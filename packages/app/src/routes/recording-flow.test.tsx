@@ -397,6 +397,86 @@ async function interactWithLiveTarget() {
 }
 
 describe("record, review, replay, and save", () => {
+  it.each([
+    [
+      "check",
+      'Step 1 (check text "Account: member" visible): expect: "text "Account: member"" not visible after 10s',
+    ],
+    [
+      "wait",
+      'Step 1 (wait for text "Account: member"): wait-for: timed out waiting for text "Account: member" (60000ms) (pixels unchanged for 60000ms). Next: Unchanged pixels are diagnostic, not a reason to stop waiting.',
+    ],
+  ] as const)(
+    "keeps an unsuccessful %s and its text open after a healthy inspection, then allows correction",
+    async (kind, detail) => {
+      const initial = state("recording", ["inspect", "record", "checkpoint", "stop"]);
+      const fake = fakeService(initial);
+      let finishCheck!: (result: ProductRecordingState) => void;
+      fake.service.recordCondition = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<ProductRecordingState>((resolve) => {
+              finishCheck = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(initial);
+      await renderJourney("/recordings/workflow-1", fake.service, platformWithStorage().platform);
+      await click(button("Wait or check"));
+      if (kind === "check") await click(button("Check it is on screen"));
+      await fill(document.querySelector<HTMLInputElement>("#condition-text")!, "Account: member");
+      await click(button("Add step"));
+
+      expect(document.querySelector<HTMLInputElement>("#condition-text")?.disabled).toBe(true);
+      expect(
+        [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+          (choice) => choice.textContent?.trim() === "Cancel",
+        )?.disabled,
+      ).toBe(true);
+      expect(
+        [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="radio"]')].every(
+          (choice) => choice.disabled,
+        ),
+      ).toBe(true);
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      await act(async () => {
+        finishCheck({
+          ...initial,
+          status: "needs-attention",
+          recovery: {
+            code: "operation-unavailable",
+            title: "The condition did not match",
+            detail,
+            recovery: "Choose the exact text and try again.",
+            retryable: true,
+          },
+        });
+      });
+      await settle();
+
+      const dialog = document.querySelector('[role="dialog"]');
+      expect(dialog).not.toBeNull();
+      expect(dialog?.querySelector('[role="alert"]')?.textContent).toContain(
+        "“Account: member” wasn’t found. Check the text on screen and try again.",
+      );
+      expect(document.querySelector<HTMLInputElement>("#condition-text")?.value).toBe(
+        "Account: member",
+      );
+      await fill(document.querySelector<HTMLInputElement>("#condition-text")!, "Account member");
+      await click(button("Add step"));
+      expect(fake.service.recordCondition).toHaveBeenCalledTimes(2);
+      expect(fake.service.recordCondition).toHaveBeenLastCalledWith({
+        kind,
+        text: "Account member",
+        timeoutMs: kind === "check" ? 10_000 : 60_000,
+      });
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    },
+  );
+
   it("aligns browser labels with the current live frame, without using content extents as viewport", async () => {
     const browser = { kind: "browser", platform: "browser", targetId: "browser-checkout" } as const;
     const recording = state("recording", ["inspect", "record", "checkpoint", "stop"]);

@@ -386,6 +386,7 @@ export function NewTestPage() {
         account?.targetId,
         url,
       );
+      setQuickProgress("Preparing recording…");
       await Promise.resolve(
         platform.storage.set(`relay:website-account:${host}`, account?.reference ?? ""),
       );

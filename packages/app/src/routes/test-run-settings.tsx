@@ -38,7 +38,12 @@ export function TestRunSettings({
 }: {
   testId: string;
   activeRun: boolean;
-  targets: { data?: readonly ProductTargetOption[]; isPending: boolean; isError: boolean };
+  targets: {
+    data?: readonly ProductTargetOption[];
+    isPending: boolean;
+    isError: boolean;
+    isFetching?: boolean;
+  };
   recordedPlatforms?: readonly PlanPlatform[];
   profiles: { data?: readonly ProductRunProfileOption[] };
   builds: { data?: readonly ProductRunBuildOption[] };
@@ -62,7 +67,16 @@ export function TestRunSettings({
     (profile) => !recordedPlatforms || recordedPlatforms.includes(profile.platform),
   );
   const browserSetup = !recordedPlatforms || recordedPlatforms.includes("browser");
-  const hasTargets = Boolean(targets.data?.length);
+  // A just-created browser can be absent from cached discovery while its
+  // refresh is still running. Absence then means checking, not unavailable.
+  const checkingTargets =
+    targets.isPending ||
+    Boolean(
+      targets.isFetching &&
+      targetId &&
+      !targets.data?.some((target) => target.targetId === targetId),
+    );
+  const hasTargets = !checkingTargets && Boolean(targets.data?.length);
   const hasSavedLogins = browserSetup && availableProfiles?.some((profile) => profile.account);
   const profilePicker =
     hasTargets && availableProfiles?.length ? (
@@ -169,7 +183,7 @@ export function TestRunSettings({
             targetId: selectedTargetId,
           });
         }}
-        loading={configuration.loading || targets.isPending}
+        loading={configuration.loading || checkingTargets}
         error={scopeError ?? configuration.error}
         onRetry={scopeError ? onRetryScope : configuration.retry}
       >
@@ -236,8 +250,10 @@ export function TestRunSettings({
             </div>
           </details>
         ) : null}
-        {targets.isPending ? (
-          <PageLoading label="Finding devices…" />
+        {checkingTargets ? (
+          <PageLoading
+            label={destination.label === "Browser" ? "Finding browsers…" : "Finding devices…"}
+          />
         ) : !targets.data?.length ? (
           <EmptyState
             title={destination.emptyTitle}

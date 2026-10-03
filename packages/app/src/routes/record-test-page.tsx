@@ -2,7 +2,10 @@ import { ScanLine } from "lucide-react";
 import { AuthoringWorkspace } from "./authoring-workspace";
 import { RecordTestHeader } from "./record-test-header";
 import { RecordingScreenCapture } from "./recording-screen-capture";
-import { RecordingCondition as RecordingConditionDialog } from "./recording-condition";
+import {
+  RecordingCondition as RecordingConditionDialog,
+  conditionFailureMessage,
+} from "./recording-condition";
 import type { RecordingCondition } from "../data/recording-product-service";
 import { RecordingTimelineSidebar } from "./recording-timeline-sidebar";
 /** @jsxImportSource react */
@@ -114,7 +117,12 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
       if (intent.action === "checkpoint") return productService.checkpoint(intent.label);
       if (intent.action === "condition") {
         if (!productService.recordCondition) throw new Error("Waits are unavailable here.");
-        return productService.recordCondition(intent.condition);
+        const result = await productService.recordCondition(intent.condition);
+        // A command can return an unsuccessful outcome while a later inspection
+        // is healthy. Keep that outcome in the form; inspection is not proof
+        // that the requested condition was recorded.
+        if (result.recovery) throw Object.assign(new Error(result.recovery.title), result.recovery);
+        return result;
       }
       if (intent.action === "cancel") {
         if (!productService.cancel) throw new Error("Cancel recording is unavailable.");
@@ -122,6 +130,10 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
         return productService.cancel();
       }
       return productService.stop();
+    },
+    onError: async (_error, intent) => {
+      if (intent.action === "condition")
+        await refreshRecording(queryClient, productService, workflowId).catch(() => undefined);
     },
     onSuccess: async (_state, intent) => {
       const canonical = await refreshRecording(queryClient, productService, workflowId);
@@ -534,7 +546,11 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                 onObserve={observeLastUnknownMutation}
                 onRefresh={() => void recoverRecordingRefreshOnly()}
                 recordingError={recording.error}
-                actionError={action.error}
+                actionError={
+                  conditionOpen && action.variables?.action === "condition"
+                    ? undefined
+                    : action.error
+                }
                 recovery={action.data?.recovery ?? recording.data?.recovery}
                 onRetry={() => void recording.refetch()}
                 retrying={recording.isFetching}
@@ -616,7 +632,10 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                               pending={action.isPending && action.variables?.action === "condition"}
                               error={
                                 action.isError && action.variables?.action === "condition"
-                                  ? errorMessage(action.error)
+                                  ? conditionFailureMessage(
+                                      action.variables.condition,
+                                      action.error,
+                                    )
                                   : undefined
                               }
                               suggestions={screenText}
