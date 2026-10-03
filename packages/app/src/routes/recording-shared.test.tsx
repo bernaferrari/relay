@@ -59,3 +59,21 @@ it("offers connection retry and disables it while checking", async () => {
   expect(host.textContent).toContain("Trying again");
   expect(host.textContent).toContain("Start Relay");
 });
+
+it("does not describe a Run preparation failure as restoring work", async () => {
+  const host = await render(
+    <RecordingProblem
+      operation="run"
+      recovery={{
+        code: "operation-unavailable",
+        title: "Relay could not reserve the durable Run workflow",
+        detail: "Workflow request identity is missing",
+        recovery: "Resolve the reported Relay problem, then start this workflow again explicitly.",
+        retryable: true,
+      }}
+    />,
+  );
+  expect(host.textContent).not.toContain("restore this work");
+  expect(host.textContent).toContain("Relay could not complete this request");
+  expect(host.textContent).not.toContain("Workflow request identity");
+});

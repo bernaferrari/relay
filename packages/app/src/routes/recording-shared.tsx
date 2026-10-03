@@ -48,9 +48,6 @@ export function errorMessage(error: unknown): string {
   if (/failed to fetch|networkerror|connection (?:ended|failed|refused)/iu.test(message)) {
     return "Relay could not reach the local service. Check the connection, then try again.";
   }
-  if (/workflow|expectedversion|operationid|identifier is invalid/iu.test(message)) {
-    return "Relay could not restore this work. Return to the Test and try again.";
-  }
   return "Relay could not complete this request. Try again, or return to the Test.";
 }
 
