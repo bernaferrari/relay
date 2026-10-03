@@ -165,7 +165,7 @@ export function registerRelayResources(
         activeProfile: profile,
         activeToolCount:
           profile === "qa"
-            ? relayQaOutcomeTools.length + relayQaOperatorTools.length + tools.length
+            ? 1 + relayQaOutcomeTools.length + relayQaOperatorTools.length + tools.length
             : profile === "outcome"
               ? relayOutcomeTools.length
               : profile === "operator"
@@ -173,7 +173,12 @@ export function registerRelayResources(
                 : tools.length,
         activeOperations:
           profile === "qa"
-            ? [...relayQaOutcomeTools, ...relayQaOperatorTools, ...tools].map(({ name }) => name)
+            ? [
+                "relay_panel",
+                ...[...relayQaOutcomeTools, ...relayQaOperatorTools, ...tools].map(
+                  ({ name }) => name,
+                ),
+              ]
             : profile === "outcome"
               ? relayOutcomeTools.map(({ name }) => name)
               : profile === "operator"
@@ -183,7 +188,8 @@ export function registerRelayResources(
           id,
           toolCount:
             id === "qa"
-              ? relayQaOutcomeTools.length +
+              ? 1 +
+                relayQaOutcomeTools.length +
                 relayQaOperatorTools.length +
                 relayMcpToolsForProfile(id).length
               : id === "outcome"

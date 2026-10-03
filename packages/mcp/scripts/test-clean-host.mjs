@@ -107,7 +107,13 @@ async function startFixture(operationIds) {
   return { fixture, url: `http://127.0.0.1:${address.port}` };
 }
 
-async function readMcpResponses(command, args, environment, callHealth = false) {
+async function readMcpResponses(
+  command,
+  args,
+  environment,
+  callHealth = false,
+  supportsApps = false,
+) {
   const child = spawn(command, args, {
     env: { ...process.env, ...environment },
     stdio: ["pipe", "pipe", "pipe"],
@@ -116,7 +122,7 @@ async function readMcpResponses(command, args, environment, callHealth = false) 
   let output = "";
   let stderr = "";
   const complete = () =>
-    (callHealth ? [2, 3, 4, 5] : [2, 3, 4]).every((id) =>
+    [2, 3, 4, ...(callHealth ? [5] : []), ...(supportsApps ? [6] : [])].every((id) =>
       responses.some((response) => response.id === id),
     );
   const done = new Promise((resolvePromise, reject) => {
@@ -151,7 +157,13 @@ async function readMcpResponses(command, args, environment, callHealth = false) 
       method: "initialize",
       params: {
         protocolVersion: "2025-11-25",
-        capabilities: {},
+        capabilities: supportsApps
+          ? {
+              extensions: {
+                "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] },
+              },
+            }
+          : {},
         clientInfo: { name: "relay-clean-host-test", version: "1" },
       },
     })}\n`,
@@ -173,6 +185,10 @@ async function readMcpResponses(command, args, environment, callHealth = false) 
   if (callHealth)
     child.stdin.write(
       `${JSON.stringify({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "relay_health", arguments: {} } })}\n`,
+    );
+  if (supportsApps)
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 6, method: "resources/read", params: { uri: "ui://relay/review" } })}\n`,
     );
   let timeout;
   try {
@@ -327,6 +343,10 @@ async function main() {
       true,
     );
     const qaTools = qaResponses.find((response) => response.id === 2)?.result?.tools;
+    assert.equal(qaTools.length, 23);
+    const fallbackPanel = qaTools.find((tool) => tool.name === "relay_panel");
+    assert.equal(fallbackPanel.annotations.readOnlyHint, true);
+    assert.equal(fallbackPanel._meta?.ui, undefined);
     assert.ok(qaTools.some((tool) => tool.name === "relay_record_test"));
     assert.ok(qaTools.some((tool) => tool.name === "relay_run_test"));
     assert.ok(qaTools.some((tool) => tool.name === "relay_inspect_workflow"));
@@ -339,6 +359,25 @@ async function main() {
       true,
       JSON.stringify(qaResponses.find((response) => response.id === 5)),
     );
+
+    const appResponses = await readMcpResponses(
+      join(bin, copiedConfig.mcpServers.relay.command),
+      copiedConfig.mcpServers.relay.args,
+      qaEnv,
+      false,
+      true,
+    );
+    const appTool = appResponses
+      .find((response) => response.id === 2)
+      ?.result?.tools.find((tool) => tool.name === "relay_panel");
+    assert.equal(appTool._meta.ui.resourceUri, "ui://relay/review");
+    const panel = appResponses.find((response) => response.id === 6)?.result?.contents?.[0];
+    assert.ok(panel, JSON.stringify(appResponses.find((response) => response.id === 6)));
+    assert.equal(panel.mimeType, "text/html;profile=mcp-app");
+    assert.deepEqual(panel._meta["openai/ui"].availableDisplayModes, ["fullscreen"]);
+    assert.match(panel.text, /Tests and results/);
+    assert.match(panel.text, /type="module"/);
+    assert.doesNotMatch(panel.text, /RELAY_PANEL_SCRIPT|packages\/mcp\/panel|src="https?:/);
 
     const bridgePort = await freePort();
     const bridge = spawn(join(bin, "relay-mcp-bridge"), [], {

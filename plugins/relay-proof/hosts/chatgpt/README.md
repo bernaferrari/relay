@@ -46,7 +46,7 @@ Use the same package directly when the host launches local MCP commands:
       "command": "npx",
       "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "qa"],
       "env": {
-        "RELAY_MCP_PROFILE": "proof"
+        "RELAY_MCP_PROFILE": "qa"
       }
     }
   }
@@ -64,6 +64,10 @@ The ChatGPT host does not get a custom schema or a second Proof workflow. The
 same canonical MCP tools, resources, confirmation rules, and human approval
 boundary apply everywhere.
 
-This distribution has no MCP App view or Extensions entrypoint. Transport
-checks do not establish rendered host compatibility; qualify a specific host
-before claiming live panels or interactive review there.
+The QA profile includes the read-only `relay_panel` tool. A host that
+advertises `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app` gets
+the bundled Tests and results view. Other hosts get its state as text.
+Transport and capability checks do not establish rendered host compatibility.
+Follow the [qualification steps](../panel.md) before claiming a specific
+ChatGPT/Codex host supports this panel. It has no live device controls or
+visual acceptance buttons.

@@ -35,6 +35,7 @@ const workspaceAliasPlugin = {
 // executable. Runtime integrations remain real npm dependencies so optional
 // platform providers can keep their own install/loader behavior.
 const external = [
+  "@relay/runtime/*",
   "@modelcontextprotocol/server",
   "@modelcontextprotocol/server/*",
   "playwright-core",
@@ -85,3 +86,20 @@ for (const file of await readdir(dist)) {
   const source = await readFile(path, "utf8");
   await writeFile(path, source.replace(/^(?:#![^\n]*\n)+/u, "#!/usr/bin/env node\n"));
 }
+
+const panel = await build({
+  absWorkingDir: packageRoot,
+  entryPoints: ["panel/view.ts"],
+  bundle: true,
+  platform: "browser",
+  format: "esm",
+  target: "es2022",
+  minify: true,
+  write: false,
+});
+const template = await readFile(join(packageRoot, "panel/template.html"), "utf8");
+const browserSource = panel.outputFiles[0].text.replaceAll("</script", "<\\/script");
+await writeFile(
+  join(dist, "relay-panel.html"),
+  template.replace("/* RELAY_PANEL_SCRIPT */", () => browserSource),
+);

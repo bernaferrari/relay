@@ -47,6 +47,7 @@
     "test:clean-host": "node scripts/test-clean-host.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "2.0.3",
     "@modelcontextprotocol/server": "2.1.0",
     "playwright-core": "^1.63.0",
     "pngjs": "^7.0.0",
@@ -56,11 +57,20 @@
   "devDependencies": {
     "@relay/client": "workspace:*",
     "@relay/protocol": "workspace:*",
+    "@relay/runtime": "workspace:*",
     "@relay/workflows": "workspace:*",
     "@types/node": "^26.6.3",
     "esbuild": "0.28.2",
     "tsx": "^4.23.15",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "@relay/runtime": "0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@relay/runtime": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=24"

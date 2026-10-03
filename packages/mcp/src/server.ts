@@ -39,6 +39,7 @@ import {
 } from "./outcome-tools.js";
 import { invokeRelayOperatorTool, operatorResultIsPng } from "./operator-tool-dispatch.js";
 import { relayOperatorTools, type RelayOperatorToolDescriptor } from "./operator-tools.js";
+import { registerRelayPanel } from "./panel-resources.js";
 import { relayQaOutcomeTools, relayQaOperatorTools } from "./qa-tools.js";
 import { proofOutcomeTools } from "./proof-outcome-tools.js";
 import {
@@ -835,6 +836,7 @@ export function createMcpServer({
   const tools = relayMcpToolsForProfile(profile);
   const recoveryOptions = recoveryOptionsForProfile(profile, tools);
   if (profile === "qa") {
+    registerRelayPanel(server, invoker, scope);
     for (const descriptor of relayQaOutcomeTools) {
       registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
     }

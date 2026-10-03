@@ -24,6 +24,7 @@ export type McpConfig = {
   credentialSource: CredentialSource;
   timeoutMs: number;
   profile: RelayMcpProfile;
+  runtime?: { workspaceRoot: string; port?: number };
 };
 
 export declare function parseMcpConfig(

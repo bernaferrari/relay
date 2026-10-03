@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Relay · Tests and results</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: var(--font-sans, system-ui, sans-serif);
+        background: var(--color-background-primary, #111315);
+        color: var(--color-text-primary, #f1f3f5);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+        font-weight: 650;
+      }
+      p {
+        font-size: 13px;
+        color: var(--color-text-secondary, #a6adb5);
+        margin: 7px 0;
+      }
+      button,
+      select {
+        font: inherit;
+        font-size: 13px;
+        color: inherit;
+        background: var(--color-background-secondary, #202429);
+        border: 1px solid var(--color-border-primary, #363c43);
+        border-radius: 8px;
+        padding: 9px 12px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button:hover:enabled {
+        background: var(--color-background-tertiary, #2c3239);
+      }
+      :focus-visible {
+        outline: 2px solid #5da6ff;
+        outline-offset: 3px;
+      }
+      select {
+        max-width: 100%;
+        width: 100%;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--color-text-secondary, #a6adb5);
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 24px 0 12px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(210px, 1fr) minmax(260px, 1.6fr);
+        gap: 24px;
+      }
+      .rows {
+        display: grid;
+        gap: 6px;
+      }
+      .row {
+        text-align: left;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 8px;
+      }
+      .row[aria-pressed="true"] {
+        border-color: #5da6ff;
+        background: #24374d;
+      }
+      .status {
+        font-size: 11px;
+        white-space: nowrap;
+        padding: 3px 7px;
+        border-radius: 20px;
+        background: #353a40;
+      }
+      .ok {
+        color: #89d6a1;
+      }
+      .error {
+        color: #fda29b;
+      }
+      .healed {
+        color: #edbb7d;
+      }
+      .stage {
+        min-height: 350px;
+        background: var(--color-background-secondary, #191d21);
+        border-radius: 14px;
+        padding: 18px;
+      }
+      .stage img {
+        display: block;
+        max-width: 100%;
+        max-height: 70vh;
+        margin: 12px auto;
+        border-radius: 8px;
+      }
+      .empty {
+        padding: 32px 12px;
+        text-align: center;
+      }
+      .controls {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-top: 14px;
+      }
+      .issues {
+        font-size: 13px;
+        color: #edbb7d;
+        line-height: 1.5;
+      }
+      .test {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--color-border-primary, #363c43);
+        font-size: 13px;
+      }
+      .muted {
+        color: var(--color-text-secondary, #a6adb5);
+        font-size: 12px;
+      }
+      #loading {
+        min-height: 240px;
+        border-radius: 14px;
+        background: var(--color-background-secondary, #191d21);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 620px) {
+        body {
+          padding: 16px;
+        }
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .stage {
+          min-height: 240px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Tests and results</h1>
+        <p id="scope">Relay</p>
+      </div>
+      <button id="refresh" disabled>Refresh</button>
+    </header>
+    <div id="loading" aria-label="Loading saved Tests and results"></div>
+    <main id="content" hidden>
+      <div class="layout">
+        <section>
+          <label for="apps">App</label
+          ><select id="apps"></select>
+          <h2>Saved tests</h2>
+          <div id="tests"></div>
+          <h2>Recent runs</h2>
+          <div class="rows" id="runs"></div>
+        </section>
+        <section class="stage">
+          <h2 id="run-title">Select a run</h2>
+          <div id="frame">
+            <p class="empty">Choose a result to inspect its retained screenshot.</p>
+          </div>
+          <div id="controls" class="controls" hidden>
+            <button id="previous">Previous</button><span id="frame-count" class="muted"></span
+            ><button id="next">Next</button>
+          </div>
+          <p class="muted">Retained evidence · This view does not control your device.</p>
+        </section>
+      </div>
+      <p id="issues" class="issues" role="status"></p>
+    </main>
+    <script type="module">
+      /* RELAY_PANEL_SCRIPT */
+    </script>
+  </body>
+</html>
