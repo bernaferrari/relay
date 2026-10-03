@@ -332,6 +332,9 @@ importers:
       '@relay/core':
         specifier: workspace:*
         version: link:../core
+      '@relay/product':
+        specifier: workspace:*
+        version: link:../product
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol

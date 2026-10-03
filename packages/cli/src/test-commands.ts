@@ -6,8 +6,9 @@ import {
 } from "./command-descriptors.js";
 
 export const graphTestListPath: CommandPathDescriptor = path("test list", ["appMapId"], undefined, {
-  summary: "List reusable tests and their screenshot policies",
+  summary: "List saved Tests with recorded platforms and actions still needing work",
   examples: ["relay test list grok-android"],
+  note: "discovery.status describes saved recordings, not live execution readiness. Choose a recorded Test, then compile it with one saved targetProfileId to inspect offline blockers. Drafts stay visible with needs-recording or needs-binding status.",
 });
 
 /**

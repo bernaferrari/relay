@@ -4,6 +4,7 @@ import {
   captureProofForAuthoring,
   type AuthoringSession,
 } from "@relay/protocol";
+import { recordedTapDisplayTitle } from "@relay/core/recorded-control-label";
 import type {
   AuthorTestSnapshot,
   AuthoringReviewActionKind,
@@ -268,10 +269,24 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
     actions: revision.actions.map((action) => {
       const linkedEvidence = reviewEvidenceForAction(action, revision);
       const waitConditions = reviewWaitConditions(action);
+      const observation = action.entranceObservationId
+        ? observationsForRevision(revision).get(action.entranceObservationId)
+        : undefined;
+      const tap = action.steps.length === 1 ? action.steps[0] : undefined;
+      const displayLabel =
+        tap?.kind === "tap" && observation?.nodes
+          ? recordedTapDisplayTitle(
+              action.label ?? semanticIntent(action),
+              tap.target ?? {},
+              observation.nodes,
+              session.target.platform,
+            )
+          : action.label;
+      const intent = displayLabel ? shortName(displayLabel) : semanticIntent(action);
       return {
         id: action.id,
-        intent: semanticIntent(action),
-        ...(action.label ? { label: action.label } : {}),
+        intent,
+        ...(action.label ? { label: displayLabel } : {}),
         stepCount: action.steps.length,
         kind: reviewActionKind(action),
         ...(waitConditions ? { waitConditions } : {}),

@@ -5,6 +5,7 @@ import {
   resolveNamedControlOutcome,
 } from "./device-target-resolution.js";
 import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
+import { recordedControlDisplayName } from "./recorded-control-label.js";
 
 /** Promote a pixel click only when a fresh tree identifies a unique control at
  * that location. The raw recording retains the original click separately. */
@@ -85,7 +86,13 @@ export function semanticTargetForRecording(
       const label = node.label?.trim();
       // A container's label can be its whole text; name the step by the
       // selector then, so it reads like the control the person clicked.
-      return { target: selector, name: label && label.length <= 60 ? label : value };
+      return {
+        target: selector,
+        name:
+          label && label.length <= 60
+            ? label
+            : (recordedControlDisplayName(selector, nodes) ?? value),
+      };
     }
   }
   return undefined;

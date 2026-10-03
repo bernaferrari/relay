@@ -5,9 +5,12 @@ description: Connect Relay for app testing, diagnose an unreachable service or i
 
 # Connect Relay
 
+If the host exposes no Relay tools, follow the plugin README's connection
+setup using the installed connector executable. Its `--help` works offline.
+
 1. Read `relay://guides/start` and `relay://guides/agents`. These guides ship
    with the MCP connector and remain readable while the service is offline.
-2. Call `relay_health`. If unavailable, run `relay-mcp doctor --profile qa`
+2. Call `relay_health`. If the service is unavailable, run `relay-mcp doctor --profile qa`
    in the host's configured environment and follow its failed check's next
    action. With the matching `@relay/runtime` candidate installed, configure
    an explicitly chosen absolute `--workspace` directory to attach or launch
@@ -15,10 +18,14 @@ description: Connect Relay for app testing, diagnose an unreachable service or i
    An explicit `--server` or `RELAY_URL` keeps attachment to that endpoint.
    Store the workspace outside plugin caches; browser engines and native
    tools remain target prerequisites. Doctor is read-only and never launches.
-3. Call `relay_connect_target`. Select a returned ready target explicitly when
+3. Call `relay_panel` to list Apps, then call it with the selected `appMapId`
+   to find that App's saved Tests and recent Runs. It returns read-only state
+   even when the host cannot render a panel. For detailed Test steps, read
+   `relay://app-maps/<appMapId>/tests/<testId>` using the returned exact IDs.
+4. Call `relay_connect_target`. Select a returned ready target explicitly when
    several exist. Keep its identity throughout the task. Resolve unavailable
    pairing, unlock, or control prerequisites before recording.
-4. Call `relay_observe_target` for that target. Completion is an actual
+5. Call `relay_observe_target` for that target. Completion is an actual
    captured frame with its evidence reference, or the specific reported
    missing prerequisite. A healthy connection alone is not a tested app.
 

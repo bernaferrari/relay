@@ -48,6 +48,8 @@ import { TestRunSettings } from "./test-run-settings";
 import { TestWorkspaceActions } from "./test-workspace-actions";
 import { TestWorkspaceStage } from "./test-stage";
 import { productLinkClassName } from "../lib/class-names";
+import { testRunDestinationCopy } from "../data/test-run-targets";
+import { useTestRunDestinations } from "../data/use-test-run-destinations";
 
 const routeApi = getRouteApi("/tests/$testId");
 const staleTestMessage = "The saved Test changed.";
@@ -137,22 +139,17 @@ export function TestPage() {
     queryFn: async () => (await readRunPointer(platform)) ?? null,
     staleTime: Infinity,
   });
-  const targets = useQuery({
-    queryKey: runQueryKeys.targets,
-    queryFn: () => runService.listTargets(),
-    staleTime: 5_000,
-    refetchInterval: 5_000,
+  const { targets, profiles, editorDocument, recordedPlatforms } = useTestRunDestinations({
+    testId,
+    appMapId: test.data?.appMapId,
+    recordedProfileId: test.data?.recordedProfileId,
+    runService,
+    testEditorService,
   });
   const builds = useQuery({
     queryKey: ["run-config", "builds"],
     queryFn: () => runService.listBuilds?.() ?? Promise.resolve([]),
     enabled: typeof runService.listBuilds === "function",
-    staleTime: 15_000,
-  });
-  const profiles = useQuery({
-    queryKey: ["run-config", "profiles", test.data?.appMapId],
-    queryFn: () => runService.listProfiles?.(test.data!.appMapId) ?? Promise.resolve([]),
-    enabled: Boolean(test.data?.appMapId && runService.listProfiles),
     staleTime: 15_000,
   });
   const scope = useRunConfigurationKey(platform, `test-run:${testId}`, test.data?.appMapId);
@@ -171,6 +168,7 @@ export function TestPage() {
     .find((run) => run.executionIdentity?.deviceId)?.executionIdentity?.deviceId;
   useEffect(() => {
     if (!configuration.pristine) return;
+    if (editorDocument.isPending) return;
     if (profiles.isEnabled && profiles.isPending) return;
     const ready = (id?: string) =>
       Boolean(id && targets.data?.some((target) => target.targetId === id));
@@ -202,6 +200,7 @@ export function TestPage() {
     profiles.isEnabled,
     profiles.isPending,
     test.data?.recordedProfileId,
+    editorDocument.isPending,
   ]);
   const targetId = configuration.selection.targetId ?? "";
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
@@ -217,6 +216,7 @@ export function TestPage() {
   const profileBlocker = admission.blockers.find((item) => item.id === "saved-profile");
   const paired = usePairedConfigurationWorkspace(platform);
   const usePairs = configuration.selection.usePairedWorkspace === true;
+  const pairedPlatformReady = !recordedPlatforms || recordedPlatforms.includes("browser");
   const selectedProfile = profiles.data?.find(
     (profile) => profile.id === configuration.selection.savedProfileId,
   );
@@ -235,9 +235,9 @@ export function TestPage() {
         ]
           .filter(Boolean)
           .join(" · ")
-      : "Choose device or browser";
+      : testRunDestinationCopy(recordedPlatforms).placeholder;
   const canStart =
-    (usePairs ? paired.workspace.rows.length > 0 : targetReady) &&
+    (usePairs ? pairedPlatformReady && paired.workspace.rows.length > 0 : targetReady) &&
     !configuration.loading &&
     admission.status === "ready" &&
     editorState === "saved";
@@ -313,12 +313,6 @@ export function TestPage() {
         });
       }
     },
-  });
-  const editorDocument = useQuery({
-    queryKey: ["test-editor", testId, test.data?.appMapId],
-    queryFn: () => testEditorService.get(testId, test.data!.appMapId),
-    staleTime: 5_000,
-    enabled: Boolean(test.data?.appMapId),
   });
   const recordedPlatform =
     profiles.data?.find((profile) => profile.id === test.data?.recordedProfileId)?.platform ??
@@ -458,6 +452,7 @@ export function TestPage() {
       testId={testId}
       activeRun={Boolean(activeRun)}
       targets={targets}
+      recordedPlatforms={recordedPlatforms}
       profiles={profiles}
       builds={builds}
       configuration={configuration}

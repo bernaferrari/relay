@@ -52,6 +52,48 @@ async function render() {
 }
 
 describe("saved recording evidence", () => {
+  it("inspects the displayed frame while another moment loads, then closes when that frame changes", async () => {
+    let resolveBefore!: (value: ReturnType<typeof bytes>) => void;
+    service.getRecordingFrame.mockImplementation((uri) =>
+      uri === "after.png"
+        ? Promise.resolve(bytes())
+        : new Promise((resolve) => {
+            resolveBefore = resolve;
+          }),
+    );
+    const host = await render();
+    const displayed = host.querySelector<HTMLImageElement>("img")!;
+    const previous = displayed.src;
+    Object.defineProperty(displayed, "naturalWidth", { value: 1080 });
+    await act(async () => displayed.dispatchEvent(new Event("load")));
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Before")!
+        .click(),
+    );
+    const inspect = host.querySelector<HTMLButtonElement>('[aria-label="Inspect screenshot"]');
+    expect(inspect).not.toBeNull();
+    await act(async () => inspect!.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector("img")?.src).toBe(previous);
+    expect(dialog.querySelector("img")?.alt).toBe("After: Open Settings");
+    await act(async () =>
+      dialog.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click(),
+    );
+    expect(dialog.querySelector("img")?.style.getPropertyValue("--zoom-width")).toBe("1080px");
+    expect(dialog.querySelector("img")?.src).toBe(previous);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previous);
+    await act(async () => resolveBefore(bytes()));
+    await settle();
+    expect(dialog.querySelector("img")?.alt).toBe("After: Open Settings");
+    await act(async () =>
+      host.querySelector('img[aria-hidden="true"]')!.dispatchEvent(new Event("load")),
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(host.querySelector("img")?.alt).toBe("Before: Open Settings");
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previous);
+  });
+
   it("keeps the displayed screenshot alive while another moment loads and never deselects it", async () => {
     let resolveBefore!: (value: ReturnType<typeof bytes>) => void;
     service.getRecordingFrame.mockImplementation((uri) =>

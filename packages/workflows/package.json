@@ -10,6 +10,7 @@
     "./operation-port": "./src/operation-port.ts",
     "./proof": "./src/proof-workflow.ts",
     "./recording-outcomes": "./src/recording-outcome-jobs.ts",
+    "./recorded-step-presentation": "./src/recorded-step-presentation.ts",
     "./target-catalog": "./src/target-catalog.ts",
     "./types": "./src/types.ts",
     "./testing": "./src/testing.ts",

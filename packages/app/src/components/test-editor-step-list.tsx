@@ -31,6 +31,7 @@ function uniquePlatformBlockNotice(
 
 export function TestEditorStepOutline({
   test,
+  displayTitles,
   recordedPlatforms,
   routePlatformBlockers,
   stepPlatformBlockers,
@@ -49,6 +50,7 @@ export function TestEditorStepOutline({
   headerAside,
 }: {
   test: AppMapScenarioTest;
+  displayTitles?: Readonly<Record<string, string>>;
   recordedPlatforms?: readonly PlanPlatform[];
   routePlatformBlockers?: Partial<Record<PlanPlatform, string>>;
   stepPlatformBlockers?: Readonly<Record<string, string>>;
@@ -123,7 +125,7 @@ export function TestEditorStepOutline({
                   </span>
                   <span className="min-w-0">
                     <strong className="block overflow-hidden text-sm font-medium break-words">
-                      {entry.step.intent}
+                      {displayTitles?.[entry.step.id] ?? entry.step.intent}
                     </strong>
                     <small className="mt-0.5 block overflow-hidden text-xs text-muted-foreground break-words empty:hidden">
                       {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}

@@ -96,7 +96,7 @@ export function TestEditorWorkspace({
             aria-pressed={workspaceView === view}
             onClick={() => onWorkspaceViewChange(view)}
           >
-            {view === "steps" ? "Steps" : "Browser"}
+            {view === "steps" ? "Steps" : inspectorKind === "device" ? "Device" : "Browser"}
           </Button>
         ))}
       </div>
@@ -127,6 +127,7 @@ export function TestEditorWorkspace({
               showDetails={settingsOpen}
               selectedEditor={editorExpanded || hasPendingCheckpoint ? stepEditor : null}
               test={editorDocument.test}
+              displayTitles={editorDocument.displayTitles}
               recordedPlatforms={editorDocument.recordedPlatforms}
               routePlatformBlockers={editorDocument.routePlatformBlockers}
               stepPlatformBlockers={editorDocument.stepPlatformBlockers}

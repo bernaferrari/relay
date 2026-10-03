@@ -6,8 +6,10 @@ description: Reproduce an app issue or record a reusable Relay Test, including r
 # Record a reusable Test
 
 1. Read `relay://guides/record`, `relay://guides/targets`, and
-   `relay://guides/waits`. Use the existing App/Test resources to check whether
-   the journey already exists. Choose the intended ready target and observe
+   `relay://guides/waits`. Call `relay_panel`, then call it with the chosen
+   `appMapId` to check whether the journey already exists. Read detailed steps
+   at `relay://app-maps/<appMapId>/tests/<testId>` with the returned IDs.
+   Choose the intended ready target through `relay_connect_target` and observe
    its starting screen.
 2. Call `relay_record_test` with the App, target and a clear title. This starts
    the existing durable authoring workflow. Keep its returned workflow ID

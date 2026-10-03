@@ -15,6 +15,7 @@ import {
   type PlanPlatform,
 } from "@relay/product/test-route-platforms";
 import { scenarioTestOriginMissingEvidence } from "@relay/product/test-origin-readiness";
+import { testInstructionDisplayTitles } from "@relay/workflows/recorded-step-presentation";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
@@ -42,6 +43,8 @@ export type ProductTestEditorDocument = {
   appName: string;
   revision: number;
   test: AppMapScenarioTest;
+  /** Readable projection of captured controls; editable intent stays canonical. */
+  displayTitles?: Readonly<Record<string, string>>;
   savedPaths?: readonly AppMapTestBindingCandidate[];
   browserTargetIds?: readonly string[];
   recordedPlatforms?: readonly PlanPlatform[];
@@ -282,6 +285,7 @@ export function documentFromMap(
     ],
     revision: appMap.revision,
     test: structuredClone(test),
+    displayTitles: testInstructionDisplayTitles(appMap, test),
     savedPaths: Object.values(appMap.connections ?? {})
       .filter((connection) => connection.state === "ready" && connection.actions.length > 0)
       .map((connection) => ({

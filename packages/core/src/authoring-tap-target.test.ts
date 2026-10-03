@@ -48,6 +48,24 @@ test("a unique identifier takes priority over localized text", () => {
     identifier: "app:id/internet",
   });
 });
+
+test("a captured Grok send button keeps its identifier while recording a readable name", () => {
+  const capture = observation();
+  capture.nodes = [
+    {
+      identifier: "input_send_button",
+      bundleId: "ai.x.grok",
+      type: "android.view.View",
+      hittable: true,
+      enabled: true,
+      rect: { x: 20, y: 100, width: 60, height: 60 },
+    },
+  ];
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 50, y: 130 } }, capture), {
+    target: { identifier: "input_send_button" },
+    name: "Send message",
+  });
+});
 test("a containing control identifier wins over its nested label and resolves after translation and movement", () => {
   const capture = observation();
   capture.nodes!.push({

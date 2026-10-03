@@ -190,6 +190,60 @@ function scenario(): AppMapScenarioTest {
   };
 }
 
+test("saved native instructions project captured control names into Run check titles only", () => {
+  const map = fixture();
+  const work = scenario();
+  work.steps = [work.steps[0]!];
+  work.steps[0]!.intent = "Tap “input_send_button”";
+  const connection = map.connections["open-cart"]!;
+  connection.actions = [{ id: "send", kind: "tap", target: { identifier: "input_send_button" } }];
+  map.screens.home!.variantIds = ["composer"];
+  map.screenVariants.composer = {
+    ...scope,
+    id: "composer",
+    screenId: "home",
+    targetProfile: {
+      id: "android",
+      targetId: "phone",
+      source: "device",
+      platform: "android",
+      name: "Phone",
+      capabilities: [],
+      observedAt: at,
+    },
+    observation: {
+      fingerprint: "a".repeat(64),
+      volatileSignals: [],
+      nodes: [
+        { role: "android.widget.linearlayout", identifier: "ai.x.grok:id/action_bar_root" },
+        { role: "android.view.view", identifier: "input_send_button", hittable: true },
+      ],
+    },
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const before = structuredClone(work);
+  const compiled = compileAppMapTest(map, work);
+  const root = compiled.graph[compiled.plan.rootRecipeId]!;
+  assert.equal(
+    root.steps.find((step) => step.kind === "module")?.check?.title,
+    "Tap “Send message”",
+  );
+  assert.deepEqual(work, before);
+  assert.ok(
+    Object.values(compiled.graph)
+      .flatMap((recipe) => recipe.steps)
+      .some((step) => step.kind === "tap" && step.target?.identifier === "input_send_button"),
+  );
+  work.steps[0]!.intent = "Submit the expert request";
+  const custom = compileAppMapTest(map, work);
+  assert.equal(
+    custom.graph[custom.plan.rootRecipeId]!.steps[0]?.check?.title,
+    "Submit the expert request",
+  );
+});
+
 test("initial passive self-loop keeps destination proof and later source proof", () => {
   const current = fixture();
   current.connections.observe = {

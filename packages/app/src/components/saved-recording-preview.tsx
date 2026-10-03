@@ -2,6 +2,7 @@
 import type { ProductTestStep } from "@relay/product/catalog";
 import { Button } from "@relay/ui-react/components/button";
 import { ScreenshotMomentSwitch } from "./screenshot-moment-switch";
+import { EvidenceImageViewer } from "./evidence-image-viewer";
 import { useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -119,10 +120,14 @@ export function SavedRecordingPreview({
           />
         ) : null}
         {image && !failed ? (
-          <img
-            src={image.url}
+          <EvidenceImageViewer
+            key={image.url}
+            frame={{
+              id: image.uri,
+              title: image.alt,
+              media: { kind: "image", src: image.url },
+            }}
             onError={() => setFailedUri(image.uri)}
-            alt={image.alt}
             className={`h-full max-h-full w-full rounded-md object-contain ${loading ? "opacity-50" : ""}`}
           />
         ) : (

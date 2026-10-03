@@ -139,6 +139,9 @@ Show or tell Relay what to exercise. Run it on the accounts and devices you
 choose. Review what happened together. Reuse the path next time.
 
 Everyday tasks:
+  Find Apps and Tests     relay map list
+                          relay test list <appId>
+  Inspect saved routes    relay test compile <appId> <testId> --input '{"targetProfileId":"<saved-profile>"}'
   Open and observe        relay connect [device]
                           relay observe [device]
   Record a journey        relay record <title> --confirm
@@ -153,6 +156,13 @@ Everyday tasks:
   Export the evidence     relay export <runId> --out ./review
   Check the local server  relay doctor
   Read a task guide       relay guide [start|record|run|targets|waits|debug|review|maps|agents]
+
+Choosing a saved Test:
+  test list adds discovery.status and platform context. Recorded means a saved route exists;
+  it does not mean a target is connected or every selector has passed preflight. Explicit drafts
+  say needs-recording; unbound actions say needs-binding. Choose one saved targetProfileId from
+  discovery.savedTargetProfiles when compiling, then inspect preflight.summary.blockers.
+  map get is a compact overview. map export <appId> --json includes the full saved graph as YAML.
 
 Full command reference:
   relay review [--app <appId>]
