@@ -37,6 +37,12 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
       ? platformLabel(selectedOption?.platform)
       : "App";
 
+  const triggerSubtitle = selectedAppId
+    ? triggerDetail
+    : scope.kind === "all" || scope.kind === "workspace"
+      ? "Everything"
+      : undefined;
+
   function switchApp(appId?: string) {
     router.history.push(
       appContextDestination({ pathname: location.pathname, search: location.search, appId }),
@@ -58,9 +64,11 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-sm font-medium leading-5">{triggerName}</span>
-            <span className="truncate text-xs leading-4 text-muted-foreground">
-              {selectedAppId ? triggerDetail : "Everything"}
-            </span>
+            {triggerSubtitle ? (
+              <span className="truncate text-xs leading-4 text-muted-foreground">
+                {triggerSubtitle}
+              </span>
+            ) : null}
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </DropdownMenuTrigger>

@@ -11,6 +11,19 @@ export function mapPathGroups(paths: readonly ProductMapPath[]): ProductMapPath[
   return [...groups.values()];
 }
 
+/** Collapse repeated display rows, retaining every recorded identity inside.
+ * Exact action labels keep checks, wait durations, and different actions apart. */
+export function mapActionGroups(paths: readonly ProductMapPath[]): ProductMapPath[][] {
+  const groups = new Map<string, ProductMapPath[]>();
+  for (const path of paths) {
+    const key = JSON.stringify([path.fromScreenId, path.toScreenId ?? null, path.label]);
+    const group = groups.get(key) ?? [];
+    group.push(path);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
 export function canvasMapPaths(
   paths: readonly ProductMapPath[],
   selectedPathId?: string,

@@ -3,7 +3,7 @@ import type { ProductMapOverview } from "@relay/product/map-exploration";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import {
   MAP_MAX_SCALE,
@@ -72,11 +72,16 @@ const overview: ProductMapOverview = {
   navigation: { route: "/apps/shop/map", href: "/apps/shop/map" },
 };
 
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline map test fixture")));
+});
+
 afterEach(async () => {
   await act(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 async function render(
@@ -106,6 +111,60 @@ async function render(
 }
 
 describe("Map exploration", () => {
+  it("collapses repeated action rows while preserving exact path inspection and search", async () => {
+    const paths = [
+      {
+        ...overview.paths[0]!,
+        id: "first",
+        coveringTests: [{ id: "first-test", name: "First checkout" }],
+      },
+      {
+        ...overview.paths[0]!,
+        id: "second",
+        coveringTests: [{ id: "second-test", name: "Second checkout" }],
+      },
+      { ...overview.paths[0]!, id: "other-action", label: "Swipe to cart" },
+    ];
+    const { history } = await render(
+      { get: async () => ({ ...overview, paths }) },
+      undefined,
+      "/apps/shop/map?view=paths",
+    );
+    const group = [...document.querySelectorAll("summary")].find((item) =>
+      item.textContent?.includes("Open cart"),
+    );
+    expect(group).toBeDefined();
+    expect(group?.textContent).toContain("2 paths");
+    expect(group?.textContent).toContain("2 tests");
+    expect(
+      [...document.querySelectorAll("button")].some((item) =>
+        item.textContent?.includes("Swipe to cart"),
+      ),
+    ).toBe(true);
+    await act(async () => group!.click());
+    await act(async () => button("Inspect Open cart · Second checkout").click());
+    expect(history.location.search).toContain("path=second");
+    await act(async () => button("Choose path").click());
+    const namedPath = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes("First checkout"),
+    );
+    expect(namedPath).toBeDefined();
+    await act(async () => (namedPath as HTMLElement).click());
+    expect(history.location.search).toContain("path=first");
+    await act(async () => button("Paths").click());
+    const search = document.querySelector('input[aria-label="Search paths"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        search,
+        "First checkout",
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(document.body.textContent).not.toContain("Second checkout");
+    await act(async () => button("Home → Cart: Open cart").click());
+    expect(history.location.search).toContain("path=first");
+  });
+
   it("restores an inspected screen from a deep link and keeps it while changing views", async () => {
     const { history } = await render(undefined, undefined, "/apps/shop/map?screen=cart");
     expect(document.body.textContent).toContain("Cart");
@@ -307,7 +366,7 @@ describe("Map exploration", () => {
     expect(world?.style.transform).not.toBe(beforeWheel);
 
     await act(async () => button("Paths").click());
-    await act(async () => button("Home → Cart").click());
+    await act(async () => button("Home → Cart: Open cart").click());
     expect(history.location.pathname).toBe("/apps/shop/map");
     expect(document.querySelector('[aria-label="Selected path"]')).not.toBeNull();
     const pathLink = document.querySelector<HTMLAnchorElement>('a[href*="path=home-cart"]');
@@ -443,7 +502,7 @@ describe("Map exploration", () => {
       }),
     });
     await act(async () => button("Paths").click());
-    expect(button("Screen 29 → Cart")).toBeDefined();
+    expect(button("Screen 29 → Cart: Journey 29")).toBeDefined();
     const input = document.querySelector<HTMLInputElement>("#map-path-search")!;
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     await act(async () => {
@@ -452,7 +511,7 @@ describe("Map exploration", () => {
     });
     expect(document.body.textContent).toContain("No matching paths");
     await act(async () => button("Clear search").click());
-    expect(button("Screen 29 → Cart")).toBeDefined();
+    expect(button("Screen 29 → Cart: Journey 29")).toBeDefined();
   });
 
   it("focuses a screen into its Tests and failure evidence, with repair gated", async () => {

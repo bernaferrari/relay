@@ -414,9 +414,10 @@ export function MapEdges({
       },
     ];
   });
-  // Paint selection last so crossing neutral routes cannot obscure it.
+  // Paint selection last. Hover/focus must not move a pressed control in the DOM:
+  // reordering it between pointer down and up cancels browser click activation.
   geometries.sort(
-    (a, b) => Number(a.path.id === activePathId) - Number(b.path.id === activePathId),
+    (a, b) => Number(a.path.id === selectedPathId) - Number(b.path.id === selectedPathId),
   );
   const edgeBounds = geometries.reduce<MapBounds>(
     (result, geometry) => ({

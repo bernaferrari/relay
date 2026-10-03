@@ -91,8 +91,9 @@
   opacity: 0.2;
 }
 
+/* Other paths remain readable and clickable while one is inspected. */
 [data-slot="map-edge"][data-state="muted"] [data-slot="map-edge-label"] {
-  visibility: hidden;
+  opacity: 0.65;
 }
 
 [data-slot="map-cluster-label"] {

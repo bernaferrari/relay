@@ -24,11 +24,27 @@ export function latestRunOf(runs: readonly ProductRunSummary[] | undefined) {
 }
 
 /** One stable-height row for every run state, including no run. */
-export function TestLastRunLine({ run }: { run?: ProductRunSummary }) {
+export function TestLastRunLine({
+  history,
+}: {
+  history: { data?: readonly ProductRunSummary[]; isLoading: boolean; isError: boolean };
+}) {
+  const run = latestRunOf(history.data);
+  const status = history.isLoading ? "loading" : history.isError ? "unavailable" : undefined;
   const search = useLocation({ select: (location) => location.search }) as Record<string, unknown>;
   return (
     <p className="flex h-8 w-full min-w-0 items-center justify-end gap-2 text-sm whitespace-nowrap text-muted-foreground">
-      <StatusPill state={runStateOf(run)} />
+      {!run && status === "loading" ? (
+        <span
+          role="status"
+          aria-label="Loading run history"
+          className="h-5 w-40 rounded-md bg-muted"
+        />
+      ) : !run && status === "unavailable" ? (
+        <span>Run history unavailable</span>
+      ) : (
+        <StatusPill state={runStateOf(run)} />
+      )}
       {run ? (
         <>
           <span

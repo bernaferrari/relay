@@ -2,12 +2,13 @@ import { useState } from "react";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { ArrowRight, Route, Search } from "lucide-react";
+import { Route, Search } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Dialog, DialogTrigger } from "@relay/ui-react/components/dialog";
 import { MapPreviewDialogContent } from "./map-preview-dialog-content";
 import { MapScreenPreview } from "./map-screen-preview";
-import { libraryRowSurface } from "./library-row-styles";
+import { MapPathActionGroup } from "./map-path-action-group";
+import { mapActionGroups } from "./map-path-groups";
 import { EmptyState } from "./product-patterns";
 
 export function MapPathsPanel({
@@ -49,7 +50,8 @@ export function MapPathsPanel({
               Paths
             </h2>
             <span className="text-xs tabular-nums text-muted-foreground" role="status">
-              {query ? `${matches.length} of ${paths.length}` : paths.length}
+              {mapActionGroups(matches).length} actions ·{" "}
+              {query ? `${matches.length} of ${paths.length}` : paths.length} recorded paths
             </span>
           </div>
           <Button
@@ -93,6 +95,7 @@ export function MapPathsPanel({
         <div className="space-y-5">
           {[...groups].map(([screenId, connections]) => {
             const screen = screenById.get(screenId);
+            const actions = mapActionGroups(connections);
             return (
               <section
                 key={screenId}
@@ -101,7 +104,7 @@ export function MapPathsPanel({
               >
                 <Dialog>
                   <DialogTrigger
-                    className="group/map-screen h-24 w-16 rounded outline-none sm:h-36 sm:w-24"
+                    className="group/map-screen h-24 w-16 rounded outline-none sm:w-24"
                     aria-label={`Preview ${connections[0]!.fromTitle}`}
                   >
                     <MapScreenPreview
@@ -126,34 +129,13 @@ export function MapPathsPanel({
                       {connections[0]!.fromTitle}
                     </h3>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {connections.length} {connections.length === 1 ? "path" : "paths"}
+                      {actions.length} {actions.length === 1 ? "action" : "actions"}
                     </span>
                   </header>
                   <ul className="space-y-1">
-                    {connections.map((path) => (
-                      <li key={path.id}>
-                        <button
-                          type="button"
-                          aria-label={`${path.fromTitle} → ${path.toTitle ?? "Finish"}`}
-                          onClick={() => onInspect(path.id)}
-                          className={`${libraryRowSurface} grid min-h-12 w-full grid-cols-[16px_minmax(0,1fr)_64px] items-center gap-x-3 gap-y-1 rounded-md px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)_72px]`}
-                        >
-                          <span className="col-span-2 min-w-0 text-sm font-normal leading-5 sm:col-span-1">
-                            {path.label}
-                          </span>
-                          <ArrowRight
-                            className="col-start-1 row-start-2 size-4 text-muted-foreground sm:col-start-2 sm:row-start-1"
-                            aria-hidden="true"
-                          />
-                          <span className="col-start-2 row-start-2 min-w-0 text-xs leading-5 text-muted-foreground sm:col-start-3 sm:row-start-1">
-                            {path.toTitle ?? "Finish"}
-                          </span>
-                          <span className="col-start-3 row-span-2 row-start-1 text-right text-xs tabular-nums text-muted-foreground sm:col-start-4 sm:row-span-1">
-                            {path.coveringTests.length
-                              ? `${path.coveringTests.length} ${path.coveringTests.length === 1 ? "test" : "tests"}`
-                              : "No tests"}
-                          </span>
-                        </button>
+                    {actions.map((group) => (
+                      <li key={group[0]!.id}>
+                        <MapPathActionGroup paths={group} onInspect={onInspect} />
                       </li>
                     ))}
                   </ul>
