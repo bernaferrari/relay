@@ -315,9 +315,9 @@ const runAcrossRoute = createRoute({
 const suitesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/suites",
-  // Plans are groups on the Tests page.
+  // Keep old Plan links on the Plans view of the Test library.
   beforeLoad: () => {
-    throw redirect({ to: "/tests", replace: true });
+    throw redirect({ to: "/tests", search: { view: "plans" }, replace: true });
   },
 });
 const suiteRoute = createRoute({

@@ -182,7 +182,8 @@ export class AuthoringSessionStore {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
       requireState(session, "preparing", "ready", "recording", "reviewing", "failed");
-      const preserveDestination = session.state === "reviewing";
+      const preserveDestination =
+        session.state === "reviewing" || (session.state === "failed" && Boolean(session.take));
       let observed;
       try {
         observed = await persistCapturedAuthoringObservation(await runtime.observe(session));

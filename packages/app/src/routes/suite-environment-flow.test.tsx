@@ -280,7 +280,7 @@ describe("Suite and Environment routes", () => {
   it("shows only the displayed App's plans as groups on Tests", async () => {
     const scopedSuite = { ...suite, appMapId: "app-2", appName: "Billing", name: "Billing smoke" };
     const listSuites = vi.fn(async () => [suite, scopedSuite]);
-    await render("/tests?app=app-2", {
+    await render("/tests?app=app-2&view=plans", {
       apps: [
         { id: "app-1", name: "Checkout" },
         { id: "app-2", name: "Billing" },
@@ -311,7 +311,7 @@ describe("Suite and Environment routes", () => {
     expect(history.location.pathname).toBe("/apps/app-1/suites/suite-1");
   });
 
-  it("keeps Tests search in the URL, hides plan groups while searching, and restores them on Clear", async () => {
+  it("keeps Tests search in the URL and restores all saved Tests on Clear", async () => {
     const { history } = await render("/tests");
     const search = document.querySelector<HTMLInputElement>('input[aria-label="Search tests"]');
     if (!search) throw new Error("Search tests input missing");
@@ -327,7 +327,7 @@ describe("Suite and Environment routes", () => {
     await clickButton("Clear");
     expect(history.location.search).not.toContain("q=");
     expect(search.value).toBe("");
-    expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).not.toBeNull();
+    expect(document.querySelector('section[aria-labelledby="loose-heading"]')).not.toBeNull();
   });
 
   it("creates a plan from the New plan dialog on Tests and opens it", async () => {

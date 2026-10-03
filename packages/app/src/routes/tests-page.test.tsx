@@ -211,6 +211,48 @@ function buttonNamed(label: string, scope: ParentNode = document) {
 }
 
 describe("Tests home", () => {
+  it("puts saved Tests first, including plan members, and keeps drafts in their own view", async () => {
+    const draft = test({
+      id: "draft-checkout",
+      name: "UNRECORDED — Checkout",
+      status: "needs-review",
+      recentRun: run({ id: "draft-run", phase: "failed", outcome: "product-failure" }),
+    });
+    const { history } = await render("/tests?app=app-shop", {
+      tests: [login, cart, draft, invoice],
+    });
+    expect(main().querySelector('a[href="/tests/test-login"]')).not.toBeNull();
+    expect(main().querySelector('a[href="/tests/test-cart"]')).not.toBeNull();
+    expect(main().querySelector('a[href="/tests/draft-checkout"]')).toBeNull();
+    expect(buttonNamed("1 test failing", needsYou() ?? document)).toBeTruthy();
+    expect(main().querySelector('section[aria-labelledby="plans-heading"]')).toBeNull();
+    const drafts = main().querySelector<HTMLElement>('[role="tab"][data-library-view="drafts"]');
+    await press(drafts);
+    expect(history.location.search).toContain("view=drafts");
+    expect(main().querySelector('a[href="/tests/test-login"]')).toBeNull();
+    expect(main().querySelector('a[href="/tests/draft-checkout"]')).not.toBeNull();
+    expect(main().textContent).not.toContain("UNRECORDED");
+    expect(main().querySelector('a[href="/tests/draft-checkout/edit"]')?.textContent).toBe(
+      "Edit draft",
+    );
+  });
+  it("preserves the App on an Edit draft link when two Apps share a Test id", async () => {
+    const drafts = [
+      test({ id: "shared-draft", name: "DRAFT — Checkout", appMapId: "app-shop", stepCount: 0 }),
+      test({ id: "shared-draft", name: "DRAFT — Billing", appMapId: "app-bank", stepCount: 0 }),
+    ];
+    await render("/tests?app=app-shop&view=drafts", { tests: drafts });
+    const edit = main().querySelector<HTMLAnchorElement>('a[href^="/tests/shared-draft/edit"]')!;
+    expect(new URL(edit.href).searchParams.get("app")).toBe("app-shop");
+    expect(main().textContent).not.toContain("Billing");
+  });
+
+  it("shows a useful empty result when no plan matches the search", async () => {
+    await render("/tests?view=plans&q=missing");
+    expect(main().textContent).toContain("No matching plans");
+    expect(main().textContent).not.toContain("Release smoke");
+  });
+
   it("offers a scoped first test when only other Apps have tests", async () => {
     await render("/tests?app=app-empty");
     expect(main().textContent).toContain("No tests for this App yet");
@@ -225,18 +267,19 @@ describe("Tests home", () => {
     await render("/tests?app=app-shop");
     expect(main().querySelector("h1")?.textContent).toBe("Tests");
     // Banking's invoice test is out of scope.
-    expect(main().textContent).toContain("2 tests · 1 plan");
+    expect(main().querySelector('[data-library-view="tests"]')?.textContent).toBe("Tests2");
+    expect(main().querySelector('[data-library-view="plans"]')?.textContent).toBe("Plans1");
     expect(main().textContent).not.toContain("Pay invoice");
   });
 
   it("uses singular test wording when one Test belongs to the chosen App", async () => {
     await render("/tests?app=app-bank");
-    expect(main().textContent).toContain("1 test");
+    expect(main().querySelector('[data-library-view="tests"]')?.textContent).toBe("Tests1");
     expect(main().textContent).not.toContain("1 tests");
   });
 
-  it("groups a plan's tests under its card, shown on expand, and lists the rest as Other tests", async () => {
-    await render("/tests");
+  it("groups a plan's tests in the Plans view and reveals members on expand", async () => {
+    await render("/tests?view=plans");
     const plans = main().querySelector<HTMLElement>('section[aria-labelledby="plans-heading"]')!;
     const toggle = plans.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
     expect(toggle.textContent).toContain("Release smoke");
@@ -247,12 +290,8 @@ describe("Tests home", () => {
       plans.querySelector('a[href="/apps/app-shop/suites/suite-smoke"]')?.textContent?.trim(),
     ).toBe("Run all");
 
-    const other = main().querySelector<HTMLElement>('section[aria-labelledby="loose-heading"]')!;
-    expect(other.querySelector("h2")?.textContent).toBe("Other tests");
-    expect(other.textContent).toContain("Tests that are not in a plan yet.");
-    expect(other.querySelector('a[href="/tests/test-invoice"]')).not.toBeNull();
-    expect(other.querySelector('a[href="/tests/test-login"]')).toBeNull();
-    expect(other.querySelector('a[href="/tests/test-cart"]')).toBeNull();
+    expect(main().querySelector('section[aria-labelledby="loose-heading"]')).toBeNull();
+    expect(main().querySelector('a[href="/tests/test-invoice"]')).toBeNull();
 
     await press(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
@@ -315,7 +354,7 @@ describe("Tests home", () => {
     await press(buttonNamed("Clear", matches));
     expect(history.location.search).toBe("");
     expect(main().querySelector('section[aria-label="Matching tests"]')).toBeNull();
-    expect(main().querySelector('section[aria-labelledby="plans-heading"]')).not.toBeNull();
+    expect(main().querySelector('section[aria-labelledby="loose-heading"]')).not.toBeNull();
   });
 
   it("hides the failing chip when the failing test belongs to another App", async () => {
@@ -324,7 +363,7 @@ describe("Tests home", () => {
     expect(main().textContent).not.toMatch(/failing/u);
   });
 
-  it("flattens plans away while searching and finds planned tests too", async () => {
+  it("finds planned tests through the default Test search", async () => {
     const { history } = await render("/tests");
     await search("cart");
     expect(history.location.search).toBe("?q=cart");
@@ -345,7 +384,7 @@ describe("Tests home", () => {
     expect(main().querySelector<HTMLInputElement>('input[aria-label="Search tests"]')?.value).toBe(
       "",
     );
-    expect(main().querySelector('section[aria-labelledby="plans-heading"]')).not.toBeNull();
+    expect(main().querySelector('section[aria-labelledby="loose-heading"]')).not.toBeNull();
   });
 
   it("restores a search from the URL", async () => {

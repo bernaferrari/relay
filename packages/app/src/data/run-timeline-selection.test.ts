@@ -1078,3 +1078,55 @@ it("dest-end Observe timeline keeps Capture frame, not leftover Run saved Test f
   expect(result.timeline[0]?.framePaths).toEqual(["frames/003.png"]);
   expect(result.timeline[0]?.framePaths).not.toContain("frames/004.png");
 });
+
+it.each(["ok", "error"])(
+  "groups an internal %s check with its recorded step while retaining failures",
+  (status) => {
+    const steps = [
+      { id: "check", title: 'check text "Save" visible', status, frames: [] },
+      {
+        id: "capture",
+        title: "Capture for review · step:save-check:Check “Save” is on screen",
+        status: "ok",
+        frames: [{ path: "settings.png" }],
+      },
+      { id: "unmapped", title: 'check text "Other" visible', status: "ok", frames: [] },
+    ];
+    const result = projectRunReport(
+      "run",
+      {
+        steps,
+        artifacts: [
+          {
+            kind: "campaign-check-result",
+            data: { id: "save-check", status: status === "ok" ? "passed" : "failed" },
+          },
+        ],
+        testStepEvidence: steps.slice(0, 2).map((step, index) => ({
+          schemaVersion: 1,
+          testStepId: "save-check",
+          recipeId: "recipe",
+          recipeStepId: step.id,
+          traceStepId: step.id,
+          traceStepIndex: index,
+          occurrence: index + 1,
+          evidence: {
+            framePaths: index === 1 ? ["settings.png"] : [],
+            eventSequences: [],
+            artifactKinds: [],
+          },
+        })),
+      },
+      {},
+    );
+    expect(result.timeline.map((step) => step.id)).toEqual(
+      status === "ok" ? ["capture", "unmapped"] : ["check", "capture", "unmapped"],
+    );
+    expect(result.timeline.find((step) => step.id === "capture")?.state).toBe(
+      status === "ok" ? "passed" : "failed",
+    );
+    expect(result.timeline.find((step) => step.id === "capture")?.framePaths).toEqual([
+      "settings.png",
+    ]);
+  },
+);

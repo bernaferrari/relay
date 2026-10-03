@@ -291,7 +291,7 @@ describe("Tests library", () => {
     await render("/tests");
     const main = document.querySelector<HTMLElement>("#main-content")!;
     expect(main.querySelector("h1")?.textContent).toBe("Tests");
-    expect(main.textContent).toContain("2 tests");
+    expect(main.querySelector('[data-library-view="tests"]')?.textContent).toBe("Tests2");
     expect(document.querySelector('[aria-label="Morning review"]')).toBeNull();
     expect(document.querySelector('[aria-label="Resume work"]')).toBeNull();
     // One search replaces the old status/result filter selects.
@@ -325,7 +325,7 @@ describe("Tests library", () => {
     const { history } = await render("/tests");
     expect(
       document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
-    ).toContain("Fix");
+    ).toContain("Review steps");
     await clickText("Run");
     expect(history.location.pathname).toBe("/tests/test-language-internal");
     expect(history.location.search).toBe("?setup=run");
@@ -369,7 +369,7 @@ async function click(label: string) {
 }
 
 describe("Tests workspace", () => {
-  it("lists human Test summaries, plans as groups, and a dominant creation action", async () => {
+  it("lists saved Test summaries first and exposes plans in their own view", async () => {
     const { history } = await render(
       "/tests",
       catalog(),
@@ -394,27 +394,25 @@ describe("Tests workspace", () => {
     );
 
     const main = document.querySelector<HTMLElement>("#main-content")!;
-    expect(main.textContent).toContain("2 tests · 1 plan");
+    expect(main.querySelector('[data-library-view="tests"]')?.textContent).toBe("Tests2");
+    expect(main.querySelector('[data-library-view="plans"]')?.textContent).toBe("Plans1");
     expect(main.querySelector('a[href="/tests/new"]')?.textContent?.trim()).toBe("New test");
     expect(
       [...main.querySelectorAll("button")].some(
         (button) => button.textContent?.trim() === "New plan",
       ),
     ).toBe(true);
-    expect(main.querySelector("#plans-heading")?.textContent).toBe("Test plans");
-    expect(main.textContent).toContain("Release smoke");
-    expect(
-      main.querySelector('a[href="/apps/app-shop-internal/suites/suite-1"]')?.textContent?.trim(),
-    ).toBe("Run all");
+    expect(main.querySelector("#plans-heading")).toBeNull();
+    expect(main.textContent).not.toContain("Release smoke");
     // The collection links that used to sit on this page now live in the
     // sidebar (Devices) or the command palette (Activity, Changes).
     expect(main.querySelector('a[href="/suites"]')).toBeNull();
     expect(main.querySelector('a[href="/changes"]')).toBeNull();
     expect(main.querySelector('a[href="/sessions"]')).toBeNull();
     expect(document.querySelector('a[href="/devices"]')?.textContent?.trim()).toBe("Devices");
-    // Collapsed plan: its test is not listed until opened; the rest are "Other tests".
-    expect(main.querySelector("#loose-heading")?.textContent).toBe("Other tests");
-    expect(main.textContent).not.toContain("Change language");
+    // Plan membership does not hide a saved Test from the default list.
+    expect(main.querySelector("#loose-heading")?.textContent).toBe("All tests");
+    expect(main.textContent).toContain("Change language");
     expect(main.textContent).toContain("Complete checkout");
     expect(main.textContent).toContain("Needs setup");
     expect(main.textContent).not.toContain("app-shop-internal");

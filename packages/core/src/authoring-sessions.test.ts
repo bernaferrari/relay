@@ -1616,6 +1616,36 @@ test("observing reviewed work preserves its destination and requires fresh repla
   });
 });
 
+test("recovering interrupted work preserves the recorded end after the browser resets", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    const recorded = structuredClone(session.take!.revisions.at(-1)!);
+    const recovered = await store.recover({
+      async releaseLease() {},
+      async reconcileRecording() {},
+    });
+    assert.equal(recovered[0]?.state, "failed");
+    runtime.screen = "source";
+    session = await store.observe(session.id, runtime);
+    const observed = session.take!.revisions.at(-1)!;
+    assert.deepEqual(observed.after, recorded.after);
+    assert.deepEqual(observed.actions, recorded.actions);
+    assert.ok(observed.evidence.length > recorded.evidence.length);
+    await assert.rejects(
+      store.commit(session.id, { createTest: true }),
+      /Replay the current Take successfully/,
+    );
+    session = await store.replay(session.id, runtime);
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "passed");
+  });
+});
+
 test("editing a Take still requires a successful replay before commit", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);
