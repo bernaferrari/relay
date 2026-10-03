@@ -1456,11 +1456,7 @@ describe("record, review, replay, and save", () => {
       document.querySelector<HTMLInputElement>("#review-action-intent")!,
       "My saved instruction",
     );
-    await click(button("More review actions"));
-    const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (candidate) => candidate.textContent === "Save draft and close",
-    )!;
-    await click(item);
+    await click(button("Save draft"));
     expect(fake.service.saveDraft).toHaveBeenCalledWith({
       reviewRevision: 7,
       rename: { actionId: "step-1", intent: "My saved instruction" },
@@ -1469,6 +1465,8 @@ describe("record, review, replay, and save", () => {
     expect(fake.calls).not.toContain("replay");
     expect(fake.calls).not.toContain("approve");
     expect(fake.service.save).not.toHaveBeenCalled();
+    expect(history.location.search).toContain("view=drafts");
+    expect(history.location.search).toContain("app=app-1");
   });
 
   it("keeps a failed Save visible when a subsequent inspection is healthy", async () => {

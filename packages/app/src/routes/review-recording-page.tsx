@@ -199,8 +199,12 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
         throw new Error("Could not confirm the saved draft. Keep this page open and try again.");
       return persisted;
     },
-    onSuccess: async () => {
-      await navigate({ to: "/tests" });
+    onSuccess: async (persisted) => {
+      await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.drafts });
+      await navigate({
+        to: "/tests",
+        search: { app: persisted.snapshot?.frozen?.appMapId, view: "drafts" },
+      });
     },
   });
 
@@ -422,6 +426,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
               variant="ghost"
               size="sm"
               className="-ml-2"
+              title={productService.saveDraft && !saved ? "Save draft and close" : undefined}
               disabled={
                 transition.isPending ||
                 leaveDraft.isPending ||
@@ -430,7 +435,12 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
               }
               onClick={() => leaveDraft.mutate()}
             >
-              <ArrowLeft aria-hidden="true" /> {leaveDraft.isPending ? "Leaving…" : "Back to Tests"}
+              <ArrowLeft aria-hidden="true" />{" "}
+              {leaveDraft.isPending
+                ? "Saving draft…"
+                : productService.saveDraft && !saved
+                  ? "Save draft"
+                  : "Back to Tests"}
             </Button>
           ) : null
         }
@@ -577,8 +587,8 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
 
       {leaveDraft.error ? (
         <p role="alert" className="m-0 rounded-lg border border-border p-3 text-sm">
-          Could not confirm the saved draft. Your work is still open here. Try Back to Tests again
-          when the connection returns.
+          Could not confirm the saved draft. Your work is still open here. Try saving the draft
+          again when the connection returns.
         </p>
       ) : null}
 

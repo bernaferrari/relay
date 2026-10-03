@@ -1,4 +1,10 @@
-import type { ActionSummary, DeviceSummary, OperationOutput } from "@relay/protocol";
+import type {
+  ActionSummary,
+  DeviceSummary,
+  OperationOutput,
+  TargetDefinition,
+} from "@relay/protocol";
+import { browserDisplayNames } from "./browser-display-names";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
@@ -15,6 +21,7 @@ export type ProductDevice = {
   runnable: boolean;
   avdName?: string;
   recovery?: string;
+  browserUrl?: string;
   device: DeviceSummary;
 };
 
@@ -149,9 +156,24 @@ function project(device: DeviceSummary): ProductDevice {
   };
 }
 
-export function projectDevices(devices: readonly DeviceSummary[]): readonly ProductDevice[] {
+export function projectDevices(
+  devices: readonly DeviceSummary[],
+  targets: readonly TargetDefinition[] = [],
+): readonly ProductDevice[] {
+  const names = browserDisplayNames(targets);
   return devices
     .map(project)
+    .map((device) => {
+      if (device.platform !== "browser") return device;
+      const target = targets.find(
+        (target) => target.id === device.id || target.id === device.serial,
+      );
+      return {
+        ...device,
+        name: names.get(target?.id ?? device.id) ?? device.name,
+        ...(target?.browser ? { browserUrl: target.browser.startUrl } : {}),
+      };
+    })
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
 
@@ -161,14 +183,18 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
     (clientPromise ??= productClientForPlatform(platform)).then(({ client }) => client);
   async function listDevices(): Promise<readonly ProductDevice[]> {
     const api = await client();
-    const [result, inventory] = await Promise.all([
+    const [result, inventory, targets] = await Promise.all([
       api.invoke("target.devices.list", {}),
       api
         .invoke("target.avds.list", {})
         .then((result) => result.inventory)
         .catch(() => undefined),
+      api
+        .invoke("target.list", {})
+        .then((result) => result.targets)
+        .catch(() => []),
     ]);
-    const devices = [...projectDevices(result.devices)];
+    const devices = [...projectDevices(result.devices, targets)];
     for (const avd of inventory?.avds ?? []) {
       if (avd.serial && devices.some((device) => device.serial === avd.serial)) continue;
       // A configured AVD is available to start, never an attached/runnable target.

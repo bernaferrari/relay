@@ -12,6 +12,8 @@ import {
   DropdownMenuSubContent,
 } from "@relay/ui-react/components/dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { Input } from "@relay/ui-react/components/input";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
   Check,
@@ -49,6 +51,7 @@ export function DeviceDestinationButton({
   onSelect,
 }: { label?: string; onSelect?(device: ProductDevice): void } = {}) {
   const router = useRouter();
+  const [search, setSearch] = useState("");
   const { deviceService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const devices = useQuery({
     queryKey: deviceQueryKeys.devices,
@@ -77,6 +80,11 @@ export function DeviceDestinationButton({
     (item) => destinationRunTargetId(item) === selected.data?.targetId,
   );
   const label = current?.name ?? summary.label;
+  const matches = (device: ProductDevice) =>
+    !search.trim() ||
+    `${device.name} ${device.browserUrl ?? ""} ${device.kind ?? ""}`
+      .toLocaleLowerCase()
+      .includes(search.trim().toLocaleLowerCase());
   function select(device: ProductDevice) {
     onSelect?.(device);
     const next = { targetId: destinationRunTargetId(device) };
@@ -84,7 +92,7 @@ export function DeviceDestinationButton({
     void platform.storage.set(WORKSPACE_DESTINATION_KEY, JSON.stringify(next));
   }
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={() => setSearch("")}>
       <DropdownMenuTrigger
         className="[-webkit-app-region:no-drag] inline-flex h-7 max-w-50 items-center gap-1 rounded-md px-2.5 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
         aria-label={triggerLabel ?? `Device or browser: ${label}`}
@@ -92,7 +100,7 @@ export function DeviceDestinationButton({
           current
             ? `New runs use ${current.name}`
             : available.length
-              ? `Choose where to run tests. Ready: ${available.map((item) => item.name).join(", ")}`
+              ? "Choose a device or browser for new runs"
               : summary.detail
         }
       >
@@ -105,9 +113,25 @@ export function DeviceDestinationButton({
         sideOffset={8}
         className="w-80 max-h-[min(480px,var(--available-height))] max-w-[calc(100vw-24px)] overflow-y-auto p-1.5"
       >
+        {(devices.data?.length ?? 0) > 7 ? (
+          <div className="px-1 pb-1">
+            <Input
+              aria-label="Find a device or browser"
+              placeholder="Find a device or browser…"
+              value={search}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape" && event.key !== "Tab") event.stopPropagation();
+              }}
+              className="h-9 text-sm"
+            />
+          </div>
+        ) : null}
         <div className="max-h-[min(320px,50dvh)] overflow-y-auto overscroll-contain">
           {groups.map((group) => {
-            const members = available.filter((device) => groupFor(device) === group);
+            const members = available.filter(
+              (device) => groupFor(device) === group && matches(device),
+            );
             if (!members.length) return null;
             return (
               <DropdownMenuGroup key={group}>
@@ -122,6 +146,7 @@ export function DeviceDestinationButton({
                       key={device.id}
                       className={rowClass}
                       onClick={() => select(device)}
+                      closeOnClick
                       aria-label={`${device.name}${isSelected ? ", selected" : ""}`}
                     >
                       <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
@@ -142,6 +167,11 @@ export function DeviceDestinationButton({
               </DropdownMenuGroup>
             );
           })}
+          {search.trim() && !available.some(matches) && !unavailable.some(matches) ? (
+            <p role="status" className="px-2 py-3 text-sm text-muted-foreground">
+              No matching devices or browsers
+            </p>
+          ) : null}
           {!available.length ? (
             <p className="px-2 py-3 text-xs text-muted-foreground">
               {devices.isError
@@ -156,7 +186,9 @@ export function DeviceDestinationButton({
           <>
             <DropdownMenuSeparator className="my-1.5" />
             {groups.map((group) => {
-              const members = unavailable.filter((device) => groupFor(device) === group);
+              const members = unavailable.filter(
+                (device) => groupFor(device) === group && matches(device),
+              );
               if (!members.length) return null;
               return (
                 <DropdownMenuSub key={group}>

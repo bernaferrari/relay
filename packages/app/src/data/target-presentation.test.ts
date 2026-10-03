@@ -1,4 +1,4 @@
-import type { AuthoringTarget, DeviceSummary } from "@relay/protocol";
+import type { AuthoringTarget, DeviceSummary, TargetDefinition } from "@relay/protocol";
 import { describe, expect, it } from "vitest";
 import { presentReadyTargets } from "./target-presentation";
 
@@ -9,6 +9,21 @@ const targets: AuthoringTarget[] = [
 ];
 
 describe("target presentation", () => {
+  it("keeps the same browser name when review presents only one of several destinations", async () => {
+    const browsers: TargetDefinition[] = ["browser-one", "browser-two"].map((id, index) => ({
+      id,
+      name: "127.0.0.1",
+      kind: "browser",
+      createdAt: index,
+      updatedAt: index,
+      browser: { startUrl: "http://127.0.0.1:8793/" },
+    }));
+    const options = await presentReadyTargets(client([], browsers), [targets[1]!]);
+    expect(options).toEqual([
+      { ...targets[1], name: "127.0.0.1:8793 · Browser 2", detail: "Managed browser" },
+    ]);
+  });
+
   it("joins human catalog names onto only the canonical ready targets", async () => {
     const devices: DeviceSummary[] = [
       device("browser-one", "Checkout browser", "browser"),
@@ -45,10 +60,10 @@ describe("target presentation", () => {
   });
 });
 
-function client(devices: DeviceSummary[]) {
+function client(devices: DeviceSummary[], catalog: TargetDefinition[] = []) {
   return {
     async invoke() {
-      return { devices };
+      return { devices, targets: catalog };
     },
   };
 }
