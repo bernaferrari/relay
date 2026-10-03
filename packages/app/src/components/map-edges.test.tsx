@@ -443,3 +443,42 @@ it("keeps connector and arrow size fixed when highlighted, with dotted return ro
   expect(line.getAttribute("d")).toBe(geometry);
   await act(async () => root.unmount());
 });
+
+it("keeps connection controls in place between pointer press and activation", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const select = vi.fn();
+  const paths = ["first", "second"].map((id) => ({
+    id,
+    label: id,
+    fromScreenId: "home",
+    toScreenId: id,
+    fromTitle: "Home",
+    coveringTests: [],
+  }));
+  await act(async () =>
+    root.render(
+      <MapEdges
+        paths={paths}
+        positions={
+          new Map([
+            ["home", { x: 0, y: 0 }],
+            ["first", { x: 600, y: 0 }],
+            ["second", { x: 600, y: 400 }],
+          ])
+        }
+        screens={[{ id: "home" }, { id: "first" }, { id: "second" }]}
+        imageDimensions={new Map()}
+        markerId="stable-control"
+        selectedPathId="second"
+        onSelectPath={select}
+      />,
+    ),
+  );
+  const controls = [...container.querySelectorAll('[role="button"]')];
+  await act(async () => controls[0]!.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+  expect([...container.querySelectorAll('[role="button"]')]).toEqual(controls);
+  await act(async () => controls[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  expect(select).toHaveBeenCalledWith("first");
+  await act(async () => root.unmount());
+});

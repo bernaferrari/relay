@@ -34,7 +34,17 @@ export function useCurrentAppScope() {
     queryFn: () => runService.getTest(testId!),
     enabled: Boolean(testId),
   });
-  const needsCatalogScope = /^\/(?:tests|runs|batches)\//u.test(location.pathname);
+  const runId = safeDecodeURIComponent(
+    /^\/runs\/([^/]+)(?:\/walkthrough)?$/u.exec(location.pathname)?.[1] ?? "",
+  );
+  const run = useQuery({
+    queryKey: ["catalog", "run", runId ?? "unselected"],
+    queryFn: async () => (await catalogService.getRun(runId!)) ?? null,
+    enabled: Boolean(runId),
+    staleTime: 15_000,
+    retry: false,
+  });
+  const needsCatalogScope = /^\/(?:tests|batches)\//u.test(location.pathname);
   const tests = useQuery({
     queryKey: catalogQueryKeys.tests,
     queryFn: () => catalogService.listTests(),
@@ -94,7 +104,7 @@ export function useCurrentAppScope() {
     pathname: location.pathname,
     search: location.search,
     tests: test.data ? [test.data] : tests.data,
-    runs: runs.data,
+    runs: runId ? (run.data ? [run.data] : run.isFetched ? [] : undefined) : runs.data,
     batches: batch.data
       ? [
           {
@@ -133,6 +143,9 @@ export function useCurrentAppScope() {
     apps.data?.find((app) => app.id === selectedAppId) ??
     (test.data && test.data.appMapId === selectedAppId
       ? { id: test.data.appMapId, name: test.data.appName }
+      : undefined) ??
+    (run.data?.appName && run.data.appMapId === selectedAppId
+      ? { id: run.data.appMapId, name: run.data.appName }
       : undefined) ??
     (batch.data && (batch.data.setup?.appMapId ?? batch.data.appMapId) === selectedAppId
       ? {

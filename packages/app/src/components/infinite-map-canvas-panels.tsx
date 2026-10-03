@@ -367,9 +367,15 @@ export function MapCanvasPanels({
                         path.fromScreenId === selectedPath.fromScreenId &&
                         path.toScreenId === selectedPath.toScreenId,
                     )
-                    .map((path) => (
+                    .map((path, index) => (
                       <DropdownMenuItem key={path.id} onClick={() => setSelectedPathId(path.id)}>
-                        {path.label}
+                        <span className="flex min-w-0 flex-col gap-1">
+                          <span className="whitespace-normal">{path.label}</span>
+                          <span className="whitespace-normal text-xs text-muted-foreground">
+                            {path.coveringTests.map((test) => test.name).join(" · ") ||
+                              `Recorded path ${index + 1}`}
+                          </span>
+                        </span>
                       </DropdownMenuItem>
                     ))}
                 </DropdownMenuContent>

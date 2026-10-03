@@ -559,6 +559,60 @@ async function selectOption(label: string, option: string) {
 }
 
 describe("Run and Report", () => {
+  it.each(["passed", "empty", "unavailable"])(
+    "keeps unknown history distinct from no runs until it resolves as %s",
+    async (result) => {
+      const fake = fakeRunService();
+      type Runs = Awaited<ReturnType<NonNullable<RunProductService["listTestRuns"]>>>;
+      let resolve!: (runs: Runs) => void;
+      let reject!: (error: Error) => void;
+      const pendingRuns = new Promise<Runs>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+      fake.service.listTestRuns = () => pendingRuns;
+      await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+      expect(document.body.textContent).not.toContain("Not run yet");
+      expect(document.querySelector('[aria-label="Loading run history"]')).not.toBeNull();
+      await act(async () => {
+        if (result === "unavailable") reject(new Error("Offline"));
+        else
+          resolve(
+            result === "empty"
+              ? []
+              : [
+                  {
+                    id: "run-1",
+                    title: "Saved result",
+                    action: "saved-test",
+                    status: "ok",
+                    phase: "completed",
+                    outcome: "passed",
+                    queuedAt: 1,
+                    identity: { runId: "run-1" },
+                    links: { self: "/runs/run-1" },
+                  },
+                ],
+          );
+      });
+      await vi.waitFor(
+        async () => {
+          await settle();
+          expect(document.querySelector('[aria-label="Loading run history"]')).toBeNull();
+        },
+        { timeout: 5_000 },
+      );
+      expect(document.body.textContent).toContain(
+        result === "passed"
+          ? "Passed"
+          : result === "empty"
+            ? "Not run yet"
+            : "Run history unavailable",
+      );
+      if (result !== "empty") expect(document.body.textContent).not.toContain("Not run yet");
+    },
+  );
+
   it("keeps saved Test steps separate from historical evidence and preserves definition selection", async () => {
     const fake = fakeRunService(runState("succeeded"));
     const { history } = await renderRun(

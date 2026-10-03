@@ -1,6 +1,10 @@
 /** @jsxImportSource react */
 import type { ProductChange } from "@relay/product/change-journey";
-import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catalog";
+import type {
+  ProductRunDetail,
+  ProductRunSummary,
+  ProductTestSummary,
+} from "@relay/product/catalog";
 import type { ProductTestSummary as RunTestSummary } from "../data/run-product-service";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
@@ -142,6 +146,7 @@ async function renderShell(input: {
   changes?: readonly ProductChange[];
   devices?: readonly ProductDevice[];
   onRunsRead?: () => void;
+  runDetail?: Promise<ProductRunDetail | undefined>;
   initialEntries?: string[];
   /** The saved Test a Run page reads for its return link. */
   test?: RunTestSummary;
@@ -172,13 +177,16 @@ async function renderShell(input: {
             }),
           } as unknown as RunProductService
         }
-        catalogService={catalog(
-          input.runs ?? [],
-          input.tests ?? [],
-          input.runsUnavailable,
-          input.testsUnavailable,
-          input.onRunsRead,
-        )}
+        catalogService={{
+          ...catalog(
+            input.runs ?? [],
+            input.tests ?? [],
+            input.runsUnavailable,
+            input.testsUnavailable,
+            input.onRunsRead,
+          ),
+          getRun: async () => input.runDetail,
+        }}
         changeService={changes(input.changes ?? [])}
         deviceService={devices(input.devices ?? [])}
       />,
@@ -195,6 +203,42 @@ async function settle() {
 }
 
 describe("shell overlays", () => {
+  it("resolves a directly linked Run from its own record even when the cached list misses it", async () => {
+    let resolveRun!: (run: ProductRunDetail) => void;
+    const runDetail = new Promise<ProductRunDetail>((resolve) => {
+      resolveRun = resolve;
+    });
+    await renderShell({ initialEntries: ["/runs/new-run?app=wrong-app"], runs: [], runDetail });
+    const pending = document.querySelector('[aria-label="App: Loading app"]');
+    expect(pending).not.toBeNull();
+    expect(pending?.textContent).not.toContain("Everything");
+    await act(async () =>
+      resolveRun({
+        id: "new-run",
+        title: "Checkout result",
+        action: "saved-test",
+        status: "ok",
+        phase: "completed",
+        queuedAt: 1,
+        appMapId: "checkout",
+        appName: "Checkout",
+        identity: { runId: "new-run", appMapId: "checkout" },
+        links: { self: "/runs/new-run" },
+        steps: [],
+        stepEvidence: [],
+        evidence: { available: false, frameCount: 0, artifactCount: 0 },
+      }),
+    );
+    await settle();
+    expect(document.querySelector('[aria-label="App: Checkout"]')).not.toBeNull();
+    expect(document.querySelector('nav[aria-label="App navigation"] a')?.getAttribute("href")).toBe(
+      "/apps/checkout/map",
+    );
+    expect(
+      document.querySelector('nav[aria-label="Primary"] a[href="/tests?app=checkout"]'),
+    ).not.toBeNull();
+  });
+
   it("keeps narrow-screen destinations reachable and preserves the app when switching collections", async () => {
     const history = await renderShell({ initialEntries: ["/tests?app=checkout"] });
     const navigation = document.querySelector('nav[aria-label="Main navigation"]')!;
