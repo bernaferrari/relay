@@ -12,10 +12,23 @@ import { Button } from "@relay/ui-react/components/button";
 import { Field, FieldLabel } from "@relay/ui-react/components/field";
 import { Input } from "@relay/ui-react/components/input";
 import { Hourglass } from "lucide-react";
+import { projectError } from "@relay/product/errors";
 import type { RecordingCondition as Condition } from "../data/recording-product-service";
 
 const WAIT_CHOICES = [30, 60, 120, 300] as const;
 const PAUSE_CHOICES = [5, 10, 30, 60] as const;
+
+/** Give an assertion timeout its form context without exposing runner syntax.
+ * Connection, ownership and other failures keep their product recovery. */
+export function conditionFailureMessage(condition: Condition, error: unknown): string {
+  const detail = projectError(error).detail;
+  if (!condition.text || !detail.includes(condition.text)) return detail;
+  if (/not visible after|not found on screen|wait-for: timed out waiting for/iu.test(detail))
+    return `“${condition.text}” wasn’t found. Check the text on screen and try again.`;
+  if (/still visible after/iu.test(detail))
+    return `“${condition.text}” is still on screen. Try again when it disappears.`;
+  return detail;
+}
 
 /**
  * Slow results (an image, a video, a model's answer) need "wait until this
@@ -48,7 +61,7 @@ export function RecordingCondition({
     value < 60 ? `${value} seconds` : `${value / 60} minute${value > 60 ? "s" : ""}`;
   function submit(event: FormEvent) {
     event.preventDefault();
-    if ((kind !== "pause" && !text.trim()) || pending) return;
+    if ((kind !== "pause" && !text.trim()) || pending || disabled) return;
     onSubmit({
       kind,
       text: text.trim(),
@@ -60,9 +73,14 @@ export function RecordingCondition({
       active
         ? "border-brand bg-brand-soft text-foreground"
         : "border-border text-muted-foreground hover:border-brand/40 hover:text-foreground"
-    }`;
+    } disabled:cursor-wait disabled:opacity-60`;
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!pending) onOpenChange(next);
+      }}
+    >
       <DialogTrigger
         render={
           <Button
@@ -95,6 +113,7 @@ export function RecordingCondition({
                 type="button"
                 role="radio"
                 aria-checked={kind === value}
+                disabled={pending}
                 className={choice(kind === value)}
                 onClick={() => setKind(value)}
               >
@@ -112,6 +131,7 @@ export function RecordingCondition({
                     type="button"
                     role="radio"
                     aria-checked={pause === value}
+                    disabled={pending}
                     className={choice(pause === value)}
                     onClick={() => setPause(value)}
                   >
@@ -134,6 +154,7 @@ export function RecordingCondition({
                 maxLength={200}
                 autoComplete="off"
                 autoFocus
+                disabled={pending}
               />
               <p className="text-xs text-muted-foreground">
                 Choose text or a control that appears when ready. Text in your prompt also matches.
@@ -144,6 +165,7 @@ export function RecordingCondition({
                     <button
                       key={value}
                       type="button"
+                      disabled={pending}
                       className={choice(text === value)}
                       onClick={() => setText(value)}
                     >
@@ -164,6 +186,7 @@ export function RecordingCondition({
                     type="button"
                     role="radio"
                     aria-checked={seconds === value}
+                    disabled={pending}
                     className={choice(seconds === value)}
                     onClick={() => setSeconds(value)}
                   >
@@ -179,8 +202,17 @@ export function RecordingCondition({
             </p>
           ) : null}
           <div className="flex flex-wrap items-center justify-end gap-2.5">
-            <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-            <Button type="submit" disabled={(kind !== "pause" && !text.trim()) || pending}>
+            <DialogClose
+              render={
+                <Button variant="ghost" disabled={pending}>
+                  Cancel
+                </Button>
+              }
+            />
+            <Button
+              type="submit"
+              disabled={(kind !== "pause" && !text.trim()) || pending || disabled}
+            >
               {pending ? (kind === "check" ? "Checking…" : "Waiting…") : "Add step"}
             </Button>
           </div>

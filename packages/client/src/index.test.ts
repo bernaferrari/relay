@@ -667,6 +667,61 @@ test("app launch has a dedicated acknowledgement budget while ordinary requests 
   assert.deepEqual(budgets, [90000, 20000, 1234]);
 });
 
+test("authored waits retain their deadline through durable and direct recording transports", async (t) => {
+  const budgets: number[] = [];
+  t.mock.method(AbortSignal, "timeout", (ms: number) => {
+    budgets.push(ms);
+    return new AbortController().signal;
+  });
+  const connection = {
+    url: "https://relay.test",
+    auth: { type: "none" as const },
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:test",
+    actorKind: "human" as const,
+  };
+  let requests = 0;
+  const fetcher: typeof fetch = async () => {
+    requests++;
+    return new Response(JSON.stringify({ error: "Unavailable" }), { status: 503 });
+  };
+  const client = new RelayClient(connection, { fetch: fetcher });
+  const decision = {
+    workflowId: "wf_test",
+    expectedVersion: 1,
+    action: "authoring-record" as const,
+    interaction: {
+      kind: "steps" as const,
+      steps: [{ kind: "wait-for" as const, target: { text: "Ready" }, timeoutMs: 30_000 }],
+    },
+  };
+  await assert.rejects(client.invoke("workflow.transition", decision));
+  await assert.rejects(
+    client.invoke("authoring.session.interact", {
+      sessionId: "recording-1",
+      interaction: {
+        kind: "steps",
+        steps: [
+          { kind: "expect", target: { text: "Generating" }, condition: "gone", timeoutMs: 300_000 },
+          { kind: "wait-for", target: { text: "Download" }, timeoutMs: 300_000 },
+        ],
+      },
+    }),
+  );
+  await assert.rejects(
+    client.invoke("authoring.session.interact", {
+      sessionId: "recording-1",
+      interaction: { kind: "steps", steps: [{ kind: "sleep", ms: 60_000 }] },
+    }),
+  );
+  await assert.rejects(client.invoke("system.health.get", {}));
+  const explicit = new RelayClient(connection, { fetch: fetcher, timeoutMs: 1234 });
+  await assert.rejects(explicit.invoke("workflow.transition", decision));
+  assert.deepEqual(budgets, [50_000, 620_000, 80_000, 20_000, 1234]);
+  assert.equal(requests, 5, "a longer acknowledgement budget must never retry a mutation");
+});
+
 test("a rejected app launch remains a failure under its longer deadline", async () => {
   const client = new RelayClient(
     {

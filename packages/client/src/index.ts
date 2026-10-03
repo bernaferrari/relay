@@ -29,6 +29,7 @@ import {
   type TrimAuthoringTakeInput,
 } from "@relay/protocol";
 import { ApiError } from "./api-error.js";
+import { authoringRequestTimeout } from "./authoring-request-timeout.js";
 export { ApiError } from "./api-error.js";
 import {
   inspectExploration as inspectGoalExploration,
@@ -258,6 +259,7 @@ export class RelayClient {
   private readonly timeoutMs: number;
   private readonly launchTimeoutMs: number;
   private readonly recoveryTimeoutMs: number;
+  private readonly explicitTimeoutMs: number | undefined;
 
   constructor(connection: ServerConnection, options: RelayClientOptions = {}) {
     this.connection = normalizeConnection(connection);
@@ -266,6 +268,7 @@ export class RelayClient {
     // receiver-free even though it is stored on the client instance.
     this.fetcher = (input, init) => fetcher(input, init);
     this.timeoutMs = options.timeoutMs ?? 20_000;
+    this.explicitTimeoutMs = options.timeoutMs;
     // Cold app launch can take over 20 seconds before the OS acknowledges activation.
     // Keep explicit caller budgets authoritative and other operations short.
     this.launchTimeoutMs = options.timeoutMs ?? 90_000;
@@ -569,7 +572,7 @@ export class RelayClient {
         ? this.recoveryTimeoutMs
         : id === "target.app.launch" || id === "target.snapshot.capture"
           ? this.launchTimeoutMs
-          : undefined,
+          : (this.explicitTimeoutMs ?? authoringRequestTimeout(id, input, this.timeoutMs)),
     );
     try {
       return parseRegisteredOperationOutput(definition.output, body);
