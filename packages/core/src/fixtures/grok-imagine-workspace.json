@@ -1,0 +1,6804 @@
+{
+  "template": [
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 0,
+      "editable": false,
+      "enabled": true,
+      "index": 62,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 1,
+      "editable": false,
+      "enabled": true,
+      "index": 63,
+      "parentIndex": 62,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.LinearLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 2,
+      "editable": false,
+      "enabled": true,
+      "index": 64,
+      "parentIndex": 63,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 3,
+      "editable": false,
+      "enabled": true,
+      "identifier": "ai.x.grok:id/action_bar_root",
+      "index": 65,
+      "parentIndex": 64,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.LinearLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 4,
+      "editable": false,
+      "enabled": true,
+      "identifier": "android:id/content",
+      "index": 66,
+      "parentIndex": 65,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 5,
+      "editable": false,
+      "enabled": true,
+      "index": 67,
+      "parentIndex": 66,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "androidx.compose.ui.platform.ComposeView",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 6,
+      "editable": false,
+      "enabled": true,
+      "index": 68,
+      "parentIndex": 67,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 7,
+      "editable": false,
+      "enabled": true,
+      "index": 69,
+      "parentIndex": 68,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 8,
+      "editable": false,
+      "enabled": true,
+      "index": 70,
+      "parentIndex": 69,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 9,
+      "editable": false,
+      "enabled": true,
+      "index": 71,
+      "parentIndex": 70,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 10,
+      "editable": false,
+      "enabled": true,
+      "index": 72,
+      "parentIndex": 71,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 11,
+      "editable": false,
+      "enabled": true,
+      "index": 73,
+      "parentIndex": 72,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "index": 74,
+      "parentIndex": 73,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 75,
+      "label": "Access Your Photos",
+      "parentIndex": 74,
+      "rect": {
+        "height": 56,
+        "width": 414,
+        "x": 333,
+        "y": 319
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Access Your Photos",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 76,
+      "label": "Grant permission to create videos from your photos in Imagine.",
+      "parentIndex": 74,
+      "rect": {
+        "height": 101,
+        "width": 1008,
+        "x": 36,
+        "y": 411
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Grant permission to create videos from your photos in Imagine.",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 77,
+      "parentIndex": 74,
+      "rect": {
+        "height": 144,
+        "width": 303,
+        "x": 389,
+        "y": 530
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 78,
+      "label": "Continue",
+      "parentIndex": 77,
+      "rect": {
+        "height": 56,
+        "width": 207,
+        "x": 437,
+        "y": 574
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Continue",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 79,
+      "parentIndex": 77,
+      "rect": {
+        "height": 108,
+        "width": 303,
+        "x": 389,
+        "y": 548
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 80,
+      "label": "Featured Templates",
+      "parentIndex": 74,
+      "rect": {
+        "height": 60,
+        "width": 984,
+        "x": 48,
+        "y": 752
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Featured Templates",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 81,
+      "parentIndex": 74,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 3,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 82,
+      "parentIndex": 81,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 3,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 83,
+      "label": "Photo Edit",
+      "parentIndex": 82,
+      "rect": {
+        "height": 53,
+        "width": 486,
+        "x": 27,
+        "y": 1587
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Photo Edit",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 84,
+      "parentIndex": 74,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 543,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 85,
+      "parentIndex": 84,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 543,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 86,
+      "label": "Reimagine",
+      "parentIndex": 85,
+      "rect": {
+        "height": 53,
+        "width": 486,
+        "x": 567,
+        "y": 1587
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Reimagine",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 87,
+      "parentIndex": 74,
+      "rect": {
+        "height": 670,
+        "width": 534,
+        "x": 3,
+        "y": 1670
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 88,
+      "parentIndex": 87,
+      "rect": {
+        "height": 670,
+        "width": 534,
+        "x": 3,
+        "y": 1670
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 89,
+      "parentIndex": 74,
+      "rect": {
+        "height": 670,
+        "width": 534,
+        "x": 543,
+        "y": 1670
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 90,
+      "parentIndex": 89,
+      "rect": {
+        "height": 670,
+        "width": 534,
+        "x": 543,
+        "y": 1670
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "index": 91,
+      "parentIndex": 73,
+      "rect": {
+        "height": 348,
+        "width": 1080,
+        "x": 0,
+        "y": 1992
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 92,
+      "parentIndex": 91,
+      "rect": {
+        "height": 156,
+        "width": 180,
+        "x": 24,
+        "y": 2016
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 93,
+      "parentIndex": 92,
+      "rect": {
+        "height": 156,
+        "width": 156,
+        "x": 24,
+        "y": 2016
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "hittable": false,
+      "index": 94,
+      "label": "Favorites",
+      "parentIndex": 93,
+      "rect": {
+        "height": 156,
+        "width": 156,
+        "x": 24,
+        "y": 2016
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 95,
+      "parentIndex": 93,
+      "rect": {
+        "height": 156,
+        "width": 156,
+        "x": 24,
+        "y": 2016
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 96,
+      "parentIndex": 95,
+      "rect": {
+        "height": 156,
+        "width": 156,
+        "x": 24,
+        "y": 2016
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": true,
+      "enabled": true,
+      "hittable": true,
+      "index": 97,
+      "parentIndex": 91,
+      "rect": {
+        "height": 144,
+        "width": 672,
+        "x": 204,
+        "y": 2022
+      },
+      "selected": false,
+      "type": "android.widget.EditText",
+      "value": "",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 98,
+      "parentIndex": 97,
+      "rect": {
+        "height": 144,
+        "width": 672,
+        "x": 204,
+        "y": 2022
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 99,
+      "label": "Attach media",
+      "parentIndex": 98,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 207,
+        "y": 2022
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 100,
+      "label": "Type to imagine",
+      "parentIndex": 98,
+      "rect": {
+        "height": 56,
+        "width": 320,
+        "x": 348,
+        "y": 2066
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Type to imagine",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 101,
+      "parentIndex": 91,
+      "rect": {
+        "height": 156,
+        "width": 180,
+        "x": 876,
+        "y": 2016
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 102,
+      "label": "Imagine settings",
+      "parentIndex": 101,
+      "rect": {
+        "height": 156,
+        "width": 156,
+        "x": 900,
+        "y": 2016
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 10,
+      "editable": false,
+      "enabled": true,
+      "index": 103,
+      "parentIndex": 71,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 11,
+      "editable": false,
+      "enabled": true,
+      "index": 104,
+      "parentIndex": 103,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "identifier": "conversation_top_bar",
+      "index": 105,
+      "parentIndex": 104,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 106,
+      "parentIndex": 105,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 107,
+      "parentIndex": 106,
+      "rect": {
+        "height": 192,
+        "width": 1080,
+        "x": 0,
+        "y": 103
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 108,
+      "parentIndex": 107,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 109,
+      "parentIndex": 108,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 110,
+      "label": "Show navigation drawer",
+      "parentIndex": 109,
+      "rect": {
+        "height": 72,
+        "width": 72,
+        "x": 72,
+        "y": 163
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 111,
+      "parentIndex": 109,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 112,
+      "parentIndex": 107,
+      "rect": {
+        "height": 144,
+        "width": 545,
+        "x": 268,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 113,
+      "parentIndex": 112,
+      "rect": {
+        "height": 144,
+        "width": 134,
+        "x": 258,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 114,
+      "label": "Ask",
+      "parentIndex": 113,
+      "rect": {
+        "height": 64,
+        "width": 88,
+        "x": 268,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Ask",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 115,
+      "parentIndex": 112,
+      "rect": {
+        "height": 144,
+        "width": 266,
+        "x": 392,
+        "y": 127
+      },
+      "selected": true,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 116,
+      "label": "Imagine",
+      "parentIndex": 115,
+      "rect": {
+        "height": 64,
+        "width": 194,
+        "x": 428,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Imagine",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 117,
+      "parentIndex": 112,
+      "rect": {
+        "height": 144,
+        "width": 155,
+        "x": 658,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 118,
+      "label": "Build",
+      "parentIndex": 117,
+      "rect": {
+        "height": 64,
+        "width": 119,
+        "x": 694,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Build",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 119,
+      "parentIndex": 107,
+      "rect": {
+        "height": 144,
+        "width": 168,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 120,
+      "parentIndex": 119,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 121,
+      "parentIndex": 120,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "index": 122,
+      "label": "Refresh",
+      "parentIndex": 121,
+      "rect": {
+        "height": 72,
+        "width": 72,
+        "x": 936,
+        "y": 163
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "index": 123,
+      "parentIndex": 121,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    }
+  ],
+  "generated": [
+    {
+      "index": 47,
+      "type": "android.widget.FrameLayout",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 0
+    },
+    {
+      "index": 48,
+      "type": "android.widget.LinearLayout",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 1,
+      "parentIndex": 47
+    },
+    {
+      "index": 49,
+      "type": "android.widget.FrameLayout",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 2,
+      "parentIndex": 48
+    },
+    {
+      "index": 50,
+      "type": "android.widget.LinearLayout",
+      "identifier": "ai.x.grok:id/action_bar_root",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 3,
+      "parentIndex": 49
+    },
+    {
+      "index": 51,
+      "type": "android.widget.FrameLayout",
+      "identifier": "android:id/content",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 4,
+      "parentIndex": 50
+    },
+    {
+      "index": 52,
+      "type": "androidx.compose.ui.platform.ComposeView",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 5,
+      "parentIndex": 51
+    },
+    {
+      "index": 53,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 6,
+      "parentIndex": 52
+    },
+    {
+      "index": 54,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 7,
+      "parentIndex": 53
+    },
+    {
+      "index": 55,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 8,
+      "parentIndex": 54
+    },
+    {
+      "index": 56,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 9,
+      "parentIndex": 55
+    },
+    {
+      "index": 57,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 10,
+      "parentIndex": 56
+    },
+    {
+      "index": 58,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 11,
+      "parentIndex": 57
+    },
+    {
+      "index": 59,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 58
+    },
+    {
+      "index": 60,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 3,
+        "y": 203,
+        "width": 534,
+        "height": 801
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 59
+    },
+    {
+      "index": 61,
+      "type": "android.widget.Button",
+      "label": "Make Video",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 387,
+        "y": 854,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 14,
+      "parentIndex": 60
+    },
+    {
+      "index": 62,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 543,
+        "y": 203,
+        "width": 534,
+        "height": 801
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 59
+    },
+    {
+      "index": 63,
+      "type": "android.widget.Button",
+      "label": "Make Video",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 927,
+        "y": 854,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 14,
+      "parentIndex": 62
+    },
+    {
+      "index": 64,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 3,
+        "y": 1010,
+        "width": 534,
+        "height": 801
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 59
+    },
+    {
+      "index": 65,
+      "type": "android.widget.Button",
+      "label": "Make Video",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 387,
+        "y": 1661,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 14,
+      "parentIndex": 64
+    },
+    {
+      "index": 66,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 543,
+        "y": 1010,
+        "width": 534,
+        "height": 801
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 59
+    },
+    {
+      "index": 67,
+      "type": "android.widget.Button",
+      "label": "Make Video",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 927,
+        "y": 1661,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 14,
+      "parentIndex": 66
+    },
+    {
+      "index": 68,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 3,
+        "y": 1817,
+        "width": 534,
+        "height": 523
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 59
+    },
+    {
+      "index": 69,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 543,
+        "y": 1817,
+        "width": 534,
+        "height": 523
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 59
+    },
+    {
+      "index": 70,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 319,
+        "width": 1008,
+        "height": 152
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 59
+    },
+    {
+      "index": 71,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 319,
+        "width": 1008,
+        "height": 152
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 14,
+      "parentIndex": 70
+    },
+    {
+      "index": 72,
+      "type": "android.widget.TextView",
+      "label": "A generated image prompt retained as changing content.",
+      "value": "A generated image prompt retained as changing content.",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 84,
+        "y": 367,
+        "width": 912,
+        "height": 56
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 71
+    },
+    {
+      "index": 73,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 322,
+        "y": 1820,
+        "width": 436,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 58
+    },
+    {
+      "index": 74,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 322,
+        "y": 1820,
+        "width": 436,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 73
+    },
+    {
+      "index": 75,
+      "type": "android.widget.TextView",
+      "label": "Enhance Quality",
+      "value": "Enhance Quality",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 406,
+        "y": 1864,
+        "width": 328,
+        "height": 56
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 74
+    },
+    {
+      "index": 76,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 1992,
+        "width": 1080,
+        "height": 348
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 58
+    },
+    {
+      "index": 77,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 2016,
+        "width": 180,
+        "height": 156
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 76
+    },
+    {
+      "index": 78,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 2016,
+        "width": 156,
+        "height": 156
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 77
+    },
+    {
+      "index": 79,
+      "type": "android.view.View",
+      "label": "Favorites",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 2016,
+        "width": 156,
+        "height": 156
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": false,
+      "depth": 15,
+      "parentIndex": 78
+    },
+    {
+      "index": 80,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 2016,
+        "width": 156,
+        "height": 156
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 78
+    },
+    {
+      "index": 81,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 2016,
+        "width": 156,
+        "height": 156
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 80
+    },
+    {
+      "index": 82,
+      "type": "android.widget.EditText",
+      "value": "",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 204,
+        "y": 2022,
+        "width": 672,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": true,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 76
+    },
+    {
+      "index": 83,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 204,
+        "y": 2022,
+        "width": 672,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 82
+    },
+    {
+      "index": 84,
+      "type": "android.widget.Button",
+      "label": "Attach media",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 207,
+        "y": 2022,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 15,
+      "parentIndex": 83
+    },
+    {
+      "index": 85,
+      "type": "android.widget.TextView",
+      "label": "Type to imagine",
+      "value": "Type to imagine",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 348,
+        "y": 2066,
+        "width": 320,
+        "height": 56
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 83
+    },
+    {
+      "index": 86,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 876,
+        "y": 2016,
+        "width": 180,
+        "height": 156
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 76
+    },
+    {
+      "index": 87,
+      "type": "android.widget.Button",
+      "label": "Imagine settings",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 2016,
+        "width": 156,
+        "height": 156
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 14,
+      "parentIndex": 86
+    },
+    {
+      "index": 88,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 295
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 10,
+      "parentIndex": 56
+    },
+    {
+      "index": 89,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 295
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 11,
+      "parentIndex": 88
+    },
+    {
+      "index": 90,
+      "type": "android.view.View",
+      "identifier": "conversation_top_bar",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 295
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 89
+    },
+    {
+      "index": 91,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 295
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 90
+    },
+    {
+      "index": 92,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 103,
+        "width": 1080,
+        "height": 192
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 91
+    },
+    {
+      "index": 93,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 92
+    },
+    {
+      "index": 94,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 93
+    },
+    {
+      "index": 95,
+      "type": "android.view.View",
+      "label": "Show navigation drawer",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 72,
+        "y": 163,
+        "width": 72,
+        "height": 72
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 94
+    },
+    {
+      "index": 96,
+      "type": "android.widget.Button",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 94
+    },
+    {
+      "index": 97,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 268,
+        "y": 127,
+        "width": 545,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 92
+    },
+    {
+      "index": 98,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 258,
+        "y": 127,
+        "width": 134,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 97
+    },
+    {
+      "index": 99,
+      "type": "android.widget.TextView",
+      "label": "Ask",
+      "value": "Ask",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 268,
+        "y": 167,
+        "width": 88,
+        "height": 64
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 98
+    },
+    {
+      "index": 100,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 392,
+        "y": 127,
+        "width": 266,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": true,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 97
+    },
+    {
+      "index": 101,
+      "type": "android.widget.TextView",
+      "label": "Imagine",
+      "value": "Imagine",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 428,
+        "y": 167,
+        "width": 194,
+        "height": 64
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 100
+    },
+    {
+      "index": 102,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 658,
+        "y": 127,
+        "width": 155,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 97
+    },
+    {
+      "index": 103,
+      "type": "android.widget.TextView",
+      "label": "Build",
+      "value": "Build",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 694,
+        "y": 167,
+        "width": 119,
+        "height": 64
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 102
+    },
+    {
+      "index": 104,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 127,
+        "width": 168,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 92
+    },
+    {
+      "index": 105,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 104
+    },
+    {
+      "index": 106,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 17,
+      "parentIndex": 105
+    },
+    {
+      "index": 107,
+      "type": "android.view.View",
+      "label": "Refresh",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 936,
+        "y": 163,
+        "width": 72,
+        "height": 72
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 18,
+      "parentIndex": 106
+    },
+    {
+      "index": 108,
+      "type": "android.widget.Button",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 18,
+      "parentIndex": 106
+    }
+  ],
+  "editor": [
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 0,
+      "editable": false,
+      "enabled": true,
+      "index": 113,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 1,
+      "editable": false,
+      "enabled": true,
+      "index": 114,
+      "parentIndex": 113,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.LinearLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 2,
+      "editable": false,
+      "enabled": true,
+      "index": 115,
+      "parentIndex": 114,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 3,
+      "editable": false,
+      "enabled": true,
+      "identifier": "ai.x.grok:id/action_bar_root",
+      "index": 116,
+      "parentIndex": 115,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.LinearLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 4,
+      "editable": false,
+      "enabled": true,
+      "identifier": "android:id/content",
+      "index": 117,
+      "parentIndex": 116,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 5,
+      "editable": false,
+      "enabled": true,
+      "index": 118,
+      "parentIndex": 117,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "androidx.compose.ui.platform.ComposeView",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 6,
+      "editable": false,
+      "enabled": true,
+      "index": 119,
+      "parentIndex": 118,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 7,
+      "editable": false,
+      "enabled": true,
+      "index": 120,
+      "parentIndex": 119,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 8,
+      "editable": false,
+      "enabled": true,
+      "index": 121,
+      "parentIndex": 120,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 9,
+      "editable": false,
+      "enabled": true,
+      "index": 122,
+      "parentIndex": 121,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 10,
+      "editable": false,
+      "enabled": true,
+      "index": 123,
+      "parentIndex": 122,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 11,
+      "editable": false,
+      "enabled": true,
+      "index": 124,
+      "parentIndex": 123,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "index": 125,
+      "parentIndex": 124,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 126,
+      "label": "Access Your Photos",
+      "parentIndex": 125,
+      "rect": {
+        "height": 56,
+        "width": 414,
+        "x": 333,
+        "y": 319
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Access Your Photos",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 127,
+      "label": "Grant permission to create videos from your photos in Imagine.",
+      "parentIndex": 125,
+      "rect": {
+        "height": 101,
+        "width": 1008,
+        "x": 36,
+        "y": 411
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Grant permission to create videos from your photos in Imagine.",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 128,
+      "parentIndex": 125,
+      "rect": {
+        "height": 144,
+        "width": 303,
+        "x": 389,
+        "y": 530
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 129,
+      "label": "Continue",
+      "parentIndex": 128,
+      "rect": {
+        "height": 56,
+        "width": 207,
+        "x": 437,
+        "y": 574
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Continue",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 130,
+      "parentIndex": 128,
+      "rect": {
+        "height": 108,
+        "width": 303,
+        "x": 389,
+        "y": 548
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 131,
+      "label": "Featured Templates",
+      "parentIndex": 125,
+      "rect": {
+        "height": 60,
+        "width": 984,
+        "x": 48,
+        "y": 752
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Featured Templates",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 132,
+      "parentIndex": 125,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 3,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 133,
+      "parentIndex": 132,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 3,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 134,
+      "parentIndex": 125,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 543,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 135,
+      "parentIndex": 134,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 543,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "index": 136,
+      "parentIndex": 124,
+      "rect": {
+        "height": 1254,
+        "width": 1080,
+        "x": 0,
+        "y": 1086
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 137,
+      "parentIndex": 136,
+      "rect": {
+        "height": 138,
+        "width": 1032,
+        "x": 24,
+        "y": 1104
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 138,
+      "parentIndex": 137,
+      "rect": {
+        "height": 108,
+        "width": 858,
+        "x": 48,
+        "y": 1110
+      },
+      "selected": false,
+      "type": "android.widget.HorizontalScrollView",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 139,
+      "parentIndex": 138,
+      "rect": {
+        "height": 144,
+        "width": 457,
+        "x": 57,
+        "y": 1092
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 140,
+      "parentIndex": 139,
+      "rect": {
+        "height": 144,
+        "width": 184,
+        "x": 57,
+        "y": 1092
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 141,
+      "label": "Speed",
+      "parentIndex": 140,
+      "rect": {
+        "height": 53,
+        "width": 124,
+        "x": 87,
+        "y": 1138
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Speed",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 142,
+      "parentIndex": 139,
+      "rect": {
+        "height": 144,
+        "width": 273,
+        "x": 241,
+        "y": 1092
+      },
+      "selected": true,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 143,
+      "label": "Quality\u00a02.0",
+      "parentIndex": 142,
+      "rect": {
+        "height": 53,
+        "width": 213,
+        "x": 271,
+        "y": 1138
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Quality\u00a02.0",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 144,
+      "parentIndex": 138,
+      "rect": {
+        "height": 144,
+        "width": 176,
+        "x": 541,
+        "y": 1092
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 145,
+      "label": "Image count",
+      "parentIndex": 144,
+      "rect": {
+        "height": 48,
+        "width": 48,
+        "x": 571,
+        "y": 1140
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 146,
+      "label": "x 4",
+      "parentIndex": 144,
+      "rect": {
+        "height": 53,
+        "width": 56,
+        "x": 631,
+        "y": 1138
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "x 4",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 147,
+      "parentIndex": 144,
+      "rect": {
+        "height": 108,
+        "width": 176,
+        "x": 541,
+        "y": 1110
+      },
+      "selected": false,
+      "type": "android.widget.Spinner",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 148,
+      "parentIndex": 138,
+      "rect": {
+        "height": 144,
+        "width": 171,
+        "x": 735,
+        "y": 1092
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 149,
+      "label": "2:3",
+      "parentIndex": 148,
+      "rect": {
+        "height": 53,
+        "width": 57,
+        "x": 819,
+        "y": 1138
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "2:3",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 150,
+      "parentIndex": 148,
+      "rect": {
+        "height": 108,
+        "width": 171,
+        "x": 735,
+        "y": 1110
+      },
+      "selected": false,
+      "type": "android.widget.Spinner",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": true,
+      "enabled": true,
+      "focused": true,
+      "hittable": true,
+      "index": 151,
+      "parentIndex": 136,
+      "rect": {
+        "height": 270,
+        "width": 1032,
+        "x": 24,
+        "y": 1242
+      },
+      "selected": false,
+      "type": "android.widget.EditText",
+      "value": "",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 152,
+      "parentIndex": 151,
+      "rect": {
+        "height": 270,
+        "width": 1032,
+        "x": 24,
+        "y": 1242
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 153,
+      "label": "Type to make image",
+      "parentIndex": 152,
+      "rect": {
+        "height": 56,
+        "width": 405,
+        "x": 60,
+        "y": 1286
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Type to make image",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 154,
+      "parentIndex": 152,
+      "rect": {
+        "height": 144,
+        "width": 1032,
+        "x": 24,
+        "y": 1377
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 155,
+      "label": "Attach media",
+      "parentIndex": 154,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 30,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 156,
+      "parentIndex": 154,
+      "rect": {
+        "height": 108,
+        "width": 720,
+        "x": 180,
+        "y": 1386
+      },
+      "selected": false,
+      "type": "android.widget.HorizontalScrollView",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 157,
+      "parentIndex": 156,
+      "rect": {
+        "height": 144,
+        "width": 450,
+        "x": 180,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 158,
+      "parentIndex": 157,
+      "rect": {
+        "height": 144,
+        "width": 150,
+        "x": 180,
+        "y": 1368
+      },
+      "selected": true,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 159,
+      "parentIndex": 157,
+      "rect": {
+        "height": 144,
+        "width": 150,
+        "x": 330,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 160,
+      "parentIndex": 157,
+      "rect": {
+        "height": 144,
+        "width": 150,
+        "x": 480,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": false,
+      "hittable": true,
+      "index": 161,
+      "label": "Send prompt",
+      "parentIndex": 154,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 906,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 10,
+      "editable": false,
+      "enabled": true,
+      "index": 162,
+      "parentIndex": 122,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 11,
+      "editable": false,
+      "enabled": true,
+      "index": 163,
+      "parentIndex": 162,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "identifier": "conversation_top_bar",
+      "index": 164,
+      "parentIndex": 163,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 165,
+      "parentIndex": 164,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 166,
+      "parentIndex": 165,
+      "rect": {
+        "height": 192,
+        "width": 1080,
+        "x": 0,
+        "y": 103
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 167,
+      "parentIndex": 166,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 168,
+      "parentIndex": 167,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 169,
+      "label": "Show navigation drawer",
+      "parentIndex": 168,
+      "rect": {
+        "height": 72,
+        "width": 72,
+        "x": 72,
+        "y": 163
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 170,
+      "parentIndex": 168,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 171,
+      "parentIndex": 166,
+      "rect": {
+        "height": 144,
+        "width": 545,
+        "x": 268,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 172,
+      "parentIndex": 171,
+      "rect": {
+        "height": 144,
+        "width": 134,
+        "x": 258,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 173,
+      "label": "Ask",
+      "parentIndex": 172,
+      "rect": {
+        "height": 64,
+        "width": 88,
+        "x": 268,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Ask",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 174,
+      "parentIndex": 171,
+      "rect": {
+        "height": 144,
+        "width": 266,
+        "x": 392,
+        "y": 127
+      },
+      "selected": true,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 175,
+      "label": "Imagine",
+      "parentIndex": 174,
+      "rect": {
+        "height": 64,
+        "width": 194,
+        "x": 428,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Imagine",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 176,
+      "parentIndex": 171,
+      "rect": {
+        "height": 144,
+        "width": 155,
+        "x": 658,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 177,
+      "label": "Build",
+      "parentIndex": 176,
+      "rect": {
+        "height": 64,
+        "width": 119,
+        "x": 694,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Build",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 178,
+      "parentIndex": 166,
+      "rect": {
+        "height": 144,
+        "width": 168,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 179,
+      "parentIndex": 178,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 180,
+      "parentIndex": 179,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "index": 181,
+      "label": "Refresh",
+      "parentIndex": 180,
+      "rect": {
+        "height": 72,
+        "width": 72,
+        "x": 936,
+        "y": 163
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "index": 182,
+      "parentIndex": 180,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    }
+  ],
+  "speed": [
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 0,
+      "editable": false,
+      "enabled": true,
+      "index": 113,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 1,
+      "editable": false,
+      "enabled": true,
+      "index": 114,
+      "parentIndex": 113,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.LinearLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 2,
+      "editable": false,
+      "enabled": true,
+      "index": 115,
+      "parentIndex": 114,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 3,
+      "editable": false,
+      "enabled": true,
+      "identifier": "ai.x.grok:id/action_bar_root",
+      "index": 116,
+      "parentIndex": 115,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.LinearLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 4,
+      "editable": false,
+      "enabled": true,
+      "identifier": "android:id/content",
+      "index": 117,
+      "parentIndex": 116,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.widget.FrameLayout",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 5,
+      "editable": false,
+      "enabled": true,
+      "index": 118,
+      "parentIndex": 117,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "androidx.compose.ui.platform.ComposeView",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 6,
+      "editable": false,
+      "enabled": true,
+      "index": 119,
+      "parentIndex": 118,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 7,
+      "editable": false,
+      "enabled": true,
+      "index": 120,
+      "parentIndex": 119,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 8,
+      "editable": false,
+      "enabled": true,
+      "index": 121,
+      "parentIndex": 120,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 9,
+      "editable": false,
+      "enabled": true,
+      "index": 122,
+      "parentIndex": 121,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 10,
+      "editable": false,
+      "enabled": true,
+      "index": 123,
+      "parentIndex": 122,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 11,
+      "editable": false,
+      "enabled": true,
+      "index": 124,
+      "parentIndex": 123,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "index": 125,
+      "parentIndex": 124,
+      "rect": {
+        "height": 2340,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 126,
+      "label": "Access Your Photos",
+      "parentIndex": 125,
+      "rect": {
+        "height": 56,
+        "width": 414,
+        "x": 333,
+        "y": 319
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Access Your Photos",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 127,
+      "label": "Grant permission to create videos from your photos in Imagine.",
+      "parentIndex": 125,
+      "rect": {
+        "height": 101,
+        "width": 1008,
+        "x": 36,
+        "y": 411
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Grant permission to create videos from your photos in Imagine.",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 128,
+      "parentIndex": 125,
+      "rect": {
+        "height": 144,
+        "width": 303,
+        "x": 389,
+        "y": 530
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 129,
+      "label": "Continue",
+      "parentIndex": 128,
+      "rect": {
+        "height": 56,
+        "width": 207,
+        "x": 437,
+        "y": 574
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Continue",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 130,
+      "parentIndex": 128,
+      "rect": {
+        "height": 108,
+        "width": 303,
+        "x": 389,
+        "y": 548
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 131,
+      "label": "Featured Templates",
+      "parentIndex": 125,
+      "rect": {
+        "height": 60,
+        "width": 984,
+        "x": 48,
+        "y": 752
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Featured Templates",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 132,
+      "parentIndex": 125,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 3,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 133,
+      "parentIndex": 132,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 3,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 134,
+      "parentIndex": 125,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 543,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 135,
+      "parentIndex": 134,
+      "rect": {
+        "height": 801,
+        "width": 534,
+        "x": 543,
+        "y": 863
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "index": 136,
+      "parentIndex": 124,
+      "rect": {
+        "height": 1254,
+        "width": 1080,
+        "x": 0,
+        "y": 1086
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 137,
+      "parentIndex": 136,
+      "rect": {
+        "height": 138,
+        "width": 1032,
+        "x": 24,
+        "y": 1104
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 138,
+      "parentIndex": 137,
+      "rect": {
+        "height": 108,
+        "width": 898,
+        "x": 48,
+        "y": 1110
+      },
+      "selected": false,
+      "type": "android.widget.HorizontalScrollView",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 139,
+      "parentIndex": 138,
+      "rect": {
+        "height": 144,
+        "width": 457,
+        "x": 57,
+        "y": 1092
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 140,
+      "parentIndex": 139,
+      "rect": {
+        "height": 144,
+        "width": 184,
+        "x": 57,
+        "y": 1092
+      },
+      "selected": true,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 141,
+      "label": "Speed",
+      "parentIndex": 140,
+      "rect": {
+        "height": 53,
+        "width": 124,
+        "x": 87,
+        "y": 1138
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Speed",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 142,
+      "parentIndex": 139,
+      "rect": {
+        "height": 144,
+        "width": 273,
+        "x": 241,
+        "y": 1092
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 143,
+      "label": "Quality\u00a02.0",
+      "parentIndex": 142,
+      "rect": {
+        "height": 53,
+        "width": 213,
+        "x": 271,
+        "y": 1138
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Quality\u00a02.0",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 144,
+      "parentIndex": 138,
+      "rect": {
+        "height": 144,
+        "width": 216,
+        "x": 541,
+        "y": 1092
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 145,
+      "label": "Image count",
+      "parentIndex": 144,
+      "rect": {
+        "height": 48,
+        "width": 48,
+        "x": 571,
+        "y": 1140
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 146,
+      "label": "Auto",
+      "parentIndex": 144,
+      "rect": {
+        "height": 53,
+        "width": 96,
+        "x": 631,
+        "y": 1138
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Auto",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 147,
+      "parentIndex": 144,
+      "rect": {
+        "height": 108,
+        "width": 216,
+        "x": 541,
+        "y": 1110
+      },
+      "selected": false,
+      "type": "android.widget.Spinner",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 148,
+      "parentIndex": 138,
+      "rect": {
+        "height": 144,
+        "width": 171,
+        "x": 775,
+        "y": 1092
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 149,
+      "label": "2:3",
+      "parentIndex": 148,
+      "rect": {
+        "height": 53,
+        "width": 57,
+        "x": 859,
+        "y": 1138
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "2:3",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 150,
+      "parentIndex": 148,
+      "rect": {
+        "height": 108,
+        "width": 171,
+        "x": 775,
+        "y": 1110
+      },
+      "selected": false,
+      "type": "android.widget.Spinner",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": true,
+      "enabled": true,
+      "focused": true,
+      "hittable": true,
+      "index": 151,
+      "parentIndex": 136,
+      "rect": {
+        "height": 270,
+        "width": 1032,
+        "x": 24,
+        "y": 1242
+      },
+      "selected": false,
+      "type": "android.widget.EditText",
+      "value": "",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 152,
+      "parentIndex": 151,
+      "rect": {
+        "height": 270,
+        "width": 1032,
+        "x": 24,
+        "y": 1242
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 153,
+      "label": "Type to make image",
+      "parentIndex": 152,
+      "rect": {
+        "height": 56,
+        "width": 405,
+        "x": 60,
+        "y": 1286
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Type to make image",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 154,
+      "parentIndex": 152,
+      "rect": {
+        "height": 144,
+        "width": 1032,
+        "x": 24,
+        "y": 1377
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 155,
+      "label": "Attach media",
+      "parentIndex": 154,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 30,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 156,
+      "parentIndex": 154,
+      "rect": {
+        "height": 108,
+        "width": 720,
+        "x": 180,
+        "y": 1386
+      },
+      "selected": false,
+      "type": "android.widget.HorizontalScrollView",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 157,
+      "parentIndex": 156,
+      "rect": {
+        "height": 144,
+        "width": 450,
+        "x": 180,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 158,
+      "parentIndex": 157,
+      "rect": {
+        "height": 144,
+        "width": 150,
+        "x": 180,
+        "y": 1368
+      },
+      "selected": true,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 159,
+      "parentIndex": 157,
+      "rect": {
+        "height": 144,
+        "width": 150,
+        "x": 330,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 160,
+      "parentIndex": 157,
+      "rect": {
+        "height": 144,
+        "width": 150,
+        "x": 480,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": false,
+      "hittable": true,
+      "index": 161,
+      "label": "Send prompt",
+      "parentIndex": 154,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 906,
+        "y": 1368
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 10,
+      "editable": false,
+      "enabled": true,
+      "index": 162,
+      "parentIndex": 122,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 11,
+      "editable": false,
+      "enabled": true,
+      "index": 163,
+      "parentIndex": 162,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 12,
+      "editable": false,
+      "enabled": true,
+      "identifier": "conversation_top_bar",
+      "index": 164,
+      "parentIndex": 163,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 13,
+      "editable": false,
+      "enabled": true,
+      "index": 165,
+      "parentIndex": 164,
+      "rect": {
+        "height": 295,
+        "width": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 14,
+      "editable": false,
+      "enabled": true,
+      "index": 166,
+      "parentIndex": 165,
+      "rect": {
+        "height": 192,
+        "width": 1080,
+        "x": 0,
+        "y": 103
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 167,
+      "parentIndex": 166,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 168,
+      "parentIndex": 167,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 169,
+      "label": "Show navigation drawer",
+      "parentIndex": 168,
+      "rect": {
+        "height": 72,
+        "width": 72,
+        "x": 72,
+        "y": 163
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 170,
+      "parentIndex": 168,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 36,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 171,
+      "parentIndex": 166,
+      "rect": {
+        "height": 144,
+        "width": 545,
+        "x": 268,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 172,
+      "parentIndex": 171,
+      "rect": {
+        "height": 144,
+        "width": 134,
+        "x": 258,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 173,
+      "label": "Ask",
+      "parentIndex": 172,
+      "rect": {
+        "height": 64,
+        "width": 88,
+        "x": 268,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Ask",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 174,
+      "parentIndex": 171,
+      "rect": {
+        "height": 144,
+        "width": 266,
+        "x": 392,
+        "y": 127
+      },
+      "selected": true,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 175,
+      "label": "Imagine",
+      "parentIndex": 174,
+      "rect": {
+        "height": 64,
+        "width": 194,
+        "x": 428,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Imagine",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 176,
+      "parentIndex": 171,
+      "rect": {
+        "height": 144,
+        "width": 155,
+        "x": 658,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "index": 177,
+      "label": "Build",
+      "parentIndex": 176,
+      "rect": {
+        "height": 64,
+        "width": 119,
+        "x": 694,
+        "y": 167
+      },
+      "selected": false,
+      "type": "android.widget.TextView",
+      "value": "Build",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 15,
+      "editable": false,
+      "enabled": true,
+      "index": 178,
+      "parentIndex": 166,
+      "rect": {
+        "height": 144,
+        "width": 168,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 16,
+      "editable": false,
+      "enabled": true,
+      "index": 179,
+      "parentIndex": 178,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 17,
+      "editable": false,
+      "enabled": true,
+      "hittable": true,
+      "index": 180,
+      "parentIndex": 179,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "index": 181,
+      "label": "Refresh",
+      "parentIndex": 180,
+      "rect": {
+        "height": 72,
+        "width": 72,
+        "x": 936,
+        "y": 163
+      },
+      "selected": false,
+      "type": "android.view.View",
+      "visibleToUser": true
+    },
+    {
+      "bundleId": "ai.x.grok",
+      "depth": 18,
+      "editable": false,
+      "enabled": true,
+      "index": 182,
+      "parentIndex": 180,
+      "rect": {
+        "height": 144,
+        "width": 144,
+        "x": 900,
+        "y": 127
+      },
+      "selected": false,
+      "type": "android.widget.Button",
+      "visibleToUser": true
+    }
+  ],
+  "frozen": [
+    {
+      "fingerprint": "9797cd387310def532c42e46283af576313636ca9f30ec3a69abce27242d5789",
+      "nodes": [
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 6
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 7
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 8
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 9
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 10
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 11
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 12
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 13
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 14
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 14
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 14
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 14
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 12
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 14
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 15
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 16
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 14
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 10
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 11
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 14
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 15
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 16
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 15
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 16
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 16
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 15
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "depth": 16
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 17
+        },
+        {
+          "role": "android.view.view",
+          "enabled": true,
+          "selected": true,
+          "hittable": true,
+          "depth": 16
+        },
+        {
+          "role": "android.view.view",
+          "label": "favorites",
+          "enabled": true,
+          "selected": false,
+          "hittable": false,
+          "depth": 15
+        },
+        {
+          "role": "android.view.view",
+          "label": "refresh",
+          "enabled": true,
+          "selected": false,
+          "depth": 18
+        },
+        {
+          "role": "android.view.view",
+          "label": "show navigation drawer",
+          "enabled": true,
+          "selected": false,
+          "depth": 17
+        },
+        {
+          "role": "android.view.view",
+          "identifier": "conversation_top_bar",
+          "enabled": true,
+          "selected": false,
+          "depth": 12
+        },
+        {
+          "role": "android.widget.button",
+          "enabled": true,
+          "selected": false,
+          "depth": 14
+        },
+        {
+          "role": "android.widget.button",
+          "enabled": true,
+          "selected": false,
+          "depth": 17
+        },
+        {
+          "role": "android.widget.button",
+          "enabled": true,
+          "selected": false,
+          "depth": 18
+        },
+        {
+          "role": "android.widget.button",
+          "label": "attach media",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 15
+        },
+        {
+          "role": "android.widget.button",
+          "label": "imagine settings",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 14
+        },
+        {
+          "role": "android.widget.edittext",
+          "enabled": true,
+          "selected": false,
+          "hittable": true,
+          "depth": 13
+        },
+        {
+          "role": "android.widget.framelayout",
+          "enabled": true,
+          "selected": false,
+          "depth": 0
+        },
+        {
+          "role": "android.widget.framelayout",
+          "enabled": true,
+          "selected": false,
+          "depth": 2
+        },
+        {
+          "role": "android.widget.framelayout",
+          "identifier": "android:id/content",
+          "enabled": true,
+          "selected": false,
+          "depth": 4
+        },
+        {
+          "role": "android.widget.linearlayout",
+          "enabled": true,
+          "selected": false,
+          "depth": 1
+        },
+        {
+          "role": "android.widget.linearlayout",
+          "identifier": "ai.x.grok:id/action_bar_root",
+          "enabled": true,
+          "selected": false,
+          "depth": 3
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "access your photos",
+          "value": "access your photos",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "ask",
+          "value": "ask",
+          "enabled": true,
+          "selected": false,
+          "depth": 17
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "build",
+          "value": "build",
+          "enabled": true,
+          "selected": false,
+          "depth": 17
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "continue",
+          "value": "continue",
+          "enabled": true,
+          "selected": false,
+          "depth": 14
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "featured templates",
+          "value": "featured templates",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "grant permission to create videos from your photos in imagine.",
+          "value": "grant permission to create videos from your photos in imagine.",
+          "enabled": true,
+          "selected": false,
+          "depth": 13
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "imagine",
+          "value": "imagine",
+          "enabled": true,
+          "selected": false,
+          "depth": 17
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "photo edit",
+          "value": "photo edit",
+          "enabled": true,
+          "selected": false,
+          "depth": 15
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "reimagine",
+          "value": "reimagine",
+          "enabled": true,
+          "selected": false,
+          "depth": 15
+        },
+        {
+          "role": "android.widget.textview",
+          "label": "type to imagine",
+          "value": "type to imagine",
+          "enabled": true,
+          "selected": false,
+          "depth": 15
+        },
+        {
+          "role": "androidx.compose.ui.platform.composeview",
+          "enabled": true,
+          "selected": false,
+          "depth": 5
+        }
+      ],
+      "volatileSignals": []
+    }
+  ],
+  "sourceRun": "5e1b30e8-840e-4f3f-b510-4efea52d925b",
+  "redactedFields": [
+    "generated image prompt label/value",
+    "device system bars and keyboard omitted"
+  ],
+  "promotionalModal": [
+    {
+      "index": 50,
+      "type": "android.widget.FrameLayout",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 0
+    },
+    {
+      "index": 51,
+      "type": "android.widget.FrameLayout",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 1,
+      "parentIndex": 50
+    },
+    {
+      "index": 52,
+      "type": "android.widget.FrameLayout",
+      "identifier": "android:id/content",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 2,
+      "parentIndex": 51
+    },
+    {
+      "index": 53,
+      "type": "android.view.ViewGroup",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 3,
+      "parentIndex": 52
+    },
+    {
+      "index": 54,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 4,
+      "parentIndex": 53
+    },
+    {
+      "index": 55,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 5,
+      "parentIndex": 54
+    },
+    {
+      "index": 56,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 6,
+      "parentIndex": 55
+    },
+    {
+      "index": 57,
+      "type": "android.view.View",
+      "label": "Close sheet",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 983
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 7,
+      "parentIndex": 56
+    },
+    {
+      "index": 58,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 983,
+        "width": 1080,
+        "height": 1357
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 7,
+      "parentIndex": 56
+    },
+    {
+      "index": 59,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 983,
+        "width": 1080,
+        "height": 1213
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 8,
+      "parentIndex": 58
+    },
+    {
+      "index": 60,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 983,
+        "width": 1080,
+        "height": 1213
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 9,
+      "parentIndex": 59
+    },
+    {
+      "index": 61,
+      "type": "android.widget.ScrollView",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 983,
+        "width": 1080,
+        "height": 1213
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 10,
+      "parentIndex": 60
+    },
+    {
+      "index": 62,
+      "type": "ho.s",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 48,
+        "y": 1031,
+        "width": 985,
+        "height": 554
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 11,
+      "parentIndex": 61
+    },
+    {
+      "index": 63,
+      "type": "android.view.TextureView",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 48,
+        "y": 1031,
+        "width": 985,
+        "height": 554
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 62
+    },
+    {
+      "index": 64,
+      "type": "android.widget.TextView",
+      "label": "Shape your scene, start to finish",
+      "value": "Shape your scene, start to finish",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 48,
+        "y": 1657,
+        "width": 896,
+        "height": 75
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 11,
+      "parentIndex": 61
+    },
+    {
+      "index": 65,
+      "type": "android.widget.TextView",
+      "label": "Choose your first and last frames, or create seamless loops. Every video now follows your instructions more closely.",
+      "value": "Choose your first and last frames, or create seamless loops. Every video now follows your instructions more closely.",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 48,
+        "y": 1768,
+        "width": 984,
+        "height": 176
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 11,
+      "parentIndex": 61
+    },
+    {
+      "index": 66,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 48,
+        "y": 2010,
+        "width": 984,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 11,
+      "parentIndex": 61
+    },
+    {
+      "index": 67,
+      "type": "android.widget.TextView",
+      "label": "Try it now",
+      "value": "Try it now",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 432,
+        "y": 2054,
+        "width": 217,
+        "height": 56
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 66
+    },
+    {
+      "index": 68,
+      "type": "android.widget.Button",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 48,
+        "y": 2016,
+        "width": 984,
+        "height": 132
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 66
+    }
+  ],
+  "modalSourceRun": "2890616a-2799-466b-a273-bb4b027c9cdd",
+  "rememberedSpeedEditor": [
+    {
+      "index": 100,
+      "type": "android.widget.FrameLayout",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 0
+    },
+    {
+      "index": 101,
+      "type": "android.widget.LinearLayout",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 1,
+      "parentIndex": 100
+    },
+    {
+      "index": 102,
+      "type": "android.widget.FrameLayout",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 2,
+      "parentIndex": 101
+    },
+    {
+      "index": 103,
+      "type": "android.widget.LinearLayout",
+      "identifier": "ai.x.grok:id/action_bar_root",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 3,
+      "parentIndex": 102
+    },
+    {
+      "index": 104,
+      "type": "android.widget.FrameLayout",
+      "identifier": "android:id/content",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 4,
+      "parentIndex": 103
+    },
+    {
+      "index": 105,
+      "type": "androidx.compose.ui.platform.ComposeView",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 5,
+      "parentIndex": 104
+    },
+    {
+      "index": 106,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 6,
+      "parentIndex": 105
+    },
+    {
+      "index": 107,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 7,
+      "parentIndex": 106
+    },
+    {
+      "index": 108,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 8,
+      "parentIndex": 107
+    },
+    {
+      "index": 109,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 9,
+      "parentIndex": 108
+    },
+    {
+      "index": 110,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 10,
+      "parentIndex": 109
+    },
+    {
+      "index": 111,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 11,
+      "parentIndex": 110
+    },
+    {
+      "index": 112,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 2340
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 111
+    },
+    {
+      "index": 113,
+      "type": "android.widget.TextView",
+      "label": "Access Your Photos",
+      "value": "Access Your Photos",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 333,
+        "y": 319,
+        "width": 414,
+        "height": 56
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 112
+    },
+    {
+      "index": 114,
+      "type": "android.widget.TextView",
+      "label": "Grant permission to create videos from your photos in Imagine.",
+      "value": "Grant permission to create videos from your photos in Imagine.",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 411,
+        "width": 1008,
+        "height": 101
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 112
+    },
+    {
+      "index": 115,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 389,
+        "y": 530,
+        "width": 303,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 112
+    },
+    {
+      "index": 116,
+      "type": "android.widget.TextView",
+      "label": "Continue",
+      "value": "Continue",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 437,
+        "y": 574,
+        "width": 207,
+        "height": 56
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 115
+    },
+    {
+      "index": 117,
+      "type": "android.widget.Button",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 389,
+        "y": 548,
+        "width": 303,
+        "height": 108
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 115
+    },
+    {
+      "index": 118,
+      "type": "android.widget.TextView",
+      "label": "Create from Template",
+      "value": "Create from Template",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 48,
+        "y": 752,
+        "width": 476,
+        "height": 60
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 112
+    },
+    {
+      "index": 119,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 860,
+        "width": 1080,
+        "height": 504
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 112
+    },
+    {
+      "index": 120,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 860,
+        "width": 336,
+        "height": 504
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 119
+    },
+    {
+      "index": 121,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 860,
+        "width": 336,
+        "height": 504
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 15,
+      "parentIndex": 120
+    },
+    {
+      "index": 122,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 342,
+        "y": 860,
+        "width": 336,
+        "height": 382
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 119
+    },
+    {
+      "index": 123,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 342,
+        "y": 860,
+        "width": 336,
+        "height": 382
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 15,
+      "parentIndex": 122
+    },
+    {
+      "index": 124,
+      "type": "android.widget.TextView",
+      "label": "Object Remover",
+      "value": "Object Remover",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 372,
+        "y": 1218,
+        "width": 276,
+        "height": 24
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 123
+    },
+    {
+      "index": 125,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 684,
+        "y": 860,
+        "width": 336,
+        "height": 382
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 119
+    },
+    {
+      "index": 126,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 684,
+        "y": 860,
+        "width": 336,
+        "height": 382
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 15,
+      "parentIndex": 125
+    },
+    {
+      "index": 127,
+      "type": "android.widget.TextView",
+      "label": "Professional Headshot",
+      "value": "Professional Headshot",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 714,
+        "y": 1218,
+        "width": 276,
+        "height": 24
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 126
+    },
+    {
+      "index": 128,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 3,
+        "y": 1415,
+        "width": 534,
+        "height": 801
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": false,
+      "depth": 13,
+      "parentIndex": 112
+    },
+    {
+      "index": 129,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 543,
+        "y": 1415,
+        "width": 534,
+        "height": 801
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": false,
+      "depth": 13,
+      "parentIndex": 112
+    },
+    {
+      "index": 130,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 1086,
+        "width": 1080,
+        "height": 1254
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 111
+    },
+    {
+      "index": 131,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 1104,
+        "width": 1032,
+        "height": 138
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 130
+    },
+    {
+      "index": 132,
+      "type": "android.widget.HorizontalScrollView",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 48,
+        "y": 1110,
+        "width": 828,
+        "height": 108
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 131
+    },
+    {
+      "index": 133,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 57,
+        "y": 1092,
+        "width": 387,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 132
+    },
+    {
+      "index": 134,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 57,
+        "y": 1092,
+        "width": 184,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": true,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 133
+    },
+    {
+      "index": 135,
+      "type": "android.widget.TextView",
+      "label": "Speed",
+      "value": "Speed",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 87,
+        "y": 1138,
+        "width": 124,
+        "height": 53
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 134
+    },
+    {
+      "index": 136,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 241,
+        "y": 1092,
+        "width": 203,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 133
+    },
+    {
+      "index": 137,
+      "type": "android.widget.TextView",
+      "label": "Quality",
+      "value": "Quality",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 271,
+        "y": 1138,
+        "width": 143,
+        "height": 53
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 136
+    },
+    {
+      "index": 138,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 471,
+        "y": 1092,
+        "width": 216,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 15,
+      "parentIndex": 132
+    },
+    {
+      "index": 139,
+      "type": "android.view.View",
+      "label": "Image count",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 501,
+        "y": 1140,
+        "width": 48,
+        "height": 48
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 138
+    },
+    {
+      "index": 140,
+      "type": "android.widget.TextView",
+      "label": "Auto",
+      "value": "Auto",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 561,
+        "y": 1138,
+        "width": 96,
+        "height": 53
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 138
+    },
+    {
+      "index": 141,
+      "type": "android.widget.Spinner",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 471,
+        "y": 1110,
+        "width": 216,
+        "height": 108
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 138
+    },
+    {
+      "index": 142,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 705,
+        "y": 1092,
+        "width": 171,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 15,
+      "parentIndex": 132
+    },
+    {
+      "index": 143,
+      "type": "android.widget.TextView",
+      "label": "2:3",
+      "value": "2:3",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 789,
+        "y": 1138,
+        "width": 57,
+        "height": 53
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 142
+    },
+    {
+      "index": 144,
+      "type": "android.widget.Spinner",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 705,
+        "y": 1110,
+        "width": 171,
+        "height": 108
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 142
+    },
+    {
+      "index": 145,
+      "type": "android.widget.EditText",
+      "value": "",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 1242,
+        "width": 1032,
+        "height": 270
+      },
+      "enabled": true,
+      "focused": true,
+      "selected": false,
+      "editable": true,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 13,
+      "parentIndex": 130
+    },
+    {
+      "index": 146,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 1242,
+        "width": 1032,
+        "height": 270
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 145
+    },
+    {
+      "index": 147,
+      "type": "android.widget.TextView",
+      "label": "Type to make image",
+      "value": "Type to make image",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 60,
+        "y": 1286,
+        "width": 405,
+        "height": 56
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 146
+    },
+    {
+      "index": 148,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 24,
+        "y": 1377,
+        "width": 1032,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 146
+    },
+    {
+      "index": 149,
+      "type": "android.widget.Button",
+      "label": "Attach media",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 30,
+        "y": 1368,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 148
+    },
+    {
+      "index": 150,
+      "type": "android.widget.HorizontalScrollView",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 180,
+        "y": 1386,
+        "width": 720,
+        "height": 108
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 148
+    },
+    {
+      "index": 151,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 180,
+        "y": 1368,
+        "width": 300,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 150
+    },
+    {
+      "index": 152,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 180,
+        "y": 1368,
+        "width": 150,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": true,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 18,
+      "parentIndex": 151
+    },
+    {
+      "index": 153,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 330,
+        "y": 1368,
+        "width": 150,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 18,
+      "parentIndex": 151
+    },
+    {
+      "index": 154,
+      "type": "android.widget.Button",
+      "label": "Send prompt",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 906,
+        "y": 1368,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": false,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 148
+    },
+    {
+      "index": 155,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 295
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 10,
+      "parentIndex": 109
+    },
+    {
+      "index": 156,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 295
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 11,
+      "parentIndex": 155
+    },
+    {
+      "index": 157,
+      "type": "android.view.View",
+      "identifier": "conversation_top_bar",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 295
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 12,
+      "parentIndex": 156
+    },
+    {
+      "index": 158,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 295
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 13,
+      "parentIndex": 157
+    },
+    {
+      "index": 159,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 0,
+        "y": 103,
+        "width": 1080,
+        "height": 192
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 14,
+      "parentIndex": 158
+    },
+    {
+      "index": 160,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 159
+    },
+    {
+      "index": 161,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 160
+    },
+    {
+      "index": 162,
+      "type": "android.view.View",
+      "label": "Show navigation drawer",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 72,
+        "y": 163,
+        "width": 72,
+        "height": 72
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 161
+    },
+    {
+      "index": 163,
+      "type": "android.widget.Button",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 36,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 161
+    },
+    {
+      "index": 164,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 268,
+        "y": 127,
+        "width": 545,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 159
+    },
+    {
+      "index": 165,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 258,
+        "y": 127,
+        "width": 134,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 164
+    },
+    {
+      "index": 166,
+      "type": "android.widget.TextView",
+      "label": "Ask",
+      "value": "Ask",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 268,
+        "y": 167,
+        "width": 88,
+        "height": 64
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 165
+    },
+    {
+      "index": 167,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 392,
+        "y": 127,
+        "width": 266,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": true,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 164
+    },
+    {
+      "index": 168,
+      "type": "android.widget.TextView",
+      "label": "Imagine",
+      "value": "Imagine",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 428,
+        "y": 167,
+        "width": 194,
+        "height": 64
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 167
+    },
+    {
+      "index": 169,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 658,
+        "y": 127,
+        "width": 155,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 16,
+      "parentIndex": 164
+    },
+    {
+      "index": 170,
+      "type": "android.widget.TextView",
+      "label": "Build",
+      "value": "Build",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 694,
+        "y": 167,
+        "width": 119,
+        "height": 64
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 17,
+      "parentIndex": 169
+    },
+    {
+      "index": 171,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 127,
+        "width": 168,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 15,
+      "parentIndex": 159
+    },
+    {
+      "index": 172,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 16,
+      "parentIndex": 171
+    },
+    {
+      "index": 173,
+      "type": "android.view.View",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "hittable": true,
+      "depth": 17,
+      "parentIndex": 172
+    },
+    {
+      "index": 174,
+      "type": "android.view.View",
+      "label": "Refresh",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 936,
+        "y": 163,
+        "width": 72,
+        "height": 72
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 18,
+      "parentIndex": 173
+    },
+    {
+      "index": 175,
+      "type": "android.widget.Button",
+      "bundleId": "ai.x.grok",
+      "rect": {
+        "x": 900,
+        "y": 127,
+        "width": 144,
+        "height": 144
+      },
+      "enabled": true,
+      "selected": false,
+      "editable": false,
+      "visibleToUser": true,
+      "depth": 18,
+      "parentIndex": 173
+    }
+  ],
+  "editorSourceRun": "3ef077cd-67b2-4e25-b1f8-cf6e4f67e884"
+}

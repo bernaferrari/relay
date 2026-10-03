@@ -8,6 +8,8 @@ import {
   Square,
   MonitorSmartphone,
   LoaderCircle,
+  ZoomIn,
+  Minimize2,
 } from "lucide-react";
 import {
   useEffect,
@@ -69,6 +71,7 @@ export function LiveTargetCanvas({
   directBrowser?: boolean;
 }) {
   const [text, setText] = useState("");
+  const [enlarged, setEnlarged] = useState(false);
   const helpId = `${useId()}-help`;
   const textInputId = `live-target-text-${useId().replaceAll(":", "")}`;
   const pointerStart = useRef<Point | undefined>(undefined);
@@ -135,6 +138,8 @@ export function LiveTargetCanvas({
   }
 
   function wheelTarget(event: WheelEvent<HTMLCanvasElement>) {
+    // In enlarged mode, wheel input pans the preview. Drag still operates the app.
+    if (enlarged && !directBrowser) return;
     if (!streaming || busy) return;
     event.preventDefault();
     const origin = point(event);
@@ -208,17 +213,19 @@ export function LiveTargetCanvas({
     <div
       className={
         rail
-          ? "flex h-full min-h-0 flex-col"
-          : "grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto_auto]"
+          ? "relative flex h-full min-h-0 flex-col"
+          : "relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto_auto]"
       }
     >
       <div
         className={
           directBrowser
             ? "relative flex min-h-0 items-start justify-center overflow-auto"
-            : rail
-              ? "relative flex min-h-80 flex-1 items-center justify-center overflow-hidden bg-muted/40"
-              : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
+            : enlarged
+              ? "relative flex min-h-0 flex-1 items-start justify-start overflow-auto p-3"
+              : rail
+                ? "relative flex min-h-80 flex-1 items-center justify-center overflow-hidden bg-muted/40"
+                : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
         }
       >
         <canvas
@@ -227,7 +234,9 @@ export function LiveTargetCanvas({
           className={
             directBrowser
               ? "block h-auto w-full shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              : "h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
+              : enlarged
+                ? "mx-auto h-[200%] w-auto shrink-0 max-w-none min-h-0 object-contain"
+                : "h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
           }
           aria-label={`Interactive Device: ${targetTitle}`}
           aria-describedby={help ? helpId : undefined}
@@ -290,6 +299,30 @@ export function LiveTargetCanvas({
           </div>
         ) : null}
       </div>
+
+      {!directBrowser && streaming ? (
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="secondary"
+          className="absolute right-3 top-3 z-20"
+          aria-label={enlarged ? "Fit live view" : "Enlarge live view"}
+          aria-pressed={enlarged}
+          title={
+            enlarged
+              ? "Fit the whole screen"
+              : "Enlarge the screen. Scroll to pan; drag to interact."
+          }
+          onClick={() => {
+            if (wheelTimer.current) clearTimeout(wheelTimer.current);
+            wheelTimer.current = undefined;
+            wheel.current = undefined;
+            setEnlarged((value) => !value);
+          }}
+        >
+          {enlarged ? <Minimize2 aria-hidden="true" /> : <ZoomIn aria-hidden="true" />}
+        </Button>
+      ) : null}
 
       {!directBrowser || showTargetDetails || toolbar ? (
         <div

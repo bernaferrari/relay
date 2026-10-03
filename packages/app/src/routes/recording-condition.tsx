@@ -78,8 +78,7 @@ export function RecordingCondition({
       <DialogContent showCloseButton={false}>
         <DialogTitle>Wait or check</DialogTitle>
         <DialogDescription>
-          Relay tries it on the page now and adds it as a step. A wait stops as soon as the
-          condition holds.
+          Wait for text or a control to appear or disappear. Relay checks it now and saves the step.
         </DialogDescription>
         <form className="grid gap-4" onSubmit={submit}>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Kind">
@@ -121,7 +120,7 @@ export function RecordingCondition({
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Prefer waiting for text: it finishes as soon as the result is ready.
+                Prefer a visible condition: the wait ends as soon as it matches.
               </p>
             </div>
           ) : (
@@ -131,13 +130,14 @@ export function RecordingCondition({
                 id="condition-text"
                 value={text}
                 onChange={(event) => setText(event.currentTarget.value)}
-                placeholder={
-                  kind === "gone" ? "For example, Generating" : "For example, 144 or Download"
-                }
+                placeholder={kind === "gone" ? "For example, Generating" : "For example, Download"}
                 maxLength={200}
                 autoComplete="off"
                 autoFocus
               />
+              <p className="text-xs text-muted-foreground">
+                Choose text or a control that appears when ready. Text in your prompt also matches.
+              </p>
               {suggestions.length ? (
                 <div className="mt-1 flex flex-wrap gap-1.5" aria-label="On screen now">
                   {suggestions.map((value) => (

@@ -3,7 +3,7 @@ import type { ProductRunReport, ProductRunState } from "@relay/product/run-journ
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
@@ -21,11 +21,18 @@ import { PAIRED_CONFIGURATION_STORAGE_KEY } from "../data/paired-configuration";
 const roots: Root[] = [];
 const recordingService = {} as RecordingProductService;
 
+beforeEach(() => {
+  // Owned services supply fixture data. Shell reads must not reach the
+  // developer's service or outlive this test's DOM.
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Offline run test fixture")));
+});
+
 afterEach(async () => {
   await act(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 function runState(
@@ -1463,14 +1470,30 @@ describe("Run and Report", () => {
   it("surfaces a terminal replay with no report id as an unavailable result", async () => {
     const fake = fakeRunService(runState("succeeded"));
     fake.service.replay = async () => ({ jobId: "job-replay" });
-    fake.service.getReplayJob = async () => ({ status: "ok" });
+    let finishReplayJob!: (state: { status: string }) => void;
+    const readReplayJob = vi.fn(
+      () =>
+        new Promise<{ status: string }>((resolve) => {
+          finishReplayJob = resolve;
+        }),
+    );
+    fake.service.getReplayJob = readReplayJob;
 
     await renderRun("/runs/run-raw-1", fake.service, platformWithStorage().platform);
     await click(button("Rerun…"));
     await click(button("Start run"));
-    await settle();
-
-    expect(document.querySelector('[role="alert"]')).not.toBeNull();
+    await vi.waitFor(() => expect(readReplayJob).toHaveBeenCalledWith("job-replay"));
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => finishReplayJob({ status: "ok" }));
+    await vi.waitFor(
+      async () => {
+        await settle();
+        expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+          "Replay report unavailable",
+        );
+      },
+      { timeout: 3_000 },
+    );
     expect(document.body.textContent).not.toContain("Replaying saved steps on the saved target");
   });
 

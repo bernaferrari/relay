@@ -8,7 +8,7 @@ import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
 import { ScreenshotMomentSwitch } from "../components/screenshot-moment-switch";
-import { useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import {
   pickRecordingEvidenceControl,
   imagePointFromClick,
@@ -52,9 +52,31 @@ export function RecordingEvidencePanel({
   const [showElements, setShowElements] = useState(false);
   const [hovered, setHovered] = useState<RecordingEvidenceControl>();
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
+  const stage = useRef<HTMLDivElement>(null);
+  const [captureHeight, setCaptureHeight] = useState(0);
+  useLayoutEffect(() => {
+    const element = stage.current;
+    if (!element) return;
+    const measure = () => {
+      const style = getComputedStyle(element);
+      setCaptureHeight(
+        Math.max(
+          0,
+          element.clientHeight -
+            parseFloat(style.paddingTop || "0") -
+            parseFloat(style.paddingBottom || "0"),
+        ),
+      );
+    };
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
+    observer?.observe(element);
+    return () => observer?.disconnect();
+  }, []);
   return (
     <section
-      className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] self-start p-3 text-card-foreground"
+      className={`grid h-full min-h-0 min-w-0 ${fullPage ? "grid-rows-[auto_auto_minmax(0,1fr)]" : "grid-rows-[auto_minmax(0,1fr)]"} self-start p-3 text-card-foreground`}
       aria-labelledby="recording-evidence-title"
     >
       <div className="flex items-center justify-between gap-3">
@@ -129,7 +151,11 @@ export function RecordingEvidencePanel({
           ) : null}
         </div>
       ) : null}
-      <div className="mt-3 flex min-h-0 items-start justify-center overflow-hidden rounded-lg bg-background/40 p-2">
+      <div
+        ref={stage}
+        className="mt-3 flex min-h-0 items-start justify-center overflow-hidden rounded-lg bg-background/40 p-2"
+        style={{ "--capture-height": `${captureHeight}px` } as CSSProperties}
+      >
         {loading ? (
           <div
             role="status"
@@ -148,7 +174,7 @@ export function RecordingEvidencePanel({
             }}
           >
             <img
-              className="max-h-[65vh] max-w-full rounded-md object-contain"
+              className="block h-auto max-h-(--capture-height) w-auto max-w-full rounded-md object-contain"
               src={previewUrl}
               alt={
                 exactMoment

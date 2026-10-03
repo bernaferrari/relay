@@ -465,7 +465,11 @@ export interface RelayWorkflows {
 
 export type OutcomeTargetSelection = { targetId?: string };
 
-export type ConnectTargetIntent = OutcomeTargetSelection & { kind: "connect-target" };
+export type ConnectTargetIntent = OutcomeTargetSelection & {
+  kind: "connect-target";
+  /** Limit discovery to the requested surface; omitted preserves all-target discovery. */
+  targetKind?: AuthoringTarget["kind"];
+};
 
 export type ObserveTargetIntent = OutcomeTargetSelection & { kind: "observe-target" };
 

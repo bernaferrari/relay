@@ -7,14 +7,20 @@ import { ArrowRight, Globe, LoaderCircle, Smartphone } from "lucide-react";
 import type { ProductBrowserSpace } from "../data/browser-spaces-product-service";
 import { SelectField } from "../components/filter-select";
 
-/** "grok.com", "https://staging.example.com/login" → a full https URL, or "" when unusable. */
+/** Bare public hosts use HTTPS; loopback development sites use HTTP. */
 export function websiteAddress(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
   try {
-    const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
-    if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname.includes("."))
-      return url.hostname === "localhost" ? url.toString() : "";
+    const explicitProtocol = trimmed.includes("://");
+    const url = new URL(explicitProtocol ? trimmed : `https://${trimmed}`);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    const loopback =
+      url.hostname === "localhost" ||
+      url.hostname === "[::1]" ||
+      /^127(?:\.\d{1,3}){3}$/u.test(url.hostname);
+    if (!url.hostname.includes(".") && !loopback) return "";
+    if (!explicitProtocol && loopback) url.protocol = "http:";
     return url.toString();
   } catch {
     return "";

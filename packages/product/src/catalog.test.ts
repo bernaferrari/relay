@@ -176,7 +176,7 @@ test("share-menu with no origin variant is not Ready", () => {
   assert.equal(productTestStatusLabel(tests[0]!.status, share.name), "Needs setup");
 });
 
-test("UNRECORDED and still-absent names stay Unrecorded, not Ready", () => {
+test("explicitly unrecorded names stay blocked while generation names reflect setup", () => {
   const thread = scenario("thread", "Header More on existing chat (Start Thread still absent)");
   const older = scenario(
     "older",
@@ -187,15 +187,15 @@ test("UNRECORDED and still-absent names stay Unrecorded, not Ready", () => {
   const tests = projectProductTests([map]);
   assert.equal(tests.find((test) => test.id === "thread")?.status, "needs-review");
   assert.equal(tests.find((test) => test.id === "older")?.status, "needs-review");
-  assert.equal(tests.find((test) => test.id === "imagine")?.status, "needs-review");
+  assert.equal(tests.find((test) => test.id === "imagine")?.status, "ready");
   assert.equal(productTestStatusLabel("needs-review", thread.name), "Unrecorded");
   assert.equal(
     productTestStatusLabel("needs-review", "Imagine Speed image generation signed-in"),
-    "Unrecorded",
+    "Needs setup",
   );
   assert.equal(
     productTestStatusLabel("ready", "Imagine Speed image generation signed-in"),
-    "Unrecorded",
+    "Ready",
   );
   assert.equal(productTestStatusLabel("ready", "Header More on existing chat"), "Ready");
 });

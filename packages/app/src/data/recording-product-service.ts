@@ -4,6 +4,7 @@ import {
 } from "./recording-input-outcome";
 import type {
   ProductRecordingBeginInput,
+  ProductRecordingJourney,
   ProductRecordingSaveInput,
   ProductRecordingState,
 } from "@relay/product/recording-journey";
@@ -11,6 +12,7 @@ import { reviewAndroidTalkBack } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 import type { TalkBackCaptureResult } from "./talkback-overlay";
+import { snapshotConditionSuggestions } from "./recording-condition-suggestions";
 import type { LiveTargetSession } from "./live-target-session";
 import type {
   AuthoringInteraction,
@@ -81,7 +83,9 @@ export type RecordingCondition = {
 
 export type RecordingProductService = {
   listApps(): Promise<readonly ProductAppOption[]>;
-  connect(): Promise<ProductRecordingState>;
+  connect(
+    input?: Parameters<ProductRecordingJourney["connect"]>[0],
+  ): Promise<ProductRecordingState>;
   presentTargets(targets: readonly AuthoringTarget[]): Promise<readonly ProductTargetOption[]>;
   begin(input: ProductRecordingBeginInput): Promise<ProductRecordingState>;
   inspect(workflowId: string): Promise<ProductRecordingState>;
@@ -235,8 +239,8 @@ export function createRecordingProductService(
       const families = appFamilies(appMaps);
       return appMaps.map((app) => ({ id: app.id, name: app.name, ...families.get(app.id) }));
     },
-    async connect() {
-      return (await product()).journey.connect();
+    async connect(input) {
+      return (await product()).journey.connect(input);
     },
     async presentTargets(targets) {
       return presentReadyTargets((await product()).client, targets);
@@ -484,6 +488,7 @@ export function createRecordingProductService(
       return {
         inspectable,
         review: reviewAndroidTalkBack(snapshot.nodes ?? []),
+        conditionSuggestions: snapshotConditionSuggestions(snapshot),
         bounds: snapshot.bounds,
         ...(inspectable
           ? {}

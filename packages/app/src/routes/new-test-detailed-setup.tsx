@@ -1,4 +1,9 @@
 /** @jsxImportSource react */
+import { RecordingInputRecovery } from "./recording-input-recovery";
+import type {
+  RecordingInputOutcome,
+  RecordingObservedEffect,
+} from "../data/recording-input-outcome";
 import { AuthoringWorkspace } from "./authoring-workspace";
 import { RecordingAppChoice } from "./recording-app-choice";
 import { RecordingDeviceChoice } from "../components/recording-device-choice";
@@ -52,6 +57,9 @@ export function NewTestDetailedSetup({
   previewStatus,
   previewBusy,
   sendPreview,
+  inputFailure,
+  inputRecoveryBusy,
+  onObserveInput,
   onExploreUrl,
   targetFetching,
   browsersUnavailable,
@@ -99,6 +107,9 @@ export function NewTestDetailedSetup({
   previewStatus: LiveTargetStatus;
   previewBusy: boolean;
   sendPreview: (input: Parameters<LiveTargetSession["input"]>[0]) => Promise<boolean>;
+  inputFailure?: RecordingInputOutcome;
+  inputRecoveryBusy: boolean;
+  onObserveInput(observed: RecordingObservedEffect): Promise<void>;
   onExploreUrl(url: string): void;
   targetFetching: boolean;
   browsersUnavailable: boolean;
@@ -246,7 +257,7 @@ export function NewTestDetailedSetup({
         >
           {selectedTarget ? (
             <section
-              className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)]"
+              className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto]"
               aria-label="Device preview"
             >
               <div className="flex items-center justify-end gap-1">
@@ -277,7 +288,11 @@ export function NewTestDetailedSetup({
                     }}
                   >
                     <RotateCcw aria-hidden="true" />
-                    {reconnecting ? "Connecting…" : "Connect device"}
+                    {reconnecting
+                      ? "Connecting…"
+                      : inputFailure
+                        ? "Reconnect preview"
+                        : "Connect device"}
                   </Button>
                 ) : null}
               </div>
@@ -296,6 +311,17 @@ export function NewTestDetailedSetup({
                 targetPlatform={selectedTarget?.platform}
                 helpText=""
               />
+              {inputFailure ? (
+                <RecordingInputRecovery
+                  failure={inputFailure}
+                  busy={inputRecoveryBusy}
+                  issue={
+                    previewIssue ??
+                    "Relay lost confirmation of the last interaction. Check the live screen before continuing."
+                  }
+                  onObserve={onObserveInput}
+                />
+              ) : null}
             </section>
           ) : targetId ? (
             <div className="grid min-h-0 w-full place-items-center p-6">

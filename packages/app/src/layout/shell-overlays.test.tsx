@@ -222,6 +222,38 @@ describe("shell overlays", () => {
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Runs");
   });
 
+  it.each([
+    ["Primary", ""],
+    ["Main navigation", ""],
+    ["Primary", "?app=wrong-app"],
+    ["Main navigation", "?app=wrong-app"],
+  ])("%s keeps the visible Test App when its URL scope is %s", async (label, search) => {
+    const history = await renderShell({
+      initialEntries: [`/tests/test-1${search}`],
+      test: {
+        id: "test-1",
+        name: "Checkout",
+        appMapId: "checkout",
+        appName: "Checkout",
+        stepCount: 0,
+      },
+    });
+    expect(document.querySelector('[aria-label="App: Checkout"]')).not.toBeNull();
+    const navigation = document.querySelector(`nav[aria-label="${label}"]`)!;
+    const tests = [...navigation.querySelectorAll("a")].find(
+      (link) => link.textContent?.trim() === "Tests",
+    )!;
+    const runs = [...navigation.querySelectorAll("a")].find(
+      (link) => link.textContent?.trim() === "Runs",
+    )!;
+    expect(tests.getAttribute("href")).toBe("/tests?app=checkout");
+    expect(runs.getAttribute("href")).toBe("/runs?app=checkout");
+    await act(async () => tests.click());
+    await settle();
+    expect(history.location.pathname).toBe("/tests");
+    expect(history.location.search).toBe("?app=checkout");
+  });
+
   it("orders the sidebar as Tests, Runs, Map, then Accounts and Devices, and moves Review, Activity, and Changes out", async () => {
     const history = await renderShell({ initialEntries: ["/tests"] });
     const sidebar = document.querySelector('[aria-label="Relay navigation"]')!;

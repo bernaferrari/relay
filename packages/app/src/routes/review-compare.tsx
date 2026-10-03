@@ -74,7 +74,7 @@ function Shot({
       </figcaption>
       <div className="flex min-h-48 items-start justify-center">
         {url ? (
-          <WorkspaceScreenshot>
+          <WorkspaceScreenshot fit="width">
             <div className="relative">
               <img src={url} alt={label} draggable={false} className="block h-auto w-full" />
               {children}

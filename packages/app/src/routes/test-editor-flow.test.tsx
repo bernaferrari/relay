@@ -847,16 +847,22 @@ it("keeps an unsaved checkpoint when leaving for Runs until leaving is confirmed
   const harness = service();
   const history = await render(harness.editor);
   await click("Add a check");
-  const results = document.querySelector<HTMLAnchorElement>('a[href="/runs"]');
+  const results = [
+    ...document.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Primary"] a'),
+  ].find((link) => link.textContent?.trim() === "Runs");
   if (!results) throw new Error("Runs destination missing");
+  expect(results.getAttribute("href")).toBe("/runs?app=app-private-id");
   await act(async () => results.click());
   await settle();
   expect(history.location.pathname).toBe("/tests/test-checkout");
   expect(document.body.textContent).toContain("new screenshot checkpoint will be discarded");
   await click("Keep editing");
   expect(history.location.pathname).toBe("/tests/test-checkout");
+  expect(harness.edits).toHaveLength(0);
   await act(async () => results.click());
   await settle();
   await click("Leave without saving");
   expect(history.location.pathname).toBe("/runs");
+  expect(history.location.search).toBe("?app=app-private-id");
+  expect(harness.edits).toHaveLength(0);
 });

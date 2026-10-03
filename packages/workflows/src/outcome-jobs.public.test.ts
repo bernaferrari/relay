@@ -153,6 +153,18 @@ test("connect selects the sole ready device without exposing leases or profiles"
   assert.deepEqual(scripted.invocations, [{ id: "target.devices.list", input: {} }]);
 });
 
+test("public connect honors Phone-only discovery before browser preflight", async () => {
+  const scripted = createScriptedRelayClient([
+    { id: "target.devices.list", output: { devices: [pixel, managedBrowser] } },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+  assert.deepEqual(await jobs.connect({ kind: "connect-target", targetKind: "device" }), {
+    targets: [{ kind: "device", platform: "android", targetId: "pixel-9" }],
+    current: { kind: "device", platform: "android", targetId: "pixel-9" },
+  });
+  assert.deepEqual(scripted.invocations, [{ id: "target.devices.list", input: {} }]);
+});
+
 test("connect leaves multiple devices explicit instead of guessing", async () => {
   const scripted = createScriptedRelayClient([
     {

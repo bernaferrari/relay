@@ -13,6 +13,30 @@ afterEach(async () => {
 });
 
 describe("New test as this account", () => {
+  it("starts a local website as explicit Guest without reusing a remembered login", async () => {
+    const onStart = vi.fn();
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root!.render(
+        <NewTestQuickStart
+          recent={[]}
+          initialAddress="localhost:8793"
+          initialAccount=""
+          accountsFor={() => [
+            { reference: "authfx:old-admin", name: "Previous admin", targetId: "old-fixture" },
+          ]}
+          rememberedAccount={() => "authfx:old-admin"}
+          onStart={onStart}
+        />,
+      ),
+    );
+    await act(async () =>
+      host.querySelector<HTMLFormElement>('form[aria-label="Start a test"]')!.requestSubmit(),
+    );
+    expect(onStart).toHaveBeenCalledWith("http://localhost:8793/", undefined);
+  });
   it("fills a recent website without starting or bypassing unavailable setup", async () => {
     const onStart = vi.fn();
     const onAddressChange = vi.fn();

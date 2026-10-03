@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
@@ -19,9 +20,8 @@ import type { ScreenshotPayload } from "./workspace-capture.js";
 
 /**
  * A minimal loopback stand-in for the agent-device daemon. The job executor
- * talks to the real SDK client, which always reaches a daemon (device
- * discovery, session teardown, and iOS pixel capture bypass any local
- * provider override), so a hermetic run needs this transport seam. It speaks
+ * talks to the real SDK client for device discovery, so a hermetic run needs
+ * this transport seam in addition to the local observation provider. It speaks
  * just enough of the wire contract: GET /health advertises rpcProtocolVersion
  * 2, POST /rpc answers JSON-RPC `agent_device.command` requests for
  * devices/snapshot/screenshot/close.
@@ -29,6 +29,7 @@ import type { ScreenshotPayload } from "./workspace-capture.js";
 async function startFakeAgentDeviceDaemon(input: {
   nodes: Array<{ role: string; label: string; visibleToUser: boolean }>;
   raster: Buffer;
+  commands: string[];
 }): Promise<Server> {
   const writePngAtPath = (request: Record<string, unknown>): void => {
     const match = /"path":"((?:[^"\\]|\\.)*)"/u.exec(JSON.stringify(request));
@@ -42,7 +43,6 @@ async function startFakeAgentDeviceDaemon(input: {
     if (!path) return;
     // Screenshot writes are synchronous here: captureScreenshot reads the
     // file immediately after the RPC resolves.
-    const { writeFileSync } = require("node:fs") as typeof import("node:fs");
     writeFileSync(path, input.raster);
   };
   const respondJson = (response: import("node:http").ServerResponse, body: unknown): void => {
@@ -74,13 +74,34 @@ async function startFakeAgentDeviceDaemon(input: {
       raw += chunk;
     });
     request.on("end", () => {
-      let parsed: { id?: unknown; params?: { command?: unknown } };
+      let parsed: {
+        jsonrpc?: unknown;
+        method?: unknown;
+        id?: unknown;
+        params?: { command?: unknown };
+      };
       try {
         parsed = JSON.parse(raw) as typeof parsed;
       } catch {
         parsed = {};
       }
       const command = String(parsed.params?.command ?? "");
+      input.commands.push(command);
+      if (
+        parsed.jsonrpc !== "2.0" ||
+        parsed.method !== "agent_device.command" ||
+        !["devices", "snapshot", "screenshot", "close"].includes(command)
+      ) {
+        respondJson(response, {
+          jsonrpc: "2.0",
+          id: parsed.id,
+          result: {
+            ok: false,
+            error: { code: "INVALID_ARGUMENTS", message: "Unsupported test RPC" },
+          },
+        });
+        return;
+      }
       let data: Record<string, unknown> = {};
       if (command.includes("screenshot")) {
         writePngAtPath(parsed as Record<string, unknown>);
@@ -101,13 +122,36 @@ async function startFakeAgentDeviceDaemon(input: {
           ],
         };
       }
-      respondJson(response, { id: parsed.id, result: { ok: true, data } });
+      respondJson(response, { jsonrpc: "2.0", id: parsed.id, result: { ok: true, data } });
     });
   });
-  await new Promise<void>((resolveListen) => {
+  await new Promise<void>((resolveListen, reject) => {
+    server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolveListen());
   });
   return server;
+}
+
+/** A stalled executor must fail this fixture while its owner can still clean up. */
+async function withDeadline<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  diagnostic: string | (() => string),
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(typeof diagnostic === "function" ? diagnostic() : diagnostic)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /** The base URL the fake daemon bound to on an OS-assigned loopback port. */
@@ -135,6 +179,21 @@ function stubInteractions(): Record<string, () => Promise<Record<string, never>>
     pan: async () => ({}),
   };
 }
+
+it(
+  "the repair fixture fails a stuck lifecycle within its own deadline",
+  { timeout: 1_000 },
+  async () => {
+    await assert.rejects(
+      withDeadline(new Promise<never>(() => {}), 20, () => "Repair lifecycle is still queued"),
+      /Repair lifecycle is still queued/,
+    );
+    assert.equal(
+      await withDeadline(Promise.resolve("completed"), 20, "unexpected timeout"),
+      "completed",
+    );
+  },
+);
 
 it("an expect-screen mismatch pushes a destination-repair-hint with expected vs observed identity", async () => {
   const root = await mkdtemp(join(tmpdir(), "destination-repair-wiring-"));
@@ -228,179 +287,225 @@ it("an expect-screen mismatch pushes a destination-repair-hint with expected vs 
   }
 });
 
-it("a failed expect-screen job carries the repair hint and stub-grounder proposals", async () => {
-  const root = await mkdtemp(join(tmpdir(), "destination-repair-wiring-job-"));
-  const nodes = [{ role: "button", label: "Continue", visibleToUser: true }];
-  const raster = testRaster();
-  // The executor's device discovery, session teardown, and iOS pixel capture
-  // all run through the agent-device SDK client, which always reaches a
-  // daemon; serve that transport on a loopback port so no real daemon,
-  // subprocess, or physical target is touched.
-  const daemon = await startFakeAgentDeviceDaemon({ nodes, raster });
-  const previousState = process.env.RELAY_STATE_DIR;
-  const previousRuns = process.env.RELAY_RUNS_DIR;
-  const previousGoIos = process.env.RELAY_GO_IOS_BIN;
-  const previousOpenRouter = process.env.OPENROUTER_API_KEY;
-  const previousDaemonUrl = process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-  process.env.RELAY_STATE_DIR = root;
-  process.env.RELAY_RUNS_DIR = join(root, "runs");
-  process.env.AGENT_DEVICE_DAEMON_BASE_URL = listeningBaseUrl(daemon);
-  // A missing go-ios binary keeps the iOS pixel path on the SDK client (the
-  // fake daemon) instead of spawning the vendored go-ios binary.
-  process.env.RELAY_GO_IOS_BIN = join(root, "missing-go-ios");
-  // Force createDefaultGrounder onto StubVisionGrounder regardless of host env.
-  delete process.env.OPENROUTER_API_KEY;
-  const stubDevice = {
-    interactions: stubInteractions(),
-    command: {
-      wait: async () => ({}),
-      back: async () => ({}),
-      home: async () => ({}),
-    },
-    capture: {
-      snapshot: async () => ({ nodes }),
-      screenshot: async (input: { path?: string }) => {
-        const path = input.path ?? join(root, "shot.png");
-        await writeFile(path, raster);
-        return { base64: raster.toString("base64"), path };
-      },
-    },
-  } as unknown as Device;
-  setLocalDeviceProvider({ kind: "device", create: () => stubDevice });
-  // Seed the frozen plan's App Map with the expected screen so the repair
-  // attachment can resolve it and name the exact recovery command.
-  const created = await createAppMap({
-    organizationId: "org",
-    projectId: "project",
-    appMapId: "destination-repair-wiring-job",
-    name: "Destination repair wiring",
-  });
-  await mutateStoredAppMap("project", "destination-repair-wiring-job", (map) =>
-    addAppMapScreen(
-      map,
-      {
-        screen: {
-          organizationId: map.organizationId,
-          projectId: map.projectId,
-          appMapId: map.id,
-          id: "home",
-          title: "Home",
-          identity: { schemaVersion: 1, fingerprint: "f".repeat(64) },
-          variantIds: [],
-          createdAt: created.updatedAt,
-          updatedAt: created.updatedAt,
+it(
+  "a failed expect-screen job carries the repair hint and stub-grounder proposals",
+  { timeout: 30_000 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "destination-repair-wiring-job-"));
+    const nodes = [{ role: "button", label: "Continue", visibleToUser: true }];
+    const raster = testRaster();
+    // Device discovery uses the SDK. Observations and pixels use the local
+    // provider below. Both paths stay private to this fixture.
+    const commands: string[] = [];
+    const daemon = await startFakeAgentDeviceDaemon({ nodes, raster, commands });
+    const previousState = process.env.RELAY_STATE_DIR;
+    const previousRuns = process.env.RELAY_RUNS_DIR;
+    const previousGoIos = process.env.RELAY_GO_IOS_BIN;
+    const previousOpenRouter = process.env.OPENROUTER_API_KEY;
+    const previousDaemonUrl = process.env.AGENT_DEVICE_DAEMON_BASE_URL;
+    const previousSdkState = process.env.AGENT_DEVICE_STATE_DIR;
+    const previousSdkToken = process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
+    const previousSdkTransport = process.env.AGENT_DEVICE_DAEMON_TRANSPORT;
+    process.env.RELAY_STATE_DIR = root;
+    process.env.RELAY_RUNS_DIR = join(root, "runs");
+    process.env.AGENT_DEVICE_DAEMON_BASE_URL = listeningBaseUrl(daemon);
+    process.env.AGENT_DEVICE_STATE_DIR = join(root, "sdk-state");
+    process.env.AGENT_DEVICE_DAEMON_TRANSPORT = "http";
+    delete process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
+    // A missing go-ios binary keeps pixels on the local stub's screenshot
+    // method instead of spawning the vendored go-ios binary.
+    process.env.RELAY_GO_IOS_BIN = join(root, "missing-go-ios");
+    // Force createDefaultGrounder onto StubVisionGrounder regardless of host env.
+    delete process.env.OPENROUTER_API_KEY;
+    let queuedId: string | undefined;
+    try {
+      resetDeviceClients();
+      const stubDevice = {
+        interactions: stubInteractions(),
+        command: {
+          wait: async () => ({}),
+          back: async () => ({}),
+          home: async () => ({}),
         },
-      },
-      {
-        expectedRevision: created.revision,
-        eventId: "seed-home-screen",
-        actorId: "agent:runner",
-        actorKind: "agent",
-        at: created.updatedAt,
-      },
-    ),
-  );
+        capture: {
+          snapshot: async () => ({ nodes }),
+          screenshot: async (input: { path?: string }) => {
+            const path = input.path ?? join(root, "shot.png");
+            await writeFile(path, raster);
+            return { base64: raster.toString("base64"), path };
+          },
+        },
+      } as unknown as Device;
+      setLocalDeviceProvider({ kind: "device", create: () => stubDevice });
+      // Seed the frozen plan's App Map with the expected screen so the repair
+      // attachment can resolve it and name the exact recovery command.
+      const created = await createAppMap({
+        organizationId: "org",
+        projectId: "project",
+        appMapId: "destination-repair-wiring-job",
+        name: "Destination repair wiring",
+      });
+      await mutateStoredAppMap("project", "destination-repair-wiring-job", (map) =>
+        addAppMapScreen(
+          map,
+          {
+            screen: {
+              organizationId: map.organizationId,
+              projectId: map.projectId,
+              appMapId: map.id,
+              id: "home",
+              title: "Home",
+              identity: { schemaVersion: 1, fingerprint: "f".repeat(64) },
+              variantIds: [],
+              createdAt: created.updatedAt,
+              updatedAt: created.updatedAt,
+            },
+          },
+          {
+            expectedRevision: created.revision,
+            eventId: "seed-home-screen",
+            actorId: "agent:runner",
+            actorKind: "agent",
+            at: created.updatedAt,
+          },
+        ),
+      );
 
-  try {
-    const { enqueueJob, waitForJobCompletion } = await import("./session.js");
-    const recipe = {
-      id: "destination-repair-wiring-job",
-      title: "Destination repair wiring",
-      source: "custom" as const,
-      steps: [
-        {
-          id: "expect-wrong",
-          kind: "expect-screen" as const,
-          screenId: "home",
-          screenTitle: "Home",
-          // Differs from the stub snapshot's observed fingerprint, so the job
-          // fails on this step instead of passing vacuously.
-          fingerprint: "f".repeat(64),
-          timeoutMs: 0,
-        },
-      ],
-      createdAt: 1,
-      updatedAt: 1,
-    };
-    assert.notEqual(recipe.steps[0]?.fingerprint, observeScreenIdentity(nodes).fingerprint);
+      const { enqueueJob, waitForJobCompletion } = await import("./session.js");
+      const recipe = {
+        id: "destination-repair-wiring-job",
+        title: "Destination repair wiring",
+        source: "custom" as const,
+        steps: [
+          {
+            id: "expect-wrong",
+            kind: "expect-screen" as const,
+            screenId: "home",
+            screenTitle: "Home",
+            // Differs from the stub snapshot's observed fingerprint, so the job
+            // fails on this step instead of passing vacuously.
+            fingerprint: "f".repeat(64),
+            timeoutMs: 0,
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      assert.notEqual(recipe.steps[0]?.fingerprint, observeScreenIdentity(nodes).fingerprint);
 
-    const queued = await import("./operation-context.js").then(({ runWithOperationContext }) =>
-      runWithOperationContext(
-        {
-          schemaVersion: 1,
-          actorId: "agent:runner",
-          actorKind: "agent",
-          organizationId: "org",
-          projectId: "project",
-          operationId: "job.start",
-          requestId: randomUUID(),
-          idempotencyKey: randomUUID(),
-          issuedAt: Date.now(),
-        },
-        () =>
-          enqueueJob({
-            recipe: recipe.id,
-            serial: "SMOKE-1",
-            platform: "ios",
+      const queued = await import("./operation-context.js").then(({ runWithOperationContext }) =>
+        runWithOperationContext(
+          {
+            schemaVersion: 1,
+            actorId: "agent:runner",
+            actorKind: "agent",
+            organizationId: "org",
             projectId: "project",
-            ownerId: "agent:runner",
-            recipeSnapshot: recipe,
-            recipeGraph: {},
-          }),
-      ),
-    );
-    const job = await waitForJobCompletion(queued.id);
+            operationId: "job.start",
+            requestId: randomUUID(),
+            idempotencyKey: randomUUID(),
+            issuedAt: Date.now(),
+          },
+          () =>
+            enqueueJob({
+              recipe: recipe.id,
+              serial: "SMOKE-1",
+              platform: "ios",
+              projectId: "project",
+              ownerId: "agent:runner",
+              recipeSnapshot: recipe,
+              recipeGraph: {},
+            }),
+        ),
+      );
+      queuedId = queued.id;
+      const job = await withDeadline(
+        waitForJobCompletion(queued.id),
+        15_000,
+        () =>
+          `Repair fixture did not complete: ${queued.id} (${queued.status}); fake RPCs: ${commands.join(", ") || "none"}`,
+      );
 
-    assert.equal(job.status, "error", "the mismatching expect-screen fails the job");
-    assert.match(job.error ?? "", /not “Home”/u);
+      assert.equal(job.status, "error", "the mismatching expect-screen fails the job");
+      assert.match(job.error ?? "", /not “Home”/u);
 
-    const hint = job.artifacts.find((artifact) => artifact.kind === "destination-repair-hint");
-    assert.ok(hint, "failed run records a destination-repair-hint artifact");
-    const hintData = hint.data as Record<string, unknown>;
-    assert.equal(hintData.schemaVersion, 1);
-    assert.equal(hintData.expectedScreenId, "home");
-    assert.equal(
-      hintData.observedFingerprint,
-      observeScreenIdentity(nodes).fingerprint,
-      "hint reports what the stub device actually showed",
-    );
+      const hint = job.artifacts.find((artifact) => artifact.kind === "destination-repair-hint");
+      assert.ok(hint, "failed run records a destination-repair-hint artifact");
+      const hintData = hint.data as Record<string, unknown>;
+      assert.equal(hintData.schemaVersion, 1);
+      assert.equal(hintData.expectedScreenId, "home");
+      assert.equal(
+        hintData.observedFingerprint,
+        observeScreenIdentity(nodes).fingerprint,
+        "hint reports what the stub device actually showed",
+      );
 
-    assert.equal(
-      hintData.recovery,
-      "relay screen alias-observe destination-repair-wiring-job home",
-      "hint names the exact one-command recovery once the expected screen exists",
-    );
+      assert.equal(
+        hintData.recovery,
+        "relay screen alias-observe destination-repair-wiring-job home",
+        "hint names the exact one-command recovery once the expected screen exists",
+      );
 
-    const proposals = job.artifacts.find(
-      (artifact) => artifact.kind === "destination-repair-proposals",
-    );
-    assert.ok(proposals, "failed run records a destination-repair-proposals artifact");
-    // createDefaultGrounder without OPENROUTER_API_KEY yields
-    // StubVisionGrounder, and proposeRepair degrades that to an explicit
-    // unavailable result rather than pretending to ground pixels.
-    assert.deepEqual(proposals.data, {
-      available: false,
-      proposals: [],
-      reason: "grounding-unavailable",
-    });
-  } finally {
-    setLocalDeviceProvider(undefined);
-    resetDeviceClients();
-    if (previousDaemonUrl === undefined) delete process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-    else process.env.AGENT_DEVICE_DAEMON_BASE_URL = previousDaemonUrl;
-    await new Promise<void>((resolveClose) => {
-      daemon.close(() => resolveClose());
-    });
-    resetDurableWorkerAssignmentStoreForTests();
-    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
-    else process.env.RELAY_STATE_DIR = previousState;
-    resetControlDatabaseCache();
-    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
-    else process.env.RELAY_RUNS_DIR = previousRuns;
-    if (previousGoIos === undefined) delete process.env.RELAY_GO_IOS_BIN;
-    else process.env.RELAY_GO_IOS_BIN = previousGoIos;
-    if (previousOpenRouter === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = previousOpenRouter;
-    await rm(root, { recursive: true, force: true });
-  }
-});
+      const proposals = job.artifacts.find(
+        (artifact) => artifact.kind === "destination-repair-proposals",
+      );
+      assert.ok(proposals, "failed run records a destination-repair-proposals artifact");
+      // createDefaultGrounder without OPENROUTER_API_KEY yields
+      // StubVisionGrounder, and proposeRepair degrades that to an explicit
+      // unavailable result rather than pretending to ground pixels.
+      assert.deepEqual(proposals.data, {
+        available: false,
+        proposals: [],
+        reason: "grounding-unavailable",
+      });
+      assert.ok(commands.includes("devices"), "job discovery uses the private loopback daemon");
+      assert.ok(
+        commands.every((command) =>
+          ["devices", "snapshot", "screenshot", "close"].includes(command),
+        ),
+        "fake daemon accepted only observation and teardown RPCs",
+      );
+    } finally {
+      if (queuedId) {
+        const { getJob, cancelJob, waitForJobCompletion } = await import("./session.js");
+        if (["queued", "running", "paused"].includes(getJob(queuedId)?.status ?? "")) {
+          cancelJob(queuedId);
+          await withDeadline(
+            waitForJobCompletion(queuedId),
+            1_000,
+            "Repair fixture cancellation timed out",
+          ).catch(() => {});
+        }
+      }
+      setLocalDeviceProvider(undefined);
+      resetDeviceClients();
+      if (previousDaemonUrl === undefined) delete process.env.AGENT_DEVICE_DAEMON_BASE_URL;
+      else process.env.AGENT_DEVICE_DAEMON_BASE_URL = previousDaemonUrl;
+      await withDeadline(
+        new Promise<void>((resolveClose) => {
+          daemon.close(() => resolveClose());
+          daemon.closeAllConnections();
+        }),
+        1_000,
+        "Repair fixture daemon shutdown timed out",
+      );
+      if (previousSdkState === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
+      else process.env.AGENT_DEVICE_STATE_DIR = previousSdkState;
+      if (previousSdkToken === undefined) delete process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
+      else process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = previousSdkToken;
+      if (previousSdkTransport === undefined) delete process.env.AGENT_DEVICE_DAEMON_TRANSPORT;
+      else process.env.AGENT_DEVICE_DAEMON_TRANSPORT = previousSdkTransport;
+      resetDurableWorkerAssignmentStoreForTests();
+      if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+      else process.env.RELAY_STATE_DIR = previousState;
+      resetControlDatabaseCache();
+      if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+      else process.env.RELAY_RUNS_DIR = previousRuns;
+      if (previousGoIos === undefined) delete process.env.RELAY_GO_IOS_BIN;
+      else process.env.RELAY_GO_IOS_BIN = previousGoIos;
+      if (previousOpenRouter === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previousOpenRouter;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);

@@ -90,11 +90,7 @@ export function StepMedia({
           <EvidenceImageViewer
             key={frame.id}
             frame={frame}
-            className={
-              fill
-                ? "h-full w-full object-contain object-top max-[720px]:h-auto max-[720px]:max-h-[65dvh]"
-                : undefined
-            }
+            className={fill ? "h-full w-full object-contain object-top" : undefined}
             onError={() => setFailed(true)}
           />
         ) : (

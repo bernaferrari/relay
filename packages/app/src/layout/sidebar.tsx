@@ -12,9 +12,10 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@relay/ui-react/components/sidebar";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { CircleHelp, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
+import { useCurrentAppScope } from "./use-current-app-scope";
 import { RelayWordmark } from "../components/relay-mark";
 import { ReviewCount } from "./review-count";
 import { everydayDestinations, utilityDestinations } from "./primary-destinations";
@@ -75,9 +76,10 @@ function SidebarDestinationLink({
 }
 
 export function SidebarContent({ label = "Primary" }: { label?: string }) {
-  const { pathname, search } = useLocation();
-  const app = (search as Record<string, unknown>).app;
-  const selectedApp = typeof app === "string" ? app : undefined;
+  const {
+    location: { pathname },
+    selectedAppId: selectedApp,
+  } = useCurrentAppScope();
   const { isMobile, setOpenMobile } = useSidebar();
   const helpActive = pathname === "/settings/about";
   const settingsActive = pathname.startsWith("/settings/") && !helpActive;

@@ -493,13 +493,24 @@ export function createLiveTargetSession(input: {
       const renderer: VideoFrameRenderer = WebGLVideoFrameRenderer.isSupported
         ? new WebGLVideoFrameRenderer(canvas)
         : new BitmapVideoFrameRenderer(canvas);
-      decoder = new WebCodecsVideoDecoder({ codec: ScrcpyVideoCodecId.H264, renderer });
+      decoder = new WebCodecsVideoDecoder({
+        codec: ScrcpyVideoCodecId.H264,
+        renderer: {
+          setSize: (width, height) => renderer.setSize(width, height),
+          async draw(frame) {
+            if (closed || controller?.signal.aborted || !canvas) return;
+            await renderer.draw(frame);
+            if (closed || controller?.signal.aborted || !canvas) return;
+            sequence += 1;
+            publish({ status: "streaming", lastFrameAt: Date.now(), frameSequence: sequence });
+          },
+        },
+      });
       decoder.sizeChanged(({ width, height }) => {
         if (canvas) {
           canvas.width = width;
           canvas.height = height;
         }
-        publish({ status: "streaming", lastFrameAt: Date.now(), frameSequence: sequence });
       });
       writer = decoder.writable.getWriter();
       return writer;
@@ -509,14 +520,11 @@ export function createLiveTargetSession(input: {
       if (packet.type === "jpeg") {
         if (!canvas) continue;
         await drawJpeg(canvas, packet.data);
+        if (closed || controller?.signal.aborted) return;
         sequence += 1;
         publish({ status: "streaming", lastFrameAt: Date.now(), frameSequence: sequence });
       } else if (packet.type === "configuration" || packet.type === "data") {
         await ensureDecoder().write(packet);
-        if (packet.type === "data") {
-          sequence += 1;
-          publish({ status: "streaming", lastFrameAt: Date.now(), frameSequence: sequence });
-        }
       }
     }
     await writer?.close().catch(() => undefined);

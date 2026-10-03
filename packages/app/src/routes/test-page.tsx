@@ -638,7 +638,10 @@ export function TestPage() {
             trailing={<TestLastRunLine run={latestRunOf(recentRuns.data)} />}
           />
           {attachedRunId ? (
-            <TabsContent value="run" className="min-h-0 overflow-auto">
+            <TabsContent
+              value="run"
+              className="flex min-h-0 flex-1 flex-col overflow-hidden [&[hidden]]:hidden"
+            >
               <RunInspection key={attachedRunId} runId={attachedRunId} testId={testId} embedded />
             </TabsContent>
           ) : null}

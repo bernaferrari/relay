@@ -7,6 +7,7 @@ import type {
 import { createRelayRecordingOutcomeJobs } from "@relay/workflows/recording-outcomes";
 import {
   type AuthorTestSnapshot,
+  type ConnectTargetIntent,
   type DurableAuthorTestDecision,
   type RecordingPathContext,
   type RelayOutcomeJobs,
@@ -74,7 +75,7 @@ export type ProductRecordingSaveInput = {
 
 export type ProductRecordingJourney = {
   state(): ProductRecordingState;
-  connect(input?: { targetId?: string }): Promise<ProductRecordingState>;
+  connect(input?: Omit<ConnectTargetIntent, "kind">): Promise<ProductRecordingState>;
   begin(input: ProductRecordingBeginInput): Promise<ProductRecordingState>;
   /** Adopt and inspect a durable workflow after reload. */
   inspect(workflowId?: string): Promise<ProductRecordingState>;
@@ -280,7 +281,9 @@ export function createProductRecordingJourney(input: {
     });
   }
 
-  async function connect(input: { targetId?: string } = {}): Promise<ProductRecordingState> {
+  async function connect(
+    input: Omit<ConnectTargetIntent, "kind"> = {},
+  ): Promise<ProductRecordingState> {
     try {
       const result = await jobs.connect({ kind: "connect-target", ...input });
       return publish({

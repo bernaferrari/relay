@@ -140,6 +140,34 @@ describe("disabled steps", () => {
     ).toMatch(/^Needs origin evidence · Signed-in SuperGrok home/u);
   });
 
+  it("uses actual generation bindings and preserves explicit draft labels", () => {
+    const step = {
+      id: "generate",
+      kind: "instruction" as const,
+      intent: "Make image",
+      binding: {
+        status: "resolved" as const,
+        kind: "connections" as const,
+        connectionIds: ["generate"],
+      },
+    };
+    for (const productName of ["Imagine Speed", "Chat Heavy", "Video generation 1080p"]) {
+      expect(stepReadinessLabel(step, { productName })).toBe("Ready");
+      expect(stepReadinessLabel(step, { productName: `DRAFT — ${productName}` })).toBe(
+        "Unrecorded",
+      );
+      expect(stepReadinessLabel(step, { productName: `UNRECORDED — ${productName}` })).toBe(
+        "Unrecorded",
+      );
+      expect(
+        stepReadinessLabel(
+          { ...step, binding: { status: "unresolved", reason: "Record the Generate action" } },
+          { productName },
+        ),
+      ).toBe("Needs setup");
+    }
+  });
+
   it("names Start Thread absent as Unrecorded, not Ready", () => {
     expect(
       stepReadinessLabel({

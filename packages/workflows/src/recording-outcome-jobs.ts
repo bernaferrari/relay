@@ -56,7 +56,7 @@ export function createRelayRecordingOutcomeJobs(
   const authoring = new CanonicalAuthoringWorkflow(operations);
   return {
     async connect(intent = { kind: "connect-target" }) {
-      const catalog = await targetCatalog(operations);
+      const catalog = await targetCatalog(operations, { targetKind: intent.targetKind });
       const available = catalog.flatMap(({ target }) => (target ? [target] : []));
       const current = intent.targetId
         ? available.find((target) => target.targetId === intent.targetId)

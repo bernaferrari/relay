@@ -23,7 +23,7 @@ export function TestWorkspace({
         </div>
         <div
           data-slot="workspace-preview"
-          className="flex min-h-0 min-w-0 flex-col overflow-auto bg-stage"
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-stage"
         >
           {preview}
         </div>
@@ -93,13 +93,30 @@ export function TestStepButton({
 export function WorkspaceScreenshot({
   children,
   caption,
+  fit = "height",
 }: {
   children: ReactNode;
   caption?: ReactNode;
+  /** Width is reserved for intentional full-page inspection and comparison overlays. */
+  fit?: "height" | "width";
 }) {
   return (
-    <figure data-slot="evidence-image-frame" className="mx-auto grid w-full gap-3">
-      <div className="overflow-hidden rounded-lg border border-border bg-card [&>img]:block [&>img]:h-auto [&>img]:w-full [&>div>img]:block [&>div>img]:h-auto [&>div>img]:w-full">
+    <figure
+      data-slot="evidence-image-frame"
+      data-fit={fit}
+      className={
+        fit === "height"
+          ? `mx-auto grid h-full min-h-0 w-full flex-1 ${caption ? "grid-rows-[minmax(0,1fr)_auto] gap-3" : "grid-rows-[minmax(0,1fr)]"}`
+          : "mx-auto grid w-full gap-3"
+      }
+    >
+      <div
+        className={
+          fit === "height"
+            ? "relative flex min-h-0 items-center justify-center overflow-hidden [&>img]:block [&>img]:h-full [&>img]:max-h-full [&>img]:w-full [&>img]:max-w-full [&>img]:object-contain"
+            : "overflow-hidden rounded-lg border border-border bg-card [&>img]:block [&>img]:h-auto [&>img]:w-full [&>div>img]:block [&>div>img]:h-auto [&>div>img]:w-full"
+        }
+      >
         {children}
       </div>
       {caption ? (

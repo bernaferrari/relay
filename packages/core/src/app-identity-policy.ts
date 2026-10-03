@@ -3,6 +3,7 @@ import type { SnapshotNode } from "./device.js";
 /** Reviewed App pack for identity, auth, and dynamic-body policy. Not a plugin host. */
 export type AppIdentityPolicy = {
   readonly id: string;
+  readonly nativeImagineWorkspace?: { readonly packageName: string };
   readonly conversationHistory?: {
     readonly linkRole: RegExp;
     readonly copyRole: RegExp;
@@ -69,6 +70,11 @@ export function isGrokWebPolicy(policy: AppIdentityPolicy | undefined): boolean 
   return policy?.id === GROK_WEB_APP_POLICY.id;
 }
 
+export const GROK_ANDROID_APP_POLICY: AppIdentityPolicy = {
+  id: "grok-android",
+  nativeImagineWorkspace: { packageName: "ai.x.grok" },
+};
+
 /** Reviewed catalog: grok.com only. Generic maps and other apps get no pack. */
 export function identityPolicyForTarget(input: {
   appMapId?: string;
@@ -76,6 +82,7 @@ export function identityPolicyForTarget(input: {
 }): AppIdentityPolicy | undefined {
   const tokens = `${input.appMapId ?? ""} ${input.browserTargetId ?? ""}`.toLocaleLowerCase();
   if (/(?:^|\s)(?:grok-web|grok-com)(?:\s|$)/u.test(tokens)) return GROK_WEB_APP_POLICY;
+  if (/(?:^|\s)grok-android(?:\s|$)/u.test(tokens)) return GROK_ANDROID_APP_POLICY;
   return undefined;
 }
 

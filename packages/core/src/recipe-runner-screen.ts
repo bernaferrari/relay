@@ -69,6 +69,10 @@ import {
 } from "./destination-survey.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { isTransientError } from "./retry.js";
+import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
+import { frozenScreenIdentityObservations } from "./recipe-screen-frozen-identity.js";
+import { nativeWorkspaceIdentityNodes } from "./screen-identity-native-workspace.js";
+import { nativeImaginePendingModelSelection } from "./recipe-native-model-entry.js";
 import { stillScreenTimeoutMessage, stillScreenUnchanged } from "./still-screen-wait.js";
 import type { DestinationRepairHint } from "./repair-proposal.js";
 import {
@@ -463,14 +467,35 @@ export async function runExpectScreenStep(
     ctx.runtime.observation = undefined;
     markNavigationUnknown(ctx, `Verifying destination ${step.screenTitle}.`);
   }
-  const expected = expectedScreenFingerprints(
-    step,
-    recipeScreenIdentityOptions(ctx, step.ignoreRegions, expectScreenIdentityScope(ctx, step)),
+  const identityOptions = recipeScreenIdentityOptions(
+    ctx,
+    step.ignoreRegions,
+    expectScreenIdentityScope(ctx, step),
   );
-  const hostedObservations = reobserveScreenIdentities(
-    step.observations,
-    recipeScreenIdentityOptions(ctx, step.ignoreRegions, expectScreenIdentityScope(ctx, step)),
-  );
+  const intent = identityOptions.policy?.nativeImagineWorkspace
+    ? ctx.job?.artifacts.map(parseAppMapTestExecutionIntentArtifact).find(Boolean)
+    : undefined;
+  const scopedIdentityOptions = {
+    ...identityOptions,
+    ...(intent && nativeImaginePendingModelSelection(intent.plan, step)
+      ? { nativeImaginePendingModel: true }
+      : {}),
+  };
+  const expected = expectedScreenFingerprints(step, scopedIdentityOptions);
+  const hostedObservations = reobserveScreenIdentities(step.observations, scopedIdentityOptions);
+  let frozenNativeWorkspace = false;
+  if (identityOptions.policy?.nativeImagineWorkspace) {
+    if (intent) {
+      const frozen = await frozenScreenIdentityObservations(
+        intent.plan,
+        step,
+        scopedIdentityOptions,
+      );
+      frozenNativeWorkspace = frozen.length > 0;
+      for (const observation of frozen) expected.add(observation.fingerprint);
+      hostedObservations.push(...frozen);
+    }
+  }
   const compareObservations = hostedObservations.length
     ? hostedObservations
     : (step.observations ?? []);
@@ -528,14 +553,24 @@ export async function runExpectScreenStep(
     const observedAt = attempt.observedAt;
     const chrome = describeSnapshotChrome(nodes);
     observedTitle = chrome.header ?? chrome.app ?? "unknown";
-    const observed = observeStepIdentity(nodes, ctx, step);
-    const semanticMatch = compareObservations.some(
-      (observation) => compareScreenIdentity(observed, observation).decision === "match",
-    );
-    const resilientMatch = resilientScreenIdentityMatch(observed, compareObservations, ctx.job, {
-      screenTitle: step.screenTitle,
-    });
+    const observed = observeScreenIdentity(nodes, scopedIdentityOptions);
+    // Similarity ignores selected state. Imagine must prove exact retained
+    // chrome/composer state, including the selected Speed or Quality model.
+    const exactNativeWorkspace =
+      frozenNativeWorkspace ||
+      nativeWorkspaceIdentityNodes(nodes, identityOptions.policy) !== nodes;
+    const semanticMatch =
+      !exactNativeWorkspace &&
+      compareObservations.some(
+        (observation) => compareScreenIdentity(observed, observation).decision === "match",
+      );
+    const resilientMatch =
+      !exactNativeWorkspace &&
+      resilientScreenIdentityMatch(observed, compareObservations, ctx.job, {
+        screenTitle: step.screenTitle,
+      });
     const handoffShellMatch =
+      !exactNativeWorkspace &&
       Boolean(step.expectedApp) &&
       foregroundApplicationBundle(nodes) === step.expectedApp &&
       handoffShellIdentityMatch(observed, compareObservations);
@@ -545,6 +580,7 @@ export async function runExpectScreenStep(
     // expectedApp is only populated for handoffs, so ordinary in-app screens
     // must derive ownership from their retained resource identifiers.
     if (
+      !exactNativeWorkspace &&
       !screenIdentityMatches(expected, observed.fingerprint) &&
       (!step.expectedApp || foregroundApplicationBundle(nodes) === step.expectedApp)
     ) {
@@ -616,6 +652,7 @@ export async function runExpectScreenStep(
     }
     if (visualFingerprint) mismatchResolutionMethod = "a11y+visual";
     if (
+      !exactNativeWorkspace &&
       !inspectionUnavailable &&
       screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)
     ) {
