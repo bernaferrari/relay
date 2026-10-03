@@ -639,4 +639,45 @@ describe("shell overlays", () => {
     await settle();
     expect(history.location.pathname).toBe("/devices");
   });
+
+  it("filters a long destination list and closes after selecting the exact browser", async () => {
+    const items = Array.from({ length: 9 }, (_, index) => ({
+      ...productDevice(
+        `browser-${index}`,
+        `127.0.0.1:8793 · Browser ${index + 1}`,
+        "virtual",
+        "browser",
+      ),
+      browserUrl: "http://127.0.0.1:8793/",
+    }));
+    await renderShell({ devices: items });
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]')!.click(),
+    );
+    await settle();
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Find a device or browser"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Browser 7",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    const option = document.querySelector<HTMLElement>(
+      '[role="menuitem"][aria-label="127.0.0.1:8793 · Browser 7"]',
+    )!;
+    expect(option).not.toBeNull();
+    expect(
+      document.querySelector('[role="menuitem"][aria-label="127.0.0.1:8793 · Browser 6"]'),
+    ).toBeNull();
+    await act(async () => option.click());
+    await settle();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.querySelector('[aria-label^="Device or browser"]')?.textContent).toContain(
+      "Browser 7",
+    );
+  });
 });

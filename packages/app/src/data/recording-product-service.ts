@@ -83,6 +83,9 @@ export type RecordingCondition = {
 
 export type RecordingProductService = {
   listApps(): Promise<readonly ProductAppOption[]>;
+  listDrafts?(): Promise<
+    readonly import("@relay/product/recording-journey").ProductRecordingDraft[]
+  >;
   connect(
     input?: Parameters<ProductRecordingJourney["connect"]>[0],
   ): Promise<ProductRecordingState>;
@@ -208,6 +211,7 @@ export function createRecordingProductService(
   let productPromise:
     | Promise<{
         client: Awaited<ReturnType<typeof productClientForPlatform>>["client"];
+        actorId: string;
         journey: ReturnType<
           (typeof import("@relay/product/recording-journey"))["createProductRecordingJourneyFromClient"]
         >;
@@ -222,6 +226,7 @@ export function createRecordingProductService(
       ]);
       return {
         client,
+        actorId,
         journey: createProductRecordingJourneyFromClient({ client, actorId }),
       };
     });
@@ -233,6 +238,21 @@ export function createRecordingProductService(
   }
 
   return {
+    async listDrafts() {
+      const { listProductRecordingDrafts } = await import("@relay/product/recording-journey");
+      const { client, actorId } = await product();
+      const drafts = await listProductRecordingDrafts({ client, actorId });
+      return Promise.all(
+        drafts.map(async (draft) => {
+          // Review already saves an unfinished name on this computer. Display
+          // that same naming draft; IDs and executable evidence stay canonical.
+          const name = await Promise.resolve()
+            .then(() => platform.storage.get(`recordingName:${draft.workflowId}`))
+            .catch(() => null);
+          return { ...draft, name: name?.trim() || draft.name };
+        }),
+      );
+    },
     async listApps() {
       const { appMaps } = await (await product()).client.invoke("app-map.list", {});
       const { appFamilies } = await import("./app-families");

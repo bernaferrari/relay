@@ -10,6 +10,7 @@ import {
 const journeyEdit = vi.hoisted(() => vi.fn());
 const journey = vi.hoisted(() => ({ edit: journeyEdit, record: vi.fn() }));
 const client = vi.hoisted(() => ({ invoke: vi.fn(), binaryResource: vi.fn() }));
+const listDrafts = vi.hoisted(() => vi.fn());
 
 vi.mock("./product-client", () => ({
   productClientForPlatform: vi.fn(async () => ({ client, actorId: "human:recording-test" })),
@@ -17,6 +18,7 @@ vi.mock("./product-client", () => ({
 
 vi.mock("@relay/product/recording-journey", () => ({
   createProductRecordingJourneyFromClient: vi.fn(() => journey),
+  listProductRecordingDrafts: listDrafts,
 }));
 
 const state = { status: "reviewing", targets: [] } as ProductRecordingState;
@@ -24,6 +26,42 @@ const interaction = { kind: "screenshot", label: "Language settings" } as const;
 const platform = { platform: "web", storage: {} } as never;
 
 describe("recording edit adapter", () => {
+  it("lists the same locally saved review name without changing canonical handles", async () => {
+    const draft = {
+      workflowId: "workflow-draft",
+      appMapId: "app-1",
+      name: "Untitled recording",
+      stepCount: 1,
+      updatedAt: 42,
+    };
+    listDrafts.mockResolvedValueOnce([draft]);
+    const get = vi.fn(() => "My unfinished path");
+    const service = createRecordingProductService({ platform: "web", storage: { get } } as never);
+
+    await expect(service.listDrafts!()).resolves.toEqual([
+      { ...draft, name: "My unfinished path" },
+    ]);
+    expect(get).toHaveBeenCalledWith("recordingName:workflow-draft");
+    expect(listDrafts).toHaveBeenLastCalledWith({ client, actorId: "human:recording-test" });
+  });
+
+  it("retains the canonical draft name if local storage is unavailable", async () => {
+    const draft = {
+      workflowId: "workflow-draft",
+      appMapId: "app-1",
+      name: "Member path",
+      stepCount: 1,
+      updatedAt: 42,
+    };
+    listDrafts.mockResolvedValueOnce([draft]);
+    const get = vi.fn(() => {
+      throw new Error("Storage unavailable");
+    });
+    const service = createRecordingProductService({ platform: "web", storage: { get } } as never);
+
+    await expect(service.listDrafts!()).resolves.toEqual([draft]);
+  });
+
   it("maps each named edit to the canonical protocol union", async () => {
     const edits: AuthoringRecordingEdit[] = [];
     const adapter = createRecordingEditAdapter({

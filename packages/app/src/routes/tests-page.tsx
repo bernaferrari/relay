@@ -5,6 +5,7 @@ import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react
 import type { ProductTestSummary } from "@relay/product/catalog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
 import { TestLibraryList as TestList } from "./test-library-list";
+import { RecordingDraftList } from "./recording-draft-list";
 import { isTestDraft, runTime, relativeTime } from "./test-library-presentation";
 import { Button } from "@relay/ui-react/components/button";
 import { ChevronRight, CircleDot, CircleX, Clock, Eye, Play, Plus, Search, X } from "lucide-react";
@@ -70,6 +71,12 @@ export function TestsPage() {
     queryFn: () => suiteProfileService.listSuites(undefined),
     staleTime: 15_000,
   });
+  const recordings = useQuery({
+    queryKey: recordingQueryKeys.drafts,
+    queryFn: () => productService.listDrafts?.() ?? [],
+    staleTime: 0,
+    retry: false,
+  });
   const schedules = useQueries({
     queries: (suites.data ?? []).map((suite) => ({
       queryKey: ["suites", suite.appMapId, suite.id, "schedules"],
@@ -133,6 +140,13 @@ export function TestsPage() {
   );
   const scoped = all.filter(inApp);
   const drafts = scoped.filter(isTestDraft);
+  const recordingDrafts = (recordings.data ?? []).filter((draft) => !app || draft.appMapId === app);
+  const matchingRecordings =
+    view === "drafts"
+      ? recordingDrafts.filter(
+          (draft) => !deferredQuery || draft.name.toLocaleLowerCase().includes(deferredQuery),
+        )
+      : [];
   const saved = scoped.filter((test) => !isTestDraft(test));
   const testCount = all.filter(inApp).length;
 
@@ -208,7 +222,7 @@ export function TestsPage() {
             [
               ["tests", "Tests", saved.length],
               ["plans", "Plans", plans.length],
-              ["drafts", "Drafts", drafts.length],
+              ["drafts", "Drafts", drafts.length + recordingDrafts.length],
             ] as const
           ).map(([value, label, count]) => (
             <TabsTrigger
@@ -231,9 +245,21 @@ export function TestsPage() {
               aria-hidden="true"
             />
             <Input
-              aria-label={view === "plans" ? "Search plans" : "Search tests"}
+              aria-label={
+                view === "plans"
+                  ? "Search plans"
+                  : view === "drafts"
+                    ? "Search drafts"
+                    : "Search tests"
+              }
               className="h-10 pl-9"
-              placeholder={view === "plans" ? "Search plans" : "Search tests"}
+              placeholder={
+                view === "plans"
+                  ? "Search plans"
+                  : view === "drafts"
+                    ? "Search drafts"
+                    : "Search tests"
+              }
               value={query}
               onChange={(event) => {
                 setQuery(event.currentTarget.value);
@@ -250,7 +276,30 @@ export function TestsPage() {
             layout="centered"
           />
 
-          {tests.data && !testCount && view !== "plans" ? (
+          {view === "drafts" ? (
+            <>
+              {recordings.isPending ? <PageLoading label="Loading saved drafts…" /> : null}
+              {recordings.isError ? (
+                <div
+                  role="alert"
+                  className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm"
+                >
+                  <CircleX className="size-4 text-destructive" aria-hidden="true" />
+                  <span className="flex-1">Couldn’t load saved recording drafts.</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={recordings.isFetching}
+                    onClick={() => void recordings.refetch()}
+                  >
+                    {recordings.isFetching ? "Loading…" : "Try again"}
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {tests.data && !testCount && view === "tests" ? (
             <EmptyState
               title={app ? "No tests for this App yet" : "No tests yet"}
               detail="Record a flow on your website or device, then save it as a test."
@@ -265,11 +314,21 @@ export function TestsPage() {
             />
           ) : null}
 
-          {tests.data && testCount > 0 && view !== "plans" && flat ? (
-            <section className="mt-4" aria-label="Matching tests">
+          {tests.data && (testCount > 0 || view === "drafts") && view !== "plans" && flat ? (
+            <section
+              className="mt-4"
+              aria-label={view === "drafts" ? "Matching drafts" : "Matching tests"}
+            >
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">
-                  {matches.length} {matches.length === 1 ? "test" : "tests"}
+                  {matches.length + matchingRecordings.length}{" "}
+                  {view === "drafts"
+                    ? matches.length + matchingRecordings.length === 1
+                      ? "draft"
+                      : "drafts"
+                    : matches.length === 1
+                      ? "test"
+                      : "tests"}
                   {result === "failed" ? " failing" : ""}
                 </p>
                 <Button
@@ -283,34 +342,38 @@ export function TestsPage() {
                   <X aria-hidden="true" /> Clear
                 </Button>
               </div>
+              <RecordingDraftList drafts={matchingRecordings} />
               {matches.length ? (
                 <TestList tests={matches} shared={shared} showAppName={!app} />
-              ) : (
+              ) : !matchingRecordings.length &&
+                (view !== "drafts" || (!recordings.isPending && !recordings.isError)) ? (
                 <EmptyState
-                  title="No matching tests"
+                  title={view === "drafts" ? "No matching drafts" : "No matching tests"}
                   detail="Try another search or clear the filter."
                 />
-              )}
+              ) : null}
             </section>
           ) : null}
 
-          {tests.data && testCount > 0 && !flat && view !== "plans" ? (
+          {tests.data && (testCount > 0 || view === "drafts") && !flat && view !== "plans" ? (
             <section aria-labelledby="loose-heading" className="mt-4">
               <h2 id="loose-heading" className="sr-only">
                 {view === "drafts" ? "Draft tests" : "All tests"}
               </h2>
+              <RecordingDraftList drafts={matchingRecordings} />
               {matches.length ? (
                 <TestList tests={matches} shared={shared} showAppName={!app} />
-              ) : (
+              ) : !matchingRecordings.length &&
+                (view !== "drafts" || (!recordings.isPending && !recordings.isError)) ? (
                 <EmptyState
                   title={view === "drafts" ? "No unfinished tests" : "No recorded tests yet"}
                   detail={
                     view === "drafts"
-                      ? "Unrecorded tests appear here until their steps are ready."
+                      ? "Saved recordings and unrecorded tests appear here."
                       : "Create a test, or finish recording one of your drafts."
                   }
                 />
-              )}
+              ) : null}
             </section>
           ) : null}
           {tests.data && view === "plans" ? (

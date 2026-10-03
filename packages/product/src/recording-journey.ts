@@ -15,6 +15,7 @@ import {
 } from "@relay/workflows/types";
 import type { RelayInvokeClient } from "@relay/workflows/operation-port";
 import { projectError, type HumanError } from "./errors.js";
+export { listProductRecordingDrafts, type ProductRecordingDraft } from "./recording-drafts.js";
 
 /** Actions exposed by the Product recording journey.
  *

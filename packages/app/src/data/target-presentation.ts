@@ -1,5 +1,6 @@
 import { devicePlatformLabel } from "./device-label";
-import type { AuthoringTarget, DeviceSummary } from "@relay/protocol";
+import type { AuthoringTarget, DeviceSummary, TargetDefinition } from "@relay/protocol";
+import { browserDisplayNames } from "./browser-display-names";
 
 export type ProductTargetOption = AuthoringTarget & {
   /** Human-facing identity from Relay's validated target catalog. */
@@ -12,6 +13,7 @@ type TargetCatalogClient = {
     id: "target.devices.list",
     input: Record<string, never>,
   ): Promise<{ devices: DeviceSummary[] }>;
+  invoke(id: "target.list", input: Record<string, never>): Promise<{ targets: TargetDefinition[] }>;
 };
 
 /**
@@ -22,10 +24,17 @@ export async function presentReadyTargets(
   client: TargetCatalogClient,
   targets: readonly AuthoringTarget[],
 ): Promise<readonly ProductTargetOption[]> {
-  const devices = await client
-    .invoke("target.devices.list", {})
-    .then((result) => result.devices)
-    .catch(() => [] as DeviceSummary[]);
+  const [devices, catalog] = await Promise.all([
+    client
+      .invoke("target.devices.list", {})
+      .then((result) => result.devices)
+      .catch(() => [] as DeviceSummary[]),
+    client
+      .invoke("target.list", {})
+      .then((result) => result.targets)
+      .catch(() => [] as TargetDefinition[]),
+  ]);
+  const browserNames = browserDisplayNames(catalog);
   // Goal sessions create throwaway browsers; they are not places to run saved Tests.
   const runnable = targets.filter((target) => !isGoalScratchTarget(target.targetId));
   const drafts = runnable.map((target) => {
@@ -33,7 +42,10 @@ export async function presentReadyTargets(
       (candidate) => candidate.serial === target.targetId || candidate.id === target.targetId,
     );
     const fallback = fallbackName(target);
-    const catalogName = cleanName(device?.name, target.targetId);
+    const catalogName = cleanName(
+      browserNames.get(target.targetId) ?? device?.name,
+      target.targetId,
+    );
     return {
       ...target,
       name: catalogName ?? fallback,

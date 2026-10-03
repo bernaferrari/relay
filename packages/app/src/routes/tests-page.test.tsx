@@ -211,6 +211,53 @@ function buttonNamed(label: string, scope: ParentNode = document) {
 }
 
 describe("Tests home", () => {
+  it("finds saved recording reviews in scoped Drafts after the active pointer is replaced", async () => {
+    const productService = {
+      listApps: async () => [],
+      listDrafts: async () => [
+        {
+          workflowId: "wf-earlier",
+          appMapId: "app-shop",
+          name: "Earlier checkout review",
+          stepCount: 2,
+          updatedAt: now,
+        },
+        {
+          workflowId: "wf-other-app",
+          appMapId: "app-bank",
+          name: "Other app review",
+          stepCount: 1,
+          updatedAt: now,
+        },
+      ],
+    } as unknown as RecordingProductService;
+    await render("/tests?app=app-shop&view=drafts", {
+      tests: [],
+      productService,
+      platform: storagePlatform({ activeRecordingWorkflowId: "a-different-workflow" }),
+    });
+    const review = main().querySelector('a[href="/recordings/wf-earlier/review"]');
+    expect(review?.textContent).toContain("Earlier checkout review");
+    expect(review?.textContent).toContain("Review steps");
+    expect(main().textContent).not.toContain("Other app review");
+    expect(main().textContent).not.toContain("No tests");
+    expect(main().querySelector('[data-library-view="drafts"]')?.textContent).toContain("1");
+  });
+
+  it("shows a draft lookup error instead of a misleading empty state", async () => {
+    await render("/tests?view=drafts", {
+      tests: [],
+      productService: {
+        listApps: async () => [],
+        listDrafts: async () => {
+          throw new Error("Saved reviews unavailable");
+        },
+      } as unknown as RecordingProductService,
+    });
+    expect(main().querySelector('[role="alert"]')).not.toBeNull();
+    expect(main().textContent).toContain("Try again");
+    expect(main().textContent).not.toContain("No unfinished tests");
+  });
   it("puts saved Tests first, including plan members, and keeps drafts in their own view", async () => {
     const draft = test({
       id: "draft-checkout",

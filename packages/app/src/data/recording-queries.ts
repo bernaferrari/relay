@@ -7,6 +7,7 @@ export const recordingQueryKeys = {
   targetPresentation: (targetId: string) => ["recording", "target-presentation", targetId] as const,
   workflow: (workflowId: string) => ["recording", "workflow", workflowId] as const,
   pointer: ["recording", "active-pointer"] as const,
+  drafts: ["recording", "drafts"] as const,
   reconciledPointer: ["recording", "active-pointer", "reconciled"] as const,
 };
 
