@@ -1,6 +1,6 @@
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
 /** @jsxImportSource react */
-import type { AuthoringRecordingEdit } from "@relay/protocol";
+import { reviewAndroidTalkBack, type AuthoringRecordingEdit } from "@relay/protocol";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -397,6 +397,75 @@ async function interactWithLiveTarget() {
 }
 
 describe("record, review, replay, and save", () => {
+  it("aligns browser labels with the current live frame, without using content extents as viewport", async () => {
+    const browser = { kind: "browser", platform: "browser", targetId: "browser-checkout" } as const;
+    const recording = state("recording", ["inspect", "record", "checkpoint", "stop"]);
+    const initial = {
+      ...recording,
+      targets: [browser],
+      selectedTarget: browser,
+      snapshot: {
+        ...recording.snapshot!,
+        frozen: { ...recording.snapshot!.frozen!, target: browser },
+      },
+    };
+    const fake = fakeService(initial);
+    const review = reviewAndroidTalkBack([
+      {
+        role: "button",
+        label: "Continue as Member",
+        hittable: true,
+        rect: { x: 24, y: 319, width: 152, height: 44 },
+        index: 0,
+      },
+    ]);
+    fake.service.reviewTalkBack = vi.fn(async () => ({
+      inspectable: true,
+      review,
+      bounds: { width: 1256, height: 363 },
+    }));
+    const inspection = vi.fn();
+    let listener: Parameters<LiveTargetSession["subscribe"]>[0] | undefined;
+    fake.service.liveTarget = async () => {
+      const snapshot = {
+        target: browser,
+        status: "streaming" as const,
+        accessibility: { inspectable: true, review, bounds: { width: 1280, height: 720 } },
+      };
+      return {
+        snapshot: () => snapshot,
+        subscribe(next) {
+          listener = next;
+          return () => {};
+        },
+        mount(canvas) {
+          canvas.width = 1280;
+          canvas.height = 720;
+          canvas.getBoundingClientRect = () =>
+            ({ left: 0, top: 0, width: 640, height: 360 }) as DOMRect;
+          canvas.parentElement!.getBoundingClientRect = () =>
+            ({ left: 0, top: 0, width: 640, height: 600 }) as DOMRect;
+          listener?.(snapshot);
+          return () => {};
+        },
+        input: async () => {},
+        close() {},
+        setAccessibilityInspection: inspection,
+      };
+    };
+    await renderJourney(
+      "/recordings/workflow-1",
+      fake.service,
+      platformWithStorage({ "live.accessibilityLabels": "always" }).platform,
+    );
+    const outline = document.querySelector<HTMLElement>('[style*="--box-top"]');
+    expect(outline?.style.getPropertyValue("--box-top")).toBe("159.5px");
+    expect(outline?.style.getPropertyValue("--box-left")).toBe("12px");
+    expect(fake.service.reviewTalkBack).not.toHaveBeenCalled();
+    expect(inspection).toHaveBeenCalledWith(true);
+    await act(async () => listener?.({ target: browser, status: "degraded" }));
+    expect(document.querySelector('[style*="--box-top"]')).toBeNull();
+  });
   it("describes a verified recording without claiming that a replay ran", async () => {
     const recorded = state("reviewing", ["inspect", "replay", "approve"], { replay: "passed" });
     recorded.snapshot!.review!.latestReplay!.source = "recording";

@@ -23,6 +23,28 @@ function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+export const channelLabels: Partial<Record<EvidenceChannel, string>> = {
+  screenshot: "Screenshots",
+  "ui-tree": "Interface snapshots",
+  logs: "Logs",
+  network: "Network",
+  performance: "Performance",
+  crash: "Crash details",
+  video: "Video",
+  audio: "Audio",
+  input: "Interactions",
+};
+export const channelSummaries: Partial<Record<EvidenceChannel, string>> = {
+  screenshot: "See the screens Relay captured while this Test ran.",
+  "ui-tree": "Inspect the interface structure Relay used for semantic checks.",
+  logs: "Read messages captured from the device and Relay.",
+  network: "Review the network observations available for this Run.",
+  performance: "Review timing and performance observations from this Run.",
+  crash: "Inspect crash evidence captured while this Test ran.",
+  video: "Watch the recorded visual evidence from this Run.",
+  audio: "Listen to audio evidence captured during this Run.",
+  input: "Review the interactions Relay performed during this Run.",
+};
 export function publicNetworkUrl(value: unknown): string | undefined {
   const raw = text(value);
   if (!raw) return undefined;

@@ -31,6 +31,8 @@ import type {
 } from "./run-report-model";
 import {
   artifactEvidenceChannel,
+  channelLabels,
+  channelSummaries,
   authoredCaptureStepId,
   destEndCaptureReviewTitle,
   destWaitForEvidenceLabel,
@@ -64,28 +66,6 @@ function text(value: unknown): string | undefined {
 function finite(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
-const channelLabels: Partial<Record<EvidenceChannel, string>> = {
-  screenshot: "Screenshots",
-  "ui-tree": "Interface snapshots",
-  logs: "Logs",
-  network: "Network",
-  performance: "Performance",
-  crash: "Crash details",
-  video: "Video",
-  audio: "Audio",
-  input: "Interactions",
-};
-const channelSummaries: Partial<Record<EvidenceChannel, string>> = {
-  screenshot: "See the screens Relay captured while this Test ran.",
-  "ui-tree": "Inspect the interface structure Relay used for semantic checks.",
-  logs: "Read messages captured from the device and Relay.",
-  network: "Review the network observations available for this Run.",
-  performance: "Review timing and performance observations from this Run.",
-  crash: "Inspect crash evidence captured while this Test ran.",
-  video: "Watch the recorded visual evidence from this Run.",
-  audio: "Listen to audio evidence captured during this Run.",
-  input: "Review the interactions Relay performed during this Run.",
-};
 function channelSections(
   channels: unknown,
   rawRun: unknown,
@@ -378,7 +358,8 @@ function reportTimeline(
   const destCaptureVisible = destCaptureVisibleInRun(rawRun);
   /** Leftover Transition / Close captions or wrapper titles beside dest. */
   const leftoverBesideDest = leftoverBesideDestVisible(rawRun);
-  return array(record(rawRun)?.steps).flatMap((value, fallbackIndex) => {
+  const traces = array(record(rawRun)?.steps);
+  return traces.flatMap((value, fallbackIndex) => {
     const step = record(value);
     if (!step) return [];
     // Final captures remain in evidence; they are not another authored action.
@@ -390,6 +371,23 @@ function reportTimeline(
     const hasCapture = stepFrames.some((frame) => text(record(frame)?.path));
     if (generatedBranch && !failed && !hasCapture) return [];
     const authoredStep = stepEvidence?.find((item) => item.traceStepId === text(step.id));
+    // A successful nested check is represented by its following authored row.
+    // Join by persisted provenance; failed or unmapped traces stay inspectable.
+    if (
+      !failed &&
+      step.status === "ok" &&
+      authoredStep &&
+      !authoredCaptureStepId(text(step.title)) &&
+      traces.slice(fallbackIndex + 1).some((other) => {
+        const candidate = record(other);
+        return (
+          authoredCaptureStepId(text(candidate?.title)) === authoredStep.testStepId &&
+          Boolean(humanStepTitle(candidate?.title))
+        );
+      })
+    ) {
+      return [];
+    }
     /** Leftover Transition / Inspect setup skipped / Close wrappers cannot fill
      * the timeline beside dest — including empty-frame siblings that only carry
      * the leftover title (logo leftover inspect used to keep those rows). */

@@ -40,6 +40,7 @@ import {
   targetLabel,
 } from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
+import { currentAccessibilityInspection } from "../data/talkback-overlay";
 import { conditionTextSuggestions } from "../data/recording-condition-suggestions";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
@@ -220,19 +221,33 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
 
   const selectedTarget = recording.data?.selectedTarget ?? snapshot?.frozen?.target;
   const selectedTargetId = selectedTarget?.targetId;
-  const { liveCanvas, liveSession, liveStatus, browserContext, previewIssue, reconnect } =
-    useRecordingLivePreview({
-      enabled: previewAvailable,
-      selectedTarget,
-      createLiveTarget: productService.liveTarget,
-    });
   const talkBack = useTalkBackReview({
-    enabled: Boolean(selectedTargetId),
+    enabled: Boolean(selectedTargetId) && selectedTarget?.kind !== "browser",
     serial: selectedTargetId,
     capture: productService.reviewTalkBack,
     refreshKey: talkBackRefresh * 2 + Number(conditionOpen),
     platform,
   });
+  const {
+    liveCanvas,
+    liveSession,
+    liveStatus,
+    browserContext,
+    browserAccessibility,
+    previewIssue,
+    reconnect,
+  } = useRecordingLivePreview({
+    enabled: previewAvailable,
+    selectedTarget,
+    createLiveTarget: productService.liveTarget,
+    inspectAccessibility: talkBack.on,
+  });
+  // Browser inspection belongs to the exact frame/page/sequence on screen;
+  // a separate SDK snapshot reports content extents, not the video viewport.
+  const inspection =
+    selectedTarget?.kind === "browser"
+      ? currentAccessibilityInspection(talkBack.on ? browserAccessibility : undefined)
+      : talkBack.inspection;
   const targetPresentation = useQuery({
     queryKey: recordingQueryKeys.targetPresentation(selectedTargetId ?? "unselected"),
     queryFn: () => productService.presentTargets([selectedTarget!]),
@@ -290,8 +305,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
   // browser live transport. Refresh when opening the picker and use that same
   // current inspection for both hover labels and condition suggestions.
   const screenText =
-    talkBack.inspection.conditionSuggestions ??
-    conditionTextSuggestions(talkBack.inspection.overlayItems);
+    inspection.conditionSuggestions ?? conditionTextSuggestions(inspection.overlayItems);
 
   function sendLiveInput(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
     const queued = liveInputOutcome.current
@@ -562,8 +576,8 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                         talkBack.on && talkBack.mode !== "off" ? (
                           <TalkBackOverlay
                             canvasRef={liveCanvas}
-                            items={talkBack.inspection.overlayItems}
-                            bounds={talkBack.inspection.bounds}
+                            items={inspection.overlayItems}
+                            bounds={inspection.bounds}
                             mode={talkBack.mode}
                           />
                         ) : null

@@ -3,18 +3,15 @@ import { type CSSProperties, useDeferredValue, useEffect, useMemo, useState } fr
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import type { ProductTestSummary } from "@relay/product/catalog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
+import { TestLibraryList as TestList } from "./test-library-list";
+import { isTestDraft, runTime, relativeTime } from "./test-library-presentation";
 import { Button } from "@relay/ui-react/components/button";
 import { ChevronRight, CircleDot, CircleX, Clock, Eye, Play, Plus, Search, X } from "lucide-react";
 import { Input } from "@relay/ui-react/components/input";
-import { EmptyState, ReadinessMark } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import { LibraryPage } from "../components/page-layout";
-import {
-  StatusPill,
-  runStateDot,
-  runStateLabel,
-  runStateOf,
-  type RunState,
-} from "../components/run-status";
+import { runStateDot, runStateLabel, runStateOf, type RunState } from "../components/run-status";
 import { libraryRowSurface } from "../components/library-row-styles";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { createReviewProductService, reviewQueryKeys } from "../data/review-product-service";
@@ -29,21 +26,35 @@ import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/tests");
 
+type LibraryView = "tests" | "plans" | "drafts";
+
 type ResultFilter = "all" | "passed" | "failed" | "running" | "never";
 
 /**
- * Tests is where a person starts: what needs them, their test plans (each a
- * group with one Run button), and every other Test. Search flattens it all.
+ * Saved Tests are visible first, including Tests that belong to a plan.
+ * Plans and unfinished drafts have their own URL-backed views.
  */
 export function TestsPage() {
   const { catalogService, platform, productService, suiteProfileService } = useRouteContext({
     from: "__root__",
   });
-  const search = routeApi.useSearch() as { app?: unknown; result?: unknown; q?: unknown };
+  const search = routeApi.useSearch() as {
+    app?: unknown;
+    result?: unknown;
+    q?: unknown;
+    view?: unknown;
+    plan?: unknown;
+  };
   const navigate = useNavigate({ from: "/tests" });
   const [query, setQuery] = useState(() => (typeof search.q === "string" ? search.q : ""));
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const result = resultFilter(search.result);
+  const view: LibraryView =
+    search.view === "drafts"
+      ? "drafts"
+      : search.view === "plans" || search.plan
+        ? "plans"
+        : "tests";
   const app = typeof search.app === "string" ? search.app : "";
   useEffect(() => {
     setQuery(typeof search.q === "string" ? search.q : "");
@@ -91,7 +102,9 @@ export function TestsPage() {
   const toReview = inbox.data?.entries
     .filter((entry) => !app || entry.appMapId === app)
     .reduce((total, entry) => total + entry.items.length, 0);
-  const failing = all.filter((test) => inApp(test) && runStateOf(test.recentRun) === "failed");
+  const failing = all.filter(
+    (test) => inApp(test) && !isTestDraft(test) && runStateOf(test.recentRun) === "failed",
+  );
 
   const plans = useMemo(
     () =>
@@ -111,12 +124,16 @@ export function TestsPage() {
         .sort((left, right) => right.last - left.last || left.index - right.index),
     [app, byKey, schedules, suites.data],
   );
-  const planned = new Set(
-    plans.flatMap(({ suite }) => suite.tests.map((test) => `${suite.appMapId}:${test.id}`)),
+  const matchingPlans = plans.filter(
+    ({ suite, members }) =>
+      !deferredQuery ||
+      `${suite.name} ${suite.appName} ${members.map((test) => test.name).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(deferredQuery),
   );
-  const loose = all
-    .filter((test) => inApp(test) && !planned.has(`${test.appMapId}:${test.id}`))
-    .sort((left, right) => runTime(right.recentRun) - runTime(left.recentRun));
+  const scoped = all.filter(inApp);
+  const drafts = scoped.filter(isTestDraft);
+  const saved = scoped.filter((test) => !isTestDraft(test));
   const testCount = all.filter(inApp).length;
 
   const flat = Boolean(deferredQuery) || result !== "all";
@@ -124,6 +141,7 @@ export function TestsPage() {
     .filter(
       (test) =>
         inApp(test) &&
+        (view === "drafts" ? isTestDraft(test) : !isTestDraft(test)) &&
         matchesResult(test, result) &&
         (!deferredQuery ||
           `${test.name} ${test.appName}`.toLocaleLowerCase().includes(deferredQuery)),
@@ -132,15 +150,22 @@ export function TestsPage() {
 
   const returnFocus = useCollectionReturnFocus(
     "relay:focus:/tests",
-    tests.data ? `${flat}:${matches.length}:${plans.length}:${loose.length}` : undefined,
+    tests.data ? `${view}:${flat}:${matches.length}:${plans.length}` : undefined,
     "/tests/",
   );
 
-  function updateSearch(next: { q?: string; result?: ResultFilter }) {
+  function updateSearch(next: { q?: string; result?: ResultFilter; view?: LibraryView }) {
     void navigate({
       replace: true,
       search: (previous) => ({
         ...previous,
+        ...(next.view === undefined
+          ? {}
+          : {
+              view: next.view === "tests" ? undefined : next.view,
+              plan: undefined,
+              planApp: undefined,
+            }),
         ...(next.q === undefined ? {} : { q: next.q || undefined }),
         ...(next.result === undefined
           ? {}
@@ -154,11 +179,6 @@ export function TestsPage() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="grid gap-1">
           <h1 className="text-3xl leading-9 font-semibold tracking-tight">Tests</h1>
-          <p className="text-sm text-muted-foreground">
-            {tests.data
-              ? `${testCount} ${testCount === 1 ? "test" : "tests"}${plans.length ? ` · ${plans.length} ${plans.length === 1 ? "plan" : "plans"}` : ""}`
-              : " "}
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <NewPlanDialog {...(app ? { appId: app } : {})} />
@@ -175,120 +195,160 @@ export function TestsPage() {
         toReview={toReview}
         failing={failing.length}
         inProgress={inProgress}
-        onShowFailing={() => updateSearch({ result: "failed" })}
+        onShowFailing={() => updateSearch({ result: "failed", view: "tests" })}
       />
 
-      <div className="relative mt-6">
-        <Search
-          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <Input
-          aria-label="Search tests"
-          className="h-10 pl-9"
-          placeholder="Search tests"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.currentTarget.value);
-            updateSearch({ q: event.currentTarget.value });
-          }}
-        />
-      </div>
-
-      {tests.isPending ? <PageLoading label="Loading tests…" /> : null}
-      <RecordingProblem
-        error={tests.data === undefined ? tests.error : null}
-        onRetry={() => void tests.refetch()}
-        retrying={tests.isFetching}
-        layout="centered"
-      />
-
-      {tests.data && !testCount ? (
-        <EmptyState
-          title={app ? "No tests for this App yet" : "No tests yet"}
-          detail="Record a flow on your website or device, then save it as a test."
-          action={
-            <Button
-              nativeButton={false}
-              render={<Link to="/tests/new" search={{ app: app || undefined }} />}
+      <Tabs
+        value={view}
+        onValueChange={(value) => updateSearch({ view: value as LibraryView, result: "all" })}
+        className="mt-6"
+      >
+        <TabsList variant="line" aria-label="Test library" className="h-11 gap-3">
+          {(
+            [
+              ["tests", "Tests", saved.length],
+              ["plans", "Plans", plans.length],
+              ["drafts", "Drafts", drafts.length],
+            ] as const
+          ).map(([value, label, count]) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              data-library-view={value}
+              className="min-h-10 px-2 transition-colors"
             >
-              <Plus aria-hidden="true" /> New test
-            </Button>
-          }
-        />
-      ) : null}
-
-      {tests.data && testCount > 0 && flat ? (
-        <section className="mt-4" aria-label="Matching tests">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              {matches.length} {matches.length === 1 ? "test" : "tests"}
-              {result === "failed" ? " failing" : ""}
-            </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setQuery("");
-                updateSearch({ q: "", result: "all" });
+              {label}
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {tests.data ? count : ""}
+              </span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value={view}>
+          <div className="relative mt-4">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              aria-label={view === "plans" ? "Search plans" : "Search tests"}
+              className="h-10 pl-9"
+              placeholder={view === "plans" ? "Search plans" : "Search tests"}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+                updateSearch({ q: event.currentTarget.value });
               }}
-            >
-              <X aria-hidden="true" /> Clear
-            </Button>
+            />
           </div>
-          <TestList tests={matches} shared={shared} />
-        </section>
-      ) : null}
 
-      {tests.data && testCount > 0 && !flat ? (
-        <div className="mt-6 grid gap-8">
-          {plans.length ? (
-            <section aria-labelledby="plans-heading" className="grid gap-3">
-              <SectionHeading id="plans-heading" title="Test plans" />
-              <ul className="m-0 grid list-none divide-y divide-border p-0">
-                {plans.map(({ suite, members, last, schedule }) => (
-                  <PlanGroup
-                    key={`${suite.appMapId}:${suite.id}`}
-                    suite={suite}
-                    members={members}
-                    last={last}
-                    shared={shared}
-                    {...(schedule ? { schedule } : {})}
-                  />
-                ))}
-              </ul>
+          {tests.isPending ? <PageLoading label="Loading tests…" /> : null}
+          <RecordingProblem
+            error={tests.data === undefined ? tests.error : null}
+            onRetry={() => void tests.refetch()}
+            retrying={tests.isFetching}
+            layout="centered"
+          />
+
+          {tests.data && !testCount && view !== "plans" ? (
+            <EmptyState
+              title={app ? "No tests for this App yet" : "No tests yet"}
+              detail="Record a flow on your website or device, then save it as a test."
+              action={
+                <Button
+                  nativeButton={false}
+                  render={<Link to="/tests/new" search={{ app: app || undefined }} />}
+                >
+                  <Plus aria-hidden="true" /> New test
+                </Button>
+              }
+            />
+          ) : null}
+
+          {tests.data && testCount > 0 && view !== "plans" && flat ? (
+            <section className="mt-4" aria-label="Matching tests">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {matches.length} {matches.length === 1 ? "test" : "tests"}
+                  {result === "failed" ? " failing" : ""}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setQuery("");
+                    updateSearch({ q: "", result: "all" });
+                  }}
+                >
+                  <X aria-hidden="true" /> Clear
+                </Button>
+              </div>
+              {matches.length ? (
+                <TestList tests={matches} shared={shared} showAppName={!app} />
+              ) : (
+                <EmptyState
+                  title="No matching tests"
+                  detail="Try another search or clear the filter."
+                />
+              )}
             </section>
           ) : null}
-          {loose.length ? (
-            <section aria-labelledby="loose-heading" className="grid gap-3">
-              <SectionHeading id="loose-heading" title={plans.length ? "Other tests" : "All tests"}>
-                {plans.length ? "Tests that are not in a plan yet." : null}
-              </SectionHeading>
-              <TestList tests={loose} shared={shared} />
+
+          {tests.data && testCount > 0 && !flat && view !== "plans" ? (
+            <section aria-labelledby="loose-heading" className="mt-4">
+              <h2 id="loose-heading" className="sr-only">
+                {view === "drafts" ? "Draft tests" : "All tests"}
+              </h2>
+              {matches.length ? (
+                <TestList tests={matches} shared={shared} showAppName={!app} />
+              ) : (
+                <EmptyState
+                  title={view === "drafts" ? "No unfinished tests" : "No recorded tests yet"}
+                  detail={
+                    view === "drafts"
+                      ? "Unrecorded tests appear here until their steps are ready."
+                      : "Create a test, or finish recording one of your drafts."
+                  }
+                />
+              )}
             </section>
           ) : null}
-        </div>
-      ) : null}
+          {tests.data && view === "plans" ? (
+            <section aria-labelledby="plans-heading" className="mt-4">
+              <h2 id="plans-heading" className="sr-only">
+                Test plans
+              </h2>
+              {matchingPlans.length ? (
+                <ul className="m-0 grid list-none divide-y divide-border p-0">
+                  {matchingPlans.map(({ suite, members, last, schedule }) => (
+                    <PlanGroup
+                      key={`${suite.appMapId}:${suite.id}`}
+                      suite={suite}
+                      members={members}
+                      last={last}
+                      shared={shared}
+                      {...(schedule ? { schedule } : {})}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState
+                  title={deferredQuery ? "No matching plans" : "No plans yet"}
+                  detail={
+                    deferredQuery
+                      ? "Try another search."
+                      : "Group tests into a plan to run them together."
+                  }
+                  action={
+                    deferredQuery ? undefined : <NewPlanDialog {...(app ? { appId: app } : {})} />
+                  }
+                />
+              )}
+            </section>
+          ) : null}
+        </TabsContent>
+      </Tabs>
     </LibraryPage>
-  );
-}
-
-function SectionHeading({
-  id,
-  title,
-  children,
-}: {
-  id: string;
-  title: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="grid gap-0.5">
-      <h2 id={id} className="text-base font-semibold">
-        {title}
-      </h2>
-      {children ? <p className="text-sm text-muted-foreground">{children}</p> : null}
-    </div>
   );
 }
 
@@ -494,112 +554,6 @@ function PlanGroup({
   );
 }
 
-function TestList({
-  tests,
-  shared,
-  bare = false,
-  plan,
-}: {
-  tests: readonly ProductTestSummary[];
-  shared: ReadonlySet<string>;
-  bare?: boolean;
-  plan?: ProductSuite;
-}) {
-  return (
-    <ul
-      className={`m-0 grid list-none divide-y divide-border p-0 ${bare ? "" : "overflow-hidden"}`}
-    >
-      {tests.map((test) => (
-        <TestRow
-          key={`${test.appMapId}:${test.id}`}
-          test={shared.has(test.id) ? { ...test, sharedId: true } : test}
-          grouped={bare}
-          plan={plan}
-        />
-      ))}
-    </ul>
-  );
-}
-
-function TestRow({
-  test,
-  grouped,
-  plan,
-}: {
-  test: ProductTestSummary & { sharedId?: boolean };
-  grouped: boolean;
-  plan?: ProductSuite;
-}) {
-  const recent = test.recentRun;
-  const state = test.status === "needs-review" ? undefined : runStateOf(recent);
-  return (
-    <li>
-      <div
-        className={`group/test-row relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pr-3 ${libraryRowSurface}`}
-      >
-        <Link
-          to="/tests/$testId"
-          params={{ testId: test.id }}
-          search={{
-            ...(test.sharedId ? { app: test.appMapId } : {}),
-            ...(plan ? { plan: plan.id, planApp: plan.appMapId } : {}),
-          }}
-          className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 pl-3 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring"
-          title={`${test.stepCount} steps${recent ? ` · ${relativeTime(runTime(recent))}` : ""}`}
-        >
-          <span className="grid min-w-0 flex-1 basis-48 gap-0.5">
-            <strong className="text-sm font-normal text-foreground text-pretty">{test.name}</strong>
-            <span className="text-xs text-muted-foreground">
-              {!grouped ? `${test.appName} · ` : ""}
-              {test.stepCount} {test.stepCount === 1 ? "step" : "steps"}
-            </span>
-          </span>
-          <span className="flex min-w-0 items-center text-xs text-muted-foreground [&_[data-slot=status-pill]]:bg-transparent [&_[data-slot=status-pill]]:p-0 [&_[data-slot=badge]]:border-0 [&_[data-slot=badge]]:bg-transparent [&_[data-slot=badge]]:p-0">
-            {test.status !== "ready" ? (
-              <ReadinessMark
-                status={test.status}
-                name={test.name}
-                {...(test.setupIssue ? { issue: test.setupIssue } : {})}
-              />
-            ) : state ? (
-              <StatusPill state={state} />
-            ) : null}
-          </span>
-        </Link>
-        <Button
-          nativeButton={false}
-          variant="ghost"
-          size="sm"
-          className="min-h-9 justify-self-end"
-          render={
-            test.status === "needs-review" ? (
-              <Link to="/tests/$testId/edit" params={{ testId: test.id }} />
-            ) : (
-              <Link
-                to="/tests/$testId"
-                params={{ testId: test.id }}
-                search={{
-                  setup: "run",
-                  ...(test.sharedId ? { app: test.appMapId } : {}),
-                  ...(plan ? { plan: plan.id, planApp: plan.appMapId } : {}),
-                }}
-              />
-            )
-          }
-        >
-          {test.status === "needs-review" ? (
-            "Fix"
-          ) : (
-            <>
-              <Play aria-hidden="true" /> Run
-            </>
-          )}
-        </Button>
-      </div>
-    </li>
-  );
-}
-
 const SUMMARY_ORDER: readonly RunState[] = [
   "failed",
   "review",
@@ -667,16 +621,4 @@ function matchesResult(test: ProductTestSummary, result: ResultFilter): boolean 
   if (result === "never") return !test.recentRun;
   if (result === "running") return state === "running";
   return state === result;
-}
-
-function runTime(run: ProductTestSummary["recentRun"]): number {
-  return run ? (run.finishedAt ?? run.startedAt ?? run.queuedAt) : 0;
-}
-
-function relativeTime(value: number): string {
-  const elapsed = Math.max(0, Date.now() - value);
-  if (elapsed < 60_000) return "Just now";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
-  return `${Math.floor(elapsed / 86_400_000)}d ago`;
 }

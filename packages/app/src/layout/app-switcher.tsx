@@ -80,7 +80,11 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
               }
               onValueChange={(value) => switchApp(value === "__all" ? undefined : value)}
             >
-              <DropdownMenuRadioItem value="__all" className="min-h-14 py-2.5 pl-3 pr-8">
+              <DropdownMenuRadioItem
+                closeOnClick
+                value="__all"
+                className="min-h-14 py-2.5 pl-3 pr-8"
+              >
                 <span className="flex min-w-0 flex-col gap-1">
                   <span className="text-sm font-medium">All apps</span>
                   <span className="text-xs text-muted-foreground">Tests and runs across apps</span>
@@ -95,6 +99,7 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
                     {family.apps.map((app) => (
                       <DropdownMenuRadioItem
                         key={app.id}
+                        closeOnClick
                         value={app.id}
                         className="min-h-10 py-2 pl-5 pr-8"
                       >
@@ -108,6 +113,7 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
                 ) : (
                   <DropdownMenuRadioItem
                     key={family.id}
+                    closeOnClick
                     value={family.apps[0]!.id}
                     className="min-h-12 py-3 pl-3 pr-8"
                   >

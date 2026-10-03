@@ -1,3 +1,4 @@
+import type { TalkBackCaptureResult } from "../data/talkback-overlay";
 import { errorMessage, liveIssueMessage } from "./recording-shared";
 import { useEffect, useRef, useState } from "react";
 import type { RecordingProductService } from "../data/recording-product-service";
@@ -12,10 +13,12 @@ export function useRecordingLivePreview({
   enabled,
   selectedTarget,
   createLiveTarget,
+  inspectAccessibility = true,
 }: {
   enabled: boolean;
   selectedTarget: Parameters<NonNullable<RecordingProductService["liveTarget"]>>[0] | undefined;
   createLiveTarget: RecordingProductService["liveTarget"];
+  inspectAccessibility?: boolean;
 }) {
   const liveCanvas = useRef<HTMLCanvasElement>(null);
   const liveSession = useRef<LiveTargetSession | undefined>(undefined);
@@ -23,11 +26,19 @@ export function useRecordingLivePreview({
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [previewIssue, setPreviewIssue] = useState<string>();
+  const [browserAccessibility, setBrowserAccessibility] = useState<TalkBackCaptureResult>();
+  const inspect = useRef(inspectAccessibility);
+  inspect.current = inspectAccessibility;
+
+  useEffect(() => {
+    liveSession.current?.setAccessibilityInspection?.(inspectAccessibility);
+  }, [inspectAccessibility]);
 
   useEffect(() => {
     if (!enabled || !selectedTarget || !liveCanvas.current || !createLiveTarget) {
       setLiveStatus("idle");
       setPreviewIssue(undefined);
+      setBrowserAccessibility(undefined);
       return;
     }
     let disposed = false;
@@ -37,6 +48,7 @@ export function useRecordingLivePreview({
     setLiveStatus("connecting");
     setPreviewIssue(undefined);
     setBrowserContext(undefined);
+    setBrowserAccessibility(undefined);
     // Show the same signed-in browser the recording drives.
     const account =
       selectedTarget.kind === "browser" ? selectedTarget.authenticationFixtureId : undefined;
@@ -51,9 +63,11 @@ export function useRecordingLivePreview({
         }
         mountedSession = session;
         liveSession.current = session;
+        session.setAccessibilityInspection?.(inspect.current);
         unsubscribe = session.subscribe((next) => {
           setLiveStatus(next.status);
           setBrowserContext(next.browserContext);
+          setBrowserAccessibility(next.status === "streaming" ? next.accessibility : undefined);
           setPreviewIssue(next.issue ? liveIssueMessage(next.issue) : undefined);
         });
         stop = session.mount(liveCanvas.current);
@@ -77,6 +91,7 @@ export function useRecordingLivePreview({
     liveSession,
     liveStatus,
     browserContext,
+    browserAccessibility,
     previewIssue,
     reconnect: () => setPreviewAttempt((attempt) => attempt + 1),
   };
