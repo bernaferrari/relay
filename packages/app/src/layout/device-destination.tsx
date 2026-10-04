@@ -25,7 +25,12 @@ import {
   Smartphone,
 } from "lucide-react";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
-import { isLoopbackBrowserUrl } from "../data/device-catalog-presentation";
+import { isGoalScratchTarget } from "../data/target-presentation";
+import {
+  browserCatalogQueryKey,
+  isLoopbackBrowserUrl,
+  mergeDeviceCatalog,
+} from "../data/device-catalog-presentation";
 import {
   WORKSPACE_DESTINATION_KEY,
   destinationRunTargetId,
@@ -60,7 +65,15 @@ export function DeviceDestinationButton({
 }: { label?: string; onSelect?(device: ProductDevice): void } = {}) {
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const { deviceService, platform, queryClient } = useRouteContext({ from: "__root__" });
+  const { deviceService, browserSpacesService, platform, queryClient } = useRouteContext({
+    from: "__root__",
+  });
+  const spaces = useQuery({
+    queryKey: browserCatalogQueryKey,
+    queryFn: () => browserSpacesService.listSpaces(),
+    staleTime: 30_000,
+    retry: false,
+  });
   const devices = useQuery({
     queryKey: deviceQueryKeys.devices,
     queryFn: () => deviceService.list(),
@@ -74,15 +87,22 @@ export function DeviceDestinationButton({
       parseWorkspaceDestination(await platform.storage.get(WORKSPACE_DESTINATION_KEY)) ?? null,
     staleTime: Infinity,
   });
+  const knownDevices = mergeDeviceCatalog(devices.data, spaces.data).filter(
+    (device) => device.platform !== "browser" || !isGoalScratchTarget(device.id),
+  );
   const summary = summarizeDestinations({
-    devices: devices.data,
+    devices: knownDevices,
     status: devices.isError ? "error" : devices.isPending ? "pending" : "success",
   });
-  const available = (devices.isError ? [] : (devices.data ?? [])).filter(
-    (item) => item.status !== "needs-attention",
+  // A saved browser configuration remains selectable after a refresh fails.
+  // Cached hardware readiness does not establish a current connection.
+  const available = knownDevices.filter(
+    (item) =>
+      item.status !== "needs-attention" &&
+      (!devices.isError || (item.platform === "browser" && item.status === "virtual")),
   );
-  const unavailable = (devices.isError ? [] : (devices.data ?? [])).filter(
-    (item) => item.status === "needs-attention",
+  const unavailable = knownDevices.filter(
+    (item) => item.status === "needs-attention" || (devices.isError && item.platform !== "browser"),
   );
   const current = available.find(
     (item) => destinationRunTargetId(item) === selected.data?.targetId,
@@ -152,7 +172,7 @@ export function DeviceDestinationButton({
         sideOffset={8}
         className="w-80 max-h-[min(480px,var(--available-height))] max-w-[calc(100vw-24px)] overflow-y-auto p-1.5"
       >
-        {(devices.data?.length ?? 0) > 7 || localBrowsers.length ? (
+        {knownDevices.length > 7 || localBrowsers.length ? (
           <div className="px-1 pb-1">
             <Input
               aria-label="Find a device or browser"
@@ -210,10 +230,12 @@ export function DeviceDestinationButton({
               No matching devices or browsers
             </p>
           ) : null}
-          {!available.length ? (
-            <p className="px-2 py-3 text-xs text-muted-foreground">
+          {devices.isError || !available.length ? (
+            <p role="status" className="px-2 py-3 text-xs text-muted-foreground">
               {devices.isError
-                ? "Couldn’t check connected devices."
+                ? available.length
+                  ? "Couldn’t check connected devices. Browser configurations are still available."
+                  : "Couldn’t check connected devices."
                 : devices.isPending
                   ? "Checking devices…"
                   : "No connected devices. Start a simulator or connect a phone."}
@@ -264,8 +286,8 @@ export function DeviceDestinationButton({
         <DropdownMenuSeparator className="my-1.5" />
         <DropdownMenuItem
           className={rowClass}
-          disabled={devices.isFetching}
-          onClick={() => void devices.refetch()}
+          disabled={devices.isFetching || spaces.isFetching}
+          onClick={() => void Promise.allSettled([devices.refetch(), spaces.refetch()])}
         >
           <RefreshCw className="size-3.5 text-muted-foreground" aria-hidden="true" />
           Check again

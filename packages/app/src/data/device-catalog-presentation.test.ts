@@ -5,6 +5,7 @@ import {
   deviceMatchesCatalogSearch,
   groupBrowserDestinations,
   isLoopbackBrowserUrl,
+  mergeDeviceCatalog,
 } from "./device-catalog-presentation";
 
 function browser(id: string, name = id, browserUrl?: string): ProductDevice {
@@ -35,6 +36,48 @@ function site(id: string, startUrl: string, name = id): ProductBrowserSpace {
 }
 
 describe("browser catalog presentation", () => {
+  it("projects canonical browser registry identity without claiming live readiness", () => {
+    const newer = { ...site("newer", "https://shop.example/", "shop.example"), createdAt: 2 };
+    const older = site("older", "https://shop.example/", "shop.example");
+    const rows = mergeDeviceCatalog(undefined, [newer, older]);
+
+    expect(rows.map((row) => ({ id: row.id, serial: row.serial, name: row.name }))).toEqual([
+      { id: "newer", serial: "newer", name: "shop.example · Browser 2" },
+      { id: "older", serial: "older", name: "shop.example · Browser 1" },
+    ]);
+    for (const row of rows) {
+      expect(row.browserUrl).toBe("https://shop.example/");
+      expect(row.status).toBe("virtual");
+      expect(row.runnable).toBe(false);
+      expect(row.device.booted).toBeNull();
+    }
+  });
+
+  it("merges known hardware with authoritative registry rows and falls back only to observed inventory", () => {
+    const physical: ProductDevice = {
+      ...browser("phone"),
+      platform: "android",
+      kind: "Physical device",
+      status: "needs-attention",
+      device: {
+        id: "phone",
+        serial: "phone",
+        name: "Phone",
+        platform: "android",
+        kind: "Physical device",
+        booted: true,
+      },
+    };
+    const inventory = [physical, browser("removed-from-registry")];
+
+    const merged = mergeDeviceCatalog(inventory, [site("current", "https://shop.example/")]);
+    expect(merged.map((row) => row.id)).toEqual(["phone", "current"]);
+    expect(merged[0]).toBe(physical);
+    expect(mergeDeviceCatalog(inventory, [])).toEqual([physical]);
+    expect(mergeDeviceCatalog(inventory, undefined)).toBe(inventory);
+    expect(mergeDeviceCatalog(undefined, undefined)).toEqual([]);
+  });
+
   it("recognizes explicit loopback URLs without inferring local or test provenance from names", () => {
     for (const url of [
       "http://localhost:8793/",

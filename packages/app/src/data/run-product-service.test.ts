@@ -769,13 +769,15 @@ describe("run report projection", () => {
     expect(JSON.stringify(report)).not.toContain("Go from Start to Start");
   });
 
-  it("maps recapture failures and machine target ids into public report copy", () => {
+  it("maps recapture failures into public copy while retaining the technical cause", () => {
+    const technicalCause =
+      "Start has no immutable raw accessibility tree; recapture before offline geometry.";
     const report = projectRunReport(
       "run-3",
       {
         outcome: "harness-failure",
         deviceName: "emulator-5554",
-        error: "Start has no immutable raw accessibility tree; recapture before offline geometry.",
+        error: technicalCause,
       },
       { channels: {} },
     );
@@ -784,8 +786,16 @@ describe("run report projection", () => {
     expect(report.cause).toBe(
       "Relay needs a fresh capture of the starting screen before this Test can run.",
     );
-    expect(JSON.stringify(report)).not.toContain("emulator-5554");
-    expect(JSON.stringify(report)).not.toContain("raw accessibility");
+    expect(report.firstEvidence).toEqual({ label: report.cause });
+    expect(report.technicalCause).toBe(technicalCause);
+    const publicCopy = JSON.stringify({
+      title: report.title,
+      targetName: report.targetName,
+      cause: report.cause,
+      firstEvidence: report.firstEvidence,
+    });
+    expect(publicCopy).not.toContain("emulator-5554");
+    expect(publicCopy).not.toContain("raw accessibility");
   });
 
   it("prefers a resolved Test name over a machine-generated Run title", () => {

@@ -93,30 +93,87 @@ test("typed browser inventory preserves missing, duplicate, and unavailable regi
   );
 });
 
-test("an untyped identifier retains physical and browser collisions", async () => {
-  const physical = {
-    id: target.id,
-    serial: target.id,
+test("native IDs and serials retain untyped browser collisions and typed selection", async () => {
+  for (const identifiers of [
+    { id: target.id, serial: "native-serial" },
+    { id: "native-id", serial: target.id },
+  ]) {
+    const physical = {
+      ...identifiers,
+      name: "Phone",
+      platform: "android" as const,
+      kind: "physical",
+      booted: true,
+      connectionState: "offline",
+    };
+    const runtime = {
+      listDevices: async () => [physical],
+      listAndroidDevicesFast: async () => [],
+      listTargets: async () => [target],
+    };
+    const result = await listConnectedTargets({ targetId: target.id }, runtime);
+    assert.deepEqual(
+      result.devices.map(({ platform }) => platform),
+      ["android", "browser"],
+    );
+    assert.deepEqual(result.devices[0], physical);
+    assert.equal(result.physicalDeviceCount, 1);
+    for (const targetId of [physical.id, physical.serial]) {
+      assert.deepEqual(
+        (await listConnectedTargets({ targetKind: "device", targetId }, runtime)).devices,
+        [physical],
+      );
+    }
+    const browser = await listConnectedTargets(
+      { targetKind: "browser", targetId: target.id },
+      runtime,
+    );
+    assert.deepEqual(
+      browser.devices.map(({ platform, serial }) => ({ platform, serial })),
+      [{ platform: "browser", serial: target.id }],
+    );
+    const nativeOnlyId = physical.id === target.id ? physical.serial : physical.id;
+    assert.deepEqual(
+      (await listConnectedTargets({ targetKind: "browser", targetId: nativeOnlyId }, runtime))
+        .devices,
+      [],
+    );
+  }
+});
+
+test("phase inventory matches native IDs and observed serials without rewriting them", async () => {
+  const phone = {
+    id: "phone-id",
+    serial: "android-serial",
     name: "Phone",
     platform: "android" as const,
     kind: "physical",
     booted: true,
-    connectionState: "offline",
   };
-  const result = await listConnectedTargets(
-    { targetId: target.id },
-    {
-      listDevices: async () => [physical],
-      listAndroidDevicesFast: async () => [],
-      listTargets: async () => [target],
+  const tablet = {
+    id: "tablet-id",
+    serial: "ios-serial",
+    name: "Tablet",
+    platform: "ios" as const,
+    kind: "physical",
+    booted: true,
+  };
+  const runtime = {
+    listDevices: async () => [phone, tablet],
+    listAndroidDevicesFast: async () => [phone],
+    listTargets: async () => {
+      throw new Error("Registry must not be read");
     },
-  );
-  assert.deepEqual(
-    result.devices.map(({ platform }) => platform),
-    ["android", "browser"],
-  );
-  assert.equal(result.devices[0]?.connectionState, "offline");
-  assert.equal(result.physicalDeviceCount, 1);
+  };
+  for (const device of [phone, tablet]) {
+    for (const targetId of [device.id, device.serial]) {
+      assert.deepEqual(
+        (await listConnectedTargets({ phase: device.platform, targetId: ` ${targetId} ` }, runtime))
+          .devices,
+        [device],
+      );
+    }
+  }
 });
 
 test("typed physical and phase discovery do not read managed targets", async () => {

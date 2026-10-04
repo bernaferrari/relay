@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ProductBrowserSpace } from "../data/browser-spaces-product-service";
+import { browserCatalogQueryKey } from "../data/device-catalog-presentation";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { DeviceDestinationButton } from "./device-destination";
 import { WORKSPACE_DESTINATION_KEY, workspaceDestinationQueryKey } from "./destination-summary";
@@ -49,18 +51,49 @@ async function settle() {
   });
 }
 
-async function renderPicker(devices: readonly ProductDevice[], selectedTargetId?: string) {
+function browserSpace(id: string, name: string, startUrl: string): ProductBrowserSpace {
+  return {
+    id,
+    name,
+    startUrl,
+    createdAt: 0,
+    updatedAt: 0,
+    profileRetention: "retain",
+    persistent: true,
+    source: { kind: "managed-browser-target", id },
+  };
+}
+
+async function renderPicker(
+  devices: readonly ProductDevice[],
+  selectedTargetId?: string,
+  options: {
+    loadInventory?(): Promise<readonly ProductDevice[]>;
+    spaces?: readonly ProductBrowserSpace[];
+    seedInventory?: boolean;
+    seedSpaces?: boolean;
+  } = {},
+) {
   const client = new QueryClient();
   clients.push(client);
-  client.setQueryData(deviceQueryKeys.devices, devices);
+  if (options.seedInventory !== false) client.setQueryData(deviceQueryKeys.devices, devices);
+  const spaces =
+    options.spaces ??
+    devices
+      .filter((device) => device.platform === "browser")
+      .map((device) => browserSpace(device.id, device.name, device.browserUrl!));
+  if (options.seedSpaces !== false) client.setQueryData(browserCatalogQueryKey, spaces);
   client.setQueryData(
     workspaceDestinationQueryKey,
     selectedTargetId ? { targetId: selectedTargetId } : null,
   );
   const set = vi.fn();
   const onSelect = vi.fn();
+  const list = vi.fn(options.loadInventory ?? (async () => devices));
+  const listSpaces = vi.fn(async () => spaces);
   route.context = {
-    deviceService: { list: async () => devices },
+    deviceService: { list },
+    browserSpacesService: { listSpaces },
     queryClient: client,
     platform: { storage: { get: () => null, set } },
   };
@@ -76,7 +109,7 @@ async function renderPicker(devices: readonly ProductDevice[], selectedTargetId?
     );
   });
   await settle();
-  return { client, set, onSelect };
+  return { client, set, onSelect, list, listSpaces };
 }
 
 function trigger() {
@@ -100,6 +133,53 @@ async function searchFor(query: string) {
 }
 
 describe("device destination picker", () => {
+  it("excludes goal scratch browsers while preserving exact local selection and catalog records", async () => {
+    const local = device("local-checkout-exact", "Local checkout", "http://localhost:8793/");
+    const scratch = device("goal-goal-abc123", "Scratch browser", "http://localhost:8793/");
+    const repairScratch = {
+      ...device("goal-inactive-abc123", "Inactive scratch browser", "http://localhost:3000/"),
+      status: "needs-attention" as const,
+    };
+    const { client, onSelect } = await renderPicker([local, scratch, repairScratch], local.id);
+
+    expect(trigger().textContent).toContain("Local checkout");
+    await openPicker();
+    expect(
+      document.querySelector('[role="menuitem"][aria-label="Local checkout, selected"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Scratch browser");
+    expect(document.body.textContent).not.toContain("Inactive scratch browser");
+    expect(document.querySelector('[data-slot="dropdown-menu-sub-trigger"]')).toBeNull();
+
+    await searchFor(scratch.id);
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain(
+      "No matching devices or browsers",
+    );
+    expect(document.querySelector('[role="menuitem"][aria-label="Scratch browser"]')).toBeNull();
+    await searchFor(repairScratch.id);
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain(
+      "No matching devices or browsers",
+    );
+    expect(onSelect).not.toHaveBeenCalled();
+
+    await searchFor(local.id);
+    const match = document.querySelector<HTMLElement>(
+      '[role="menuitem"][aria-label="Local checkout, selected"]',
+    )!;
+    await act(async () => match.click());
+    await settle();
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: local.id, runnable: false }),
+    );
+    expect(client.getQueryData(workspaceDestinationQueryKey)).toEqual({ targetId: local.id });
+    expect(client.getQueryData(deviceQueryKeys.devices)).toEqual([local, scratch, repairScratch]);
+    expect(client.getQueryData(browserCatalogQueryKey)).toEqual([
+      browserSpace(local.id, local.name, local.browserUrl!),
+      browserSpace(scratch.id, scratch.name, scratch.browserUrl!),
+      browserSpace(repairScratch.id, repairScratch.name, repairScratch.browserUrl!),
+    ]);
+  });
+
   it("keeps connected devices and public browsers primary while local browsers remain selectable", async () => {
     const local = Array.from({ length: 40 }, (_, index) =>
       device(`local-${index}`, `Local browser ${index + 1}`, "http://127.0.0.1:8793/"),
@@ -133,7 +213,13 @@ describe("device destination picker", () => {
     await act(async () => option.click());
     await settle();
 
-    expect(onSelect).toHaveBeenCalledWith(local[7]);
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: local[7]!.id,
+        browserUrl: local[7]!.browserUrl,
+        runnable: false,
+      }),
+    );
     expect(client.getQueryData(workspaceDestinationQueryKey)).toEqual({ targetId: "local-7" });
     expect(set).toHaveBeenCalledWith(WORKSPACE_DESTINATION_KEY, '{"targetId":"local-7"}');
     expect(document.querySelector('[role="menu"]')).toBeNull();
@@ -167,7 +253,9 @@ describe("device destination picker", () => {
       expect(match).not.toBeNull();
       await act(async () => match.click());
       await settle();
-      expect(onSelect).toHaveBeenCalledWith(target);
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({ id: target.id, browserUrl: target.browserUrl, runnable: false }),
+      );
       expect(trigger().textContent).toContain("Hidden checkout");
     },
   );
@@ -189,6 +277,116 @@ describe("device destination picker", () => {
     );
     expect(selected).not.toBeNull();
     expect(document.querySelector('[role="menu"]')?.textContent).toContain("Selected");
-    expect(document.querySelector('[role="menuitem"][aria-label="Other local browser"]')).toBeNull();
+    expect(
+      document.querySelector('[role="menuitem"][aria-label="Other local browser"]'),
+    ).toBeNull();
   });
+
+  it("retains browser configuration selection and hardware setup after an inventory refresh fails", async () => {
+    const grok = device("grok", "Grok", "https://grok.com/");
+    const docs = device("docs", "Relay docs", "https://relay.example/docs");
+    const phone = device("phone", "My phone");
+    const offlinePhone = {
+      ...device("offline", "Offline phone"),
+      status: "needs-attention" as const,
+    };
+    const items = [grok, docs, phone, offlinePhone];
+    const { client, onSelect, list } = await renderPicker(items, "grok");
+    await act(async () => client.refetchQueries({ queryKey: deviceQueryKeys.devices }));
+    await settle();
+    expect(list).toHaveBeenCalledOnce();
+    expect(client.getQueryState(deviceQueryKeys.devices)?.status).toBe("success");
+    await openPicker();
+    expect(document.querySelector('[role="menuitem"][aria-label="My phone"]')).not.toBeNull();
+
+    list.mockRejectedValueOnce(new Error("Hardware discovery unavailable"));
+    await act(async () => client.refetchQueries({ queryKey: deviceQueryKeys.devices }));
+    await settle();
+
+    expect(client.getQueryState(deviceQueryKeys.devices)?.status).toBe("error");
+    expect(client.getQueryData(deviceQueryKeys.devices)).toEqual(items);
+    expect(trigger().textContent).toContain("Grok");
+    expect(document.querySelector('[role="menuitem"][aria-label="Grok, selected"]')).not.toBeNull();
+    expect(document.querySelector('[role="menuitem"][aria-label="My phone"]')).toBeNull();
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain(
+      "Browser configurations are still available.",
+    );
+    const browser = document.querySelector<HTMLElement>(
+      '[role="menuitem"][aria-label="Relay docs"]',
+    )!;
+    await act(async () => browser.click());
+    await settle();
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: docs.id, browserUrl: docs.browserUrl, runnable: false }),
+    );
+    expect(onSelect.mock.calls[0]![0].runnable).toBe(false);
+    expect(client.getQueryData(workspaceDestinationQueryKey)).toEqual({ targetId: "docs" });
+
+    await openPicker();
+    const setup = document.querySelector<HTMLElement>('[data-slot="dropdown-menu-sub-trigger"]')!;
+    expect(setup.textContent).toContain("Devices");
+    expect(setup.textContent).toContain("2");
+    await act(async () => setup.click());
+    await settle();
+    const setupMenu = [...document.querySelectorAll('[role="menu"]')].find((menu) =>
+      menu.textContent?.includes("Choose one to open its setup"),
+    )!;
+    expect(setupMenu.textContent).toContain("Offline phone");
+    const phoneSetup = [...setupMenu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === "My phone",
+    )!;
+    await act(async () => phoneSetup.click());
+    await settle();
+    expect(route.push).toHaveBeenCalledWith("/devices/phone");
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it.each(["pending", "error"])(
+    "offers canonical browser configurations on first load while hardware inventory is %s",
+    async (inventoryState) => {
+      let releaseInventory: ((devices: readonly ProductDevice[]) => void) | undefined;
+      const inventory = new Promise<readonly ProductDevice[]>((resolve) => {
+        releaseInventory = resolve;
+      });
+      const { client, onSelect, list, listSpaces } = await renderPicker([], "grok", {
+        seedInventory: false,
+        seedSpaces: false,
+        spaces: [
+          browserSpace("grok", "Grok", "https://grok.com/"),
+          browserSpace("docs", "Relay docs", "https://relay.example/docs"),
+        ],
+        loadInventory: async () => {
+          if (inventoryState === "error") throw new Error("Hardware discovery unavailable");
+          return inventory;
+        },
+      });
+
+      expect(list).toHaveBeenCalledOnce();
+      expect(listSpaces).toHaveBeenCalledOnce();
+      expect(client.getQueryState(deviceQueryKeys.devices)?.status).toBe(inventoryState);
+      expect(trigger().textContent).toContain("Grok");
+      await openPicker();
+      expect(
+        document.querySelector('[role="menuitem"][aria-label="Grok, selected"]'),
+      ).not.toBeNull();
+      const option = document.querySelector<HTMLElement>(
+        '[role="menuitem"][aria-label="Relay docs"]',
+      )!;
+      expect(option).not.toBeNull();
+      await act(async () => option.click());
+      await settle();
+      expect(onSelect.mock.calls[0]![0]).toMatchObject({
+        id: "docs",
+        serial: "docs",
+        platform: "browser",
+        status: "virtual",
+        runnable: false,
+        browserUrl: "https://relay.example/docs",
+      });
+      expect(client.getQueryData(workspaceDestinationQueryKey)).toEqual({ targetId: "docs" });
+      expect(trigger().textContent).toContain("Relay docs");
+      releaseInventory?.([]);
+      await settle();
+    },
+  );
 });

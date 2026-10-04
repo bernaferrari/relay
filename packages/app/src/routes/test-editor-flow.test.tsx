@@ -4,7 +4,7 @@ import type { AppMapScenarioTestEdit, AppMapScenarioTestStep } from "@relay/prot
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunProductService } from "../data/run-product-service";
@@ -472,9 +472,12 @@ describe("Test editor", () => {
     const history = await render(service().editor, "/tests/test-checkout/edit?step=step-pay");
     expect(history.location.pathname).toBe("/tests/test-checkout");
     expect(history.location.search).toContain("step=step-pay");
-    expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
-      "Confirm the total",
-    );
+    await vi.waitFor(async () => {
+      await act(async () => undefined);
+      expect(document.querySelector<HTMLTextAreaElement>("#selected-step-intent")?.value).toBe(
+        "Confirm the total",
+      );
+    });
   });
 
   it("reorders through keyboard-equivalent controls and undoes canonically", async () => {

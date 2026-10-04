@@ -28,8 +28,10 @@ import { EmptyState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
 import {
   deviceMatchesCatalogSearch,
+  browserCatalogQueryKey,
   groupBrowserDestinations,
   isLoopbackBrowserUrl,
+  mergeDeviceCatalog,
   type BrowserDestinationGroup,
 } from "../data/device-catalog-presentation";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
@@ -203,7 +205,7 @@ function BrowserDestinationRow({
 }) {
   const [open, setOpen] = useState(searchActive);
   useEffect(() => {
-    if (searchActive) setOpen(true);
+    setOpen(searchActive);
   }, [searchActive]);
   return (
     <li className={open ? "sm:col-span-2 xl:col-span-3" : ""}>
@@ -327,7 +329,7 @@ function AvailableSection({
 }) {
   const [open, setOpen] = useState(searchActive);
   useEffect(() => {
-    if (searchActive) setOpen(true);
+    setOpen(searchActive);
   }, [searchActive]);
   const headingId = useId();
   return (
@@ -365,7 +367,7 @@ function AvailableSection({
 export function DevicesPage() {
   const { deviceService, browserSpacesService } = useRouteContext({ from: "__root__" });
   const spaces = useQuery({
-    queryKey: ["devices", "browser-spaces"],
+    queryKey: browserCatalogQueryKey,
     queryFn: () => browserSpacesService.listSpaces(),
     staleTime: 30_000,
   });
@@ -385,9 +387,14 @@ export function DevicesPage() {
     staleTime: 5_000,
   });
 
-  const visibleDevices =
-    devices.data?.filter((device) => deviceMatchesCatalogSearch(device, deferredQuery, sites)) ??
-    [];
+  const catalog = useMemo(
+    () => mergeDeviceCatalog(devices.data, spaces.data),
+    [devices.data, spaces.data],
+  );
+  const catalogKnown = devices.data !== undefined || spaces.data !== undefined;
+  const visibleDevices = catalog.filter((device) =>
+    deviceMatchesCatalogSearch(device, deferredQuery, sites),
+  );
   const visibleCount = visibleDevices.length;
   const localBrowsers = visibleDevices.filter(
     (device) =>
@@ -396,20 +403,22 @@ export function DevicesPage() {
   );
   const returnFocus = useCollectionReturnFocus("relay:focus:/devices", visibleDevices, "/devices/");
 
+  // Browser navigation owns URL changes; input events own edits. Mirroring
+  // both directions in effects lets an old URL overwrite a new or empty edit.
   useEffect(() => {
-    if (search.q !== undefined && search.q !== query) setQuery(search.q);
-  }, [query, search.q]);
+    setQuery(search.q ?? "");
+  }, [search.q]);
 
-  useEffect(() => {
-    if ((search.q ?? "") === query) return;
+  function updateQuery(value: string) {
+    setQuery(value);
     void navigate({
       to: "/devices",
       search: {
-        ...(query.trim() ? { q: query.trim() } : {}),
+        ...(value.trim() ? { q: value.trim() } : {}),
         ...(search.returnTo ? { returnTo: search.returnTo } : {}),
       },
     });
-  }, [navigate, query, search.q, search.returnTo]);
+  }
 
   return (
     <BrowserSitesContext.Provider value={sites}>
@@ -439,7 +448,7 @@ export function DevicesPage() {
                   onClick={() => void devices.refetch()}
                   disabled={devices.isFetching}
                 >
-                  {devices.isFetching ? "Checking…" : "Check again"}
+                  {devices.isFetching ? "Checking devices…" : "Check again"}
                 </Button>
               ) : null}
             </div>
@@ -455,27 +464,68 @@ export function DevicesPage() {
             label="Search Devices and Browsers"
             value={query}
             placeholder="Search by name, platform, or address"
-            onChange={setQuery}
+            onChange={updateQuery}
           />
         </div>
 
-        {devices.isPending ? <PageLoading label="Checking Devices and Browsers…" /> : null}
+        {spaces.isPending && !catalogKnown ? (
+          <PageLoading label="Loading Devices and Browsers…" />
+        ) : null}
+        {devices.isPending && spaces.data !== undefined ? (
+          <p role="status" className="mt-3 text-sm text-muted-foreground">
+            Checking connected devices…
+          </p>
+        ) : null}
 
         <RecordingProblem
-          error={devices.data === undefined ? devices.error : null}
-          onRetry={() => void devices.refetch()}
-          retrying={devices.isFetching}
+          error={!catalogKnown && !spaces.isPending ? (devices.error ?? spaces.error) : null}
+          onRetry={() => {
+            void devices.refetch();
+            void spaces.refetch();
+          }}
+          retrying={devices.isFetching || spaces.isFetching}
           layout="centered"
         />
-        {devices.isError && devices.data !== undefined ? (
-          <RefreshProblem
-            subject="devices"
+        {devices.isError && devices.data === undefined && catalogKnown ? (
+          <RecordingProblem
+            recovery={{
+              title: "Couldn’t check connected devices",
+              detail: catalog.some((device) => isBrowser(device))
+                ? "Browsers remain available. Check the device connection, then try again."
+                : "Check the device connection, then try again.",
+              recovery: "",
+              retryable: true,
+            }}
             onRetry={() => void devices.refetch()}
             retrying={devices.isFetching}
           />
         ) : null}
+        {devices.isError && devices.data !== undefined ? (
+          <RefreshProblem
+            subject={spaces.data !== undefined ? "connected devices" : "devices"}
+            onRetry={() => void devices.refetch()}
+            retrying={devices.isFetching}
+          />
+        ) : null}
+        {spaces.isError && catalogKnown ? (
+          <RecordingProblem
+            recovery={{
+              title: "Couldn’t refresh browsers",
+              detail: "Try loading the browser catalog again.",
+              recovery: "",
+              retryable: true,
+            }}
+            onRetry={() => void spaces.refetch()}
+            retrying={spaces.isFetching}
+          />
+        ) : null}
 
-        {devices.data !== undefined && devices.data?.length === 0 ? (
+        {catalogKnown &&
+        !devices.isPending &&
+        !devices.isError &&
+        !spaces.isPending &&
+        !spaces.isError &&
+        catalog.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
               title="No Devices yet"
@@ -500,29 +550,19 @@ export function DevicesPage() {
           </div>
         ) : null}
 
-        {devices.data !== undefined && devices.data?.length && visibleCount === 0 ? (
+        {catalogKnown && catalog.length > 0 && visibleCount === 0 ? (
           <EmptyState
             title="No devices match your search"
             detail="Try another device name or platform."
             action={
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setQuery("");
-                  void navigate({
-                    to: "/devices",
-                    search: search.returnTo ? { returnTo: search.returnTo } : {},
-                  });
-                }}
-              >
+              <Button variant="ghost" size="sm" onClick={() => updateQuery("")}>
                 Show all devices
               </Button>
             }
           />
         ) : null}
 
-        {devices.data !== undefined && visibleCount > 0 ? (
+        {visibleCount > 0 ? (
           <div className="mt-3 grid gap-4" aria-live="polite">
             {(["Physical devices", "Android emulators", "iOS simulators", "Browsers"] as const).map(
               (title) => {
@@ -539,7 +579,7 @@ export function DevicesPage() {
                     key={title}
                     title={title}
                     devices={devicesInSection}
-                    stale={devices.isError}
+                    stale={title === "Browsers" ? spaces.isError : devices.isError}
                     returnTo={continuation ? search.returnTo : undefined}
                     groupBrowsers={title === "Browsers"}
                     searchActive={Boolean(deferredQuery)}
@@ -567,7 +607,7 @@ export function DevicesPage() {
                       devices={localBrowsers}
                       returnTo={continuation ? search.returnTo : undefined}
                       searchActive={Boolean(deferredQuery)}
-                      stale={devices.isError}
+                      stale={spaces.isError}
                       groupBrowsers
                     />
                   ) : null}
@@ -595,7 +635,7 @@ export function DevicesPage() {
                       devices={scratch}
                       returnTo={continuation ? search.returnTo : undefined}
                       searchActive={Boolean(deferredQuery)}
-                      stale={devices.isError}
+                      stale={spaces.isError}
                     />
                   ) : null}
                 </div>

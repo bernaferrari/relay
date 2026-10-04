@@ -50,7 +50,13 @@ import type {
 import { runReplayLab } from "./replay-lab.js";
 import { recordingPathContext } from "./recording-path-context.js";
 import { startDebugBugRecording } from "./recording-outcome-jobs.js";
-import { acquireOwnLease, selectAppMap, selectTarget, targetCatalog } from "./target-catalog.js";
+import {
+  acquireOwnLease,
+  findTargetCatalogEntry,
+  selectAppMap,
+  selectTarget,
+  targetCatalog,
+} from "./target-catalog.js";
 import { createGoalSessionRunner, type GoalSessionRunner } from "./goal-runner.js";
 import {
   createGoalExplorationRunner,
@@ -319,15 +325,16 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     const catalog = await targetCatalog(this.operations, {
       targetKind: intent.targetKind,
       targetId: intent.targetId,
+      phase: intent.phase,
     });
     const available = catalog.flatMap(({ target }) => (target ? [target] : []));
     const current = intent.targetId
-      ? available.find((target) => target.targetId === intent.targetId)
+      ? findTargetCatalogEntry(catalog, intent.targetId)?.target
       : available.length === 1
         ? available[0]
         : undefined;
     if (intent.targetId && !current) {
-      await selectTarget(this.operations, intent.targetId, intent.targetKind);
+      await selectTarget(this.operations, intent.targetId, intent.targetKind, intent.phase);
       throw new TypeError(`Target ${intent.targetId} is not ready.`);
     }
     return {

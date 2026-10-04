@@ -20,7 +20,9 @@ export async function listConnectedTargets(
 ): Promise<{ devices: DeviceSummary[]; physicalDeviceCount?: number }> {
   const targetId = scope.targetId?.trim();
   const selected = (devices: DeviceSummary[]) =>
-    targetId ? devices.filter((device) => (device.serial || device.id) === targetId) : devices;
+    targetId
+      ? devices.filter((device) => device.id === targetId || device.serial === targetId)
+      : devices;
   const browsers = async () =>
     (await runtime.listTargets())
       .filter((target) => target.kind === "browser")

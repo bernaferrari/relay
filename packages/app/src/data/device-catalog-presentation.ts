@@ -1,5 +1,45 @@
 import type { ProductBrowserSpace } from "./browser-spaces-product-service";
 import type { ProductDevice } from "./device-product-service";
+import { browserDisplayNames } from "./browser-display-names";
+
+export const browserCatalogQueryKey = ["browser-spaces"] as const;
+
+/** Browser configuration reads do not require connected-device discovery.
+ * A successful registry read owns browser membership; hardware observations
+ * stay unchanged and unavailable registries fall back only to known inventory. */
+export function mergeDeviceCatalog(
+  inventory: readonly ProductDevice[] | undefined,
+  spaces: readonly ProductBrowserSpace[] | undefined,
+): readonly ProductDevice[] {
+  if (spaces === undefined) return inventory ?? [];
+  const names = browserDisplayNames(
+    spaces.map((space) => ({
+      id: space.id,
+      name: space.name,
+      createdAt: space.createdAt,
+      browser: { startUrl: space.startUrl },
+    })),
+  );
+  const browsers: ProductDevice[] = spaces.map((space) => {
+    const name = names.get(space.id) ?? space.name;
+    const device = {
+      id: space.id,
+      serial: space.id,
+      name,
+      platform: "browser" as const,
+      kind: "Managed browser",
+      booted: null,
+    };
+    return {
+      ...device,
+      status: "virtual",
+      runnable: false,
+      browserUrl: space.startUrl,
+      device,
+    };
+  });
+  return [...(inventory ?? []).filter((device) => device.platform !== "browser"), ...browsers];
+}
 
 export type BrowserDestinationGroup = {
   readonly key: string;

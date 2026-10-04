@@ -37,7 +37,7 @@ describe("browser Lane tabs", () => {
     expect(gmail.electronPartition).toBe(again.electronPartition);
     expect(gmail.tabSessionKey).not.toBe(email.tabSessionKey);
     expect(gmail.electronPartition).toBe("persist:lane:grok-auth-gmail");
-    expect(browserLaneTabLabel("grok-auth-x-out")).toBe("X out");
+    expect(browserLaneTabLabel("grok-auth-x-out")).toBe("X signed out");
     expect(
       browserLaneHostIdentity({ laneId: "grok-lab", targetId: "grok-com" }).tabSessionKey,
     ).toBe("lane:grok-lab");

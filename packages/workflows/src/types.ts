@@ -478,6 +478,8 @@ export type ConnectTargetIntent = OutcomeTargetSelection & {
   kind: "connect-target";
   /** Limit discovery to the requested surface; omitted preserves all-target discovery. */
   targetKind?: AuthoringTarget["kind"];
+  /** Limit native discovery to the selected platform. */
+  phase?: "android" | "ios";
 };
 
 export type ObserveTargetIntent = OutcomeTargetSelection & { kind: "observe-target" };

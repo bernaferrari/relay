@@ -9,6 +9,21 @@ type TargetCatalogEntry = {
   blockedReason?: string;
 };
 
+function matchesTargetId(device: DeviceSummary, targetId: string): boolean {
+  return device.id === targetId || device.serial === targetId;
+}
+
+export function findTargetCatalogEntry(
+  catalog: readonly TargetCatalogEntry[],
+  targetId: string,
+): TargetCatalogEntry | undefined {
+  const matches = catalog.filter(({ device }) => matchesTargetId(device, targetId));
+  if (matches.length > 1) {
+    throw new TypeError(`Target ${targetId} is ambiguous: choose a unique device id or serial.`);
+  }
+  return matches[0];
+}
+
 function runnableTarget(device: DeviceSummary): AuthoringTarget | undefined {
   if (device.platform !== "android" && device.platform !== "ios") return undefined;
   const readiness = targetExecutionReadiness(device);
@@ -39,14 +54,20 @@ function browserPreflightProblem(
 
 export async function targetCatalog(
   operations: RelayOperationPort,
-  scope: { targetKind?: AuthoringTarget["kind"]; targetId?: string } = {},
+  scope: {
+    targetKind?: AuthoringTarget["kind"];
+    targetId?: string;
+    phase?: "android" | "ios";
+  } = {},
 ): Promise<TargetCatalogEntry[]> {
   const output = await operations.invoke("target.devices.list", {
     ...(scope.targetKind ? { targetKind: scope.targetKind } : {}),
     ...(scope.targetId ? { targetId: scope.targetId } : {}),
+    ...(scope.phase ? { phase: scope.phase } : {}),
   });
   const devices = output.devices.filter((device) => {
-    if (scope.targetId && (device.serial || device.id) !== scope.targetId) return false;
+    if (scope.targetId && !matchesTargetId(device, scope.targetId)) return false;
+    if (scope.phase && device.platform !== scope.phase) return false;
     if (!scope.targetKind) return true;
     return scope.targetKind === "browser"
       ? device.platform === "browser"
@@ -107,13 +128,13 @@ export async function selectTarget(
   operations: RelayOperationPort,
   targetId?: string,
   targetKind?: AuthoringTarget["kind"],
+  phase?: "android" | "ios",
 ): Promise<AuthoringTarget> {
-  const catalog = await targetCatalog(operations, { targetId, targetKind });
+  const catalog = await targetCatalog(operations, { targetId, targetKind, phase });
   const available = catalog.flatMap(({ target }) => (target ? [target] : []));
   if (targetId) {
-    const selected = available.find((target) => target.targetId === targetId);
-    if (selected) return selected;
-    const blocked = catalog.find(({ identity }) => identity === targetId);
+    const blocked = findTargetCatalogEntry(catalog, targetId);
+    if (blocked?.target) return blocked.target;
     if (blocked) {
       if (blocked.blockedReason) {
         throw new TypeError(`Target ${targetId} is not ready: ${blocked.blockedReason}`);

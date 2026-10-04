@@ -8,7 +8,7 @@ const AUTH_LANE_LABELS: Record<string, string> = {
   "grok-auth-email": "Email",
   "grok-auth-gmail": "Gmail",
   "grok-auth-x": "X",
-  "grok-auth-x-out": "X out",
+  "grok-auth-x-out": "X signed out",
   "grok-lab": "SuperGrok",
 };
 
@@ -81,7 +81,6 @@ export function BrowserLaneTabs({
 }) {
   const isolated = isolatedBrowserLanesForTarget(lanes, targetId);
   const [tabs, setTabs] = useState<BrowserLaneTab[]>([]);
-  const [activeKey, setActiveKey] = useState<string>();
 
   function openLane(lane: ProductAccountLane) {
     const blocker = browserLaneTabOpenBlocker({
@@ -93,7 +92,6 @@ export function BrowserLaneTabs({
     const shared = tabs.find((tab) => tab.tabSessionKey === next.tabSessionKey);
     const tab = shared ?? next;
     if (!shared) setTabs((current) => [...current, tab]);
-    setActiveKey(tab.tabSessionKey);
     onOpen(tab);
   }
 
@@ -107,72 +105,35 @@ export function BrowserLaneTabs({
             id="browser-lane-tabs-title"
             className="text-sm font-medium tracking-tight text-foreground"
           >
-            Saved configurations
+            Browser sessions
           </h2>
           <p className="mt-0.5 max-w-prose text-xs leading-5 text-muted-foreground">
-            Each tab is one Lane. Same Lane shares cookies. Different Lanes never do.
+            Each session keeps its own sign-in.
           </p>
         </div>
       </div>
-      <div
-        role="tablist"
-        aria-label="Saved configurations"
-        className="mt-3 flex flex-wrap gap-1.5 rounded-xl border border-border bg-muted/55 p-1"
-      >
+      <div role="group" aria-label="Open a browser session" className="mt-3 flex flex-wrap gap-2">
         {isolated.map((lane) => {
-          const host = browserLaneHostIdentity({
-            laneId: lane.id,
-            targetId: lane.targetId,
-            authenticationFixtureId: lane.reference,
-          });
-          const selected = activeKey === host.tabSessionKey;
           const blocker = browserLaneTabOpenBlocker({
             laneId: lane.id,
             electronGrokLabPartitionPresent,
           });
           return (
-            <button
+            <Button
               key={lane.id}
               type="button"
-              role="tab"
-              aria-selected={selected}
-              title={blocker}
+              variant="outline"
+              size="sm"
+              title={blocker ? "This saved session is not available here." : undefined}
               disabled={disabled || Boolean(blocker)}
               onClick={() => openLane(lane)}
-              className="relative min-h-9 rounded-lg px-3 text-sm font-medium tracking-tight text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 active:scale-95 disabled:opacity-50 aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-sm"
+              className="min-h-9"
             >
-              {browserLaneTabLabel(lane.id)}
-            </button>
+              Open {browserLaneTabLabel(lane.id)}
+            </Button>
           );
         })}
       </div>
-      {tabs.length ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Open {tabs.filter((tab) => tab.tabSessionKey === activeKey)[0]?.label ?? "this Lane"} in
-          Relay. CLI uses the same id as <code className="font-mono">--lane</code>.
-        </p>
-      ) : (
-        <div className="mt-3">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={
-              disabled ||
-              !isolated[0] ||
-              Boolean(
-                isolated[0] &&
-                browserLaneTabOpenBlocker({
-                  laneId: isolated[0].id,
-                  electronGrokLabPartitionPresent,
-                }),
-              )
-            }
-            onClick={() => isolated[0] && openLane(isolated[0])}
-          >
-            Open first configuration
-          </Button>
-        </div>
-      )}
     </section>
   );
 }

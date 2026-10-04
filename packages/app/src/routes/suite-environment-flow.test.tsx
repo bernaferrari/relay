@@ -505,6 +505,68 @@ describe("Suite and Environment routes", () => {
     expect(history.location.pathname).toBe("/environments/space-2");
   });
 
+  it("collapses revoked account history while expired accounts keep their repair actions", async () => {
+    const expired = {
+      ...fixture,
+      id: "expired",
+      reference: "authfx:expired:1",
+      name: "Expired member",
+      expiresAt: Date.now() - 1_000,
+    };
+    const revoked = Array.from({ length: 14 }, (_, index) => ({
+      ...fixture,
+      id: `revoked-${index}`,
+      reference: `authfx:revoked-${index}:1`,
+      name: `Historical account ${index + 1}`,
+      revokedAt: index,
+    }));
+    const refresh = vi.fn(async () => ({ fixture, space }));
+    const revoke = vi.fn(async () => ({ fixture, space }));
+    await render("/environments/space-1", {
+      browserService: browserService({
+        listAuthenticationFixtures: async () => [fixture, expired, ...revoked],
+        refreshAuthenticationFixture: refresh,
+        revokeAuthenticationFixture: revoke,
+      }),
+    });
+
+    const accounts = document.querySelector('[data-slot="environment-accounts"]')!;
+    expect(accounts.querySelectorAll("li")).toHaveLength(2);
+    expect(accounts.textContent).toContain("Staging account");
+    const expiredRow = [...accounts.querySelectorAll("li")].find((row) =>
+      row.textContent?.includes("Expired member"),
+    )!;
+    expect(expiredRow.textContent).toContain("Expired");
+    expect([...expiredRow.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Refresh",
+      "Revoke",
+    ]);
+    const history = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Inactive accounts, 14"]',
+    )!;
+    expect(history.textContent).toContain("Inactive accounts");
+    expect(history.textContent).toContain("14");
+    expect(history.getAttribute("aria-expanded")).toBe("false");
+    expect(document.body.textContent).not.toContain("Historical account");
+
+    await act(async () => history.click());
+    await settle();
+    expect(history.getAttribute("aria-expanded")).toBe("true");
+    const historyList = document.querySelector('[data-slot="environment-inactive-accounts"]')!;
+    expect(historyList.querySelectorAll("li")).toHaveLength(14);
+    expect(historyList.textContent).toContain("Historical account 1");
+    expect(historyList.textContent).toContain("Historical account 14");
+    expect(historyList.textContent).toContain("Revoked");
+    expect(historyList.querySelector("button")).toBeNull();
+
+    await act(async () => history.click());
+    await settle();
+    expect(history.getAttribute("aria-expanded")).toBe("false");
+    expect(document.body.textContent).not.toContain("Historical account");
+    expect(refresh).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
   it("opens, saves/revokes account metadata, and removes an Environment safely", async () => {
     const calls = { open: 0, save: [] as unknown[], revoke: [] as unknown[], remove: 0 };
     const openExternal = vi.fn();

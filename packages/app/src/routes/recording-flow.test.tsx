@@ -15,7 +15,10 @@ import { RecordingInputNotSentError } from "../data/recording-input-outcome";
 import type { DeviceProductService } from "../data/device-product-service";
 import type { MapProductService } from "../data/map-product-service";
 import type { Platform } from "../platform/types";
-import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
+import type {
+  BrowserSpacesProductService,
+  ProductBrowserSpace,
+} from "../data/browser-spaces-product-service";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -1429,6 +1432,16 @@ describe("record, review, replay, and save", () => {
         url: "https://shop.example/",
       }));
       const create = vi.fn().mockResolvedValue({ id: "guest-browser" });
+      const savedSpace = {
+        id: "signed-in-browser",
+        name: "Shop",
+        startUrl: "https://shop.example/",
+        createdAt: 1,
+        updatedAt: 1,
+        profileRetention: "retain",
+        persistent: true,
+        source: { kind: "managed-browser-target", id: "signed-in-browser" },
+      } satisfies ProductBrowserSpace;
       const account = {
         target: { id: "signed-in-browser", name: "Shop", startUrl: "https://shop.example/" },
         fixture: {
@@ -1448,7 +1461,7 @@ describe("record, review, replay, and save", () => {
         platformWithStorage().platform,
         undefined,
         {
-          listSpaces: async () => [{ id: "signed-in-browser", startUrl: "https://shop.example/" }],
+          listSpaces: async () => [savedSpace],
           createSpace: create,
           openSpace: open,
         } as unknown as BrowserSpacesProductService,

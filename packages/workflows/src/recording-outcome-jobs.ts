@@ -2,7 +2,13 @@ import type { AuthorTestSnapshot, DebugBugOutcome, DebugBugOutcomeIntent } from 
 import { CanonicalAuthoringWorkflow } from "./authoring-workflow.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
 import { recordingPathContext } from "./recording-path-context.js";
-import { acquireOwnLease, selectAppMap, selectTarget, targetCatalog } from "./target-catalog.js";
+import {
+  acquireOwnLease,
+  findTargetCatalogEntry,
+  selectAppMap,
+  selectTarget,
+  targetCatalog,
+} from "./target-catalog.js";
 import type {
   ConnectTargetIntent,
   ConnectTargetResult,
@@ -59,15 +65,16 @@ export function createRelayRecordingOutcomeJobs(
       const catalog = await targetCatalog(operations, {
         targetKind: intent.targetKind,
         targetId: intent.targetId,
+        phase: intent.phase,
       });
       const available = catalog.flatMap(({ target }) => (target ? [target] : []));
       const current = intent.targetId
-        ? available.find((target) => target.targetId === intent.targetId)
+        ? findTargetCatalogEntry(catalog, intent.targetId)?.target
         : available.length === 1
           ? available[0]
           : undefined;
       if (intent.targetId && !current) {
-        await selectTarget(operations, intent.targetId, intent.targetKind);
+        await selectTarget(operations, intent.targetId, intent.targetKind, intent.phase);
         throw new TypeError(`Target ${intent.targetId} is not ready.`);
       }
       return {
