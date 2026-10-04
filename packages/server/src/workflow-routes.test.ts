@@ -12,7 +12,8 @@ import {
   currentOperationContext,
   type TestJob,
 } from "@relay/core";
-import type { AuthoringSession } from "@relay/protocol";
+import { parseAuthoringSession, type AuthoringSession } from "@relay/protocol";
+import { authoringInputReceiptOutcome } from "@relay/workflows";
 import { startServer } from "./index.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 
@@ -1480,7 +1481,7 @@ test("a network workflow cannot attach or adopt another principal's canonical jo
   }
 });
 
-test("background inspection cannot reconcile an Authoring dispatch still in flight", async () => {
+test("concurrent identical inputs preserve only the winning mutation receipt", async () => {
   await withServer(async ({ port, runtime }) => {
     const actor = client(port, "agent:first");
     const created = await actor.invoke(
@@ -1517,6 +1518,7 @@ test("background inspection cannot reconcile an Authoring dispatch still in flig
       workflowId,
       expectedVersion: started.workflow.record.version,
       action: "authoring-record",
+      mutationId: "recording-winner",
       interaction: { kind: "wait", ms: 1 },
     });
     await pending;
@@ -1524,11 +1526,78 @@ test("background inspection cannot reconcile an Authoring dispatch still in flig
       const inspected = await actor.invoke("workflow.get", { workflowId });
       assert.equal(inspected.workflow.record.lastTransition, "authoring-record-requested");
       assert.equal(inspected.workflow.record.status, "active");
+      await assert.rejects(
+        actor.invoke("workflow.transition", {
+          workflowId,
+          expectedVersion: started.workflow.record.version,
+          action: "authoring-record",
+          mutationId: "recording-loser",
+          interaction: { kind: "wait", ms: 1 },
+        }),
+        (error: unknown) => error instanceof ApiError && error.status === 409,
+      );
     } finally {
       release();
     }
     const completed = await recording;
     assert.equal(completed.workflow.record.lastTransition, "authoring-record-completed");
     assert.equal(completed.workflow.record.status, "active");
+    const completedSession = parseAuthoringSession(completed.session);
+    const startedSession = parseAuthoringSession(started.session);
+    assert.equal(completedSession.workflowMutation?.mutationId, "recording-winner");
+    const reference = {
+      workflowId,
+      sessionId: startedSession.id,
+      transitionVersion: started.workflow.record.version + 1,
+      target: startedSession.target,
+    };
+    assert.equal(
+      authoringInputReceiptOutcome(completed, { ...reference, mutationId: "recording-winner" }),
+      "applied",
+    );
+    assert.equal(
+      authoringInputReceiptOutcome(completed, { ...reference, mutationId: "recording-loser" }),
+      "unknown",
+    );
   });
 });
+
+for (const retainedMutationId of [undefined, "another-input"]) {
+  test(`completion rejects a recording receipt with ${retainedMutationId ?? "missing"} identity`, async () => {
+    await withServer(async ({ port, runtime }) => {
+      const actor = client(port, "agent:first");
+      const created = await actor.invoke(
+        "workflow.create",
+        {
+          kind: "author-test",
+          frozenIdentity: frozenAuthor("nonce-validation"),
+          expiresAt: 50_000,
+        },
+        { requestId: "nonce-validation" },
+      );
+      const workflowId = created.workflow.record.workflowId;
+      const started = await actor.invoke("workflow.transition", {
+        workflowId,
+        expectedVersion: 1,
+        action: "start-authoring",
+        leaseId: "lease-1",
+      });
+      const original = runtime.transitionAuthoringSession;
+      runtime.transitionAuthoringSession = async (...args) => {
+        const next = await original(...args);
+        next.workflowMutation!.mutationId = retainedMutationId;
+        return next;
+      };
+      await assert.rejects(
+        actor.invoke("workflow.transition", {
+          workflowId,
+          expectedVersion: started.workflow.record.version,
+          action: "authoring-record",
+          mutationId: "recording-expected",
+          interaction: { kind: "wait", ms: 1 },
+        }),
+        (error: unknown) => error instanceof ApiError && error.status === 409,
+      );
+    });
+  });
+}

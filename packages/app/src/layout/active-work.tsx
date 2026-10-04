@@ -92,13 +92,26 @@ function useActiveWorkItems(): {
 }
 
 /**
- * The one live-activity signal in the top bar: absent while idle, a pulsing
- * "N running" pill while recordings, runs, or changes are in progress.
+ * Keep running work and resumable drafts discoverable without animating idle reviews.
  */
 export function ActivityCenterButton() {
   const [open, setOpen] = useState(false);
   // Keep the global indicator current even while the center is closed.
   const { items, unavailable, retry } = useActiveWorkItems();
+  const count = (activity: ActiveWorkItem["activity"]) =>
+    items.filter((item) => item.activity === activity).length;
+  const running = count("running");
+  const drafts = count("draft");
+  const queued = count("queued");
+  const unknown = count("unknown");
+  const label = [
+    running ? `${running} running` : "",
+    queued ? `${queued} queued` : "",
+    drafts ? `${drafts} ${drafts === 1 ? "draft" : "drafts"}` : "",
+    unknown ? `${unknown} to check` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   if (!unavailable && !items.length && !open) return null;
   return (
     <>
@@ -108,20 +121,22 @@ export function ActivityCenterButton() {
           size="sm"
           className="[-webkit-app-region:no-drag]"
           onClick={() => setOpen(true)}
-          title={unavailable ? "Couldn’t check running work" : "See what is running"}
-          aria-label={`Open running work${unavailable ? ", unavailable" : `, ${items.length} active`}`}
+          title={unavailable ? "Couldn’t check activity" : "Open activity"}
+          aria-label={`Open activity${unavailable ? ", unavailable" : `, ${label}`}`}
         >
           {unavailable ? (
             <span className="size-2 rounded-full bg-destructive" aria-hidden="true" />
           ) : (
             <span className="relative flex size-2" aria-hidden="true">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-60 motion-reduce:hidden" />
-              <span className="relative inline-flex size-2 rounded-full bg-brand" />
+              {running > 0 ? (
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-60 motion-reduce:hidden" />
+              ) : null}
+              <span
+                className={`relative inline-flex size-2 rounded-full ${running > 0 ? "bg-brand" : "bg-muted-foreground"}`}
+              />
             </span>
           )}
-          <span className="tabular-nums">
-            {unavailable ? "Activity unavailable" : `${items.length} running`}
-          </span>
+          <span className="tabular-nums">{unavailable ? "Activity unavailable" : label}</span>
         </Button>
       ) : null}
       <ActivityCenter
@@ -163,14 +178,14 @@ function ActivityCenter({
       >
         <header className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
           <div className="min-w-0">
-            <DialogTitle>Running now</DialogTitle>
+            <DialogTitle>Activity</DialogTitle>
             <DialogDescription className="sr-only">
-              In-progress recordings and Runs.
+              Running work and saved recording drafts.
             </DialogDescription>
           </div>
           <DialogClose
             render={
-              <Button size="icon-sm" variant="ghost" aria-label="Close running work">
+              <Button size="icon-sm" variant="ghost" aria-label="Close activity">
                 <X className="size-3.5" aria-hidden="true" />
               </Button>
             }
@@ -179,7 +194,7 @@ function ActivityCenter({
         <ScrollArea className="min-h-0 max-h-[min(28rem,calc(100vh-12rem))]">
           {unavailable ? (
             <div className="grid gap-3 px-4 py-5" role="alert">
-              <p className="text-sm text-muted-foreground">Couldn’t load running work</p>
+              <p className="text-sm text-muted-foreground">Couldn’t load activity</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -223,7 +238,7 @@ function ActivityCenter({
             </div>
           ) : (
             <div className="px-4 py-6">
-              <p className="text-sm text-muted-foreground">Nothing running</p>
+              <p className="text-sm text-muted-foreground">No active work or drafts</p>
             </div>
           )}
         </ScrollArea>

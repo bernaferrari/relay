@@ -4,6 +4,7 @@ import {
   captureProofForAuthoring,
   type AuthoringSession,
 } from "@relay/protocol";
+import { reviewedReplayFailure } from "./reviewed-replay-feedback.js";
 import { recordedTapDisplayTitle } from "@relay/core/recorded-control-label";
 import type {
   AuthorTestSnapshot,
@@ -261,55 +262,57 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
     (attempt) => attempt.takeRevision === revision.revision && attempt.outcome === "passed",
   );
   const captureProvenance = authoringCaptureProvenance(session.captureProvenance);
+  const actions = revision.actions.map((action) => {
+    const linkedEvidence = reviewEvidenceForAction(action, revision);
+    const waitConditions = reviewWaitConditions(action);
+    const observation = action.entranceObservationId
+      ? observationsForRevision(revision).get(action.entranceObservationId)
+      : undefined;
+    const tap = action.steps.length === 1 ? action.steps[0] : undefined;
+    const displayLabel =
+      tap?.kind === "tap" && observation?.nodes
+        ? recordedTapDisplayTitle(
+            action.label ?? semanticIntent(action),
+            tap.target ?? {},
+            observation.nodes,
+            session.target.platform,
+          )
+        : action.label;
+    const intent = displayLabel ? shortName(displayLabel) : semanticIntent(action);
+    return {
+      id: action.id,
+      intent,
+      ...(action.label ? { label: displayLabel } : {}),
+      stepCount: action.steps.length,
+      kind: reviewActionKind(action),
+      ...(waitConditions ? { waitConditions } : {}),
+      startedAt: action.startedAt,
+      finishedAt: action.finishedAt,
+      durationMs: Math.max(0, action.finishedAt - action.startedAt),
+      evidenceIds: linkedEvidence.evidenceIds,
+      evidenceCount: linkedEvidence.evidenceIds.length,
+      evidenceKinds: [...new Set(linkedEvidence.evidence.map((item) => item.kind))],
+      evidence: linkedEvidence.evidence,
+      ...(action.fullPage ? { fullPage: structuredClone(action.fullPage) } : {}),
+      ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
+      captureProof: captureProofForAuthoring(
+        captureProvenance,
+        take.replayAttempts.some(
+          (attempt) =>
+            attempt.source !== "recording" &&
+            attempt.takeRevision === revision.revision &&
+            attempt.outcome === "passed",
+        ),
+      ),
+    };
+  });
+  const failedAction = reviewedReplayFailure(latestReplay, revision.revision, actions);
   return {
     actionCount: revision.actions.length,
     currentRevision: revision.revision,
     revisionCount: take.revisions.length,
     ...(revision.videoClip ? { videoClip: { ...revision.videoClip } } : {}),
-    actions: revision.actions.map((action) => {
-      const linkedEvidence = reviewEvidenceForAction(action, revision);
-      const waitConditions = reviewWaitConditions(action);
-      const observation = action.entranceObservationId
-        ? observationsForRevision(revision).get(action.entranceObservationId)
-        : undefined;
-      const tap = action.steps.length === 1 ? action.steps[0] : undefined;
-      const displayLabel =
-        tap?.kind === "tap" && observation?.nodes
-          ? recordedTapDisplayTitle(
-              action.label ?? semanticIntent(action),
-              tap.target ?? {},
-              observation.nodes,
-              session.target.platform,
-            )
-          : action.label;
-      const intent = displayLabel ? shortName(displayLabel) : semanticIntent(action);
-      return {
-        id: action.id,
-        intent,
-        ...(action.label ? { label: displayLabel } : {}),
-        stepCount: action.steps.length,
-        kind: reviewActionKind(action),
-        ...(waitConditions ? { waitConditions } : {}),
-        startedAt: action.startedAt,
-        finishedAt: action.finishedAt,
-        durationMs: Math.max(0, action.finishedAt - action.startedAt),
-        evidenceIds: linkedEvidence.evidenceIds,
-        evidenceCount: linkedEvidence.evidenceIds.length,
-        evidenceKinds: [...new Set(linkedEvidence.evidence.map((item) => item.kind))],
-        evidence: linkedEvidence.evidence,
-        ...(action.fullPage ? { fullPage: structuredClone(action.fullPage) } : {}),
-        ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
-        captureProof: captureProofForAuthoring(
-          captureProvenance,
-          take.replayAttempts.some(
-            (attempt) =>
-              attempt.source !== "recording" &&
-              attempt.takeRevision === revision.revision &&
-              attempt.outcome === "passed",
-          ),
-        ),
-      };
-    }),
+    actions,
     timeline: timelineForRevision(revision),
     ...(latestReplay
       ? {
@@ -319,6 +322,7 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
             takeRevision: latestReplay.takeRevision,
             outcome: latestReplay.outcome,
             ...(latestReplay.error ? { error: latestReplay.error } : {}),
+            ...(failedAction ? { failedAction } : {}),
           },
         }
       : {}),
@@ -347,7 +351,10 @@ function allowedActions(
   return ["inspect"];
 }
 
-function problemsForSession(session: AuthoringSession): WorkflowProblem[] {
+function problemsForSession(
+  session: AuthoringSession,
+  review: AuthorTestSnapshot["review"],
+): WorkflowProblem[] {
   const problems: WorkflowProblem[] = [];
   const captureProvenance = authoringCaptureProvenance(session.captureProvenance);
   const revision = session.take?.revisions.find(
@@ -400,9 +407,12 @@ function problemsForSession(session: AuthoringSession): WorkflowProblem[] {
     problems.push({
       code: "operation-unavailable",
       title: "Replay did not prove the reviewed recording",
-      detail: replay.error ?? `The latest replay was ${replay.outcome}.`,
-      recovery:
-        "Return to the recorded source, repair the reviewed actions if needed, then replay explicitly.",
+      detail: review?.latestReplay?.failedAction
+        ? `Step ${review.latestReplay.failedAction.ordinal} · ${review.latestReplay.failedAction.intent}: ${review.latestReplay.failedAction.detail}`
+        : (replay.error ?? `The latest replay was ${replay.outcome}.`),
+      recovery: review?.latestReplay?.failedAction
+        ? "Review this step and the screen before it, then run the test again."
+        : "Return to the recorded source, repair the reviewed actions if needed, then replay explicitly.",
       retryable: true,
     });
   }
@@ -487,7 +497,7 @@ export function snapshotFromAuthoringSession(input: {
       ? { label: "The mutation outcome needs inspection" }
       : progressForSession(session),
     allowedNextActions: needsAttention ? ["inspect"] : allowedActions(session, review),
-    problems: [...problemsForSession(session), ...(input.extraProblems ?? [])],
+    problems: [...problemsForSession(session, review), ...(input.extraProblems ?? [])],
     evidenceRefs: evidenceForSession(session),
   };
 }

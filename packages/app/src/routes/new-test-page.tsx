@@ -128,6 +128,7 @@ export function NewTestPage() {
         : undefined;
   const targets = useQuery({
     queryKey: [...recordingQueryKeys.targets, targetKind],
+    enabled: apps.isSuccess && setupMode === "detailed",
     queryFn: async () => {
       const state = await productService.connect({ targetKind });
       return { ...state, targetOptions: await productService.presentTargets(state.targets) };
@@ -299,9 +300,11 @@ export function NewTestPage() {
     mutationFn: async (chosen?: {
       appId: string;
       targetId: string;
+      targetKind?: "device" | "browser";
       title: string;
       authenticationFixtureId?: string;
     }) => {
+      const recordingTargetKind = chosen?.targetKind ?? selectedTarget?.kind;
       const suggestedName =
         chosen?.title ??
         (pathContext.data
@@ -311,6 +314,7 @@ export function NewTestPage() {
         title: suggestedName,
         appMapId: chosen?.appId ?? appId,
         targetId: chosen?.targetId ?? targetId,
+        ...(recordingTargetKind ? { targetKind: recordingTargetKind } : {}),
         ...(chosen?.authenticationFixtureId
           ? { authenticationFixtureId: chosen.authenticationFixtureId }
           : {}),
@@ -398,6 +402,7 @@ export function NewTestPage() {
       await begin.mutateAsync({
         appId: chosenApp,
         targetId: browserTargetId,
+        targetKind: "browser",
         title: `Test on ${host}`,
         ...(account ? { authenticationFixtureId: account.reference } : {}),
       });
@@ -420,8 +425,10 @@ export function NewTestPage() {
 
   const loading = apps.isPending || activePointer.isPending;
   const noTargets = Boolean(targets.data && targets.data.targetOptions.length === 0);
+  const targetError = setupMode === "detailed" ? targets.error : undefined;
+  const targetRecovery = setupMode === "detailed" ? targets.data?.recovery : undefined;
   const setupOpen =
-    !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !blocksNewRecording;
+    !loading && !apps.isError && !targetError && !targetRecovery && !blocksNewRecording;
   const formReady = Boolean(
     appId &&
     selectedTarget &&
@@ -549,14 +556,18 @@ export function NewTestPage() {
         <RecordingProblem
           layout={setupOpen ? "compact" : "centered"}
           className={setupOpen ? undefined : "!mt-0 !max-w-none min-h-0 w-full flex-1"}
-          error={apps.error ?? targets.error ?? pathContext.error}
-          recovery={targets.data?.recovery}
+          error={apps.error ?? targetError ?? pathContext.error}
+          recovery={targetRecovery}
           onRetry={() => {
             if (apps.isError) void apps.refetch();
-            if (targets.isError || targets.data?.recovery) void targets.refetch();
+            if (targetError || targetRecovery) void targets.refetch();
             if (pathContext.isError) void pathContext.refetch();
           }}
-          retrying={apps.isFetching || targets.isFetching || pathContext.isFetching}
+          retrying={
+            apps.isFetching ||
+            (setupMode === "detailed" && targets.isFetching) ||
+            pathContext.isFetching
+          }
         />
         <RecordingProblem
           error={begin.error}

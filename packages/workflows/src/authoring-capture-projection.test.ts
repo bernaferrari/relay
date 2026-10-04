@@ -377,3 +377,87 @@ test("editing after a failed replay retains its history without reporting it as 
   );
   assert.equal(edited.take!.replayAttempts.length, 1);
 });
+
+test("failed replay identifies the fourth reviewed action instead of the adapter's Step 1", () => {
+  const replayed = structuredClone(session);
+  replayed.captureProvenance = {
+    schemaVersion: 1,
+    mode: "control-and-record",
+    origin: "relay-control",
+  };
+  const revision = replayed.take!.revisions[0]!;
+  revision.actions = Array.from({ length: 4 }, (_, index) => ({
+    ...revision.actions[0]!,
+    id: `action-${index + 1}`,
+    label: index === 3 ? "Settings" : `Step ${index + 1}`,
+  }));
+  const error =
+    "Step 1 (Tap identifier open-settings): tap failed: named target absent from current Android accessibility tree: selector is not present in the current accessibility tree (identifier open-settings)";
+  replayed.take!.replayAttempts.push({
+    id: "replay-failed",
+    takeId: "take-1",
+    takeRevision: 1,
+    startedAt: 3,
+    finishedAt: 4,
+    outcome: "failed",
+    error,
+    evidence: [
+      { id: "failure-frame", kind: "screenshot", capturedAt: 3, uri: "/private/frame.png" },
+    ],
+    observations: [
+      {
+        id: "failure-entrance",
+        capturedAt: 3,
+        screen: { id: "screen", fingerprint: "before-failure", capturedAt: 3, source: "run" },
+        evidenceIds: ["failure-frame"],
+      },
+    ],
+    actionProofs: Object.fromEntries(
+      revision.actions.map((action, index) => [
+        action.id,
+        {
+          actionId: action.id,
+          outcome: index === 3 ? "failed" : "passed",
+          proofStatus: "unresolved",
+          transition: "unproven",
+          ...(index === 3
+            ? { error, entranceObservationId: "failure-entrance", evidenceIds: ["failure-frame"] }
+            : { evidenceIds: [] }),
+        },
+      ]),
+    ),
+  });
+  const projected = snapshotFromAuthoringSession({ frozen, session: replayed });
+  assert.deepEqual(projected.review!.latestReplay!.failedAction, {
+    actionId: "action-4",
+    ordinal: 4,
+    intent: "Settings",
+    detail: "The control is not available on this screen.",
+    evidence: [{ id: "failure-frame", kind: "screenshot", capturedAt: 3, roles: ["entrance"] }],
+  });
+  assert.equal(
+    projected.problems[0]!.detail,
+    "Step 4 · Settings: The control is not available on this screen.",
+  );
+  assert.doesNotMatch(projected.problems[0]!.detail, /Step 1|selector|open-settings|accessibility/);
+  assert.equal(projected.review!.latestReplay!.error, error);
+  assert.equal(projected.allowedNextActions.includes("edit"), true);
+  assert.equal(projected.allowedNextActions.includes("approve"), false);
+  // Missing, stale, or mismatched proof identities cannot name a failed step.
+  const replay = replayed.take!.replayAttempts[0]!;
+  replay.actionProofs!["action-4"]!.actionId = "another-action";
+  assert.equal(
+    snapshotFromAuthoringSession({ frozen, session: replayed }).review!.latestReplay!.failedAction,
+    undefined,
+  );
+  replay.actionProofs = {};
+  assert.equal(
+    snapshotFromAuthoringSession({ frozen, session: replayed }).review!.latestReplay!.failedAction,
+    undefined,
+  );
+  replay.takeRevision = 2;
+  assert.equal(
+    snapshotFromAuthoringSession({ frozen, session: replayed }).review!.latestReplay,
+    undefined,
+  );
+});

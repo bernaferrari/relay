@@ -1,3 +1,5 @@
+import type { AuthoringInputReceiptRef } from "@relay/workflows";
+
 export type RecordingObservedEffect = "applied" | "not-observed" | "uncertain";
 
 export type RecordingInputOutcome =
@@ -25,6 +27,7 @@ export type RecordingInputOutcome =
       kind: "unknown";
       message: string;
       mutationId?: string;
+      recordingMutation?: AuthoringInputReceiptRef;
       observed?: RecordingObservedEffect;
       resolvedBy?: { at: number; actor?: string; authority?: "server" };
     };
@@ -244,6 +247,9 @@ export function classifyDispatchFailure(
   return {
     kind: "unknown",
     message,
+    ...(error && typeof error === "object" && "recordingMutation" in error
+      ? { recordingMutation: error.recordingMutation as AuthoringInputReceiptRef }
+      : {}),
     ...(supervisedRecordingMutationId(error)
       ? { mutationId: supervisedRecordingMutationId(error) }
       : {}),
@@ -366,6 +372,7 @@ export function hydrateRecordingLedger(input: {
     if (
       mutation.kind === "unknown" &&
       isSupervisedRecordingMutationId(mutation.mutationId) &&
+      !mutation.recordingMutation &&
       !mutation.observed
     ) {
       return [];

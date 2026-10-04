@@ -1,3 +1,4 @@
+import { RecordingSaveProgress } from "./recording-save-progress";
 import { RecordingReviewStatus } from "./recording-review-status";
 import { RecordingReviewActions } from "./recording-review-actions";
 import {
@@ -27,9 +28,10 @@ import {
   readRecordingInto,
 } from "../data/record-into-test";
 import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
-import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
+import { PageLoading, targetLabel } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
-import { useEvidenceObjectUrl } from "./recording-review-presentation";
+import { useRecordingReviewEvidence } from "./use-recording-review-evidence";
+import { RecordingReviewProblem, useReviewSelection } from "./recording-replay-feedback";
 import { reviewPersistence } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingReviewInspector } from "./recording-review-inspector";
@@ -281,20 +283,22 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     queryFn: () => productService.getOptimization(sessionId!),
     enabled: false,
   });
-  const matchingEvidence = selectedAction?.evidence?.find(
-    (candidate) => candidate.kind === "screenshot" && candidate.roles.includes(evidenceRole),
-  );
-  const evidence =
-    selectedAction?.evidence?.find((candidate) => candidate.id === selectedEvidenceId) ??
-    matchingEvidence ??
-    selectedAction?.evidence?.find((candidate) => candidate.kind === "screenshot");
-  const evidencePreview = useQuery({
-    queryKey: ["recording-evidence-preview", sessionId ?? "unselected", evidence?.id ?? "none"],
-    queryFn: () => productService.getEvidencePreview(sessionId!, evidence!.id),
-    enabled: Boolean(sessionId && evidence),
-    staleTime: Number.POSITIVE_INFINITY,
+  const failedReplay = reviewReady ? review?.latestReplay?.failedAction : undefined;
+  const {
+    matchingEvidence,
+    evidence,
+    evidencePreview,
+    evidenceUrl,
+    failureEvidence,
+    showingReplayFailure,
+  } = useRecordingReviewEvidence({
+    service: productService,
+    sessionId,
+    action: selectedAction,
+    evidenceRole,
+    selectedEvidenceId,
+    failure: failedReplay,
   });
-  const evidenceUrl = useEvidenceObjectUrl(evidencePreview.data);
 
   useEffect(() => {
     if (!saved) return;
@@ -306,15 +310,13 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     });
   }, [platform, queryClient, saved, workflowId]);
 
-  useEffect(() => {
-    if (actions.length === 0) {
-      setSelectedActionIds([]);
-      return;
-    }
-    setSelectedActionIds((current) =>
-      current.some((id) => actions.some((action) => action.id === id)) ? current : [actions[0]!.id],
-    );
-  }, [actions]);
+  const inspectFailedStep = useReviewSelection(
+    actions,
+    reviewReady ? review?.latestReplay : undefined,
+    setSelectedActionIds,
+    setSelectedEvidenceId,
+    setEditing,
+  );
   useEffect(() => {
     setActionIntent(selectedAction?.intent ?? "");
   }, [selectedAction?.id, selectedAction?.intent]);
@@ -375,33 +377,25 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
       if (fold.isIdle) fold.mutate(committedTestId);
       return;
     }
-    {
-      void navigate({
-        to: "/tests/$testId",
-        params: { testId: committedTestId },
-        search: { target: replayTarget?.targetId },
-        replace: true,
-      });
-    }
+    void navigate({
+      to: "/tests/$testId",
+      params: { testId: committedTestId },
+      search: { target: replayTarget?.targetId },
+      replace: true,
+    });
   }, [saved, committedTestId, replayTarget?.targetId, navigate, into.data, into.isPending, fold]);
 
-  if (saved) {
-    if (fold.error) {
-      return (
-        <RecordingProblem
-          className="m-6"
-          error={fold.error}
-          onRetry={() => committedTestId && fold.mutate(committedTestId)}
-          retrying={fold.isPending}
-        />
-      );
-    }
+  if (saved)
     return (
-      <PageLoading
-        label={into.data ? `Adding steps to ${into.data.testName}…` : "Opening the saved Test…"}
+      <RecordingSaveProgress
+        error={fold.error}
+        intoName={into.data?.testName}
+        retrying={fold.isPending}
+        onRetry={() => {
+          if (committedTestId) fold.mutate(committedTestId);
+        }}
       />
     );
-  }
 
   const reviewStatus = (
     <RecordingReviewStatus
@@ -556,9 +550,11 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
       </AuthoringHeader>
 
       {recording.isPending ? <PageLoading label="Loading the reviewed recording…" /> : null}
-      <RecordingProblem
-        layout={review ? "compact" : "centered"}
-        className={review ? "mx-4" : "m-auto flex-1 w-full !max-w-none !mt-0"}
+      <RecordingReviewProblem
+        review={review}
+        failure={failedReplay}
+        canEdit={canEdit}
+        onEditFailure={inspectFailedStep}
         error={recording.error ?? transition.error ?? recoverReview.error ?? leaveDraft.error}
         recovery={
           transition.isPending || recoverReview.error
@@ -571,17 +567,10 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
           });
         }}
         retrying={recording.isFetching}
-        operation={canRecoverReview ? "replay" : "step"}
-        action={
-          canRecoverReview ? (
-            <Button
-              size="sm"
-              onClick={() => recoverReview.mutate()}
-              disabled={recoverReview.isPending}
-            >
-              {recoverReview.isPending ? "Opening saved steps…" : "Review saved steps"}
-            </Button>
-          ) : undefined
+        recover={
+          canRecoverReview
+            ? { pending: recoverReview.isPending, onRecover: () => recoverReview.mutate() }
+            : undefined
         }
       />
 
@@ -617,9 +606,13 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 onOptimize={() => void optimization.refetch()}
                 onSelect={(actionId) => {
                   if (selecting) toggleAction(actionId, !selectedActionIds.includes(actionId));
-                  else setSelectedActionIds([actionId]);
+                  else {
+                    setSelectedActionIds([actionId]);
+                    setSelectedEvidenceId(undefined);
+                  }
                 }}
                 onToggle={toggleAction}
+                failedActionId={failedReplay?.actionId}
               />
             }
             stage={
@@ -635,7 +628,13 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 )}
                 fullPage={evidencePreview.data?.fullPage}
                 onEvidenceSelect={(id) => setSelectedEvidenceId(id)}
-                onEvidenceRoleChange={setEvidenceRole}
+                failureEvidence={Boolean(failureEvidence)}
+                showingReplayFailure={showingReplayFailure}
+                onShowReplayFailure={() => setSelectedEvidenceId(failureEvidence?.id)}
+                onEvidenceRoleChange={(role) => {
+                  setSelectedEvidenceId(undefined);
+                  setEvidenceRole(role);
+                }}
               />
             }
             inspector={

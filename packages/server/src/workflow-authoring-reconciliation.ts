@@ -91,8 +91,20 @@ export function authoringIdentityFromSession(
 export function authoringIdentityAfterMutation(
   record: DurableWorkflowRecord,
   session: AuthoringSession,
-  mutation: { action: AuthoringWorkflowTransitionInput["action"]; transitionVersion: number },
+  mutation: {
+    action: AuthoringWorkflowTransitionInput["action"];
+    transitionVersion: number;
+    mutationId?: string;
+  },
 ): WorkflowJsonValue | undefined {
+  if (
+    mutation.mutationId &&
+    (session.workflowMutation?.workflowId !== record.workflowId ||
+      session.workflowMutation.transitionVersion !== mutation.transitionVersion ||
+      session.workflowMutation.action !== mutation.action ||
+      session.workflowMutation.mutationId !== mutation.mutationId)
+  )
+    return undefined;
   const exact = authoringIdentityFromSession(record, session);
   if (exact) return exact;
   const frozen = authoringFrozenIdentityFromSession(record, session, true);

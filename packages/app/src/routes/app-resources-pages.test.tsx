@@ -2,7 +2,7 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
@@ -11,10 +11,15 @@ import type { MapProductService } from "../data/map-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
+import type { LiveTargetSession, LiveTargetSnapshot } from "../data/live-target-session";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const roots: Root[] = [];
+beforeEach(() => {
+  // Route services are fakes; shell queries must not contact the running Relay server.
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
+});
 const now = Date.now();
 const platform: Platform = {
   platform: "web",
@@ -82,6 +87,7 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 async function render(
@@ -134,6 +140,253 @@ function resources(
 }
 
 describe("App routes", () => {
+  it("signs in inline using one website choice and a fresh isolated browser per account", async () => {
+    const external = vi.fn(async () => {});
+    const saved = vi.fn(async () => ({}) as never);
+    const input = vi.fn(async () => {});
+    const preview = vi.fn(async (target) => accountPreview(target, input));
+    const createSpace = vi.fn(
+      async () => ({ id: `account-browser-${createSpace.mock.calls.length}` }) as never,
+    );
+    const openSpace = vi.fn(async ({ spaceId }) => ({
+      targetId: spaceId,
+      name: "Checkout",
+      url: "https://checkout.example/",
+      sessionId: `session:${spaceId}`,
+      configurationDigest: `config:${spaceId}`,
+    }));
+    await render(
+      "/accounts",
+      resources({
+        listBrowserTargets: async () =>
+          Array.from({ length: 40 }, (_, index) => ({
+            id: `old-browser-${index}`,
+            name: `Checkout browser ${index}`,
+            startUrl: "https://checkout.example/",
+          })),
+        saveBrowserAccount: saved,
+        openBrowserAccountForSignIn: external,
+      }),
+      {
+        ...productService,
+        previewTarget: preview,
+        inspectTargetHealth: async () => ({ input: { state: "ready" } }),
+      },
+      browserSpaces({ createSpace, openSpace }),
+    );
+    for (const name of ["Member", "Admin"]) {
+      await click(button("Add account"));
+      const dialog = document.querySelector('[role="dialog"]')!;
+      expect(dialog.querySelectorAll('[role="radio"]').length).toBe(2);
+      await click(button("Open to sign in", dialog));
+      const canvas = dialog.querySelector<HTMLCanvasElement>(
+        'canvas[data-slot="capture-live-target"]',
+      );
+      expect(canvas).not.toBeNull();
+      const id = `account-browser-${createSpace.mock.calls.length}`;
+      expect(openSpace).toHaveBeenLastCalledWith({ spaceId: id, presentation: "embedded" });
+      expect(preview).toHaveBeenLastCalledWith(
+        expect.objectContaining({ kind: "browser", targetId: id }),
+        { sessionId: `session:${id}`, configurationDigest: `config:${id}` },
+      );
+      await tapAccountPreview(canvas!);
+      await fill(document.querySelector<HTMLInputElement>("#account-name")!, name);
+      await click(button("Save account", dialog));
+      expect(saved).toHaveBeenLastCalledWith({ targetId: id, name });
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    }
+    expect(createSpace).toHaveBeenCalledTimes(2);
+    expect(input).toHaveBeenCalledTimes(2);
+    expect(external).not.toHaveBeenCalled();
+  });
+
+  it("keeps Save account fenced after an unconfirmed inline sign-in click", async () => {
+    const saved = vi.fn(async () => ({}) as never);
+    const input = vi.fn(async () => {
+      throw Object.assign(new Error("lost response"), { mutationId: "account-input-1" });
+    });
+    const reconcile = vi.fn(async () => ({
+      mutationId: "account-input-1",
+      outcome: "applied" as const,
+      health: { state: "ready" as const },
+    }));
+    await render(
+      "/accounts",
+      resources({ saveBrowserAccount: saved }),
+      {
+        ...productService,
+        previewTarget: async (target) => accountPreview(target, input),
+        inspectTargetHealth: async () => ({ input: { state: "ready" } }),
+        reconcileInput: reconcile,
+      },
+      browserSpaces({
+        createSpace: async () => ({ id: "new-account" }) as never,
+        openSpace: async () => ({
+          targetId: "new-account",
+          name: "Checkout",
+          url: "https://checkout.example/",
+          sessionId: "session:new-account",
+        }),
+      }),
+    );
+    await click(button("Add account"));
+    await fill(document.querySelector<HTMLInputElement>("#account-website")!, "checkout.example");
+    await click(button("Open to sign in"));
+    await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Member");
+    const dialog = document.querySelector('[role="dialog"]')!;
+    const canvas = dialog.querySelector<HTMLCanvasElement>("canvas")!;
+    expect(canvas).not.toBeNull();
+    await tapAccountPreview(canvas);
+    expect(button("Save account", dialog).disabled).toBe(true);
+    await tapAccountPreview(canvas);
+    expect(input).toHaveBeenCalledTimes(1);
+    expect(saved).not.toHaveBeenCalled();
+    await click(button("It applied", dialog));
+    expect(reconcile).toHaveBeenCalledWith(
+      expect.objectContaining({ serial: "new-account", mutationId: "account-input-1" }),
+    );
+    expect(button("Save account", dialog).disabled).toBe(false);
+    await click(button("Save account", dialog));
+    expect(saved).toHaveBeenCalledWith({ targetId: "new-account", name: "Member" });
+  });
+
+  it.each([
+    { sessionId: "another-session", frameSequence: 1 },
+    { sessionId: "session:new-account", frameSequence: 0 },
+  ])("does not save from a foreign session or before its first frame: %j", async (frame) => {
+    const saved = vi.fn(async () => ({}) as never);
+    const input = vi.fn(async () => {});
+    await render(
+      "/accounts",
+      resources({ saveBrowserAccount: saved }),
+      { ...productService, previewTarget: async (target) => accountPreview(target, input, frame) },
+      browserSpaces({
+        createSpace: async () => ({ id: "new-account" }) as never,
+        openSpace: async () => ({
+          targetId: "new-account",
+          name: "Checkout",
+          url: "https://checkout.example/",
+          sessionId: "session:new-account",
+        }),
+      }),
+    );
+    await click(button("Add account"));
+    await fill(document.querySelector<HTMLInputElement>("#account-website")!, "checkout.example");
+    await click(button("Open to sign in"));
+    await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Member");
+    expect(button("Save account").disabled).toBe(true);
+    await tapAccountPreview(document.querySelector<HTMLCanvasElement>("canvas")!);
+    expect(input).not.toHaveBeenCalled();
+    expect(saved).not.toHaveBeenCalled();
+  });
+
+  it("fences Save against a same-turn pending sign-in input", async () => {
+    let finish!: () => void;
+    const input = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const saved = vi.fn(async () => ({}) as never);
+    await render(
+      "/accounts",
+      resources({ saveBrowserAccount: saved }),
+      { ...productService, previewTarget: async (target) => accountPreview(target, input) },
+      browserSpaces({
+        createSpace: async () => ({ id: "new-account" }) as never,
+        openSpace: async () => ({
+          targetId: "new-account",
+          name: "Checkout",
+          url: "https://checkout.example/",
+          sessionId: "session:new-account",
+        }),
+      }),
+    );
+    await click(button("Add account"));
+    await fill(document.querySelector<HTMLInputElement>("#account-website")!, "checkout.example");
+    await click(button("Open to sign in"));
+    await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Member");
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas")!;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 240 }) as DOMRect;
+    canvas.setPointerCapture = () => {};
+    await act(async () => {
+      canvas.dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, clientX: 80, clientY: 100 }),
+      );
+      canvas.dispatchEvent(
+        new MouseEvent("pointerup", { bubbles: true, clientX: 80, clientY: 100 }),
+      );
+      button("Save account").click();
+    });
+    expect(saved).not.toHaveBeenCalled();
+    expect(button("Save account").disabled).toBe(true);
+    await act(async () => finish());
+    await settle();
+    expect(button("Save account").disabled).toBe(false);
+  });
+
+  it("opens the same sign-in profile externally and waits for its new exact preview session", async () => {
+    let connect!: (session: LiveTargetSession) => void;
+    const nextPreview = new Promise<LiveTargetSession>((resolve) => {
+      connect = resolve;
+    });
+    const input = vi.fn(async () => {});
+    const preview = vi
+      .fn()
+      .mockImplementationOnce(async (target) => accountPreview(target, input))
+      .mockImplementationOnce(() => nextPreview);
+    const openSpace = vi
+      .fn()
+      .mockResolvedValueOnce({
+        targetId: "new-account",
+        name: "Checkout",
+        url: "https://checkout.example/",
+        sessionId: "session:new-account",
+        configurationDigest: "same-profile",
+      })
+      .mockResolvedValueOnce({
+        targetId: "new-account",
+        name: "Checkout",
+        url: "https://checkout.example/",
+        sessionId: "headed-session",
+        configurationDigest: "same-profile",
+      });
+    const createSpace = vi.fn(async () => ({ id: "new-account" }) as never);
+    await render(
+      "/accounts",
+      resources({ saveBrowserAccount: async () => ({}) as never }),
+      { ...productService, previewTarget: preview },
+      browserSpaces({ createSpace, openSpace }),
+    );
+    await click(button("Add account"));
+    await fill(document.querySelector<HTMLInputElement>("#account-website")!, "checkout.example");
+    await click(button("Open to sign in"));
+    await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Member");
+    expect(button("Save account").disabled).toBe(false);
+    await click(button("Open browser window"));
+    expect(createSpace).toHaveBeenCalledTimes(1);
+    expect(openSpace).toHaveBeenLastCalledWith({
+      spaceId: "new-account",
+      presentation: "external",
+    });
+    expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ targetId: "new-account" }), {
+      sessionId: "headed-session",
+      configurationDigest: "same-profile",
+    });
+    expect(button("Save account").disabled).toBe(true);
+    await act(async () =>
+      connect(
+        accountPreview({ kind: "browser", platform: "browser", targetId: "new-account" }, input, {
+          sessionId: "headed-session",
+          frameSequence: 1,
+        }),
+      ),
+    );
+    await settle();
+    expect(button("Save account").disabled).toBe(false);
+  });
+
   it("lists production apps and creates an App through the canonical service", async () => {
     const created: string[] = [];
     const history = await render(
@@ -287,20 +540,33 @@ describe("App routes", () => {
           opened.push(input);
         },
       }),
+      {
+        ...productService,
+        previewTarget: async (target) => accountPreview(target, async () => {}),
+      },
+      browserSpaces({
+        createSpace: async () => ({ id: "isolated-checkout" }) as never,
+        openSpace: async () => ({
+          targetId: "isolated-checkout",
+          name: "Checkout",
+          url: "https://checkout.example/",
+          sessionId: "session:isolated-checkout",
+        }),
+      }),
     );
 
     expect(document.querySelector("h1")?.textContent).toBe("Accounts");
-    expect(document.body.textContent).toContain("Save a login once; tests can run as it.");
+    expect(document.body.textContent).toContain("Logins your tests can run as.");
     await click(button("Add account"));
     const dialog = () => document.querySelector('[role="dialog"]')!;
     expect(dialog().textContent).toContain("checkout.example");
     expect(dialog().textContent).toContain("Another website");
     await click(button("Open to sign in", dialog()));
-    expect(opened).toEqual([{ targetId: "first-browser" }]);
+    expect(opened).toEqual([]);
     expect(dialog().textContent).toContain("Sign in to checkout.example");
     await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Staging buyer");
     await click(button("Save account", dialog()));
-    expect(saved).toEqual([{ targetId: "first-browser", name: "Staging buyer" }]);
+    expect(saved).toEqual([{ targetId: "isolated-checkout", name: "Staging buyer" }]);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
@@ -315,11 +581,23 @@ describe("App routes", () => {
           opened.push(input);
         },
       }),
-      productService,
+      {
+        ...productService,
+        previewTarget: async (target) => accountPreview(target, async () => {}),
+      },
       browserSpaces({
         createSpace: async (input) => {
           created.push(input);
           return { id: "new-browser" } as never;
+        },
+        openSpace: async (input) => {
+          opened.push(input);
+          return {
+            targetId: "new-browser",
+            name: "App",
+            url: "https://app.example.com/",
+            sessionId: "session:new-browser",
+          };
         },
       }),
     );
@@ -330,7 +608,7 @@ describe("App routes", () => {
     expect(created).toEqual([
       { name: "app.example.com", startUrl: "https://app.example.com/", profileRetention: "retain" },
     ]);
-    expect(opened).toEqual([{ targetId: "new-browser" }]);
+    expect(opened).toEqual([{ spaceId: "new-browser", presentation: "embedded" }]);
   });
 
   it("shows each account by name, website, sign-in method, status, and last use", async () => {
@@ -574,6 +852,56 @@ function button(name: string, root: ParentNode = document): HTMLButtonElement {
   );
   if (!(match instanceof HTMLButtonElement)) throw new TypeError(`Button not found: ${name}`);
   return match;
+}
+
+function accountPreview(
+  target: LiveTargetSnapshot["target"],
+  input: LiveTargetSession["input"],
+  frame?: { sessionId: string; frameSequence: number },
+): LiveTargetSession {
+  let snapshot: LiveTargetSnapshot = { status: "connecting", target };
+  const listeners = new Set<(snapshot: LiveTargetSnapshot) => void>();
+  return {
+    snapshot: () => snapshot,
+    subscribe(listener) {
+      listeners.add(listener);
+      listener(snapshot);
+      return () => listeners.delete(listener);
+    },
+    mount(canvas) {
+      canvas.width = 320;
+      canvas.height = 240;
+      snapshot = {
+        status: "streaming",
+        target,
+        frameSequence: frame?.frameSequence ?? 1,
+        browserContext: {
+          sessionId: frame?.sessionId ?? `session:${target.targetId}`,
+          engine: "chromium",
+          viewport: { width: 320, height: 240 },
+          locale: "en-US",
+        },
+      };
+      listeners.forEach((listener) => listener(snapshot));
+      return () => {};
+    },
+    input,
+    close() {
+      listeners.clear();
+    },
+  };
+}
+
+async function tapAccountPreview(canvas: HTMLCanvasElement) {
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 240 }) as DOMRect;
+  canvas.setPointerCapture = () => {};
+  await act(async () => {
+    canvas.dispatchEvent(
+      new MouseEvent("pointerdown", { bubbles: true, clientX: 80, clientY: 100 }),
+    );
+    canvas.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientX: 80, clientY: 100 }));
+  });
+  await settle();
 }
 
 async function click(target: HTMLElement) {

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { mock } from "node:test";
 import {
   AUTHORING_RAW_CAPTURE_VERSION,
   summarizeAuthoringSession,
@@ -23,6 +23,11 @@ import { runWithOperationContext, type OperationContext } from "./operation-cont
 import { commitAppMapChanges } from "./app-map.js";
 import { createAppMap, mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { readAuthoringEvidence } from "./authoring-evidence.js";
+import {
+  authoringSessionPath,
+  readAuthoringSession,
+  writeAuthoringSession,
+} from "./authoring-session-storage.js";
 import { MAX_AUTHORING_RETAINED_OBSERVATIONS } from "./authoring-observation-links.js";
 import {
   appendAuthoringRawInteractionIntent,
@@ -204,6 +209,103 @@ async function createReadySession(
   session = await store.observe(session.id, runtime);
   return session;
 }
+
+test("new recording retention does not hydrate historical Takes and prunes only old abandoned sessions", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const seed = await store.start(
+      (await createReadySession(store, runtime, appMapId)).id,
+      runtime,
+    );
+    const retained = [
+      { id: "history-newest", state: "failed" as const, updatedAt: 500 },
+      { id: "history-review", state: "reviewing" as const, updatedAt: 100 },
+      { id: "history-active", state: "recording" as const, updatedAt: 100 },
+      { id: "history-saved", state: "committed" as const, updatedAt: 100 },
+      {
+        id: "history-other-project",
+        state: "cancelled" as const,
+        updatedAt: 100,
+        projectId: "project-b",
+      },
+      {
+        id: "history-archived",
+        state: "cancelled" as const,
+        updatedAt: 100,
+        archive: {
+          reason: "superseded" as const,
+          archivedAt: 100,
+          supersededBySessionId: "history-review",
+        },
+      },
+    ];
+    await Promise.all(
+      [...retained, { id: "history-old", state: "cancelled" as const, updatedAt: 200 }].map(
+        (entry) => writeAuthoringSession({ ...seed, ...entry }),
+      ),
+    );
+    const corrupted = JSON.parse(await readFile(authoringSessionPath(seed.id), "utf8"));
+    corrupted.id = "history-corrupt";
+    corrupted.state = "failed";
+    corrupted.updatedAt = 600;
+    corrupted.take.revisions[0].observationRefs = ["missing-observation"];
+    await writeFile(authoringSessionPath(corrupted.id), JSON.stringify(corrupted));
+    await writeFile(authoringSessionPath("history-invalid-json"), "{");
+    await writeFile(
+      authoringSessionPath("history-invalid-schema"),
+      JSON.stringify({ ...corrupted, id: "history-invalid-schema", schemaVersion: 999 }),
+    );
+    await writeFile(
+      authoringSessionPath("history-id-mismatch"),
+      JSON.stringify({ ...corrupted, id: "history-different-file" }),
+    );
+    const previousLimit = process.env.RELAY_ABANDONED_AUTHORING_LIMIT;
+    process.env.RELAY_ABANDONED_AUTHORING_LIMIT = "1";
+    const originalClone = structuredClone;
+    const clone = mock.method(
+      globalThis,
+      "structuredClone",
+      (value: unknown, options?: Parameters<typeof structuredClone>[1]) => {
+        if (
+          value &&
+          typeof value === "object" &&
+          "id" in value &&
+          String(value.id).startsWith("history-")
+        ) {
+          throw new Error("Creating a recording hydrated a historical Take");
+        }
+        return originalClone(value, options);
+      },
+    );
+    try {
+      const map = await readAppMap("project-a", appMapId);
+      await store.create({
+        appMapId,
+        expectedAppMapRevision: map!.revision,
+        target: seed.target,
+        leaseId: "lease-a",
+      });
+    } finally {
+      clone.mock.restore();
+      if (previousLimit === undefined) delete process.env.RELAY_ABANDONED_AUTHORING_LIMIT;
+      else process.env.RELAY_ABANDONED_AUTHORING_LIMIT = previousLimit;
+    }
+    await assert.rejects(store.get("history-old"), /not found/u);
+    for (const entry of retained) {
+      const preserved = await readAuthoringSession(entry.id);
+      assert.ok(preserved, `${entry.id} must be retained`);
+      assert.equal(preserved.state, entry.state);
+      assert.deepEqual(preserved.take, seed.take);
+    }
+    for (const id of [
+      "history-corrupt",
+      "history-invalid-json",
+      "history-invalid-schema",
+      "history-id-mismatch",
+    ]) {
+      await readFile(authoringSessionPath(id));
+    }
+  });
+});
 
 test("state machine permits only explicit lifecycle edges", () => {
   const allowed = new Set([

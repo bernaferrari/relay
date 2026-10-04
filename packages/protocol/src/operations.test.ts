@@ -21,6 +21,18 @@ import { destEndCoverageForRequirement } from "./recipes.js";
 import { RC23_SCREENSHOT_FIRST_TESTS } from "./rc23-screenshot-first.js";
 import * as z from "zod/v4";
 
+test("target inventory accepts an explicit kind and exact id while preserving default discovery", () => {
+  const input = operationDefinition("target.devices.list").input;
+  assert.deepEqual(input.parse({}), {});
+  assert.deepEqual(input.parse({ phase: "android" }), { phase: "android" });
+  assert.deepEqual(input.parse({ targetKind: "browser", targetId: "browser-1" }), {
+    targetKind: "browser",
+    targetId: "browser-1",
+  });
+  assert.throws(() => input.parse({ targetKind: "guess" }), /device or browser/u);
+  assert.throws(() => input.parse({ targetId: "" }));
+});
+
 function jsonSchemaHasKey(schema: unknown, key: string, seen = new Set<unknown>()): boolean {
   if (!schema || typeof schema !== "object" || seen.has(schema)) return false;
   seen.add(schema);

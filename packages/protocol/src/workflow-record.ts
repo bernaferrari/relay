@@ -88,7 +88,12 @@ export type WorkflowTransitionInput = WorkflowTransitionFence &
     | { action: "abandon-run"; reason: string }
     | { action: "cancel-run" }
     | { action: "start-authoring"; leaseId: string }
-    | { action: "authoring-record"; interaction: import("./authoring.js").AuthoringInteraction }
+    | {
+        action: "authoring-record";
+        interaction: import("./authoring.js").AuthoringInteraction;
+        /** Unique caller identity, persisted only with this successful input. */
+        mutationId?: string;
+      }
     | { action: "authoring-checkpoint"; label?: string }
     | { action: "authoring-stop" }
     | { action: "authoring-edit"; edit: import("./authoring.js").AuthoringRecordingEdit }

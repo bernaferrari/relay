@@ -41,7 +41,10 @@ export async function targetCatalog(
   operations: RelayOperationPort,
   scope: { targetKind?: AuthoringTarget["kind"]; targetId?: string } = {},
 ): Promise<TargetCatalogEntry[]> {
-  const output = await operations.invoke("target.devices.list", {});
+  const output = await operations.invoke("target.devices.list", {
+    ...(scope.targetKind ? { targetKind: scope.targetKind } : {}),
+    ...(scope.targetId ? { targetId: scope.targetId } : {}),
+  });
   const devices = output.devices.filter((device) => {
     if (scope.targetId && (device.serial || device.id) !== scope.targetId) return false;
     if (!scope.targetKind) return true;
@@ -103,8 +106,9 @@ export async function targetCatalog(
 export async function selectTarget(
   operations: RelayOperationPort,
   targetId?: string,
+  targetKind?: AuthoringTarget["kind"],
 ): Promise<AuthoringTarget> {
-  const catalog = await targetCatalog(operations, { targetId });
+  const catalog = await targetCatalog(operations, { targetId, targetKind });
   const available = catalog.flatMap(({ target }) => (target ? [target] : []));
   if (targetId) {
     const selected = available.find((target) => target.targetId === targetId);

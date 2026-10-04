@@ -292,7 +292,12 @@ function durableTransitionInput(
     expectedVersion: decision.expectedVersion,
   };
   if (decision.action === "record") {
-    return { ...fence, action: "authoring-record", interaction: decision.interaction };
+    return {
+      ...fence,
+      action: "authoring-record",
+      interaction: decision.interaction,
+      ...(decision.mutationId ? { mutationId: decision.mutationId } : {}),
+    };
   }
   if (decision.action === "checkpoint") {
     return {

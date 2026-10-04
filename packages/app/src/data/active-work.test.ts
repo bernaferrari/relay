@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ProductRecordingState } from "./recording-product-service";
 import { collectActiveWork } from "./active-work";
 
 describe("active work projection", () => {
@@ -144,4 +145,53 @@ describe("active work projection", () => {
     ]);
     expect(items.find(({ id }) => id === "run:run-host-c")?.href).toBe("/runs/run-host-c");
   });
+});
+
+const reviewedDraft: ProductRecordingState = {
+  status: "reviewing",
+  targets: [],
+  snapshot: {
+    schemaVersion: 1,
+    kind: "author-test",
+    title: "Draft checkout",
+    phase: "running",
+    stage: "reviewing",
+    version: "v1",
+    progress: { label: "Review the recording" },
+    allowedNextActions: ["inspect", "edit", "replay"],
+    problems: [],
+    evidenceRefs: [],
+  },
+};
+
+it("keeps a reviewed draft reopenable without presenting it as execution", () => {
+  expect(collectActiveWork({ recordingId: "draft-1", recording: reviewedDraft })).toMatchObject([
+    {
+      activity: "draft",
+      status: "Draft",
+      title: "Draft checkout",
+      href: "/recordings/draft-1/review",
+    },
+  ]);
+});
+
+it("distinguishes a draft, running execution, queued execution and unconfirmed pointer", () => {
+  const run = {
+    id: "running",
+    title: "Checkout",
+    action: "test",
+    status: "running",
+    phase: "running" as const,
+    queuedAt: 1,
+    identity: { runId: "running" },
+    links: { self: "/runs/running" },
+  };
+  const items = collectActiveWork({
+    recordingId: "draft-1",
+    recording: reviewedDraft,
+    runs: [run, { ...run, id: "queued", phase: "queued" }],
+    runPointer: { runId: "unknown", workflowId: "workflow", testId: "test" },
+  });
+  expect(items.map((item) => item.activity)).toEqual(["draft", "running", "queued", "unknown"]);
+  expect(items.filter((item) => item.activity === "running")).toHaveLength(1);
 });

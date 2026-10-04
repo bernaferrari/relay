@@ -181,6 +181,32 @@ test("durable recording retains typed pre-dispatch proof after inspecting the fa
   assert.equal(scripted.invocations.filter((call) => call.id === "workflow.transition").length, 1);
 });
 
+test("durable recording forwards the exact client mutation identity", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "workflow.transition",
+      checkInput: (input) =>
+        assert.deepEqual(input, {
+          workflowId: "author-workflow",
+          expectedVersion: 3,
+          action: "authoring-record",
+          interaction: { kind: "wait", ms: 1 },
+          mutationId: "recording-1",
+        }),
+      output: { workflow: workflow(5, "authoring-record-completed"), session },
+    },
+  ]);
+  const state = await createRelayWorkflows(scripted.client).advanceAuthoring({
+    workflowId: "author-workflow",
+    expectedVersion: 3,
+    action: "record",
+    interaction: { kind: "wait", ms: 1 },
+    mutationId: "recording-1",
+  });
+  assert.equal(state.stage, "recording");
+  assert.deepEqual(state.problems, []);
+});
+
 test("a failed inspection cannot impersonate a fresh workflow version", async () => {
   const scripted = createScriptedRelayClient([{ id: "workflow.get", error: new Error("Offline") }]);
   const snapshot = await createRelayWorkflows(scripted.client).inspectAuthoring("author-workflow");

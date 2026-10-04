@@ -14,6 +14,7 @@ import {
   type WorkflowProblem,
 } from "@relay/workflows/types";
 import type { RelayInvokeClient } from "@relay/workflows/operation-port";
+import type { AuthoringInputReceiptRef } from "@relay/workflows";
 import { projectError, type HumanError } from "./errors.js";
 export { listProductRecordingDrafts, type ProductRecordingDraft } from "./recording-drafts.js";
 
@@ -35,6 +36,8 @@ export type ProductRecordingAction =
 export type ProductRecordingRecovery = HumanError & {
   code: WorkflowProblem["code"] | "transport";
   action?: ProductRecordingAction["action"];
+  /** Exact reserved transition identity from the fresh pre-dispatch read. */
+  recordingMutation?: AuthoringInputReceiptRef;
 };
 
 export type ProductRecordingStatus =
@@ -59,6 +62,7 @@ export type ProductRecordingBeginInput = RecordingPathContext & {
   title: string;
   appMapId?: string;
   targetId?: string;
+  targetKind?: AuthoringTarget["kind"];
   originApplication?: string;
   /** Saved browser login to record as. */
   authenticationFixtureId?: string;
@@ -228,7 +232,7 @@ export function createProductRecordingJourney(input: {
       targets: current.targets.map((target) => ({ ...target })),
       ...(current.selectedTarget ? { selectedTarget: { ...current.selectedTarget } } : {}),
       ...(current.snapshot ? { snapshot: copySnapshot(current.snapshot) } : {}),
-      ...(current.recovery ? { recovery: { ...current.recovery } } : {}),
+      ...(current.recovery ? { recovery: structuredClone(current.recovery) } : {}),
     };
   }
 
@@ -252,7 +256,7 @@ export function createProductRecordingJourney(input: {
         : current.snapshot
           ? { snapshot: copySnapshot(current.snapshot) }
           : {}),
-      ...(input.recovery ? { recovery: { ...input.recovery } } : {}),
+      ...(input.recovery ? { recovery: structuredClone(input.recovery) } : {}),
     };
     return exposedState();
   }
@@ -260,6 +264,7 @@ export function createProductRecordingJourney(input: {
   function publishSnapshot(
     snapshot: AuthorTestSnapshot,
     action?: ProductRecordingAction["action"],
+    recordingMutation?: AuthoringInputReceiptRef,
   ): ProductRecordingState {
     const recovery = recoveryFromSnapshot(snapshot, action);
     // An unavailable read is not a new canonical state. Keep the last review
@@ -278,7 +283,9 @@ export function createProductRecordingJourney(input: {
     return publish({
       snapshot: retained,
       ...(snapshot.frozen?.target ? { selectedTarget: snapshot.frozen.target } : {}),
-      ...(recovery ? { recovery } : {}),
+      ...(recovery
+        ? { recovery: { ...recovery, ...(recordingMutation ? { recordingMutation } : {}) } }
+        : {}),
     });
   }
 
@@ -299,13 +306,16 @@ export function createProductRecordingJourney(input: {
 
   async function begin(input: ProductRecordingBeginInput): Promise<ProductRecordingState> {
     try {
+      const targetId = input.targetId ?? current.selectedTarget?.targetId;
+      const targetKind =
+        input.targetKind ??
+        (targetId === current.selectedTarget?.targetId ? current.selectedTarget?.kind : undefined);
       const snapshot = await jobs.record({
         kind: "record-test",
         title: input.title,
         ...(input.appMapId ? { appMapId: input.appMapId } : {}),
-        ...((input.targetId ?? current.selectedTarget?.targetId)
-          ? { targetId: input.targetId ?? current.selectedTarget?.targetId }
-          : {}),
+        ...(targetId ? { targetId } : {}),
+        ...(targetKind ? { targetKind } : {}),
         ...(input.originApplication?.trim()
           ? { originApplication: input.originApplication.trim() }
           : {}),
@@ -378,13 +388,35 @@ export function createProductRecordingJourney(input: {
     if (!snapshot.allowedNextActions.includes(action.action)) {
       return publish({ recovery: unexpectedAction(snapshot, action.action) });
     }
+    const decision = decisionFor(snapshot, action);
+    if (decision.action === "record") decision.mutationId = crypto.randomUUID();
+    const recordingMutation: AuthoringInputReceiptRef | undefined =
+      decision.action === "record" &&
+      decision.mutationId &&
+      snapshot.workflow &&
+      snapshot.authoring?.sessionId &&
+      snapshot.frozen?.target.kind === "browser"
+        ? {
+            mutationId: decision.mutationId,
+            workflowId: snapshot.workflow.workflowId,
+            sessionId: snapshot.authoring.sessionId,
+            transitionVersion: snapshot.workflow.expectedVersion + 1,
+            target: structuredClone(snapshot.frozen.target),
+          }
+        : undefined;
     try {
       return publishSnapshot(
-        await jobs.advanceRecording(decisionFor(snapshot, action)),
+        await jobs.advanceRecording(decision),
         action.action,
+        recordingMutation,
       );
     } catch (error) {
-      return publish({ recovery: recoveryFromError(error, action.action) });
+      return publish({
+        recovery: {
+          ...recoveryFromError(error, action.action),
+          ...(recordingMutation ? { recordingMutation } : {}),
+        },
+      });
     }
   }
 

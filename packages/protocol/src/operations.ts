@@ -5,6 +5,7 @@ import {
   captureReviewOutputParser,
 } from "./capture-review-operation-parser.js";
 import { assertTargetRuntimeReadiness } from "./target-runtime-readiness-parser.js";
+import { targetDevicesInputParser } from "./target-inventory-input-parser.js";
 import {
   authoringInteractionParser,
   authoringSessionListInputParser,
@@ -142,14 +143,6 @@ const devicesParser = objectParser<{ devices: DeviceSummary[] }>("devices respon
       assertTargetRuntimeReadiness(device.readiness, "device readiness");
   }
 });
-const targetDevicesInputParser = objectParser<{ phase?: "android" | "ios" }>(
-  "target devices input",
-  (input) => {
-    if (input.phase !== undefined && input.phase !== "android" && input.phase !== "ios") {
-      fail("target devices phase", "must be android or ios when provided");
-    }
-  },
-);
 const androidAvdInventoryParser = objectParser<{ inventory: AndroidAvdInventory }>(
   "target.avds.list output",
   (input) => {

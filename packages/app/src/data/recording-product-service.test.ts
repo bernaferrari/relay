@@ -198,6 +198,87 @@ describe("recording edit adapter", () => {
     );
   });
 
+  it("loads only the exact failed replay entrance screenshot in the current revision", async () => {
+    const hash = "e".repeat(64);
+    const replay = {
+      takeRevision: 2,
+      outcome: "failed",
+      evidence: [{ id: "failure-frame", kind: "screenshot", uri: `relay-evidence://${hash}` }],
+      observations: [
+        {
+          id: "entrance",
+          evidenceIds: ["failure-frame"],
+          nodes: [{ label: "Search", rect: { x: 40, y: 200, width: 80, height: 40 } }],
+        },
+      ],
+      actionProofs: {
+        failed: {
+          actionId: "failed",
+          outcome: "failed",
+          entranceObservationId: "entrance",
+          evidenceIds: ["failure-frame"],
+        },
+      },
+    };
+    const take = {
+      currentRevision: 2,
+      revisions: [
+        {
+          revision: 2,
+          actions: [
+            { id: "earlier", evidenceIds: [] },
+            { id: "failed", evidenceIds: [] },
+          ],
+          evidence: [],
+        },
+      ],
+      replayAttempts: [replay],
+    };
+    client.invoke.mockClear();
+    client.binaryResource.mockClear();
+    client.invoke.mockResolvedValueOnce({ session: { take } });
+    client.binaryResource.mockResolvedValueOnce({
+      bytes: new Uint8Array([4]),
+      headers: new Headers({ "content-type": "image/png" }),
+    });
+    const service = createRecordingProductService(platform);
+    const preview = await service.getEvidencePreview("session", "failure-frame");
+    expect(preview?.bytes).toEqual(new Uint8Array([4]));
+    expect(preview?.controls?.map((control) => control.name)).toEqual(["Search"]);
+    expect(client.binaryResource).toHaveBeenCalledWith(
+      `/authoring-evidence/${hash}?mime=image%2Fpng&v=cors-v2`,
+    );
+    for (const change of [
+      (value: typeof replay) => {
+        value.takeRevision = 1;
+      },
+      (value: typeof replay) => {
+        value.outcome = "passed";
+      },
+      (value: typeof replay) => {
+        value.actionProofs.failed.outcome = "passed";
+      },
+      (value: typeof replay) => {
+        value.actionProofs.failed.actionId = "earlier";
+      },
+      (value: typeof replay) => {
+        value.actionProofs.failed.entranceObservationId = "missing";
+      },
+      (value: typeof replay) => {
+        value.evidence[0]!.uri = "/private/raw.png";
+      },
+    ]) {
+      const changed = structuredClone(replay);
+      change(changed);
+      client.invoke.mockResolvedValueOnce({
+        session: { take: { ...take, replayAttempts: [changed] } },
+      });
+      client.binaryResource.mockClear();
+      await expect(service.getEvidencePreview("session", "failure-frame")).resolves.toBeNull();
+      expect(client.binaryResource).not.toHaveBeenCalled();
+    }
+  });
+
   it("projects pickable controls from the observation that owns the screenshot", async () => {
     const sha256 = "b".repeat(64);
     client.invoke.mockClear();
@@ -566,10 +647,20 @@ it("live recording preserves only typed pre-dispatch recovery", async () => {
       code: "mutation-outcome-unknown",
       detail: "Inspection failed after tapping",
       recovery: "Inspect",
+      recordingMutation: {
+        mutationId: "recording-1",
+        workflowId: "workflow-1",
+        sessionId: "session-1",
+        transitionVersion: 18,
+        target: { kind: "browser", platform: "browser", targetId: "browser-1" },
+      },
     },
   });
   await expect(
     live.input({ kind: "tap", target: { label: "Continue" } }),
   ).rejects.not.toBeInstanceOf(RecordingInputNotSentError);
+  await expect(live.input({ kind: "tap", target: { label: "Continue" } })).rejects.toMatchObject({
+    recordingMutation: { workflowId: "workflow-1", sessionId: "session-1", transitionVersion: 18 },
+  });
   await live.close();
 });

@@ -49,13 +49,13 @@ import {
   recordAuthoringInteraction,
 } from "./authoring-recording-lifecycle.js";
 import {
-  abandonedAuthoringSessions,
   archiveSupersededAuthoringReviews,
   authoringRecoveryScopes,
   listedAuthoringSessions,
   publishAuthoringCommittedEvent,
   publishAuthoringSessionEvent,
 } from "./authoring-session-review-lifecycle.js";
+import { pruneAbandonedAuthoringSessions } from "./authoring-session-retention.js";
 import { persistCapturedAuthoringObservation } from "./authoring-observation-capture.js";
 export type { CapturedAuthoringObservation } from "./authoring-observation-capture.js";
 import type {
@@ -167,15 +167,8 @@ export class AuthoringSessionStore {
     };
     await writeAuthoringSession(session);
     publishAuthoringSessionEvent(session);
-    await this.#pruneAbandoned(operation.projectId);
+    await pruneAbandonedAuthoringSessions(operation.projectId, this.#queue);
     return clone(session);
-  }
-
-  async #pruneAbandoned(projectId: string): Promise<void> {
-    const configured = Number(process.env.RELAY_ABANDONED_AUTHORING_LIMIT ?? 100);
-    const limit = Number.isSafeInteger(configured) && configured >= 0 ? configured : 100;
-    const abandoned = abandonedAuthoringSessions(await this.#all(), projectId, limit);
-    await Promise.all(abandoned.map((session) => removeAuthoringSession(session.id)));
   }
 
   async observe(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {

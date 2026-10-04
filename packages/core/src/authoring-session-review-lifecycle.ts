@@ -37,11 +37,9 @@ export function listedAuthoringSessions(
   );
 }
 
-export function abandonedAuthoringSessions(
-  sessions: readonly AuthoringSession[],
-  projectId: string,
-  limit: number,
-): AuthoringSession[] {
+export function abandonedAuthoringSessions<
+  Session extends Pick<AuthoringSession, "projectId" | "archive" | "state">,
+>(sessions: readonly Session[], projectId: string, limit: number): Session[] {
   return sessions
     .filter(
       (session) =>
