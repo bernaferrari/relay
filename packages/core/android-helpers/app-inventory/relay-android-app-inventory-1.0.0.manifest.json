@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "versionName": "1.0.0-590725473946",
+  "assetName": "relay-android-app-inventory-1.0.0.apk",
+  "packageName": "dev.relay.appinventory",
+  "instrumentationRunner": "dev.relay.appinventory/.InstalledAppsInstrumentation",
+  "sha256": "f4b4de83ecbbdf215303066fd511d03903f7d94c05dd83d347658b1c7891aa0a",
+  "sourceSha256": "590725473946448e0b9149bdbbc0fc9bd3dd012f05ecd4854302a8cfdc42c147",
+  "statusProtocol": "relay-android-app-inventory-v1"
+}

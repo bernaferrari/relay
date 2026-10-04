@@ -1,6 +1,7 @@
 import type {
   ActionSummary,
   DeviceSummary,
+  OperationInput,
   OperationOutput,
   TargetDefinition,
 } from "@relay/protocol";
@@ -181,14 +182,18 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
   let clientPromise: ReturnType<typeof productClientForPlatform> | undefined;
   const client = () =>
     (clientPromise ??= productClientForPlatform(platform)).then(({ client }) => client);
-  async function listDevices(): Promise<readonly ProductDevice[]> {
+  async function listDevices(
+    scope: OperationInput<"target.devices.list"> = {},
+  ): Promise<readonly ProductDevice[]> {
     const api = await client();
     const [result, inventory, targets] = await Promise.all([
-      api.invoke("target.devices.list", {}),
-      api
-        .invoke("target.avds.list", {})
-        .then((result) => result.inventory)
-        .catch(() => undefined),
+      api.invoke("target.devices.list", scope),
+      scope.targetId
+        ? Promise.resolve(undefined)
+        : api
+            .invoke("target.avds.list", {})
+            .then((result) => result.inventory)
+            .catch(() => undefined),
       api
         .invoke("target.list", {})
         .then((result) => result.targets)
@@ -223,7 +228,7 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
       return (await (await client()).invoke("target.avd.boot", { avdName })).boot;
     },
     async get(deviceId) {
-      return (await listDevices()).find(
+      return (await listDevices(deviceId.startsWith("avd:") ? {} : { targetId: deviceId })).find(
         (device) => device.id === deviceId || device.serial === deviceId,
       );
     },
@@ -235,7 +240,7 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
       return result.recovery;
     },
     async launchApp(deviceId, app, relaunch) {
-      const device = (await listDevices()).find(
+      const device = (await listDevices({ targetKind: "device", targetId: deviceId })).find(
         (candidate) => candidate.id === deviceId || candidate.serial === deviceId,
       );
       if (!device) throw new TypeError(`Device ${deviceId} is not available.`);

@@ -1,8 +1,10 @@
 import { listAndroidAppsWithAdb, type AndroidAdbExecutor } from "agent-device/android-adb";
 import { execAndroidAdb } from "./android-adb-host.js";
+import { readAndroidApplicationLabels } from "./android-app-inventory.js";
 
 /** Read launchable apps on an attached local Android target. Discovery never
- * launches a package or changes the current screen. */
+ * launches a listed app or changes the screen. A metadata helper is prepared
+ * when necessary to observe the device's application labels. */
 export async function listAndroidInstalledApps(
   serial: string,
   execute: typeof execAndroidAdb = execAndroidAdb,
@@ -28,5 +30,8 @@ export async function listAndroidInstalledApps(
       stdoutBuffer: Buffer.from(result.stdout),
     };
   };
-  return listAndroidAppsWithAdb(adb, { target: "mobile", filter: "all" });
+  const apps = await listAndroidAppsWithAdb(adb, { target: "mobile", filter: "all" });
+  if (!apps.length) return apps;
+  const labels = await readAndroidApplicationLabels(serial, execute);
+  return labels ? apps.map((app) => ({ ...app, name: labels.get(app.package) ?? app.name })) : apps;
 }

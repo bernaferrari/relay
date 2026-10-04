@@ -20,6 +20,7 @@ import type {
   AuthoringRawOptimizationProposalResponse,
   AuthoringRecordingEdit,
   AuthoringTarget,
+  OperationInput,
 } from "@relay/protocol";
 import type { AuthoringInputReceiptRef, AuthoringInputReceiptOutcome } from "@relay/workflows";
 import { reconcileOutcomeFromServerResponse } from "./recording-input-outcome";
@@ -91,7 +92,10 @@ export type RecordingProductService = {
   connect(
     input?: Parameters<ProductRecordingJourney["connect"]>[0],
   ): Promise<ProductRecordingState>;
-  presentTargets(targets: readonly AuthoringTarget[]): Promise<readonly ProductTargetOption[]>;
+  presentTargets(
+    targets: readonly AuthoringTarget[],
+    scope?: OperationInput<"target.devices.list">,
+  ): Promise<readonly ProductTargetOption[]>;
   begin(input: ProductRecordingBeginInput): Promise<ProductRecordingState>;
   inspect(workflowId: string): Promise<ProductRecordingState>;
   /** Read-only optimizer suggestions for one canonical authoring session. */
@@ -268,8 +272,8 @@ export function createRecordingProductService(
     async connect(input) {
       return (await product()).journey.connect(input);
     },
-    async presentTargets(targets) {
-      return presentReadyTargets((await product()).client, targets);
+    async presentTargets(targets, scope) {
+      return presentReadyTargets((await product()).client, targets, scope);
     },
     async begin(input) {
       return (await product()).journey.begin(input);

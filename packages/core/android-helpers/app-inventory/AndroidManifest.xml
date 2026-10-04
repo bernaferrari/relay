@@ -1,0 +1,22 @@
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.relay.appinventory">
+    <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:debuggable="false"
+        android:label="Relay App Inventory"
+        android:theme="@android:style/Theme.NoDisplay" />
+
+    <instrumentation
+        android:name=".InstalledAppsInstrumentation"
+        android:targetPackage="dev.relay.appinventory"
+        android:functionalTest="true" />
+</manifest>

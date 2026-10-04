@@ -563,7 +563,94 @@ describe("Devices", () => {
   });
 });
 
-describe("Current app language", () => {
+describe("Device app controls", () => {
+  it("opens the selected native device without waiting for unrelated target discovery", async () => {
+    const service = fakeDeviceService();
+    service.get = async () => productDevice("phone", "QA phone", "ready", "android");
+    const selected = { kind: "device", platform: "android", targetId: "phone" } as const;
+    let previews = 0;
+    const scope = { targetKind: "device", targetId: "phone" };
+    await renderPath("/devices/phone", {
+      deviceService: service,
+      productService: {
+        connect: async (input: Parameters<RecordingProductService["connect"]>[0]) => {
+          if (JSON.stringify(input) !== JSON.stringify(scope)) {
+            throw new Error("Unrelated browser preflight would block this native device");
+          }
+          return { targets: [selected] };
+        },
+        presentTargets: async (
+          targets: Parameters<RecordingProductService["presentTargets"]>[0],
+          input: Parameters<RecordingProductService["presentTargets"]>[1],
+        ) => {
+          expect(input).toEqual(scope);
+          return targets.map((target) => ({
+            ...target,
+            name: "QA phone",
+            detail: "Android device",
+          }));
+        },
+        previewTarget: async (target: typeof selected): Promise<LiveTargetSession> => {
+          expect(target.targetId).toBe("phone");
+          previews += 1;
+          return {
+            snapshot: () => ({ status: "streaming", target: selected }),
+            subscribe: (listener) => {
+              listener({ status: "streaming", target: selected });
+              return () => undefined;
+            },
+            mount: () => () => undefined,
+            input: async () => undefined,
+            close: () => undefined,
+          };
+        },
+      } as unknown as RecordingProductService,
+    });
+    expect(previews).toBe(1);
+    expect(document.querySelector('[data-slot="capture-live-target"]')).not.toBeNull();
+  });
+
+  it("offers named apps without a language panel when the host cannot change language", async () => {
+    const service = fakeDeviceService();
+    service.get = async () => productDevice("phone", "QA phone", "ready", "android");
+    service.listInstalledApps = async () => [{ package: "com.android.settings", name: "Settings" }];
+    const launches: string[] = [];
+    service.launchApp = async (_serial, app) => {
+      launches.push(app);
+      return { serial: "phone", app, platform: "android", launchedAt: 1 };
+    };
+    service.listAppLocales = async () => {
+      throw new Error("Locale lookup must not run without language control");
+    };
+    await renderPath("/devices/phone", { deviceService: service });
+    expect(document.body.textContent).not.toContain("App and language");
+    const picker = document.querySelector<HTMLButtonElement>('[aria-label="App"]')!;
+    await click(picker);
+    const settings = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (item) => item.textContent === "Settings",
+    )!;
+    await click(settings);
+    expect(picker.textContent).toBe("Settings");
+    expect(document.body.textContent).not.toContain("com.android.settings");
+    expect(document.body.textContent).not.toContain("Loading supported languages");
+    expect(document.querySelector('[aria-label="Language"]')).toBeNull();
+    await click(button("Open app"));
+    expect(launches).toEqual(["com.android.settings"]);
+    expect(
+      document.querySelector<HTMLAnchorElement>('a[href*="originApplication"]')?.href,
+    ).toContain("com.android.settings");
+  });
+
+  it("gives the live device the available space when the host has no app controls", async () => {
+    const service = fakeDeviceService();
+    service.get = async () => productDevice("phone", "QA phone", "ready", "android");
+    await renderPath("/devices/phone", { deviceService: service });
+    expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("App and language");
+    expect(document.body.textContent).not.toContain("App controls are unavailable");
+    expect(document.body.textContent).toContain("Record a Test");
+  });
+
   it("shows the observed device language without changing it", async () => {
     const service = fakeDeviceService();
     service.get = async () => productDevice("phone", "QA phone", "ready", "android");
@@ -586,9 +673,9 @@ describe("Current app language", () => {
       return { packageName: "com.android.settings", locale: "en" };
     };
     await renderPath("/devices/phone", { deviceService: service });
-    await click(document.querySelector<HTMLButtonElement>('[aria-label="Starting app"]')!);
-    const settings = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
-      item.textContent?.includes("com.android.settings"),
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="App"]')!);
+    const settings = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (item) => item.textContent === "Settings",
     )!;
     await click(settings);
     expect(document.querySelector('[aria-label="Language"]')?.textContent).toContain("Korean");
