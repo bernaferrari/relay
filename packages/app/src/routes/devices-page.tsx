@@ -162,26 +162,28 @@ function DeviceRow({
                   .join(" · ")
               : deviceSummaryLine(device)}
           </span>
-          {!isBrowser(device) || stale ? <span
-            data-slot="library-row-status"
-            className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
-          >
-            {stale ? (
-              <CircleHelp className="size-3.5" aria-hidden="true" />
-            ) : !stopped && device.status === "needs-attention" ? (
-              <CircleHelp className="size-3.5 text-warning-foreground" aria-hidden="true" />
-            ) : (
-              <span
-                aria-hidden="true"
-                className={
-                  stopped
-                    ? "size-2 shrink-0 rounded-full border border-muted-foreground/60"
-                    : "size-2 shrink-0 rounded-full bg-success"
-                }
-              />
-            )}
-            {stale ? "Status unavailable" : statusLabel(device)}
-          </span> : null}
+          {!isBrowser(device) || stale ? (
+            <span
+              data-slot="library-row-status"
+              className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              {stale ? (
+                <CircleHelp className="size-3.5" aria-hidden="true" />
+              ) : !stopped && device.status === "needs-attention" ? (
+                <CircleHelp className="size-3.5 text-warning-foreground" aria-hidden="true" />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className={
+                    stopped
+                      ? "size-2 shrink-0 rounded-full border border-muted-foreground/60"
+                      : "size-2 shrink-0 rounded-full bg-success"
+                  }
+                />
+              )}
+              {stale ? "Status unavailable" : statusLabel(device)}
+            </span>
+          ) : null}
         </span>
       </Link>
     </li>
@@ -220,9 +222,7 @@ function BrowserDestinationRow({
           </span>
           <span className="grid min-w-0 flex-1 gap-1">
             <strong className="truncate text-sm font-semibold">{group.label}</strong>
-            <span className="text-xs text-muted-foreground">
-              {group.devices.length} browsers
-            </span>
+            <span className="text-xs text-muted-foreground">{group.devices.length} browsers</span>
           </span>
           <ChevronRight
             className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
@@ -346,7 +346,7 @@ function AvailableSection({
             {devices.length}
           </Badge>
         </CollapsibleTrigger>
-        <CollapsibleContent className="border-t border-border">
+        <CollapsibleContent className="border-t border-border p-3">
           <DeviceSection
             title=""
             devices={devices}

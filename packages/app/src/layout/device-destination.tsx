@@ -25,6 +25,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
+import { isLoopbackBrowserUrl } from "../data/device-catalog-presentation";
 import {
   WORKSPACE_DESTINATION_KEY,
   destinationRunTargetId,
@@ -33,9 +34,16 @@ import {
   workspaceDestinationQueryKey,
 } from "./destination-summary";
 
-const groups = ["Devices", "Android emulators", "iOS simulators", "Browsers"] as const;
+const groups = [
+  "Devices",
+  "Android emulators",
+  "iOS simulators",
+  "Browsers",
+  "Local browsers",
+] as const;
 function groupFor(device: ProductDevice): (typeof groups)[number] {
-  if (device.platform === "browser") return "Browsers";
+  if (device.platform === "browser")
+    return isLoopbackBrowserUrl(device.browserUrl) ? "Local browsers" : "Browsers";
   if (/simulator/i.test(device.kind ?? "")) return "iOS simulators";
   if (/emulator/i.test(device.kind ?? "")) return "Android emulators";
   return "Devices";
@@ -79,17 +87,48 @@ export function DeviceDestinationButton({
   const current = available.find(
     (item) => destinationRunTargetId(item) === selected.data?.targetId,
   );
-  const label = current?.name ?? summary.label;
+  const label = current?.name ?? "Choose device";
+  const query = search.trim().toLocaleLowerCase();
+  const localBrowsers = available.filter((device) => groupFor(device) === "Local browsers");
+  const selectedLocalBrowser = current && groupFor(current) === "Local browsers" ? current : null;
+  const otherLocalBrowsers = localBrowsers.filter((device) => device.id !== current?.id);
   const matches = (device: ProductDevice) =>
-    !search.trim() ||
-    `${device.name} ${device.browserUrl ?? ""} ${device.kind ?? ""}`
+    !query ||
+    `${device.name} ${device.id} ${device.serial} ${device.browserUrl ?? ""} ${device.kind ?? ""}`
       .toLocaleLowerCase()
-      .includes(search.trim().toLocaleLowerCase());
+      .includes(query);
   function select(device: ProductDevice) {
     onSelect?.(device);
     const next = { targetId: destinationRunTargetId(device) };
     queryClient.setQueryData(workspaceDestinationQueryKey, next);
     void platform.storage.set(WORKSPACE_DESTINATION_KEY, JSON.stringify(next));
+  }
+  function destinationItem(device: ProductDevice) {
+    const Icon = device.platform === "browser" ? Globe : Smartphone;
+    const isSelected = current?.id === device.id;
+    return (
+      <DropdownMenuItem
+        key={device.id}
+        className={rowClass}
+        onClick={() => select(device)}
+        closeOnClick
+        aria-label={`${device.name}${isSelected ? ", selected" : ""}`}
+      >
+        <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+        <span
+          className="min-w-0 flex-1 truncate"
+          title={device.browserUrl ? `${device.name}\n${device.browserUrl}` : device.name}
+        >
+          {device.name}
+        </span>
+        {device.osVersion ? (
+          <span className="text-xs text-muted-foreground">{versionLabel(device)}</span>
+        ) : null}
+        <span className="w-3.5">
+          {isSelected ? <Check className="size-3.5" aria-hidden="true" /> : null}
+        </span>
+      </DropdownMenuItem>
+    );
   }
   return (
     <DropdownMenu onOpenChange={() => setSearch("")}>
@@ -113,7 +152,7 @@ export function DeviceDestinationButton({
         sideOffset={8}
         className="w-80 max-h-[min(480px,var(--available-height))] max-w-[calc(100vw-24px)] overflow-y-auto p-1.5"
       >
-        {(devices.data?.length ?? 0) > 7 ? (
+        {(devices.data?.length ?? 0) > 7 || localBrowsers.length ? (
           <div className="px-1 pb-1">
             <Input
               aria-label="Find a device or browser"
@@ -128,7 +167,16 @@ export function DeviceDestinationButton({
           </div>
         ) : null}
         <div className="max-h-[min(320px,50dvh)] overflow-y-auto overscroll-contain">
+          {!query && selectedLocalBrowser ? (
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="px-2 pb-1 pt-2 text-xs font-medium">
+                Selected
+              </DropdownMenuLabel>
+              {destinationItem(selectedLocalBrowser)}
+            </DropdownMenuGroup>
+          ) : null}
           {groups.map((group) => {
+            if (group === "Local browsers" && !query) return null;
             const members = available.filter(
               (device) => groupFor(device) === group && matches(device),
             );
@@ -138,36 +186,26 @@ export function DeviceDestinationButton({
                 <DropdownMenuLabel className="px-2 pb-1 pt-2 text-xs font-medium">
                   {group}
                 </DropdownMenuLabel>
-                {members.map((device) => {
-                  const Icon = device.platform === "browser" ? Globe : Smartphone;
-                  const isSelected = current?.id === device.id;
-                  return (
-                    <DropdownMenuItem
-                      key={device.id}
-                      className={rowClass}
-                      onClick={() => select(device)}
-                      closeOnClick
-                      aria-label={`${device.name}${isSelected ? ", selected" : ""}`}
-                    >
-                      <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                      <span className="min-w-0 flex-1 truncate" title={device.name}>
-                        {device.name}
-                      </span>
-                      {device.osVersion ? (
-                        <span className="text-xs text-muted-foreground">
-                          {versionLabel(device)}
-                        </span>
-                      ) : null}
-                      <span className="w-3.5">
-                        {isSelected ? <Check className="size-3.5" aria-hidden="true" /> : null}
-                      </span>
-                    </DropdownMenuItem>
-                  );
-                })}
+                {members.map(destinationItem)}
               </DropdownMenuGroup>
             );
           })}
-          {search.trim() && !available.some(matches) && !unavailable.some(matches) ? (
+          {!query && otherLocalBrowsers.length ? (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={rowClass}>
+                <Globe className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                <span className="flex-1">Local browsers</span>
+                <span className="text-xs text-muted-foreground">{otherLocalBrowsers.length}</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-80 max-h-[min(360px,60dvh)] overflow-y-auto">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Local browsers</DropdownMenuLabel>
+                  {otherLocalBrowsers.map(destinationItem)}
+                </DropdownMenuGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ) : null}
+          {query && !available.some(matches) && !unavailable.some(matches) ? (
             <p role="status" className="px-2 py-3 text-sm text-muted-foreground">
               No matching devices or browsers
             </p>

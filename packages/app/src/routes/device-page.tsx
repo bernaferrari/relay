@@ -163,7 +163,13 @@ export function DevicePage() {
           detail: "Managed browser",
         };
       }
-      const scope = { targetKind: "device" as const, targetId: device.data!.serial };
+      const scope = {
+        targetKind: "device" as const,
+        targetId: device.data!.serial,
+        ...(device.data!.platform === "android" || device.data!.platform === "ios"
+          ? { phase: device.data!.platform }
+          : {}),
+      };
       const connected = await productService.connect(scope);
       if (connected.recovery) return null;
       const options = await productService.presentTargets(connected.targets, scope);

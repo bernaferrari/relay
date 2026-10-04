@@ -569,7 +569,7 @@ describe("Device app controls", () => {
     service.get = async () => productDevice("phone", "QA phone", "ready", "android");
     const selected = { kind: "device", platform: "android", targetId: "phone" } as const;
     let previews = 0;
-    const scope = { targetKind: "device", targetId: "phone" };
+    const scope = { targetKind: "device", targetId: "phone", phase: "android" };
     await renderPath("/devices/phone", {
       deviceService: service,
       productService: {

@@ -4,6 +4,7 @@ import type { ProductDevice } from "./device-product-service";
 import {
   deviceMatchesCatalogSearch,
   groupBrowserDestinations,
+  isLoopbackBrowserUrl,
 } from "./device-catalog-presentation";
 
 function browser(id: string, name = id, browserUrl?: string): ProductDevice {
@@ -34,6 +35,48 @@ function site(id: string, startUrl: string, name = id): ProductBrowserSpace {
 }
 
 describe("browser catalog presentation", () => {
+  it("recognizes explicit loopback URLs without inferring local or test provenance from names", () => {
+    for (const url of [
+      "http://localhost:8793/",
+      "https://team.localhost/",
+      "http://127.0.0.1:8793/",
+      "http://127.1.2.3/",
+      "http://[::1]:8793/",
+    ])
+      expect(isLoopbackBrowserUrl(url)).toBe(true);
+    for (const url of [
+      undefined,
+      "invalid",
+      "file:///localhost",
+      "https://localhost.example/",
+      "https://test.example/",
+      "http://192.168.0.2/",
+    ])
+      expect(isLoopbackBrowserUrl(url)).toBe(false);
+  });
+
+  it("keeps named profiles prominent beside grouped address-named browsers", () => {
+    const devices = [browser("auto-one"), browser("member", "Member account"), browser("auto-two")];
+    const sites = new Map(
+      devices.map((device) => [
+        device.id,
+        site(
+          device.id,
+          "https://shop.example/",
+          device.id === "member" ? "Member account" : "shop.example",
+        ),
+      ]),
+    );
+
+    const groups = groupBrowserDestinations(devices, sites, { keepNamedSeparate: true });
+
+    expect(groups[0]?.devices).toEqual([devices[1]]);
+    expect(groups[1]?.devices).toEqual([devices[0], devices[2]]);
+    expect(new Set(groups.flatMap((group) => group.devices.map((device) => device.id)))).toEqual(
+      new Set(devices.map((device) => device.id)),
+    );
+  });
+
   it("groups repeated addresses while preserving each browser identity and order", () => {
     const devices = [browser("first"), browser("member", "Member account"), browser("last")];
     const sites = new Map(
