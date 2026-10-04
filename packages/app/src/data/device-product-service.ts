@@ -67,6 +67,17 @@ export const deviceQueryKeys = {
   actions: ["devices", "actions"] as const,
 };
 
+/** Use the observed platform when discovering one known target. */
+export function deviceDiscoveryScope(
+  device: Pick<ProductDevice, "id" | "serial" | "platform">,
+): OperationInput<"target.devices.list"> {
+  return {
+    targetKind: device.platform === "browser" ? "browser" : "device",
+    targetId: device.serial || device.id,
+    ...(device.platform === "browser" ? {} : { phase: device.platform }),
+  };
+}
+
 function identity(device: DeviceSummary): string {
   return device.serial || device.id;
 }

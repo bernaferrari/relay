@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRelayRecordingOutcomeJobs } from "./recording-outcome-jobs.js";
+import { createRelayOutcomeJobs } from "./outcome-jobs.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
 import { selectTarget } from "./target-catalog.js";
 
@@ -20,6 +21,190 @@ const browser = {
   platform: "browser",
   booted: true,
 };
+
+for (const [facade, createJobs] of [
+  ["recording", createRelayRecordingOutcomeJobs],
+  ["complete", createRelayOutcomeJobs],
+] as const) {
+  test(`${facade} connect preserves the selected native phase before discovery`, async () => {
+    for (const phase of ["android", "ios"] as const) {
+      const selected = { ...phone, platform: phase };
+      const calls: { id: string; input: unknown }[] = [];
+      const scope = { targetKind: "device" as const, targetId: phone.serial, phase };
+      const client: RelayInvokeClient = {
+        async invoke(id, input) {
+          calls.push({ id, input });
+          if (id !== "target.devices.list") throw new Error(`Unexpected ${id}`);
+          if ((input as { phase?: string }).phase !== phase) return new Promise(() => {});
+          return { devices: [selected] };
+        },
+      };
+      const jobs = createJobs(client, { actorId: "agent:test" });
+      assert.deepEqual(
+        await settlesBeforeUnrelatedInventory(jobs.connect({ kind: "connect-target", ...scope })),
+        {
+          targets: [{ kind: "device", platform: phase, targetId: phone.serial }],
+          current: { kind: "device", platform: phase, targetId: phone.serial },
+        },
+      );
+      assert.deepEqual(calls, [{ id: "target.devices.list", input: scope }]);
+    }
+  });
+
+  test(`${facade} connect keeps native phase filtering when discovery returns other platforms`, async () => {
+    const client: RelayInvokeClient = {
+      async invoke(id) {
+        if (id !== "target.devices.list") throw new Error(`Unexpected ${id}`);
+        return {
+          devices: [phone, { ...phone, id: "ipad", serial: "ipad", platform: "ios" }, browser],
+        };
+      },
+    };
+    const jobs = createJobs(client, { actorId: "agent:test" });
+    assert.deepEqual(await jobs.connect({ kind: "connect-target", phase: "android" }), {
+      targets: [{ kind: "device", platform: "android", targetId: phone.serial }],
+      current: { kind: "device", platform: "android", targetId: phone.serial },
+    });
+  });
+
+  test(`${facade} connect preserves native phase while diagnosing a missing selected target`, async () => {
+    const calls: { id: string; input: unknown }[] = [];
+    const scope = {
+      targetKind: "device" as const,
+      targetId: "missing-phone",
+      phase: "android" as const,
+    };
+    const client: RelayInvokeClient = {
+      async invoke(id, input) {
+        calls.push({ id, input });
+        if (id !== "target.devices.list") throw new Error(`Unexpected ${id}`);
+        if ((input as { phase?: string }).phase !== scope.phase) return new Promise(() => {});
+        return { devices: [] };
+      },
+    };
+    const jobs = createJobs(client, { actorId: "agent:test" });
+    await assert.rejects(
+      settlesBeforeUnrelatedInventory(jobs.connect({ kind: "connect-target", ...scope })),
+      /Target missing-phone is not a connected/u,
+    );
+    assert.deepEqual(calls, [
+      { id: "target.devices.list", input: scope },
+      { id: "target.devices.list", input: scope },
+    ]);
+  });
+
+  test(`${facade} connect resolves a native SDK ID to the observed serial`, async () => {
+    const observed = { ...phone, id: "sdk-phone-id", serial: "usb-phone-serial" };
+    for (const phase of ["android", "ios"] as const) {
+      for (const targetId of [observed.id, observed.serial]) {
+        const calls: { id: string; input: unknown }[] = [];
+        const scope = { targetKind: "device" as const, targetId, phase };
+        const client: RelayInvokeClient = {
+          async invoke(id, input) {
+            calls.push({ id, input });
+            if (id !== "target.devices.list") throw new Error(`Unexpected ${id}`);
+            return { devices: [{ ...observed, platform: phase }] };
+          },
+        };
+        const target = { kind: "device", platform: phase, targetId: observed.serial };
+        assert.deepEqual(
+          await createJobs(client, { actorId: "agent:test" }).connect({
+            kind: "connect-target",
+            ...scope,
+          }),
+          { targets: [target], current: target },
+        );
+        assert.deepEqual(calls, [{ id: "target.devices.list", input: scope }]);
+      }
+    }
+  });
+
+  test(`${facade} connect reports native readiness for an SDK ID alias`, async () => {
+    const client: RelayInvokeClient = {
+      async invoke(id) {
+        if (id !== "target.devices.list") throw new Error(`Unexpected ${id}`);
+        return {
+          devices: [
+            {
+              ...phone,
+              id: "sdk-phone-id",
+              serial: "usb-phone-serial",
+              connectionState: "offline",
+            },
+          ],
+        };
+      },
+    };
+    await assert.rejects(
+      createJobs(client, { actorId: "agent:test" }).connect({
+        kind: "connect-target",
+        targetKind: "device",
+        targetId: "sdk-phone-id",
+        phase: "android",
+      }),
+      /Target sdk-phone-id is not ready:/u,
+    );
+  });
+
+  test(`${facade} connect refuses colliding native IDs and serials even when one is blocked`, async () => {
+    for (const connectionState of ["connected", "offline"]) {
+      const calls: string[] = [];
+      const client: RelayInvokeClient = {
+        async invoke(id) {
+          calls.push(id);
+          if (id !== "target.devices.list") throw new Error(`Unexpected ${id}`);
+          return {
+            devices: [
+              { ...phone, id: "shared-id", serial: "first-serial", connectionState },
+              { ...phone, id: "second-id", serial: "shared-id" },
+            ],
+          };
+        },
+      };
+      await assert.rejects(
+        createJobs(client, { actorId: "agent:test" }).connect({
+          kind: "connect-target",
+          targetKind: "device",
+          targetId: "shared-id",
+          phase: "android",
+        }),
+        /Target shared-id is ambiguous/u,
+      );
+      assert.deepEqual(calls, ["target.devices.list"]);
+    }
+  });
+
+  test(`${facade} connect refuses an untyped SDK ID collision with a ready browser`, async () => {
+    const { client } = readyBrowser();
+    const invoke = client.invoke.bind(client);
+    client.invoke = async (id, input) =>
+      id === "target.devices.list"
+        ? {
+            devices: [
+              { ...phone, id: browser.id, serial: "phone-serial", connectionState: "offline" },
+              browser,
+            ],
+          }
+        : invoke(id, input);
+    await assert.rejects(
+      createJobs(client, { actorId: "agent:test" }).connect({
+        kind: "connect-target",
+        targetId: browser.id,
+      }),
+      /Target unrelated-browser is ambiguous/u,
+    );
+  });
+}
+
+async function settlesBeforeUnrelatedInventory<T>(pending: Promise<T>): Promise<T> {
+  const stuck = Symbol("unrelated native inventory blocked scoped discovery");
+  const result = await Promise.race([
+    pending,
+    new Promise<typeof stuck>((resolve) => setImmediate(() => resolve(stuck))),
+  ]);
+  assert.notEqual(result, stuck, "Scoped native discovery must not wait for another platform");
+  return result as T;
+}
 
 function stalledBrowser() {
   const calls: string[] = [];

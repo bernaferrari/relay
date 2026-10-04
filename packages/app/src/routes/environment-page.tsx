@@ -15,6 +15,11 @@ import {
 import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Link,
@@ -23,7 +28,7 @@ import {
   useNavigate,
   useRouteContext,
 } from "@tanstack/react-router";
-import { RotateCcw } from "lucide-react";
+import { ChevronRight, RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { FormPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
@@ -31,6 +36,7 @@ import { readSetupContinuation } from "../data/setup-continuation";
 import { BrowserLaneTabs } from "../components/browser-lane-tabs";
 import { PageLoading } from "./recording-shared";
 import { productLinkClassName } from "../lib/class-names";
+import type { ProductBrowserAuthFixture } from "../data/browser-spaces-product-service";
 
 const routeApi = getRouteApi("/environments/$profileId");
 
@@ -43,7 +49,7 @@ function displayHost(url: string): string {
 }
 
 function signInStatus(fixture: { revokedAt?: number; expiresAt?: number }): string | undefined {
-  if (fixture.revokedAt) return "Revoked";
+  if (fixture.revokedAt !== undefined) return "Revoked";
   if (fixture.expiresAt && fixture.expiresAt <= Date.now()) return "Expired";
   return undefined;
 }
@@ -177,6 +183,47 @@ export function EnvironmentPage() {
     readiness.data?.target.checks.filter((check) => check.status === "fail") ?? [];
   const warningChecks =
     readiness.data?.target.checks.filter((check) => check.status === "warning") ?? [];
+  const currentAccounts = fixtures.data?.filter((fixture) => fixture.revokedAt === undefined) ?? [];
+  const inactiveAccounts =
+    fixtures.data?.filter((fixture) => fixture.revokedAt !== undefined) ?? [];
+
+  function accountRow(fixture: ProductBrowserAuthFixture) {
+    const status = signInStatus(fixture);
+    return (
+      <li
+        className="flex items-center gap-4 border-t border-border py-2.5 first:border-t-0 first:pt-0"
+        key={fixture.reference}
+      >
+        <span className="min-w-0 flex-1">
+          <strong className="block text-sm font-medium wrap-anywhere">{fixture.name}</strong>
+          {status ? <small className="text-xs text-muted-foreground">{status}</small> : null}
+        </span>
+        {fixture.revokedAt === undefined ? (
+          <span className="flex shrink-0 items-center">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })}
+              disabled={refreshAccount.isPending}
+            >
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                revokeAccount.reset();
+                setRevokeFixture(fixture);
+              }}
+              disabled={revokeAccount.isPending}
+            >
+              Revoke
+            </Button>
+          </span>
+        ) : null}
+      </li>
+    );
+  }
 
   return (
     <FormPage>
@@ -335,56 +382,34 @@ export function EnvironmentPage() {
               Accounts
             </h2>
             {fixtures.isPending ? <PageLoading label="Loading accounts…" /> : null}
-            {fixtures.data?.length ? (
+            {currentAccounts.length ? (
               <ul data-slot="environment-accounts" className="mt-2 grid list-none p-0">
-                {fixtures.data.map((fixture) => {
-                  const status = signInStatus(fixture);
-                  return (
-                    <li
-                      className="flex items-center gap-4 border-t border-border py-2.5 first:border-t-0 first:pt-0"
-                      key={fixture.reference}
-                    >
-                      <span className="min-w-0 flex-1">
-                        <strong className="block text-sm font-medium wrap-anywhere">
-                          {fixture.name}
-                        </strong>
-                        {status ? (
-                          <small className="text-xs text-muted-foreground">{status}</small>
-                        ) : null}
-                      </span>
-                      {!fixture.revokedAt ? (
-                        <span className="flex shrink-0 items-center">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })
-                            }
-                            disabled={refreshAccount.isPending}
-                          >
-                            Refresh
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              revokeAccount.reset();
-                              setRevokeFixture(fixture);
-                            }}
-                            disabled={revokeAccount.isPending}
-                          >
-                            Revoke
-                          </Button>
-                        </span>
-                      ) : null}
-                    </li>
-                  );
-                })}
+                {currentAccounts.map(accountRow)}
               </ul>
             ) : !fixtures.isPending ? (
               <p className="mt-2 text-sm leading-5 text-muted-foreground">
                 Save the account currently open in this browser to reuse it in tests.
               </p>
+            ) : null}
+            {inactiveAccounts.length ? (
+              <Collapsible key={profileId} className="mt-3 border-t border-border">
+                <CollapsibleTrigger
+                  aria-label={`Inactive accounts, ${inactiveAccounts.length}`}
+                  className="group flex min-h-11 w-full items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+                >
+                  <ChevronRight
+                    className="size-4 shrink-0 group-aria-expanded:rotate-90"
+                    aria-hidden="true"
+                  />
+                  <span>Inactive accounts</span>
+                  <span className="text-xs tabular-nums">{inactiveAccounts.length}</span>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <ul data-slot="environment-inactive-accounts" className="grid list-none p-0">
+                    {inactiveAccounts.map(accountRow)}
+                  </ul>
+                </CollapsibleContent>
+              </Collapsible>
             ) : null}
             {fixtures.error || saveAccount.error || refreshAccount.error || revokeAccount.error ? (
               <FieldError>

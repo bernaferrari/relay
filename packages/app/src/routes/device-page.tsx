@@ -15,6 +15,7 @@ import { deviceSummaryLine } from "../data/device-label";
 import { liveInputRecovery } from "../data/live-input-recovery";
 import {
   deviceQueryKeys,
+  deviceDiscoveryScope,
   type DeviceProductService,
   type ProductDevice,
 } from "../data/device-product-service";
@@ -154,29 +155,24 @@ export function DevicePage() {
   const target = useQuery({
     queryKey: ["devices", deviceId, "live-target"],
     queryFn: async () => {
-      if (device.data?.platform === "browser") {
+      const selectedDevice = device.data!;
+      if (selectedDevice.platform === "browser") {
         return {
           kind: "browser" as const,
           platform: "browser" as const,
-          targetId: device.data.id,
-          name: device.data.name,
+          targetId: selectedDevice.id,
+          name: selectedDevice.name,
           detail: "Managed browser",
         };
       }
-      const scope = {
-        targetKind: "device" as const,
-        targetId: device.data!.serial,
-        ...(device.data!.platform === "android" || device.data!.platform === "ios"
-          ? { phase: device.data!.platform }
-          : {}),
-      };
+      const scope = deviceDiscoveryScope(selectedDevice);
       const connected = await productService.connect(scope);
       if (connected.recovery) return null;
       const options = await productService.presentTargets(connected.targets, scope);
       return (
         options.find(
           (option) =>
-            option.targetId === device.data?.serial || option.targetId === device.data?.id,
+            option.targetId === selectedDevice.serial || option.targetId === selectedDevice.id,
         ) ?? null
       );
     },

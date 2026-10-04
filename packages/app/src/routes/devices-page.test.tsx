@@ -64,25 +64,31 @@ const browsers = [
   device("grok-auto-two", "grok.com · Browser 2"),
 ];
 const devices = [device("samsung", "Samsung phone", "android"), ...browsers];
-const spaces: readonly ProductBrowserSpace[] = browsers
-  .filter((browser) => browser.id !== "unknown-address")
-  .map((browser, index) => ({
-    id: browser.id,
-    name: browser.id.startsWith("grok-auto") ? "grok.com" : browser.name,
-    startUrl:
-      index < 3
-        ? "http://localhost:8793/checkout"
-        : index === 3
-          ? "http://localhost:8794/"
+const spaces: readonly ProductBrowserSpace[] = browsers.map((browser, index) => ({
+  id: browser.id,
+  name: browser.id.startsWith("grok-auto") ? "grok.com" : browser.name,
+  startUrl:
+    index < 3
+      ? "http://localhost:8793/checkout"
+      : index === 3
+        ? "http://localhost:8794/"
+        : browser.id === "unknown-address"
+          ? ""
           : "https://grok.com/",
-    createdAt: index,
-    updatedAt: index,
-    profileRetention: "retain",
-    persistent: true,
-    source: { kind: "managed-browser-target", id: browser.id },
-  }));
+  createdAt: index,
+  updatedAt: index,
+  profileRetention: "retain",
+  persistent: true,
+  source: { kind: "managed-browser-target", id: browser.id },
+}));
 
-async function render(path: string) {
+async function render(
+  path: string,
+  options: {
+    listDevices?: DeviceProductService["list"];
+    listSpaces?: BrowserSpacesProductService["listSpaces"];
+  } = {},
+) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const values = new Map<string, string>();
   const platform: Platform = {
@@ -95,7 +101,7 @@ async function render(path: string) {
     },
   };
   const deviceService: DeviceProductService = {
-    list: async () => devices,
+    list: options.listDevices ?? (async () => devices),
     get: async (id) => devices.find((device) => device.id === id),
     actions: async () => [],
     recover: async () => {
@@ -103,7 +109,7 @@ async function render(path: string) {
     },
   };
   const browserSpacesService = {
-    listSpaces: async () => spaces,
+    listSpaces: options.listSpaces ?? (async () => spaces),
   } as BrowserSpacesProductService;
   const host = document.createElement("div");
   document.body.append(host);
@@ -129,7 +135,103 @@ async function settle() {
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
 }
 
+async function fillSearch(value: string) {
+  const input = document.querySelector<HTMLInputElement>("#device-search");
+  if (!input) throw new Error("Device search not found");
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+  return input;
+}
+
 describe("Devices catalog", () => {
+  it("shows canonical browser choices while connected-device discovery is blocked", async () => {
+    await render("/devices?q=grok", { listDevices: () => new Promise(() => {}) });
+
+    const browser = document.querySelector(
+      'a[data-slot="device-row"][href="/environments/grok-daily"]',
+    );
+    expect(browser?.textContent).toContain("Grok daily");
+    expect(browser?.querySelector('[data-slot="library-row-status"]')).toBeNull();
+    expect(document.body.textContent).toContain("Checking connected devices…");
+    expect(document.body.textContent).not.toContain("Loading Devices and Browsers…");
+  });
+
+  it("scopes hardware discovery failure to connected devices while browser registry choices stay usable", async () => {
+    await render("/devices?q=grok", {
+      listDevices: async () => {
+        throw new Error("Hardware discovery failed");
+      },
+    });
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
+    await settle();
+
+    expect(document.body.textContent).toContain("Couldn’t check connected devices");
+    expect(document.body.textContent).toContain("Browsers remain available");
+    const browser = document.querySelector(
+      'a[data-slot="device-row"][href="/environments/grok-daily"]',
+    );
+    expect(browser?.textContent).toContain("Grok daily");
+    expect(browser?.textContent).not.toContain("Status unavailable");
+    expect(browser?.textContent).not.toContain("Ready");
+    expect(document.querySelector('[data-slot="recovery-centered"]')).toBeNull();
+  });
+
+  it("keeps typed and cleared search synchronized with the URL and resets local disclosure", async () => {
+    const history = await render(`/devices?returnTo=${encodeURIComponent(returnTo)}`);
+
+    const input = await fillSearch("historical-first");
+    expect(input.value).toBe("historical-first");
+    expect(new URLSearchParams(history.location.search).get("q")).toBe("historical-first");
+    const localTrigger = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith("Local browsers"),
+    );
+    expect(localTrigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      document.querySelector('a[data-slot="device-row"][href*="historical-first"]'),
+    ).not.toBeNull();
+
+    await fillSearch("");
+
+    expect(input.value).toBe("");
+    expect(new URLSearchParams(history.location.search).get("q")).toBeNull();
+    expect(new URLSearchParams(history.location.search).get("returnTo")).toBe(returnTo);
+    expect(localTrigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      document.querySelector('a[data-slot="device-row"][href*="historical-first"]'),
+    ).toBeNull();
+    expect(document.querySelector('a[data-slot="device-row"][href*="grok-daily"]')).not.toBeNull();
+  });
+
+  it("updates an existing search and follows browser back and forward query changes", async () => {
+    const history = await render("/devices?q=grok");
+
+    const input = await fillSearch("historical-first");
+    expect(input.value).toBe("historical-first");
+    expect(new URLSearchParams(history.location.search).get("q")).toBe("historical-first");
+
+    await act(async () => history.back());
+    await settle();
+    expect(input.value).toBe("grok");
+    expect(new URLSearchParams(history.location.search).get("q")).toBe("grok");
+    expect(document.querySelector('a[data-slot="device-row"][href*="grok-daily"]')).not.toBeNull();
+    expect(
+      document.querySelector('a[data-slot="device-row"][href*="historical-first"]'),
+    ).toBeNull();
+
+    await act(async () => history.forward());
+    await settle();
+    expect(input.value).toBe("historical-first");
+    expect(new URLSearchParams(history.location.search).get("q")).toBe("historical-first");
+    expect(
+      document.querySelector('a[data-slot="device-row"][href*="historical-first"]'),
+    ).not.toBeNull();
+  });
+
   it("prioritizes named websites and discloses local browsers without removing any selection", async () => {
     await render(`/devices?returnTo=${encodeURIComponent(returnTo)}`);
 
