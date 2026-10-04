@@ -50,7 +50,6 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   });
   const navigate = useNavigate();
   const workflowId = recordingId;
-  // Recorded from a saved Test: Save adds these steps to that Test.
   const into = useQuery({
     queryKey: ["recording-into", recordingId],
     queryFn: async () => (await readRecordingInto(platform, recordingId)) ?? null,
@@ -277,6 +276,9 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
       ? { actionId: selectedAction.id, intent: actionIntent.trim() }
       : undefined;
   const runsBeforeSave = !canApprove || Boolean(pendingInstruction);
+  const runsOnSave = Boolean(
+    productService.save && currentRevision !== undefined && runsBeforeSave,
+  );
   const sessionId = snapshot?.authoring?.sessionId;
   const optimization = useQuery({
     queryKey: ["recording-optimization", sessionId ?? "unselected", currentRevision ?? 0],
@@ -400,7 +402,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   const reviewStatus = (
     <RecordingReviewStatus
       canApprove={canApprove}
-      runsBeforeSave={Boolean(productService.save && runsBeforeSave)}
+      runsBeforeSave={runsOnSave}
       pendingAction={transition.isPending ? transition.variables?.action : undefined}
       savePhase={savePhase}
       deviceName={replayDeviceName}
@@ -465,9 +467,9 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 }
                 canReplay={allowed.has("replay") && actions.length > 0}
                 autoSave={Boolean(productService.save && currentRevision !== undefined)}
-                runsBeforeSave={runsBeforeSave}
+                runsBeforeSave={runsOnSave}
                 saveDisabled={!into.data && !testName.trim()}
-                saveLabel={into.data ? `Add to “${into.data.testName}”` : "Save test"}
+                intoTestName={into.data?.testName}
                 saving={
                   transition.isPending && transition.variables?.action === "approve"
                     ? (savePhase ?? "saving")

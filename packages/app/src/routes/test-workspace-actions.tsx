@@ -144,6 +144,9 @@ export function TestWorkspaceActions({
                   <MoreHorizontal aria-hidden="true" />
                 ) : (
                   <>
+                    {configurationName !== "Run settings" ? (
+                      <span className="text-muted-foreground">Run on</span>
+                    ) : null}
                     <span className="max-w-80 truncate">{configurationName}</span>
                     <ChevronDown aria-hidden="true" />
                   </>

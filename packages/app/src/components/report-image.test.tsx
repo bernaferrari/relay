@@ -6,6 +6,46 @@ import { ReportImage } from "./report-image";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+it.each(["blob:http://127.0.0.1:3001/cached-screenshot", "/direct-screenshot.png"])(
+  "displays a directly available screenshot without a missing-loader warning or extra requests (%s)",
+  async (src) => {
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("No image requests"));
+    const createUrl = vi.spyOn(URL, "createObjectURL");
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <ReportImage media={{ kind: "image", src }} alt="Already loaded checkpoint" />
+          </QueryClientProvider>,
+        ),
+      );
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: ["report-image", src] });
+      });
+      expect(host.querySelector("img")?.getAttribute("src")).toBe(src);
+      expect(host.textContent).not.toContain("Loading screenshot");
+      expect(
+        errors.mock.calls.some((call) => String(call[0]).includes("No queryFn was passed")),
+      ).toBe(false);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(createUrl).not.toHaveBeenCalled();
+      expect(revokeUrl).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      client.clear();
+      errors.mockRestore();
+      fetch.mockRestore();
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+    }
+  },
+);
+
 it("retries a failed screenshot without navigating away from the report", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);

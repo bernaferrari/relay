@@ -191,7 +191,8 @@ export function TestPage() {
     : selectedTarget
       ? [
           selectedTarget.name,
-          selectedProfile?.account?.name ?? selectedProfile?.name,
+          selectedProfile?.account?.name ??
+            (configuration.selection.savedProfileId ? selectedProfile?.name : undefined),
           configuration.selection.buildId
             ? (selectedBuild?.name ?? "Selected build unavailable")
             : "Current build",
@@ -482,9 +483,18 @@ export function TestPage() {
         configurationLabel={configurationLabel}
         configurationName={
           usePairs
-            ? "Saved configurations"
-            : [selectedProfile?.account?.name, selectedTarget?.name].filter(Boolean).join(" · ") ||
-              "Run settings"
+            ? `${paired.workspace.rows.length} configuration${paired.workspace.rows.length === 1 ? "" : "s"}`
+            : [
+                selectedProfile?.account?.name ??
+                  (configuration.selection.savedProfileId ? selectedProfile?.name : undefined),
+                selectedTarget?.name,
+                configuration.selection.buildId
+                  ? (selectedBuild?.name ?? "Build unavailable")
+                  : undefined,
+                configuration.selection.startupMode === "cold" ? "Restart app" : undefined,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "Run settings"
         }
         profileBlocked={Boolean(profileBlocker)}
         onRun={runOrFocusSetup}

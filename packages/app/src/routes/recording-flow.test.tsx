@@ -11,6 +11,7 @@ import type {
   RecordingProductService,
 } from "../data/recording-product-service";
 import type { LiveTargetSession } from "../data/live-target-session";
+import { rememberRecordingInto } from "../data/record-into-test";
 import { RecordingInputNotSentError } from "../data/recording-input-outcome";
 import type { DeviceProductService } from "../data/device-product-service";
 import type { MapProductService } from "../data/map-product-service";
@@ -1501,7 +1502,7 @@ describe("record, review, replay, and save", () => {
     },
   );
 
-  it("offers one Save test action that checks edited steps and includes the current instruction", async () => {
+  it("offers Run and save for edited steps and includes the current instruction", async () => {
     const initial = state("reviewing", ["inspect", "edit", "replay"]);
     initial.snapshot!.review!.currentRevision = 7;
     const fake = fakeService(initial);
@@ -1521,16 +1522,16 @@ describe("record, review, replay, and save", () => {
       fake.service,
       storage.platform,
     );
-    expect(button("Save test").disabled).toBe(false);
-    expect(document.body.textContent).not.toContain("Run and save");
+    expect(button("Run and save").disabled).toBe(false);
+    expect(document.body.textContent).not.toContain("Save test");
     expect(document.body.textContent).not.toContain("Run test");
     await click(button("Edit steps"));
     await fill(
       document.querySelector<HTMLInputElement>("#review-action-intent")!,
       "Open app settings",
     );
-    await click(button("Save test"));
-    expect(button("Checking steps…").disabled).toBe(true);
+    await click(button("Run and save"));
+    expect(button("Running…").disabled).toBe(true);
     expect(fake.service.save).toHaveBeenCalledWith(
       expect.objectContaining({
         reviewRevision: 7,
@@ -1543,6 +1544,82 @@ describe("record, review, replay, and save", () => {
     expect(fake.calls).not.toContain("replay");
     expect(fake.calls).toContain("approve");
   });
+
+  it("keeps a verified recording as Save test without a separate execution", async () => {
+    const initial = state("reviewing", ["inspect", "edit", "replay", "approve"], {
+      replay: "passed",
+    });
+    initial.snapshot!.review!.currentRevision = 7;
+    const fake = fakeService(initial);
+    fake.service.save = vi.fn((input) => fake.service.approve(input.testName));
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(button("Save test").disabled).toBe(false);
+    expect(document.body.textContent).not.toContain("Run and save");
+    await click(button("Save test"));
+    expect(fake.service.save).toHaveBeenCalledWith(expect.objectContaining({ reviewRevision: 7 }));
+    expect(fake.calls).not.toContain("replay");
+  });
+
+  it("names execution when an unsaved instruction changes a verified recording", async () => {
+    const initial = state("reviewing", ["inspect", "edit", "replay", "approve"], {
+      replay: "passed",
+    });
+    initial.snapshot!.review!.currentRevision = 7;
+    const fake = fakeService(initial);
+    fake.service.save = vi.fn(async () => initial);
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(button("Save test").disabled).toBe(false);
+    await click(button("Edit steps"));
+    await fill(document.querySelector<HTMLInputElement>("#review-action-intent")!, "Open profile");
+    expect(button("Run and save").disabled).toBe(false);
+    await click(button("Run and save"));
+    expect(fake.service.save).toHaveBeenCalledWith(
+      expect.objectContaining({ rename: { actionId: "step-1", intent: "Open profile" } }),
+    );
+    expect(fake.calls).not.toContain("replay");
+  });
+
+  it.each([false, true])(
+    "discloses whether adding recorded steps will run first (%s)",
+    async (verified) => {
+      const initial = state(
+        "reviewing",
+        verified ? ["inspect", "edit", "replay", "approve"] : ["inspect", "edit", "replay"],
+        verified ? { replay: "passed" } : {},
+      );
+      initial.snapshot!.review!.currentRevision = 7;
+      const fake = fakeService(initial);
+      fake.service.save = vi.fn(async () => initial);
+      const storage = platformWithStorage();
+      await rememberRecordingInto(storage.platform, "workflow-1", {
+        testId: "checkout",
+        testName: "Complete checkout",
+        appMapId: "app-1",
+      });
+      await renderJourney("/recordings/workflow-1/review", fake.service, storage.platform);
+      const label = verified ? "Add to “Complete checkout”" : "Run and add to “Complete checkout”";
+      expect(button(label).disabled).toBe(false);
+      expect(document.body.textContent).not.toContain("Save test");
+      await click(button(label));
+      expect(fake.service.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          testName: "Complete checkout · added steps",
+          reviewRevision: 7,
+        }),
+      );
+      expect(fake.calls).not.toContain("replay");
+      expect(fake.calls).not.toContain("approve");
+      expect(storage.values.get("relay:recording-into:workflow-1")).toContain("checkout");
+    },
+  );
 
   it("keeps explicit replay available in More review actions", async () => {
     const initial = state("reviewing", ["inspect", "replay"]);
@@ -1616,13 +1693,13 @@ describe("record, review, replay, and save", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(button("Save test"));
+    await click(button("Run and save"));
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
     expect(document.body.textContent).toContain("The steps changed");
     expect(fake.calls).not.toContain("approve");
     await click(button("Try again"));
     expect(document.body.textContent).not.toContain("The steps changed");
-    expect(button("Save test").disabled).toBe(false);
+    expect(button("Run and save").disabled).toBe(false);
   });
 
   it("follows the full server-owned progression with one dominant review action", async () => {

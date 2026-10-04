@@ -5,6 +5,18 @@ import { useEffect, useRef, useState } from "react";
 import type { RunEvidenceExportDocument } from "@relay/product/run-evidence-export";
 import { productLinkClassName } from "../lib/class-names";
 
+function exportProblem(error: unknown): string {
+  if (!(error instanceof Error)) return "Relay could not export this Run. Try again.";
+  if (error.name === "TimeoutError" || /\bsignal timed out\b/iu.test(error.message)) {
+    return "Evidence export timed out. Try again.";
+  }
+  if (error.name === "AbortError") return "Evidence export was interrupted. Try again.";
+  if (/failed to fetch|networkerror|network request failed/iu.test(error.message)) {
+    return "Could not reach Relay. Check the connection and try again.";
+  }
+  return error.message || "Relay could not export this Run. Try again.";
+}
+
 function RunEvidenceExportForRun({
   runId,
   exportEvidence,
@@ -44,7 +56,7 @@ function RunEvidenceExportForRun({
         onClick={() => exportRun.mutate()}
         disabled={exportRun.isPending}
       >
-        {exportRun.isPending ? "Preparing…" : "Export evidence"}
+        {exportRun.isPending ? "Preparing…" : exportRun.isError ? "Try again" : "Export evidence"}
       </Button>
       {href && fileName ? (
         <a className={productLinkClassName} href={href} download={fileName}>
@@ -53,9 +65,7 @@ function RunEvidenceExportForRun({
       ) : null}
       {exportRun.error ? (
         <p className="text-sm text-destructive" role="status">
-          {exportRun.error instanceof Error
-            ? exportRun.error.message
-            : "Relay could not export this Run."}
+          {exportProblem(exportRun.error)}
         </p>
       ) : null}
     </div>

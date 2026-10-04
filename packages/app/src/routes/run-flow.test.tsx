@@ -451,6 +451,7 @@ describe("recorded Test destinations", () => {
       }),
     });
     await renderRun("/tests/test-1", fake.service, storage.platform, undefined, editor);
+    expect(button("Run settings menu").textContent).toContain("Run on1 configuration");
     await openRunSettings();
     expect(document.body.textContent).toContain("This saved workspace uses browsers");
     expect(button("Run now").disabled).toBe(true);
@@ -1343,6 +1344,9 @@ describe("Run and Report", () => {
     );
     if (!cold) throw new Error("Cold-start selector not found");
     await click(cold.closest("label") ?? cold);
+    expect(button("Run settings menu").textContent).toContain(
+      "Run onCheckout browser · Android QA · Restart app",
+    );
     await click(button("Run now"));
     expect(fake.startInputs[0]).toMatchObject({
       sourceRevision: { vcs: "git", sha: "abcdef1234567", buildId: "build-android-1" },
@@ -1421,8 +1425,10 @@ describe("Run and Report", () => {
     });
     await renderRun("/tests/test-1?target=emulator-5554", fake.service, storage.platform);
 
-    // The resolved configuration is named on Run itself before any popover is
-    // opened — a person comparing Admin and Member must not have to dig.
+    // The destination and account must be visible before opening settings;
+    // title attributes alone do not establish a useful Run context.
+    expect(button("Run settings menu").textContent).toContain("Run onMember · Checkout browser");
+    expect(document.querySelector('[role="dialog"][aria-label="Run settings"]')).toBeNull();
     expect(button("Run").title).toContain("Checkout browser · Member · Current build");
     expect(button("Run settings menu").title).toContain(
       "Checkout browser · Member · Current build",
@@ -1478,6 +1484,41 @@ describe("Run and Report", () => {
       targetProfileId: "profile-admin",
     });
   });
+
+  it.each([false, true])(
+    "shows only a chosen setup without inventing an account (%s)",
+    async (chosen) => {
+      const fake = fakeRunService();
+      fake.service.listProfiles = async () => [
+        {
+          id: "profile-review",
+          name: "Checkout review setup",
+          targetId: "browser-golden",
+          platform: "browser",
+        },
+      ];
+      const storage = platformWithStorage({
+        [runConfigurationStorageKey({
+          server: "http://127.0.0.1:8787",
+          appId: "settings-language-proof",
+          entity: "test-run:test-1",
+        })]: JSON.stringify({
+          targetId: "browser-golden",
+          ...(chosen ? { savedProfileId: "profile-review" } : {}),
+        }),
+      });
+      await renderRun("/tests/test-1?target=browser-golden", fake.service, storage.platform);
+      const visible = button("Run settings menu").textContent;
+      expect(visible).toContain(
+        chosen ? "Run onCheckout review setup · Checkout browser" : "Run onCheckout browser",
+      );
+      if (!chosen) expect(visible).not.toContain("Checkout review setup");
+      expect(visible).not.toContain("Admin");
+      expect(visible).not.toContain("Signed out");
+      expect(visible).not.toContain("Current build");
+      expect(fake.startInputs).toHaveLength(0);
+    },
+  );
 
   it("exposes the canonical live Run before a slow pointer write finishes", async () => {
     const fake = fakeRunService();

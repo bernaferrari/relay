@@ -6,7 +6,10 @@ description: Connect Relay for app testing, diagnose an unreachable service or i
 # Connect Relay
 
 If the host exposes no Relay tools, follow the plugin README's connection
-setup using the installed connector executable. Its `--help` works offline.
+setup using the installed connector executable with `--profile qa` and the
+intended service or workspace. Its `--help` works offline. For a manually
+configured connection, verify that same profile before using the QA tools below;
+the executable's no-flag operator default exposes different tool names.
 
 1. Read `relay://guides/start` and `relay://guides/agents`. These guides ship
    with the MCP connector and remain readable while the service is offline.

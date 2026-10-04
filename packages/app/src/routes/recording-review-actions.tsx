@@ -19,7 +19,7 @@ export function RecordingReviewActions(props: {
   autoSave: boolean;
   runsBeforeSave: boolean;
   saveDisabled: boolean;
-  saveLabel: string;
+  intoTestName?: string;
   saving?: "checking" | "saving";
   replaying: boolean;
   deviceName: string;
@@ -30,6 +30,11 @@ export function RecordingReviewActions(props: {
   onSave(): void;
   onSaveDraft?(): void;
 }) {
+  const saveLabel = props.intoTestName
+    ? `${props.runsBeforeSave ? "Run and add to" : "Add to"} “${props.intoTestName}”`
+    : props.runsBeforeSave
+      ? "Run and save"
+      : "Save test";
   return (
     <>
       {props.editing ? (
@@ -79,16 +84,16 @@ export function RecordingReviewActions(props: {
           aria-busy={Boolean(props.saving)}
           title={
             props.runsBeforeSave
-              ? `Check edited steps on ${props.deviceName} before saving`
+              ? `Run edited steps on ${props.deviceName} before saving`
               : undefined
           }
         >
           <Save aria-hidden="true" />
           {props.saving === "checking"
-            ? "Checking steps…"
+            ? "Running…"
             : props.saving === "saving"
               ? "Saving…"
-              : props.saveLabel}
+              : saveLabel}
         </Button>
       ) : null}
       {props.canReplay && props.autoSave ? (
