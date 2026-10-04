@@ -51,7 +51,7 @@ npm install --global @relay/mcp@0.1.0 # after the public release
 # From this repository before publication:
 npm pack --silent ./packages/mcp
 npm install --global ./relay-mcp-0.1.0.tgz
-relay-mcp doctor
+relay-mcp doctor --profile qa --json
 ```
 
 The plugin descriptor invokes the installed `relay-mcp` binary. A clean host does not need pnpm or
@@ -72,28 +72,27 @@ Offline `guide` and read-only `doctor` never launch a runtime. The runtime
 candidate's [installation and browser demo](../runtime/README.md) is verified
 without repository sources; physical device support requires qualification.
 
-The default configuration needs no profile flag: the local defaults use the loopback Relay service,
-the local project, actor `agent:cursor`, and the `operator` profile (~19 hand-named verbs plus
-`relay_advanced`). That default is a complete ordinary task surface — resolve a target, observe,
-operate within scope, run saved coverage, inspect progress, save a Test, and export evidence — so
-an agent never switches profiles mid-task. `lease.takeover` is not on that profile. Configure
-your MCP client with the installed command below and reload its connection after changing it.
+For your first recording, saved Test, or review task, configure `--profile qa`.
+This matches the plugin and exposes the outcome tools used in the task guides.
+Configure the intended service or workspace, authorized project, and actor in
+the host environment. Reload the MCP connection after changing its configuration.
 
 ```json
 {
   "mcpServers": {
     "relay": {
-      "command": "relay-mcp"
+      "command": "relay-mcp",
+      "args": ["--profile", "qa"]
     }
   }
 }
 ```
 
-The fail-closed setup check works the same way without a profile. It intentionally reports
-`NOT READY` when the Relay service is unavailable or the scope or role is wrong:
+Run the setup check with the same profile and connection options as the host.
+It reports `NOT READY` when the service is unavailable or the scope or role is wrong:
 
 ```bash
-relay-mcp doctor --json
+relay-mcp doctor --profile qa --json
 ```
 
 It checks server reachability, organization/project scope, the configured agent identity, the
@@ -102,8 +101,10 @@ manifest for that profile. The report never prints `RELAY_AUTH_TOKEN`.
 
 ## Specialist profiles
 
-Trusted orchestrators can opt into a narrower or lower-level profile with `--profile <name>` or
-`RELAY_MCP_PROFILE`. Specialist access is additive, never a prerequisite for ordinary testing.
+Existing integrations retain the executable's `operator` default when no profile
+is selected. New recording and Test integrations should explicitly select `qa`.
+Choose another profile with `--profile <name>` or `RELAY_MCP_PROFILE` when the
+task requires its specialist tools.
 Proof hosts launch `--profile proof`: it retains the ordinary `relay_prove_change` outcome and
 adds the raw `proof.*` lifecycle tools for explicit plan review, recovery, publication, and
 selective reruns. A human approves a Verification Plan in the app or CLI.
@@ -150,7 +151,7 @@ export RELAY_URL=https://relay.example
 export RELAY_ORGANIZATION_ID=acme
 export RELAY_PROJECT_ID=checkout
 export RELAY_ACTOR_ID=agent:chatgpt
-export RELAY_MCP_PROFILE=proof
+export RELAY_MCP_PROFILE=qa
 relay-mcp-bridge --host 127.0.0.1 --port 8788 --auth-env RELAY_MCP_BRIDGE_AUTH_TOKEN
 ```
 
@@ -165,8 +166,8 @@ stdio-only host can use the same package directly:
   "mcpServers": {
     "relay": {
       "command": "npx",
-      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "proof"],
-      "env": { "RELAY_MCP_PROFILE": "proof" }
+      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "qa"],
+      "env": { "RELAY_MCP_PROFILE": "qa" }
     }
   }
 }
@@ -182,28 +183,29 @@ the bridge exposes exactly the profile selected by `RELAY_MCP_PROFILE`.
 
 ## Tool profiles
 
-Relay defaults to the `operator` profile (~19 hand-named verbs plus `relay_advanced`; no
-`lease.takeover`). Agents do not need to select a profile for ordinary device and Plan work.
-Trusted orchestrators can opt into a lower-level profile with `--profile <name>` or
-`RELAY_MCP_PROFILE`. `full` is trusted orchestration only and is the only profile that exposes
+Use `qa` for ordinary recording, saved Tests, and evidence review. The executable
+still defaults to `operator` for existing integrations. Configure the required
+profile once when setting up the host; discover its tools before the task.
+`full` is trusted orchestration only and is the only profile that exposes
 `lease.takeover`.
 
-| Profile    | Intended use                                                                             |
-| ---------- | ---------------------------------------------------------------------------------------- |
-| `operator` | Default (Cursor / this repo): ~19 verbs + `relay_advanced`; no `lease.takeover`          |
-| `outcome`  | Test workflow: connect, observe, record, replay, run, repeat, inspect, export            |
-| `control`  | Advanced direct target observation, input, recovery, and lease management                |
-| `map`      | Discovery and observation proposals without full authoring edits                         |
-| `observe`  | Read-only project, device, App Map, proposal, run, and evidence inspection               |
-| `author`   | Default App Map editing, device recording, and proposal creation                         |
-| `test`     | Graph Test creation, review, compilation, one-pass runs, and evidence                    |
-| `run`      | Test/Combine execution, jobs, and run evidence                                           |
-| `execute`  | Alias of `run` for execution-focused agents                                              |
-| `locale`   | Language Variables, profiles, Combine campaigns, and analysis                            |
-| `review`   | Proposal/take repair, replay, approval, and run-baseline review                          |
-| `admin`    | Workspace policy, projects, targets, schedules, matrices, and retention                  |
-| `proof`    | Prove one change with the outcome tool plus explicit proof.* lifecycle/recovery controls |
-| `full`     | Every canonical Relay operation; trusted orchestration only; includes `lease.takeover`   |
+| Profile    | Intended use                                                                              |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| `qa`       | Recommended first use: record, run, repeat, inspect, review, and export existing evidence |
+| `operator` | Executable compatibility default: ~19 verbs + `relay_advanced`; no `lease.takeover`       |
+| `outcome`  | Test workflow: connect, observe, record, replay, run, repeat, inspect, export             |
+| `control`  | Advanced direct target observation, input, recovery, and lease management                 |
+| `map`      | Discovery and observation proposals without full authoring edits                          |
+| `observe`  | Read-only project, device, App Map, proposal, run, and evidence inspection                |
+| `author`   | Default App Map editing, device recording, and proposal creation                          |
+| `test`     | Graph Test creation, review, compilation, one-pass runs, and evidence                     |
+| `run`      | Test/Combine execution, jobs, and run evidence                                            |
+| `execute`  | Alias of `run` for execution-focused agents                                               |
+| `locale`   | Language Variables, profiles, Combine campaigns, and analysis                             |
+| `review`   | Proposal/take repair, replay, approval, and run-baseline review                           |
+| `admin`    | Workspace policy, projects, targets, schedules, matrices, and retention                   |
+| `proof`    | Prove one change with the outcome tool plus explicit proof.* lifecycle/recovery controls  |
+| `full`     | Every canonical Relay operation; trusted orchestration only; includes `lease.takeover`    |
 
 Outcome tools accept job-level intent and resolve the sole Test workspace, Device, current revision,
 and available control internally. Advanced profile tools advertise and take canonical operation
@@ -214,7 +216,22 @@ remain extensible objects and are still validated by the canonical protocol pars
 
 ## Run an existing Test
 
-With the default operator profile, call `relay_run` directly with the saved Test identity:
+With the recommended `qa` profile, use `relay_panel` to choose an App and its
+saved Test. Call `relay_connect_target` to choose the intended ready target,
+then call `relay_run_test` with the returned exact IDs:
+
+```json
+{ "appMapId": "checkout", "testId": "signed-in-home", "targetId": "<returned-target-id>" }
+```
+
+Inspect the returned workflow through `relay_inspect_workflow`. Keep that
+workflow ID through disconnections instead of starting the Test again. A queued
+workflow is not a completed Run; execution completion and human screenshot
+acceptance remain separate outcomes.
+
+### Operator compatibility
+
+Existing `operator` integrations call `relay_run` with the saved Test identity:
 
 ```json
 { "appMapId": "checkout", "testId": "signed-in-home", "lane": "qa-member" }
@@ -236,25 +253,32 @@ Inspect those jobs with `relay_wait`, then use `relay_findings` after completion
 `triage`, and `export` cannot be combined with `wait:false`. The `export` option is a boolean,
 not a destination path. The existing blocking behavior remains the default.
 
-## Agent quickstart: verify one flow across languages
+## Agent quickstart: record, run, and review
 
-Run the Relay service first (`pnpm ensure:serve`) and check `relay-mcp doctor --json`. With the
-default operator profile:
+Configure `--profile qa` and your intended service or workspace. Check
+`relay-mcp doctor --profile qa --json` with those same connection options. For
+a contributor service, `pnpm ensure:serve` starts Relay; it replaces the port
+listener, so use it before starting a recording or Run.
 
-1. Use `relay_lanes` or `relay_devices` to choose the exact saved account context or device.
-2. Use `relay_snapshot` and `relay_preview` to inspect the current app before a manual action.
-3. Use `relay_run` for one saved Test, or `relay_plan_run` for one case of a saved Plan. Pass
-   `executionMode:"all"` only when every selected case is requested.
-4. Use `relay_wait` with the returned job ID, then `relay_evidence`, `relay_findings`, or
-   `relay_export` to inspect and share the result.
+1. Call `relay_health`, then `relay_panel` to choose an App. Call the panel
+   with its `appMapId` to find the intended saved Test before creating one.
+2. Call `relay_connect_target` and keep the selected target identity. An
+   existing Test can run directly with `relay_run_test`.
+3. When coverage is missing, read `relay://guides/record`, observe the starting
+   screen with `relay_observe_target`, and use `relay_record_test`. Each
+   recording mutation carries the continuation reference and expected version
+   returned by the previous step.
+4. Use `relay_inspect_workflow` until completion or a concrete blocker, then
+   `relay_export_evidence` to share the retained Run.
 
-For an authored Test, `relay_save` accepts the canonical Test document and its current
-`expectedRevision`. The operator profile exposes lower-level recording operations through
-`relay_advanced`; its input is the named canonical operation plus that operation's schema. The
-`outcome` specialist profile offers separate recording workflow verbs when a host deliberately
-uses that interface. A recording workflow mutation carries the continuation reference and
-expected version returned by the previous step. The language variant is documented in
-[Repeat a Test across languages](../../docs/LANGUAGE_SWEEP_LOOP.md).
+Repeat explicitly selected data values with `relay_repeat_test`; inspect one
+pilot before confirming `relay_continue_repeat`. The CLI language variant is
+documented in [Repeat a Test across languages](../../docs/LANGUAGE_SWEEP_LOOP.md).
+
+For existing operator authoring integrations, `relay_save` accepts the canonical
+Test document and current `expectedRevision`. Lower-level recording operations
+remain available through `relay_advanced`. The `outcome` profile retains its
+workflow interface for hosts already using it.
 
 ## Advanced graph Test loop
 
@@ -326,7 +350,8 @@ installation check can be run from this workspace with `pnpm build` and `pnpm te
 inspection and export outcomes, plus health, preview and recovery operators.
 App/Test resources remain discoverable. It excludes assisted goals, raw admin
 operations and Change Proof. The `relay-proof` plugin now selects this preset;
-`proof`, `operator` and `outcome` remain explicit compatibility profiles.
+`proof` and `outcome` remain explicit profiles; `operator` retains the executable
+default for compatibility.
 Run `relay-mcp doctor --profile qa` against the same configured service first.
 The connector requires a compatible Relay runtime and target prerequisites;
 the optional local startup described above can attach or launch the runtime.

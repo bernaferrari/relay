@@ -28,7 +28,12 @@ Assisted exploration needs a configured provider only when you request it.
 
 From a checkout, use ./bin/relay for the commands below. The MCP distribution
 is a connector to a Relay server; installing it does not install the desktop
-or native device prerequisites. Check the distribution README for setup.
+or native device prerequisites. For an agent's first recording or saved Test,
+configure relay-mcp --profile qa and the intended service or workspace. Check
+relay-mcp doctor --profile qa with those same connection options. Then call
+relay_health and relay_panel to find an App and its saved Tests. The panel
+returns text when the host cannot render it. Check the distribution README
+for installation and prerequisites.
 
 For an existing server, list its available devices, then replace <serial> with
 the device you chose and save its current screen. This captures evidence;
@@ -211,10 +216,22 @@ from labels or a screenshot when the app's navigation has not been recorded.`,
 CLI: relay guide <topic>. MCP: read relay://guides, then the listed guide URI.
 These documents ship with this version and can be read without Relay running.
 
-Discover the tools in the configured MCP profile. Use ordinary outcome tools
-for record/run/inspect, or operator verbs for preview/tap/type. The operation
-resource describes additional contracts; do not guess hidden schemas or switch
-profiles as an ordinary task step.
+For a new MCP connection, configure relay-mcp --profile qa and the intended
+service or workspace. Run relay-mcp doctor --profile qa with the same connection
+options. Discover the tools in that configured profile. Existing operator or
+specialist connections keep their own contracts; use their exposed tools.
+
+With QA, call relay_health and relay_panel to choose an App, then call the panel
+with its appMapId to find saved Tests. Read the returned Test's resource URI for
+its steps. Select the ready target through relay_connect_target, then run the
+exact saved Test with relay_run_test. Keep the returned workflow identity and
+inspect it through relay_inspect_workflow until completion or a concrete blocker.
+The panel returns text when the host cannot render it.
+
+When coverage is missing, read the record guide and use relay_record_test,
+relay_record_action and relay_preview. Each mutation uses the continuation and
+expected version returned by the previous step. The configured tools describe
+their input contracts; discover those schemas before acting.
 
 For a saved Test, run it directly on the selected App and target. For discovery,
 observe, preview the action, act, then inspect the fresh state. Keep actor and

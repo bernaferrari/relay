@@ -63,6 +63,10 @@ its `mcpServers.relay` entry into that host's MCP configuration. Use portable
 through the host's supported flow after updates; keep mutable Relay state
 outside its immutable plugin cache.
 
+For manual setup, invoke `relay-mcp` with `args: ["--profile", "qa"]`, matching
+the plugin descriptor. Use that same profile and connection options for doctor.
+The executable's no-flag `operator` default remains for existing integrations.
+
 ## First useful task
 
 1. Call `relay_health`, then `relay_panel` to choose an App. Pass its `appMapId`

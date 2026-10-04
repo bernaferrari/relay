@@ -1,6 +1,6 @@
 import { useEffect, useState, type ImgHTMLAttributes } from "react";
 import { Button } from "@relay/ui-react/components/button";
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import type { ReportEvidenceItem } from "../data/run-report-model";
 
 type ReportImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
@@ -16,7 +16,7 @@ function ImageResource({ media, ...props }: ReportImageProps) {
   const [attempt, setAttempt] = useState(0);
   const resource = useQuery({
     queryKey: ["report-image", media.src],
-    queryFn: media.load!,
+    queryFn: media.load ?? skipToken,
     enabled: Boolean(media.load),
     staleTime: Infinity,
   });
