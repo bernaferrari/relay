@@ -33,6 +33,7 @@ import { EvidencePreview } from "./run-report-panels";
 import { RunReplayStatus } from "./run-replay";
 import { RunReportActions } from "./run-report-actions";
 import { EmbeddedRunResult } from "../components/embedded-run-result";
+import { storyFailureOwnsCause } from "../data/run-story-failure-cause";
 
 export function RunReport({
   report,
@@ -302,7 +303,7 @@ export function RunReport({
           notice={
             <>
               <RunReplayStatus runService={runService} />
-              {failureNotice}
+              {storyFailureOwnsCause(report) ? null : failureNotice}
               {report.evidenceUnavailable ? (
                 <p className="text-sm text-muted-foreground" role="status">
                   Evidence details are temporarily unavailable. The saved outcome above is

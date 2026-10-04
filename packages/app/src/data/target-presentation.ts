@@ -1,5 +1,10 @@
 import { devicePlatformLabel } from "./device-label";
-import type { AuthoringTarget, DeviceSummary, TargetDefinition } from "@relay/protocol";
+import type {
+  AuthoringTarget,
+  DeviceSummary,
+  OperationInput,
+  TargetDefinition,
+} from "@relay/protocol";
 import { browserDisplayNames } from "./browser-display-names";
 
 export type ProductTargetOption = AuthoringTarget & {
@@ -11,7 +16,7 @@ export type ProductTargetOption = AuthoringTarget & {
 type TargetCatalogClient = {
   invoke(
     id: "target.devices.list",
-    input: Record<string, never>,
+    input: OperationInput<"target.devices.list">,
   ): Promise<{ devices: DeviceSummary[] }>;
   invoke(id: "target.list", input: Record<string, never>): Promise<{ targets: TargetDefinition[] }>;
 };
@@ -23,10 +28,17 @@ type TargetCatalogClient = {
 export async function presentReadyTargets(
   client: TargetCatalogClient,
   targets: readonly AuthoringTarget[],
+  scope?: OperationInput<"target.devices.list">,
 ): Promise<readonly ProductTargetOption[]> {
+  if (!targets.length) return [];
+  const targetKinds = new Set(targets.map((target) => target.kind));
+  const presentationScope = scope ?? {
+    ...(targetKinds.size === 1 ? { targetKind: targets[0]!.kind } : {}),
+    ...(targets.length === 1 ? { targetId: targets[0]!.targetId } : {}),
+  };
   const [devices, catalog] = await Promise.all([
     client
-      .invoke("target.devices.list", {})
+      .invoke("target.devices.list", presentationScope)
       .then((result) => result.devices)
       .catch(() => [] as DeviceSummary[]),
     client

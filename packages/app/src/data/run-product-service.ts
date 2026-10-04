@@ -45,6 +45,10 @@ export type ProductVisualReviewResult = Pick<
   "decision" | "baseline"
 >;
 export type ProductCaptureReviewResult = OperationOutput<"run.capture.review">;
+export type RunTargetDiscoveryScope = Pick<
+  OperationInput<"target.devices.list">,
+  "targetKind" | "targetId"
+>;
 export type ProductVisualBaselineApproval = OperationOutput<"run.visual-baseline.update">;
 export type PlayerManifestProjection = {
   schemaVersion: 1;
@@ -105,7 +109,7 @@ export type RunProductService = {
   getTest(testId: string, appMapId?: string): Promise<ProductTestSummary | undefined>;
   listTestRuns?(testId: string, appMapId?: string): Promise<readonly ProductRunSummary[]>;
   listTestRunsComplete?(testId: string): Promise<readonly ProductRunSummary[]>;
-  listTargets(): Promise<readonly ProductTargetOption[]>;
+  listTargets(scope?: RunTargetDiscoveryScope): Promise<readonly ProductTargetOption[]>;
   listBuilds?(): Promise<readonly ProductRunBuildOption[]>;
   listProfiles?(appMapId: string): Promise<readonly ProductRunProfileOption[]>;
   presentTargets(targets: readonly AuthoringTarget[]): Promise<readonly ProductTargetOption[]>;
@@ -232,13 +236,13 @@ export function createRunProductService(platform: Platform): RunProductService {
         ? catalog.listRunsComplete({ testId })
         : catalog.listRuns({ testId });
     },
-    async listTargets() {
+    async listTargets(scope) {
       const { client, targetJourney } = await runtime();
-      const state = await targetJourney.connect();
+      const state = await targetJourney.connect(scope);
       if (state.recovery) {
         throw new Error(`${state.recovery.detail} ${state.recovery.recovery}`.trim());
       }
-      return presentReadyTargets(client, state.targets);
+      return presentReadyTargets(client, state.targets, scope);
     },
     async listBuilds() {
       const { client } = await runtime();

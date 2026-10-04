@@ -772,7 +772,8 @@ export function projectRunReport(
     rawEvidence,
   );
   const outcome = runOutcome(run.outcome);
-  const cause = publicRunCause(text(canonical?.problems[0]?.detail) ?? text(run.error));
+  const technicalCause = text(canonical?.problems[0]?.detail) ?? text(run.error);
+  const cause = publicRunCause(technicalCause);
   const category = publicFailureCategory(run.failureCategory);
   const traceEvidence = firstTraceEvidence(run, outcome);
   const targetName = humanTargetName(run.deviceName);
@@ -878,6 +879,7 @@ export function projectRunReport(
     ...(targetName ? { targetName } : {}),
     ...(finite(run.durationMs) === undefined ? {} : { durationMs: finite(run.durationMs) }),
     ...(cause ? { cause } : {}),
+    ...(technicalCause ? { technicalCause } : {}),
     ...(category ? { category } : {}),
     ...(traceEvidence
       ? { firstEvidence: traceEvidence }

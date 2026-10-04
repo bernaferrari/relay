@@ -14,6 +14,7 @@ import type { RunConfigurationBlocker } from "../data/run-configuration";
 import type { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
 import type { PlanPlatform } from "@relay/product/test-route-platforms";
 import { testRunDestinationCopy } from "../data/test-run-targets";
+import { runSetupProfile } from "../data/run-setup-profile";
 
 type Configuration = ReturnType<typeof usePersistedRunConfiguration>;
 
@@ -59,8 +60,10 @@ export function TestRunSettings({
   startPending: boolean;
   onStart(): void;
 }) {
-  const selectedProfile = profiles.data?.find(
-    (profile) => profile.id === configuration.selection.savedProfileId,
+  const selectedProfile = runSetupProfile(
+    profiles.data,
+    targetId,
+    configuration.selection.savedProfileId,
   );
   const destination = testRunDestinationCopy(recordedPlatforms);
   const availableProfiles = profiles.data?.filter(
@@ -82,9 +85,19 @@ export function TestRunSettings({
     hasTargets && availableProfiles?.length ? (
       <SelectField
         label={hasSavedLogins ? "Sign in as" : "Saved setup"}
-        value={configuration.selection.savedProfileId ?? "automatic"}
+        value={
+          configuration.selection.savedProfileId ??
+          (selectedProfile?.account ? selectedProfile.id : "automatic")
+        }
         options={[
-          { value: "automatic", label: hasSavedLogins ? "Current browser" : "Automatic" },
+          {
+            value: "automatic",
+            label: selectedProfile?.account
+              ? `Current browser · ${selectedProfile.account.name}`
+              : hasSavedLogins
+                ? "Current browser"
+                : "Automatic",
+          },
           ...availableProfiles.map((profile) => ({
             value: profile.id,
             label: `${profile.account?.name ?? profile.name}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,

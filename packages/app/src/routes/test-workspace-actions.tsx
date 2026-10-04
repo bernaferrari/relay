@@ -9,7 +9,14 @@ import {
   DropdownMenuItem,
 } from "@relay/ui-react/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
-import { ChevronLeft, Circle, MoreHorizontal, Play, SlidersHorizontal } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  Circle,
+  MoreHorizontal,
+  Play,
+  SlidersHorizontal,
+} from "lucide-react";
 import type { MouseEvent, ReactNode, RefObject } from "react";
 
 export function TestWorkspaceActions({
@@ -20,12 +27,14 @@ export function TestWorkspaceActions({
   inPlan,
   activeRun,
   attachedRunId,
+  liveRunId,
   recordDisabled,
   recordPending,
   recordStepSelected,
   onRecord,
   startPending,
   configurationLabel,
+  configurationName,
   profileBlocked,
   onRun,
   settingsOpen,
@@ -42,12 +51,14 @@ export function TestWorkspaceActions({
   inPlan: boolean;
   activeRun: boolean;
   attachedRunId?: string;
+  liveRunId?: string;
   recordDisabled: boolean;
   recordPending: boolean;
   recordStepSelected: boolean;
   onRecord(): void;
   startPending: boolean;
   configurationLabel: string;
+  configurationName: string;
   profileBlocked: boolean;
   onRun(event: MouseEvent<HTMLButtonElement>): void;
   settingsOpen: boolean;
@@ -89,17 +100,23 @@ export function TestWorkspaceActions({
               {recordPending ? "Starting…" : "Record steps"}
             </Button>
           ) : null}
-          {activeRun && attachedRunId ? (
+          {activeRun && (liveRunId || attachedRunId) ? (
             <Button
               nativeButton={false}
-              render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
+              render={<Link to="/runs/$runId" params={{ runId: (liveRunId ?? attachedRunId)! }} />}
               size="sm"
             >
               View live run
             </Button>
           ) : (
             <div className="flex items-center gap-1">
-              <Button size="sm" onClick={onRun} disabled={startPending} title={configurationLabel}>
+              <Button
+                size="sm"
+                onClick={onRun}
+                disabled={startPending}
+                title={configurationLabel}
+                aria-description={configurationLabel}
+              >
                 <Play aria-hidden="true" />
                 {startPending ? "Starting…" : profileBlocked ? "Fix setup" : "Run"}
               </Button>
@@ -109,11 +126,28 @@ export function TestWorkspaceActions({
             <DropdownMenu>
               <DropdownMenuTrigger
                 ref={configurationTriggerRef}
-                render={<Button variant="ghost" size="icon-sm" />}
-                aria-label="More Test actions"
+                render={
+                  <Button
+                    variant={activeRun ? "ghost" : "outline"}
+                    size={activeRun ? "icon-sm" : "sm"}
+                  />
+                }
+                aria-label={
+                  !activeRun && configurationName !== "Run settings"
+                    ? `Run settings: ${configurationName}`
+                    : "More Test actions"
+                }
+                aria-description={`Run settings: ${configurationLabel}`}
                 title={configurationLabel}
               >
-                <MoreHorizontal aria-hidden="true" />
+                {activeRun ? (
+                  <MoreHorizontal aria-hidden="true" />
+                ) : (
+                  <>
+                    <span className="max-w-80 truncate">{configurationName}</span>
+                    <ChevronDown aria-hidden="true" />
+                  </>
+                )}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 {!activeRun && testPresent ? (

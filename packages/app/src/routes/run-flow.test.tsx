@@ -513,7 +513,11 @@ async function settle() {
 function button(label: string): HTMLButtonElement {
   const result = [...document.querySelectorAll("button")].find(
     (candidate) =>
-      candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
+      candidate.textContent?.trim() === label ||
+      candidate.getAttribute("aria-label") === label ||
+      (label === "Run settings menu" &&
+        (candidate.getAttribute("aria-label") === "More Test actions" ||
+          candidate.getAttribute("aria-label")?.startsWith("Run settings:"))),
   );
   if (!(result instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return result;
@@ -540,7 +544,7 @@ async function click(element: HTMLElement) {
 }
 
 async function openRunSettings() {
-  await click(button("More Test actions"));
+  await click(button("Run settings menu"));
   const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
     (item) => item.textContent?.trim() === "Run settings",
   );
@@ -1370,7 +1374,7 @@ describe("Run and Report", () => {
   it("returns run setup focus to the header control that opened it", async () => {
     const fake = fakeRunService();
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-    const trigger = button("More Test actions");
+    const trigger = button("Run settings menu");
     expect(
       document.querySelector('button[aria-label="Run configuration — opens run setup"]'),
     ).toBeNull();
@@ -1420,7 +1424,7 @@ describe("Run and Report", () => {
     // The resolved configuration is named on Run itself before any popover is
     // opened — a person comparing Admin and Member must not have to dig.
     expect(button("Run").title).toContain("Checkout browser · Member · Current build");
-    expect(button("More Test actions").title).toContain(
+    expect(button("Run settings menu").title).toContain(
       "Checkout browser · Member · Current build",
     );
     await openRunSettings();
@@ -1438,6 +1442,64 @@ describe("Run and Report", () => {
     expect(
       document.querySelector<HTMLButtonElement>('button[aria-label="Sign in as"]')?.textContent,
     ).toContain("Member");
+  });
+
+  it("names and binds the sole saved account on the last-used browser before Run", async () => {
+    const fake = fakeRunService();
+    fake.service.listProfiles = async () => [
+      {
+        id: "profile-admin",
+        name: "Admin setup",
+        targetId: "browser-golden",
+        platform: "browser",
+        account: { id: "acct-admin", name: "Admin" },
+      },
+    ];
+    await renderRun(
+      "/tests/test-1?target=browser-golden",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(button("Run settings menu").textContent).toContain("Admin · Checkout browser");
+    expect(button("Run settings menu").getAttribute("aria-label")).toBe(
+      "Run settings: Admin · Checkout browser",
+    );
+    expect(button("Run settings menu").getAttribute("aria-description")).toContain(
+      "Run settings: Checkout browser · Admin",
+    );
+    expect(button("Run").getAttribute("aria-description")).toContain("Admin");
+    await openRunSettings();
+    expect(document.querySelector('button[aria-label="Sign in as"]')?.textContent).toContain(
+      "Admin",
+    );
+    await click(button("Run now"));
+    expect(fake.startInputs[0]).toMatchObject({
+      targetId: "browser-golden",
+      targetProfileId: "profile-admin",
+    });
+  });
+
+  it("exposes the canonical live Run before a slow pointer write finishes", async () => {
+    const fake = fakeRunService();
+    const stored = platformWithStorage();
+    let finishWrite!: () => void;
+    const write = stored.platform.storage.set;
+    stored.platform.storage.set = (key, value) =>
+      key === "activeRunWorkflow"
+        ? new Promise<void>((resolve) => {
+            finishWrite = () => {
+              void write(key, value);
+              resolve();
+            };
+          })
+        : write(key, value);
+    await renderRun("/tests/test-1?target=browser-golden", fake.service, stored.platform);
+    await click(button("Run"));
+    expect(stored.values.has("activeRunWorkflow")).toBe(false);
+    expect(document.querySelector('a[href="/runs/run-1"]')?.textContent).toContain("View live run");
+    await act(async () => finishWrite());
+    await settle();
+    expect(stored.values.has("activeRunWorkflow")).toBe(true);
   });
 
   it("applies a toolbar destination serial once and keeps a later in-page target", async () => {
@@ -1465,7 +1527,11 @@ describe("Run and Report", () => {
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
     expect(button("Run").disabled).toBe(false);
-    expect(document.querySelectorAll('button[aria-label="More Test actions"]')).toHaveLength(1);
+    expect(
+      document.querySelectorAll(
+        'button[aria-label="More Test actions"], button[aria-label^="Run settings:"]',
+      ),
+    ).toHaveLength(1);
     await openRunSettings();
     expect(document.body.textContent).toContain("Checkout browser");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
@@ -1493,7 +1559,7 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).not.toContain("Draft issue");
-    await click(button("More Test actions"));
+    await click(button("Run settings menu"));
     expect(document.body.textContent).toContain("Review result");
     expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
@@ -1771,7 +1837,11 @@ describe("Run and Report", () => {
     history.push("/tests/test-2");
     await settle();
     expect(document.body.textContent).not.toContain("Checking Language");
-    expect(document.querySelector('button[aria-label="More Test actions"]')).not.toBeNull();
+    expect(
+      document.querySelector(
+        'button[aria-label="More Test actions"], button[aria-label^="Run settings:"]',
+      ),
+    ).not.toBeNull();
 
     history.push("/tests/test-1");
     await settle();
@@ -1912,13 +1982,13 @@ describe("Run and Report", () => {
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Checking Language");
-    await click(button("More Test actions"));
+    await click(button("Run settings menu"));
     expect(
       [...document.querySelectorAll('[role="menuitem"]')].some((item) =>
         item.textContent?.includes("Run settings"),
       ),
     ).toBe(false);
-    await click(button("More Test actions"));
+    await click(button("Run settings menu"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("View live run"),
@@ -1932,13 +2002,17 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
     expect(document.body.textContent).toContain("Test passed");
-    await click(button("More Test actions"));
+    await click(button("Run settings menu"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("Review result"),
       ),
     ).toBe(true);
-    expect(document.querySelector('button[aria-label="More Test actions"]')).not.toBeNull();
+    expect(
+      document.querySelector(
+        'button[aria-label="More Test actions"], button[aria-label^="Run settings:"]',
+      ),
+    ).not.toBeNull();
   });
 
   it("shows Cancel only while canonical state allows it", async () => {
@@ -2171,7 +2245,7 @@ describe("Run and Report", () => {
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).not.toContain("Run history");
-    await click(button("More Test actions"));
+    await click(button("Run settings menu"));
     const historyAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (item) => item.textContent === "Run history",
     );
@@ -2207,7 +2281,7 @@ describe("Run and Report", () => {
     fake.service.listTestRunsComplete = async () => history;
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
-    await click(button("More Test actions"));
+    await click(button("Run settings menu"));
     const historyAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (item) => item.textContent === "Run history",
     );

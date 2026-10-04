@@ -69,7 +69,7 @@ function SidebarDestinationLink({
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
           {item.label}
         </span>
-        {item.to === "/runs" ? <ReviewCount /> : null}
+        {item.to === "/runs" ? <ReviewCount appMapId={app} /> : null}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

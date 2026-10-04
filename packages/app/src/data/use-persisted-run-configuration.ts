@@ -87,6 +87,19 @@ type State = {
   saving?: boolean;
 };
 const empty: RunConfigurationSelection = {};
+export function runConfigurationTargetUnavailable(
+  selection: RunConfigurationSelection,
+  availableTargetIds?: readonly string[],
+): boolean {
+  const selectedIds =
+    selection.targetProfileIds ??
+    (selection.targetId
+      ? [selection.targetId]
+      : selection.targetProfileId
+        ? [selection.targetProfileId]
+        : []);
+  return Boolean(availableTargetIds && selectedIds.some((id) => !availableTargetIds.includes(id)));
+}
 export function usePersistedRunConfiguration({
   storage,
   key,
@@ -180,15 +193,9 @@ export function usePersistedRunConfiguration({
       active = false;
     };
   }, [key, storage, selection, loaded, edited, attempt]);
-  const selectedIds =
-    selection.targetProfileIds ??
-    (selection.targetId
-      ? [selection.targetId]
-      : selection.targetProfileId
-        ? [selection.targetProfileId]
-        : []);
-  const targetUnavailable = Boolean(
-    targetOptions && selectedIds.some((id) => !targetOptions.some((item) => item.id === id)),
+  const targetUnavailable = runConfigurationTargetUnavailable(
+    selection,
+    targetOptions?.map((option) => option.id),
   );
   return {
     selection,

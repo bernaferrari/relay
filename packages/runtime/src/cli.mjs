@@ -2,14 +2,14 @@ import { isAbsolute } from "node:path";
 import { ensureRelayRuntime } from "./startup.mjs";
 
 const usage =
-  "Usage: relay-runtime start|demo --workspace /absolute/path [--port 8787] [--fixture-port 8792] [--once]";
+  "Usage: relay-runtime start|demo|repeat --workspace /absolute/path [--port 8787] [--fixture-port 8792] [--once]";
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 try {
   const argv = process.argv.slice(2);
   const command = argv.shift();
   const values = new Map();
   let once = false;
-  if (!["start", "demo"].includes(command)) throw new Error(usage);
+  if (!["start", "demo", "repeat"].includes(command)) throw new Error(usage);
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index];
     if (option === "--once") {
@@ -29,15 +29,24 @@ try {
     throw new Error("Fixture port must be an integer from 1 to 65535.");
   const runtime = await ensureRelayRuntime({ workspaceRoot, port });
   console.log(JSON.stringify(runtime));
-  if (command === "demo") {
+  if (command === "demo" || command === "repeat") {
     const { runPackagedDemo } = await import("./demo.mjs");
-    const repeatCommand = `node ${quote(process.argv[1])} demo --workspace ${quote(workspaceRoot)} --port ${new URL(runtime.url).port} --fixture-port ${fixturePort}`;
+    const invocation = `node ${quote(process.argv[1])}`;
+    const workspaceArgs = `--workspace ${quote(workspaceRoot)} --port ${new URL(runtime.url).port} --fixture-port ${fixturePort}`;
+    const repeatCommand = `${invocation} repeat ${workspaceArgs}`;
     await runPackagedDemo({
       workspaceRoot,
       serverUrl: runtime.url,
       port: fixturePort,
       once,
       repeatCommand,
+      reuseFixture: command === "repeat",
+      recovery: {
+        missingBrowser:
+          "Install Chrome or Chromium, or set RELAY_BROWSER_EXECUTABLE to its absolute executable path, then retry.",
+        unavailableServer: `Start it with: ${invocation} start --workspace ${quote(workspaceRoot)} --port ${new URL(runtime.url).port}`,
+        restartDemo: `Start ${invocation} demo ${workspaceArgs}, leave it open, then repeat.`,
+      },
     });
   }
 } catch (error) {

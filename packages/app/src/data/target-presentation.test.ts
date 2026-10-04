@@ -9,6 +9,23 @@ const targets: AuthoringTarget[] = [
 ];
 
 describe("target presentation", () => {
+  it("keeps browser presentation independent of hardware inventory", async () => {
+    const calls: { id: string; input: unknown }[] = [];
+    await presentReadyTargets(
+      {
+        async invoke(id, input) {
+          calls.push({ id, input });
+          return { devices: [], targets: [] };
+        },
+      },
+      [targets[0]!],
+    );
+    expect(calls).toEqual([
+      { id: "target.devices.list", input: { targetKind: "browser", targetId: "browser-one" } },
+      { id: "target.list", input: {} },
+    ]);
+  });
+
   it("keeps the same browser name when review presents only one of several destinations", async () => {
     const browsers: TargetDefinition[] = ["browser-one", "browser-two"].map((id, index) => ({
       id,

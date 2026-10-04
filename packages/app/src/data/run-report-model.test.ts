@@ -3,6 +3,14 @@ import { describe, expect, it } from "vitest";
 import { traceVideoInterval } from "./run-report-media";
 import { mapDiagnosticEventsToVideo } from "./run-product-service";
 
+it("retains the original cause for exact story joins while keeping public copy readable", () => {
+  const technicalCause =
+    "layout assertion: identifier team-seats overlaps identifier save-settings by 44×44 px";
+  const report = projectRunReport("layout", { error: technicalCause }, {});
+  expect(report.technicalCause).toBe(technicalCause);
+  expect(report.cause).toBe("Relay could not complete this Test with the saved recording.");
+});
+
 describe("Run report video clock mapping", () => {
   it("maps diagnostic wall-clock events to bounded video offsets", () => {
     expect(

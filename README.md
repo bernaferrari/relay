@@ -10,7 +10,7 @@
 
 Relay records reusable tests for websites, Android apps, and iOS apps, then keeps each run's screenshots and results together. Use the desktop app to record your actions, or ask your coding agent to run saved tests and inspect the same evidence.
 
-**[Run your first test and open its screenshots](./docs/FIRST_TEST.md)** — a complete local browser demo with a saved test, a fresh replay, and a layout defect to review. It needs no account or model key.
+**[Run your first test and open its screenshots](./docs/FIRST_TEST.md)** — save a Test, catch a layout defect, repair the demo website, and run the unchanged Test again. It needs no account or model key.
 
 A test can be as simple as opening a menu or as involved as going through checkout. Along the way, you can check that something appears, wait for a response, or capture a screenshot. When you run the test again, Relay shows the result of each step. You can compare screenshots with earlier versions and decide whether a change looks right.
 
@@ -48,11 +48,11 @@ pnpm ensure:serve
 pnpm demo
 ```
 
-The demo opens a controlled local website, records signing in as Member and opening Settings, captures **Member settings**, saves a reusable Test, and runs it again in a fresh browser. It prints the Test and Run IDs, a **Review** link, screenshot path, and exact repeat command. Open the Review link immediately: it serves a local read-only evidence gallery without the desktop app or a web dev server. The link expires after 24 hours and needs the Relay service to stay running. The [first-test guide](./docs/FIRST_TEST.md) explains prerequisites, the expected result, and repeating the test.
+The demo opens a controlled local website, records signing in as Member and opening Settings, and saves a Test with a layout check. It prints a **Defect Review** for the failed check, then repairs its website and runs the unchanged Test in a fresh browser. The passing **Review**, separate Run IDs, durations, screenshots, and exact Repeat command are printed too. Open the gallery links directly without the desktop app or a web dev server. Links expire after 24 hours and need the Relay service to stay running. See the [first-test guide](./docs/FIRST_TEST.md).
 
-The demo deliberately includes a layout defect: **Save** overlaps the team seats. Open the retained screenshot to inspect it. Collection passing means the steps finished; human screenshot review remains pending. To record your decision, open **Demo · Member settings** in the desktop app's Review flow.
+The seeded defect places **Save** over the team seats. The saved layout check fails on that overlap and passes after the demo removes it. Human screenshot review stays pending; to record your decision about the appearance, open **Demo · Member layout** in the desktop app's Review flow.
 
-The demo website stays available for repeat runs until you press Ctrl+C. Starting `pnpm demo` again reuses the saved Test and runs it again. `pnpm demo -- --once` completes one run and closes the demo website.
+The demo website stays available until Ctrl+C. The printed Repeat runs the same Test on its repaired state. Starting `pnpm demo` again reuses the Test and demonstrates the defect and repair again. `pnpm demo -- --once` finishes the demonstration and closes the website.
 
 This is the contributor workflow. The [packaged runtime candidate](./packages/runtime/README.md)
 also runs this browser demo from a local tarball without repository sources:

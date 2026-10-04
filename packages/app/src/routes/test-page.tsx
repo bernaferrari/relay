@@ -9,10 +9,9 @@ import { rememberRecordingInto } from "../data/record-into-test";
 import { writeWorkflowPointer } from "../data/workflow-pointer";
 import { recordingQueryKeys } from "../data/recording-queries";
 /** @jsxImportSource react */
-import {
-  usePersistedRunConfiguration,
-  useRunConfigurationKey,
-} from "../data/use-persisted-run-configuration";
+import { useTestRunSetup } from "../data/use-test-run-setup";
+import { runSetupProfile } from "../data/run-setup-profile";
+import { catalogQueryKeys } from "../data/catalog-queries";
 import { WorkbenchPage } from "../components/page-layout";
 import { Button } from "@relay/ui-react/components/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
@@ -49,7 +48,6 @@ import { TestWorkspaceActions } from "./test-workspace-actions";
 import { TestWorkspaceStage } from "./test-stage";
 import { productLinkClassName } from "../lib/class-names";
 import { testRunDestinationCopy } from "../data/test-run-targets";
-import { useTestRunDestinations } from "../data/use-test-run-destinations";
 
 const routeApi = getRouteApi("/tests/$testId");
 const staleTestMessage = "The saved Test changed.";
@@ -120,6 +118,7 @@ export function TestPage() {
   );
   const searchRunId = typeof search.run === "string" ? search.run : undefined;
   const [pinnedRunId, setPinnedRunId] = useState<string | undefined>(searchRunId);
+  const [startingRun, setStartingRun] = useState<{ testId: string; runId: string }>();
   const startedForTestId = useRef<string | undefined>(undefined);
   const testIdRef = useRef(testId);
   testIdRef.current = testId;
@@ -139,73 +138,41 @@ export function TestPage() {
     queryFn: async () => (await readRunPointer(platform)) ?? null,
     staleTime: Infinity,
   });
-  const { targets, profiles, editorDocument, recordedPlatforms } = useTestRunDestinations({
-    testId,
-    appMapId: test.data?.appMapId,
-    recordedProfileId: test.data?.recordedProfileId,
-    runService,
-    testEditorService,
-  });
   const builds = useQuery({
     queryKey: ["run-config", "builds"],
     queryFn: () => runService.listBuilds?.() ?? Promise.resolve([]),
     enabled: typeof runService.listBuilds === "function",
     staleTime: 15_000,
   });
-  const scope = useRunConfigurationKey(platform, `test-run:${testId}`, test.data?.appMapId);
-  const configuration = usePersistedRunConfiguration({
-    storage: platform.storage,
-    key: scope.key,
-    targetOptions: targets.data?.map((target) => ({
-      id: target.targetId,
-      label: target.name,
-    })),
-  });
   const recordingTargetId = typeof search.target === "string" ? search.target : undefined;
   // A Test usually runs where it ran last time; start there instead of asking.
   const lastRunTargetId = [...(recentRuns.data ?? [])]
     .sort((left, right) => right.queuedAt - left.queuedAt)
     .find((run) => run.executionIdentity?.deviceId)?.executionIdentity?.deviceId;
-  useEffect(() => {
-    if (!configuration.pristine) return;
-    if (editorDocument.isPending) return;
-    if (profiles.isEnabled && profiles.isPending) return;
-    const ready = (id?: string) =>
-      Boolean(id && targets.data?.some((target) => target.targetId === id));
-    // Run as the login the Test was recorded with, on the same browser.
-    const recorded = profiles.data?.find((profile) => profile.id === test.data?.recordedProfileId);
-    const recordedLogin = recorded?.account && ready(recorded.targetId) ? recorded : undefined;
-    if (recordingTargetId)
-      configuration.setSelection({
-        targetId: recordingTargetId,
-        ...(recordedLogin?.targetId === recordingTargetId
-          ? { savedProfileId: recordedLogin.id }
-          : {}),
-      });
-    else if (recordedLogin)
-      configuration.setSelection({
-        targetId: recordedLogin.targetId!,
-        savedProfileId: recordedLogin.id,
-      });
-    else if (ready(lastRunTargetId)) configuration.setSelection({ targetId: lastRunTargetId! });
-    else if (targets.data?.length === 1)
-      configuration.setSelection({ targetId: targets.data[0]!.targetId });
-  }, [
-    configuration.pristine,
-    configuration.setSelection,
-    lastRunTargetId,
-    recordingTargetId,
-    targets.data,
-    profiles.data,
-    profiles.isEnabled,
-    profiles.isPending,
-    test.data?.recordedProfileId,
-    editorDocument.isPending,
-  ]);
+  const { targets, profiles, editorDocument, recordedPlatforms, scope, configuration } =
+    useTestRunSetup({
+      platform,
+      testId,
+      appMapId: test.data?.appMapId,
+      recordedProfileId: test.data?.recordedProfileId,
+      requestedTargetId: recordingTargetId,
+      lastRunTargetId,
+      lastRunTargetPending: recentRuns.isEnabled && recentRuns.isPending,
+      discoverAlternatives: settingsOpen,
+      runService,
+      testEditorService,
+    });
   const targetId = configuration.selection.targetId ?? "";
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
+  const selectedProfile = runSetupProfile(
+    profiles.data,
+    targetId,
+    configuration.selection.savedProfileId,
+  );
   const admission = startConfigurationAdmission({
-    savedProfileId: configuration.selection.savedProfileId,
+    savedProfileId:
+      configuration.selection.savedProfileId ??
+      (selectedProfile?.account ? selectedProfile.id : undefined),
     targetId,
     profiles: profiles.isEnabled ? profiles.data : undefined,
     profilesStatus: profiles.isEnabled && profiles.isPending ? "pending" : "success",
@@ -217,9 +184,6 @@ export function TestPage() {
   const paired = usePairedConfigurationWorkspace(platform);
   const usePairs = configuration.selection.usePairedWorkspace === true;
   const pairedPlatformReady = !recordedPlatforms || recordedPlatforms.includes("browser");
-  const selectedProfile = profiles.data?.find(
-    (profile) => profile.id === configuration.selection.savedProfileId,
-  );
   const selectedTarget = targets.data?.find((target) => target.targetId === targetId);
   const selectedBuild = builds.data?.find((build) => build.id === configuration.selection.buildId);
   const configurationLabel = usePairs
@@ -274,6 +238,9 @@ export function TestPage() {
         start: (request) => runService.start(request),
         inspect: (workflowId) => runService.inspect(workflowId),
         remember: async (durable, workflowId, runId) => {
+          setStartingRun({ testId, runId });
+          setSettingsOpen(false);
+          void queryClient.invalidateQueries({ queryKey: catalogQueryKeys.runs });
           await writeRunPointer(platform, { workflowId, runId, testId });
           queryClient.setQueryData(runQueryKeys.pointer, {
             workflowId,
@@ -289,6 +256,7 @@ export function TestPage() {
       });
     },
     onSuccess: (state) => {
+      setStartingRun(undefined);
       if (state.batchId) {
         startedForTestId.current = testId;
         void navigate({
@@ -423,6 +391,8 @@ export function TestPage() {
   // The run pointer is workspace-wide. It should only interrupt the document
   // that owns the run; a run for another Test belongs in Activity, not here.
   const activeRun = pointer.data?.testId === testId ? pointer.data : undefined;
+  const liveRunId =
+    activeRun?.runId ?? (startingRun?.testId === testId ? startingRun.runId : undefined);
   const attachedRunId =
     pinnedRunId ?? [...(recentRuns.data ?? [])].sort((a, b) => b.queuedAt - a.queuedAt)[0]?.id;
   const showRecording =
@@ -496,8 +466,9 @@ export function TestPage() {
         testName={test.data?.name}
         testPresent={Boolean(test.data)}
         inPlan={typeof search.plan === "string"}
-        activeRun={Boolean(activeRun)}
+        activeRun={Boolean(activeRun || liveRunId)}
         attachedRunId={attachedRunId}
+        liveRunId={liveRunId}
         recordDisabled={
           record.isPending ||
           devicePreviewBusy ||
@@ -509,6 +480,12 @@ export function TestPage() {
         onRecord={() => record.mutate()}
         startPending={start.isPending}
         configurationLabel={configurationLabel}
+        configurationName={
+          usePairs
+            ? "Saved configurations"
+            : [selectedProfile?.account?.name, selectedTarget?.name].filter(Boolean).join(" · ") ||
+              "Run settings"
+        }
         profileBlocked={Boolean(profileBlocker)}
         onRun={runOrFocusSetup}
         settingsOpen={settingsOpen}
