@@ -8,16 +8,18 @@ import type { RunProductService } from "../data/run-product-service";
 import { RunReport } from "./run-report";
 
 const route = vi.hoisted(() => ({ search: {} as { reportView?: string } }));
+const navigate = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
   useRouteContext: () => ({ queryClient: {} }),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
   useLocation: ({ select }: { select?: (value: unknown) => unknown } = {}) => {
     const value = { search: route.search, pathname: "/runs/layout" };
     return select ? select(value) : value;
   },
 }));
 vi.mock("../components/test-workspace", () => ({
-  TestWorkspaceHeader: () => null,
+  TestWorkspaceHeader: ({ children }: { children: ReactNode }) => <header>{children}</header>,
 }));
 vi.mock("./run-test-link", () => ({ RunTestLink: () => null }));
 vi.mock("./run-report-actions", () => ({ RunReportActions: () => null }));
@@ -29,7 +31,12 @@ vi.mock("./run-replay", () => ({
 // Keep real RunReport/SavedRunStory/RunStoryFailure composition. The visual
 // workbenches are outside this notice and failure-action behavior.
 vi.mock("./run-story", () => ({
-  RunStoryView: ({ notice }: { notice: ReactNode }) => <section>{notice}</section>,
+  RunStoryView: ({ header, notice }: { header: ReactNode; notice: ReactNode }) => (
+    <section>
+      {header}
+      {notice}
+    </section>
+  ),
 }));
 vi.mock("./run-workbench", () => ({
   RunWorkbench: ({ failureNotice }: { failureNotice: ReactNode }) => (
@@ -46,6 +53,7 @@ afterEach(() => {
   client?.clear();
   client = undefined;
   route.search = {};
+  navigate.mockClear();
   document.body.replaceChildren();
 });
 
@@ -134,3 +142,60 @@ it("keeps Run-level technical details available outside the story", async () => 
   const container = await render(report());
   expect(container.querySelector('button[aria-label="Technical details"]')).not.toBeNull();
 });
+
+it("shows persisted account context without inferring it from the test title", async () => {
+  const value = {
+    ...report(),
+    outcome: "passed" as const,
+    executionContext: { browser: "chromium", account: "Member" },
+  };
+  const container = await render(value);
+  expect(container.querySelector('[aria-label="Recorded run context"]')?.textContent).toBe(
+    "chromium · Account: Member",
+  );
+  await act(async () => root!.unmount());
+  root = undefined;
+  document.body.replaceChildren();
+  const missing = await render({
+    ...value,
+    title: "Admin test",
+    executionContext: { browser: "chromium" },
+  });
+  expect(missing.querySelector('[aria-label="Recorded run context"]')?.textContent).toBe(
+    "chromium · Account not recorded",
+  );
+});
+
+it.each([
+  ["passed", "pending", "Passed", "1 screenshot needs review"],
+  ["passed", "issue", "Screenshot issues", "1 screenshot issue"],
+  ["product-failure", "issue", "Failed", "1 screenshot issue"],
+] as const)(
+  "distinguishes %s execution from %s screenshot review",
+  async (outcome, status, label, action) => {
+    const container = await render({
+      ...report(),
+      outcome,
+      captureReview: {
+        items: [{ captureId: "capture", caption: "Settings", status }],
+        summary: {
+          captured: 1,
+          missing: 0,
+          pending: status === "pending" ? 1 : 0,
+          accepted: 0,
+          issue: status === "issue" ? 1 : 0,
+          needMoreEvidence: 0,
+        },
+      },
+    });
+    expect(container.querySelector('[data-slot="status-pill"]')?.textContent).toBe(label);
+    const review = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === action,
+    )!;
+    await act(async () => review.click());
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "/runs/$runId", params: { runId: "layout" } }),
+    );
+    expect(navigate.mock.calls[0]![0].search({})).toEqual({ reportView: "captures" });
+  },
+);
