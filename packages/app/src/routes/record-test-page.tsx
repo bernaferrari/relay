@@ -409,6 +409,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
           mutationId: unresolved.mutationId,
           observed,
           authority: {
+            platform: selectedTarget.platform,
             // A signed-in browser tracks its inputs under that login's key.
             serial:
               selectedTarget.kind === "browser" && selectedTarget.authenticationFixtureId

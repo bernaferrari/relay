@@ -126,6 +126,7 @@ export function useNewTestPreviewInput({
           observed,
           authority: {
             serial: scope.serial,
+            platform: target?.platform,
             reconcile: service.reconcileInput,
             fetchReceipt: service.fetchReconcileReceipt,
           },

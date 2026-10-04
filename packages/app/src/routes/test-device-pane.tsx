@@ -105,6 +105,7 @@ function TestDeviceView({
           observed,
           authority: {
             serial: target.targetId,
+            platform: target.platform,
             reconcile: productService.reconcileInput,
             fetchReceipt: productService.fetchReconcileReceipt,
           },

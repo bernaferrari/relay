@@ -55,6 +55,7 @@ export type RecordingReconcileAuthorityReceipt = {
 
 export type RecordingReconcileAuthority = {
   serial: string;
+  platform?: "android" | "ios" | "browser";
   actor?: string;
   reconcile: (input: {
     serial: string;
@@ -455,6 +456,7 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
     (mutation) => mutation.mutationId === input.mutationId,
   );
   const clientUnknown =
+    input.authority.platform === "android" &&
     current?.kind === "unknown" &&
     !current.recordingMutation &&
     input.mutationId.startsWith("recording-mutation-");

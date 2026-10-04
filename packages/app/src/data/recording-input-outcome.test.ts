@@ -242,6 +242,7 @@ describe("recording input outcome", () => {
       resolutionId: "res-1",
       authority: {
         serial: "pixel-1",
+        platform: "android",
         reconcile: async () => {
           throw new Error("must not resend input");
         },
@@ -489,6 +490,7 @@ it("explicit acknowledged review releases only the exact client-only pause witho
     observed: "not-observed",
     authority: {
       serial: "pixel-1",
+      platform: "android",
       actor: "human:reviewer",
       reconcile: async (input) => {
         submitted = input;
@@ -562,9 +564,39 @@ it("retains generic old transport errors and refuses incomplete or unrelated rev
         ledger,
         mutationId: "recording-mutation-legacy",
         observed: "not-observed",
-        authority: { serial: "pixel-1", reconcile: async () => invalid },
+        authority: { serial: "pixel-1", platform: "android", reconcile: async () => invalid },
       }),
     ).rejects.toThrow();
   }
   expect(recordingRecoveryBlocksSend(ledger)).toBe(true);
+});
+
+it("retains canonical pending lookup for iOS, browser and unknown platform after response loss", async () => {
+  const ledger = appendRecordingMutation(undefined, {
+    kind: "unknown",
+    mutationId: "recording-mutation-response-lost",
+    message: "Connection lost before the server identity arrived",
+  });
+  for (const platform of ["ios", "browser", undefined] as const) {
+    let submitted: unknown;
+    await reconcileRecordingMutationAuthoritatively({
+      ledger,
+      mutationId: "recording-mutation-response-lost",
+      observed: "uncertain",
+      authority: {
+        serial: "target",
+        ...(platform ? { platform } : {}),
+        reconcile: async (input) => {
+          submitted = input;
+          return {
+            mutationId: "native-input-pending",
+            outcome: "ambiguous",
+            health: { state: "uncertain", pendingMutationId: "native-input-pending" },
+          };
+        },
+      },
+    });
+    expect(submitted).toMatchObject({ reconcilePending: true });
+    expect(submitted).not.toHaveProperty("clientUnknown");
+  }
 });
