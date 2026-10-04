@@ -497,6 +497,90 @@ test("share reports project the proof block and failed-step drill-in from persis
   assert.equal(healthyReport.provenance?.appMapRevision, undefined);
 });
 
+test("share totals respect explicit outcomes over legacy execution status", () => {
+  const runs = [
+    run({ id: "legacy", status: "ok" }),
+    run({ id: "legacy-healed", status: "healed" }),
+    run({ id: "passed", status: "running", outcome: "passed" }),
+    ...(["product-failure", "harness-failure", "uncertain", "cancelled"] as const).map(
+      (outcome) => ({
+        ...run({ id: outcome, status: outcome === "cancelled" ? "running" : "ok", outcome }),
+        error: "Expected confirmation missing",
+      }),
+    ),
+  ];
+  runs.find((run) => run.id === "harness-failure")!.status = "healed";
+  const report = buildRunShareReport(
+    {
+      schemaVersion: 1,
+      id: "share-outcomes",
+      runId: runs[0]!.id,
+      runIds: runs.map((run) => run.id),
+      projectId: "project-a",
+      title: "Outcomes",
+      createdAt: 1,
+      expiresAt: 99,
+      createdBy: "human:a",
+      frameCount: runs.length,
+    },
+    runs,
+  );
+  assert.equal(report.totals.passed, 3);
+  assert.equal(report.totals.problems, 4);
+  assert.equal(report.totals.inProgress, 0);
+  const failure = report.runs.find((run) => run.id === "product-failure")?.errorHeadline ?? "";
+  assert.equal(failure, "Expected confirmation missing");
+});
+
+test("public failure labels mask credentials even with broad redaction disabled", async () => {
+  const previousMode = process.env.RELAY_REDACTION_MODE;
+  process.env.RELAY_REDACTION_MODE = "off";
+  await loadRedactionPolicy();
+  try {
+    const failed = {
+      ...run({ id: "legacy-failure", status: "ok", outcome: "product-failure" }),
+      title: "Open https://example.test/settings?token=demo-query",
+      steps: [traceStep("Tap Bearer demo-step-secret", "error")],
+      frames: [
+        {
+          path: "frames/1.png",
+          caption: "Cookie: demo-cookie-secret",
+          capturedAt: 1,
+          mime: "image/png",
+        },
+      ],
+    };
+    const report = buildRunShareReport(
+      {
+        schemaVersion: 1,
+        id: "public-text",
+        runId: failed.id,
+        runIds: [failed.id],
+        projectId: "project-a",
+        title: "Bearer demo-title-secret",
+        createdAt: 1,
+        expiresAt: 99,
+        createdBy: "human:a",
+        frameCount: 1,
+      },
+      [failed],
+    );
+    const serialized = JSON.stringify(report);
+    assert.doesNotMatch(
+      serialized,
+      /secret-token-123|demo-(?:query|step-secret|cookie-secret|title-secret)/u,
+    );
+    assert.match(report.runs[0]!.errorHeadline!, /Element not found: Bearer \[REDACTED\]/u);
+    assert.equal(report.runs[0]!.failedStep?.label, "Tap Bearer [REDACTED]");
+    assert.equal(report.runs[0]!.frames[0]?.caption, "Cookie: [REDACTED]");
+    assert.equal(report.totals.problems, 1);
+  } finally {
+    if (previousMode === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previousMode;
+    await loadRedactionPolicy();
+  }
+});
+
 test("share totals carry human review beside machine outcomes", () => {
   const reviewed = {
     ...run({ id: "run-reviewed", frames: 1, outcome: "passed" }),

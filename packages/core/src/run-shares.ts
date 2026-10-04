@@ -10,7 +10,7 @@ import type {
 } from "@relay/protocol";
 import { destIdentitySourceFrames, failedStepFromTrace } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
-import { redactText } from "./redaction.js";
+import { redactSensitiveEvidenceValue, redactText } from "./redaction.js";
 import { captureReviewQueueForRun } from "./capture-review-queue.js";
 
 const SHARE_STORE = ".run-shares.json";
@@ -234,14 +234,19 @@ function shareableFrames(run: PersistedRun): PersistedRun["frames"] {
   );
   return destIdentitySourceFrames(pngs, run.artifacts);
 }
+
+/** Public labels always mask recognized credential patterns, even when the
+ * broader workspace redaction mode is disabled. Pixels remain separate. */
+function publicEvidenceText(value: string): string {
+  return redactSensitiveEvidenceValue(redactText(value)) as string;
+}
 /** Bounded, redacted reason a run stopped. Share reports expose status plus
  * this one headline — never logs, stack traces, or resolved inputs. */
 function errorHeadlineFor(run: PersistedRun): string | undefined {
-  const healthy = run.outcome === "passed" || run.status === "ok";
-  if (healthy) return undefined;
+  if (isHealthy(run)) return undefined;
   const source = [run.error, run.healMessage].find((value) => value?.trim());
   if (!source) return undefined;
-  const headline = redactText(source.trim().replace(/\s+/gu, " "));
+  const headline = publicEvidenceText(source.trim().replace(/\s+/gu, " "));
   return headline.length > 200 ? `${headline.slice(0, 197)}…` : headline;
 }
 
@@ -292,7 +297,7 @@ export async function createRunShare(input: {
     projectId,
     ...(ownerId ? { ownerId } : {}),
     ...(input.includeBatch && input.run.batchId ? { batchId: input.run.batchId } : {}),
-    title: redactText(
+    title: publicEvidenceText(
       input.includeBatch && input.run.batchId
         ? `${input.run.title ?? input.run.action} · matrix results`
         : (input.run.title ?? input.run.action),
@@ -437,7 +442,7 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
           run,
           report: {
             id: run.id,
-            title: run.title ?? run.action,
+            title: publicEvidenceText(run.title ?? run.action),
             status: run.status,
             ...(run.outcome ? { outcome: run.outcome } : {}),
             ...(run.platform ? { platform: run.platform } : {}),
@@ -447,13 +452,15 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
             ...(run.caseIndex !== undefined ? { caseIndex: run.caseIndex } : {}),
             ...(run.caseCount !== undefined ? { caseCount: run.caseCount } : {}),
             ...(errorHeadlineFor(run) ? { errorHeadline: errorHeadlineFor(run) } : {}),
-            ...(failedStep ? { failedStep } : {}),
+            ...(failedStep
+              ? { failedStep: { ...failedStep, label: publicEvidenceText(failedStep.label) } }
+              : {}),
             ...(run.failureCategory && !isHealthy(run)
               ? { failureCategory: run.failureCategory }
               : {}),
             frames: shareableFrames(run).map((frame, index) => ({
               index,
-              caption: frame.caption || `Screen ${index + 1}`,
+              caption: publicEvidenceText(frame.caption || `Screen ${index + 1}`),
               capturedAt: frame.capturedAt,
               ...(frame.width ? { width: frame.width } : {}),
               ...(frame.height ? { height: frame.height } : {}),
@@ -465,8 +472,8 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
   );
   const reportRuns = projected.map(({ report }) => report);
   const passed = projected.filter(({ run }) => isHealthy(run)).length;
-  const inProgress = projected.filter(({ run }) =>
-    ["queued", "running", "paused"].includes(run.status),
+  const inProgress = projected.filter(
+    ({ run }) => run.outcome === undefined && ["queued", "running", "paused"].includes(run.status),
   ).length;
   // Human review is an independent outcome: aggregate it beside the machine
   // totals so a reviewer sees reported issues even when execution passed.
@@ -489,7 +496,7 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
     schemaVersion: 1,
     share: {
       id: record.id,
-      title: record.title,
+      title: publicEvidenceText(record.title),
       createdAt: record.createdAt,
       expiresAt: record.expiresAt,
     },
@@ -509,7 +516,9 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
 }
 
 function isHealthy(run: PersistedRun): boolean {
-  return run.outcome === "passed" || run.status === "ok";
+  return run.outcome !== undefined
+    ? run.outcome === "passed"
+    : run.status === "ok" || run.status === "healed";
 }
 
 /** One identity block for the whole share. Values come from the primary run
