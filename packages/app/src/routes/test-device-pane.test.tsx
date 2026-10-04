@@ -42,10 +42,27 @@ beforeEach(() => {
     saved.set(key, value);
   });
   context.productService.inspectTargetHealth.mockResolvedValue({ input: { state: "ready" } });
-  context.productService.reconcileInput.mockImplementation(async (input) => ({
-    ...input,
-    health: { state: "ready" },
-  }));
+  context.productService.reconcileInput.mockImplementation(async (input) =>
+    input.clientUnknown
+      ? {
+          mutationId: input.mutationId,
+          resolutionId: input.resolutionId,
+          outcome: input.outcome === "ambiguous" ? "ambiguous" : "acknowledged",
+          review: {
+            source: "operator-review",
+            observed:
+              input.outcome === "applied"
+                ? "applied"
+                : input.outcome === "not-applied"
+                  ? "not-observed"
+                  : "uncertain",
+            actorId: "agent:reviewer",
+          },
+          observation: { capturedAt: 20 },
+          health: { state: "ready" },
+        }
+      : { ...input, health: { state: "ready" } },
+  );
 });
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -110,10 +127,32 @@ it("persists unknown input and blocks both repeat and remount until canonical re
   )!;
   await act(async () => applied.click());
   expect(context.productService.reconcileInput).toHaveBeenCalledWith(
-    expect.objectContaining({ serial: "phone", outcome: "applied", reconcilePending: true }),
+    expect.objectContaining({ serial: "phone", outcome: "applied", clientUnknown: true }),
   );
   expect(remounted.host.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
   expect(input).toHaveBeenCalledOnce();
+});
+
+it("explicit not-observed review resumes without saying the uncertain input was never sent", async () => {
+  const input = vi.fn().mockRejectedValue(new Error("Live device control is not ready"));
+  const { host } = await renderInput(input);
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  const review = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "It did not apply",
+  )!;
+  await act(async () => review.click());
+  expect(context.productService.reconcileInput).toHaveBeenCalledWith(
+    expect.objectContaining({ serial: "phone", outcome: "not-applied", clientUnknown: true }),
+  );
+  expect(host.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
+  expect(host.textContent).not.toContain("Input was not sent");
+  expect(input).toHaveBeenCalledOnce();
+  const ledger = JSON.parse([...saved.values()][0]!);
+  expect(ledger.mutations[0]).toMatchObject({
+    kind: "confirmed",
+    observed: "not-observed",
+    resolvedBy: { authority: "operator-review", actor: "agent:reviewer" },
+  });
 });
 
 it("does not attribute a late input failure to a replacement target", async () => {

@@ -249,6 +249,25 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
     liveTarget: targetSession,
     async reconcileInput(input) {
       calls.push(`reconcile:${input.mutationId}:${input.outcome}`);
+      if (input.clientUnknown) {
+        return {
+          mutationId: input.mutationId,
+          resolutionId: input.resolutionId,
+          outcome: input.outcome === "ambiguous" ? "ambiguous" : "acknowledged",
+          review: {
+            source: "operator-review",
+            observed:
+              input.outcome === "applied"
+                ? "applied"
+                : input.outcome === "not-applied"
+                  ? "not-observed"
+                  : "uncertain",
+            actorId: "agent:reviewer",
+          },
+          observation: { capturedAt: 20 },
+          health: { state: "ready" },
+        };
+      }
       return input;
     },
     async inspectTargetHealth() {
@@ -2716,13 +2735,13 @@ describe("record, review, replay, and save", () => {
     expect(inputCount).toBe(1);
     await click(button("It did not apply"));
     expect(fake.calls.some((call) => call.endsWith(":not-applied"))).toBe(true);
-    expect(document.body.textContent).toContain("no visible effect");
+    expect(document.body.textContent).not.toContain("Recording paused: Relay lost confirmation");
     expect(document.body.textContent).not.toMatch(/was not sent/i);
-    await tapLiveTarget();
+    // Acknowledging the exact old input only releases the pause. The next
+    // native action is still an explicit tap, with no automatic repeat.
     expect(inputCount).toBe(1);
-    expect(document.body.textContent).toContain("Keep it paused to avoid repeating the action.");
     await tapLiveTarget();
-    expect(inputCount).toBe(1);
+    expect(inputCount).toBe(2);
   });
 
   it("restores an uncertain Device mutation after remount without a local ledger", async () => {
