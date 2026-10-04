@@ -125,7 +125,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "app-map.test.edit":
     " Semantic edits include test.patch.requirementAction: capture-view | test-action. MCP can author the same dest-end contract as CLI. capture-view leftover-skip is only GQA-004 attach and GQA-040 Settings inventory; omitted dest-end stays test-action.",
   "app-map.test.run":
-    " Not a first poke: compiled wait-for/expect-screen poll the accessibility slot while pixels stay still and freeze the glass. Poke with screenshot + interact first. Without `in`: runs one saved Test once (expectedRevision + target are required). With `in`: upserts a Combine for this Test × the selected worlds and runs one cell — pass executionMode:'all' to run every world instead; `cell` or `selectedCellIds` names which. Never invent a Variable for screenshots.",
+    " Run a requested saved Test directly on its selected target. Without `in`: runs one saved Test once (expectedRevision + target are required). Compiled wait-for/expect-screen check their authored condition within its timeout; inspect retained evidence on failure. With `in`: upserts a Combine for this Test × the selected worlds and runs one cell — pass executionMode:'all' to run every world instead; `cell` or `selectedCellIds` names which. Never invent a Variable for screenshots.",
   "app-map.screen.alias-observe":
     " One-command fix when a run reports an unknown screen in a new locale: navigate the target to that screen first, then approve its observed fingerprint as an alias of the mapped screen. Never replaces the primary fingerprint; repeats deduplicate.",
   "app-map.scroll-surface.origin.inspect":

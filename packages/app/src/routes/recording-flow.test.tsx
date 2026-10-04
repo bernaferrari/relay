@@ -1236,6 +1236,8 @@ describe("record, review, replay, and save", () => {
 
   it("opens setup with a starting app carried from the device", async () => {
     const fake = fakeService();
+    const connect = vi.fn(fake.service.connect);
+    fake.service.connect = connect;
     await renderJourney(
       "/tests/new?target=emulator-5554&originApplication=com.android.settings",
       fake.service,
@@ -1243,6 +1245,9 @@ describe("record, review, replay, and save", () => {
     );
     expect(document.querySelector('form[aria-label="Record setup"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("This page couldn’t load");
+    expect(connect).toHaveBeenCalledWith({ targetKind: "device", targetId: "emulator-5554" });
+    expect(button("Phone or tablet").getAttribute("aria-pressed")).toBe("true");
+    expect(document.body.textContent).not.toContain("New browser");
   });
 
   it("creates an app inline without losing the chosen device or starting recording", async () => {

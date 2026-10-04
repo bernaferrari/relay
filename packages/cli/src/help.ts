@@ -40,9 +40,9 @@ const globalOptions = `Global options:
   --map <id>                       Choose backing topology when more than one exists (advanced)
   --lane <id>                      Saved who+where on test run, combine/plan run, interact, snapshot, or screenshot. Server resolves revision and overlay; --input-file is not needed
 
-Screenshot and snapshot output:
+Screenshot, snapshot, and compile output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file
-  --full                           On snapshot stdout: print the raw accessibility tree
+  --full                           On snapshots, print the raw tree; on test compile, print full plan JSON
   --binary                         Write raw PNG bytes to stdout
   --force                          Overwrite an existing --file target or a non-empty survey --dir
   --mark <x>,<y>                   Draw a tap preview ring on a screenshot (no tap)

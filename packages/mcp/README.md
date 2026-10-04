@@ -245,7 +245,7 @@ human screenshot acceptance.
 For manual observation and control, `relay_snapshot`, `relay_preview`, `relay_tap`, `relay_type`,
 and `relay_swipe` accept either `serial` or `lane`. Use the same Lane as the Test to preserve the
 browser/account context. Do not combine a serial with a Lane. `laneId` is an equivalent alias;
-conflicting aliases are rejected. `relay_screenshot` accepts either a serial or a Lane (browser captures go through the Lane's exact account context); `relay_recover` still requires a serial;
+conflicting aliases are rejected. `relay_screenshot` accepts either a serial or a Lane (browser captures go through the Lane's exact account context); `relay_recover` accepts that same Lane or a serial;
 a Lane-aware `relay_preview` returns pixels without committing the interaction.
 
 For a long Plan, set `wait:false` on `relay_plan_run`. It returns the batch and job IDs immediately.
@@ -270,6 +270,17 @@ listener, so use it before starting a recording or Run.
    returned by the previous step.
 4. Use `relay_inspect_workflow` until completion or a concrete blocker, then
    `relay_export_evidence` to share the retained Run.
+
+For native recording, limit discovery with
+`{"targetKind":"device","phase":"android"}` or `"ios"`, then pass the returned
+`targetId` to observation, recording, and replay. Set `originApplication` on
+`relay_record_test` to the exact native package or bundle the saved Test must
+reopen. Add a goal outcome check through `relay_record_action` using the
+canonical `interaction: {kind:"steps",steps:[...]}` contract with `expect` or
+`wait-for` and a bounded timeout. `relay_add_checkpoint` retains evidence;
+the authored condition is the executable check. `relay_edit_recording` also
+accepts `insert-before` to add a check to a reviewed recording; replay that
+edited revision before saving it.
 
 Repeat explicitly selected data values with `relay_repeat_test`; inspect one
 pilot before confirming `relay_continue_repeat`. The CLI language variant is

@@ -488,7 +488,8 @@ test("gives run agents one revision-pinned graph Test operation", () => {
 
 test("app-map.test.run guidance explains the one-Test versus Combine split", () => {
   const guidance = tool("app-map.test.run").description;
-  assert.match(guidance, /Not a first poke/u);
+  assert.match(guidance, /Run a requested saved Test directly/u);
+  assert.doesNotMatch(guidance, /Poke with screenshot|Not a first poke/u);
   assert.match(guidance, /wait-for\/expect-screen/u);
   assert.match(guidance, /Without `in`/u);
   assert.match(guidance, /expectedRevision \+ target are required/u);

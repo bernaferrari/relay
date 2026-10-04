@@ -62,6 +62,23 @@ test("global configuration uses CLI over environment over defaults", () => {
   assert.equal(environmentLocal.config.ensureLocalServer, false);
 });
 
+test("test compile accepts --full as an output choice without changing the request", () => {
+  const parsed = parseCli(
+    ["test", "compile", "grok-android", "settings", "--full", "--input", '{"targetProfileId":"android"}'],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") return;
+  assert.equal(parsed.operationId, "app-map.test.compile");
+  assert.equal(parsed.full, true);
+  assert.deepEqual(parsed.input, {
+    appMapId: "grok-android",
+    testId: "settings",
+    targetProfileId: "android",
+  });
+  assert.throws(() => parseCli(["activity", "list", "--full"], {}), /snapshot and test compile/);
+});
+
 test("verify-change --base selects the reviewed local plan path", () => {
   const preview = parseCli(
     ["verify-change", "--base", "main", "--config-file", "./reviewed.json", "--json"],

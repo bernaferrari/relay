@@ -176,12 +176,13 @@ export class CliOutput {
     this.streams.stdout.write(value);
   }
 
-  result(operationId: string, result: unknown, ok = true): void {
+  result(operationId: string, result: unknown, ok = true, humanReadable?: string): void {
     const terminal = { type: "result" as const, ok, operationId, result };
     this.terminal = terminal;
     if (this.mode === "json" || this.mode === "ndjson") line(this.streams.stdout, terminal);
     else {
       const readable =
+        humanReadable ??
         formatVerifyChangeResult(result) ??
         formatWalkthroughPackResult(result) ??
         formatDoctorResult(result) ??
@@ -214,6 +215,72 @@ export class CliOutput {
       }
     }
   }
+}
+
+export function formatTestCompileResult(value: unknown): string | undefined {
+  const result = record(value);
+  const plan = record(result?.plan);
+  const preflight = record(result?.preflight);
+  const summary = record(preflight?.summary);
+  if (!plan || !preflight || !summary) return undefined;
+
+  const test = record(plan.test);
+  const target = record(plan.runtimeTargetProfile);
+  const recipeCount = typeof summary.recipes === "number" ? summary.recipes : 0;
+  const checked = typeof summary.checkedSelectors === "number" ? summary.checkedSelectors : 0;
+  const resolved = typeof summary.resolvedSelectors === "number" ? summary.resolvedSelectors : 0;
+  const blockers = typeof summary.blockers === "number" ? summary.blockers : 0;
+  const warnings = typeof summary.warnings === "number" ? summary.warnings : 0;
+  const appMapId = typeof plan.appMapId === "string" ? plan.appMapId : "unknown";
+  const testId = typeof test?.id === "string" ? test.id : "<testId>";
+  const testName = typeof test?.name === "string" ? test.name : testId;
+  const revision = typeof plan.appMapRevision === "number" ? plan.appMapRevision : undefined;
+  const profileId = typeof target?.id === "string" ? target.id : "not selected";
+  const platform = typeof target?.platform === "string" ? target.platform : "unknown platform";
+  const targetId = typeof target?.targetId === "string" ? target.targetId : undefined;
+  const lines = [
+    `Test: ${testName}`,
+    `App: ${appMapId}${revision === undefined ? "" : ` (revision ${revision})`}`,
+    `Target profile: ${profileId} (${platform})`,
+    `Offline plan: ${recipeCount} recipes · ${resolved}/${checked} selectors resolved · ${blockers} blockers · ${warnings} warnings`,
+  ];
+
+  const findings = Array.isArray(preflight.findings) ? preflight.findings : [];
+  for (const item of findings.slice(0, 5)) {
+    const finding = record(item);
+    if (!finding) continue;
+    const message = typeof finding.message === "string" ? finding.message : undefined;
+    const code = typeof finding.code === "string" ? finding.code : undefined;
+    if (message || code) lines.push(`- ${message ?? code}`);
+  }
+  if (findings.length > 5) lines.push(`  …and ${findings.length - 5} more findings`);
+
+  if (blockers > 0) {
+    lines.push("Next: resolve the preflight blockers, then compile again before running.");
+  } else if (
+    targetId &&
+    revision !== undefined &&
+    (platform === "android" || platform === "ios" || platform === "browser")
+  ) {
+    const runInput = {
+      expectedRevision: revision,
+      target: {
+        kind: platform === "browser" ? "browser" : "device",
+        platform,
+        targetId,
+      },
+      ...(profileId !== "not selected" ? { targetProfileId: profileId } : {}),
+    };
+    lines.push(
+      `Next: run on this target: relay test run ${shellArgument(appMapId)} ${shellArgument(testId)} --input ${shellArgument(JSON.stringify(runInput))}`,
+    );
+  } else {
+    lines.push(
+      `Next: select a saved Lane, then run: relay test run ${shellArgument(appMapId)} ${shellArgument(testId)} --lane <lane>`,
+    );
+  }
+  lines.push("Compile is offline; it did not contact the target.");
+  return lines.join("\n");
 }
 
 function formatDoctorResult(value: unknown): string | undefined {

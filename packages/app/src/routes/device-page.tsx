@@ -343,6 +343,7 @@ export function DevicePage() {
                     search={{
                       ...(recordingContinuation?.appId ? { app: recordingContinuation.appId } : {}),
                       target: target.data?.targetId ?? device.data.serial,
+                      targetKind: "device",
                       ...(appIdentifier ? { originApplication: appIdentifier } : {}),
                     }}
                   />

@@ -82,7 +82,10 @@ export function NewTestPage() {
   const [creatingApp, setCreatingApp] = useState(false);
   const previousTargetId = useRef<string | undefined>(undefined);
   const [quickProgress, setQuickProgress] = useState<string>();
-  const [wantsDevice, setWantsDevice] = useState(false);
+  const [wantsDevice, setWantsDevice] = useState(
+    search.targetKind === "device" ||
+      Boolean(requestedOriginApplication && !/^https?:\/\//iu.test(requestedOriginApplication)),
+  );
   const accounts = useQuery({
     queryKey: ["new-test", "browser-accounts"],
     queryFn: () => appResourcesService.listBrowserAccounts(),
@@ -127,10 +130,13 @@ export function NewTestPage() {
         ? "browser"
         : undefined;
   const targets = useQuery({
-    queryKey: [...recordingQueryKeys.targets, targetKind],
+    queryKey: [...recordingQueryKeys.targets, targetKind, requestedTargetId],
     enabled: apps.isSuccess && setupMode === "detailed",
     queryFn: async () => {
-      const state = await productService.connect({ targetKind });
+      const state = await productService.connect({
+        targetKind,
+        ...(requestedTargetId ? { targetId: requestedTargetId } : {}),
+      });
       return { ...state, targetOptions: await productService.presentTargets(state.targets) };
     },
     staleTime: 5_000,

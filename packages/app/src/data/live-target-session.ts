@@ -1,7 +1,7 @@
 import type { TalkBackCaptureResult } from "./talkback-overlay";
 import { reviewAndroidTalkBack } from "@relay/protocol";
 import { RecordingInputNotSentError } from "./recording-input-outcome";
-import type { BinaryResource, RelayClient } from "@relay/client";
+import { ApiError, type BinaryResource, type RelayClient } from "@relay/client";
 import type {
   AuthoringInteraction,
   AuthoringTarget,
@@ -255,6 +255,19 @@ async function* videoPackets(body: ReadableStream<Uint8Array>) {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function androidLiveInputNotDispatched(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 409) return false;
+  const body = error.body;
+  return (
+    body !== null &&
+    typeof body === "object" &&
+    "code" in body &&
+    body.code === "ANDROID_LIVE_INPUT_NOT_DISPATCHED" &&
+    "dispatched" in body &&
+    body.dispatched === false
+  );
 }
 
 function framePath(targetId: string, sequence?: number): string {
@@ -656,13 +669,25 @@ export function createLiveTargetSession(input: {
       const x = value.x / canvas.width;
       const y = value.y / canvas.height;
       if (value.action === "up") {
-        await input.client.invoke("target.touch", {
-          serial: target.targetId,
-          action: "down",
-          x,
-          y,
-        });
+        try {
+          await input.client.invoke("target.touch", {
+            serial: target.targetId,
+            action: "down",
+            x,
+            y,
+          });
+        } catch (error) {
+          if (androidLiveInputNotDispatched(error)) {
+            const message =
+              "The preview control is disconnected. Reconnect the live view and try again.";
+            fail(new Error(message));
+            throw new RecordingInputNotSentError(message, { cause: error });
+          }
+          throw error;
+        }
       }
+      // Once down succeeded, an up failure leaves the whole tap uncertain,
+      // even if that individual request carries a no-dispatch receipt.
       await input.client.invoke("target.touch", {
         serial: target.targetId,
         action: value.action,

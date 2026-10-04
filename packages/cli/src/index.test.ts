@@ -2225,6 +2225,66 @@ function preflightSummary() {
   };
 }
 
+const compileFixture = {
+  plan: {
+    schemaVersion: 1,
+    appMapId: "grok-android",
+    appMapRevision: 386,
+    test: { id: "settings-tour", name: "Settings tour" },
+    runtimeTargetProfile: {
+      id: "android-profile",
+      platform: "android",
+      targetId: "phone-1",
+    },
+    recipes: {
+      "root-recipe": { steps: [{ id: "one" }, { id: "two" }] },
+    },
+    stepProvenance: { evidence: "large evidence payload" },
+  },
+  preflight: {
+    ...preflightSummary(),
+    summary: {
+      recipes: 1,
+      checkedSelectors: 2,
+      resolvedSelectors: 2,
+      blockers: 0,
+      warnings: 0,
+    },
+    findings: [],
+  },
+};
+
+test("test compile human output is concise and --full retains the complete result", async () => {
+  const invokeCompile = (argv: string[]) => {
+    const io = capture();
+    return runCli(argv, {
+      streams: io.streams,
+      createClient: () => ({ invoke: async () => compileFixture, events: async () => {} }),
+      registerSignalHandlers: false,
+      env: {},
+    }).then((code) => ({ code, stdout: io.stdout() }));
+  };
+
+  const concise = await invokeCompile(["test", "compile", "grok-android", "settings-tour"]);
+  assert.equal(concise.code, ExitCode.success);
+  assert.match(concise.stdout, /Settings tour/);
+  assert.match(concise.stdout, /1 recipes · 2\/2 selectors resolved · 0 blockers/);
+  assert.match(
+    concise.stdout,
+    /relay test run grok-android settings-tour --input '\{"expectedRevision":386,"target":\{"kind":"device","platform":"android","targetId":"phone-1"\},"targetProfileId":"android-profile"\}'/,
+  );
+  assert.match(concise.stdout, /offline; it did not contact the target/);
+  assert.doesNotMatch(concise.stdout, /large evidence payload/);
+
+  const full = await invokeCompile(["test", "compile", "grok-android", "settings-tour", "--full"]);
+  assert.equal(full.code, ExitCode.success);
+  assert.deepEqual(JSON.parse(full.stdout), compileFixture);
+
+  const machine = await invokeCompile(["test", "compile", "grok-android", "settings-tour", "--json"]);
+  assert.equal(machine.code, ExitCode.success);
+  assert.deepEqual(JSON.parse(machine.stdout).result, compileFixture);
+});
+
 test("test run resolves one connected target and current revision before invoking", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];
