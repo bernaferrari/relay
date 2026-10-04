@@ -184,6 +184,8 @@ export async function runFirstDemo({
     await mkdir(exportDir, { recursive: true });
     const screenshotPath = resolve(exportDir, "Member settings.png");
     await writeFile(screenshotPath, bytes);
+    console.log(`Test ID: ${testId}`);
+    console.log(`Run ID: ${runId}`);
     if (createLocalReport) {
       const report = await client.invoke("run.share.create", {
         runId,
@@ -198,7 +200,7 @@ export async function runFirstDemo({
     }
     console.log(`Screenshot: ${screenshotPath}`);
     console.log(
-      "Look for the seeded layout defect: Save overlaps the team seats. Report it in Review.",
+      "Look for the seeded layout defect: Save overlaps the team seats. Inspect it in the gallery; record a decision in Relay.",
     );
     console.log(
       `Repeat: ${repeatCommand ?? `./bin/relay run ${testId} --map ${appMapId} --device ${targetId} --json`}`,
@@ -232,7 +234,7 @@ if (
     process.exitCode = 1;
   } else {
     try {
-      await runFirstDemo({ once: options.includes("--once") });
+      await runFirstDemo({ once: options.includes("--once"), createLocalReport: true });
     } catch (error) {
       console.error(`Demo stopped: ${error.message}`);
       process.exitCode = 1;

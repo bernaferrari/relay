@@ -168,7 +168,8 @@ test("signed report links expose only grouped public evidence and stop working w
     assert.match(String(page.headers["Content-Security-Policy"]), /default-src 'none'/u);
     assert.match(html, /Grouped by screen across every run/u);
     assert.match(html, /2 variants/u);
-    assert.match(html, /Inputs and device identifiers are hidden/u);
+    assert.match(html, /Structured inputs and device identifiers are omitted/u);
+    assert.match(html, /Screenshots and text labels may contain app content/u);
     assert.doesNotMatch(html, /private-device-id|private log|Italian|English/u);
 
     const report = await publicGet(`/shared/runs/${token}/report`);
@@ -216,9 +217,10 @@ test("a seventy-screenshot matrix renders as ten screen groups with deferred ima
   };
   const html = renderRunShareReportHtml(report, "token");
   assert.equal(html.match(/<details class="screen"/gu)?.length, 10);
-  assert.equal(html.match(/<details class="screen" open/gu)?.length, 2);
+  assert.equal(html.match(/<details class="screen" open/gu)?.length, 1);
   assert.equal(html.match(/<img /gu)?.length, 70);
-  assert.equal(html.match(/loading="lazy"/gu)?.length, 70);
+  assert.equal(html.match(/loading="lazy"/gu)?.length, 63);
+  assert.equal(html.match(/loading="eager"/gu)?.length, 7);
   assert.match(html, /70<\/strong><span>Screenshots/u);
 });
 
@@ -248,7 +250,8 @@ test("share page renders proof block and failed-step drill-in", () => {
       {
         id: "run-bad",
         title: "Broken flow",
-        status: "error",
+        status: "ok",
+        outcome: "product-failure",
         failureCategory: "locator",
         errorHeadline: "Element not found",
         failedStep: { index: 1, total: 4, label: "Tap About phone" },
@@ -263,6 +266,85 @@ test("share page renders proof block and failed-step drill-in", () => {
   assert.match(html, /App Map revision<\/dt><dd>r12<\/dd>/u);
   assert.match(html, /deadbeef0000 \(PR #5\)/u);
   assert.match(html, /Failed at step 2 of 4: Tap About phone/u);
+  assert.match(html, /class="status problem" aria-label="product-failure"/u);
+});
+
+test("a completed replay opens its final evidence while human review stays pending", () => {
+  const report: RunShareReport = {
+    schemaVersion: 1,
+    share: { id: "s1", title: "Member settings", createdAt: 1, expiresAt: Date.now() + 60_000 },
+    provenance: { platform: "browser", appMapRevision: 5 },
+    totals: { runs: 1, passed: 1, problems: 0, screenshots: 2, inProgress: 0 },
+    captureReview: {
+      captured: 1,
+      missing: 0,
+      pending: 1,
+      accepted: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+    },
+    runs: [
+      {
+        id: "r1",
+        title: "Member settings",
+        status: "ok",
+        outcome: "passed",
+        frames: [
+          { index: 0, caption: "step:step-recording-1:Sign in", capturedAt: 1 },
+          { index: 1, caption: "final:Member settings", capturedAt: 2 },
+        ],
+      },
+    ],
+  };
+  const html = renderRunShareReportHtml(report, "tok");
+  assert.match(html, /1 run passed/u);
+  assert.match(html, /1 awaiting screenshot review/u);
+  assert.doesNotMatch(html, /0 reported|0 reviewed|final:|step-recording-1/u);
+  assert.ok(html.indexOf("/frames/r1/1") < html.indexOf("/frames/r1/0"));
+  assert.match(html, /<details class="report-details"><summary>Run details<\/summary>/u);
+  assert.match(html, /href="\/shared\/runs\/tok\/frames\/r1\/1" target="_blank" rel="noopener"/u);
+  assert.match(html, /App Map revision<\/dt><dd>r5<\/dd>/u);
+});
+
+test("matrix screenshots keep differing screen labels visible", () => {
+  const report: RunShareReport = {
+    schemaVersion: 1,
+    share: { id: "s1", title: "Checkout", createdAt: 1, expiresAt: Date.now() + 60_000 },
+    totals: { runs: 2, passed: 1, problems: 1, screenshots: 4, inProgress: 0 },
+    runs: [
+      {
+        id: "success",
+        title: "Checkout",
+        status: "ok",
+        outcome: "passed",
+        caseIndex: 0,
+        caseCount: 2,
+        frames: [
+          { index: 0, caption: "step:sign-in-success:Sign in", capturedAt: 1 },
+          { index: 1, caption: "final:Order confirmed", capturedAt: 2 },
+        ],
+      },
+      {
+        id: "failure",
+        title: "Checkout",
+        status: "error",
+        outcome: "product-failure",
+        caseIndex: 1,
+        caseCount: 2,
+        frames: [
+          { index: 0, caption: "step:sign-in-failure:Sign in", capturedAt: 1 },
+          { index: 1, caption: "final:Payment declined", capturedAt: 2 },
+        ],
+      },
+    ],
+  };
+  const html = renderRunShareReportHtml(report, "tok");
+  assert.match(html, /<summary><span>Screenshot 2<\/span>/u);
+  assert.match(html, /<figcaption><strong>Case 1 of 2<\/strong><span>Order confirmed<\/span>/u);
+  assert.match(html, /<figcaption><strong>Case 2 of 2<\/strong><span>Payment declined<\/span>/u);
+  assert.match(html, /<summary><span>Sign in<\/span>/u);
+  assert.doesNotMatch(html, /<figcaption><strong>Case [12] of 2<\/strong><span>Sign in<\/span>/u);
+  assert.doesNotMatch(html, /final:|sign-in-success|sign-in-failure/u);
 });
 
 test("share page omits proof block without provenance and adds canonical link only with base URL", () => {

@@ -4,11 +4,13 @@
 
 # Relay
 
-**Record a test. Run it again. Review the screenshots.**
+**Record a user flow. Replay it with your coding agent. Review the screenshots.**
 
 </div>
 
-Relay is a desktop app for testing websites, Android apps, and iOS apps. You use your app while Relay records your actions, then save those steps as a test you can run again. It keeps screenshots and results together so you can understand what happened without repeating the whole test yourself.
+Relay records reusable tests for websites, Android apps, and iOS apps, then keeps each run's screenshots and results together. Use the desktop app to record your actions, or ask your coding agent to run saved tests and inspect the same evidence.
+
+**[Run your first test and open its screenshots](./docs/FIRST_TEST.md)** — a complete local browser demo with a saved test, a fresh replay, and a layout defect to review. It needs no account or model key.
 
 A test can be as simple as opening a menu or as involved as going through checkout. Along the way, you can check that something appears, wait for a response, or capture a screenshot. When you run the test again, Relay shows the result of each step. You can compare screenshots with earlier versions and decide whether a change looks right.
 
@@ -31,9 +33,9 @@ vp install
 pnpm dev:desktop
 ```
 
-In the app, choose **New Test** and enter a website or select a connected device. Record a short flow, review the steps, and save it. You can then run it again and open the result to see the captured screens.
+In the app, choose **New Test**, enter a website address, and choose **Start recording**. Your clicks and typing become test steps. Capture a screen you want to check, stop recording, and save the test. Run it again and open its screenshots. For a connected phone or tablet, choose the device option during setup.
 
-Choose **Save test** when the recording is already verified. After changing steps, **Run and save** executes them on the recorded target before saving; a failed or interrupted run keeps the review open. To keep unfinished work without executing it, choose **Save draft and close** from **More**. To run separately, choose **Run without saving**.
+Choose **Save test** to keep the recording. After changing steps, Relay checks them on the recorded target before saving; a failed or interrupted check keeps the review open. To keep unfinished work without executing it, choose **Save draft and close** from **More**. To run separately, choose **Run without saving**.
 
 Run `pnpm doctor -- --web` to check website prerequisites. Relay uses an installed Chrome, Chromium, or Edge executable. For a custom installation, set `RELAY_BROWSER_EXECUTABLE` to its absolute path before starting Relay. Android requires `adb`, and physical iOS devices require Apple developer tooling; missing mobile tools do not block website testing. To use Relay in a browser, run `pnpm dev:web` instead.
 
@@ -46,9 +48,9 @@ pnpm ensure:serve
 pnpm demo
 ```
 
-The demo opens a controlled local website, records signing in as Member and opening Settings, captures **Member settings**, saves a reusable Test, and runs it again in a fresh browser. It prints the result link, screenshot path, and exact repeat command. Open the link after starting `pnpm dev:web`, or find **Demo · Member settings** in the desktop app.
+The demo opens a controlled local website, records signing in as Member and opening Settings, captures **Member settings**, saves a reusable Test, and runs it again in a fresh browser. It prints the Test and Run IDs, a **Review** link, screenshot path, and exact repeat command. Open the Review link immediately: it serves a local read-only evidence gallery without the desktop app or a web dev server. The link expires after 24 hours and needs the Relay service to stay running. The [first-test guide](./docs/FIRST_TEST.md) explains prerequisites, the expected result, and repeating the test.
 
-The demo deliberately includes a layout defect: **Save** overlaps the team seats. Open the screenshot and report the issue in Review. Collection passing leaves screenshot review pending for you to decide.
+The demo deliberately includes a layout defect: **Save** overlaps the team seats. Open the retained screenshot to inspect it. Collection passing means the steps finished; human screenshot review remains pending. To record your decision, open **Demo · Member settings** in the desktop app's Review flow.
 
 The demo website stays available for repeat runs until you press Ctrl+C. Starting `pnpm demo` again reuses the saved Test and runs it again. `pnpm demo -- --once` completes one run and closes the demo website.
 

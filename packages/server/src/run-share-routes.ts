@@ -111,7 +111,8 @@ function duration(value?: number): string {
 }
 
 function resultTone(run: RunShareReportRun): "pass" | "problem" | "neutral" {
-  if (run.outcome === "passed" || run.status === "ok" || run.status === "healed") {
+  if (run.outcome !== undefined) return run.outcome === "passed" ? "pass" : "problem";
+  if (run.status === "ok" || run.status === "healed") {
     return "pass";
   }
   if (run.status === "queued" || run.status === "running" || run.status === "paused") {
@@ -171,7 +172,7 @@ function proofBlock(report: RunShareReport): string {
       : []),
   ];
   if (entries.length === 0) return "";
-  return `<section aria-label="What this proves"><div class="section-title"><h2>What this proves</h2><span>Identity of the code and plan under test</span></div><dl class="proof">${entries.join("")}</dl></section>`;
+  return `<section aria-label="What this proves"><div class="section-title"><h2>What this proves</h2></div><dl class="proof">${entries.join("")}</dl></section>`;
 }
 
 /** Human review rides beside the machine totals. A passing run with reported
@@ -179,11 +180,26 @@ function proofBlock(report: RunShareReport): string {
 function reviewBlock(report: RunShareReport): string {
   const review = report.captureReview;
   if (!review) return "";
-  const planned = review.captured + review.missing;
-  return `<section class="metrics" aria-label="Screenshot review totals"><div class="metric"><strong>${review.captured}</strong><span>of ${planned} captured</span></div><div class="metric"><strong>${review.accepted}</strong><span>Reviewed as correct</span></div><div class="metric"><strong>${review.issue}</strong><span>Reported issues</span></div><div class="metric"><strong>${review.needMoreEvidence}</strong><span>Need more evidence</span></div><div class="metric"><strong>${review.pending}</strong><span>Awaiting review</span></div></section>`;
+  const items = [
+    ...(review.pending ? [`${review.pending} awaiting screenshot review`] : []),
+    ...(review.accepted ? [`${review.accepted} reviewed as correct`] : []),
+    ...(review.issue
+      ? [`${review.issue} reported ${review.issue === 1 ? "issue" : "issues"}`]
+      : []),
+    ...(review.needMoreEvidence ? [`${review.needMoreEvidence} need more evidence`] : []),
+    ...(review.missing
+      ? [`${review.missing} missing ${review.missing === 1 ? "capture" : "captures"}`]
+      : []),
+  ];
+  if (items.length === 0) return "";
+  return `<p class="review-status" aria-label="Screenshot review totals">${items.map(escapeHtml).join(" · ")}</p>`;
 }
 
-const styleBlock = `:root{color-scheme:light dark;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f7f7f8;color:#17171b;font-synthesis:none}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#fff 0,#f7f7f8 320px);min-height:100vh}main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:48px 0 80px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:32px;margin-bottom:36px}.brand{font-size:13px;font-weight:650;letter-spacing:-.01em}.brand b{display:inline-grid;place-items:center;width:24px;height:24px;margin-right:8px;border-radius:7px;background:#2547f5;color:white}.eyebrow{margin:28px 0 8px;color:#65656f;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}h1{margin:0;max-width:760px;font-size:clamp(30px,5vw,52px);line-height:1.02;letter-spacing:-.045em;text-wrap:balance}.expires{color:#65656f;font-size:12px;white-space:nowrap}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;overflow:hidden;margin:0 0 28px;border:1px solid rgb(0 0 0/.08);border-radius:14px;background:rgb(0 0 0/.08)}.metric{padding:18px;background:#fff}.metric strong{display:block;font-size:24px;letter-spacing:-.035em;font-variant-numeric:tabular-nums}.metric span{display:block;margin-top:3px;color:#6c6c75;font-size:12px}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:36px 0 12px}.section-title h2{margin:0;font-size:17px;letter-spacing:-.02em}.section-title span{color:#777780;font-size:12px}.runs{list-style:none;margin:0;padding:0;border:1px solid rgb(0 0 0/.08);border-radius:12px;background:#fff}.runs li{display:grid;grid-template-columns:10px minmax(180px,1fr) minmax(80px,140px) 72px;align-items:center;gap:12px;min-height:44px;padding:0 14px;border-bottom:1px solid rgb(0 0 0/.07);font-size:12px}.runs li:last-child{border:0}.runs li>span{color:#707079}.runs strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.number{text-align:right;font-variant-numeric:tabular-nums}.status{width:7px;height:7px;border-radius:50%;background:#9b9ba3}.status.pass{background:#16a36a}.status.problem{background:#d94835}.screen{overflow:hidden;margin:12px 0;border:1px solid rgb(0 0 0/.08);border-radius:14px;background:#fff}.screen summary{display:grid;grid-template-columns:1fr auto 20px;align-items:center;gap:12px;min-height:54px;padding:0 16px;cursor:pointer;list-style:none;font-size:14px;font-weight:650}.screen summary::-webkit-details-marker{display:none}.screen summary small{color:#777780;font-size:11px;font-weight:500}.screen summary i{font-size:16px;font-style:normal;transition:transform .15s ease}.screen[open] summary i{transform:rotate(180deg)}.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;padding:0 12px 12px}.shot{min-width:0;margin:0;overflow:hidden;border:1px solid rgb(0 0 0/.08);border-radius:10px;background:#fafafa}.shot-frame{display:grid;place-items:center;height:240px;overflow:hidden;background:linear-gradient(135deg,#f0f0f2,#fafafa)}.shot img{display:block;max-width:100%;height:100%;object-fit:contain}.shot figcaption{display:grid;gap:2px;padding:9px 10px;border-top:1px solid rgb(0 0 0/.07);font-size:11px}.shot figcaption strong,.shot figcaption span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shot figcaption span{color:#74747d}.privacy{margin:32px 0 0;color:#777780;font-size:11px;line-height:1.5}.privacy strong{color:#44444c}@media(max-width:620px){main{width:min(100% - 20px,1180px);padding-top:28px}.top{display:block}.expires{display:block;margin-top:16px}.metrics{grid-template-columns:repeat(2,1fr)}.runs li{grid-template-columns:10px 1fr 64px}.runs li>span:nth-of-type(2){display:none}.shot-frame{height:210px}}@media(prefers-color-scheme:dark){:root{background:#111114;color:#f4f4f5}body{background:linear-gradient(180deg,#17171b 0,#111114 320px)}.metrics,.runs,.screen,.shot{border-color:#2a2a30}.metrics{background:#2a2a30}.metric,.runs,.screen{background:#19191d}.runs li,.shot figcaption{border-color:#29292f}.shot{background:#151519}.shot-frame{background:linear-gradient(135deg,#111114,#1b1b20)}.expires,.eyebrow,.section-title span,.metric span,.runs li>span,.screen summary small,.shot figcaption span,.privacy{color:#9a9aa4}.privacy strong{color:#d2d2d7}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}.runs li .why{display:block;margin-top:3px;color:#d94835;font-size:11px;line-height:1.45;white-space:normal;overflow-wrap:anywhere}@media(prefers-color-scheme:dark){.runs li .why{color:#f28b7c}}`;
+function screenshotLabel(caption: string): string {
+  return caption.replace(/^step:[^:]*:/u, "").replace(/^final:/u, "");
+}
+
+const styleBlock = `:root{color-scheme:light dark;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f7f7f8;color:#17171b;font-synthesis:none}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#fff 0,#f7f7f8 320px);min-height:100vh;-webkit-font-smoothing:antialiased}main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:32px 0 80px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:32px;margin-bottom:24px}.brand{font-size:13px;font-weight:650;letter-spacing:-.01em}.brand b{display:inline-grid;place-items:center;width:24px;height:24px;margin-right:8px;border-radius:7px;background:#2547f5;color:white}.eyebrow{margin:20px 0 8px;color:#65656f;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}h1{margin:0;max-width:760px;font-size:clamp(28px,4vw,40px);line-height:1.15;letter-spacing:-.045em;text-wrap:balance}.expires{color:#65656f;font-size:12px;white-space:nowrap}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;overflow:hidden;margin:0 0 28px;border:1px solid rgb(0 0 0/.08);border-radius:14px;background:rgb(0 0 0/.08)}.metric{padding:18px;background:#fff}.metric strong{display:block;font-size:24px;letter-spacing:-.035em;font-variant-numeric:tabular-nums}.metric span{display:block;margin-top:3px;color:#6c6c75;font-size:12px}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:36px 0 12px}.section-title h2{margin:0;font-size:17px;letter-spacing:-.02em}.section-title span{color:#777780;font-size:12px}.runs{list-style:none;margin:0;padding:0;border:1px solid rgb(0 0 0/.08);border-radius:12px;background:#fff}.runs li{display:grid;grid-template-columns:10px minmax(180px,1fr) minmax(80px,140px) 72px;align-items:center;gap:12px;min-height:44px;padding:0 14px;border-bottom:1px solid rgb(0 0 0/.07);font-size:12px}.runs li:last-child{border:0}.runs li>span{color:#707079}.runs strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.number{text-align:right;font-variant-numeric:tabular-nums}.status{width:7px;height:7px;border-radius:50%;background:#9b9ba3}.status.pass{background:#16a36a}.status.problem{background:#d94835}.screen{overflow:hidden;margin:12px 0;border:1px solid rgb(0 0 0/.08);border-radius:14px;background:#fff}.screen summary{display:grid;grid-template-columns:1fr auto 20px;align-items:center;gap:12px;min-height:54px;padding:0 16px;cursor:pointer;list-style:none;font-size:14px;font-weight:600}.screen summary::-webkit-details-marker{display:none}.screen summary small{color:#777780;font-size:11px;font-weight:500}.screen summary i{font-size:16px;font-style:normal;transition:transform .15s ease}.screen[open] summary i{transform:rotate(180deg)}.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;padding:0 12px 12px}.shot{min-width:0;margin:0;overflow:hidden;border:1px solid rgb(0 0 0/.08);border-radius:10px;background:#fafafa}.shot-frame{display:flex;align-items:center;justify-content:center;height:360px;overflow:hidden;background:linear-gradient(135deg,#f0f0f2,#fafafa)}.shot img{display:block;min-width:0;min-height:0;width:100%;height:100%;object-fit:contain}.shot figcaption{display:grid;gap:2px;padding:9px 10px;border-top:1px solid rgb(0 0 0/.07);font-size:12px}.shot figcaption strong,.shot figcaption span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shot figcaption span{color:#74747d}.privacy{margin:32px 0 0;color:#777780;font-size:11px;line-height:1.5}.privacy strong{color:#44444c}@media(max-width:620px){main{width:min(100% - 20px,1180px);padding-top:24px}.top{display:block}.expires{display:block;margin-top:16px}.metrics{grid-template-columns:repeat(2,1fr)}.runs li{grid-template-columns:10px 1fr 64px}.runs li>span:nth-of-type(2){display:none}.shot-frame{height:210px}}@media(prefers-color-scheme:dark){:root{background:#111114;color:#f4f4f5}body{background:linear-gradient(180deg,#17171b 0,#111114 320px)}.metrics,.runs,.screen,.shot{border-color:#2a2a30}.metrics{background:#2a2a30}.metric,.runs,.screen{background:#19191d}.runs li,.shot figcaption{border-color:#29292f}.shot{background:#151519}.shot-frame{background:linear-gradient(135deg,#111114,#1b1b20)}.expires,.eyebrow,.section-title span,.metric span,.runs li>span,.screen summary small,.shot figcaption span,.privacy{color:#9a9aa4}.privacy strong{color:#d2d2d7}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}.runs li .why{display:block;margin-top:3px;color:#d94835;font-size:11px;line-height:1.45;white-space:normal;overflow-wrap:anywhere}@media(prefers-color-scheme:dark){.runs li .why{color:#f28b7c}}`;
 
 export function renderRunShareReportHtml(
   report: RunShareReport,
@@ -192,11 +208,19 @@ export function renderRunShareReportHtml(
 ): string {
   const blockedKeys = new Set(blockedShareFrames);
   const maxScreens = Math.max(0, ...report.runs.map((run) => run.frames.length));
-  const screenSections = Array.from({ length: maxScreens }, (_, screenIndex) => {
+  const screenSections = Array.from({ length: maxScreens }, (_, index) => {
+    const screenIndex = maxScreens - index - 1;
+    const captions = new Set(
+      report.runs.flatMap((run) => {
+        const frame = run.frames[screenIndex];
+        return frame ? [screenshotLabel(frame.caption)] : [];
+      }),
+    );
+    const screenTitle = captions.size === 1 ? [...captions][0] : `Screenshot ${screenIndex + 1}`;
     const variants = report.runs.flatMap((run) => {
       const frame = run.frames[screenIndex];
       if (!frame) return [];
-      const blocked = blockedKeys.has(`${run.id}:${screenIndex}`);
+      const blocked = frame.withheld || blockedKeys.has(`${run.id}:${screenIndex}`);
       if (blocked) {
         return [
           `<figure class="shot">
@@ -205,16 +229,16 @@ export function renderRunShareReportHtml(
         </figure>`,
         ];
       }
-      const source = `/shared/runs/${encodeURIComponent(token)}/frames/${encodeURIComponent(run.id)}/${screenIndex}`;
+      const source = `/shared/runs/${encodeURIComponent(token)}/frames/${encodeURIComponent(run.id)}/${frame.index}`;
       return [
         `<figure class="shot">
-          <div class="shot-frame"><img src="${source}" alt="${escapeHtml(frame.caption)} — ${escapeHtml(runLabel(run))}" loading="lazy" decoding="async"></div>
-          <figcaption><strong>${escapeHtml(runLabel(run))}</strong><span>${escapeHtml(frame.caption)}</span></figcaption>
+          <div class="shot-frame"><img src="${source}" alt="${escapeHtml(screenshotLabel(frame.caption))} — ${escapeHtml(runLabel(run))}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async"></div>
+          <figcaption>${report.runs.length > 1 ? `<strong>${escapeHtml(runLabel(run))}</strong>` : ""}${captions.size > 1 ? `<span>${escapeHtml(screenshotLabel(frame.caption))}</span>` : ""}<a href="${source}" target="_blank" rel="noopener">Open screenshot</a></figcaption>
         </figure>`,
       ];
     });
-    return `<details class="screen"${screenIndex < 2 ? " open" : ""}>
-      <summary><span>Screen ${screenIndex + 1}</span><small>${variants.length} ${variants.length === 1 ? "variant" : "variants"}</small><i aria-hidden="true">⌄</i></summary>
+    return `<details class="screen"${index === 0 ? " open" : ""}>
+      <summary><span>${escapeHtml(screenTitle)}</span><small>${variants.length > 1 ? `${variants.length} variants · ` : ""}${screenIndex + 1} of ${maxScreens}</small><i aria-hidden="true">⌄</i></summary>
       <div class="shots">${variants.join("")}</div>
     </details>`;
   }).join("");
@@ -249,12 +273,35 @@ ${baseUrl ? `<link rel="canonical" href="${escapeHtml(new URL(`/shared/runs/${en
 ${styleBlock}
 .proof{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1px;overflow:hidden;margin:0 0 28px;border:1px solid rgb(0 0 0/.08);border-radius:14px;background:rgb(0 0 0/.08)}.proof div{padding:12px 14px;background:#fff}.proof dt{margin:0;color:#777780;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}.proof dd{margin:3px 0 0;font-size:13px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}@media(prefers-color-scheme:dark){.proof{border-color:#2a2a30;background:#2a2a30}.proof div{background:#19191d}}
 .runs li .failed-at{display:block;margin-top:3px;color:#8a5a00;font-size:11px;line-height:1.45}@media(prefers-color-scheme:dark){.runs li .failed-at{color:#d9a53f}}
+.brand{margin-bottom:16px}.outcome{margin:0;font-size:15px;line-height:1.5;font-weight:600}.review-status{margin:6px 0 24px;font-size:14px;line-height:1.5;color:#65656f}.shots:has(>figure:only-child) .shot-frame{height:clamp(240px,calc(100dvh - 350px),600px)}.shot figcaption a{justify-self:start;min-height:44px;display:inline-flex;align-items:center;color:inherit;text-underline-offset:3px}.screen summary>span{overflow-wrap:anywhere}.report-details{margin-top:32px}.report-details>summary{min-height:44px;display:list-item;cursor:pointer;font-size:14px;color:#65656f}.screen summary:focus-visible,.report-details>summary:focus-visible,.shot a:focus-visible{outline:2px solid currentColor;outline-offset:-4px;border-radius:4px}@media(prefers-color-scheme:dark){.review-status,.report-details>summary{color:#9a9aa4}}@media(max-width:620px){main{padding-top:24px}.top{margin-bottom:20px}.expires{white-space:normal}.section-title{align-items:flex-start}.section-title span{max-width:45%;text-align:right}.shots:has(>figure:only-child) .shot-frame{height:clamp(220px,calc(100dvh - 460px),420px)}}
+.report-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:32px;align-items:start}.report-context .top{display:block}.report-context h1{font-size:28px;line-height:1.2}.report-context .expires{display:block;white-space:normal;line-height:1.5;margin-top:20px}.report-context .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.report-context .runs li{grid-template-columns:10px minmax(0,1fr) 48px}.report-context .runs li>span:nth-of-type(2){display:none}.report-gallery>.section-title{margin-top:0}.report-gallery .shots:has(>figure:only-child) .shot-frame{height:clamp(280px,calc(100dvh - 220px),720px)}@media(max-width:900px){.report-layout{grid-template-columns:minmax(0,1fr);gap:24px}.report-context .review-status{margin-bottom:0}.report-context .report-details{margin-top:12px}.report-gallery .shots:has(>figure:only-child) .shot-frame{height:clamp(240px,calc(100dvh - 350px),540px)}}
 </style></head><body><main>
-<div class="top"><div><div class="brand"><b>R</b>Relay evidence</div><p class="eyebrow">Shared results</p><h1>${escapeHtml(report.share.title)}</h1></div><span class="expires">Available until ${escapeHtml(dateTime(report.share.expiresAt))}</span></div>
-${proofBlock(report)}<section class="metrics" aria-label="Result totals"><div class="metric"><strong>${report.totals.runs}</strong><span>Runs</span></div><div class="metric"><strong>${report.totals.screenshots}</strong><span>Screenshots</span></div>${withheldCount > 0 ? `<div class="metric"><strong>${withheldCount}</strong><span>Withheld</span></div>` : ""}<div class="metric"><strong>${report.totals.passed}</strong><span>Passed</span></div><div class="metric"><strong>${report.totals.problems}</strong><span>Need attention</span></div>${report.totals.inProgress > 0 ? `<div class="metric"><strong>${report.totals.inProgress}</strong><span>In progress</span></div>` : ""}</section>${reviewBlock(report)}
-<div class="section-title"><h2>Run summary</h2><span>Inputs and device identifiers are hidden</span></div><ul class="runs">${runRows}</ul>
-<div class="section-title"><h2>Screenshot review</h2><span>Grouped by screen across every run</span></div>${screenSections || '<p class="privacy">No screenshots were captured for this report.</p>'}
-<p class="privacy"><strong>Privacy:</strong> this capability link shows bounded run status and screenshots only. It does not expose logs, network bodies, selectors, resolved inputs, or device identifiers. This link can be revoked. A copy someone already downloaded cannot be recalled.</p>
+<div class="report-layout"><header class="report-context">
+<div class="top"><div><div class="brand"><b>R</b>Relay evidence</div><h1>${escapeHtml(report.share.title)}</h1></div></div>
+<p class="outcome" aria-label="Execution result">${
+    [
+      ...(report.totals.passed
+        ? [`${report.totals.passed} ${report.totals.passed === 1 ? "run" : "runs"} passed`]
+        : []),
+      ...(report.totals.problems
+        ? [
+            `${report.totals.problems} ${report.totals.problems === 1 ? "run needs" : "runs need"} attention`,
+          ]
+        : []),
+      ...(report.totals.inProgress ? [`${report.totals.inProgress} in progress`] : []),
+    ]
+      .map(escapeHtml)
+      .join(" · ") || "No completed runs"
+  }</p>${reviewBlock(report)}
+<details class="report-details"><summary>Run details</summary>
+${proofBlock(report)}<section class="metrics" aria-label="Result totals"><div class="metric"><strong>${report.totals.runs}</strong><span>Runs</span></div><div class="metric"><strong>${report.totals.screenshots}</strong><span>Screenshots</span></div>${withheldCount > 0 ? `<div class="metric"><strong>${withheldCount}</strong><span>Withheld</span></div>` : ""}<div class="metric"><strong>${report.totals.passed}</strong><span>Passed</span></div><div class="metric"><strong>${report.totals.problems}</strong><span>Need attention</span></div>${report.totals.inProgress > 0 ? `<div class="metric"><strong>${report.totals.inProgress}</strong><span>In progress</span></div>` : ""}</section>
+<div class="section-title"><h2>Run summary</h2><span>Structured inputs and device identifiers are omitted</span></div><ul class="runs">${runRows}</ul>
+<p class="privacy">Grouped by screen across every run</p>
+<p class="privacy"><strong>Privacy:</strong> this capability link includes run summaries and screenshots. Logs, network bodies, structured inputs, and device identifiers are omitted. Screenshots and text labels may contain app content. This link can be revoked. A copy someone already downloaded cannot be recalled.</p>
+</details><span class="expires">Available until ${escapeHtml(dateTime(report.share.expiresAt))}</span>
+</header><section class="report-gallery" aria-label="Screenshots">
+<div class="section-title"><h2>Screenshots</h2><span>Latest first</span></div>${screenSections || '<p class="privacy">No screenshots were captured for this report.</p>'}
+</section></div>
 </main></body></html>`;
 }
 
