@@ -374,7 +374,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_connect_target",
     title: "Connect to a target",
     description:
-      "Discover ready local Devices or managed Browsers and select the sole ready target. Set targetKind and phase to limit mobile discovery. Keep the returned targetId through observation, recording, and replay; choose an exact targetId when several are ready.",
+      "Discover ready local Devices or managed Browsers and select the sole ready target. Set targetKind and phase to limit mobile discovery. Keep the returned targetId through observation, recording, and replay; choose an exact targetId when several are ready. If the selected phone is disconnected, reconnect it and call relay_connect_target after it is ready with the same targetId, targetKind, and phase.",
     requiresConfirmation: false,
     inputSchema: z.object({ targetId, targetKind, phase }).strict(),
     annotations: {

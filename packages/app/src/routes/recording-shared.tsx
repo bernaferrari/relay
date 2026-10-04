@@ -114,7 +114,7 @@ export function RecordingProblem({
   layout?: "compact" | "centered";
   className?: string;
   action?: ReactNode;
-  operation?: "step" | "run" | "replay";
+  operation?: "step" | "run" | "replay" | "recording";
 }) {
   if (!recovery && !error) return null;
   if (recovery?.code === "mutation-outcome-unknown") {
@@ -129,9 +129,11 @@ export function RecordingProblem({
             ? `Checking ${operation} status…`
             : operation === "replay"
               ? "Replay was interrupted. Your saved steps are safe."
-              : operation === "run"
-                ? "Run status needs checking."
-                : "Step status needs checking."}
+              : operation === "recording"
+                ? "Recording status needs checking."
+                : operation === "run"
+                  ? "Run status needs checking."
+                  : "Step status needs checking."}
         </span>
         {action ??
           (!checking && onRetry ? (
@@ -141,9 +143,11 @@ export function RecordingProblem({
               onClick={onRetry}
               disabled={retrying}
               title={
-                operation === "run"
-                  ? "Check whether the run started. This does not start another run."
-                  : "Check whether the step was saved. This does not repeat the device action."
+                operation === "recording"
+                  ? "Check the recording status. This does not send device input."
+                  : operation === "run"
+                    ? "Check whether the run started. This does not start another run."
+                    : "Check whether the step was saved. This does not repeat the device action."
               }
             >
               Check status
@@ -271,6 +275,8 @@ export function targetLabel(target: {
 }
 
 export function liveIssueMessage(message: string): string {
+  const missingDevice = /^(Android|iOS) device not available(?::|$)/iu.exec(message);
+  if (missingDevice) return `Reconnect your ${missingDevice[1]} device to continue.`;
   if (
     /packet|metadata|content type|transport marker|canvas context|codec|decode|base64|targetid|operation/iu.test(
       message,

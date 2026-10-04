@@ -638,13 +638,66 @@ test("stopping without an action cancels the empty take instead of opening revie
     assert.equal(session.state, "cancelled");
     assert.equal(session.take?.state, "discarded");
     assert.equal(session.take?.revisions.at(-1)?.actions.length, 0);
-    assert.deepEqual(runtime.lifecycle, [
-      "observe",
-      "observe",
-      "start-video",
-      "stop-video",
-      "observe",
-    ]);
+    assert.deepEqual(runtime.lifecycle, ["observe", "observe", "start-video", "stop-video"]);
+  });
+});
+
+for (const action of ["stop", "cancel"] as const) {
+  test(`${action} cancels a disconnected zero-step recording without inventing endpoint evidence`, async () => {
+    await withWorkspace(async ({ store, runtime, appMapId }) => {
+      let session = await createReadySession(store, runtime, appMapId);
+      session = await store.start(session.id, runtime);
+      const retainedTake = structuredClone(session.take!);
+      const observations = runtime.observations;
+      runtime.observe = async () => {
+        throw new Error("The recorded device is disconnected");
+      };
+      session = await store[action](session.id, runtime);
+      assert.equal(session.state, "cancelled");
+      assert.equal(session.take?.state, "discarded");
+      assert.equal(runtime.observations, observations);
+      assert.equal(runtime.executed.length, 0);
+      assert.deepEqual(
+        session.take?.revisions.slice(0, retainedTake.revisions.length),
+        retainedTake.revisions,
+      );
+      const endpoint = session.take?.revisions.at(-1);
+      assert.deepEqual(endpoint?.before, retainedTake.revisions.at(-1)?.before);
+      assert.deepEqual(endpoint?.after, retainedTake.revisions.at(-1)?.after);
+      assert.deepEqual(endpoint?.observations, retainedTake.revisions.at(-1)?.observations);
+      assert.deepEqual(session.take?.rawEvents, retainedTake.rawEvents);
+      assert.equal((await store.get(session.id)).state, "cancelled");
+      const map = await readAppMap("project-a", appMapId);
+      assert.equal(Object.keys(map!.connections).length, 0);
+    });
+  });
+}
+
+test("disconnected empty Stop retains sealed video without creating a final screen proof", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    const retained = structuredClone(session.take!);
+    const bytes = Buffer.from("sealed-video-before-device-disconnected");
+    runtime.stopVideo = async () => ({ data: bytes, mime: "video/mp4" });
+    runtime.observe = async () => {
+      throw new Error("Device disconnected; no final pixels");
+    };
+    session = await store.stop(session.id, runtime);
+    const revision = session.take!.revisions.at(-1)!;
+    const video = revision.evidence.find((item) => item.kind === "video");
+    assert.ok(video?.sha256, "sealing a video must retain its canonical evidence bytes");
+    assert.deepEqual(await readAuthoringEvidence(video.sha256), bytes);
+    assert.equal(session.state, "cancelled");
+    assert.equal(session.take?.state, "discarded");
+    assert.equal(revision.actions.length, 0);
+    assert.deepEqual(revision.before, retained.revisions.at(-1)!.before);
+    assert.deepEqual(revision.after, retained.revisions.at(-1)!.after);
+    assert.deepEqual(revision.observations, retained.revisions.at(-1)!.observations);
+    assert.deepEqual(session.take?.rawEvents, retained.rawEvents);
+    assert.ok(revision.videoClip);
+    const stored = await store.get(session.id);
+    assert.deepEqual(stored.take?.revisions.at(-1), revision);
   });
 });
 

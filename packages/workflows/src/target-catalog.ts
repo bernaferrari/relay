@@ -144,8 +144,12 @@ export async function selectTarget(
         throw new TypeError(`Target ${targetId} is not ready: ${readiness.recovery}`);
       }
     }
+    const guidance =
+      targetKind !== "browser" && (targetKind === "device" || phase)
+        ? " Reconnect the selected device, then repeat target discovery after it is ready with the same targetId, targetKind, and phase."
+        : "";
     throw new TypeError(
-      `Target ${targetId} is not a connected Android, iOS, or managed browser target.`,
+      `Target ${targetId} is not a connected Android, iOS, or managed browser target.${guidance}`,
     );
   }
   if (available.length === 1) return available[0]!;

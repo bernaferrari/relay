@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AUTHORING_RAW_CAPTURE_VERSION } from "@relay/protocol";
 import type {
   AuthoringAction,
   AuthoringEvidence,
@@ -86,6 +87,37 @@ export async function finishAuthoringRecording<Captured>(
   const { now, persistEvidence, persistObservation, nextRevision } = dependencies;
   const stoppedAt = now();
   const video = await runtime.stopVideo?.(session);
+  const rawEvents = session.take?.rawEvents;
+  if (
+    currentRevision(session).actions.length === 0 &&
+    session.take?.rawCaptureVersion === AUTHORING_RAW_CAPTURE_VERSION &&
+    rawEvents?.[0]?.kind === "take-start" &&
+    rawEvents.every((event) => event.kind === "take-start" || event.kind === "observation")
+  ) {
+    // Version 2 persists interaction intent before native dispatch. Only its
+    // untouched history proves that this empty Take needs no final device
+    // evidence. The store cancels it; retain its existing captures without
+    // promoting an old endpoint or manufacturing a fresh stop frame.
+    if (video?.data) {
+      const before = currentRevision(session).before?.capturedAt ?? session.take.createdAt;
+      const videoEndMs = Math.max(0, stoppedAt - before);
+      const videoEvidence = await persistEvidence({
+        kind: "video",
+        capturedAt: now(),
+        data: video.data,
+        mime: video.mime ?? "video/mp4",
+        startMs: 0,
+        endMs: videoEndMs,
+      });
+      session = nextRevision(session, "recording", (revision) => ({
+        ...revision,
+        evidence: [...revision.evidence, videoEvidence],
+        videoClip: { startMs: 0, endMs: videoEndMs },
+      }));
+    }
+    if (video?.warning) session.error = video.warning;
+    return session;
+  }
   const captured = await persistObservation(await runtime.observe(session));
   const completion =
     options.inferCompletion === false || currentRevision(session).actions.length === 0

@@ -6,7 +6,10 @@ import type {
   AuthoringObservation,
   AuthoringSession,
 } from "@relay/protocol";
-import { seedAuthoringRawRecording } from "./authoring-raw-recording.js";
+import {
+  appendAuthoringRawInteractionIntent,
+  seedAuthoringRawRecording,
+} from "./authoring-raw-recording.js";
 import {
   finishAuthoringRecording,
   recordAuthoringInteraction,
@@ -192,8 +195,18 @@ test("finish lifecycle seals video before endpoint capture and appends a raw sto
     },
   });
 
+  const recording = recordingSession();
+  recording.take!.revisions[0]!.actions.push({
+    id: "tap",
+    source: "manual",
+    recordedAt: 100,
+    startedAt: 100,
+    finishedAt: 100,
+    steps: [{ kind: "tap", target: { label: "Continue" } }],
+    evidenceIds: [],
+  });
   const session = await finishAuthoringRecording(
-    recordingSession(),
+    recording,
     {
       async execute() {},
       async stopVideo() {
@@ -214,6 +227,50 @@ test("finish lifecycle seals video before endpoint capture and appends a raw sto
     ["take-start", "take-stop"],
   );
   assert.deepEqual(session.take?.revisions.at(-1)?.videoClip, { startMs: 0, endMs: 100 });
+});
+
+test("zero actions with an unresolved native intent still require endpoint reconciliation", async () => {
+  const session = recordingSession();
+  const patch = appendAuthoringRawInteractionIntent(session.take!, {
+    target: session.target,
+    interaction: { kind: "tap", target: { label: "Continue" } },
+    startedAt: 120,
+    entrance: session.take!.revisions[0]!.before,
+  });
+  assert.ok(patch);
+  const { intentEventId: _intentEventId, ...raw } = patch;
+  Object.assign(session.take!, raw);
+  const retained = structuredClone(session);
+  let observations = 0;
+  await assert.rejects(
+    finishAuthoringRecording(
+      session,
+      {
+        async execute() {
+          throw new Error("Stop must not resend input");
+        },
+        async observe() {
+          observations += 1;
+          throw new Error("Device disconnected with input outcome unknown");
+        },
+      },
+      dependencies({
+        now: () => 130,
+        async persistObservation() {
+          throw new Error("no observation");
+        },
+        async persistEvidence() {
+          throw new Error("no evidence");
+        },
+        async writeSession() {
+          throw new Error("no new intent");
+        },
+      }),
+    ),
+    /input outcome unknown/,
+  );
+  assert.equal(observations, 1);
+  assert.deepEqual(session, retained);
 });
 
 test("full-page capture retains document evidence without replacing viewport geometry", async () => {

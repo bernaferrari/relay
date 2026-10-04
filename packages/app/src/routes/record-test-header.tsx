@@ -20,6 +20,7 @@ export function RecordTestHeader({
   pending,
   stopping,
   onCancel,
+  onLeave,
   onStop,
 }: {
   open: boolean;
@@ -31,6 +32,7 @@ export function RecordTestHeader({
   pending: boolean;
   stopping: boolean;
   onCancel(): void;
+  onLeave(): void;
   onStop(): void;
 }) {
   return (
@@ -58,17 +60,28 @@ export function RecordTestHeader({
         <AuthoringHeader
           title={interrupted ? "Recording interrupted" : "Record test"}
           back={
-            <DialogTrigger
-              render={
-                <Button
-                  className="inline-flex w-fit [-webkit-app-region:no-drag]"
-                  variant="ghost"
-                  size="sm"
-                />
-              }
-            >
-              Cancel
-            </DialogTrigger>
+            interrupted ? (
+              <Button
+                className="[-webkit-app-region:no-drag]"
+                variant="ghost"
+                size="sm"
+                onClick={onLeave}
+              >
+                Back to Tests
+              </Button>
+            ) : (
+              <DialogTrigger
+                render={
+                  <Button
+                    className="inline-flex w-fit [-webkit-app-region:no-drag]"
+                    variant="ghost"
+                    size="sm"
+                  />
+                }
+              >
+                Cancel
+              </DialogTrigger>
+            )
           }
           actions={
             <>

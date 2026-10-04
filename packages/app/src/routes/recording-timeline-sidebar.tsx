@@ -85,6 +85,7 @@ export function RecordingTimelineSidebar({
         ) : null}
         {recordingError || actionError || recovery ? (
           <RecordingProblem
+            operation="recording"
             className="m-3"
             error={recordingError ?? actionError}
             recovery={recovery}

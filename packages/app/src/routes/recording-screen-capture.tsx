@@ -67,7 +67,7 @@ export function RecordingScreenCapture({
           </Field>
           <div className="flex flex-wrap items-center justify-end gap-2.5">
             <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-            <Button type="submit" variant="default" disabled={pending}>
+            <Button type="submit" variant="default" disabled={pending || disabled}>
               {pending ? "Saving…" : "Save"}
             </Button>
           </div>
