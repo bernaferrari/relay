@@ -131,8 +131,9 @@ declare function defaultHintForCode(code: string): string | undefined;
  * The daemon renders it; it never re-derives degradation from node shapes.
  *
  * Defined here (the foundational snapshot type module) rather than in
- * snapshot-quality/verdict.ts so SnapshotNode can reference it without a cyclic import;
- * snapshot-quality/verdict.ts owns the validation logic.
+ * capture-kit's snapshot-quality-verdict.ts so SnapshotNode can reference it without a cyclic
+ * import. Ownership splits three ways: this module owns the vocabularies below, capture-kit parses
+ * an untrusted runner payload into them, and contracts re-hydrates a verdict this repo published.
  */
 /**
  * Which capture STRATEGY produced a snapshot, within one platform's plan —
@@ -148,8 +149,19 @@ type SnapshotQualityTiming = {
   acquisitionMs: number;
   presentationMs: number;
 };
+/**
+ * The verdict states a capture plan may stamp. This tuple is the ONE declaration of that
+ * vocabulary, and `SnapshotQualityVerdict['state']` is its projection; readers hold exhaustive maps
+ * over the union instead of importing this module, because the eager-closure gate freezes their
+ * loading shape (#2872). This tuple and the Apple runner's `SnapshotQualityState.allCases` are each
+ * pinned as a set to `contracts/fixtures/ios-snapshot-quality-states.json`, so a state one side
+ * renames, adds, or deletes without the other goes red there instead of arriving as a verdict the
+ * host cannot name — which reads as verdict-absent and drops the disclosure with it.
+ */
+declare const SNAPSHOT_QUALITY_STATES: readonly ['healthy', 'recovered', 'sparse'];
+type SnapshotQualityState = (typeof SNAPSHOT_QUALITY_STATES)[number];
 type SnapshotQualityVerdict = {
-  state: 'healthy' | 'recovered' | 'sparse';
+  state: SnapshotQualityState;
   backend: SnapshotCaptureBackend;
   reason?: string;
   reasonCode?: 'ax-rejected' | 'sparse-tree' | 'budget' | 'no-nodes' | 'capture-failed' | 'presentation-failed' | 'deferred' | 'requested-backend';
@@ -243,19 +255,39 @@ type RawSnapshotNode = {
   subrole?: string;
   label?: string;
   value?: string;
+  /**
+   * Android content description when it is not already the `label`. An Android node is
+   * labelled by its text and falls back to the content description only when it has none,
+   * so an accessibility label the app set beside visible text (a labelled text view, a
+   * filled or hinted field) is carried here for consumers that want the accessible name.
+   */
+  contentDescription?: string;
   identifier?: string;
   rect?: Rect;
   enabled?: boolean;
   selected?: boolean;
+  /** Checked state of a checkable control (switch, checkbox, radio); absent means not checkable or unavailable. */
+  checked?: boolean;
   focused?: boolean;
+  /** Accessibility heading flag an app set on the node; absent means not a heading or unavailable. */
+  heading?: boolean;
+  /** Localized role description an app set beside the native class, verbatim (`Tab`, `Tab List`, `Link`). */
+  roleDescription?: string;
   /** Native accessibility facts; absent means unavailable, not false. */
   editable?: boolean;
   password?: boolean;
   hintShowing?: boolean;
+  /**
+   * Placeholder text of a text field (the Android hint), whether or not the field is showing it.
+   * Absent when the field has none or the producer did not read it.
+   */
+  placeholder?: string;
   /** Accessibility selection offsets, never a character count or proof of value equality. */
   selectionStart?: number;
   selectionEnd?: number;
   visibleToUser?: boolean;
+  /** UIKit `isUserInteractionEnabled`; absent means the producer did not read it, not false. */
+  userInteractionEnabled?: boolean;
   hittable?: boolean;
   depth?: number;
   parentIndex?: number;
@@ -390,11 +422,22 @@ type SnapshotStateProvenance = OptionalProducerProvenance<SnapshotProvenance> | 
 declare const IOS_TARGET_ACTIVATION_REASONS: readonly ['bundle_changed', 'stale_target', 'missing_after_wait', 'interaction_foreground_guard'];
 type IosTargetActivationReason = (typeof IOS_TARGET_ACTIVATION_REASONS)[number];
 /**
- * States an activation could have been needed for, in `XCApplicationState` raw order.
- * `runningForeground` is excluded because the runner skips `activate()` when the app is already
- * foreground and never stamps a fact there.
+ * How XCTest reports an app running (`XCUIApplication.State`), in the SDK's raw order: unknown 0,
+ * notRunning 1, suspended 2, plain background 3, foreground 4 — the SDK declares suspended on
+ * non-macOS platforms only. This is the one declaration of those names; the `appState` runner
+ * command answers the session app's state with them, and `RunnerTests+ApplicationStateRawValueTests`
+ * ties them to the SDK enum. The `appState` path names states, so nothing here assigns a raw value;
+ * only the activation decoder's raw table does.
  */
-declare const IOS_TARGET_ACTIVATION_PRIOR_STATES: readonly ['unknown', 'notRunning', 'runningBackground', 'runningBackgroundSuspended'];
+declare const APPLE_APPLICATION_STATES: readonly ['unknown', 'notRunning', 'runningBackgroundSuspended', 'runningBackground', 'runningForeground'];
+type AppleApplicationState = (typeof APPLE_APPLICATION_STATES)[number];
+/**
+ * States an activation could have been needed for: every Apple state except the foreground one,
+ * which the runner skips `activate()` in and therefore stamps no fact about. Derived from the full
+ * list so the two cannot drift, and in the SDK's raw order — a state added to the full list lands
+ * here and must then be pinned natively before the decoder tie accepts it.
+ */
+declare const IOS_TARGET_ACTIVATION_PRIOR_STATES: readonly ("notRunning" | "runningBackground" | "runningBackgroundSuspended" | "unknown")[];
 type IosTargetActivationPriorState = (typeof IOS_TARGET_ACTIVATION_PRIOR_STATES)[number];
 /**
  * Foreground repair the Apple runner performed while serving one command (#2682). `priorState` is
@@ -443,7 +486,22 @@ type SnapshotState = {
    * the foreground instead (#2682). Consumers that surface this tree disclose the repair.
    */
   targetActivation?: IosTargetActivation;
+  /** What post-gesture stabilization proved about the gesture before this capture. */
+  postGestureOutcome?: PostGestureOutcome;
 } & SnapshotStateProvenance;
+/** The gesture a post-gesture outcome fact names: the command and its positionals. */
+type PostGestureAction = {
+  action: string;
+  positionals: string[];
+};
+/**
+ * `unsettled`: the surface was still changing when the stabilization deadline expired.
+ * `no-effect`: the settled surface still matches the pre-gesture tree (#1600).
+ */
+type PostGestureOutcome = {
+  kind: 'unsettled' | 'no-effect';
+  gesture: PostGestureAction;
+};
 type SnapshotUnchanged = {
   ageMs: number;
   nodeCount: number;
@@ -574,7 +632,7 @@ type DaemonRequest = {
   runtime?: SessionRuntimeHints;
   meta?: DaemonRequestMeta;
 };
-type DaemonArtifactKnownType = 'screenshot' | 'screenshot-diff' | 'screen-recording' | 'screen-recording-chunk' | 'screen-recording-telemetry' | 'trace-log' | 'test-artifacts';
+type DaemonArtifactKnownType = 'screenshot' | 'screenshot-diff' | 'screen-recording' | 'screen-recording-chunk' | 'screen-recording-contact-sheet' | 'screen-recording-telemetry' | 'trace-log' | 'test-artifacts';
 type DaemonArtifactType = DaemonArtifactKnownType | (string & {});
 type DaemonArtifact = {
   field: string;
@@ -608,4 +666,4 @@ type JsonRpcRequestEnvelope<TParams = unknown> = {
   params?: TParams;
 };
 //#endregion
-export { ScreenshotOverlayRef as A, centerOfRect as B, Platform as C, Point as D, IosTargetActivation as E, SnapshotProvenance as F, isAgentDeviceError as G, DaemonError as H, SnapshotQualityVerdict as I, normalizeAgentDeviceError as K, SnapshotState as L, SnapshotKeyboardBandFact as M, SnapshotNode as N, RawSnapshotNode as O, SnapshotOptions as P, SnapshotUnchanged as R, DeviceTarget as S, PublicPlatform as T, NormalizedError as U, AppError as V, defaultHintForCode as W, SessionIsolationMode as _, DaemonRequest as a, DeviceInfo as b, DaemonServerMode as c, JsonRpcRequestEnvelope as d, LeaseBackend as f, ResponseLevel as g, ResponseCost as h, DaemonLockPolicy as i, SnapshotCommandOptionFields as j, Rect as k, DaemonTransportPreference as l, NetworkIncludeMode as m, DaemonArtifactType as n, DaemonResponse as o, LocalInstallSource as p, normalizeError as q, DaemonInstallSource as r, DaemonResponseData as s, DaemonArtifact as t, JsonRpcId as u, SessionRuntimeHints as v, PlatformSelector as w, DeviceKind as x, AppleOS as y, SnapshotVisibility as z };
+export { Rect as A, SnapshotVisibility as B, Platform as C, IosTargetActivation as D, AppleApplicationState as E, SnapshotOptions as F, DaemonError as G, AppError as H, SnapshotProvenance as I, NormalizedError as J, ErrorCause as K, SnapshotQualityVerdict as L, SnapshotCommandOptionFields as M, SnapshotKeyboardBandFact as N, Point as O, SnapshotNode as P, normalizeError as Q, SnapshotState as R, DeviceTarget as S, PublicPlatform as T, AppErrorCode as U, centerOfRect as V, AppErrorDetails as W, isAgentDeviceError as X, defaultHintForCode as Y, normalizeAgentDeviceError as Z, SessionIsolationMode as _, DaemonRequest as a, DeviceInfo as b, DaemonServerMode as c, JsonRpcRequestEnvelope as d, LeaseBackend as f, ResponseLevel as g, ResponseCost as h, DaemonLockPolicy as i, ScreenshotOverlayRef as j, RawSnapshotNode as k, DaemonTransportPreference as l, NetworkIncludeMode as m, DaemonArtifactType as n, DaemonResponse as o, LocalInstallSource as p, KnownAppErrorCode as q, DaemonInstallSource as r, DaemonResponseData as s, DaemonArtifact as t, JsonRpcId as u, SessionRuntimeHints as v, PlatformSelector as w, DeviceKind as x, AppleOS as y, SnapshotUnchanged as z };

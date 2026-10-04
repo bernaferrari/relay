@@ -60,7 +60,7 @@ import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { OperationRecord } from "./operation-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
 import type { TargetObservation } from "./target-observation.js";
-import type { TargetSupervisorHealth } from "./target-supervisor.js";
+import type { TargetInputManualReview, TargetInputReconciliationOutcome, TargetSupervisorHealth } from "./target-supervisor.js";
 import type { WorkflowOperationMap } from "./workflow-record.js";
 import type { WorkspaceChangeContext } from "./workspace-change-context.js";
 import type { ProofOperationMap } from "./proof-operation-map.js";
@@ -146,12 +146,16 @@ export type SpecificOperationMap = {
        * target even if its id differs from mutationId (for example an input
        * interrupted by a restart, whose id the client never learned). */
       reconcilePending?: boolean;
+      /** Explicitly review this exact legacy client-only Android mutation.
+       * Requires no server pending input; never retargets another mutation. */
+      clientUnknown?: boolean;
     };
     output: {
       health: TargetSupervisorHealth;
       observation: TargetObservation;
       mutationId?: string;
-      outcome?: "applied" | "not-applied" | "ambiguous";
+      outcome?: TargetInputReconciliationOutcome;
+      review?: TargetInputManualReview;
       resolutionId?: string;
     };
   };
@@ -161,7 +165,8 @@ export type SpecificOperationMap = {
       receipt: {
         resolutionId: string;
         mutationId: string;
-        outcome: "applied" | "not-applied" | "ambiguous";
+        outcome: TargetInputReconciliationOutcome;
+        review?: TargetInputManualReview;
         reviewedAt: number;
         health?: {
           state: "ready" | "blocked" | "uncertain";

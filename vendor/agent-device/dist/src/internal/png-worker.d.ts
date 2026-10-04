@@ -32,6 +32,11 @@ type PngWorkerJobResult = {
   height: number;
   data: Uint8Array;
 } | {
+  kind: 'decode-image';
+  width: number;
+  height: number;
+  data: Uint8Array;
+} | {
   kind: 'encode';
   png: Uint8Array;
 } | {

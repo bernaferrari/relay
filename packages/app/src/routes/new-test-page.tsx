@@ -1,6 +1,6 @@
 import { useNewTestPreviewSession } from "./use-new-test-preview-session";
 import { useNewTestPreviewInput } from "./use-new-test-preview-input";
-import { useNewTestSetup } from "./use-new-test-setup";
+import { useNewTestSetup, useNewTestTargets } from "./use-new-test-setup";
 import { NewTestDraftDialog } from "./new-test-draft-dialog";
 import { NewTestDetailedSetup } from "./new-test-detailed-setup";
 import { NewTestTargetMode } from "./new-test-target-mode";
@@ -129,21 +129,12 @@ export function NewTestPage() {
       : !requestedTargetId || app?.platform === "web"
         ? "browser"
         : undefined;
-  const targets = useQuery({
-    queryKey: [...recordingQueryKeys.targets, targetKind, requestedTargetId],
+  const targets = useNewTestTargets({
+    service: productService,
     enabled: apps.isSuccess && setupMode === "detailed",
-    queryFn: async () => {
-      const state = await productService.connect({
-        targetKind,
-        ...(requestedTargetId ? { targetId: requestedTargetId } : {}),
-      });
-      return { ...state, targetOptions: await productService.presentTargets(state.targets) };
-    },
-    staleTime: 5_000,
-    refetchInterval: (query) =>
-      targetId && !query.state.data?.targetOptions.some((target) => target.targetId === targetId)
-        ? 5_000
-        : false,
+    targetKind,
+    requestedTargetId,
+    selectedTargetId: targetId,
   });
   async function adoptBrowser(targetId: string) {
     chooseTarget(targetId);
@@ -458,10 +449,10 @@ export function NewTestPage() {
       ? "Finish creating your app"
       : previewInput.failure
         ? "Check the last interaction before recording"
-        : previewInput.busy
-          ? "Checking the last interaction…"
-          : previewIssue || previewInput.issue
-            ? "Reconnect the preview before recording"
+        : previewIssue || previewInput.issue
+          ? "Reconnect the preview before recording"
+          : previewInput.busy
+            ? "Checking the last interaction…"
             : reconnectPreview.isPending
               ? "Reconnecting preview…"
               : !selectedTarget

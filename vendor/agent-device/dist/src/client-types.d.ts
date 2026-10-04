@@ -1,15 +1,16 @@
-import { E as IosTargetActivation, H as DaemonError, I as SnapshotQualityVerdict, M as SnapshotKeyboardBandFact, N as SnapshotNode, R as SnapshotUnchanged, S as DeviceTarget, T as PublicPlatform, U as NormalizedError, _ as SessionIsolationMode, a as DaemonRequest, f as LeaseBackend, g as ResponseLevel, i as DaemonLockPolicy, j as SnapshotCommandOptionFields, m as NetworkIncludeMode, o as DaemonResponse, r as DaemonInstallSource, s as DaemonResponseData, t as DaemonArtifact, v as SessionRuntimeHints, w as PlatformSelector, x as DeviceKind, y as AppleOS, z as SnapshotVisibility } from "./sdk-contracts.js";
-import { t as AppsFilter } from "./app-inventory.js";
-import { B as FindLocator, C as MACOS_PERMISSION_TARGETS, D as BackMode, E as PermissionMode, F as SwipePattern, H as SnapshotDiagnosticsSummary, I as SwipePreset, L as TransformGestureParams, N as ScrollDirection, O as GesturePointerCount, P as ScrollInputDirection, R as ClickButton, S as DeviceRotation, T as PermissionAction, U as SessionSurface, V as ScreenshotResultData, _ as HoverCommandResponseData, b as SettleObservation, g as FindCommandResponseData, h as FillCommandResponseData, m as ClickCommandResponseData, p as ScrollCommandResult, v as LongPressCommandResponseData, w as MOBILE_PERMISSION_TARGETS, x as TvRemoteButton, y as PressCommandResponseData, z as AndroidSnapshotBackendMetadata } from "./sdk-selectors.js";
+import { B as SnapshotVisibility, D as IosTargetActivation, E as AppleApplicationState, G as DaemonError, J as NormalizedError, L as SnapshotQualityVerdict, M as SnapshotCommandOptionFields, N as SnapshotKeyboardBandFact, P as SnapshotNode, S as DeviceTarget, T as PublicPlatform, _ as SessionIsolationMode, a as DaemonRequest, f as LeaseBackend, g as ResponseLevel, i as DaemonLockPolicy, m as NetworkIncludeMode, o as DaemonResponse, r as DaemonInstallSource, s as DaemonResponseData, t as DaemonArtifact, v as SessionRuntimeHints, w as PlatformSelector, x as DeviceKind, y as AppleOS, z as SnapshotUnchanged } from "./sdk-contracts.js";
+import { n as GesturePointerCount, s as AppsFilter } from "./gesture-plan-types.js";
+import { C as TransformGestureParams, D as ScreenshotResultData, E as FindLocator, O as SnapshotDiagnosticsSummary, S as SwipePreset, a as FoldPose, b as ScrollInputDirection, c as MACOS_PERMISSION_TARGETS, d as PermissionMode, g as AgentArtifactsResult, h as TextSizeCategory, i as DeviceRotation, k as SessionSurface, l as MOBILE_PERMISSION_TARGETS, o as SetFoldPoseInput, r as TvRemoteButton, s as BackMode, t as ScrollCommandResult, u as PermissionAction, v as CloudProviderSessionResult, w as AndroidSnapshotBackendMetadata, x as SwipePattern, y as ScrollDirection } from "./scroll-command.js";
 import { a as RemoteConnectionProfileFields, c as MetroPrepareResult, i as CloudProviderProfileFields, l as MetroReloadOptions, s as MetroPrepareOptions, u as MetroReloadResult } from "./sdk-remote-config.js";
+import { _ as SettleObservation, d as ClickCommandResponseData, f as FillCommandResponseData, g as PressCommandResponseData, h as LongPressCommandResponseData, m as HoverCommandResponseData, p as FindCommandResponseData, v as ClickButton } from "./sdk-selectors.js";
 import { t as BatchRunResult } from "./sdk-batch-runner.js";
-import { r as CloudProviderSessionResult, t as AgentArtifactsResult } from "./cloud-artifacts.js";
 //#region packages/contracts/src/json.d.ts
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 type JsonObject = {
   [key: string]: JsonValue;
 };
+declare function isRecord(value: unknown): value is Record<string, unknown>;
 //#endregion
 //#region packages/contracts/src/target-shutdown-contract.d.ts
 type TargetShutdownResult = {
@@ -211,7 +212,6 @@ type AppOpenOptions = AgentDeviceRequestOverrides & AgentDeviceSelectionOptions 
   saveScript?: boolean | string;
   /** #1258: overwrite an existing --save-script target instead of refusing. Alias: --overwrite. */
   force?: boolean;
-  deviceHub?: boolean;
   testIme?: boolean;
   noRecord?: boolean;
   runtime?: SessionRuntimeHints;
@@ -734,97 +734,6 @@ type BatchRunOptions = AgentDeviceRequestOverrides & {
   out?: string;
 };
 //#endregion
-//#region packages/contracts/src/replay.d.ts
-type ReplayCommandResult = {
-  replayed: number;
-  healed: number;
-  session: string;
-  /**
-   * True iff `session` still exists in the daemon's session store when the
-   * response is built. This remains true when replay suppresses an authored
-   * terminal `close` for an explicit live-session handoff. The client uses
-   * this, not script parsing, to decide whether an owned one-shot daemon must
-   * stay alive so the caller can keep addressing this session.
-   */
-  sessionActive: boolean;
-  artifactPaths: string[];
-  warnings?: string[];
-  snapshotDiagnostics?: SnapshotDiagnosticsSummary;
-  message: string;
-};
-type ReplaySuiteTestSkipReason = 'skipped-by-filter';
-type ReplaySuiteAttemptFailure = {
-  attempt: number;
-  message: string;
-  durationMs?: number;
-};
-type ReplaySuiteTestPassed = {
-  file: string;
-  title?: string;
-  session: string;
-  status: 'passed';
-  durationMs: number;
-  finalAttemptDurationMs?: number;
-  attempts: number;
-  artifactsDir?: string;
-  replayed: number;
-  healed: number;
-  warnings?: string[];
-  attemptFailures?: ReplaySuiteAttemptFailure[];
-  shardIndex?: number;
-  shardCount?: number;
-  deviceId?: string;
-  deviceName?: string;
-  snapshotDiagnostics?: SnapshotDiagnosticsSummary;
-};
-type ReplaySuiteTestFailed = {
-  file: string;
-  title?: string;
-  session: string;
-  status: 'failed';
-  durationMs: number;
-  attempts: number;
-  artifactsDir?: string;
-  error: DaemonError;
-  /** Warnings accumulated before the failing step (skipped `optional` steps, capture degradations). */
-  warnings?: string[];
-  /** Present when the owning runtime classified the failure as device/runner infrastructure. */
-  infrastructure?: true;
-  shardIndex?: number;
-  shardCount?: number;
-  deviceId?: string;
-  deviceName?: string;
-  snapshotDiagnostics?: SnapshotDiagnosticsSummary;
-};
-type ReplaySuiteTestSkipped = {
-  file: string;
-  title?: string;
-  status: 'skipped';
-  durationMs: 0;
-  reason: ReplaySuiteTestSkipReason;
-  message: string;
-};
-type ReplaySuiteTestResult = ReplaySuiteTestPassed | ReplaySuiteTestFailed | ReplaySuiteTestSkipped;
-type ReplaySuiteResult = {
-  total: number;
-  executed: number;
-  passed: number;
-  failed: number;
-  skipped: number;
-  notRun: number;
-  durationMs: number;
-  failures: ReplaySuiteTestFailed[];
-  tests: ReplaySuiteTestResult[];
-  /**
-   * The suite's own artifacts root (the parent of every test's `artifactsDir`), as resolved on
-   * the host that ran the suite. Absent when the suite produced no attempt (e.g. every source
-   * was filtered out). #2246: a remote daemon rewrites this to the caller-local path once the
-   * directory has been transferred back, so it always names a path the caller can open.
-   */
-  artifactsDir?: string;
-  snapshotDiagnostics?: SnapshotDiagnosticsSummary;
-};
-//#endregion
 //#region packages/contracts/src/client-request.d.ts
 type CommandRequestResult = DaemonResponseData;
 //#endregion
@@ -927,6 +836,15 @@ type SettingsUpdateOptions = (DeviceCommandBaseOptions & {
 }) | (DeviceCommandBaseOptions & {
   setting: 'appearance';
   state: 'light' | 'dark' | 'toggle';
+}) |
+/**
+ * One member, two legs: with a `state` it applies that rung, and without one it asks the target
+ * what it currently holds. The ladder is shared across platforms; an owner that serves neither
+ * leg refuses on its own runtime fact rather than answering an empty value.
+ */
+(DeviceCommandBaseOptions & {
+  setting: 'text-size';
+  state?: TextSizeCategory;
 }) | (DeviceCommandBaseOptions & {
   setting: 'faceid' | 'touchid';
   state: 'match' | 'nonmatch' | 'enroll' | 'unenroll';
@@ -1014,6 +932,7 @@ type HomeCommandOptions = DeviceCommandBaseOptions;
 type OrientationCommandOptions = DeviceCommandBaseOptions & {
   orientation: DeviceRotation;
 };
+type FoldCommandOptions = DeviceCommandBaseOptions & SetFoldPoseInput;
 type AppSwitcherCommandOptions = DeviceCommandBaseOptions;
 type ActionButtonCommandOptions = DeviceCommandBaseOptions;
 type TvRemoteCommandOptions = DeviceCommandBaseOptions & {
@@ -1079,7 +998,13 @@ type AppStateCommandResult = {
   platform: 'ios' | 'macos';
   appName: string;
   appBundleId?: string;
-  source: 'session';
+  /** `runner` when the runner read the session app's state; `session` when only the record answered. */
+  source: 'session' | 'runner';
+  /**
+   * How the session app is running, as the runner reads it; absent with `source: 'session'`.
+   * `runningBackground` after `home` says the app left the foreground, not what took it.
+   */
+  state?: AppleApplicationState;
   surface: SessionSurface;
   /** iOS only — the session device's UDID. */
   device_udid?: string;
@@ -1137,6 +1062,97 @@ type ShutdownCommandResult = {
    * leaf (`ios`/`macos`) — this is an extra field, not a replacement.
    */
   appleOs?: AppleOS;
+};
+//#endregion
+//#region packages/contracts/src/replay.d.ts
+type ReplayCommandResult = {
+  replayed: number;
+  healed: number;
+  session: string;
+  /**
+   * True iff `session` still exists in the daemon's session store when the
+   * response is built. This remains true when replay suppresses an authored
+   * terminal `close` for an explicit live-session handoff. The client uses
+   * this, not script parsing, to decide whether an owned one-shot daemon must
+   * stay alive so the caller can keep addressing this session.
+   */
+  sessionActive: boolean;
+  artifactPaths: string[];
+  warnings?: string[];
+  snapshotDiagnostics?: SnapshotDiagnosticsSummary;
+  message: string;
+};
+type ReplaySuiteTestSkipReason = 'skipped-by-filter';
+type ReplaySuiteAttemptFailure = {
+  attempt: number;
+  message: string;
+  durationMs?: number;
+};
+type ReplaySuiteTestPassed = {
+  file: string;
+  title?: string;
+  session: string;
+  status: 'passed';
+  durationMs: number;
+  finalAttemptDurationMs?: number;
+  attempts: number;
+  artifactsDir?: string;
+  replayed: number;
+  healed: number;
+  warnings?: string[];
+  attemptFailures?: ReplaySuiteAttemptFailure[];
+  shardIndex?: number;
+  shardCount?: number;
+  deviceId?: string;
+  deviceName?: string;
+  snapshotDiagnostics?: SnapshotDiagnosticsSummary;
+};
+type ReplaySuiteTestFailed = {
+  file: string;
+  title?: string;
+  session: string;
+  status: 'failed';
+  durationMs: number;
+  attempts: number;
+  artifactsDir?: string;
+  error: DaemonError;
+  /** Warnings accumulated before the failing step (skipped `optional` steps, capture degradations). */
+  warnings?: string[];
+  /** Present when the owning runtime classified the failure as device/runner infrastructure. */
+  infrastructure?: true;
+  shardIndex?: number;
+  shardCount?: number;
+  deviceId?: string;
+  deviceName?: string;
+  snapshotDiagnostics?: SnapshotDiagnosticsSummary;
+};
+type ReplaySuiteTestSkipped = {
+  file: string;
+  title?: string;
+  status: 'skipped';
+  durationMs: 0;
+  reason: ReplaySuiteTestSkipReason;
+  message: string;
+};
+type ReplaySuiteTestResult = ReplaySuiteTestPassed | ReplaySuiteTestFailed | ReplaySuiteTestSkipped;
+type ReplaySuiteResult = {
+  total: number;
+  executed: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  notRun: number;
+  durationMs: number;
+  failures: ReplaySuiteTestFailed[];
+  tests: ReplaySuiteTestResult[];
+  /**
+   * The suite's own artifacts root (the parent of every test's `artifactsDir`), as resolved on
+   * the host that ran the suite. Absent when the suite produced no attempt (e.g. every source
+   * was filtered out). #2246: a remote daemon rewrites this to the caller-local path once the
+   * directory has been transferred back, so it always names a path the caller can open.
+   */
+  artifactsDir?: string;
+  snapshotDiagnostics?: SnapshotDiagnosticsSummary;
 };
 //#endregion
 //#region packages/contracts/src/prepare.d.ts
@@ -1297,6 +1313,26 @@ type ViewportCommandResult = {
   message: string;
 };
 //#endregion
+//#region packages/contracts/src/fold-runtime.d.ts
+/** Single source of truth for the discriminator the Apple owner sets and the MCP schema advertises. */
+declare const FOLD_SCREEN_COORDINATE_SPACE: 'native-panel';
+/**
+ * The panel the device lights after the pose settled, in that panel's own native points: its pixel
+ * size divided by its point scale, never rotated. `coordinateSpace` is always
+ * {@link FOLD_SCREEN_COORDINATE_SPACE}, and these numbers are NOT snapshot coordinates — the active
+ * app window can differ from the panel (iPhone Duo: a 669x951 inner panel hosts a 951x669 app
+ * window), so they cannot place a tap. A caller that needs the app viewport must take a fresh
+ * snapshot.
+ */
+type FoldScreenReport = Readonly<{
+  /** The CoreDevice display name of the panel the device now lights. */
+  display: string;
+  /** Marks these dimensions as the panel's native points, never a snapshot's app viewport. */
+  coordinateSpace: typeof FOLD_SCREEN_COORDINATE_SPACE;
+  widthPt: number;
+  heightPt: number;
+}>;
+//#endregion
 //#region packages/contracts/src/navigation.d.ts
 /**
  * Closed results of the navigation/global action commands. Each mirrors its
@@ -1337,6 +1373,22 @@ type OrientationCommandResult = {
   message: string;
   confirmed?: boolean;
   warning?: string;
+};
+/**
+ * `fold` — `{ action: 'fold', pose, hingeAngleDegrees, screen?, message }`.
+ *
+ * Unlike `orientation`, there is no unconfirmed variant: the Apple owner reads the hinge angle
+ * back from CoreDevice after the simulator HID helper sends the pose, and reports a pose only when
+ * that reading agrees with the request. `screen` names the panel the device lights afterwards and
+ * that panel's native point size (ADR 0025); it is the panel's geometry, not the app viewport, so a
+ * caller must take a fresh snapshot before placing a tap.
+ */
+type FoldCommandResult = {
+  action: 'fold';
+  pose: FoldPose;
+  hingeAngleDegrees: number;
+  screen?: FoldScreenReport;
+  message: string;
 };
 /** `app-switcher` — `{ action: 'app-switcher', message: 'Opened app switcher' }`. */
 type AppSwitcherCommandResult = {
@@ -1577,6 +1629,7 @@ interface CommandResultMap {
   doctor: DoctorCommandResult;
   fill: FillCommandResponseData;
   find: FindCommandResponseData;
+  fold: FoldCommandResult;
   home: HomeCommandResult;
   hover: HoverCommandResponseData;
   keyboard: KeyboardCommandResult;
@@ -1610,6 +1663,7 @@ type AgentDeviceCommandClient = {
   back: (options?: BackCommandOptions) => Promise<CommandResult<'back'>>;
   home: (options?: HomeCommandOptions) => Promise<CommandResult<'home'>>;
   orientation: (options: OrientationCommandOptions) => Promise<CommandResult<'orientation'>>;
+  fold: (options: FoldCommandOptions) => Promise<CommandResult<'fold'>>;
   appSwitcher: (options?: AppSwitcherCommandOptions) => Promise<CommandResult<'app-switcher'>>;
   actionButton: (options?: ActionButtonCommandOptions) => Promise<CommandResult<'action-button'>>;
   tvRemote: (options: TvRemoteCommandOptions) => Promise<CommandResult<'tv-remote'>>;
@@ -1729,4 +1783,4 @@ type AgentDeviceClient = {
   };
 };
 //#endregion
-export { AgentDeviceClientConfig as n, AgentDeviceDaemonTransport as r, AgentDeviceClient as t };
+export { NetworkOptions as $, DeviceSelectionMetadata as $t, WaitCommandOptions as A, InteractionTarget as At, GetOptions as B, SelectorSnapshotCommandOptions as Bt, HomeCommandOptions as C, ScrollOptions as Ct, ReactNativeCommandOptions as D, TransformGestureOptions as Dt, PrepareCommandOptions as E, SwipeOptions as Et, SessionCloseResult as F, CaptureScreenshotOptions as Ft, CommandRequestResult as G, AppInstallFromSourceOptions as Gt, IsStatePredicateOptions as H, AppCloseResult as Ht, SessionSaveScriptOptions as I, CaptureScreenshotResult as It, ReplayRunOptions as J, AppListOptions as Jt, BatchRunOptions as K, AppInstallFromSourceResult as Kt, SessionSaveScriptResult as L, CaptureSnapshotOptions as Lt, AlertAction as M, RefTarget as Mt, PermissionTarget as N, SelectorTarget as Nt, TvRemoteCommandOptions as O, TypeTextOptions as Ot, SettingsUpdateOptions as P, CaptureDiffOptions as Pt, LogsOptions as Q, AppTriggerEventOptions as Qt, FindBaseOptions as R, CaptureSnapshotResult as Rt, FoldCommandOptions as S, isRecord as Sn, RotateGestureOptions as St, OrientationCommandOptions as T, SwipeGestureOptions as Tt, IsTextPredicateOptions as U, AppDeployOptions as Ut, IsOptions as V, AppCloseOptions as Vt, RecordControlOptions as W, AppDeployResult as Wt, AudioOptions as X, AppOpenResult as Xt, ReplayTestOptions as Y, AppOpenOptions as Yt, EventsOptions as Z, AppPushOptions as Zt, AppStateCommandOptions as _, DeviceCommandBaseOptions as _n, LongPressOptions as _t, WaitCommandResult as a, AgentDeviceDevice as an, HumanControlHoldOptions as at, ClipboardCommandOptions as b, JsonPrimitive as bn, PressOptions as bt, DebugSymbolsOptions as c, DeviceBootOptions as cn, LeaseAllocateOptions as ct, PrepareCommandResult as d, AgentDeviceClientConfig as dn, ClickOptions as dt, DeviceSelectionReason as en, PerfOptions as et, ReplayCommandResult as f, AgentDeviceDaemonTransport as fn, DragOptions as ft, AlertCommandOptions as g, AgentDeviceSelectionOptions as gn, HoverOptions as gt, ActionButtonCommandOptions as h, AgentDeviceRequestOverrides as hn, FocusOptions as ht, TraceCommandResult as i, AgentDeviceCapabilitiesResult as in, HumanControlHold as it, WaitCommandTarget as j, PointTarget as jt, ViewportCommandOptions as k, ElementTarget as kt, DebugSymbolsResult as l, DeviceShutdownOptions as ln, LeaseOptions as lt, TriggerAppEventCommandResult as m, AgentDeviceIdentifiers as mn, FlingOptions as mt, AgentDeviceCommandClient as n, MaterializationReleaseOptions as nn, TraceOptions as nt, DiffSnapshotCommandResult as o, AgentDeviceSession as on, HumanControlHoldScope as ot, ReplaySuiteResult as p, AgentDeviceDaemonTransportContext as pn, FillOptions as pt, BatchStep as q, AppInstallOptions as qt, RecordingCommandResult as r, MaterializationReleaseResult as rn, CloudArtifactsOptions as rt, DoctorCommandResult as s, AgentDeviceSessionDevice as sn, Lease as st, AgentDeviceClient as t, DeviceSelectionSource as tn, RecordOptions as tt, PushCommandResult as u, StartupPerfSample as un, LeaseScopedOptions as ut, AppSwitcherCommandOptions as v, TargetShutdownResult as vn, PanOptions as vt, KeyboardCommandOptions as w, SettleCommandOptions as wt, DoctorCommandOptions as x, JsonValue as xn, RepeatedPressOptions as xt, BackCommandOptions as y, JsonObject as yn, PinchOptions as yt, FindOptions as z, FindSnapshotCommandOptions as zt };

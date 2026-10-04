@@ -101,6 +101,7 @@ export const coreTargetOperationInputSchemas = {
       resolutionId: identifier("Idempotent reconciliation attempt identifier").optional(),
       outcome: z.enum(["applied", "not-applied", "ambiguous"]),
       reconcilePending: z.boolean().optional(),
+      clientUnknown: z.boolean().optional(),
     })
     .strict(),
   "target.input.receipt.get": z

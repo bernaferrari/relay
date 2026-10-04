@@ -18,13 +18,12 @@ import {
   attachActiveSessionAddressHint,
   attachRepairSessionAddressHint,
   cleanupDaemonAfterRequest,
-  ensureDaemon,
   isActiveReplaySessionResponse,
   isHeldRepairDivergence,
   resolveClientSettings,
   type DaemonClientSettings,
-  type EnsuredDaemon,
 } from './daemon-client-lifecycle.ts';
+import { ensureDaemon, type EnsuredDaemon } from './daemon-client-startup.ts';
 import { sendRequest } from './daemon-client-transport.ts';
 
 export type DaemonRequest = SharedDaemonRequest;

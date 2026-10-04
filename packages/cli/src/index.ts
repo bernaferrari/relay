@@ -807,12 +807,12 @@ export async function runCli(
           );
         } else {
           const outputResult = await finalizeCombineExportResult({
-              operationId,
-              result,
-              summarized: summarizeResult(operationId, result, input, commandPath),
-              exportDir: "exportDir" in parsed ? parsed.exportDir : undefined,
-              todoFile: "todoFile" in parsed ? parsed.todoFile : undefined,
-            });
+            operationId,
+            result,
+            summarized: summarizeResult(operationId, result, input, commandPath),
+            exportDir: "exportDir" in parsed ? parsed.exportDir : undefined,
+            todoFile: "todoFile" in parsed ? parsed.todoFile : undefined,
+          });
           const humanCompileOutput =
             operationId === "app-map.test.compile" && parsed.config.output === "human"
               ? parsed.full

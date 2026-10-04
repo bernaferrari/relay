@@ -450,3 +450,41 @@ it("repairs only the known renderer size-preflight legacy error", () => {
     "unknown",
   ]);
 });
+
+it("does not fabricate authority from a stale reconciliation refusal", async () => {
+  const ledger = appendRecordingMutation(undefined, { kind: "unknown", mutationId: "recording-mutation-legacy", message: "Live control is reconnecting" });
+  const error = Object.assign(new Error("No matching receipt"), { body: { code: "TARGET_INPUT_RECONCILIATION_STALE" } });
+  await expect(reconcileRecordingMutationAuthoritatively({ ledger, mutationId: "recording-mutation-legacy", observed: "not-observed", authority: { serial: "pixel-1", reconcile: async () => { throw error; } } })).rejects.toBe(error);
+  expect(recordingRecoveryBlocksSend(ledger)).toBe(true);
+});
+
+it("explicit acknowledged review releases only the exact client-only pause without claiming not-dispatched", async () => {
+  const ledger = appendRecordingMutation(undefined, { kind: "unknown", mutationId: "recording-mutation-legacy", message: "Live control is reconnecting" });
+  let submitted: unknown;
+  const next = await reconcileRecordingMutationAuthoritatively({ ledger, mutationId: "recording-mutation-legacy", observed: "not-observed", authority: {
+    serial: "pixel-1", actor: "human:reviewer", reconcile: async (input) => {
+      submitted = input;
+      return { mutationId: input.mutationId, resolutionId: input.resolutionId, outcome: "acknowledged", health: { state: "ready" }, review: { source: "operator-review", observed: "not-observed", actorId: "human:reviewer" }, observation: { capturedAt: 20 } };
+    },
+  } });
+  expect(submitted).toMatchObject({ clientUnknown: true, mutationId: "recording-mutation-legacy", outcome: "not-applied" });
+  expect(submitted).not.toHaveProperty("reconcilePending");
+  expect(next.mutations[0]).toMatchObject({ kind: "confirmed", observed: "not-observed", resolvedBy: { authority: "operator-review", actor: "human:reviewer" } });
+  expect(recordingRecoveryBlocksSend(next)).toBe(false);
+});
+
+it("retains generic old transport errors and refuses incomplete or unrelated review receipts", async () => {
+  const ledger = parseRecordingLedger(JSON.stringify({ mutations: [{ kind: "unknown", mutationId: "recording-mutation-legacy", message: "Live device control is not ready" }] }));
+  expect(ledger.mutations[0]?.kind).toBe("unknown");
+  expect(recordingRecoveryBlocksSend(hydrateRecordingLedger({ projection: ledger, health: { input: { state: "ready" } } }))).toBe(true);
+  const receipt = { mutationId: "recording-mutation-legacy", resolutionId: "review-1", outcome: "acknowledged" as const, health: { state: "ready" as const }, review: { source: "operator-review" as const, observed: "not-observed" as const, actorId: "agent:reviewer" }, observation: { capturedAt: 20 } };
+  for (const invalid of [
+    { ...receipt, mutationId: "recording-mutation-other" },
+    { ...receipt, observation: undefined },
+    { ...receipt, health: { state: "blocked" as const } },
+    { ...receipt, outcome: "not-applied" as const },
+  ]) {
+    await expect(reconcileRecordingMutationAuthoritatively({ ledger, mutationId: "recording-mutation-legacy", observed: "not-observed", authority: { serial: "pixel-1", reconcile: async () => invalid } })).rejects.toThrow();
+  }
+  expect(recordingRecoveryBlocksSend(ledger)).toBe(true);
+});

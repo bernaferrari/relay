@@ -6,6 +6,8 @@ title: Node.js API
 
 Use `createAgentDeviceClient()` for typed, deterministic device automation from Node.js instead of shelling out to the CLI.
 
+Concurrent calls from one Node.js process serialize local daemon startup and replacement by state directory. Each queued call checks daemon identity and its requested transport before continuing. Different state directories can start independently; device commands follow their session and device ownership rules.
+
 Building an agent? Start with the dedicated [AI SDK](/docs/ai-sdk) or [Eve](/docs/eve) integration.
 
 ## Runnable examples

@@ -1,4 +1,4 @@
-import { N as SnapshotNode } from "./sdk-contracts.js";
+import { P as SnapshotNode } from "./sdk-contracts.js";
 //#region packages/selectors/src/internal/find.d.ts
 declare const FIND_LOCATORS: readonly ['any', 'text', 'label', 'value', 'role', 'id'];
 type FindLocator = (typeof FIND_LOCATORS)[number];

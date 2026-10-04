@@ -2,7 +2,7 @@ import type { OperationDefinition, RuntimeParser } from "./operation-contract.js
 import { operationInputContract } from "./operation-builders.js";
 import { fail, number, objectParser, record, string } from "./operation-parser-primitives.js";
 import type { TargetObservation } from "./target-observation.js";
-import type { TargetSupervisorHealth } from "./target-supervisor.js";
+import type { TargetInputManualReview, TargetInputReconciliationOutcome, TargetSupervisorHealth } from "./target-supervisor.js";
 
 const PIXEL_STATES = new Set(["ready", "delayed", "unavailable"]);
 const SEMANTIC_STATES = new Set(["current", "stale", "refreshing", "wedged", "unavailable"]);
@@ -123,6 +123,7 @@ export function createTargetInputReconciliationOperationDefinition(input: {
     serial: string;
     mutationId: string;
     outcome: "applied" | "not-applied" | "ambiguous";
+    clientUnknown?: boolean;
   },
   { health: TargetSupervisorHealth; observation: TargetObservation }
 > {
@@ -148,6 +149,7 @@ export function createTargetInputReconciliationOperationDefinition(input: {
   }>("target input reconciliation response", (value) => {
     health.parse({ health: value.health });
     input.targetObservation.parse(value.observation);
+    if (value.outcome !== undefined) assertReconciliationOutcome(value);
   });
   return {
     id: "target.input.reconcile",
@@ -175,7 +177,8 @@ export function createTargetInputReceiptGetOperationDefinition(): OperationDefin
     receipt: {
       resolutionId: string;
       mutationId: string;
-      outcome: "applied" | "not-applied" | "ambiguous";
+      outcome: TargetInputReconciliationOutcome;
+      review?: TargetInputManualReview;
       reviewedAt: number;
     };
   }
@@ -196,7 +199,8 @@ export function createTargetInputReceiptGetOperationDefinition(): OperationDefin
     receipt: {
       resolutionId: string;
       mutationId: string;
-      outcome: "applied" | "not-applied" | "ambiguous";
+      outcome: TargetInputReconciliationOutcome;
+      review?: TargetInputManualReview;
       reviewedAt: number;
     };
   }>("target input receipt response", (value) => {
@@ -207,9 +211,7 @@ export function createTargetInputReceiptGetOperationDefinition(): OperationDefin
     if (!string(receipt.mutationId, "mutationId").trim()) {
       fail("mutationId", "must be non-empty");
     }
-    if (!new Set(["applied", "not-applied", "ambiguous"]).has(String(receipt.outcome))) {
-      fail("outcome", "is unsupported");
-    }
+    assertReconciliationOutcome(receipt);
     number(receipt.reviewedAt, "reviewedAt");
   });
   return {
@@ -229,6 +231,23 @@ export function createTargetInputReceiptGetOperationDefinition(): OperationDefin
     cancellable: false,
     transport: { method: "GET", path: "/device/input/receipt" },
   };
+}
+
+function assertReconciliationOutcome(value: Record<string, unknown>): void {
+  if (!new Set(["applied", "not-applied", "ambiguous", "acknowledged"]).has(String(value.outcome))) {
+    fail("outcome", "is unsupported");
+  }
+  if (value.outcome === "acknowledged" || value.review !== undefined) {
+    const review = record(value.review, "explicit input review");
+    if (review.source !== "operator-review") fail("input review source", "must be operator-review");
+    if (!new Set(["applied", "not-observed", "uncertain"]).has(String(review.observed))) {
+      fail("input review observed", "is unsupported");
+    }
+    if (value.outcome === "acknowledged" && review.observed === "uncertain") {
+      fail("input review observed", "must resolve the explicit review");
+    }
+    if (!string(review.actorId, "input review actorId").trim()) fail("input review actorId", "must be non-empty");
+  }
 }
 
 export function createTargetSupervisorOperationDefinitions(input: {

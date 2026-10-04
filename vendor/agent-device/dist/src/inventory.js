@@ -1,4 +1,4 @@
-import{D as e,O as t}from"./sdk-contracts.js";import{n}from"./device-shell.js";import{a as r,r as i}from"./adb-failure.js";import a from"node:path";function o(e){return e.startsWith(`emulator-`)}function s(e){return e.toLowerCase().replaceAll(`_`,` `).replaceAll(/\s+/g,` `).trim()}function c(e){let t=[];for(let n of e.split(`
+import{A as e,j as t}from"./sdk-contracts.js";import{n}from"./device-shell.js";import{a as r,r as i}from"./adb-failure.js";import a from"node:path";function o(e){return e.startsWith(`emulator-`)}function s(e){return e.toLowerCase().replaceAll(`_`,` `).replaceAll(/\s+/g,` `).trim()}function c(e){let t=[];for(let n of e.split(`
 `)){let e=n.trim().split(/\s+/),r=e[0];!r||r===`List`||e[1]!==`device`||t.push({serial:r,rawModel:(e.find(e=>e.startsWith(`model:`))??``).replace(`model:`,``)})}return t}function l(e){return e.split(`
 `).map(e=>e.trim()).filter(e=>e.length>0)}function u(e){let t=e.split(`
 `).map(e=>e.trim()).filter(e=>e.length>0);return t.at(-1)===`OK`&&t.pop(),t.join(`
