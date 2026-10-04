@@ -1,13 +1,14 @@
 import type { AuthoringInputReceiptRef } from "@relay/workflows";
+import type { TargetInputManualReview, TargetInputReconciliationOutcome } from "@relay/protocol";
 
 export type RecordingObservedEffect = "applied" | "not-observed" | "uncertain";
 
-export type RecordingInputOutcome =
+export type RecordingInputOutcome = (
   | {
       kind: "confirmed";
       mutationId?: string;
       observed?: RecordingObservedEffect;
-      resolvedBy?: { at: number; actor?: string; authority?: "server" };
+      resolvedBy?: { at: number; actor?: string; authority?: "server" | "operator-review" };
     }
   | {
       kind: "not-dispatched";
@@ -30,7 +31,8 @@ export type RecordingInputOutcome =
       recordingMutation?: AuthoringInputReceiptRef;
       observed?: RecordingObservedEffect;
       resolvedBy?: { at: number; actor?: string; authority?: "server" };
-    };
+    }
+) & { review?: TargetInputManualReview };
 
 export type RecordingReconcileServerOutcome = "applied" | "not-applied" | "ambiguous";
 
@@ -45,7 +47,8 @@ export type RecordingTargetHealthProjection = {
 export type RecordingReconcileAuthorityReceipt = {
   mutationId: string;
   resolutionId?: string;
-  outcome?: RecordingReconcileServerOutcome;
+  outcome?: TargetInputReconciliationOutcome;
+  review?: TargetInputManualReview;
   health?: RecordingTargetHealthProjection["input"];
   observation?: unknown;
 };
@@ -60,6 +63,7 @@ export type RecordingReconcileAuthority = {
     outcome: RecordingReconcileServerOutcome;
     /** The person reviewed the screen: resolve whatever input is pending. */
     reconcilePending?: boolean;
+    clientUnknown?: boolean;
   }) => Promise<RecordingReconcileAuthorityReceipt>;
   fetchReceipt?: (input: {
     serial: string;
@@ -94,6 +98,7 @@ export function reconcileObservedFromServerReceipt(
   receipt: RecordingReconcileAuthorityReceipt,
 ): RecordingObservedEffect {
   if (receipt.health?.state === "uncertain") return "uncertain";
+  if (receipt.outcome === "acknowledged") return receipt.review?.observed ?? "uncertain";
   if (receipt.outcome === "not-applied") return "not-observed";
   if (receipt.outcome === "ambiguous") return "uncertain";
   if (receipt.outcome === "applied") return "applied";
@@ -103,13 +108,14 @@ export function reconcileObservedFromServerReceipt(
 /** Server outcome is authority. Ready is not applied. A missing outcome is
  * uncertain — never echo the request. */
 export function reconcileOutcomeFromServerResponse(input: {
-  returned?: RecordingReconcileServerOutcome;
+  returned?: TargetInputReconciliationOutcome;
   healthState?: RecordingTargetHealthProjection["input"]["state"];
-}): RecordingReconcileServerOutcome {
+}): TargetInputReconciliationOutcome {
   if (
     input.returned === "applied" ||
     input.returned === "not-applied" ||
-    input.returned === "ambiguous"
+    input.returned === "ambiguous" ||
+    input.returned === "acknowledged"
   ) {
     return input.returned;
   }
@@ -445,25 +451,18 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
   now?: number;
 }): Promise<RecordingRecoveryLedger> {
   const resolutionId = crypto.randomUUID();
+  const current = input.ledger.mutations.find((mutation) => mutation.mutationId === input.mutationId);
+  const clientUnknown = current?.kind === "unknown" &&
+    !current.recordingMutation && input.mutationId.startsWith("recording-mutation-");
   const receipt = await input.authority
     .reconcile({
       resolutionId,
       serial: input.authority.serial,
       mutationId: input.mutationId,
       outcome: recordingReconcileServerOutcome(input.observed),
-      reconcilePending: true,
+      ...(clientUnknown ? { clientUnknown: true } : { reconcilePending: true }),
     })
     .catch(async (error) => {
-      // The server holds no pending input (for example it restarted and its
-      // input fence is gone). Nothing can be repeated, so the person's answer
-      // resolves the pause instead of leaving the recording stuck.
-      if (reconcileIsStale(error)) {
-        return {
-          mutationId: input.mutationId,
-          resolutionId,
-          outcome: recordingReconcileServerOutcome(input.observed),
-        } satisfies RecordingReconcileAuthorityReceipt;
-      }
       if (!input.authority.fetchReceipt) throw error;
       try {
         return await fetchRecordingReconcileReceipt({
@@ -475,6 +474,24 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
         throw error;
       }
     });
+  if (receipt.outcome === "acknowledged") {
+    if (!clientUnknown || receipt.mutationId !== input.mutationId ||
+      receipt.review?.source !== "operator-review" ||
+      !receipt.review.actorId || receipt.review.observed === "uncertain" || !receipt.resolutionId ||
+      !receipt.observation || receipt.health?.state !== "ready" || receipt.health.pendingMutationId) {
+      throw new TypeError("Relay did not return an exact, completed client-only review receipt.");
+    }
+    return resolveRecordingMutation(input.ledger, input.mutationId, {
+      kind: "confirmed", observed: receipt.review.observed, review: receipt.review,
+      resolvedBy: { at: input.now ?? Date.now(), actor: receipt.review.actorId, authority: "operator-review" },
+    });
+  }
+  if (clientUnknown && receipt.mutationId !== input.mutationId) {
+    throw new TypeError("Relay returned a receipt for a different client-only mutation.");
+  }
+  if (clientUnknown && receipt.outcome !== "ambiguous") {
+    throw new TypeError("A client-only pause requires an explicit operator acknowledgement receipt.");
+  }
   // The server may have resolved the input it actually held (the person's
   // decision covers what they saw), so its id can differ from ours.
   const pending = receipt.health?.pendingMutationId;
@@ -531,9 +548,4 @@ export async function dispatchRecordingInput(input: {
   } catch (error) {
     return { kind: "refresh-failed", mutationId, message: errorText(error) };
   }
-}
-
-function reconcileIsStale(error: unknown): boolean {
-  const body = (error as { body?: { code?: unknown } } | null)?.body;
-  return body?.code === "TARGET_INPUT_RECONCILIATION_STALE";
 }

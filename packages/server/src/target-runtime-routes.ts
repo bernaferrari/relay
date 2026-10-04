@@ -59,6 +59,7 @@ import {
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { recordAudit, type RequestContext } from "./security.js";
 import { captureDurableTargetObservation } from "./target-observation-route.js";
+import { assertClientUnknownReviewAllowed } from "./target-client-input-review.js";
 import {
   durableObservationId,
   localBrowserExecutionTarget,
@@ -237,7 +238,7 @@ export async function handleTargetRuntimeRoute(context: {
     if (body.reconcilePending !== undefined && typeof body.reconcilePending !== "boolean") {
       throw new HttpError(400, "reconcilePending must be a boolean");
     }
-    if (body.reconcilePending === true) {
+    if (body.reconcilePending === true && body.clientUnknown !== true) {
       // The person reviewed the screen; bind their decision to the input that
       // is actually pending on this target.
       const target = await resolveSupervisedRuntimeTarget({ serial, runtime });
@@ -252,6 +253,16 @@ export async function handleTargetRuntimeRoute(context: {
     await runtime.assertTargetControl(scope, controlTargetIdForBrowserLane(serial));
     return serializeReconciliation(serial, async () => {
       const receiptScope = { organizationId: scope.organizationId, projectId: scope.projectId };
+      const clientTarget = body.clientUnknown === true
+        ? await resolveSupervisedRuntimeTarget({ serial, runtime })
+        : undefined;
+      if (clientTarget) {
+        assertClientUnknownReviewAllowed({
+          mutationId, platform: clientTarget.platform,
+          health: runtime.readTargetHealth(clientTarget.id, clientTarget.platform),
+          reconcilePending: body.reconcilePending,
+        });
+      }
       const latest = readReconcileReceipt({ ...receiptScope, serial, mutationId });
       const stored = body.resolutionId
         ? (readReconcileReceipt({
@@ -267,6 +278,9 @@ export async function handleTargetRuntimeRoute(context: {
         if (!stored.healthSnapshot) {
           const target = await resolveSupervisedRuntimeTarget({ serial, runtime });
           const current = runtime.readTargetHealth(target.id, target.platform);
+          if (stored.review) {
+            assertClientUnknownReviewAllowed({ mutationId, platform: target.platform, health: current });
+          }
           if (current.input.pendingMutationId && current.input.pendingMutationId !== mutationId) {
             throw new HttpError(
               409,
@@ -274,7 +288,7 @@ export async function handleTargetRuntimeRoute(context: {
             );
           }
           const health =
-            current.input.state === "uncertain" && current.input.pendingMutationId === mutationId
+            current.input.state === "uncertain" && current.input.pendingMutationId === mutationId && stored.outcome !== "acknowledged"
               ? runtime.reconcileTargetInput(target.id, target.platform, {
                   mutationId,
                   observationId: stored.observationId!,
@@ -297,7 +311,42 @@ export async function handleTargetRuntimeRoute(context: {
           ...(stored.observation ? { observation: stored.observation } : {}),
           mutationId: stored.mutationId,
           outcome: stored.outcome,
+          ...(stored.review ? { review: stored.review } : {}),
           resolutionId: stored.resolutionId,
+        });
+        return true;
+      }
+      if (clientTarget) {
+        const observation = await runtime.captureTargetObservation(serial);
+        // Observation may yield to another run or lease acquisition. Recheck
+        // authority and target fences before durably acknowledging this ID.
+        await runtime.assertTargetControl(scope, controlTargetIdForBrowserLane(serial));
+        const health = runtime.readTargetHealth(clientTarget.id, clientTarget.platform);
+        assertClientUnknownReviewAllowed({ mutationId, platform: clientTarget.platform, health });
+        const review = {
+          source: "operator-review" as const,
+          observed: body.outcome === "applied" ? "applied" as const
+            : body.outcome === "not-applied" ? "not-observed" as const : "uncertain" as const,
+          actorId: currentOperationContext()?.actorId ?? scope.subject,
+        };
+        const prepared = rememberReconcileReceipt({
+          ...receiptScope, serial, mutationId,
+          ...(body.resolutionId ? { resolutionId: body.resolutionId } : {}),
+          outcome: body.outcome === "ambiguous" ? "ambiguous" : "acknowledged",
+          review, observationId: durableObservationId(observation), observation,
+        });
+        const receipt = completeReconcileReceipt({
+          ...receiptScope, receipt: prepared, health: health.input,
+          healthSnapshot: { ...health, visibility: "project" },
+        });
+        recordAudit(scope, {
+          action: "target.input.reconcile", resource: mutationId, target: serial,
+          result: body.outcome === "ambiguous" ? "deny" : "allow",
+        });
+        json(response, 200, {
+          health: receipt.healthSnapshot, observation,
+          mutationId: receipt.mutationId, outcome: receipt.outcome,
+          resolutionId: receipt.resolutionId, review: receipt.review,
         });
         return true;
       }
@@ -382,6 +431,7 @@ export async function handleTargetRuntimeRoute(context: {
         reviewedAt: receipt.reviewedAt,
         ...(receipt.health ? { health: receipt.health } : {}),
         ...(receipt.observation ? { observation: receipt.observation } : {}),
+        ...(receipt.review ? { review: receipt.review } : {}),
       },
     });
     return true;

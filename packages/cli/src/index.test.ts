@@ -2280,7 +2280,13 @@ test("test compile human output is concise and --full retains the complete resul
   assert.equal(full.code, ExitCode.success);
   assert.deepEqual(JSON.parse(full.stdout), compileFixture);
 
-  const machine = await invokeCompile(["test", "compile", "grok-android", "settings-tour", "--json"]);
+  const machine = await invokeCompile([
+    "test",
+    "compile",
+    "grok-android",
+    "settings-tour",
+    "--json",
+  ]);
   assert.equal(machine.code, ExitCode.success);
   assert.deepEqual(JSON.parse(machine.stdout).result, compileFixture);
 });

@@ -21,6 +21,8 @@ import type {
   AuthoringRecordingEdit,
   AuthoringTarget,
   OperationInput,
+  TargetInputManualReview,
+  TargetInputReconciliationOutcome,
 } from "@relay/protocol";
 import type { AuthoringInputReceiptRef, AuthoringInputReceiptOutcome } from "@relay/workflows";
 import { reconcileOutcomeFromServerResponse } from "./recording-input-outcome";
@@ -142,10 +144,12 @@ export type RecordingProductService = {
     resolutionId?: string;
     outcome: "applied" | "not-applied" | "ambiguous";
     reconcilePending?: boolean;
+    clientUnknown?: boolean;
   }): Promise<{
     mutationId: string;
     resolutionId?: string;
-    outcome: "applied" | "not-applied" | "ambiguous";
+    outcome: TargetInputReconciliationOutcome;
+    review?: TargetInputManualReview;
     health?: {
       state: "ready" | "blocked" | "uncertain";
       pendingMutationId?: string;
@@ -160,7 +164,8 @@ export type RecordingProductService = {
   }): Promise<{
     mutationId: string;
     resolutionId?: string;
-    outcome: "applied" | "not-applied" | "ambiguous";
+    outcome: TargetInputReconciliationOutcome;
+    review?: TargetInputManualReview;
     health?: {
       state: "ready" | "blocked" | "uncertain";
       pendingMutationId?: string;
@@ -547,18 +552,20 @@ export function createRecordingProductService(
         ...(input.resolutionId ? { resolutionId: input.resolutionId } : {}),
         outcome: input.outcome,
         ...(input.reconcilePending ? { reconcilePending: true } : {}),
+        ...(input.clientUnknown ? { clientUnknown: true } : {}),
       });
       const pending = result.health?.input?.pendingMutationId;
       const state = result.health?.input?.state;
-      const returned = result.outcome as "applied" | "not-applied" | "ambiguous" | undefined;
+      const returned = result.outcome;
       const outcome = reconcileOutcomeFromServerResponse({
         ...(returned ? { returned } : {}),
         ...(state ? { healthState: state } : {}),
       });
       return {
-        mutationId: pending ?? input.mutationId,
+        mutationId: result.mutationId ?? pending ?? input.mutationId,
         ...(typeof result.resolutionId === "string" ? { resolutionId: result.resolutionId } : {}),
         outcome,
+        ...(result.review ? { review: result.review } : {}),
         ...(result.health?.input
           ? {
               health: {
@@ -583,6 +590,7 @@ export function createRecordingProductService(
         mutationId: receipt.mutationId,
         resolutionId: receipt.resolutionId,
         outcome: receipt.outcome,
+        ...(receipt.review ? { review: receipt.review } : {}),
         ...(receipt.health ? { health: receipt.health } : {}),
         ...(receipt.observation ? { observation: receipt.observation } : {}),
       };

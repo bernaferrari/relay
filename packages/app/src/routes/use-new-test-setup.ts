@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import type { ProductAppOption } from "../data/recording-product-service";
+import { useQuery } from "@tanstack/react-query";
+import type { ProductAppOption, RecordingProductService } from "../data/recording-product-service";
 import type { ProductBrowserSpace } from "../data/browser-spaces-product-service";
+import { recordingQueryKeys } from "../data/recording-queries";
 import { websiteHost } from "./new-test-quick-start";
 
 export function initialSetupMode(input: {
@@ -33,4 +35,31 @@ export function useNewTestSetup(
     if (address === undefined && savedAddress) setBrowserUrl(savedAddress);
   }, [address, savedAddress]);
   return { setupMode, setSetupMode, browserUrl: address ?? "", setBrowserUrl };
+}
+
+export function useNewTestTargets(input: {
+  service: RecordingProductService;
+  enabled: boolean;
+  targetKind?: "device" | "browser";
+  requestedTargetId?: string;
+  selectedTargetId?: string;
+}) {
+  const { service, targetKind, requestedTargetId, selectedTargetId } = input;
+  return useQuery({
+    queryKey: [...recordingQueryKeys.targets, targetKind, requestedTargetId],
+    enabled: input.enabled,
+    queryFn: async () => {
+      const state = await service.connect({
+        targetKind,
+        ...(requestedTargetId ? { targetId: requestedTargetId } : {}),
+      });
+      return { ...state, targetOptions: await service.presentTargets(state.targets) };
+    },
+    staleTime: 5_000,
+    refetchInterval: (query) =>
+      selectedTargetId &&
+      !query.state.data?.targetOptions.some((target) => target.targetId === selectedTargetId)
+        ? 5_000
+        : false,
+  });
 }

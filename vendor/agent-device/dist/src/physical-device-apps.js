@@ -1,0 +1,1 @@
+import{a as e,i as t,l as n}from"./devicectl.js";async function r(e,n){return await t(e,n)}async function i(e,t){await n(e,t)}async function a(t,n){return await e(t,n)}function o(e){return e.includes(`not installed`)||e.includes(`not found`)||e.includes(`no such file`)}export{i,r as n,a as r,o as t};

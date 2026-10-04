@@ -8,6 +8,18 @@ export type TargetSemanticHealthState =
   | "wedged"
   | "unavailable";
 export type TargetInputHealthState = "ready" | "uncertain" | "blocked";
+/** Explicit screen review of a client-only unknown. This is not a native
+ * dispatch receipt and cannot prove that input was never sent. */
+export type TargetInputManualReview = {
+  source: "operator-review";
+  observed: "applied" | "not-observed" | "uncertain";
+  actorId: string;
+};
+export type TargetInputReconciliationOutcome =
+  | "applied"
+  | "not-applied"
+  | "ambiguous"
+  | "acknowledged";
 export type TargetOverallHealthState =
   | "starting"
   | "ready"

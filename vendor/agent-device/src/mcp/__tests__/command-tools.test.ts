@@ -426,14 +426,10 @@ test('MCP clipboard outputSchema advertises action union branches', () => {
   const clipboard = tools.find((tool) => tool.name === 'clipboard');
   assert.ok(clipboard);
   assert.ok(clipboard.outputSchema);
-  const clipboardActions = (clipboard.outputSchema.oneOf ?? []).map(
-    (branch) => {
-      const action = branch.properties?.action as
-        | { const?: unknown; enum?: unknown[] }
-        | undefined;
-      return action?.const ?? action?.enum;
-    },
-  );
+  const clipboardActions = (clipboard.outputSchema.oneOf ?? []).map((branch) => {
+    const action = branch.properties?.action as { const?: unknown; enum?: unknown[] } | undefined;
+    return action?.const ?? action?.enum;
+  });
   assert.deepEqual(clipboardActions, ['read', 'write', ['paste', 'copy']]);
 });
 

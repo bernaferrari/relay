@@ -1,6 +1,6 @@
 import { b as DeviceInfo } from "./sdk-contracts.js";
-import { t as AppsFilter } from "./app-inventory.js";
-import { a as readAndroidClipboardWithAdb, c as AndroidAdbExecutor, d as AndroidAdbProvider, f as AndroidPortReverseEndpoint, i as getAndroidKeyboardStatusWithAdb, l as AndroidAdbExecutorOptions, n as AndroidKeyboardState, o as writeAndroidClipboardWithAdb, p as AndroidPortReverseProvider, r as dismissAndroidKeyboardWithAdb, t as AndroidKeyboardDismissResult, u as AndroidAdbExecutorResult } from "./device-input-state.js";
+import { s as AppsFilter } from "./gesture-plan-types.js";
+import { a as readAndroidClipboardWithAdb, c as AndroidAdbExecutor, d as AndroidAdbProvider, f as AndroidPortReverseEndpoint, i as getAndroidKeyboardStatusWithAdb, l as AndroidAdbExecutorOptions, m as AppStateRuntimeResult, n as AndroidKeyboardState, o as writeAndroidClipboardWithAdb, p as AndroidPortReverseProvider, r as dismissAndroidKeyboardWithAdb, t as AndroidKeyboardDismissResult, u as AndroidAdbExecutorResult } from "./device-input-state.js";
 //#region packages/platform-android/src/adb-port-reverse.d.ts
 declare function createAndroidPortReverseManager(provider: AndroidAdbProvider | AndroidAdbExecutor): AndroidPortReverseProvider;
 //#endregion
@@ -57,13 +57,6 @@ type AndroidOpenAppWithAdbOptions = {
 };
 declare function forceStopAndroidAppWithAdb(adb: AndroidAdbExecutor, packageName: string): Promise<void>;
 declare function openAndroidAppWithAdb(adb: AndroidAdbExecutor, packageName: string, options?: AndroidOpenAppWithAdbOptions): Promise<void>;
-//#endregion
-//#region packages/contracts/src/app-state-runtime.d.ts
-/** Neutral foreground identity returned by a selected platform/provider runtime. */
-type AppStateRuntimeResult = Readonly<{
-  package?: string;
-  activity?: string;
-}>;
 //#endregion
 //#region packages/platform-android/src/mechanics.d.ts
 declare function listAndroidAppsWithAdb(...args: Parameters<typeof listAndroidAppsWithAdb$1>): Promise<Awaited<ReturnType<typeof listAndroidAppsWithAdb$1>>>;

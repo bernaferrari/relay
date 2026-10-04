@@ -64,7 +64,15 @@ test("global configuration uses CLI over environment over defaults", () => {
 
 test("test compile accepts --full as an output choice without changing the request", () => {
   const parsed = parseCli(
-    ["test", "compile", "grok-android", "settings", "--full", "--input", '{"targetProfileId":"android"}'],
+    [
+      "test",
+      "compile",
+      "grok-android",
+      "settings",
+      "--full",
+      "--input",
+      '{"targetProfileId":"android"}',
+    ],
     {},
   );
   assert.equal(parsed.command, "invoke");

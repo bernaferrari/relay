@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import type { TargetInputManualReview, TargetInputReconciliationOutcome } from "@relay/protocol";
 
 /** Durable reconcile receipts. A lost HTTP response can retrieve the same
  * observed effect without resending input. */
@@ -11,7 +12,8 @@ export type DurableReconcileReceipt = {
   resolutionId: string;
   mutationId: string;
   serial: string;
-  outcome: "applied" | "not-applied" | "ambiguous";
+  outcome: TargetInputReconciliationOutcome;
+  review?: TargetInputManualReview;
   observationId?: string;
   health?: {
     state: "ready" | "blocked" | "uncertain";

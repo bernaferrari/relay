@@ -126,3 +126,12 @@ test("target.input.reconcile requires explicit review and an exclusive target", 
     /outcome/u,
   );
 });
+
+test("acknowledged client-only receipts require explicit operator provenance", () => {
+  const definition = operationDefinition("target.input.receipt.get");
+  const receipt = { resolutionId: "review-1", mutationId: "recording-mutation-old", outcome: "acknowledged", reviewedAt: 12, review: { source: "operator-review", observed: "not-observed", actorId: "agent:reviewer" } };
+  assert.deepEqual(definition.output.parse({ receipt }), { receipt });
+  assert.throws(() => definition.output.parse({ receipt: { ...receipt, review: undefined } }));
+  assert.throws(() => definition.output.parse({ receipt: { ...receipt, review: { ...receipt.review, observed: "uncertain" } } }));
+  assert.deepEqual(operationDefinition("target.input.reconcile").input.parse({ serial: "pixel-1", mutationId: "recording-mutation-old", outcome: "not-applied", clientUnknown: true }), { serial: "pixel-1", mutationId: "recording-mutation-old", outcome: "not-applied", clientUnknown: true });
+});
