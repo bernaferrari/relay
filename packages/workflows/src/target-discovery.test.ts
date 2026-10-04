@@ -85,7 +85,14 @@ for (const [facade, createJobs] of [
     const jobs = createJobs(client, { actorId: "agent:test" });
     await assert.rejects(
       settlesBeforeUnrelatedInventory(jobs.connect({ kind: "connect-target", ...scope })),
-      /Target missing-phone is not a connected/u,
+      (error: unknown) => {
+        assert.ok(error instanceof TypeError);
+        assert.match(error.message, /Target missing-phone is not a connected/u);
+        assert.match(error.message, /Reconnect the selected device/u);
+        assert.match(error.message, /after it is ready/u);
+        assert.match(error.message, /same targetId, targetKind, and phase/u);
+        return true;
+      },
     );
     assert.deepEqual(calls, [
       { id: "target.devices.list", input: scope },

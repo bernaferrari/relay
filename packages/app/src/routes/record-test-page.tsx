@@ -225,7 +225,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
 
   function saveCheckpoint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (action.isPending || !allowed.has("checkpoint")) return;
+    if (liveToolsDisabled || !allowed.has("checkpoint")) return;
     action.mutate({
       action: "checkpoint",
       ...(checkpointLabel.trim() ? { label: checkpointLabel.trim() } : {}),
@@ -255,6 +255,8 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     createLiveTarget: productService.liveTarget,
     inspectAccessibility: talkBack.on,
   });
+  const liveToolsDisabled =
+    liveStatus !== "streaming" || action.isPending || liveInputBusy || recoveryKind === "unknown";
   // Browser inspection belongs to the exact frame/page/sequence on screen;
   // a separate SDK snapshot reports content extents, not the video viewport.
   const inspection =
@@ -528,6 +530,12 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
         failed={snapshot?.stage === "failed"}
         pending={action.isPending}
         stopping={stopWaitingForInput}
+        onLeave={() =>
+          void navigate({
+            to: "/tests",
+            search: snapshot?.frozen?.appMapId ? { app: snapshot.frozen.appMapId } : {},
+          })
+        }
         onCancel={() => {
           setExitOpen(false);
           action.mutate({ action: "cancel" });
@@ -628,6 +636,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                           <TalkBackModeSelect
                             mode={talkBack.mode}
                             loading={talkBack.loading}
+                            disabled={liveToolsDisabled}
                             onModeChange={(mode) => talkBack.setMode(mode)}
                           />
                           {selectedTarget.kind === "device" && productService.captureFullPage ? (
@@ -635,7 +644,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                               variant="ghost"
                               size="sm"
                               title="Capture the scrollable page and return to this position"
-                              disabled={!allowed.has("record") || action.isPending || liveInputBusy}
+                              disabled={!allowed.has("record") || liveToolsDisabled}
                               onClick={() => action.mutate({ action: "full-page" })}
                             >
                               <ScanLine className="size-4" aria-hidden="true" />
@@ -648,12 +657,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                             <RecordingConditionDialog
                               open={conditionOpen}
                               onOpenChange={setConditionOpen}
-                              disabled={
-                                !allowed.has("checkpoint") ||
-                                action.isPending ||
-                                liveInputBusy ||
-                                recoveryKind === "unknown"
-                              }
+                              disabled={!allowed.has("checkpoint") || liveToolsDisabled}
                               pending={action.isPending && action.variables?.action === "condition"}
                               error={
                                 action.isError && action.variables?.action === "condition"
@@ -672,12 +676,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                           <RecordingScreenCapture
                             open={checkpointOpen}
                             onOpenChange={setCheckpointOpen}
-                            disabled={
-                              !allowed.has("checkpoint") ||
-                              action.isPending ||
-                              liveInputBusy ||
-                              recoveryKind === "unknown"
-                            }
+                            disabled={!allowed.has("checkpoint") || liveToolsDisabled}
                             pending={action.isPending}
                             label={checkpointLabel}
                             onLabelChange={setCheckpointLabel}

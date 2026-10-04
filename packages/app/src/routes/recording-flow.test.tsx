@@ -641,6 +641,106 @@ describe("record, review, replay, and save", () => {
     expect(history.location.pathname).toBe("/recordings/workflow-1");
     expect(fake.calls.some((call) => /^(begin|input|record|stop)/u.test(call))).toBe(false);
   });
+  it("disables live recording tools until the disconnected stream returns", async () => {
+    const fake = fakeService();
+    fake.service.captureFullPage = vi.fn(async () => state("recording", []));
+    fake.service.recordCondition = vi.fn(async () => state("recording", []));
+    const originalLiveTarget = fake.service.liveTarget!;
+    let publish!: Parameters<LiveTargetSession["subscribe"]>[0];
+    fake.service.liveTarget = async (selected) => {
+      const session = await originalLiveTarget(selected);
+      return {
+        ...session,
+        subscribe(listener) {
+          publish = listener;
+          return session.subscribe(listener);
+        },
+      };
+    };
+    const { history } = await renderJourney(
+      "/recordings/workflow-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    const tools = ["Full page", "Wait or check", "Save screenshot", "Inspect elements"];
+    for (const label of tools) expect(button(label).disabled).toBe(false);
+
+    for (const status of ["offline", "degraded", "connecting"] as const) {
+      await act(async () => publish({ status, target }));
+      for (const label of tools) expect(button(label).disabled).toBe(true);
+      expect(button("Android Back").disabled).toBe(true);
+      expect(button("Stop and review").disabled).toBe(false);
+      expect(history.location.pathname).toBe("/recordings/workflow-1");
+    }
+    await act(async () => publish({ status: "streaming", target, frameSequence: 2 }));
+    for (const label of tools) expect(button(label).disabled).toBe(false);
+    expect(fake.service.captureFullPage).not.toHaveBeenCalled();
+    expect(fake.service.recordCondition).not.toHaveBeenCalled();
+    expect(fake.calls.some((call) => /^(begin|input|record|stop|checkpoint)/u.test(call))).toBe(
+      false,
+    );
+  });
+  it("keeps capture admission closed when the preview streams without allowed capture actions", async () => {
+    const fake = fakeService(state("recording", ["inspect", "stop"]));
+    fake.service.captureFullPage = vi.fn(async () => state("recording", []));
+    fake.service.recordCondition = vi.fn(async () => state("recording", []));
+    await renderJourney("/recordings/workflow-1", fake.service, platformWithStorage().platform);
+    for (const label of ["Full page", "Wait or check", "Save screenshot"])
+      expect(button(label).disabled).toBe(true);
+    expect(button("Android Back").disabled).toBe(true);
+    expect(button("Stop and review").disabled).toBe(false);
+    expect(fake.service.captureFullPage).not.toHaveBeenCalled();
+    expect(fake.service.recordCondition).not.toHaveBeenCalled();
+  });
+  it.each(["condition", "screenshot"] as const)(
+    "retains an open %s draft and blocks submission after a disconnect",
+    async (kind) => {
+      const fake = fakeService();
+      fake.service.recordCondition = vi.fn(async () => state("recording", []));
+      const originalLiveTarget = fake.service.liveTarget!;
+      let publish!: Parameters<LiveTargetSession["subscribe"]>[0];
+      fake.service.liveTarget = async (selected) => {
+        const session = await originalLiveTarget(selected);
+        return {
+          ...session,
+          subscribe(listener) {
+            publish = listener;
+            return session.subscribe(listener);
+          },
+        };
+      };
+      await renderJourney("/recordings/workflow-1", fake.service, platformWithStorage().platform);
+      await click(button(kind === "condition" ? "Wait or check" : "Save screenshot"));
+      const input = document.querySelector<HTMLInputElement>(
+        kind === "condition" ? "#condition-text" : "#checkpoint-label",
+      )!;
+      await fill(input, "Order confirmation");
+      await act(async () => publish({ status: "offline", target }));
+      const dialog = document.querySelector('[role="dialog"]')!;
+      const submit = dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      expect(submit.disabled).toBe(true);
+      expect(input.value).toBe("Order confirmation");
+      await act(async () => {
+        dialog
+          .querySelector("form")!
+          .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+      expect(fake.service.recordCondition).not.toHaveBeenCalled();
+      expect(fake.calls.some((call) => call.startsWith("checkpoint"))).toBe(false);
+
+      await act(async () => publish({ status: "streaming", target, frameSequence: 2 }));
+      expect(submit.disabled).toBe(false);
+      expect(input.value).toBe("Order confirmation");
+      await act(async () => publish({ status: "offline", target }));
+      const cancel = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
+        (item) => item.textContent?.trim() === "Cancel",
+      )!;
+      expect(cancel.disabled).toBe(false);
+      await click(cancel);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(button("Stop and review").disabled).toBe(false);
+    },
+  );
   it("isolates naming and edit mode when navigating between recordings", async () => {
     const fake = fakeService(state("reviewing", ["inspect", "edit", "replay"]));
     const storage = platformWithStorage({ "recordingName:workflow-2": "Second recording" });
@@ -2483,18 +2583,60 @@ describe("record, review, replay, and save", () => {
     expect(fake.calls).not.toContain("approve");
   });
 
+  it("leaves an interrupted recording for scoped Tests without retrying Stop or cancelling its draft", async () => {
+    const interrupted: ProductRecordingState = {
+      ...state("recording", ["inspect"]),
+      status: "needs-attention",
+      recovery: {
+        code: "mutation-outcome-unknown",
+        title: "Relay could not confirm that authoring-stop finished",
+        detail: "Pending authoring-stop receipt",
+        recovery: "Inspect the saved workflow without repeating the request.",
+        retryable: false,
+      },
+    };
+    interrupted.snapshot!.phase = "needs-attention";
+    const fake = fakeService(interrupted);
+    fake.service.cancel = vi.fn(async () => state("cancelled", []));
+    fake.service.stop = vi.fn(fake.service.stop);
+    const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
+    const { history } = await renderJourney(
+      "/recordings/workflow-1",
+      fake.service,
+      storage.platform,
+    );
+    expect(document.body.textContent).toContain("Recording interrupted");
+    expect(button("Stop and review").disabled).toBe(true);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(
+      [...document.querySelectorAll("button")].some(
+        (item) => item.textContent?.trim() === "Cancel",
+      ),
+    ).toBe(false);
+    await click(button("Back to Tests"));
+    expect(history.location.pathname).toBe("/tests");
+    expect(new URLSearchParams(history.location.search).get("app")).toBe("app-1");
+    expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
+    expect(fake.service.cancel).not.toHaveBeenCalled();
+    expect(fake.service.stop).not.toHaveBeenCalled();
+  });
+
   it("Cancel recording returns to the recording's App", async () => {
     let current = state("recording", ["inspect", "record", "stop"]);
     const fake = fakeService(current);
     fake.service.inspect = async () => current;
-    fake.service.cancel = async () => (current = state("cancelled", []));
+    fake.service.cancel = vi.fn(async () => (current = state("cancelled", [])));
     const { history } = await renderJourney(
       "/recordings/workflow-1",
       fake.service,
       platformWithStorage().platform,
     );
     await click(button("Cancel"));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Cancel recording?");
+    expect(fake.service.cancel).not.toHaveBeenCalled();
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
     await click(button("Cancel recording"));
+    expect(fake.service.cancel).toHaveBeenCalledOnce();
     expect(history.location.pathname).toBe("/tests");
     expect(new URLSearchParams(history.location.search).get("app")).toBe("app-1");
   });

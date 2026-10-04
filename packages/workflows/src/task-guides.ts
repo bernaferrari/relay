@@ -70,15 +70,24 @@ these are selector examples, not a prebuilt Test or known screen identity.
 4. Stop, then inspect the full session and its Before/After evidence. Continue
    when state: reviewing and the recorded actions/checks show the intended
    journey. An unchanged recording that reached its observed destination may
-   be committed directly. After edits, return to the source screen and run
-   relay session replay <session-id> --json; that exact revision must pass.
+   be committed directly. After edits, return to the source screen and replay
+   that exact revision before saving:
+
+   \`\`\`bash
+   relay session replay <session-id> --json
+   relay session get <session-id> --json
+   \`\`\`
+
+   Inspect the replay result in the session. Commit only when the replay passed;
+   if it failed or is incomplete, fix the recording and replay the new revision.
    Commit with createTest: true to save a reusable Test. Successful save returns
    state: committed, session.committedTestId and session.committedConnectionId.
 5. Confirm that Test ID in test list and inspect its saved connection. Return
-   the same device to Home, then run the exact saved Test. Inspect the returned
-   workflow ID until it has completed or reports a concrete blocker. Keep its
-   Run ID and open/export the captured evidence. Run the same command again
-   from Home when a second repeat is requested. Saving alone proves no repeat.
+   the same device to Home, then run the exact saved Test. The result includes
+   \`workflow.workflowId\` and \`execution.runId\`: inspect with the workflow ID
+   until it has completed or reports a concrete blocker, and export with the
+   Run ID. Run the same command again from Home when a second repeat is
+   requested. Saving alone proves no repeat.
 
 Commands below are the CLI sequence for an unchanged recording. Read each
 result before continuing; IDs come from Relay, and selectors come from the
@@ -97,13 +106,26 @@ interaction objects shown in session interact --input below. Use relay_preview
 with serial and the observed label to preview a selector; relay_add_checkpoint
 names a screenshot.
 
-Call relay_stop_recording, inspect through relay_inspect_workflow, and save
-with relay_approve_recording plus transport confirm: true only when approve is
-in allowedNextActions. Edited revisions require relay_replay_recording first.
+Call relay_stop_recording and inspect through relay_inspect_workflow. For an
+edited revision, replay only when \`replay\` is in \`allowedNextActions\`, using the
+latest workflow version returned by the preceding mutation. For example:
+
+\`\`\`json
+{"workflowId":"recording-workflow-id","expectedVersion":3}
+\`\`\`
+
+Call relay_replay_recording with that payload, replacing the workflow ID and
+numeric version with the latest values from Relay. Then call
+relay_inspect_workflow with \`{"workflowId":"recording-workflow-id"}\` to inspect
+the replay result. Call relay_approve_recording with transport confirm: true
+only after the replay passed and \`approve\` is in \`allowedNextActions\`. For an
+unchanged recording, follow the allowed next action without an extra replay.
 Read the saved Test resource returned by relay_panel for the App, run it with
-relay_run_test, and inspect its workflow. Follow the evidence references and
-use relay_export_evidence for handoff. Human review of an image remains a human
-decision. An uncertain mutation outcome requires inspection before more input.`,
+relay_run_test, and inspect its workflow. In the result, pass
+\`workflow.workflowId\` to relay_inspect_workflow and \`execution.runId\` to
+relay_export_evidence. These IDs serve different calls. Follow the evidence
+references for handoff. Human review of an image remains a human decision. An
+uncertain mutation outcome requires inspection before more input.`,
     examples: [
       ["connect", "<serial>", "--json"],
       ["device", "snapshot", "<serial>", "--json", "--full"],
