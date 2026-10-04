@@ -11,6 +11,7 @@ import {
   type SourceRevision,
   type TracePack,
   browserAuthenticationFixtureReferenceSchema,
+  operationDefinition,
 } from "@relay/protocol";
 import type { RelayOutcomeJobs, WorkflowRef } from "@relay/workflows";
 import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
@@ -46,7 +47,11 @@ const legacyWorkflowRef = z
   .min(1)
   .max(96 * 1024)
   .startsWith("relay-workflow.v1.");
-const targetId = identifier.optional().describe("Only needed when more than one device is ready");
+const targetId = identifier
+  .optional()
+  .describe("Selected target id; keep it through observation, recording, and replay");
+const targetKind = z.enum(["device", "browser"]).optional();
+const phase = z.enum(["android", "ios"]).optional();
 const workflowDecision = {
   workflowId: identifier,
   expectedVersion: z.number().int().positive(),
@@ -355,70 +360,23 @@ function assertRawOutcomeInputBounds(name: string, value: Record<string, unknown
     assertRawTracePackPayloads(record.tracePacks, VERIFY_CHANGE_MAX_TRACE_PACKS);
   }
 }
-const semanticTarget = z
-  .object({
-    identifier: identifier.optional(),
-    label: identifier.optional(),
-    text: identifier.optional(),
-    role: identifier.optional(),
-    point: z.object({ x: z.number(), y: z.number() }).strict().optional(),
-  })
-  .strict();
-const recordedInteraction = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("tap"), target: semanticTarget }).strict(),
-  z
-    .object({
-      kind: z.literal("type"),
-      text: z.string(),
-      target: semanticTarget.optional(),
-      mode: z.enum(["append", "replace"]).optional(),
-    })
-    .strict(),
-  z.object({ kind: z.literal("key"), key: z.enum(["back", "home"]) }).strict(),
-  z
-    .object({
-      kind: z.literal("swipe"),
-      from: z.object({ x: z.number(), y: z.number() }).strict(),
-      to: z.object({ x: z.number(), y: z.number() }).strict(),
-      durationMs: z.number().min(50).max(5_000).optional(),
-    })
-    .strict(),
-  z.object({ kind: z.literal("wait"), ms: z.number().int().nonnegative() }).strict(),
-]);
-
-const recordingEdit = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("remove"), actionIds: z.array(identifier).min(1) }).strict(),
-  z.object({ kind: z.literal("reorder"), actionIds: z.array(identifier).min(1) }).strict(),
-  z
-    .object({ kind: z.literal("replace"), actionId: identifier, interaction: recordedInteraction })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("merge"),
-      actionIds: z.array(identifier).min(2),
-      intent: z.string().trim().min(1).max(240).optional(),
-    })
-    .strict(),
-  z
-    .object({ kind: z.literal("split"), actionId: identifier, atStep: z.number().int().min(1) })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("rename"),
-      actionId: identifier,
-      intent: z.string().trim().min(1).max(240),
-    })
-    .strict(),
-]);
+// Recording uses the same interaction and edit contracts as CLI, HTTP, and
+// Product. This includes executable expect/wait-for steps and insertion edits.
+const recordedInteraction = operationDefinition("authoring.session.interact").input.presentation
+  .shape.interaction;
+const recordingEdit = operationDefinition("authoring.take.edit").input.presentation.shape.edit;
+if (!recordedInteraction || !recordingEdit) {
+  throw new Error("Canonical authoring interaction and edit schemas are required.");
+}
 
 export const relayOutcomeTools = Object.freeze([
   {
     name: "relay_connect_target",
-    title: "Connect to a Device",
+    title: "Connect to a target",
     description:
-      "Discover ready local Devices and select the sole Device automatically. Supply targetId only when several Devices are ready.",
+      "Discover ready local Devices or managed Browsers and select the sole ready target. Set targetKind and phase to limit mobile discovery. Keep the returned targetId through observation, recording, and replay; choose an exact targetId when several are ready.",
     requiresConfirmation: false,
-    inputSchema: z.object({ targetId }).strict(),
+    inputSchema: z.object({ targetId, targetKind, phase }).strict(),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -428,7 +386,7 @@ export const relayOutcomeTools = Object.freeze([
   },
   {
     name: "relay_observe_target",
-    title: "Observe a Device",
+    title: "Observe a target",
     description:
       "Capture one bounded pixel and semantic observation without taking control. Pixels remain available when accessibility is stale or unavailable.",
     requiresConfirmation: false,
@@ -458,10 +416,16 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_record_test",
     title: "Record a Test",
     description:
-      "Start a control-and-record session in the current Test workspace on the sole ready Device. Interactions are sent through Relay. Relay may reserve available control but never displaces another person or agent.",
+      "Start a control-and-record session in the current Test workspace on the selected ready target. Set originApplication to the native package/bundle the saved Test must reopen. Interactions and explicit checks are sent through Relay. Relay may reserve available control but never displaces another person or agent.",
     requiresConfirmation: true,
     inputSchema: z
-      .object({ appMapId: identifier.optional(), title: identifier, targetId })
+      .object({
+        appMapId: identifier.optional(),
+        title: identifier,
+        targetId,
+        targetKind,
+        originApplication: identifier.optional(),
+      })
       .strict(),
     annotations: {
       readOnlyHint: false,
@@ -474,7 +438,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_run_test",
     title: "Run a Test",
     description:
-      "Compile and run one saved Test on the sole ready Device. Safe Tests need no confirmation. If preflight reports execution risk, review it and repeat the call with transport confirm: true. Returns a server-owned workflow ID, exact version, and immutable Run evidence references.",
+      "Compile and run one saved Test on the selected ready target. Pass the targetId returned by relay_connect_target. Safe Tests need no confirmation. If preflight reports execution risk, review it and repeat the call with transport confirm: true. Returns a server-owned workflow ID, exact version, and immutable Run evidence references.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
@@ -494,7 +458,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_record_action",
     title: "Record one action",
     description:
-      "Append one typed tap, type, key, swipe, or wait using its durable workflow id and optimistic version.",
+      'Append one canonical interaction using its durable workflow id and optimistic version. Use interaction:{kind:"steps",steps:[{kind:"wait-for",target:{label:"Done"},timeoutMs:10000}]} or an expect condition to check the goal outcome; a checkpoint captures evidence without an authored condition.',
     requiresConfirmation: false,
     inputSchema: z.object({ ...workflowDecision, interaction: recordedInteraction }).strict(),
     annotations: {
@@ -507,7 +471,8 @@ export const relayOutcomeTools = Object.freeze([
   {
     name: "relay_add_checkpoint",
     title: "Add a recording checkpoint",
-    description: "Capture an immutable named checkpoint in the active recording.",
+    description:
+      "Capture an immutable named checkpoint in the active recording. Use relay_record_action with expect/wait-for steps for an executable outcome check.",
     requiresConfirmation: false,
     inputSchema: z.object({ ...workflowDecision, label: identifier.optional() }).strict(),
     annotations: {
@@ -534,7 +499,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_edit_recording",
     title: "Edit a recording",
     description:
-      "Transform the reviewed recording with one typed remove, reorder, replace, merge, split, or rename command. Every successful edit creates a new revision that must replay before approval.",
+      "Transform the reviewed recording with one canonical edit, including insert-before for an explicit outcome check. Every successful edit creates a new revision that must replay before approval.",
     requiresConfirmation: false,
     inputSchema: z.object({ ...workflowDecision, edit: recordingEdit }).strict(),
     annotations: {

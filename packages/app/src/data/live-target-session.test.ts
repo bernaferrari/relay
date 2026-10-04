@@ -357,6 +357,70 @@ it("sends a complete normalized Android tap from the non-recording canvas", asyn
   live.close();
 });
 
+it.each([
+  ["first down", 0, "not-dispatched"],
+  ["up after an applied down", 1, "unknown"],
+] as const)(
+  "keeps a rejected Android %s outcome precise",
+  async (_label, successfulCalls, kind) => {
+    const failure = new ApiError(409, "Live device control is not ready", {
+      code: "ANDROID_LIVE_INPUT_NOT_DISPATCHED",
+      dispatched: false,
+    });
+    const invoke = vi.fn();
+    if (successfulCalls) invoke.mockResolvedValueOnce({ ok: true });
+    invoke.mockRejectedValueOnce(failure);
+    const live = createLiveTargetSession({
+      client: {
+        connection: { url: "http://relay.test" },
+        invoke,
+        openStream: () => new Promise(() => {}),
+        binaryResource: vi.fn(),
+      } as never,
+      target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+    });
+    live.mount({ width: 488, height: 1080 } as HTMLCanvasElement);
+    const refresh = vi.fn();
+    const outcome = await dispatchRecordingInput({
+      send: () => live.input({ kind: "touch", action: "up", x: 244, y: 540 }),
+      refresh,
+    });
+    expect(outcome.kind).toBe(kind);
+    expect(invoke).toHaveBeenCalledTimes(successfulCalls + 1);
+    expect(refresh).not.toHaveBeenCalled();
+    if (kind === "not-dispatched") {
+      expect(live.snapshot().status).toBe("degraded");
+      expect(live.snapshot().issue).toContain("Reconnect");
+    }
+    live.close();
+  },
+);
+
+it.each([
+  new ApiError(409, "Live device control is not ready"),
+  new ApiError(409, "Live device control is reconnecting"),
+  new TypeError("Failed to fetch"),
+])("retains unknown Android input without a typed no-dispatch receipt", async (failure) => {
+  const invoke = vi.fn().mockRejectedValueOnce(failure);
+  const live = createLiveTargetSession({
+    client: {
+      connection: { url: "http://relay.test" },
+      invoke,
+      openStream: () => new Promise(() => {}),
+      binaryResource: vi.fn(),
+    } as never,
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+  });
+  live.mount({ width: 488, height: 1080 } as HTMLCanvasElement);
+  const outcome = await dispatchRecordingInput({
+    send: () => live.input({ kind: "touch", action: "up", x: 244, y: 540 }),
+    refresh: vi.fn(),
+  });
+  expect(outcome.kind).toBe("unknown");
+  expect(invoke).toHaveBeenCalledTimes(1);
+  live.close();
+});
+
 it("uses pixel dimensions without accessibility and refuses input if both are unavailable", async () => {
   const onInteraction = vi.fn();
   let pixelsAvailable = true;

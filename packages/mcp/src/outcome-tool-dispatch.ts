@@ -75,6 +75,10 @@ export async function dispatchRelayOutcomeTool(
     return jobs.connect({
       kind: "connect-target",
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+      ...(parsed.targetKind === "device" || parsed.targetKind === "browser"
+        ? { targetKind: parsed.targetKind }
+        : {}),
+      ...(parsed.phase === "android" || parsed.phase === "ios" ? { phase: parsed.phase } : {}),
     });
   }
   if (input.name === "relay_observe_target") {
@@ -159,6 +163,12 @@ export async function dispatchRelayOutcomeTool(
       title: parsed.title as string,
       confirmControl: true,
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+      ...(parsed.targetKind === "device" || parsed.targetKind === "browser"
+        ? { targetKind: parsed.targetKind }
+        : {}),
+      ...(typeof parsed.originApplication === "string"
+        ? { originApplication: parsed.originApplication }
+        : {}),
     });
   }
   if (input.name === "relay_run_test") {

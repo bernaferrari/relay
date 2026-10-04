@@ -100,7 +100,7 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
           ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, debug, repair, and export evidence."
           : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
     profile === "outcome" || profile === "qa"
-      ? "Omit appMapId and targetId when exactly one Test workspace and one ready Device exist."
+      ? "Omit appMapId when exactly one Test workspace exists. Use relay_connect_target to choose the intended target, limit mobile discovery with targetKind and phase, and keep its returned targetId through observation, recording, and replay."
       : "Supply the required fields in each tool schema. Keep the same saved Lane or explicit target throughout observation and execution.",
     "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
     "Repeat runs one representative case first and requires explicit confirmation before remaining values.",

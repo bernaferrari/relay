@@ -91,6 +91,17 @@ type ActiveAndroidControl = {
 
 const activeControls = new Map<string, ActiveAndroidControl>();
 
+export const ANDROID_LIVE_INPUT_NOT_DISPATCHED = "ANDROID_LIVE_INPUT_NOT_DISPATCHED";
+
+/** This proof covers only this request: an earlier gesture event may have
+ * reached the device. Channel write failures cannot provide this proof. */
+function liveControlUnavailable(): HttpError {
+  return new HttpError(409, "Live device control is not ready", {
+    code: ANDROID_LIVE_INPUT_NOT_DISPATCHED,
+    dispatched: false,
+  });
+}
+
 const TOUCH_ACTIONS = {
   down: AndroidMotionEventAction.Down,
   move: AndroidMotionEventAction.Move,
@@ -102,7 +113,7 @@ const TOUCH_ACTIONS = {
 export async function injectAndroidKey(serial: string, input: AndroidKeyboardInput): Promise<void> {
   const active = activeControls.get(serial);
   if (!active) {
-    throw new HttpError(409, "Live device control is not ready");
+    throw liveControlUnavailable();
   }
   if (input.kind === "text") {
     if (input.text) {
@@ -132,7 +143,7 @@ export async function injectAndroidTouch(
 ): Promise<void> {
   const active = activeControls.get(serial);
   if (!active) {
-    throw new HttpError(409, "Live device control is not ready");
+    throw liveControlUnavailable();
   }
   const releasing = action === "up" || action === "cancel";
   await active.channel.write((controller) =>
@@ -160,7 +171,7 @@ export async function injectAndroidScroll(
 ): Promise<void> {
   const active = activeControls.get(serial);
   if (!active) {
-    throw new HttpError(409, "Live device control is not ready");
+    throw liveControlUnavailable();
   }
   await active.channel.write((controller) =>
     controller.injectScroll({

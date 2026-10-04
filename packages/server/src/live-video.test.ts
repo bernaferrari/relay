@@ -4,7 +4,11 @@ import {
   AndroidControlChannel,
   AndroidVideoStreamRegistry,
   encodeRelayVideoPacket,
+  injectAndroidTouch,
+  injectAndroidKey,
+  injectAndroidScroll,
 } from "./live-video.js";
+import { HttpError } from "./http.js";
 
 test("live video registry replaces stale producers without releasing the replacement", () => {
   const registry = new AndroidVideoStreamRegistry();
@@ -67,4 +71,45 @@ test("control retirement waits for an in-flight write and rejects later writes",
     channel.write((control) => control.injectText("late")),
     /reconnecting/i,
   );
+});
+
+test("an absent live control proves the individual request was not dispatched", async () => {
+  const serial = "no-live-controller";
+  for (const send of [
+    () => injectAndroidTouch(serial, "down", 0.5, 0.5),
+    () => injectAndroidKey(serial, { kind: "key", key: "enter" }),
+    () => injectAndroidScroll(serial, 0.5, 0.5, 0, 1),
+  ]) {
+    await assert.rejects(
+      send(),
+      (error: unknown) =>
+        error instanceof HttpError &&
+        error.status === 409 &&
+        error.body?.code === "ANDROID_LIVE_INPUT_NOT_DISPATCHED" &&
+        error.body?.dispatched === false,
+    );
+  }
+});
+
+test("a failed control write never claims the input was not dispatched", async () => {
+  let writes = 0;
+  const channel = new AndroidControlChannel({
+    injectKeyCode: async () => undefined,
+    injectText: async () => undefined,
+    injectScroll: async () => undefined,
+    injectTouch: async () => {
+      writes += 1;
+      throw new Error("socket lost after write");
+    },
+  });
+  await assert.rejects(
+    channel.write((control) =>
+      control.injectTouch({} as Parameters<typeof control.injectTouch>[0]),
+    ),
+    (error: unknown) =>
+      error instanceof HttpError &&
+      error.status === 409 &&
+      error.body?.code !== "ANDROID_LIVE_INPUT_NOT_DISPATCHED",
+  );
+  assert.equal(writes, 1);
 });

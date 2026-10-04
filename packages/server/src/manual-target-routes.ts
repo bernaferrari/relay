@@ -24,6 +24,7 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { assertAndroidLiveInputPlatform } from "./live-input-platform.js";
 import {
+  ANDROID_LIVE_INPUT_NOT_DISPATCHED,
   injectAndroidKey,
   injectAndroidScroll,
   injectAndroidTouch,
@@ -357,7 +358,11 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
       // falling back to the shared semantic device adapter.
       await injectAndroidKey(serial, input);
     } catch (error) {
-      if (!(error instanceof HttpError) || !/control is not ready/i.test(error.message)) {
+      if (
+        !(error instanceof HttpError) ||
+        error.body?.code !== ANDROID_LIVE_INPUT_NOT_DISPATCHED ||
+        error.body?.dispatched !== false
+      ) {
         throw error;
       }
       await interact(

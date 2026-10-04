@@ -51,6 +51,7 @@ export type ParsedCli =
       surveyForce?: boolean;
       currentTarget?: boolean;
       currentRevision?: boolean;
+      full?: boolean;
       findings?: boolean;
       triage?: "jev";
       outDir?: string;
@@ -207,8 +208,12 @@ function applySnapshotPresentation(
 ): Record<string, unknown> {
   const wantsFull = tokens.switches.has("--full");
   const wantsFile = tokens.values.has("--file");
-  if (wantsFull && operationId !== "target.snapshot.capture") {
-    throw new UsageError("--full is only valid on snapshot commands");
+  if (
+    wantsFull &&
+    operationId !== "target.snapshot.capture" &&
+    operationId !== "app-map.test.compile"
+  ) {
+    throw new UsageError("--full is only valid on snapshot and test compile commands");
   }
   if (operationId !== "target.snapshot.capture") return input;
   // The CLI is what an agent types first: machine output keeps the raw tree
@@ -762,6 +767,9 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     ),
     ...(resolved.operationId === "target.interact" && preview
       ? { behavior: "screenshot" as const }
+      : {}),
+    ...(resolved.operationId === "app-map.test.compile" && tokens.switches.has("--full")
+      ? { full: true }
       : {}),
     ...(surveyDirForce(resolved.operationId, tokens) ? { surveyForce: true } : {}),
     ...(targetShortcut === "current" ? { currentTarget: true } : {}),

@@ -2468,12 +2468,17 @@ function pngSignatureBase64(): string {
 }
 
 test("profile instructions distinguish saved Test execution from manual exploration", () => {
-  for (const profile of ["operator", "outcome", "full"] as const) {
+  for (const profile of ["operator", "outcome", "qa", "full"] as const) {
     const instructions = relayMcpInstructionsForProfile(profile);
     assert.match(instructions, /For a requested saved Test, run it directly/);
     assert.doesNotMatch(instructions, /Do not start with test run/);
-    if (profile === "outcome") assert.match(instructions, /Omit appMapId and targetId/);
-    else assert.doesNotMatch(instructions, /Omit.*appMapId/);
+    if (profile === "outcome" || profile === "qa") {
+      assert.match(instructions, /Omit appMapId when exactly one Test workspace exists/);
+      assert.match(
+        instructions,
+        /keep its returned targetId through observation, recording, and replay/,
+      );
+    } else assert.doesNotMatch(instructions, /Omit.*appMapId/);
   }
 });
 

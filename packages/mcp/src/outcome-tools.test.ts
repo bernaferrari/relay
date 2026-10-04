@@ -1,4 +1,5 @@
 import type { RelayOutcomeJobs } from "@relay/workflows";
+import { operationDefinition } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -374,6 +375,127 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       { method: testCase.method, argumentsValue: [testCase.expected] },
     ]);
   }
+});
+
+test("mobile target scope and recording origin reach the existing facade", async () => {
+  const invocations: Invocation[] = [];
+  const jobs = recordingJobs(invocations);
+  await invokeRelayOutcomeToolWithJobs({
+    name: "relay_connect_target",
+    argumentsValue: { targetKind: "device", phase: "android" },
+    confirmed: false,
+    jobs,
+  });
+  await invokeRelayOutcomeToolWithJobs({
+    name: "relay_record_test",
+    argumentsValue: {
+      title: "Reply completes",
+      targetId: "pixel-9",
+      targetKind: "device",
+      originApplication: "ai.x.grok",
+    },
+    confirmed: true,
+    jobs,
+  });
+  assert.deepEqual(invocations, [
+    {
+      method: "connect",
+      argumentsValue: [{ kind: "connect-target", targetKind: "device", phase: "android" }],
+    },
+    {
+      method: "record",
+      argumentsValue: [
+        {
+          kind: "record-test",
+          title: "Reply completes",
+          targetId: "pixel-9",
+          targetKind: "device",
+          originApplication: "ai.x.grok",
+          confirmControl: true,
+        },
+      ],
+    },
+  ]);
+  for (const argumentsValue of [{ phase: "browser" }, { targetKind: "android" }]) {
+    await assert.rejects(
+      invokeRelayOutcomeToolWithJobs({
+        name: "relay_connect_target",
+        argumentsValue,
+        confirmed: false,
+        jobs,
+      }),
+    );
+  }
+  assert.equal(invocations.length, 2, "invalid target filters never invoke the facade");
+});
+
+test("recorded outcome checks and insertion edits share canonical authoring schemas", async () => {
+  const interaction = {
+    kind: "steps",
+    label: "Reply completes",
+    steps: [
+      {
+        kind: "expect",
+        target: { label: "Stop message" },
+        condition: "gone",
+        timeoutMs: 30_000,
+      },
+      { kind: "wait-for", target: { label: "Copy message" }, timeoutMs: 30_000 },
+    ],
+  };
+  const edit = { kind: "insert-before", actionId: "capture-reply", interaction };
+  const recordTool = relayOutcomeTools.find(({ name }) => name === "relay_record_action")!;
+  const editTool = relayOutcomeTools.find(({ name }) => name === "relay_edit_recording")!;
+  assert.equal(
+    (recordTool.inputSchema as { shape?: Record<string, unknown> }).shape?.interaction,
+    operationDefinition("authoring.session.interact").input.presentation.shape.interaction,
+  );
+  assert.equal(
+    (editTool.inputSchema as { shape?: Record<string, unknown> }).shape?.edit,
+    operationDefinition("authoring.take.edit").input.presentation.shape.edit,
+  );
+
+  const invocations: Invocation[] = [];
+  const jobs = recordingJobs(invocations);
+  await invokeRelayOutcomeToolWithJobs({
+    name: "relay_record_action",
+    argumentsValue: { workflowId: "recording", expectedVersion: 2, interaction },
+    confirmed: false,
+    jobs,
+  });
+  await invokeRelayOutcomeToolWithJobs({
+    name: "relay_edit_recording",
+    argumentsValue: { workflowId: "recording", expectedVersion: 3, edit },
+    confirmed: false,
+    jobs,
+  });
+  assert.deepEqual(invocations, [
+    {
+      method: "advanceRecording",
+      argumentsValue: [
+        { action: "record", workflowId: "recording", expectedVersion: 2, interaction },
+      ],
+    },
+    {
+      method: "editRecording",
+      argumentsValue: [
+        { kind: "edit-recording", workflowId: "recording", expectedVersion: 3, edit },
+      ],
+    },
+  ]);
+  await assert.rejects(
+    invokeRelayOutcomeToolWithJobs({
+      name: "relay_record_action",
+      argumentsValue: {
+        workflowId: "recording",
+        expectedVersion: 4,
+        interaction: { ...interaction, steps: "invalid" },
+      },
+      confirmed: false,
+      jobs,
+    }),
+  );
+  assert.equal(invocations.length, 2, "malformed check interactions never invoke the facade");
 });
 
 test("relay_goal exposes explicit reproduction and review-only promotion", async () => {

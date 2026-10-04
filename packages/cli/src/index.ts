@@ -34,7 +34,7 @@ import {
   validateOperationId,
 } from "./invoke.js";
 import { protocolOperationInput } from "./protocol-input.js";
-import { CliOutput, type OutputStreams } from "./output.js";
+import { CliOutput, formatTestCompileResult, type OutputStreams } from "./output.js";
 import { liveTitleFromInput, watchJobsLive } from "./live-run-view.js";
 import { abortError, assertOutcomeSucceeded, waitForOutcome, waitForPoll } from "./outcome-wait.js";
 export { assertOutcomeSucceeded, waitForOutcome } from "./outcome-wait.js";
@@ -806,16 +806,20 @@ export async function runCli(
             summarized.queue ? formatPlanCaptureReviewQueue(summarized.queue) : summarized,
           );
         } else {
-          output.result(
-            operationId,
-            await finalizeCombineExportResult({
+          const outputResult = await finalizeCombineExportResult({
               operationId,
               result,
               summarized: summarizeResult(operationId, result, input, commandPath),
               exportDir: "exportDir" in parsed ? parsed.exportDir : undefined,
               todoFile: "todoFile" in parsed ? parsed.todoFile : undefined,
-            }),
-          );
+            });
+          const humanCompileOutput =
+            operationId === "app-map.test.compile" && parsed.config.output === "human"
+              ? parsed.full
+                ? JSON.stringify(result, null, 2)
+                : formatTestCompileResult(result)
+              : undefined;
+          output.result(operationId, outputResult, true, humanCompileOutput);
         }
       }
       return await persistOut(exitCode);

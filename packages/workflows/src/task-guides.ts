@@ -25,6 +25,8 @@ Start with one screen on a connected device or an existing Browser.
 
 Recording, saved Test replay, screenshots, and human review require no model.
 Assisted exploration needs a configured provider only when you request it.
+For the executable record, check, save, and repeat sequence, read relay guide
+record (MCP: relay://guides/record). The first recording can create its App Map.
 
 From a checkout, use ./bin/relay for the commands below. The MCP distribution
 is a connector to a Relay server; installing it does not install the desktop
@@ -47,23 +49,136 @@ it does not assert that the app works.`,
   {
     topic: "record",
     title: "Record a reusable Test",
-    summary: "Keep setup, actions, and checks understandable.",
-    markdown: `Open your App and select the intended Device or Browser/account.
-Navigate to the starting screen before pressing Record. Record one journey
-with a clear outcome, such as "Member opens billing".
+    summary: "Record actions, check the outcome, save, and repeat with evidence.",
+    markdown: `Record one short journey with an observable result. The mobile
+example below starts on Home, opens Sidebar, then opens Settings. Replace the
+menu and Settings-only labels with unique controls observed on your own phone;
+these are selector examples, not a prebuilt Test or known screen identity.
 
-Use the hover inspector to identify a control before clicking it. Give useful
-screenshots names. Remove accidental actions during review. Before and After
-show the evidence around the selected action.
+1. Choose the intended Device and app, navigate to Home, and inspect its screen.
+   Preview the menu target before sending input. In desktop, use the inspector.
+2. Start Record. With no App Maps, Relay creates one; with one, it reuses it.
+   With several, choose the intended App using --map <app-id>. Keep the returned
+   result.authoring.sessionId and result.frozen.appMapId; replace the matching
+   placeholders below. Wait for stage: recording before adding actions.
+3. Record the menu tap. Inspect the fresh Sidebar and preview its Settings
+   target, then record that tap. Add the bounded wait-for check for a control
+   unique to the intended Settings screen, followed by a named screenshot.
+   A check passes when its control is found; timeoutMs is the maximum wait.
+   Choose a result state that proves your task finished. A fixed pause or an
+   unchanged screenshot cannot establish completion.
+4. Stop, then inspect the full session and its Before/After evidence. Continue
+   when state: reviewing and the recorded actions/checks show the intended
+   journey. An unchanged recording that reached its observed destination may
+   be committed directly. After edits, return to the source screen and run
+   relay session replay <session-id> --json; that exact revision must pass.
+   Commit with createTest: true to save a reusable Test. Successful save returns
+   state: committed, session.committedTestId and session.committedConnectionId.
+5. Confirm that Test ID in test list and inspect its saved connection. Return
+   the same device to Home, then run the exact saved Test. Inspect the returned
+   workflow ID until it has completed or reports a concrete blocker. Keep its
+   Run ID and open/export the captured evidence. Run the same command again
+   from Home when a second repeat is requested. Saving alone proves no repeat.
 
-An unchanged recording that reached its observed destination can be saved.
-Edited actions need a successful Run before saving. A Run failure keeps the
-recording available for repair. Set the Test's origin application when startup
-must reopen the app; approved mapped paths prepare nested starting screens.
+Commands below are the CLI sequence for an unchanged recording. Read each
+result before continuing; IDs come from Relay, and selectors come from the
+current screen. Keep the same server, workspace, actor, and device throughout.
+The saved Test needs an executable startup: set the origin application in
+desktop (MCP: originApplication) when it must reopen the app; approved mapped
+paths prepare nested starting screens. A blocker needs deliberate repair.
 
-Save, then run the saved Test from its normal starting state. Saving alone
-does not prove future runs. Keep the returned Test and App IDs for automation.`,
-    examples: [["record", "<title>", "--device", "<serial>", "--map", "<app-id>", "--confirm"]],
+MCP with profile qa follows the same sequence: relay_connect_target with
+targetKind: device, relay_observe_target, then relay_record_test with title and
+the chosen targetId (appMapId is optional under the same selection rules).
+Record sends control only with transport confirm: true. Copy workflowId and
+numeric expectedVersion from the returned workflow into each following call,
+and refresh them after every mutation. relay_record_action accepts the same
+interaction objects shown in session interact --input below. Use relay_preview
+with serial and the observed label to preview a selector; relay_add_checkpoint
+names a screenshot.
+
+Call relay_stop_recording, inspect through relay_inspect_workflow, and save
+with relay_approve_recording plus transport confirm: true only when approve is
+in allowedNextActions. Edited revisions require relay_replay_recording first.
+Read the saved Test resource returned by relay_panel for the App, run it with
+relay_run_test, and inspect its workflow. Follow the evidence references and
+use relay_export_evidence for handoff. Human review of an image remains a human
+decision. An uncertain mutation outcome requires inspection before more input.`,
+    examples: [
+      ["connect", "<serial>", "--json"],
+      ["device", "snapshot", "<serial>", "--json", "--full"],
+      [
+        "device",
+        "interact",
+        "<serial>",
+        "--preview",
+        "--file",
+        "menu-preview.png",
+        "--input",
+        '{"kind":"label","label":"<menu-label>"}',
+      ],
+      ["record", "home-settings", "--device", "<serial>", "--confirm", "--json"],
+      [
+        "session",
+        "interact",
+        "<session-id>",
+        "--input",
+        '{"interaction":{"kind":"tap","target":{"label":"<menu-label>"}}}',
+        "--json",
+      ],
+      ["device", "snapshot", "<serial>", "--json", "--full"],
+      [
+        "device",
+        "interact",
+        "<serial>",
+        "--preview",
+        "--file",
+        "settings-preview.png",
+        "--input",
+        '{"kind":"label","label":"Settings"}',
+      ],
+      [
+        "session",
+        "interact",
+        "<session-id>",
+        "--input",
+        '{"interaction":{"kind":"tap","target":{"label":"Settings"}}}',
+        "--json",
+      ],
+      [
+        "session",
+        "interact",
+        "<session-id>",
+        "--input",
+        '{"interaction":{"kind":"steps","label":"Settings ready","steps":[{"kind":"wait-for","target":{"label":"<settings-only-label>"},"timeoutMs":10000}]}}',
+        "--json",
+      ],
+      [
+        "session",
+        "screenshot",
+        "<session-id>",
+        "--input",
+        '{"interaction":{"label":"Settings result"}}',
+        "--json",
+      ],
+      ["session", "stop", "<session-id>", "--json"],
+      ["session", "get", "<session-id>", "--json"],
+      [
+        "session",
+        "commit",
+        "<session-id>",
+        "--input",
+        '{"createTest":true}',
+        "--confirm",
+        "--json",
+      ],
+      ["test", "list", "<app-id>", "--json"],
+      ["connect", "get", "<app-id>", "<connection-id>", "--json"],
+      ["run", "<test-id>", "--map", "<app-id>", "--device", "<serial>", "--json"],
+      ["inspect", "<workflow-id>", "--json"],
+      ["export", "<run-id>", "--out", "./review", "--json"],
+      ["review", "--app", "<app-id>"],
+    ],
   },
   {
     topic: "run",
@@ -137,8 +252,22 @@ This uses the same runner and works without an agent or model.
 
 A timeout is the maximum wait, not a sleep. Reaching it fails the condition.
 Check the meaningful result after readiness; a ready button alone cannot prove
-an image's quality, a video's resolution, or a download's persistence.`,
-    examples: [],
+an image's quality, a video's resolution, or a download's persistence.
+
+While recording, use the session interact command below (MCP:
+relay_record_action with the same interaction). Replace both labels from the
+current operation: the result label must identify its new result. Read relay
+guide record for obtaining the session ID and for stop, save, repeat, and review.`,
+    examples: [
+      [
+        "session",
+        "interact",
+        "<session-id>",
+        "--input",
+        '{"interaction":{"kind":"steps","label":"Result ready","steps":[{"kind":"expect","target":{"label":"<busy-label>"},"condition":"gone","timeoutMs":30000},{"kind":"wait-for","target":{"label":"<new-result-label>"},"timeoutMs":30000}]}}',
+        "--json",
+      ],
+    ],
   },
   {
     topic: "debug",
@@ -228,10 +357,13 @@ exact saved Test with relay_run_test. Keep the returned workflow identity and
 inspect it through relay_inspect_workflow until completion or a concrete blocker.
 The panel returns text when the host cannot render it.
 
-When coverage is missing, read the record guide and use relay_record_test,
-relay_record_action and relay_preview. Each mutation uses the continuation and
-expected version returned by the previous step. The configured tools describe
-their input contracts; discover those schemas before acting.
+When coverage is missing, read relay://guides/record for the complete action,
+check, stop, save, and repeat sequence. The first relay_record_test can create
+its App Map. Each following mutation uses workflowId and numeric
+expectedVersion from the latest returned workflow, subject to allowedNextActions.
+The configured tools describe their input contracts; read those schemas before
+acting. Use relay_connect_target with targetKind: device to select only phones;
+phase: android or ios further narrows that choice.
 
 For a saved Test, run it directly on the selected App and target. For discovery,
 observe, preview the action, act, then inspect the fresh state. Keep actor and

@@ -136,7 +136,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
   mapped(
     "app-map.test.compile",
     path("test compile", ["appMapId", "testId"], undefined, {
-      summary: "Validate and inspect the deterministic Test plan plus step provenance",
+      summary: "Check an offline Test plan and report blockers; use --full for its full provenance",
       inputHelp: [
         {
           name: "entryCheckpointScreenId",
@@ -156,7 +156,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         'relay test compile grok-ios settings-tour --input \'{"targetProfileId":"ipad-pt-BR"}\'',
         'relay test compile grok-web test-grok-web-signed-in-home --input \'{"targetProfileId":"ios"}\'',
       ],
-      note: "The returned plan always names its startup policy. This preview does not control a device or persist a Test edit.",
+      note: "Human output summarizes the target, plan counts, blockers, and next action; add --full for the complete result. The returned plan always names its startup policy. This preview is offline: it does not contact a target or persist a Test edit. --json and --ndjson retain the complete result.",
     }),
   ),
   mapped(
