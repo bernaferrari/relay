@@ -10,6 +10,7 @@ import { useEffect, useRef } from "react";
 import { EmptyState } from "../components/product-patterns";
 import type { ProductRunState } from "../data/run-product-service";
 import { runQueryKeys } from "../data/run-queries";
+import { catalogQueryKeys } from "../data/catalog-queries";
 import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
 import { shouldRestorePersistedRun } from "../data/run-restore-gating";
 import { RecordingProblem, targetLabel } from "./recording-shared";
@@ -169,6 +170,7 @@ export function RunInspection({
     void clearRunPointerIfCurrent(platform, runId).then((cleared) => {
       if (!cleared) return;
       queryClient.setQueryData(runQueryKeys.pointer, null);
+      void queryClient.invalidateQueries({ queryKey: catalogQueryKeys.runs });
       const testId = report.data.testId ?? originTest.current.testId;
       if (testId) {
         // Completing a Run can update the map revision behind the saved Test.

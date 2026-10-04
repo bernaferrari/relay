@@ -1,6 +1,6 @@
 # Your first Relay test
 
-Run a complete local browser demo: record signing in as Member, open Settings, save a reusable Test, replay it in a fresh browser, and inspect the retained screenshot.
+Run a complete local browser demo: record signing in as Member, open Settings, save a layout check, catch a seeded defect, repair it, and rerun the same Test in a fresh browser.
 
 This is the contributor path from source. Relay's runtime and MCP packages are local release candidates; there is no published npm package or qualified standalone desktop installer to download yet. If you already have the matching tarballs, use the [runtime candidate instructions](../packages/runtime/README.md).
 
@@ -25,26 +25,27 @@ The doctor reports missing prerequisites. For a custom browser installation, set
 
 The output prints:
 
-- **Test ID** and **Run ID** for the saved Test and completed replay.
-- **Review:** a local read-only gallery with the retained run evidence. Open this link directly; no desktop app or web dev server is needed. It expires after 24 hours and requires the Relay service to stay running.
+- **Defect Review:** the failed Run, where **Save** overlaps the team seats.
+- **Review:** the passing Run after the demo repairs its own website. Open either local read-only gallery directly; no desktop app or web dev server is needed. Links expire after 24 hours and require the Relay service to stay running.
+- **Test ID**, separate **Run IDs**, and each Run's measured **Duration**. Both Runs execute the same saved Test.
 - **Screenshot:** the exported **Member settings.png** file in `.relay/first-run-demo/<run-id>/`. Its hash is checked against the retained capture before export.
 - **Repeat:** the exact command to run the same saved Test again.
 
-The screenshot should show Workspace settings for **Account member**. The fixture deliberately places **Save** over the team-seat text. Inspect that overlap: it demonstrates why completing the steps and reviewing the screenshot are separate outcomes.
+Both screenshots show Workspace settings for **Account member**. The first Run's deterministic layout check fails on the overlap. The demo then removes the overlap in its controlled website and replays the unchanged Test; the second check passes. Open both galleries to compare the evidence. No model key is needed.
 
-“Collection passed” means the replay completed and retained its screenshot. Human screenshot review remains pending. The gallery displays evidence; it does not approve the app's appearance. To record a decision, start `pnpm dev:desktop`, open **Demo · Member settings**, and use Review.
+“Layout check passed” verifies that Save and the team seats do not overlap. Human screenshot review remains pending. To record a decision about the appearance, start `pnpm dev:desktop`, open **Demo · Member layout**, and use Review.
 
 ## Repeat the saved Test
 
-Keep the demo terminal open while using its printed Repeat command; that terminal serves the fixture website. Stop it with Ctrl+C when finished. Running `pnpm demo` again reuses the saved Test and produces a new Run and Review link.
+Keep the demo terminal open while using its printed Repeat command; that terminal serves the website. Repeat preserves the repaired website and runs the same saved Test, producing a new Run and Review link. Stop the demo with Ctrl+C when finished. Starting `pnpm demo` again reuses the Test and demonstrates the defect and repair again.
 
-For one run that closes the fixture automatically:
+To close the website automatically after demonstrating the defect and repair:
 
 ```bash
 pnpm demo -- --once
 ```
 
-The retained screenshot and gallery remain available while the Relay service runs. Start `pnpm demo` again before repeating after `--once` or Ctrl+C.
+The retained screenshots and galleries remain available while the Relay service runs. Start the demo again before repeating after `--once` or Ctrl+C. The installed runtime's Repeat command checks that its original demo website is still running and refuses a different website before sending browser input.
 
 ## Test your own app next
 

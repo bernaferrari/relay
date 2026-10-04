@@ -23,8 +23,8 @@ export function formatReviewCount(count: number): string {
 }
 
 /** Screenshots waiting for a person, shown next to the Runs destination. */
-export function ReviewCount() {
-  const count = useReviewCount();
+export function ReviewCount({ appMapId }: { appMapId?: string }) {
+  const count = useReviewCount(appMapId);
   if (!count) return null;
   return (
     <span

@@ -68,6 +68,13 @@ export type ReportTimelineItem = {
   /** Present only when the backend provides an authored assertion join. */
   expected?: string;
   observed?: string;
+  /** Plain-language failure proven by the exact retained assertion evidence. */
+  failure?: {
+    kind?: "layout-overlap";
+    cause?: string;
+    summary: string;
+    technicalDetail?: string;
+  };
 };
 
 export type ReportPerformanceSeries = {
@@ -84,6 +91,8 @@ export type ProductRunReportOverview = {
   targetName?: string;
   durationMs?: number;
   cause?: string;
+  /** Original cause retained for exact failure-detail joins; never used as UI copy. */
+  technicalCause?: string;
   category?: string;
   firstEvidence?: { label: string; detail?: string };
   timeline: readonly ReportTimelineItem[];

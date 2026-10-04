@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeTraceTitle, storyFromJob, storyFromReport } from "./run-story";
+import { describeTraceTitle, reportTraceSteps, storyFromJob, storyFromReport } from "./run-story";
 
 describe("run story", () => {
   it("says what the engine did in plain words", () => {
@@ -83,5 +83,90 @@ describe("run story", () => {
     expect(live.latestFrame).toBe("frames/002.png");
     expect(live.steps[0]).toMatchObject({ title: "Checkout", state: "running" });
     expect(live.steps[0]!.actions.map((action) => action.state)).toEqual(["passed", "running"]);
+  });
+
+  it("carries the proven layout failure through saved and live stories with exact trace identity", () => {
+    const first = { identifier: "team-seats" };
+    const second = { identifier: "save-settings" };
+    const raw = {
+      title: "Settings layout",
+      status: "error",
+      steps: [
+        {
+          id: "layout-trace",
+          index: 4,
+          title: "Check layout: identifier team-seats does not overlap identifier save-settings",
+          status: "error",
+          frames: [{ path: "layout-failure.png" }],
+        },
+      ],
+      artifacts: [
+        {
+          kind: "command-attempt",
+          data: {
+            stepId: "layout-trace",
+            command: { kind: "assert-layout", relation: "non-overlap", first, second },
+          },
+        },
+        {
+          kind: "layout-assertion",
+          data: {
+            relation: "non-overlap",
+            first,
+            second,
+            passed: false,
+            overlap: { x: 1, y: 2, width: 30, height: 44 },
+            error:
+              "layout assertion: identifier team-seats overlaps identifier save-settings by 30×44 px",
+          },
+        },
+        {
+          kind: "ui-tree",
+          data: {
+            stepId: "layout-trace",
+            phase: "after",
+            nodes: [
+              { identifier: "team-seats", label: "Team seats" },
+              { identifier: "save-settings", label: "Save" },
+            ],
+          },
+        },
+      ],
+    };
+    const saved = storyFromReport({
+      timeline: reportTraceSteps(raw),
+      stepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "settings-step",
+          recipeId: "r",
+          recipeStepId: "layout",
+          traceStepId: "layout-trace",
+          traceStepIndex: 4,
+          occurrence: 1,
+          evidence: {
+            framePaths: ["layout-failure.png"],
+            eventSequences: [],
+            artifactKinds: ["layout-assertion"],
+          },
+        },
+      ],
+      stepTitles: { "settings-step": "Check settings layout" },
+    });
+    expect(saved[0]).toMatchObject({
+      id: "settings-step",
+      title: "Check settings layout",
+      state: "failed",
+    });
+    const expected = {
+      id: "layout-trace",
+      label: "Check Team seats and Save do not overlap",
+      state: "failed",
+      framePath: "layout-failure.png",
+      failure: { summary: "Team seats and Save overlap." },
+    };
+    expect(saved[0]?.actions[0]).toMatchObject(expected);
+    expect(storyFromJob(raw).steps[0]?.actions[0]).toMatchObject(expected);
+    expect(describeTraceTitle(raw.steps[0]!.title)?.label).toBe("Check elements do not overlap");
   });
 });

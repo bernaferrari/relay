@@ -5,6 +5,8 @@ export const runQueryKeys = {
       : (["run", "test", testId] as const),
   testStability: (testId: string) => ["run", "test", testId, "stability"] as const,
   targets: ["run", "targets"] as const,
+  scopedTargets: (scope: { targetKind?: string; targetId?: string }) =>
+    ["run", "targets", scope] as const,
   targetPresentation: (targetId: string) => ["run", "target-presentation", targetId] as const,
   pointer: ["run", "active-pointer"] as const,
   workflow: (workflowId: string) => ["run", "workflow", workflowId] as const,

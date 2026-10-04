@@ -5,6 +5,7 @@
  */
 import type { RunTestStepEvidence } from "@relay/protocol";
 import type { ReportTimelineItem } from "./run-report-model";
+import { layoutTracePresentation } from "./layout-trace-presentation";
 
 export type StoryActionKind =
   | "tap"
@@ -28,6 +29,7 @@ export type StoryAction = {
   /** Most useful frame to show for this action (after, else before). */
   framePath?: string;
   detail?: string;
+  failure?: ReportTimelineItem["failure"];
 };
 
 export type StoryStep = {
@@ -99,6 +101,8 @@ export function describeTraceTitle(
   if (/^(?:Scroll|Swipe|Drag)\b/iu.test(text)) return { kind: "scroll", label: text };
   if (/^(?:Open|Launch|Navigate|Go to|Start app)\b/iu.test(text))
     return { kind: "open", label: text };
+  if (/^Check layout:/iu.test(text))
+    return { kind: "check", label: "Check elements do not overlap" };
   if (/^(?:Check|Assert|Verify)\b/iu.test(text)) return { kind: "check", label: text };
   return { kind: "other", label: text };
 }
@@ -160,9 +164,11 @@ export function storyFromReport(input: {
       state: stateOf(item.state),
       ...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {}),
       ...(framePath ? { framePath } : {}),
-      ...(item.observed || item.expected
-        ? { detail: item.observed ?? `Expected ${item.expected}` }
-        : {}),
+      ...(item.failure
+        ? { failure: item.failure, detail: item.failure.summary }
+        : item.observed || item.expected
+          ? { detail: item.observed ?? `Expected ${item.expected}` }
+          : {}),
     });
   }
   return order.map((id) => {
@@ -189,11 +195,15 @@ export function storyFromJob(job: {
   status?: unknown;
   steps?: unknown;
   frames?: unknown;
+  artifacts?: unknown;
 }): { steps: StoryStep[]; latestFrame?: string } {
   const steps = Array.isArray(job.steps) ? (job.steps as JobStepLike[]) : [];
   const actions: StoryAction[] = [];
   for (const [index, step] of steps.entries()) {
-    const described = describeTraceTitle(typeof step.title === "string" ? step.title : "");
+    const rawTitle = typeof step.title === "string" ? step.title : "";
+    const layout =
+      typeof step.id === "string" ? layoutTracePresentation(job, step.id, rawTitle) : undefined;
+    const described = describeTraceTitle(layout?.title ?? rawTitle);
     if (!described) continue;
     const frames = Array.isArray(step.frames)
       ? (step.frames as { path?: unknown }[]).flatMap((frame) =>
@@ -215,6 +225,9 @@ export function storyFromJob(job: {
       state: stateOf(typeof step.status === "string" ? step.status : undefined),
       ...(durationMs !== undefined ? { durationMs } : {}),
       ...(lastFrame(frames) ? { framePath: lastFrame(frames)! } : {}),
+      ...(layout?.failure && step.status === "error"
+        ? { failure: layout.failure, detail: layout.failure.summary }
+        : {}),
     });
   }
   const allFrames = Array.isArray(job.frames)
@@ -280,6 +293,7 @@ export function reportTraceSteps(rawRun: unknown): ReportTimelineItem[] {
     const tautology = /Go from (.+) to (.+)$/u.exec(title);
     if (tautology && tautology[1]!.trim() === tautology[2]!.trim()) return [];
     const status = asText(step.status);
+    const layout = layoutTracePresentation(rawRun, asText(step.id) ?? "", title);
     const framePaths = asArray(step.frames).flatMap((frame) => {
       const path = asText(asRecord(frame)?.path);
       return path ? [path] : [];
@@ -288,7 +302,7 @@ export function reportTraceSteps(rawRun: unknown): ReportTimelineItem[] {
       {
         id: asText(step.id) ?? `trace-${index}`,
         index: asFinite(step.index) ?? index,
-        title,
+        title: layout?.title ?? title,
         state:
           status === "error" || step.tone === "fail"
             ? ("failed" as const)
@@ -302,6 +316,10 @@ export function reportTraceSteps(rawRun: unknown): ReportTimelineItem[] {
           : {}),
         evidenceCount: framePaths.length,
         ...(framePaths.length ? { framePaths } : {}),
+        ...(asText(step.log) ? { log: asText(step.log) } : {}),
+        ...(layout?.failure && (status === "error" || step.tone === "fail")
+          ? { failure: layout.failure }
+          : {}),
       },
     ];
   });

@@ -260,7 +260,10 @@ async function click(label: string) {
   if (label === "Run settings") await click("More Test actions");
   const target = [...document.querySelectorAll<HTMLElement>('button, a, [role="menuitem"]')].find(
     (candidate) =>
-      candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
+      candidate.textContent?.trim() === label ||
+      candidate.getAttribute("aria-label") === label ||
+      (label === "More Test actions" &&
+        candidate.getAttribute("aria-label")?.startsWith("Run settings:")),
   );
   if (!target) throw new Error(`Control not found: ${label}`);
   await act(async () => target.click());

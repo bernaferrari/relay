@@ -22,15 +22,22 @@ with a specific recovery message. Mutable Tests, browser profiles, accounts,
 activity and evidence live in the chosen workspace, outside the package and
 plugin caches. The same state directory lease protects concurrent launches.
 
-The demo records signing in as Member and opening Settings, saves a reusable
-Test, runs it in a fresh browser, exports a hash-verified screenshot, and
-leaves human screenshot review pending. Its fixture stays available until
-Ctrl+C. Add `--once` for one run and fixture shutdown. The canonical service
-remains available for the next task.
+The demo records signing in as Member, opening Settings, and checking that
+Save does not overlap the team seats. It saves the Test, proves the seeded
+overlap fails, repairs its own controlled website, and runs the unchanged
+Test again. Both Runs retain hash-verified screenshots, durations, and local
+gallery links. Human screenshot review stays pending. The website stays
+available until Ctrl+C. Add `--once` to finish after the defect and repair
+demonstration and close the website. The canonical service remains available.
 
 The printed Review URL is a local, expiring canonical HTML evidence gallery.
 It works without the contributor web dev server and remains read-only. The
-printed Repeat command uses the installed runtime, preserving the same Test.
+printed Repeat command uses `relay-runtime repeat`, preserving the same Test
+and the live website's repaired state. Leave the first demo terminal open;
+copy Repeat into a second terminal. Repeat exits after the new Run and never
+starts or closes a fixture. If the original website has stopped or its port
+belongs to a different website, it refuses before sending browser input.
+Start `relay-runtime demo` again to repeat the defect-and-repair demonstration.
 
 ## Start through the installed MCP connector
 
@@ -68,8 +75,24 @@ disposition. It defaults SDK daemon state to the workspace's
 An explicitly configured `AGENT_DEVICE_STATE_DIR` is preserved.
 
 Browser installation acceptance runs against a temporary installed tarball
-without repository source paths. Native helpers and physical device support
-require separate platform qualification; this artifact does not establish it.
+without repository source paths, including Repeat while the default demo
+remains open, repair preservation, and refusal after shutdown or replacement.
+This is an isolated installation on the current Mac, not a fresh operating
+system or a published install.
+
+Browser installation and startup do not download the Android scrcpy server.
+Before trying Android live preview, prepare that optional asset from your
+installation directory:
+
+```bash
+cd /absolute/installation
+npm exec -- fetch-scrcpy-server 2.5
+```
+
+Restart Relay after preparation. An unprepared Android live-preview request
+returns setup guidance before opening ADB. Native helpers and physical device
+support require separate platform qualification; browser acceptance does not
+establish it.
 
 ## Build and verify from the contributor checkout
 

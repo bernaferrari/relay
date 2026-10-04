@@ -22,7 +22,7 @@
     "build": "node scripts/build.mjs",
     "test": "node --test src/startup.test.mjs",
     "test:installed": "node scripts/test-installed.mjs",
-    "postinstall": "fetch-scrcpy-server 2.5",
+    "setup:android": "fetch-scrcpy-server 2.5",
     "prepack": "node scripts/build.mjs"
   },
   "dependencies": {

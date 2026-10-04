@@ -1,11 +1,9 @@
 import { once } from "node:events";
 import { randomInt } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import type http from "node:http";
 import { AdbServerClient } from "@yume-chan/adb";
 import { AdbServerNodeTcpConnector } from "@yume-chan/adb-server-node-tcp";
 import { AdbScrcpyClient, AdbScrcpyOptions2_1 } from "@yume-chan/adb-scrcpy";
-import { BIN, VERSION } from "@yume-chan/fetch-scrcpy-server";
 import {
   AndroidKeyCode,
   AndroidKeyEventAction,
@@ -20,6 +18,7 @@ import {
 } from "@yume-chan/scrcpy";
 import { ReadableStream, WritableStream } from "@yume-chan/stream-extra";
 import { CORS_HEADERS, HttpError } from "./http.js";
+import { readAndroidVideoServer } from "./android-live-video-assets.js";
 
 const PACKET_HEADER_BYTES = 16;
 
@@ -198,6 +197,7 @@ async function writeChunk(res: http.ServerResponse, chunk: Uint8Array): Promise<
  * no image polling, host transcoding, or playback buffer in the live path.
  */
 export async function streamAndroidVideo(res: http.ServerResponse, serial: string): Promise<void> {
+  const { binary: serverBinary, version } = await readAndroidVideoServer();
   const connector = new AdbServerNodeTcpConnector({ host: "127.0.0.1", port: 5037 });
   const server = new AdbServerClient(connector);
   const device = (await server.getDevices(["device"])).find((item) => item.serial === serial);
@@ -233,7 +233,6 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
   });
 
   try {
-    const serverBinary = await readFile(BIN);
     await AdbScrcpyClient.pushServer(
       adb,
       new ReadableStream({
@@ -265,7 +264,7 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
         videoBitRate: 8_000_000,
         tunnelForward: false,
       },
-      { version: VERSION },
+      { version },
     );
     scrcpy = await AdbScrcpyClient.start(adb, DefaultServerPath, options);
     void scrcpy.output.pipeTo(new WritableStream<string>({ write() {} })).catch(() => undefined);
