@@ -20,9 +20,11 @@ function exportProblem(error: unknown): string {
 function RunEvidenceExportForRun({
   runId,
   exportEvidence,
+  kind = "evidence",
 }: {
   runId: string;
   exportEvidence(runId: string): Promise<RunEvidenceExportDocument>;
+  kind?: "evidence" | "walkthrough";
 }) {
   const mounted = useRef(true);
   useEffect(() => {
@@ -35,9 +37,19 @@ function RunEvidenceExportForRun({
   const [fileName, setFileName] = useState<string>();
   const exportRun = useMutation({
     mutationFn: () => exportEvidence(runId),
+    onMutate: () => {
+      setHref(undefined);
+      setFileName(undefined);
+    },
     onSuccess: (document) => {
       if (!mounted.current) return;
-      setHref(URL.createObjectURL(new Blob([document.body], { type: "application/json" })));
+      setHref(
+        URL.createObjectURL(
+          new Blob([document.body], {
+            type: kind === "walkthrough" ? "text/html" : "application/json",
+          }),
+        ),
+      );
       setFileName(document.fileName);
     },
   });
@@ -56,11 +68,17 @@ function RunEvidenceExportForRun({
         onClick={() => exportRun.mutate()}
         disabled={exportRun.isPending}
       >
-        {exportRun.isPending ? "Preparing…" : exportRun.isError ? "Try again" : "Export evidence"}
+        {exportRun.isPending
+          ? "Preparing…"
+          : exportRun.isError
+            ? "Try again"
+            : kind === "walkthrough"
+              ? "Prepare walkthrough"
+              : "Export evidence"}
       </Button>
       {href && fileName ? (
         <a className={productLinkClassName} href={href} download={fileName}>
-          Save evidence pack
+          {kind === "walkthrough" ? "Save walkthrough" : "Save evidence pack"}
         </a>
       ) : null}
       {exportRun.error ? (
@@ -78,4 +96,18 @@ export function RunEvidenceExport(props: {
   exportEvidence(runId: string): Promise<RunEvidenceExportDocument>;
 }) {
   return <RunEvidenceExportForRun key={props.runId} {...props} />;
+}
+
+export function RunWalkthroughExport(props: {
+  runId: string;
+  exportWalkthrough(runId: string): Promise<RunEvidenceExportDocument>;
+}) {
+  return (
+    <RunEvidenceExportForRun
+      key={props.runId}
+      runId={props.runId}
+      exportEvidence={props.exportWalkthrough}
+      kind="walkthrough"
+    />
+  );
 }

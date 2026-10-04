@@ -48,6 +48,10 @@ export function RunReport({
 }) {
   const { queryClient } = useRouteContext({ from: "__root__" });
   const target = report.targetName ?? "the selected device or browser";
+  const captureIssues =
+    report.captureReview?.items.filter((item) => item.status === "issue").length ?? 0;
+  const pendingCaptures =
+    report.captureReview?.items.filter((item) => item.status === "pending").length ?? 0;
   const failure = report.outcome && report.outcome !== "passed" ? report.cause : undefined;
   const firstEvidenceIsDistinct = Boolean(
     report.firstEvidence &&
@@ -257,6 +261,7 @@ export function RunReport({
           <span role="status">
             <StatusPill
               size="md"
+              label={report.outcome === "passed" && captureIssues ? "Screenshot issues" : undefined}
               state={runStateOf({
                 outcome: report.outcome,
                 captureSummary: {
@@ -275,6 +280,29 @@ export function RunReport({
               </span>
               <span className="sr-only">Duration: </span>
               {formatDuration(report.durationMs)}
+            </span>
+          ) : null}
+          {captureIssues || pendingCaptures ? (
+            <button
+              type="button"
+              onClick={() => selectRunView("captures")}
+              className="min-h-8 rounded-md px-2 text-sm underline underline-offset-4 hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              {captureIssues
+                ? `${captureIssues} screenshot ${captureIssues === 1 ? "issue" : "issues"}`
+                : `${pendingCaptures} ${pendingCaptures === 1 ? "screenshot needs" : "screenshots need"} review`}
+            </button>
+          ) : null}
+          {report.executionContext?.browser || report.executionContext?.account ? (
+            <span className="basis-full text-xs" aria-label="Recorded run context">
+              {[
+                report.executionContext.browser,
+                report.executionContext.account
+                  ? `Account: ${report.executionContext.account}`
+                  : "Account not recorded",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           ) : null}
         </>

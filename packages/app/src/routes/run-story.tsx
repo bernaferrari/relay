@@ -78,14 +78,14 @@ function StateMark({ state }: { state: StoryState }) {
 }
 
 function useBlobUrl(blob?: Blob): string | undefined {
-  const [url, setUrl] = useState<string>();
+  const [image, setImage] = useState<{ blob: Blob; url: string }>();
   useEffect(() => {
-    if (!blob) return setUrl(undefined);
+    if (!blob) return setImage(undefined);
     const next = URL.createObjectURL(blob);
-    setUrl(next);
+    setImage({ blob, url: next });
     return () => URL.revokeObjectURL(next);
   }, [blob]);
-  return url;
+  return image?.blob === blob ? image?.url : undefined;
 }
 
 export function RunStoryView({
@@ -146,10 +146,10 @@ export function RunStoryView({
     enabled: Boolean(loadFrame && framePath && !direct),
     staleTime: Infinity,
     retry: 1,
-    placeholderData: (previous) => previous,
   });
   const blobUrl = useBlobUrl(direct ? undefined : frame.data);
   const url = direct ?? blobUrl;
+  const loadingFrame = Boolean(loadFrame && framePath && !direct && !frame.isError && !blobUrl);
   const capture = captures?.find((item) => item.framePath && item.framePath === framePath);
   const listEnd = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -238,6 +238,23 @@ export function RunStoryView({
                   }}
                   onError={() => {}}
                 />
+              ) : loadingFrame ? (
+                <div
+                  role="status"
+                  aria-label="Loading recorded screen"
+                  aria-busy="true"
+                  className="h-full w-full rounded-lg bg-muted/15 ring-1 ring-border/30"
+                />
+              ) : framePath && frame.isError ? (
+                <div
+                  className="grid justify-items-center gap-3 text-sm text-muted-foreground"
+                  role="status"
+                >
+                  <p>Screenshot couldn’t load.</p>
+                  <Button variant="outline" size="sm" onClick={() => void frame.refetch()}>
+                    Retry screenshot
+                  </Button>
+                </div>
               ) : (
                 <p className="px-6 py-16 text-center text-sm text-muted-foreground">
                   {status === "running" ? "Starting…" : "No screen yet"}

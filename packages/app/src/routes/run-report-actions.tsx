@@ -20,7 +20,7 @@ import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 import type { RunProductService } from "../data/run-product-service";
 import { RunReviewControls } from "./run-review-controls";
 import { RunReplayAction } from "./run-replay";
-import { RunEvidenceExport } from "./run-evidence-export";
+import { RunEvidenceExport, RunWalkthroughExport } from "./run-evidence-export";
 
 type RunReport = Awaited<ReturnType<RunProductService["getReport"]>>;
 
@@ -38,7 +38,9 @@ export function RunReportActions({
   canInvestigate: boolean;
 }) {
   const [rawEvidenceOpen, setRawEvidenceOpen] = useState(false);
-  const [runDialog, setRunDialog] = useState<"review" | "configuration" | "export" | null>(null);
+  const [runDialog, setRunDialog] = useState<
+    "review" | "configuration" | "export" | "walkthrough" | null
+  >(null);
 
   return (
     <>
@@ -66,9 +68,12 @@ export function RunReportActions({
           <dl className="grid gap-x-8 gap-y-4 px-1 py-3 sm:grid-cols-2">
             {[
               ["Device", report.targetName],
+              ["Account", report.executionContext?.account ?? "Not recorded"],
               ["Build", report.executionContext?.buildId],
               ["Saved setup ID", report.executionContext?.targetProfileId],
               ["Source revision", report.executionContext?.sourceRevision],
+              ["Viewport", report.executionContext?.viewport],
+              ["Language", report.executionContext?.locale],
             ]
               .filter(([, value]) => value)
               .map(([label, value]) => (
@@ -96,6 +101,26 @@ export function RunReportActions({
           if (!open) setRunDialog(null);
         }}
       />
+      <Dialog
+        open={runDialog === "walkthrough"}
+        onOpenChange={(open) => {
+          if (!open) setRunDialog(null);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Download walkthrough</DialogTitle>
+          <DialogDescription>
+            A captured-screen walkthrough you can open without Relay. Downloaded copies cannot be
+            recalled.
+          </DialogDescription>
+          {runService.exportWalkthrough ? (
+            <RunWalkthroughExport
+              runId={report.runId}
+              exportWalkthrough={runService.exportWalkthrough}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={runDialog === "export"}
         onOpenChange={(open) => {
@@ -176,6 +201,11 @@ export function RunReportActions({
           <DropdownMenuItem onClick={() => setRunDialog("configuration")}>
             Configuration
           </DropdownMenuItem>
+          {runService.exportWalkthrough ? (
+            <DropdownMenuItem onClick={() => setRunDialog("walkthrough")}>
+              Download walkthrough
+            </DropdownMenuItem>
+          ) : null}
           {runService.exportEvidence ? (
             <DropdownMenuItem onClick={() => setRunDialog("export")}>
               Export evidence
