@@ -59,7 +59,10 @@ import {
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { recordAudit, type RequestContext } from "./security.js";
 import { captureDurableTargetObservation } from "./target-observation-route.js";
-import { assertClientUnknownReviewAllowed } from "./target-client-input-review.js";
+import {
+  assertClientUnknownReviewAllowed,
+  completeClientUnknownInputReview,
+} from "./target-client-input-review.js";
 import {
   durableObservationId,
   localBrowserExecutionTarget,
@@ -253,12 +256,14 @@ export async function handleTargetRuntimeRoute(context: {
     await runtime.assertTargetControl(scope, controlTargetIdForBrowserLane(serial));
     return serializeReconciliation(serial, async () => {
       const receiptScope = { organizationId: scope.organizationId, projectId: scope.projectId };
-      const clientTarget = body.clientUnknown === true
-        ? await resolveSupervisedRuntimeTarget({ serial, runtime })
-        : undefined;
+      const clientTarget =
+        body.clientUnknown === true
+          ? await resolveSupervisedRuntimeTarget({ serial, runtime })
+          : undefined;
       if (clientTarget) {
         assertClientUnknownReviewAllowed({
-          mutationId, platform: clientTarget.platform,
+          mutationId,
+          platform: clientTarget.platform,
           health: runtime.readTargetHealth(clientTarget.id, clientTarget.platform),
           reconcilePending: body.reconcilePending,
         });
@@ -279,7 +284,11 @@ export async function handleTargetRuntimeRoute(context: {
           const target = await resolveSupervisedRuntimeTarget({ serial, runtime });
           const current = runtime.readTargetHealth(target.id, target.platform);
           if (stored.review) {
-            assertClientUnknownReviewAllowed({ mutationId, platform: target.platform, health: current });
+            assertClientUnknownReviewAllowed({
+              mutationId,
+              platform: target.platform,
+              health: current,
+            });
           }
           if (current.input.pendingMutationId && current.input.pendingMutationId !== mutationId) {
             throw new HttpError(
@@ -288,7 +297,9 @@ export async function handleTargetRuntimeRoute(context: {
             );
           }
           const health =
-            current.input.state === "uncertain" && current.input.pendingMutationId === mutationId && stored.outcome !== "acknowledged"
+            current.input.state === "uncertain" &&
+            current.input.pendingMutationId === mutationId &&
+            stored.outcome !== "acknowledged"
               ? runtime.reconcileTargetInput(target.id, target.platform, {
                   mutationId,
                   observationId: stored.observationId!,
@@ -317,36 +328,22 @@ export async function handleTargetRuntimeRoute(context: {
         return true;
       }
       if (clientTarget) {
-        const observation = await runtime.captureTargetObservation(serial);
-        // Observation may yield to another run or lease acquisition. Recheck
-        // authority and target fences before durably acknowledging this ID.
-        await runtime.assertTargetControl(scope, controlTargetIdForBrowserLane(serial));
-        const health = runtime.readTargetHealth(clientTarget.id, clientTarget.platform);
-        assertClientUnknownReviewAllowed({ mutationId, platform: clientTarget.platform, health });
-        const review = {
-          source: "operator-review" as const,
-          observed: body.outcome === "applied" ? "applied" as const
-            : body.outcome === "not-applied" ? "not-observed" as const : "uncertain" as const,
-          actorId: currentOperationContext()?.actorId ?? scope.subject,
-        };
-        const prepared = rememberReconcileReceipt({
-          ...receiptScope, serial, mutationId,
+        const receipt = await completeClientUnknownInputReview({
+          scope,
+          serial,
+          mutationId,
+          outcome: body.outcome,
+          target: clientTarget,
+          runtime,
           ...(body.resolutionId ? { resolutionId: body.resolutionId } : {}),
-          outcome: body.outcome === "ambiguous" ? "ambiguous" : "acknowledged",
-          review, observationId: durableObservationId(observation), observation,
-        });
-        const receipt = completeReconcileReceipt({
-          ...receiptScope, receipt: prepared, health: health.input,
-          healthSnapshot: { ...health, visibility: "project" },
-        });
-        recordAudit(scope, {
-          action: "target.input.reconcile", resource: mutationId, target: serial,
-          result: body.outcome === "ambiguous" ? "deny" : "allow",
         });
         json(response, 200, {
-          health: receipt.healthSnapshot, observation,
-          mutationId: receipt.mutationId, outcome: receipt.outcome,
-          resolutionId: receipt.resolutionId, review: receipt.review,
+          health: receipt.healthSnapshot,
+          observation: receipt.observation,
+          mutationId: receipt.mutationId,
+          outcome: receipt.outcome,
+          resolutionId: receipt.resolutionId,
+          review: receipt.review,
         });
         return true;
       }

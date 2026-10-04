@@ -622,13 +622,52 @@ describe("recording edit adapter", () => {
 
   it("preserves explicit client-only acknowledgement and operator provenance", async () => {
     client.invoke.mockClear();
-    const review = { source: "operator-review", observed: "not-observed", actorId: "agent:reviewer" };
-    client.invoke.mockResolvedValueOnce({ mutationId: "recording-mutation-old", resolutionId: "review-1", outcome: "acknowledged", review, health: { input: { state: "ready" } }, observation: { capturedAt: 20 } });
+    const review = {
+      source: "operator-review",
+      observed: "not-observed",
+      actorId: "agent:reviewer",
+    };
+    client.invoke.mockResolvedValueOnce({
+      mutationId: "recording-mutation-old",
+      resolutionId: "review-1",
+      outcome: "acknowledged",
+      review,
+      health: { input: { state: "ready" } },
+      observation: { capturedAt: 20 },
+    });
     const service = createRecordingProductService(platform);
-    await expect(service.reconcileInput!({ serial: "pixel-1", mutationId: "recording-mutation-old", resolutionId: "review-1", outcome: "not-applied", clientUnknown: true })).resolves.toMatchObject({ mutationId: "recording-mutation-old", resolutionId: "review-1", outcome: "acknowledged", review });
-    expect(client.invoke).toHaveBeenCalledWith("target.input.reconcile", { serial: "pixel-1", mutationId: "recording-mutation-old", resolutionId: "review-1", outcome: "not-applied", clientUnknown: true });
-    client.invoke.mockResolvedValueOnce({ receipt: { mutationId: "recording-mutation-old", resolutionId: "review-1", outcome: "acknowledged", review } });
-    await expect(service.fetchReconcileReceipt!({ serial: "pixel-1", mutationId: "recording-mutation-old" })).resolves.toMatchObject({ outcome: "acknowledged", review });
+    await expect(
+      service.reconcileInput!({
+        serial: "pixel-1",
+        mutationId: "recording-mutation-old",
+        resolutionId: "review-1",
+        outcome: "not-applied",
+        clientUnknown: true,
+      }),
+    ).resolves.toMatchObject({
+      mutationId: "recording-mutation-old",
+      resolutionId: "review-1",
+      outcome: "acknowledged",
+      review,
+    });
+    expect(client.invoke).toHaveBeenCalledWith("target.input.reconcile", {
+      serial: "pixel-1",
+      mutationId: "recording-mutation-old",
+      resolutionId: "review-1",
+      outcome: "not-applied",
+      clientUnknown: true,
+    });
+    client.invoke.mockResolvedValueOnce({
+      receipt: {
+        mutationId: "recording-mutation-old",
+        resolutionId: "review-1",
+        outcome: "acknowledged",
+        review,
+      },
+    });
+    await expect(
+      service.fetchReconcileReceipt!({ serial: "pixel-1", mutationId: "recording-mutation-old" }),
+    ).resolves.toMatchObject({ outcome: "acknowledged", review });
   });
 });
 

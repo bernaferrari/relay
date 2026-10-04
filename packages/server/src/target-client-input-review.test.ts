@@ -13,11 +13,21 @@ test("client-only review cannot replace native receipts, recovery fences or cont
     { ...input, mutationId: "android-input-native" },
     { ...input, reconcilePending: true },
     { ...input, health: { ...health, input: { state: "blocked" as const } } },
-    { ...input, health: { ...health, input: { state: "ready" as const, pendingMutationId: "newer-input" } } },
-    { ...input, health: { ...health, input: { state: "uncertain" as const, pendingMutationId: "newer-input" } } },
+    {
+      ...input,
+      health: { ...health, input: { state: "ready" as const, pendingMutationId: "newer-input" } },
+    },
+    {
+      ...input,
+      health: {
+        ...health,
+        input: { state: "uncertain" as const, pendingMutationId: "newer-input" },
+      },
+    },
     { ...input, health: { ...health, overall: "recovering" as const } },
     { ...input, health: { ...health, overall: "needs-human" as const } },
     { ...input, health: { ...health, overall: "quarantined" as const } },
     { ...input, health: { ...health, control: { state: "held-by-other" as const } } },
-  ]) assert.throws(() => assertClientUnknownReviewAllowed(invalid));
+  ])
+    assert.throws(() => assertClientUnknownReviewAllowed(invalid));
 });
