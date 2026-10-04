@@ -2,7 +2,11 @@ import type { OperationDefinition, RuntimeParser } from "./operation-contract.js
 import { operationInputContract } from "./operation-builders.js";
 import { fail, number, objectParser, record, string } from "./operation-parser-primitives.js";
 import type { TargetObservation } from "./target-observation.js";
-import type { TargetInputManualReview, TargetInputReconciliationOutcome, TargetSupervisorHealth } from "./target-supervisor.js";
+import type {
+  TargetInputManualReview,
+  TargetInputReconciliationOutcome,
+  TargetSupervisorHealth,
+} from "./target-supervisor.js";
 
 const PIXEL_STATES = new Set(["ready", "delayed", "unavailable"]);
 const SEMANTIC_STATES = new Set(["current", "stale", "refreshing", "wedged", "unavailable"]);
@@ -234,7 +238,9 @@ export function createTargetInputReceiptGetOperationDefinition(): OperationDefin
 }
 
 function assertReconciliationOutcome(value: Record<string, unknown>): void {
-  if (!new Set(["applied", "not-applied", "ambiguous", "acknowledged"]).has(String(value.outcome))) {
+  if (
+    !new Set(["applied", "not-applied", "ambiguous", "acknowledged"]).has(String(value.outcome))
+  ) {
     fail("outcome", "is unsupported");
   }
   if (value.outcome === "acknowledged" || value.review !== undefined) {
@@ -246,7 +252,8 @@ function assertReconciliationOutcome(value: Record<string, unknown>): void {
     if (value.outcome === "acknowledged" && review.observed === "uncertain") {
       fail("input review observed", "must resolve the explicit review");
     }
-    if (!string(review.actorId, "input review actorId").trim()) fail("input review actorId", "must be non-empty");
+    if (!string(review.actorId, "input review actorId").trim())
+      fail("input review actorId", "must be non-empty");
   }
 }
 

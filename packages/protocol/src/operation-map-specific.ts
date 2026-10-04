@@ -60,7 +60,11 @@ import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import type { OperationRecord } from "./operation-contract.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
 import type { TargetObservation } from "./target-observation.js";
-import type { TargetInputManualReview, TargetInputReconciliationOutcome, TargetSupervisorHealth } from "./target-supervisor.js";
+import type {
+  TargetInputManualReview,
+  TargetInputReconciliationOutcome,
+  TargetSupervisorHealth,
+} from "./target-supervisor.js";
 import type { WorkflowOperationMap } from "./workflow-record.js";
 import type { WorkspaceChangeContext } from "./workspace-change-context.js";
 import type { ProofOperationMap } from "./proof-operation-map.js";

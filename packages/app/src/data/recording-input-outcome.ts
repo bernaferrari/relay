@@ -451,9 +451,13 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
   now?: number;
 }): Promise<RecordingRecoveryLedger> {
   const resolutionId = crypto.randomUUID();
-  const current = input.ledger.mutations.find((mutation) => mutation.mutationId === input.mutationId);
-  const clientUnknown = current?.kind === "unknown" &&
-    !current.recordingMutation && input.mutationId.startsWith("recording-mutation-");
+  const current = input.ledger.mutations.find(
+    (mutation) => mutation.mutationId === input.mutationId,
+  );
+  const clientUnknown =
+    current?.kind === "unknown" &&
+    !current.recordingMutation &&
+    input.mutationId.startsWith("recording-mutation-");
   const receipt = await input.authority
     .reconcile({
       resolutionId,
@@ -475,22 +479,37 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
       }
     });
   if (receipt.outcome === "acknowledged") {
-    if (!clientUnknown || receipt.mutationId !== input.mutationId ||
+    if (
+      !clientUnknown ||
+      receipt.mutationId !== input.mutationId ||
       receipt.review?.source !== "operator-review" ||
-      !receipt.review.actorId || receipt.review.observed === "uncertain" || !receipt.resolutionId ||
-      !receipt.observation || receipt.health?.state !== "ready" || receipt.health.pendingMutationId) {
+      !receipt.review.actorId ||
+      receipt.review.observed === "uncertain" ||
+      !receipt.resolutionId ||
+      !receipt.observation ||
+      receipt.health?.state !== "ready" ||
+      receipt.health.pendingMutationId
+    ) {
       throw new TypeError("Relay did not return an exact, completed client-only review receipt.");
     }
     return resolveRecordingMutation(input.ledger, input.mutationId, {
-      kind: "confirmed", observed: receipt.review.observed, review: receipt.review,
-      resolvedBy: { at: input.now ?? Date.now(), actor: receipt.review.actorId, authority: "operator-review" },
+      kind: "confirmed",
+      observed: receipt.review.observed,
+      review: receipt.review,
+      resolvedBy: {
+        at: input.now ?? Date.now(),
+        actor: receipt.review.actorId,
+        authority: "operator-review",
+      },
     });
   }
   if (clientUnknown && receipt.mutationId !== input.mutationId) {
     throw new TypeError("Relay returned a receipt for a different client-only mutation.");
   }
   if (clientUnknown && receipt.outcome !== "ambiguous") {
-    throw new TypeError("A client-only pause requires an explicit operator acknowledgement receipt.");
+    throw new TypeError(
+      "A client-only pause requires an explicit operator acknowledgement receipt.",
+    );
   }
   // The server may have resolved the input it actually held (the person's
   // decision covers what they saw), so its id can differ from ours.
