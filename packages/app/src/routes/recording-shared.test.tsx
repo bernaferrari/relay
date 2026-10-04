@@ -77,3 +77,25 @@ it("does not describe a Run preparation failure as restoring work", async () => 
   expect(host.textContent).toContain("Relay could not complete this request");
   expect(host.textContent).not.toContain("Workflow request identity");
 });
+
+it("identifies interrupted replay without offering another execution", async () => {
+  const retry = vi.fn();
+  const host = await render(
+    <RecordingProblem
+      operation="replay"
+      recovery={{
+        code: "mutation-outcome-unknown",
+        title: "Outcome unknown",
+        detail: "Pending receipt",
+        recovery: "Inspect",
+        retryable: false,
+      }}
+      onRetry={retry}
+    />,
+  );
+  expect(host.textContent).toContain("Replay was interrupted. Your saved steps are safe.");
+  expect(host.textContent).not.toContain("Step status");
+  expect(host.textContent).not.toContain("Try again");
+  expect(host.querySelector("button")?.textContent).toContain("Check status");
+  expect(retry).not.toHaveBeenCalled();
+});

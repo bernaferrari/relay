@@ -37,7 +37,13 @@ export function RecordingEvidencePanel({
   controls = [],
   exactMoment = true,
   loading = false,
+  failureEvidence = false,
+  showingReplayFailure = false,
+  onShowReplayFailure,
 }: {
+  failureEvidence?: boolean;
+  showingReplayFailure?: boolean;
+  onShowReplayFailure?(): void;
   exactMoment?: boolean;
   loading?: boolean;
   controls?: readonly RecordingEvidenceControl[];
@@ -105,12 +111,15 @@ export function RecordingEvidencePanel({
           </Button>
           <ScreenshotMomentSwitch
             label="Evidence moment"
-            value={evidenceRole}
+            value={showingReplayFailure ? "failure" : evidenceRole}
             items={[
               { value: "entrance", label: "Before" },
               { value: "exit", label: "After" },
+              ...(failureEvidence ? [{ value: "failure" as const, label: "At failure" }] : []),
             ]}
-            onChange={onEvidenceRoleChange}
+            onChange={(moment: "entrance" | "exit" | "failure") =>
+              moment === "failure" ? onShowReplayFailure?.() : onEvidenceRoleChange(moment)
+            }
           />
         </div>
       </div>
@@ -177,9 +186,11 @@ export function RecordingEvidencePanel({
               className="block h-auto max-h-(--capture-height) w-auto max-w-full rounded-md object-contain"
               src={previewUrl}
               alt={
-                exactMoment
-                  ? `${evidenceRole === "entrance" ? "Before" : "After"} the step: ${action?.intent}`
-                  : `Screenshot for step: ${action?.intent}`
+                showingReplayFailure
+                  ? `Screen when step failed: ${action?.intent}`
+                  : exactMoment
+                    ? `${evidenceRole === "entrance" ? "Before" : "After"} the step: ${action?.intent}`
+                    : `Screenshot for step: ${action?.intent}`
               }
               onLoad={(event) => {
                 setImageSize({
@@ -245,8 +256,10 @@ export function RecordingActionsPanel({
   onOptimize,
   onSelect,
   onToggle,
+  failedActionId,
 }: {
   actions: readonly ReviewAction[];
+  failedActionId?: string;
   selectedActionIds: readonly string[];
   optimization: {
     isFetching: boolean;
@@ -372,7 +385,9 @@ export function RecordingActionsPanel({
                       <RecordingActionIcon action={step} />
                       <strong className="text-sm font-medium">{copy.title}</strong>
                     </span>
-                    {step.proofStatus === "unresolved" ? (
+                    {step.id === failedActionId ? (
+                      <p className="text-xs text-destructive">Failed</p>
+                    ) : step.proofStatus === "unresolved" ? (
                       <p className="text-xs text-muted-foreground">Needs setup</p>
                     ) : null}
                   </button>

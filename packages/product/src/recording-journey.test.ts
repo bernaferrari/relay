@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AuthoringInteraction } from "@relay/protocol";
-import type { AuthorTestSnapshot } from "@relay/workflows";
+import type { AuthorTestSnapshot, DurableAuthorTestDecision } from "@relay/workflows";
+import type { RelayRecordingOutcomeJobs } from "@relay/workflows/recording-outcomes";
 import { createProductRecordingJourney } from "./recording-journey.js";
 
 const target = { kind: "device", platform: "android", targetId: "pixel-9" } as const;
@@ -42,7 +43,7 @@ function jobsFor(input: {
   advanced?: AuthorTestSnapshot;
   onRecord?: (intent: unknown) => void;
   onAdvance?: (decision: unknown) => void;
-}) {
+}): RelayRecordingOutcomeJobs {
   return {
     async connect() {
       return { targets: [target], current: target };
@@ -98,6 +99,33 @@ test("recording preserves selected Map path identity", async () => {
   });
 });
 
+test("begin preserves the connected browser kind only for that same target", async () => {
+  for (const targetId of [undefined, "connected-browser", "another-phone"]) {
+    let recordedIntent: unknown;
+    const jobs = jobsFor({
+      onRecord: (intent) => {
+        recordedIntent = intent;
+      },
+    });
+    const browser = {
+      kind: "browser" as const,
+      platform: "browser" as const,
+      targetId: "connected-browser",
+    };
+    jobs.connect = async () => ({ targets: [browser], current: browser });
+    const journey = createProductRecordingJourney({ jobs });
+    await journey.connect();
+    await journey.begin({ title: "Connected recording", ...(targetId ? { targetId } : {}) });
+    assert.deepEqual(recordedIntent, {
+      kind: "record-test",
+      title: "Connected recording",
+      targetId: targetId ?? "connected-browser",
+      confirmControl: true,
+      ...(targetId !== "another-phone" ? { targetKind: "browser" } : {}),
+    });
+  }
+});
+
 test("recording carries the prepared browser session and account", async () => {
   let recordedIntent: unknown;
   const journey = createProductRecordingJourney({
@@ -108,6 +136,7 @@ test("recording carries the prepared browser session and account", async () => {
     title: "Checkout path",
     appMapId: "app-1",
     targetId: "checkout-browser",
+    targetKind: "browser",
     liveSessionId: "live-member-session",
     authenticationFixtureId: "authfx:member:1",
   });
@@ -117,6 +146,7 @@ test("recording carries the prepared browser session and account", async () => {
     title: "Checkout path",
     appMapId: "app-1",
     targetId: "checkout-browser",
+    targetKind: "browser",
     liveSessionId: "live-member-session",
     authenticationFixtureId: "authfx:member:1",
     confirmControl: true,
@@ -188,6 +218,95 @@ test("review edits use the canonical edit transition", async () => {
     edit: { kind: "rename", actionId: "action-1", intent: "Open settings" },
   });
   assert.equal(next.snapshot?.workflow?.expectedVersion, 10);
+});
+
+test("unknown browser input retains the exact fresh dispatch version and session", async () => {
+  const browser = {
+    kind: "browser",
+    platform: "browser",
+    targetId: "browser-1",
+    liveSessionId: "live-1",
+  } as const;
+  const before = snapshot("recording", ["inspect", "record", "stop"], 4);
+  const fresh = snapshot("recording", ["inspect", "record", "stop"], 17);
+  for (const value of [before, fresh]) value.frozen = { ...value.frozen!, target: browser };
+  const unknown = snapshot("recording", ["inspect"], 18, {
+    problems: [
+      {
+        code: "mutation-outcome-unknown",
+        title: "Response lost",
+        detail: "Late response",
+        recovery: "Inspect",
+        retryable: false,
+      },
+    ],
+  });
+  let decision: unknown;
+  const journey = createProductRecordingJourney({
+    jobs: jobsFor({
+      recorded: before,
+      inspected: fresh,
+      advanced: unknown,
+      onAdvance: (next) => {
+        decision = next;
+      },
+    }),
+  });
+  await journey.begin({ title: "Browser settings" });
+  const result = await journey.record({ kind: "tap", target: { label: "Settings" } });
+  const mutationId = (decision as Extract<DurableAuthorTestDecision, { action: "record" }>)
+    .mutationId;
+  assert.match(mutationId!, /^[0-9a-f-]{36}$/u);
+  assert.deepEqual(decision, {
+    workflowId: "workflow-1",
+    expectedVersion: 17,
+    action: "record",
+    mutationId,
+    interaction: { kind: "tap", target: { label: "Settings" } },
+  });
+  assert.deepEqual(result.recovery?.recordingMutation, {
+    mutationId,
+    workflowId: "workflow-1",
+    sessionId: "session-1",
+    transitionVersion: 18,
+    target: browser,
+  });
+  assert.equal(
+    Reflect.set(result.recovery!.recordingMutation!.target, "targetId", "mutated-by-caller"),
+    true,
+  );
+  assert.equal(journey.state().recovery?.recordingMutation?.target.targetId, "browser-1");
+});
+
+test("concurrent identical inputs keep different identities after a lost rejection response", async () => {
+  const fresh = snapshot("recording", ["inspect", "record", "stop"], 17);
+  fresh.frozen = {
+    ...fresh.frozen!,
+    target: { kind: "browser", platform: "browser", targetId: "browser-1" },
+  };
+  const decisions: DurableAuthorTestDecision[] = [];
+  const journeys = [0, 1].map(() => {
+    const jobs = jobsFor({ recorded: fresh, inspected: fresh });
+    jobs.advanceRecording = async (decision) => {
+      decisions.push(decision);
+      throw new Error("The dispatch or CAS rejection response was lost");
+    };
+    return createProductRecordingJourney({ jobs });
+  });
+  await Promise.all(journeys.map((journey) => journey.begin({ title: "Browser settings" })));
+  const states = await Promise.all(
+    journeys.map((journey) => journey.record({ kind: "wait", ms: 1 })),
+  );
+  const refs = states.map((state) => state.recovery!.recordingMutation!);
+  assert.equal(decisions.length, 2);
+  assert.equal(refs[0]!.transitionVersion, refs[1]!.transitionVersion);
+  assert.notEqual(refs[0]!.mutationId, refs[1]!.mutationId);
+  refs.forEach((ref, index) => {
+    const decision = decisions[index]!;
+    assert.ok(decision.action === "record");
+    assert.equal(ref.mutationId, decision.mutationId);
+    assert.match(ref.mutationId, /^[0-9a-f-]{36}$/u);
+  });
 });
 
 test("public state is bounded and detached from the canonical projection", async () => {

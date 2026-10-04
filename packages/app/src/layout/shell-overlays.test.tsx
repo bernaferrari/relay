@@ -14,7 +14,10 @@ import { RelayApp } from "../app";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
 import type { DeviceProductService, ProductDevice } from "../data/device-product-service";
-import type { RecordingProductService } from "../data/recording-product-service";
+import type {
+  ProductRecordingState,
+  RecordingProductService,
+} from "../data/recording-product-service";
 import type { RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
 
@@ -140,6 +143,7 @@ function devices(items: readonly ProductDevice[] = []): DeviceProductService {
 
 async function renderShell(input: {
   runs?: readonly ProductRunSummary[];
+  recording?: ProductRecordingState;
   tests?: readonly ProductTestSummary[];
   runsUnavailable?: boolean;
   testsUnavailable?: boolean;
@@ -156,12 +160,17 @@ async function renderShell(input: {
   const history = createMemoryHistory({ initialEntries: input.initialEntries ?? ["/home"] });
   const root = createRoot(host);
   roots.push(root);
+  const hostPlatform = platform();
+  if (input.recording)
+    hostPlatform.storage.get = (key) => (key === "activeRecordingWorkflowId" ? "draft-1" : null);
+  const recordingService = recording();
+  if (input.recording) recordingService.inspect = async () => input.recording!;
   await act(async () => {
     root.render(
       <RelayApp
-        platform={platform()}
+        platform={hostPlatform}
         history={history}
-        productService={recording()}
+        productService={recordingService}
         runService={
           {
             getTest: async (testId: string) => (input.test?.id === testId ? input.test : undefined),
@@ -370,12 +379,12 @@ describe("shell overlays", () => {
     const history = await renderShell({ runs: [run], changes: [change] });
 
     const trigger = document.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Open running work"]',
+      'button[aria-label^="Open activity"]',
     );
     expect(trigger).toBeTruthy();
     // The global badge is live before opening the center, so closed Activity
     // still communicates work that needs attention.
-    expect(trigger?.getAttribute("aria-label")).toMatch(/2 active/);
+    expect(trigger?.getAttribute("aria-label")).toMatch(/2 running/);
     expect(trigger?.textContent).toBe("2 running");
     await act(async () => trigger?.click());
     await settle();
@@ -383,7 +392,7 @@ describe("shell overlays", () => {
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("Verify checkout change");
     expect(document.body.textContent).toContain("Verifying");
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Running now");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Activity");
     const activityLink = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
       (link) => link.textContent === "View all activity",
     );
@@ -394,10 +403,68 @@ describe("shell overlays", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it.each([false, true])(
+    "keeps a draft reopenable and pulses only when execution is running (mixed=%s)",
+    async (mixed) => {
+      const draft: ProductRecordingState = {
+        status: "reviewing",
+        targets: [],
+        snapshot: {
+          schemaVersion: 1,
+          kind: "author-test",
+          title: "Draft checkout",
+          phase: "running",
+          stage: "reviewing",
+          version: "v1",
+          progress: { label: "Review" },
+          allowedNextActions: ["inspect", "edit", "replay"],
+          problems: [],
+          evidenceRefs: [],
+          review: {
+            actionCount: 1,
+            replayRequired: true,
+            actions: [
+              { id: "step", intent: "Settings", stepCount: 1, captureProof: "relay-controlled" },
+            ],
+          },
+        },
+      };
+      const run: ProductRunSummary = {
+        id: "live-run",
+        title: "Live checkout",
+        action: "test",
+        status: "running",
+        phase: "running",
+        queuedAt: 1,
+        identity: { runId: "live-run" },
+        links: { self: "/runs/live-run" },
+      };
+      const history = await renderShell({ recording: draft, runs: mixed ? [run] : [] });
+      const trigger = document.querySelector<HTMLButtonElement>(
+        'button[aria-label^="Open activity"]',
+      )!;
+      expect(trigger?.textContent).toBe(mixed ? "1 running · 1 draft" : "1 draft");
+      expect(trigger?.querySelector(".animate-ping") !== null).toBe(mixed);
+      await act(async () => trigger.click());
+      await settle();
+      const dialog = document.querySelector('[role="dialog"]')!;
+      expect(dialog.textContent).toContain("Activity");
+      expect(dialog.textContent).not.toContain("Running now");
+      const draftLink = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+        item.textContent?.includes("Draft checkout"),
+      )!;
+      expect(draftLink.textContent).toContain("Draft");
+      if (mixed) expect(dialog.textContent).toContain("Live checkout");
+      await act(async () => draftLink.click());
+      await settle();
+      expect(history.location.pathname).toBe("/recordings/draft-1/review");
+    },
+  );
+
   it("keeps the top bar quiet while nothing is running", async () => {
     await renderShell({});
-    expect(document.querySelector('button[aria-label^="Open running work"]')).toBeNull();
-    expect(document.body.textContent).not.toContain("Running now");
+    expect(document.querySelector('button[aria-label^="Open activity"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("Activity");
   });
 
   it("marks closed Activity unavailable and offers an in-place retry", async () => {
@@ -410,13 +477,13 @@ describe("shell overlays", () => {
     });
 
     const trigger = document.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Open running work"]',
+      'button[aria-label^="Open activity"]',
     );
     expect(trigger?.getAttribute("aria-label")).toContain("unavailable");
     await act(async () => trigger?.click());
     await settle();
 
-    expect(document.body.textContent).toContain("Couldn’t load running work");
+    expect(document.body.textContent).toContain("Couldn’t load activity");
     const retry = [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Try again"),
     );
@@ -425,7 +492,7 @@ describe("shell overlays", () => {
     await act(async () => retry?.click());
     await settle();
     expect(reads).toBeGreaterThan(before);
-    expect(document.body.textContent).toContain("Couldn’t load running work");
+    expect(document.body.textContent).toContain("Couldn’t load activity");
   });
 
   it("opens the command palette with the keyboard, searches, and navigates", async () => {

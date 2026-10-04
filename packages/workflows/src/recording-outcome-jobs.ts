@@ -56,7 +56,10 @@ export function createRelayRecordingOutcomeJobs(
   const authoring = new CanonicalAuthoringWorkflow(operations);
   return {
     async connect(intent = { kind: "connect-target" }) {
-      const catalog = await targetCatalog(operations, { targetKind: intent.targetKind });
+      const catalog = await targetCatalog(operations, {
+        targetKind: intent.targetKind,
+        targetId: intent.targetId,
+      });
       const available = catalog.flatMap(({ target }) => (target ? [target] : []));
       const current = intent.targetId
         ? available.find((target) => target.targetId === intent.targetId)
@@ -64,7 +67,7 @@ export function createRelayRecordingOutcomeJobs(
           ? available[0]
           : undefined;
       if (intent.targetId && !current) {
-        await selectTarget(operations, intent.targetId);
+        await selectTarget(operations, intent.targetId, intent.targetKind);
         throw new TypeError(`Target ${intent.targetId} is not ready.`);
       }
       return {
@@ -79,7 +82,7 @@ export function createRelayRecordingOutcomeJobs(
         );
       }
       const target = recordingTarget(
-        await selectTarget(operations, intent.targetId),
+        await selectTarget(operations, intent.targetId, intent.targetKind),
         intent.authenticationFixtureId,
         intent.liveSessionId,
       );

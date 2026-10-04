@@ -303,6 +303,15 @@ export type AuthoringReview = {
     takeRevision: number;
     outcome: "passed" | "failed" | "cancelled";
     error?: string;
+    /** Identified only by a failed action proof in this exact reviewed revision. */
+    failedAction?: {
+      actionId: string;
+      ordinal: number;
+      intent: string;
+      detail: string;
+      /** The screenshot observed just before this failed action, when retained. */
+      evidence: NonNullable<AuthoringReview["actions"][number]["evidence"]>;
+    };
   };
   /** Bounded wall-clock facts for the reviewed revision, not raw event data. */
   timeline?: {
@@ -424,7 +433,7 @@ export type AuthorTestDecision = VersionedDecision &
 
 export type DurableAuthorTestDecision = DurableWorkflowHandle &
   (
-    | { action: "record"; interaction: AuthoringInteraction }
+    | { action: "record"; interaction: AuthoringInteraction; mutationId?: string }
     | { action: "checkpoint"; label?: string }
     | { action: "stop" }
     | { action: "edit"; edit: AuthoringRecordingEdit }
@@ -478,6 +487,8 @@ export type RecordTestOutcomeIntent = OutcomeTargetSelection &
     kind: "record-test";
     appMapId?: string;
     title: string;
+    /** Explicit surface chosen by the caller; omitted discovers every target kind. */
+    targetKind?: AuthoringTarget["kind"];
     /** Exact package/bundle selected during recording setup. */
     originApplication?: string;
     /** Saved browser login to record as; the recording's browser is signed in. */

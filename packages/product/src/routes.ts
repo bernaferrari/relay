@@ -102,6 +102,8 @@ export type RouteDefinition = {
     | "filter"
     | "status"
     | "app"
+    | "site"
+    | "account"
     | "view"
     | "step"
     | "at"
@@ -176,6 +178,8 @@ export const ROUTE_DEFINITIONS = [
   ]),
   d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", [
     "app",
+    "site",
+    "account",
     "view",
     "path",
     "target",

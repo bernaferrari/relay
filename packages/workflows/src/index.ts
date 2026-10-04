@@ -154,6 +154,11 @@ export type {
 } from "./intent-document.js";
 export { createBrowserWorkflow, type BrowserInspection } from "./browser-workflow.js";
 export {
+  authoringInputReceiptOutcome,
+  type AuthoringInputReceiptRef,
+  type AuthoringInputReceiptOutcome,
+} from "./authoring-input-receipt.js";
+export {
   createBrowserCaptureWorkflow,
   type BrowserCapturePlan,
 } from "./browser-capture-workflow.js";

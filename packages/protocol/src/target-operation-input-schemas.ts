@@ -60,6 +60,11 @@ export const targetOperationInputSchemas = {
         .enum(["android", "ios"])
         .optional()
         .describe("Optional platform filter. Omit to list iOS, Android, and browsers."),
+      targetKind: z
+        .enum(["device", "browser"])
+        .optional()
+        .describe("Explicit target kind. Browser inventory does not scan physical hardware."),
+      targetId: identifier("Exact target identifier to list").optional(),
     })
     .strict(),
   "target.avds.list": empty,

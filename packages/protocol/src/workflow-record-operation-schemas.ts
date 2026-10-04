@@ -142,6 +142,7 @@ export const workflowRecordOperationInputSchemas = {
       leaseId: identifier.optional(),
       reviewed: z.boolean().optional(),
       interaction: authoringInteraction.optional(),
+      mutationId: identifier.optional(),
       label: z.string().trim().min(1).max(256).optional(),
       edit: authoringRecordingEdit.optional(),
       destination: destination.optional(),
@@ -176,7 +177,10 @@ export const workflowRecordOperationInputSchemas = {
       if (value.action === "attach-run") allowed.add("jobId");
       if (value.action === "abandon-run") allowed.add("reason");
       if (value.action === "start-authoring") allowed.add("leaseId");
-      if (value.action === "authoring-record") allowed.add("interaction");
+      if (value.action === "authoring-record") {
+        allowed.add("interaction");
+        allowed.add("mutationId");
+      }
       if (value.action === "authoring-checkpoint") allowed.add("label");
       if (value.action === "authoring-edit") allowed.add("edit");
       if (value.action === "authoring-approve") {

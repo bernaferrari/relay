@@ -77,16 +77,18 @@ export function RecordingReviewActions(props: {
           onClick={props.onSave}
           disabled={props.pending || props.saveDisabled}
           aria-busy={Boolean(props.saving)}
-          title={props.runsBeforeSave ? `Run on ${props.deviceName}, then save` : undefined}
+          title={
+            props.runsBeforeSave
+              ? `Check edited steps on ${props.deviceName} before saving`
+              : undefined
+          }
         >
           <Save aria-hidden="true" />
           {props.saving === "checking"
-            ? "Running before save…"
+            ? "Checking steps…"
             : props.saving === "saving"
               ? "Saving…"
-              : props.runsBeforeSave
-                ? "Run and save"
-                : props.saveLabel}
+              : props.saveLabel}
         </Button>
       ) : null}
       {props.canReplay && props.autoSave ? (

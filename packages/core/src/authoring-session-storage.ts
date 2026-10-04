@@ -118,7 +118,7 @@ function poolObservations(serialized: string): string {
   return JSON.stringify(stored);
 }
 
-function expandObservations(value: unknown): unknown {
+function expandObservations(value: unknown, clone = true): unknown {
   if (!value || typeof value !== "object" || !("observationPool" in value)) return value;
   const { observationPool: pool, ...stored } = value as {
     observationPool: Record<string, unknown>;
@@ -127,7 +127,7 @@ function expandObservations(value: unknown): unknown {
   for (const list of [...(stored.take?.revisions ?? []), ...(stored.take?.replayAttempts ?? [])]) {
     const pooled = (hash: string) => {
       if (!(hash in pool)) throw new Error("Authoring Session observation is missing");
-      return structuredClone(pool[hash]);
+      return clone ? structuredClone(pool[hash]) : pool[hash];
     };
     if (Array.isArray(list.observationRefs)) {
       list.observations = list.observationRefs.map(pooled);
@@ -145,14 +145,39 @@ function expandObservations(value: unknown): unknown {
   return stored;
 }
 
-export async function readAuthoringSession(id: string): Promise<AuthoringSession | null> {
+async function readSessionFile(id: string, clone = true): Promise<AuthoringSession | null> {
   try {
     return parseAuthoringSession(
-      expandObservations(JSON.parse(await readFile(authoringSessionPath(id), "utf8"))),
+      expandObservations(JSON.parse(await readFile(authoringSessionPath(id), "utf8")), clone),
     );
   } catch {
     return null;
   }
+}
+
+export async function readAuthoringSession(id: string): Promise<AuthoringSession | null> {
+  return readSessionFile(id);
+}
+
+export type AuthoringSessionRetentionEntry = Pick<
+  AuthoringSession,
+  "id" | "projectId" | "state" | "updatedAt" | "archive"
+>;
+
+/** Validate the same stored envelope and pool references without copying every
+ * historical tree. Retention receives metadata only, never a mutable Take. */
+export async function readAuthoringSessionRetention(
+  id: string,
+): Promise<AuthoringSessionRetentionEntry | null> {
+  const session = await readSessionFile(id, false);
+  if (!session || session.id !== id || !Number.isFinite(session.updatedAt)) return null;
+  return {
+    id: session.id,
+    projectId: session.projectId,
+    state: session.state,
+    updatedAt: session.updatedAt,
+    ...(session.archive ? { archive: session.archive } : {}),
+  };
 }
 
 export async function removeAuthoringSession(id: string): Promise<void> {

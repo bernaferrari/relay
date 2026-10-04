@@ -121,7 +121,7 @@ export type SpecificOperationMap = {
   };
   "target.actions.list": { input: Record<string, never>; output: { actions: ActionSummary[] } };
   "target.devices.list": {
-    input: { phase?: "android" | "ios" };
+    input: { phase?: "android" | "ios"; targetKind?: "device" | "browser"; targetId?: string };
     output: { devices: DeviceSummary[] };
   };
   "target.avds.list": {

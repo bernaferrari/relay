@@ -634,8 +634,10 @@ describe("record, review, replay, and save", () => {
     await click(button("Edit steps"));
     await act(async () => history.push("/recordings/workflow-2/review"));
     await settle();
-    expect(document.querySelector<HTMLInputElement>("#review-test-name")?.value).toBe(
-      "Second recording",
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLInputElement>("#review-test-name")?.value).toBe(
+        "Second recording",
+      ),
     );
     expect(button("Edit steps").getAttribute("aria-pressed")).toBe("false");
     expect(storage.values.get("recordingName:workflow-1")).toBe("First recording draft");
@@ -1333,7 +1335,7 @@ describe("record, review, replay, and save", () => {
     expect(document.querySelector<HTMLInputElement>("#new-test-website")?.value).toBe("");
   });
 
-  it("Phone setup bypasses a pending website connection request", async () => {
+  it("defers unrelated target readiness until the user opens Phone setup", async () => {
     const fake = fakeService();
     const scopes: unknown[] = [];
     fake.service.connect = async (input) => {
@@ -1350,11 +1352,41 @@ describe("record, review, replay, and save", () => {
       undefined,
       true,
     );
+    expect(scopes).toEqual([]);
     await click(button("Phone or tablet"));
     await settle();
-    expect(scopes).toEqual([{ targetKind: "browser" }, { targetKind: "device" }]);
+    expect(scopes).toEqual([{ targetKind: "device" }]);
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("Checking…");
+  });
+
+  it("can open website setup after an existing browser readiness failure", async () => {
+    const fake = fakeService();
+    fake.service.listApps = async () => [{ id: "app-1", name: "shop.example", platform: "web" }];
+    fake.service.connect = async () => ({
+      status: "target-selection",
+      targets: [],
+      recovery: {
+        code: "transport",
+        title: "Browser unavailable",
+        detail: "The selected browser is offline.",
+        recovery: "Choose another browser.",
+        retryable: true,
+      },
+    });
+    await renderJourney(
+      "/tests/new?app=app-1&target=old-browser",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(document.body.textContent).toContain("Browser unavailable");
+    await click(button("Website"));
+    expect(document.querySelector('form[aria-label="Start a test"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Browser unavailable");
   });
 
   it("preserves the website address across mode switches and filters browsers out of phone setup", async () => {
@@ -1390,6 +1422,7 @@ describe("record, review, replay, and save", () => {
     "keeps App context and respects an explicit saved account choice (%s)",
     async (useAccount) => {
       const fake = fakeService();
+      const begin = vi.spyOn(fake.service, "begin");
       const open = vi.fn().mockImplementation(async (spaceId: string) => ({
         targetId: spaceId,
         name: "Shop",
@@ -1439,6 +1472,7 @@ describe("record, review, replay, and save", () => {
         );
       }
       await click(button("Start recording"));
+      expect(begin).toHaveBeenCalledWith(expect.objectContaining({ targetKind: "browser" }));
       expect(create).toHaveBeenCalledTimes(useAccount ? 0 : 1);
       if (!useAccount)
         expect(create).toHaveBeenCalledWith(
@@ -1454,7 +1488,7 @@ describe("record, review, replay, and save", () => {
     },
   );
 
-  it("offers one Run and save action that checks edited steps and includes the current instruction", async () => {
+  it("offers one Save test action that checks edited steps and includes the current instruction", async () => {
     const initial = state("reviewing", ["inspect", "edit", "replay"]);
     initial.snapshot!.review!.currentRevision = 7;
     const fake = fakeService(initial);
@@ -1474,15 +1508,16 @@ describe("record, review, replay, and save", () => {
       fake.service,
       storage.platform,
     );
-    expect(button("Run and save").disabled).toBe(false);
+    expect(button("Save test").disabled).toBe(false);
+    expect(document.body.textContent).not.toContain("Run and save");
     expect(document.body.textContent).not.toContain("Run test");
     await click(button("Edit steps"));
     await fill(
       document.querySelector<HTMLInputElement>("#review-action-intent")!,
       "Open app settings",
     );
-    await click(button("Run and save"));
-    expect(button("Running before save…").disabled).toBe(true);
+    await click(button("Save test"));
+    expect(button("Checking steps…").disabled).toBe(true);
     expect(fake.service.save).toHaveBeenCalledWith(
       expect.objectContaining({
         reviewRevision: 7,
@@ -1568,13 +1603,13 @@ describe("record, review, replay, and save", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(button("Run and save"));
+    await click(button("Save test"));
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
     expect(document.body.textContent).toContain("The steps changed");
     expect(fake.calls).not.toContain("approve");
     await click(button("Try again"));
     expect(document.body.textContent).not.toContain("The steps changed");
-    expect(button("Run and save").disabled).toBe(false);
+    expect(button("Save test").disabled).toBe(false);
   });
 
   it("follows the full server-owned progression with one dominant review action", async () => {
@@ -1584,7 +1619,9 @@ describe("record, review, replay, and save", () => {
 
     await beginRecording();
     expect(history.location.pathname).toBe("/recordings/workflow-1");
-    expect(document.body.textContent).toContain("Taps and typing appear here.");
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Taps and typing appear here."),
+    );
     expect(document.querySelector('[aria-label="Interactive Device: Pixel 9 Pro"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("emulator-5554");
     const liveTextInput = document.querySelector<HTMLInputElement>(
@@ -2030,6 +2067,109 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("accessibility geometry");
   });
 
+  it("points to the exact failed reviewed step and its replay screen without hiding unknown status", async () => {
+    const failed = state("reviewing", ["inspect", "edit", "replay"], { replay: "failed" });
+    const review = failed.snapshot!.review!;
+    const frame = {
+      id: "failure-frame",
+      kind: "screenshot" as const,
+      capturedAt: 7,
+      roles: ["entrance"] as const,
+    };
+    review.actions = Array.from({ length: 4 }, (_, index) => ({
+      ...review.actions[0]!,
+      id: `step-${index + 1}`,
+      intent: index === 3 ? "Settings" : `Action ${index + 1}`,
+      kind: "tap" as const,
+      evidence: [
+        {
+          id: `recorded-${index + 1}`,
+          kind: "screenshot" as const,
+          capturedAt: 1,
+          roles: ["entrance", "exit"] as const,
+        },
+      ],
+    }));
+    review.latestReplay!.failedAction = {
+      actionId: "step-4",
+      ordinal: 4,
+      intent: "Settings",
+      detail: "The control is not available on this screen.",
+      evidence: [frame],
+    };
+    review.latestReplay!.error =
+      "Step 1: selector open-settings is not present in the accessibility tree";
+    Object.assign(failed, {
+      recovery: {
+        code: "operation-unavailable",
+        title: "Replay did not prove the reviewed recording",
+        detail: "Step 4 · Settings: The control is not available on this screen.",
+        recovery: "Review this step before running again.",
+        retryable: true,
+      },
+    });
+    const fake = fakeService(failed);
+    const evidence = vi.spyOn(fake.service, "getEvidencePreview");
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("Step 4 · Settings");
+    expect(document.body.textContent).toContain("The control is not available on this screen.");
+    expect(document.body.textContent).not.toContain("selector open-settings");
+    expect(document.querySelector("#recording-evidence-title")?.textContent).toContain("Step 4");
+    expect(evidence).toHaveBeenCalledWith("recording-1", "failure-frame");
+    expect(button("At failure").getAttribute("aria-pressed")).toBe("true");
+    await click(button("Before"));
+    expect(button("Before").getAttribute("aria-pressed")).toBe("true");
+    expect(button("At failure").getAttribute("aria-pressed")).toBe("false");
+    expect(evidence).toHaveBeenCalledWith("recording-1", "recorded-4");
+    await click(button("Edit step"));
+    expect(button("At failure").getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector<HTMLInputElement>("#review-action-intent")?.value).toBe(
+      "Settings",
+    );
+    expect(button("Remove action").disabled).toBe(false);
+    expect(fake.edits).toEqual([]);
+    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
+  });
+
+  it("keeps replay uncertainty fenced even when an earlier failed action is retained", async () => {
+    const unavailable = state("reviewing", ["inspect"], { replay: "failed" });
+    unavailable.snapshot!.phase = "needs-attention";
+    unavailable.snapshot!.review!.latestReplay!.failedAction = {
+      actionId: unavailable.snapshot!.review!.actions[0]!.id,
+      ordinal: 1,
+      intent: "Settings",
+      detail: "Earlier failure",
+      evidence: [],
+    };
+    Object.assign(unavailable, {
+      recovery: {
+        code: "mutation-outcome-unknown",
+        title: "Replay status unknown",
+        detail: "Receipt pending",
+        recovery: "Inspect",
+        retryable: false,
+      },
+    });
+    const fake = fakeService(unavailable);
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain(
+      "Replay was interrupted. Your saved steps are safe.",
+    );
+    expect(document.body.textContent).not.toContain("Earlier failure");
+    expect(document.body.textContent).not.toContain("Step status needs checking");
+    expect(document.querySelector('[aria-label="Edit steps"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("Edit step");
+    expect(fake.calls).not.toContain("replay");
+  });
+
   it("never presents a retained snapshot as live while recovery is required", async () => {
     const unavailable: ProductRecordingState = {
       ...state("recording", ["inspect"]),
@@ -2352,6 +2492,54 @@ describe("record, review, replay, and save", () => {
 
     await click(button("Open recording"));
     expect(history.location.pathname).toBe("/recordings/workflow-1");
+  });
+
+  it("resumes after the exact delayed recording receipt without repeating input", async () => {
+    const fake = fakeService();
+    const originalLiveTarget = fake.service.liveTarget!;
+    const receipt = {
+      mutationId: "recording-1",
+      workflowId: "workflow-1",
+      sessionId: "recording-1",
+      transitionVersion: 5,
+      target,
+    };
+    let finishReceipt!: (value: { outcome: "applied" }) => void;
+    const fetchReceipt = vi.fn(
+      () =>
+        new Promise<{ outcome: "applied" }>((resolve) => {
+          finishReceipt = resolve;
+        }),
+    );
+    Object.assign(fake.service, { fetchRecordingInputReceipt: fetchReceipt });
+    let inputCount = 0;
+    fake.service.liveTarget = async (selected) => {
+      const session = await originalLiveTarget(selected);
+      return {
+        ...session,
+        async input() {
+          inputCount += 1;
+          throw Object.assign(new Error("record response arrived after transport timeout"), {
+            recordingMutation: receipt,
+          });
+        },
+      };
+    };
+    const storage = platformWithStorage();
+    await renderJourney("/tests/new", fake.service, storage.platform);
+    await beginRecording();
+    await tapLiveTarget();
+    expect(document.body.textContent).toContain("Recording paused: Relay lost confirmation");
+    await tapLiveTarget();
+    expect(inputCount).toBe(1);
+    expect(fetchReceipt).toHaveBeenCalledWith(receipt);
+    await act(async () => finishReceipt({ outcome: "applied" }));
+    await settle();
+    expect(document.body.textContent).not.toContain("Recording paused: Relay lost confirmation");
+    expect(inputCount).toBe(1);
+    expect(fake.calls.some((call) => call.startsWith("reconcile:"))).toBe(false);
+    await click(button("Stop and review"));
+    expect(fake.calls).toContain("stop");
   });
 
   it("blocks live input after an unknown dispatch until the user observes and reconciles", async () => {

@@ -556,6 +556,8 @@ export type AuthoringSession = {
   /** Exact durable mutation proof written atomically with canonical session
    * state. A workflow GET may reconcile only this named transition. */
   workflowMutation?: {
+    /** Caller nonce for exact recording input receipts; absent on legacy mutations. */
+    mutationId?: string;
     workflowId: string;
     transitionVersion: number;
     action: string;

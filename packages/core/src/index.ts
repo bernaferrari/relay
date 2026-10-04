@@ -18,6 +18,7 @@ export * from "./target-control.js";
 export * from "./coordination-store.js";
 export * from "./session.js";
 export * from "./workspace.js";
+export * from "./connected-target-inventory.js";
 export * from "./trace.js";
 export * from "./runs.js";
 export * from "./capture-review.js";

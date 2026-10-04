@@ -163,6 +163,23 @@ test("exact browser selection only preflights the selected browser", async () =>
   assert.equal(calls.filter((call) => call.id === "target.preflight").length, 1);
 });
 
+test("typed browser selection forwards the exact inventory scope and still preflights", async () => {
+  const { client, calls } = readyBrowser();
+  assert.deepEqual(await selectTarget(createRelayOperationPort(client), browser.id, "browser"), {
+    kind: "browser",
+    platform: "browser",
+    targetId: browser.id,
+  });
+  assert.deepEqual(calls[0], {
+    id: "target.devices.list",
+    input: { targetKind: "browser", targetId: browser.id },
+  });
+  assert.deepEqual(
+    calls.filter(({ id }) => id === "target.preflight").map(({ input }) => input),
+    [{ targetId: browser.id }],
+  );
+});
+
 test("default connect continues to discover and preflight all target kinds", async () => {
   const { client, calls } = readyBrowser();
   const result = await createRelayRecordingOutcomeJobs(client, { actorId: "agent:test" }).connect();

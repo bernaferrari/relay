@@ -77,6 +77,18 @@ describe("React route contract", () => {
     ).not.toThrow();
   });
 
+  it.each(["", "fixture:admin"])(
+    "accepts website recording links with the explicit account %j",
+    (account) => {
+      expect(() =>
+        assertAllowedRouteSearch("/tests/new", {
+          site: "http://127.0.0.1:8794/",
+          account,
+        }),
+      ).not.toThrow();
+    },
+  );
+
   it("builds semantic parent locations for direct-entry navigation", () => {
     expect(parentPathForPath("/tests/test-1/edit")).toBe("/tests/test-1");
     expect(parentPathForPath("/apps/app%201/versions")).toBe("/apps/app%201");

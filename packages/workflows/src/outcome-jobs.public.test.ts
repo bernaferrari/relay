@@ -162,7 +162,9 @@ test("public connect honors Phone-only discovery before browser preflight", asyn
     targets: [{ kind: "device", platform: "android", targetId: "pixel-9" }],
     current: { kind: "device", platform: "android", targetId: "pixel-9" },
   });
-  assert.deepEqual(scripted.invocations, [{ id: "target.devices.list", input: {} }]);
+  assert.deepEqual(scripted.invocations, [
+    { id: "target.devices.list", input: { targetKind: "device" } },
+  ]);
 });
 
 test("connect leaves multiple devices explicit instead of guessing", async () => {

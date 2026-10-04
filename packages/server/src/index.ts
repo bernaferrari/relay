@@ -42,7 +42,7 @@ import {
   getActiveJobs,
   getJob,
   listActionsWithTrace,
-  listAndroidDevicesFast,
+  listConnectedTargets,
   listDevices,
   publicShareBaseUrl,
   resolveJobDevicePlatform,
@@ -58,7 +58,6 @@ import {
   toJobReport,
   toJunitXml,
   releaseDeviceLease,
-  listTargets,
   loadEvidenceCollectionPolicy,
   loadRedactionPolicy,
   loadDeviceSetup,
@@ -403,30 +402,14 @@ async function handleRequest(
 
     if (method === "GET" && pathname === "/devices") {
       const phase = url.searchParams.get("phase");
-      if (phase === "android") {
-        const devices = await listAndroidDevicesFast().catch(() => []);
-        json(res, 200, { devices });
-        return;
-      }
-      if (phase === "ios") {
-        const devices = (await listDevices().catch(() => [])).filter(
-          (device) => device.platform === "ios",
-        );
-        json(res, 200, { devices });
-        return;
-      }
-      const mobile = await listDevices().catch(() => []);
-      const browsers = (await listTargets()).map((target) => ({
-        id: target.id,
-        serial: target.id,
-        name: target.name,
-        kind: "Managed browser",
-        booted: true,
-        platform: "browser",
-        targetKind: "browser",
-      }));
-      const devices = [...mobile, ...browsers];
-      lastKnownDeviceCount = mobile.length;
+      const targetKind = url.searchParams.get("targetKind");
+      const targetId = url.searchParams.get("targetId")?.trim();
+      const { devices, physicalDeviceCount } = await listConnectedTargets({
+        ...(phase === "android" || phase === "ios" ? { phase } : {}),
+        ...(targetKind === "browser" || targetKind === "device" ? { targetKind } : {}),
+        ...(targetId ? { targetId } : {}),
+      });
+      if (physicalDeviceCount !== undefined) lastKnownDeviceCount = physicalDeviceCount;
       json(res, 200, { devices });
       return;
     }

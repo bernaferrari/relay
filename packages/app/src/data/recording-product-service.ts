@@ -8,6 +8,7 @@ import type {
   ProductRecordingSaveInput,
   ProductRecordingState,
 } from "@relay/product/recording-journey";
+import { failedReplayEvidence } from "./recording-replay-evidence";
 import { reviewAndroidTalkBack } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
@@ -20,6 +21,7 @@ import type {
   AuthoringRecordingEdit,
   AuthoringTarget,
 } from "@relay/protocol";
+import type { AuthoringInputReceiptRef, AuthoringInputReceiptOutcome } from "@relay/workflows";
 import { reconcileOutcomeFromServerResponse } from "./recording-input-outcome";
 import { presentReadyTargets, type ProductTargetOption } from "./target-presentation";
 import {
@@ -162,6 +164,10 @@ export type RecordingProductService = {
     };
     observation?: unknown;
   }>;
+  /** Read only: prove the exact input already sent, without replaying it. */
+  fetchRecordingInputReceipt?(input: AuthoringInputReceiptRef): Promise<{
+    outcome: AuthoringInputReceiptOutcome;
+  }>;
   /** Server-owned input fence for remount. The local ledger is only a projection. */
   inspectTargetHealth?(serial: string): Promise<{
     input: {
@@ -281,9 +287,11 @@ export function createRecordingProductService(
       const revision = take?.revisions.find(
         (candidate) => candidate.revision === take.currentRevision,
       );
-      const evidence = revision?.evidence.find(
+      const recordedEvidence = revision?.evidence.find(
         (candidate) => candidate.id === evidenceId && candidate.kind === "screenshot",
       );
+      const replayEvidence = recordedEvidence ? undefined : failedReplayEvidence(take, evidenceId);
+      const evidence = recordedEvidence ?? replayEvidence?.evidence;
       if (!evidence) return null;
       const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(evidence.uri);
       if (!match) return null;
@@ -347,7 +355,9 @@ export function createRecordingProductService(
       const resource = await client.binaryResource(
         `/authoring-evidence/${encodeURIComponent(match[1]!)}?mime=${encodeURIComponent(mime)}&v=cors-v2`,
       );
-      let controls = controlsForAuthoringEvidence(revision, evidenceId);
+      let controls = replayEvidence
+        ? projectRecordingEvidenceControls(replayEvidence.observation.nodes)
+        : controlsForAuthoringEvidence(revision, evidenceId);
       if (fullPage) {
         const frame = fullPage.frames.find((candidate) => candidate.evidenceId === evidenceId);
         // Diagnostic rasters are review-only and never inherit logical
@@ -474,7 +484,12 @@ export function createRecordingProductService(
             if (rejectedGestureBeforeDispatch(state.recovery.detail)) {
               throw new RecordingInputNotSentError("The scroll exceeded the screen bounds.");
             }
-            throw new Error(`${state.recovery.detail} ${state.recovery.recovery}`.trim());
+            throw Object.assign(
+              new Error(`${state.recovery.detail} ${state.recovery.recovery}`.trim()),
+              state.recovery.recordingMutation
+                ? { recordingMutation: state.recovery.recordingMutation }
+                : {},
+            );
           }
         },
       });
@@ -567,6 +582,12 @@ export function createRecordingProductService(
         ...(receipt.health ? { health: receipt.health } : {}),
         ...(receipt.observation ? { observation: receipt.observation } : {}),
       };
+    },
+    async fetchRecordingInputReceipt(input) {
+      const { client } = await product();
+      const { authoringInputReceiptOutcome } = await import("@relay/workflows");
+      const output = await client.invoke("workflow.get", { workflowId: input.workflowId });
+      return { outcome: authoringInputReceiptOutcome(output, input) };
     },
     async inspectTargetHealth(serial) {
       const { client } = await product();

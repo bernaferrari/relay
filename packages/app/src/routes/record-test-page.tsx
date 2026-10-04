@@ -45,6 +45,7 @@ import {
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
 import { currentAccessibilityInspection } from "../data/talkback-overlay";
 import { conditionTextSuggestions } from "../data/recording-condition-suggestions";
+import { useRecordingInputReceipt } from "./use-recording-input-receipt";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
 const recordingRouteApi = getRouteApi("/recordings/$recordingId");
@@ -271,6 +272,29 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     Promise.resolve({ kind: "confirmed" }),
   );
   const recordingLedger = useRef<RecordingRecoveryLedger>({ mutations: [] });
+
+  useRecordingInputReceipt({
+    failure: unresolvedRecordingMutation(recordingLedger.current, "unknown"),
+    workflowId,
+    target: selectedTarget,
+    service: productService,
+    onConfirmed: async (failure, isCurrent) => {
+      const refreshed = await refreshRecordingEvidence({
+        refresh: async () => {
+          await refreshRecording(queryClient, productService, workflowId);
+        },
+        mutationId: failure.mutationId,
+      });
+      const latest = unresolvedRecordingMutation(recordingLedger.current, "unknown");
+      if (!isCurrent() || latest !== failure) return;
+      persistLedger(
+        resolveRecordingMutation(recordingLedger.current, failure.mutationId!, refreshed),
+      );
+      setRecoveryKind(refreshed.kind);
+      setLiveIssue(recordingInputRecoveryMessage(refreshed));
+      setTalkBackRefresh((count) => count + 1);
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;

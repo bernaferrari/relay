@@ -600,6 +600,9 @@ export async function handleWorkflowRoute(input: {
               workflowId: current.record.workflowId,
               transitionVersion: reserved.workflow.record.version,
               action: body.action,
+              ...(body.action === "authoring-record" && body.mutationId
+                ? { mutationId: body.mutationId }
+                : {}),
               completedAt: runtime.now(),
             },
           );
@@ -664,6 +667,9 @@ export async function handleWorkflowRoute(input: {
           !authoringIdentityAfterMutation(current.record, next, {
             action: body.action,
             transitionVersion: reserved.workflow.record.version,
+            ...(body.action === "authoring-record" && body.mutationId
+              ? { mutationId: body.mutationId }
+              : {}),
           })
         ) {
           throw new HttpError(409, "Authoring mutation returned a different canonical session");

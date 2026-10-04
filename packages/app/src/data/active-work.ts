@@ -11,6 +11,8 @@ export type ActiveWorkItem = {
   title: string;
   detail: string;
   status: string;
+  /** Execution truth is separate from the fact that this work can be reopened. */
+  activity: "running" | "queued" | "draft" | "unknown";
   href: string;
 };
 
@@ -32,18 +34,20 @@ export function collectActiveWork(input: {
     snapshot?.stage !== "failed"
   ) {
     const reviewing = snapshot?.stage === "reviewing";
+    const running =
+      !reviewing && input.recording?.status === "recording" && snapshot?.phase === "running";
     items.push({
       id: `recording:${input.recordingId}`,
       kind: "recording",
       title: snapshot?.title || "Recording in progress",
-      detail: reviewing ? "Ready to review and replay" : targetDetail(input.recording),
-      status: reviewing ? "Reviewing" : "Recording",
+      detail: reviewing ? "Saved steps ready for review" : targetDetail(input.recording),
+      status: reviewing ? "Draft" : running ? "Recording" : "Status needs checking",
+      activity: reviewing ? "draft" : running ? "running" : "unknown",
       href: `/recordings/${encodeURIComponent(input.recordingId)}${reviewing ? "/review" : ""}`,
     });
   }
 
   const allRuns = input.runs ?? [];
-  const activeRuns = allRuns.filter((run) => run.phase === "queued" || run.phase === "running");
   const batches = new Map<string, ProductRunSummary[]>();
   for (const run of allRuns) {
     if (run.batchId) {
@@ -63,18 +67,20 @@ export function collectActiveWork(input: {
       kind: "batch",
       title: batchRuns[0]?.testName ?? batchRuns[0]?.title ?? "Run Across",
       detail: `${completed.length} of ${total} cases finished`,
-      status: "Running across",
+      status: batchRuns.some((run) => run.phase === "running") ? "Running across" : "Queued",
+      activity: batchRuns.some((run) => run.phase === "running") ? "running" : "queued",
       href: `/batches/${encodeURIComponent(batchId)}`,
     });
   }
 
-  if (input.runPointer && !activeRuns.some((run) => run.id === input.runPointer?.runId)) {
+  if (input.runPointer && !allRuns.some((run) => run.id === input.runPointer?.runId)) {
     items.push({
       id: `run:${input.runPointer.runId}`,
       kind: "run",
-      title: "Run in progress",
+      title: "Run",
       detail: "Open the latest server status",
-      status: "Running",
+      status: "Status needs checking",
+      activity: "unknown",
       href: `/runs/${encodeURIComponent(input.runPointer.runId)}`,
     });
   }
@@ -90,6 +96,7 @@ export function collectActiveWork(input: {
           ? "Representative verification is running"
           : "Required verification is running",
       status: change.status === "running-pilot" ? "Pilot" : "Verifying",
+      activity: "running",
       href: `/changes/${encodeURIComponent(change.id)}`,
     });
   }
@@ -104,6 +111,7 @@ function runItem(run: ProductRunSummary): ActiveWorkItem {
     title: run.testName ?? run.title,
     detail: run.targetName ?? (run.phase === "queued" ? "Waiting for a target" : "Live Run"),
     status: run.phase === "queued" ? "Queued" : "Running",
+    activity: run.phase === "queued" ? "queued" : "running",
     href: `/runs/${encodeURIComponent(run.id)}`,
   };
 }

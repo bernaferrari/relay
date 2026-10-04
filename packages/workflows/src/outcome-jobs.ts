@@ -316,7 +316,10 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   private readonly eventSource?: WorkflowEventSource;
 
   async connect(intent: ConnectTargetIntent = { kind: "connect-target" }) {
-    const catalog = await targetCatalog(this.operations, { targetKind: intent.targetKind });
+    const catalog = await targetCatalog(this.operations, {
+      targetKind: intent.targetKind,
+      targetId: intent.targetId,
+    });
     const available = catalog.flatMap(({ target }) => (target ? [target] : []));
     const current = intent.targetId
       ? available.find((target) => target.targetId === intent.targetId)
@@ -324,7 +327,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
         ? available[0]
         : undefined;
     if (intent.targetId && !current) {
-      await selectTarget(this.operations, intent.targetId);
+      await selectTarget(this.operations, intent.targetId, intent.targetKind);
       throw new TypeError(`Target ${intent.targetId} is not ready.`);
     }
     return {
@@ -364,7 +367,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       );
     }
     const target = recordingTarget(
-      await selectTarget(this.operations, intent.targetId),
+      await selectTarget(this.operations, intent.targetId, intent.targetKind),
       intent.authenticationFixtureId,
       intent.liveSessionId,
     );
