@@ -2,6 +2,7 @@ import * as esbuild from "esbuild";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyAndroidAppInventory } from "../../../scripts/build-android-app-inventory.mjs";
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(desktopRoot, "../..");
@@ -43,6 +44,19 @@ export async function bundleServer() {
       "packages/server/node_modules/@yume-chan/fetch-scrcpy-server/server.bin",
     ),
     resolve(outDir, "server.bin"),
+  );
+  const inventory = await verifyAndroidAppInventory();
+  const inventorySource = resolve(workspaceRoot, "packages/core/android-helpers/app-inventory");
+  const inventoryTarget = resolve(outDir, "android-helpers/app-inventory");
+  await mkdir(inventoryTarget, { recursive: true });
+  await copyFile(
+    resolve(inventorySource, inventory.assetName),
+    resolve(inventoryTarget, inventory.assetName),
+  );
+  const inventoryManifest = inventory.assetName.replace(/\.apk$/u, ".manifest.json");
+  await copyFile(
+    resolve(inventorySource, inventoryManifest),
+    resolve(inventoryTarget, inventoryManifest),
   );
   // Playwright derives its package root from the generated bundle directory
   // and reads this metadata during module initialization.

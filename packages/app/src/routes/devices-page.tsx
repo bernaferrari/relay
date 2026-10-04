@@ -1,4 +1,4 @@
-import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
+import { libraryRowSurface } from "../components/library-row-styles";
 /** @jsxImportSource react */
 import { isGoalScratchTarget } from "../data/target-presentation";
 import { Badge } from "@relay/ui-react/components/badge";
@@ -26,6 +26,12 @@ import { LibrarySearch } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
+import {
+  deviceMatchesCatalogSearch,
+  groupBrowserDestinations,
+  isLoopbackBrowserUrl,
+  type BrowserDestinationGroup,
+} from "../data/device-catalog-presentation";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
@@ -60,7 +66,28 @@ function deviceGroup(device: ProductDevice): string {
 }
 
 /** A tiny drawing of the hardware so the grid reads at a glance. */
-function DeviceSilhouette({ kind }: { kind: "phone" | "tablet" | "window" }) {
+function DeviceSilhouette({ kind }: { kind: "phone" | "tablet" | "window" | "android" }) {
+  if (kind === "android") {
+    return (
+      <svg
+        data-slot="android-device-icon"
+        viewBox="0 0 24 24"
+        className="size-8 text-foreground/70"
+        aria-hidden="true"
+      >
+        <path
+          d="m7 7-2-3m12 3 2-3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <path d="M2 18a10 10 0 0 1 20 0Z" fill="currentColor" />
+        <circle cx="7.5" cy="14" r="1" className="fill-stage" />
+        <circle cx="16.5" cy="14" r="1" className="fill-stage" />
+      </svg>
+    );
+  }
   if (kind === "window") {
     return (
       <span className="flex h-7 w-9 flex-col overflow-hidden rounded-md border-2 border-foreground/70 bg-card">
@@ -115,7 +142,13 @@ function DeviceRow({
           ) : (
             <DeviceSilhouette
               kind={
-                DeviceIcon === AppWindow ? "window" : DeviceIcon === Tablet ? "tablet" : "phone"
+                device.platform === "android"
+                  ? "android"
+                  : DeviceIcon === AppWindow
+                    ? "window"
+                    : DeviceIcon === Tablet
+                      ? "tablet"
+                      : "phone"
               }
             />
           )}
@@ -129,7 +162,7 @@ function DeviceRow({
                   .join(" · ")
               : deviceSummaryLine(device)}
           </span>
-          <span
+          {!isBrowser(device) || stale ? <span
             data-slot="library-row-status"
             className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
           >
@@ -148,9 +181,62 @@ function DeviceRow({
               />
             )}
             {stale ? "Status unavailable" : statusLabel(device)}
-          </span>
+          </span> : null}
         </span>
       </Link>
+    </li>
+  );
+}
+
+function BrowserDestinationRow({
+  group,
+  returnTo,
+  searchActive,
+  stale,
+}: {
+  group: BrowserDestinationGroup;
+  returnTo?: string;
+  searchActive: boolean;
+  stale: boolean;
+}) {
+  const [open, setOpen] = useState(searchActive);
+  useEffect(() => {
+    if (searchActive) setOpen(true);
+  }, [searchActive]);
+  return (
+    <li className={open ? "sm:col-span-2 xl:col-span-3" : ""}>
+      <Collapsible
+        open={open}
+        onOpenChange={setOpen}
+        data-slot="browser-destination-group"
+        className="overflow-hidden rounded-xl border border-border bg-card"
+      >
+        <CollapsibleTrigger className="flex min-h-24 w-full items-center gap-3.5 p-3.5 text-left outline-none transition-colors duration-150 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none">
+          <span
+            className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-stage"
+            aria-hidden="true"
+          >
+            <SiteIcon url={group.url} className="size-7" />
+          </span>
+          <span className="grid min-w-0 flex-1 gap-1">
+            <strong className="truncate text-sm font-semibold">{group.label}</strong>
+            <span className="text-xs text-muted-foreground">
+              {group.devices.length} browsers
+            </span>
+          </span>
+          <ChevronRight
+            className={`size-4 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+            aria-hidden="true"
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="border-t border-border">
+          <ul className="m-0 grid list-none gap-3 p-3.5 sm:grid-cols-2 xl:grid-cols-3">
+            {group.devices.map((device) => (
+              <DeviceRow key={device.id} device={device} returnTo={returnTo} stale={stale} />
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </Collapsible>
     </li>
   );
 }
@@ -161,14 +247,22 @@ function DeviceSection({
   returnTo,
   bordered = true,
   stale = false,
+  groupBrowsers = false,
+  searchActive = false,
 }: {
   title: string;
   devices: readonly ProductDevice[];
   returnTo?: string;
   bordered?: boolean;
   stale?: boolean;
+  groupBrowsers?: boolean;
+  searchActive?: boolean;
 }) {
   const headingId = useId();
+  const sites = useContext(BrowserSitesContext);
+  const browserGroups = groupBrowsers
+    ? groupBrowserDestinations(devices, sites, { keepNamedSeparate: title === "Browsers" })
+    : [];
   return (
     <section
       className=""
@@ -189,9 +283,28 @@ function DeviceSection({
         </div>
       ) : null}
       <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-3">
-        {devices.map((device) => (
-          <DeviceRow key={device.id} device={device} returnTo={returnTo} stale={stale} />
-        ))}
+        {groupBrowsers
+          ? browserGroups.map((group) =>
+              group.devices.length === 1 ? (
+                <DeviceRow
+                  key={group.key}
+                  device={group.devices[0]!}
+                  returnTo={returnTo}
+                  stale={stale}
+                />
+              ) : (
+                <BrowserDestinationRow
+                  key={group.key}
+                  group={group}
+                  returnTo={returnTo}
+                  searchActive={searchActive}
+                  stale={stale}
+                />
+              ),
+            )
+          : devices.map((device) => (
+              <DeviceRow key={device.id} device={device} returnTo={returnTo} stale={stale} />
+            ))}
       </ul>
     </section>
   );
@@ -203,12 +316,14 @@ function AvailableSection({
   returnTo,
   searchActive,
   stale = false,
+  groupBrowsers = false,
 }: {
   title: string;
   devices: readonly ProductDevice[];
   returnTo?: string;
   searchActive: boolean;
   stale?: boolean;
+  groupBrowsers?: boolean;
 }) {
   const [open, setOpen] = useState(searchActive);
   useEffect(() => {
@@ -238,6 +353,8 @@ function AvailableSection({
             returnTo={returnTo}
             bordered={false}
             stale={stale}
+            groupBrowsers={groupBrowsers}
+            searchActive={searchActive}
           />
         </CollapsibleContent>
       </Collapsible>
@@ -269,14 +386,14 @@ export function DevicesPage() {
   });
 
   const visibleDevices =
-    devices.data?.filter(
-      (device) =>
-        !deferredQuery ||
-        `${device.name} ${device.platform} ${device.osVersion ?? ""} ${device.kind ?? ""}`
-          .toLocaleLowerCase()
-          .includes(deferredQuery),
-    ) ?? [];
+    devices.data?.filter((device) => deviceMatchesCatalogSearch(device, deferredQuery, sites)) ??
+    [];
   const visibleCount = visibleDevices.length;
+  const localBrowsers = visibleDevices.filter(
+    (device) =>
+      deviceGroup(device) === "Browsers" &&
+      isLoopbackBrowserUrl(sites.get(device.id)?.startUrl ?? device.browserUrl),
+  );
   const returnFocus = useCollectionReturnFocus("relay:focus:/devices", visibleDevices, "/devices/");
 
   useEffect(() => {
@@ -337,7 +454,7 @@ export function DevicesPage() {
             id="device-search"
             label="Search Devices and Browsers"
             value={query}
-            placeholder="Search by name or platform"
+            placeholder="Search by name, platform, or address"
             onChange={setQuery}
           />
         </div>
@@ -412,6 +529,7 @@ export function DevicesPage() {
                 const devicesInSection = visibleDevices.filter(
                   (device) =>
                     deviceGroup(device) === title &&
+                    !(title === "Browsers" && localBrowsers.includes(device)) &&
                     !device.id.startsWith("avd:") &&
                     !(title === "iOS simulators" && device.device.booted === false),
                 );
@@ -423,6 +541,8 @@ export function DevicesPage() {
                     devices={devicesInSection}
                     stale={devices.isError}
                     returnTo={continuation ? search.returnTo : undefined}
+                    groupBrowsers={title === "Browsers"}
+                    searchActive={Boolean(deferredQuery)}
                   />
                 );
               },
@@ -436,11 +556,21 @@ export function DevicesPage() {
               const scratch = visibleDevices.filter(
                 (device) => deviceGroup(device) === "Agent scratch browsers",
               );
-              if (!available.length && !scratch.length) return null;
+              if (!available.length && !scratch.length && !localBrowsers.length) return null;
               const android = available.filter((device) => device.id.startsWith("avd:"));
               const simulators = available.filter((device) => !device.id.startsWith("avd:"));
               return (
                 <div className="grid gap-4">
+                  {localBrowsers.length ? (
+                    <AvailableSection
+                      title="Local browsers"
+                      devices={localBrowsers}
+                      returnTo={continuation ? search.returnTo : undefined}
+                      searchActive={Boolean(deferredQuery)}
+                      stale={devices.isError}
+                      groupBrowsers
+                    />
+                  ) : null}
                   {simulators.length ? (
                     <AvailableSection
                       title="Available iOS simulators"

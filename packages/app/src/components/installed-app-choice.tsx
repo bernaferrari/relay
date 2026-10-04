@@ -5,7 +5,7 @@ import { Label } from "@relay/ui-react/components/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, RotateCcw } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { DeviceProductService } from "../data/device-product-service";
 
 export function InstalledAppChoice({
@@ -14,13 +14,16 @@ export function InstalledAppChoice({
   value,
   onChange,
   onOpened,
+  label = "Starting app",
 }: {
   service: DeviceProductService;
   serial: string;
   value: string;
   onChange(value: string): void;
   onOpened(packageName: string): void;
+  label?: string;
 }) {
+  const controlId = useId();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [opening, setOpening] = useState(false);
@@ -40,6 +43,16 @@ export function InstalledAppChoice({
     (app) => !query || `${app.name} ${app.package}`.toLocaleLowerCase().includes(query),
   );
   const selected = apps.data?.find((app) => app.package === value);
+  const nameCounts = new Map<string, number>();
+  for (const app of apps.data ?? []) {
+    const name = app.name.trim().toLocaleLowerCase();
+    if (name) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+  }
+  useEffect(() => {
+    requestRef.current += 1;
+    setOpening(false);
+    setOpenError(undefined);
+  }, [serial, value]);
   async function openSelectedApp() {
     if (!value || !service.launchApp) return;
     const requestId = ++requestRef.current;
@@ -54,13 +67,13 @@ export function InstalledAppChoice({
         selectionRef.current.value === requested.value
       )
         onOpened(value);
-    } catch {
+    } catch (error) {
       if (
         requestRef.current === requestId &&
         selectionRef.current.serial === requested.serial &&
         selectionRef.current.value === requested.value
       )
-        setOpenError("This app could not be opened. Try again or choose Current screen.");
+        setOpenError(appOpenIssue(error));
     } finally {
       if (requestRef.current === requestId) setOpening(false);
     }
@@ -68,7 +81,7 @@ export function InstalledAppChoice({
 
   return (
     <div className="grid min-w-0 gap-1.5">
-      <Label htmlFor="recording-origin-application">Starting app</Label>
+      <Label htmlFor={controlId}>{label}</Label>
       <Popover
         open={open}
         onOpenChange={(next) => {
@@ -79,17 +92,17 @@ export function InstalledAppChoice({
         <PopoverTrigger
           render={
             <Button
-              id="recording-origin-application"
+              id={controlId}
               type="button"
               variant="outline"
               className="min-h-11 w-full justify-between"
-              aria-label="Starting app"
+              aria-label={label}
               aria-haspopup="listbox"
             />
           }
         >
           <span className="min-w-0 truncate text-left">
-            {selected ? `${selected.name} · ${selected.package}` : "Current screen"}
+            {selected?.name.trim() || value || "Current screen"}
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </PopoverTrigger>
@@ -115,7 +128,11 @@ export function InstalledAppChoice({
               <span>Current screen</span>
               {!value ? <Check className="size-4" aria-hidden="true" /> : null}
             </button>
-            {apps.isPending ? (
+            {!service.listInstalledApps ? (
+              <p className="px-2 py-3 text-xs text-muted-foreground">
+                Installed apps are unavailable. Use the current screen.
+              </p>
+            ) : apps.isPending ? (
               <p className="px-2 py-3 text-xs text-muted-foreground" role="status">
                 Loading installed apps…
               </p>
@@ -133,31 +150,44 @@ export function InstalledAppChoice({
                 </Button>
               </div>
             ) : options.length ? (
-              options.map((app) => (
-                <button
-                  key={app.package}
-                  type="button"
-                  role="option"
-                  aria-selected={app.package === value}
-                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                  onClick={() => {
-                    onChange(app.package);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="min-w-0 truncate">
-                    <span className="block truncate">{app.name || app.package}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {app.package}
+              options.map((app) => {
+                const name = app.name.trim();
+                const showPackage = Boolean(
+                  name &&
+                  name !== app.package &&
+                  ((nameCounts.get(name.toLocaleLowerCase()) ?? 0) > 1 ||
+                    (query && !name.toLocaleLowerCase().includes(query))),
+                );
+                return (
+                  <button
+                    key={app.package}
+                    type="button"
+                    role="option"
+                    aria-selected={app.package === value}
+                    className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                    onClick={() => {
+                      onChange(app.package);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="min-w-0 truncate">
+                      <span className="block truncate">{name || app.package}</span>
+                      {showPackage ? (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {app.package}
+                        </span>
+                      ) : null}
                     </span>
-                  </span>
-                  {app.package === value ? (
-                    <Check className="size-4 shrink-0" aria-hidden="true" />
-                  ) : null}
-                </button>
-              ))
+                    {app.package === value ? (
+                      <Check className="size-4 shrink-0" aria-hidden="true" />
+                    ) : null}
+                  </button>
+                );
+              })
             ) : (
-              <p className="px-2 py-3 text-xs text-muted-foreground">No matching apps.</p>
+              <p className="px-2 py-3 text-xs text-muted-foreground">
+                {query ? "No matching apps." : "No installed apps are available."}
+              </p>
             )}
           </div>
         </PopoverContent>
@@ -183,4 +213,21 @@ export function InstalledAppChoice({
       </p>
     </div>
   );
+}
+
+function appOpenIssue(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (
+    /not installed|unknown package|invalid (?:app|package|identifier)|package .*not found/iu.test(
+      message,
+    )
+  ) {
+    return "This app is unavailable. Choose another app or use the current screen.";
+  }
+  if (
+    /permission denied|forbidden|unauthorized|lease.*(?:denied|held|owned|required)/iu.test(message)
+  ) {
+    return "Relay does not have permission to open this app.";
+  }
+  return "Couldn’t confirm the app opened. Check the live view before trying again.";
 }

@@ -58,8 +58,7 @@ describe("device product operations", () => {
       platform: "ios",
     });
     expect(calls).toEqual([
-      { id: "target.devices.list", input: {} },
-      { id: "target.avds.list", input: {} },
+      { id: "target.devices.list", input: { targetKind: "device", targetId: "ios-id" } },
       { id: "target.list", input: {} },
       {
         id: "target.app.launch",
@@ -74,10 +73,28 @@ describe("device product operations", () => {
     await expect(service.launchApp!("browser-id", "https://example.test")).rejects.toThrow(
       /attached Android and iOS/iu,
     );
-    expect(calls.map(({ id }) => id)).toEqual([
-      "target.devices.list",
-      "target.avds.list",
-      "target.list",
-    ]);
+    expect(calls.map(({ id }) => id)).toEqual(["target.devices.list", "target.list"]);
+  });
+
+  it("opens the known device without waiting on unrelated inventory", async () => {
+    calls.length = 0;
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation(async (id, input) => {
+      if (id === "target.avds.list") throw new Error("Unrelated emulator inventory is blocked");
+      if (id === "target.devices.list" && (input as { targetId?: string }).targetId !== "ios-id")
+        throw new Error("Unrelated browser inventory is blocked");
+      return original(id, input);
+    });
+    try {
+      await expect(createDeviceProductService({} as Platform).get("ios-id")).resolves.toMatchObject(
+        {
+          serial: "ios-serial",
+          platform: "ios",
+        },
+      );
+      expect(calls.some(({ id }) => id === "target.avds.list")).toBe(false);
+    } finally {
+      invoke.mockImplementation(original);
+    }
   });
 });

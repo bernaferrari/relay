@@ -68,9 +68,11 @@ export function DevicePage() {
   const [talkBackRefresh, setTalkBackRefresh] = useState(0);
   const selectedApp = useQuery<string>({
     queryKey: ["device-app-choice", deviceId],
+    queryFn: () => queryClient.getQueryData<string>(["device-app-choice", deviceId]) ?? "",
     enabled: false,
     initialData: "",
     gcTime: Infinity,
+    staleTime: Infinity,
   });
   const appIdentifier = selectedApp.data;
   const setAppIdentifier = (value: string) =>
@@ -117,7 +119,13 @@ export function DevicePage() {
   const appLocales = useQuery({
     queryKey: ["device-app-locales", device.data?.serial, appIdentifier],
     queryFn: () => deviceService.listAppLocales!(device.data!.serial, appIdentifier),
-    enabled: Boolean(device.data?.serial && appIdentifier && deviceService.listAppLocales),
+    enabled: Boolean(
+      device.data?.platform === "android" &&
+      device.data.runnable &&
+      appIdentifier &&
+      deviceService.listAppLocales &&
+      deviceService.setAppLocale,
+    ),
     retry: false,
   });
   localeSelectionRef.current = { serial: device.data?.serial ?? "", packageName: appIdentifier };
@@ -155,9 +163,10 @@ export function DevicePage() {
           detail: "Managed browser",
         };
       }
-      const connected = await productService.connect();
+      const scope = { targetKind: "device" as const, targetId: device.data!.serial };
+      const connected = await productService.connect(scope);
       if (connected.recovery) return null;
-      const options = await productService.presentTargets(connected.targets);
+      const options = await productService.presentTargets(connected.targets, scope);
       return (
         options.find(
           (option) =>
@@ -173,6 +182,13 @@ export function DevicePage() {
     device.data.platform === "android" &&
     deviceService.launchApp &&
     deviceService.listInstalledApps,
+  );
+  const appLanguagesSupported = Boolean(deviceService.listAppLocales && deviceService.setAppLocale);
+  const showDeviceControls = Boolean(
+    appControlsSupported ||
+    (device.data?.platform === "ios" && device.data.runnable && deviceService.launchApp) ||
+    boot.error ||
+    (recover.data && !recover.data.ready),
   );
 
   useEffect(() => {
@@ -338,6 +354,11 @@ export function DevicePage() {
       />
 
       {device.isPending ? <PageLoading label="Checking this device…" /> : null}
+      {recover.data?.ready ? (
+        <p className="sr-only" aria-live="polite">
+          Device is ready.
+        </p>
+      ) : null}
 
       {device.isError ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
@@ -378,7 +399,7 @@ export function DevicePage() {
       {device.data && !device.isError ? (
         <div
           className={
-            device.data.platform === "browser"
+            device.data.platform === "browser" || !showDeviceControls
               ? "flex min-h-0 flex-1 flex-col gap-3"
               : "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(240px,300px)] gap-6 max-[900px]:grid-cols-1 max-[900px]:overflow-y-auto"
           }
@@ -457,42 +478,29 @@ export function DevicePage() {
               }
             />
           )}
-          <aside
-            className={
-              device.data.platform === "browser" && !recover.error
-                ? "sr-only"
-                : "grid min-w-0 content-start gap-5 overflow-y-auto py-2"
-            }
-            aria-label="Device controls"
-            tabIndex={device.data.platform === "browser" && !recover.error ? -1 : 0}
-          >
-            {boot.error ? (
-              <p role="alert" className="text-sm text-destructive">
-                {boot.error.message}
-              </p>
-            ) : null}
-            {recover.data ? (
-              <p
-                className={recover.data.ready ? "sr-only" : "text-sm text-muted-foreground"}
-                aria-live="polite"
-              >
-                <strong className="font-medium">
-                  {recover.data.ready ? "Device is ready." : "Device still needs attention."}
-                </strong>
-                {recover.data.ready ? null : recover.data.summary}
-              </p>
-            ) : null}
-            {device.data.platform === "android" ? (
-              <section className="grid gap-4" aria-labelledby="device-launch-title">
-                <div className="grid gap-2 text-sm leading-relaxed text-muted-foreground">
-                  <h2 className="font-semibold text-foreground" id="device-launch-title">
-                    App and language
-                  </h2>
-                </div>
-                <div className="grid gap-4">
-                  <div className="grid min-w-0 gap-2 text-sm [&>label]:font-medium">
-                    {appControlsSupported ? (
+          {showDeviceControls ? (
+            <aside
+              className="grid min-w-0 content-start gap-5 overflow-y-auto py-2"
+              aria-label="Device controls"
+              tabIndex={0}
+            >
+              {boot.error ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {boot.error.message}
+                </p>
+              ) : null}
+              {recover.data && !recover.data.ready ? (
+                <p className="text-sm text-muted-foreground" aria-live="polite">
+                  <strong className="font-medium">Device still needs attention.</strong>
+                  {recover.data.summary}
+                </p>
+              ) : null}
+              {appControlsSupported ? (
+                <section className="grid gap-4" aria-label="App controls">
+                  <div className="grid gap-4">
+                    <div className="grid min-w-0 gap-2 text-sm [&>label]:font-medium">
                       <InstalledAppChoice
+                        label="App"
                         service={deviceService}
                         serial={device.data.serial}
                         value={appIdentifier}
@@ -506,94 +514,89 @@ export function DevicePage() {
                         }}
                         onOpened={() => setLiveAttempt((value) => value + 1)}
                       />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        App controls are unavailable on this host. Reconnect the device and try
-                        again.
-                      </p>
-                    )}
+                    </div>
+                    {appIdentifier && appLanguagesSupported ? (
+                      appLocales.isPending ? (
+                        <p className="text-sm text-muted-foreground" role="status">
+                          Loading supported languages…
+                        </p>
+                      ) : appLocales.isError ? (
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                          <span>Supported languages could not be loaded.</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => void appLocales.refetch()}
+                          >
+                            Try again
+                          </Button>
+                        </div>
+                      ) : appLocales.data?.locales.length ? (
+                        <div className="grid max-w-sm gap-2">
+                          <SelectField
+                            label="Language"
+                            value={
+                              localeChange.isPending &&
+                              localeChange.variables.serial === device.data.serial &&
+                              localeChange.variables.packageName === appIdentifier
+                                ? localeChange.variables.locale
+                                : supportedLocaleChoice(
+                                    appLocales.data.currentLocale,
+                                    appLocales.data.locales,
+                                  )
+                            }
+                            placeholder="Choose a language"
+                            options={appLocales.data.locales.map((locale) => ({
+                              value: locale,
+                              label: localeLabel(locale),
+                            }))}
+                            onValueChange={(locale) => {
+                              localeSelectionRef.current = {
+                                serial: device.data!.serial,
+                                packageName: appIdentifier,
+                              };
+                              localeChange.mutate({
+                                locale,
+                                serial: device.data!.serial,
+                                packageName: appIdentifier,
+                              });
+                            }}
+                            disabled={localeChange.isPending}
+                          />
+                          {localeChange.isPending ? (
+                            <p className="text-sm text-muted-foreground" role="status">
+                              Applying language…
+                            </p>
+                          ) : localeSuccess ? (
+                            <p className="text-sm text-success-foreground" role="status">
+                              Language updated: {localeLabel(localeSuccess)}
+                            </p>
+                          ) : null}
+                          {localeChange.error ? (
+                            <p className="text-sm text-destructive" role="alert">
+                              Language could not be updated. Try again.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          This app has no selectable languages available.
+                        </p>
+                      )
+                    ) : null}
                   </div>
-                  {appIdentifier ? (
-                    appLocales.isPending ? (
-                      <p className="text-sm text-muted-foreground" role="status">
-                        Loading supported languages…
-                      </p>
-                    ) : appLocales.isError ? (
-                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                        <span>Supported languages could not be loaded.</span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => void appLocales.refetch()}
-                        >
-                          Try again
-                        </Button>
-                      </div>
-                    ) : appLocales.data?.locales.length ? (
-                      <div className="grid max-w-sm gap-2">
-                        <SelectField
-                          label="Language"
-                          value={
-                            localeChange.isPending &&
-                            localeChange.variables.serial === device.data.serial &&
-                            localeChange.variables.packageName === appIdentifier
-                              ? localeChange.variables.locale
-                              : supportedLocaleChoice(
-                                  appLocales.data.currentLocale,
-                                  appLocales.data.locales,
-                                )
-                          }
-                          placeholder="Choose a language"
-                          options={appLocales.data.locales.map((locale) => ({
-                            value: locale,
-                            label: localeLabel(locale),
-                          }))}
-                          onValueChange={(locale) => {
-                            localeSelectionRef.current = {
-                              serial: device.data!.serial,
-                              packageName: appIdentifier,
-                            };
-                            localeChange.mutate({
-                              locale,
-                              serial: device.data!.serial,
-                              packageName: appIdentifier,
-                            });
-                          }}
-                          disabled={localeChange.isPending}
-                        />
-                        {localeChange.isPending ? (
-                          <p className="text-sm text-muted-foreground" role="status">
-                            Applying language…
-                          </p>
-                        ) : localeSuccess ? (
-                          <p className="text-sm text-success-foreground" role="status">
-                            Language updated: {localeLabel(localeSuccess)}
-                          </p>
-                        ) : null}
-                        {localeChange.error ? (
-                          <p className="text-sm text-destructive" role="alert">
-                            Language could not be updated. Try again.
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        This app has no selectable languages available.
-                      </p>
-                    )
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-            {device.data.platform === "ios" && device.data.runnable && deviceService.launchApp ? (
-              <IOSAppLaunchForm
-                service={deviceService}
-                deviceId={device.data.id}
-                deviceName={device.data.name}
-              />
-            ) : null}
-          </aside>
+                </section>
+              ) : null}
+              {device.data.platform === "ios" && device.data.runnable && deviceService.launchApp ? (
+                <IOSAppLaunchForm
+                  service={deviceService}
+                  deviceId={device.data.id}
+                  deviceName={device.data.name}
+                />
+              ) : null}
+            </aside>
+          ) : null}
         </div>
       ) : null}
     </WorkbenchPage>
