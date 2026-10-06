@@ -40,24 +40,33 @@ export function useTestRunSetup(input: TestRunSetupInput) {
       Boolean(id && targets.data?.some((target) => target.targetId === id));
     const recorded = profiles.data?.find((profile) => profile.id === input.recordedProfileId);
     const recordedLogin = recorded?.account && ready(recorded.targetId) ? recorded : undefined;
+    const selectionFor = (targetId: string, savedProfileId?: string) => ({
+      targetId,
+      ...(savedProfileId ? { savedProfileId } : {}),
+      // Recording leaves the phone at its destination. A new Android Test
+      // with an explicitly chosen app should reopen it before source proof;
+      // saved configurations (including opting out) never enter this branch.
+      ...(targets.data?.find((target) => target.targetId === targetId)?.platform === "android" &&
+      editorDocument.data?.test.originApplication &&
+      !/^https?:\/\//iu.test(editorDocument.data.test.originApplication)
+        ? { startupMode: "cold" as const }
+        : {}),
+    });
     if (input.requestedTargetId)
-      configuration.setSelection({
-        targetId: input.requestedTargetId,
-        ...(recordedLogin?.targetId === input.requestedTargetId
-          ? { savedProfileId: recordedLogin.id }
-          : {}),
-      });
+      configuration.setSelection(
+        selectionFor(
+          input.requestedTargetId,
+          recordedLogin?.targetId === input.requestedTargetId ? recordedLogin.id : undefined,
+        ),
+      );
     else if (recordedLogin)
-      configuration.setSelection({
-        targetId: recordedLogin.targetId!,
-        savedProfileId: recordedLogin.id,
-      });
+      configuration.setSelection(selectionFor(recordedLogin.targetId!, recordedLogin.id));
     else if (ready(input.lastRunTargetId))
-      configuration.setSelection({ targetId: input.lastRunTargetId! });
+      configuration.setSelection(selectionFor(input.lastRunTargetId!));
     else if (ready(recorded?.targetId))
-      configuration.setSelection({ targetId: recorded!.targetId! });
+      configuration.setSelection(selectionFor(recorded!.targetId!));
     else if (targets.data?.length === 1)
-      configuration.setSelection({ targetId: targets.data[0]!.targetId });
+      configuration.setSelection(selectionFor(targets.data[0]!.targetId));
   }, [
     configuration.pristine,
     configuration.setSelection,
@@ -69,6 +78,7 @@ export function useTestRunSetup(input: TestRunSetupInput) {
     profiles.isEnabled,
     profiles.isPending,
     editorDocument.isPending,
+    editorDocument.data,
   ]);
   return { ...destinations, scope, configuration };
 }

@@ -351,7 +351,7 @@ export function LiveTargetCanvas({
               ) : null}
             </div>
           ) : null}
-          <div className="flex w-full items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2">
             {targetPlatform === "android" ? (
               <div
                 role="group"
@@ -387,7 +387,7 @@ export function LiveTargetCanvas({
                   Text to type into the focused field
                 </label>
                 <Input
-                  className="min-w-0 flex-1"
+                  className="min-w-24 flex-1 basis-40"
                   id={textInputId}
                   value={text}
                   onChange={(event) => setText(event.currentTarget.value)}

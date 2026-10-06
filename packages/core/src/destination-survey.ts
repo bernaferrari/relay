@@ -44,43 +44,68 @@ export type DestinationSurveyDependencies = {
   remainingSteps?: readonly Pick<RecipeStep, "kind">[];
 };
 
-const DESTINATION_SURVEY_INPUT_KINDS: Record<string, true> = {
+const DESTINATION_SURVEY_VIEWPORT_KINDS: Record<string, true> = {
   tap: true,
   swipe: true,
   scroll: true,
   key: true,
   interact: true,
+  type: true,
+  "wait-for": true,
+  expect: true,
+  "expect-screen": true,
+  "assert-layout": true,
+  screenshot: true,
+  "capture-surface": true,
+  tour: true,
+  // A sibling module may inspect or mutate this same landing. Its body is
+  // intentionally conservative here; a passive tail never justifies leaving
+  // a taught viewport behind before another instruction executes.
+  module: true,
 };
 
-/** Restore unless a later tap/swipe/scroll/key/interact still needs the list
- * at its first viewport. Sleep, log, and expect steps do not. */
+/** Later checks and screenshots depend on the taught viewport just as input
+ * does. Only a genuinely passive terminal tail may skip restoration. */
 export function destinationSurveyShouldRestore(
   remainingSteps: readonly Pick<RecipeStep, "kind">[],
 ): boolean {
-  return remainingSteps.some((step) => DESTINATION_SURVEY_INPUT_KINDS[step.kind] === true);
+  return remainingSteps.some((step) => DESTINATION_SURVEY_VIEWPORT_KINDS[step.kind] === true);
 }
 
 function remainingRecipeStepsAfter(
   step: DestinationSurveyStep,
   ctx: RecipeStepContext,
 ): readonly Pick<RecipeStep, "kind">[] | undefined {
-  const recipes: { steps: readonly RecipeStep[] }[] = [];
-  if (ctx.job?.recipeSnapshot) recipes.push(ctx.job.recipeSnapshot);
-  for (const recipe of Object.values(ctx.job?.recipeGraph ?? {})) {
-    if (recipe) recipes.push(recipe);
-  }
-  for (const recipe of Object.values(ctx.recipeGraph ?? {})) {
-    if (recipe) recipes.push(recipe);
-  }
-  for (const recipe of recipes) {
-    const index = recipe.steps.findIndex((candidate) =>
-      step.id
-        ? candidate.id === step.id
-        : candidate.kind === "expect-screen" &&
-          candidate.screenId === step.screenId &&
-          candidate.destinationSurvey !== undefined,
-    );
-    if (index >= 0) return recipe.steps.slice(index + 1);
+  const graph = { ...ctx.recipeGraph, ...ctx.job?.recipeGraph };
+  const matches = (candidate: RecipeStep) =>
+    step.id
+      ? candidate.id === step.id
+      : candidate.kind === "expect-screen" &&
+        candidate.screenId === step.screenId &&
+        candidate.destinationSurvey !== undefined;
+  const visit = (
+    recipe: { steps: readonly RecipeStep[]; id?: string },
+    ancestors: ReadonlySet<string>,
+  ): readonly Pick<RecipeStep, "kind">[] | undefined => {
+    if (recipe.id && ancestors.has(recipe.id)) return undefined;
+    const seen = new Set(ancestors);
+    if (recipe.id) seen.add(recipe.id);
+    for (const [index, candidate] of recipe.steps.entries()) {
+      if (matches(candidate)) return recipe.steps.slice(index + 1);
+      if (candidate.kind !== "module") continue;
+      const child = graph[candidate.recipeId];
+      const remaining = child ? visit(child, seen) : undefined;
+      if (remaining) return [...remaining, ...recipe.steps.slice(index + 1)];
+    }
+    return undefined;
+  };
+  // Search from the executable root first so a child's local end does not
+  // hide the next instruction in its caller.
+  const roots = [ctx.job?.recipeSnapshot, ...Object.values(graph)];
+  for (const recipe of roots) {
+    if (!recipe) continue;
+    const remaining = visit(recipe, new Set());
+    if (remaining) return remaining;
   }
   return undefined;
 }

@@ -234,6 +234,11 @@ export type OperationInvokeOptions = {
 };
 
 export type OperationInvoker = {
+  binaryResource?(
+    path: string,
+    init?: RequestInit,
+    maxBytes?: number,
+  ): Promise<{ bytes: Uint8Array; headers: Headers }>;
   invoke(
     operationId: OperationId,
     input: Record<string, unknown>,
@@ -291,6 +296,7 @@ export function createRelayOperationInvoker(config: McpConfig): OperationInvoker
   const client = new RelayClient(config.connection, { timeoutMs: config.timeoutMs });
   return {
     invoke: (operationId, input, options) => client.invoke(operationId, input as never, options),
+    binaryResource: (path, init, maxBytes) => client.binaryResource(path, init, maxBytes),
   };
 }
 

@@ -557,6 +557,13 @@ export const operationInputSchemas = {
   "run.repair.list": z.object({ limit: z.number().int().min(1).max(500).optional() }).strict(),
   "run.replay.offline": z.object({ runId: identifier("Persisted run identifier") }).strict(),
   "run.trace-pack.get": z.object({ runId: identifier("Persisted run identifier") }).strict(),
+  "run.panel-manifest.get": z
+    .object({
+      runId: identifier("Persisted run identifier"),
+      offset: z.number().int().min(0).max(999999).optional(),
+      limit: z.number().int().min(1).max(40).optional(),
+    })
+    .strict(),
   "run.walkthrough-pack.get": z
     .object({
       runId: identifier("Persisted run identifier"),

@@ -166,8 +166,9 @@ test("signed report links expose only grouped public evidence and stop working w
     const html = page.body.toString();
     assert.equal(page.status, 200);
     assert.match(String(page.headers["Content-Security-Policy"]), /default-src 'none'/u);
-    assert.match(html, /Grouped by screen across every run/u);
-    assert.match(html, /2 variants/u);
+    assert.match(html, /Matching frozen checkpoints are grouped across requested configurations/u);
+    assert.equal(html.match(/<details class="screen"/gu)?.length, 2);
+    assert.doesNotMatch(html, /variants/u);
     assert.match(html, /Structured inputs and device identifiers are omitted/u);
     assert.match(html, /Screenshots and text labels may contain app content/u);
     assert.doesNotMatch(html, /private-device-id|private log|Italian|English/u);
@@ -214,6 +215,15 @@ test("a seventy-screenshot matrix renders as ten screen groups with deferred ima
         capturedAt: index,
       })),
     })),
+    gallery: Array.from({ length: 10 }, (_, index) => ({
+      id: `checkpoint-${index}`,
+      caption: `Settings ${index + 1}`,
+      tiles: Array.from({ length: 7 }, (_, caseIndex) => ({
+        label: `Locale ${caseIndex + 1}`,
+        runId: `run-${caseIndex}`,
+        frameIndex: index,
+      })),
+    })),
   };
   const html = renderRunShareReportHtml(report, "token");
   assert.equal(html.match(/<details class="screen"/gu)?.length, 10);
@@ -222,6 +232,117 @@ test("a seventy-screenshot matrix renders as ten screen groups with deferred ima
   assert.equal(html.match(/loading="lazy"/gu)?.length, 63);
   assert.equal(html.match(/loading="eager"/gu)?.length, 7);
   assert.match(html, /70<\/strong><span>Screenshots/u);
+});
+
+test("shared gallery renders missing requested tiles without shifting later checkpoints", () => {
+  const report: RunShareReport = {
+    schemaVersion: 1,
+    share: { id: "partial", title: "Locales", createdAt: 1, expiresAt: 10_000 },
+    totals: { runs: 2, passed: 2, problems: 0, screenshots: 5, inProgress: 0 },
+    runs: [
+      {
+        id: "english",
+        title: "English",
+        status: "ok",
+        outcome: "passed",
+        frames: [
+          { index: 0, caption: "Home", capturedAt: 1 },
+          { index: 1, caption: "Settings", capturedAt: 2 },
+          { index: 2, caption: "Billing", capturedAt: 3 },
+        ],
+      },
+      {
+        id: "arabic",
+        title: "Arabic",
+        status: "ok",
+        outcome: "passed",
+        frames: [
+          { index: 0, caption: "Home", capturedAt: 1 },
+          { index: 1, caption: "Billing", capturedAt: 3 },
+        ],
+      },
+    ],
+    gallery: [
+      {
+        id: "home",
+        caption: "Home",
+        tiles: [
+          { label: "English", runId: "english", frameIndex: 0 },
+          { label: "Arabic", runId: "arabic", frameIndex: 0 },
+          { label: "French" },
+        ],
+      },
+      {
+        id: "settings",
+        caption: "Settings",
+        tiles: [
+          { label: "English", runId: "english", frameIndex: 1 },
+          { label: "Arabic", runId: "arabic" },
+          { label: "French" },
+        ],
+      },
+      {
+        id: "billing",
+        caption: "Billing",
+        tiles: [
+          { label: "English", runId: "english", frameIndex: 2 },
+          { label: "Arabic", runId: "arabic", frameIndex: 1 },
+          { label: "French" },
+        ],
+      },
+    ],
+  };
+  const html = renderRunShareReportHtml(report, "tok");
+  const groups = [...html.matchAll(/<details class="screen"[^>]*>([\s\S]*?)<\/details>/gu)].map(
+    (match) => match[1]!,
+  );
+  const settings = groups.find((group) => group.includes("<span>Settings</span>"))!;
+  const billing = groups.find((group) => group.includes("<span>Billing</span>"))!;
+  assert.equal(groups.length, 3);
+  assert.equal(html.match(/class="shot missing"/gu)?.length, 4);
+  assert.equal(html.match(/<figcaption><strong>French<\/strong>/gu)?.length, 3);
+  assert.equal(settings.match(/<img /gu)?.length, 1);
+  assert.match(settings, /1 captured · 2 missing/u);
+  assert.doesNotMatch(settings, /\/frames\/arabic\/1/u);
+  assert.match(billing, /\/frames\/english\/2/u);
+  assert.match(billing, /\/frames\/arabic\/1/u);
+  assert.match(html, /2 runs passed/u);
+  assert.doesNotMatch(html, /runs need attention/u);
+  // Integrity checks use the actual frame index even after correspondence
+  // places a frame into a different row from its array ordinal.
+  const withheld = renderRunShareReportHtml(report, "tok", ["arabic:1"]);
+  assert.doesNotMatch(withheld, /<img src="\/shared\/runs\/tok\/frames\/arabic\/1/u);
+  assert.match(withheld, /bytes do not match the recorded digest/u);
+});
+
+test("shared group labels retain iteration, phase and recapture attempt", () => {
+  const report: RunShareReport = {
+    schemaVersion: 1,
+    share: { id: "retry", title: "Retry", createdAt: 1, expiresAt: 10_000 },
+    totals: { runs: 1, passed: 1, problems: 0, screenshots: 1, inProgress: 0 },
+    runs: [
+      {
+        id: "run",
+        title: "Test",
+        status: "ok",
+        frames: [{ index: 0, caption: "Settings", capturedAt: 1 }],
+      },
+    ],
+    gallery: [
+      {
+        id: "checkpoint-repeat-retry",
+        caption: "Settings",
+        iteration: 1,
+        attempt: 2,
+        phase: "stable",
+        tiles: [{ label: "Arabic", runId: "run", frameIndex: 0 }],
+      },
+    ],
+  };
+  assert.match(
+    renderRunShareReportHtml(report, "tok"),
+    /Settings · Iteration 2 · Attempt 2 · stable/u,
+  );
 });
 
 test("share page renders proof block and failed-step drill-in", () => {
@@ -306,7 +427,7 @@ test("a completed replay opens its final evidence while human review stays pendi
   assert.match(html, /App Map revision<\/dt><dd>r5<\/dd>/u);
 });
 
-test("matrix screenshots keep differing screen labels visible", () => {
+test("captures without checkpoint correspondence stay separate despite duplicate captions", () => {
   const report: RunShareReport = {
     schemaVersion: 1,
     share: { id: "s1", title: "Checkout", createdAt: 1, expiresAt: Date.now() + 60_000 },
@@ -339,9 +460,12 @@ test("matrix screenshots keep differing screen labels visible", () => {
     ],
   };
   const html = renderRunShareReportHtml(report, "tok");
-  assert.match(html, /<summary><span>Screenshot 2<\/span>/u);
-  assert.match(html, /<figcaption><strong>Case 1 of 2<\/strong><span>Order confirmed<\/span>/u);
-  assert.match(html, /<figcaption><strong>Case 2 of 2<\/strong><span>Payment declined<\/span>/u);
+  assert.equal(html.match(/<details class="screen"/gu)?.length, 4);
+  assert.match(html, /<summary><span>Order confirmed<\/span>/u);
+  assert.match(html, /<summary><span>Payment declined<\/span>/u);
+  assert.equal(html.match(/<summary><span>Sign in<\/span>/gu)?.length, 2);
+  assert.match(html, /<figcaption><strong>Case 1 of 2<\/strong><a/u);
+  assert.match(html, /<figcaption><strong>Case 2 of 2<\/strong><a/u);
   assert.match(html, /<summary><span>Sign in<\/span>/u);
   assert.doesNotMatch(html, /<figcaption><strong>Case [12] of 2<\/strong><span>Sign in<\/span>/u);
   assert.doesNotMatch(html, /final:|sign-in-success|sign-in-failure/u);

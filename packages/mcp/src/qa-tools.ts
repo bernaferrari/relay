@@ -57,6 +57,7 @@ export const relayQaRequiredOperationIds = Object.freeze([
   "workflow.get",
   "workflow.transition",
   "run.get",
+  "run.panel-manifest.get",
   "run.list",
   "run.walkthrough-pack.get",
   "app-map.test.compile",

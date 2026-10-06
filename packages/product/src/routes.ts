@@ -111,6 +111,7 @@ export type RouteDefinition = {
     | "screen"
     | "path"
     | "target"
+    | "targetKind"
     | "originApplication"
     | "runId"
     | "session"
@@ -184,6 +185,7 @@ export const ROUTE_DEFINITIONS = [
     "path",
     "target",
     "originApplication",
+    "targetKind",
   ]),
   d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", [
     "app",

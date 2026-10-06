@@ -37,12 +37,16 @@ export function registerRelayPanel(
         .object({
           appMapId: z.string().min(1).max(240).optional(),
           runId: z.string().min(1).max(240).optional(),
-          frameIndex: z.number().int().min(0).max(499).optional(),
+          frameIndex: z.number().int().min(0).max(999999).optional(),
+          view: z.enum(["catalog", "run", "frame"]).optional(),
+          requestId: z.string().min(1).max(80).optional(),
         })
         .strict()
         .superRefine((value, ctx) => {
           if (value.frameIndex !== undefined && !value.runId)
             ctx.addIssue({ code: "custom", message: "frameIndex requires runId" });
+          if (value.view && value.view !== "catalog" && !value.runId)
+            ctx.addIssue({ code: "custom", message: "Run and frame reads require runId" });
         }),
       annotations: {
         readOnlyHint: true,

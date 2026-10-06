@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import http from "node:http";
 import {
   buildRunStory,
@@ -22,7 +21,6 @@ import {
   listCampaignRepairTargets,
   listRunSummariesPage,
   listRunShares,
-  readFrameFile,
   readTarget,
   readAppMap,
   readVisualBaselineFrame,
@@ -57,6 +55,7 @@ import {
   catalogLatestRunPerTest,
 } from "@relay/core";
 import { playerMapForRuns } from "./run-player-map.js";
+import { handleRunPanelRoute } from "./run-panel-routes.js";
 import type {
   CampaignRepairTarget,
   CaptureReviewAction,
@@ -79,7 +78,6 @@ import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } f
 import { scopedCampaignRepairInput } from "./run-repair-input.js";
 import { guardVisualVerification } from "./run-visual-verification.js";
 import {
-  recordedFrameDigests,
   resolvePlayerAppMapId,
   assertJoinedRunSharesAppMap,
   joinedRunIds,
@@ -812,6 +810,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   }
 
   const playerManifestMatch = matchPath(pathname, "/runs/:id/player-manifest");
+  if (await handleRunPanelRoute(context, loadScopedRun)) return true;
   if (method === "GET" && playerManifestMatch) {
     const run = await loadScopedRun(playerManifestMatch.id!, scope);
     const appMapId = resolvePlayerAppMapId(run, url);
@@ -862,26 +861,6 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   if (method === "GET" && persistedMatch) {
     const run = await loadScopedRun(persistedMatch.id!, scope);
     json(response, 200, { run });
-    return true;
-  }
-
-  const frameMatch = matchPath(pathname, "/runs/:id/frames/:file");
-  if (method === "GET" && frameMatch) {
-    const run = await loadScopedRun(frameMatch.id!, scope);
-    const buffer = await readFrameFile(run.dir, frameMatch.file!);
-    if (!buffer) throw new HttpError(404, "Frame not found");
-    const actual = createHash("sha256").update(buffer).digest("hex");
-    const expected = recordedFrameDigests(run, frameMatch.file!);
-    if (expected.length > 0 && expected.some((digest) => digest !== actual)) {
-      throw new HttpError(409, `Frame ${frameMatch.file} bytes do not match the recorded digest`);
-    }
-    response.writeHead(200, {
-      "Content-Type": "image/png",
-      "Content-Length": buffer.byteLength,
-      "Cache-Control": "private, max-age=3600",
-      ...CORS_HEADERS,
-    });
-    response.end(buffer);
     return true;
   }
 

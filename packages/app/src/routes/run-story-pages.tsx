@@ -30,6 +30,7 @@ export function SavedRunStory({
   testId,
   runService,
   onViewChange,
+  onInspectFailure,
   extraActions,
   summary,
   notice,
@@ -39,6 +40,7 @@ export function SavedRunStory({
   testId?: string;
   runService: RunProductService;
   onViewChange(view: string): void;
+  onInspectFailure?(traceStepId?: string): void;
   extraActions?: React.ReactNode;
   summary?: React.ReactNode;
   notice?: React.ReactNode;
@@ -108,6 +110,10 @@ export function SavedRunStory({
       step={failedStep}
       action={failedAction}
       stepNumber={failedIndex + 1}
+      report={report}
+      onInspectEvidence={() =>
+        onInspectFailure ? onInspectFailure(failedAction?.id) : onViewChange("steps")
+      }
       {...(fixable ? { testId: testId! } : {})}
     />
   ) : null;

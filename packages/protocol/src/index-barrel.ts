@@ -56,6 +56,7 @@ export * from "./graph-exploration.js";
 export * from "./run-share.js";
 export * from "./trace-pack.js";
 export * from "./walkthrough-pack.js";
+export * from "./run-panel-manifest.js";
 export * from "./walkthrough-html.js";
 export * from "./json-value-bounds.js";
 export * from "./trace-pack-comparison.js";

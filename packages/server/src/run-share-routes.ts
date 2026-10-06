@@ -9,7 +9,7 @@ import {
   runsRoot,
   type PersistedRun,
 } from "@relay/core";
-import type { RunShareReport, RunShareReportRun } from "@relay/protocol";
+import type { RunShareGalleryGroup, RunShareReport, RunShareReportRun } from "@relay/protocol";
 import { destIdentitySourceFrames } from "@relay/protocol";
 import { CORS_HEADERS, json, matchPath } from "./http.js";
 
@@ -207,41 +207,66 @@ export function renderRunShareReportHtml(
   blockedShareFrames: readonly string[] = [],
 ): string {
   const blockedKeys = new Set(blockedShareFrames);
-  const maxScreens = Math.max(0, ...report.runs.map((run) => run.frames.length));
-  const screenSections = Array.from({ length: maxScreens }, (_, index) => {
-    const screenIndex = maxScreens - index - 1;
-    const captions = new Set(
-      report.runs.flatMap((run) => {
-        const frame = run.frames[screenIndex];
-        return frame ? [screenshotLabel(frame.caption)] : [];
-      }),
+  // Older projections carry no correspondence. Keep each capture separate;
+  // neither its array position nor its caption identifies a checkpoint.
+  const gallery: RunShareGalleryGroup[] =
+    report.gallery ??
+    report.runs.flatMap((run) =>
+      run.frames.map((frame) => ({
+        id: `${run.id}:${frame.index}`,
+        caption: frame.caption,
+        tiles: [{ label: runLabel(run), runId: run.id, frameIndex: frame.index }],
+      })),
     );
-    const screenTitle = captions.size === 1 ? [...captions][0] : `Screenshot ${screenIndex + 1}`;
-    const variants = report.runs.flatMap((run) => {
-      const frame = run.frames[screenIndex];
-      if (!frame) return [];
-      const blocked = frame.withheld || blockedKeys.has(`${run.id}:${screenIndex}`);
-      if (blocked) {
-        return [
-          `<figure class="shot">
+  const runsById = new Map(report.runs.map((run) => [run.id, run]));
+  const screenSections = [...gallery]
+    .reverse()
+    .map((group, index) => {
+      const screenIndex = gallery.length - index - 1;
+      const captions = new Set(
+        group.tiles.flatMap((tile) => {
+          const frame = tile.runId
+            ? runsById.get(tile.runId)?.frames.find((frame) => frame.index === tile.frameIndex)
+            : undefined;
+          return frame ? [screenshotLabel(frame.caption)] : [];
+        }),
+      );
+      const screenTitle = [
+        screenshotLabel(group.caption),
+        ...(group.iteration !== undefined ? [`Iteration ${group.iteration + 1}`] : []),
+        ...(group.attempt && group.attempt > 1 ? [`Attempt ${group.attempt}`] : []),
+        ...(group.phase ? [group.phase] : []),
+      ].join(" · ");
+      let missing = 0;
+      const variants = group.tiles.map((tile) => {
+        const run = tile.runId ? runsById.get(tile.runId) : undefined;
+        const frame = run?.frames.find((frame) => frame.index === tile.frameIndex);
+        if (!run || !frame) {
+          missing += 1;
+          return `<figure class="shot missing">
+          <div class="shot-frame"><p><strong>Missing</strong><br>${run ? "No screenshot is available for this requested checkpoint." : "This requested configuration has no available run evidence."}</p></div>
+          <figcaption><strong>${escapeHtml(tile.label)}</strong></figcaption>
+        </figure>`;
+        }
+        const blocked = frame.withheld || blockedKeys.has(`${run.id}:${frame.index}`);
+        if (blocked) {
+          return `<figure class="shot">
           <div class="shot-frame"><p>This recorded frame was not embedded because its bytes do not match the recorded digest.</p></div>
-          <figcaption><strong>${escapeHtml(runLabel(run))}</strong><span>${escapeHtml(frame.caption)}</span></figcaption>
-        </figure>`,
-        ];
-      }
-      const source = `/shared/runs/${encodeURIComponent(token)}/frames/${encodeURIComponent(run.id)}/${frame.index}`;
-      return [
-        `<figure class="shot">
-          <div class="shot-frame"><img src="${source}" alt="${escapeHtml(screenshotLabel(frame.caption))} — ${escapeHtml(runLabel(run))}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async"></div>
-          <figcaption>${report.runs.length > 1 ? `<strong>${escapeHtml(runLabel(run))}</strong>` : ""}${captions.size > 1 ? `<span>${escapeHtml(screenshotLabel(frame.caption))}</span>` : ""}<a href="${source}" target="_blank" rel="noopener">Open screenshot</a></figcaption>
-        </figure>`,
-      ];
-    });
-    return `<details class="screen"${index === 0 ? " open" : ""}>
-      <summary><span>${escapeHtml(screenTitle)}</span><small>${variants.length > 1 ? `${variants.length} variants · ` : ""}${screenIndex + 1} of ${maxScreens}</small><i aria-hidden="true">⌄</i></summary>
+          <figcaption><strong>${escapeHtml(tile.label)}</strong><span>${escapeHtml(screenshotLabel(frame.caption))}</span></figcaption>
+        </figure>`;
+        }
+        const source = `/shared/runs/${encodeURIComponent(token)}/frames/${encodeURIComponent(run.id)}/${frame.index}`;
+        return `<figure class="shot">
+          <div class="shot-frame"><img src="${source}" alt="${escapeHtml(screenshotLabel(frame.caption))} — ${escapeHtml(tile.label)}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async"></div>
+          <figcaption>${report.runs.length > 1 || group.tiles.length > 1 ? `<strong>${escapeHtml(tile.label)}</strong>` : ""}${captions.size > 1 ? `<span>${escapeHtml(screenshotLabel(frame.caption))}</span>` : ""}<a href="${source}" target="_blank" rel="noopener">Open screenshot</a></figcaption>
+        </figure>`;
+      });
+      return `<details class="screen"${index === 0 ? " open" : ""}>
+      <summary><span>${escapeHtml(screenTitle)}</span><small>${variants.length > 1 ? `${variants.length - missing} captured${missing ? ` · ${missing} missing` : ""} · ` : ""}${screenIndex + 1} of ${gallery.length}</small><i aria-hidden="true">⌄</i></summary>
       <div class="shots">${variants.join("")}</div>
     </details>`;
-  }).join("");
+    })
+    .join("");
   const runRows = report.runs
     .map(
       (run) => `<li>
@@ -296,7 +321,7 @@ ${styleBlock}
 <details class="report-details"><summary>Run details</summary>
 ${proofBlock(report)}<section class="metrics" aria-label="Result totals"><div class="metric"><strong>${report.totals.runs}</strong><span>Runs</span></div><div class="metric"><strong>${report.totals.screenshots}</strong><span>Screenshots</span></div>${withheldCount > 0 ? `<div class="metric"><strong>${withheldCount}</strong><span>Withheld</span></div>` : ""}<div class="metric"><strong>${report.totals.passed}</strong><span>Passed</span></div><div class="metric"><strong>${report.totals.problems}</strong><span>Need attention</span></div>${report.totals.inProgress > 0 ? `<div class="metric"><strong>${report.totals.inProgress}</strong><span>In progress</span></div>` : ""}</section>
 <div class="section-title"><h2>Run summary</h2><span>Structured inputs and device identifiers are omitted</span></div><ul class="runs">${runRows}</ul>
-<p class="privacy">Grouped by screen across every run</p>
+<p class="privacy">Matching frozen checkpoints are grouped across requested configurations. Captures without correspondence are shown separately.</p>
 <p class="privacy"><strong>Privacy:</strong> this capability link includes run summaries and screenshots. Logs, network bodies, structured inputs, and device identifiers are omitted. Screenshots and text labels may contain app content. This link can be revoked. A copy someone already downloaded cannot be recalled.</p>
 </details><span class="expires">Available until ${escapeHtml(dateTime(report.share.expiresAt))}</span>
 </header><section class="report-gallery" aria-label="Screenshots">

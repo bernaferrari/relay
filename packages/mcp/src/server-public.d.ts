@@ -26,6 +26,11 @@ export const relayMcpErrorLimit: 1024;
 
 export type OperationInvokeOptions = { signal?: AbortSignal };
 export type OperationInvoker = {
+  binaryResource?(
+    path: string,
+    init?: RequestInit,
+    maxBytes?: number,
+  ): Promise<{ bytes: Uint8Array; headers: Headers }>;
   invoke(
     operationId: OperationId,
     input: Record<string, unknown>,

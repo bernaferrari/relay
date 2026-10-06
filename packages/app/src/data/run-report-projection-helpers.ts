@@ -6,6 +6,7 @@
  */
 import type { EvidenceChannel } from "@relay/protocol";
 import { isCaptureReviewLeftoverCaption } from "@relay/protocol";
+import type { ProductRunReportOverview } from "./run-report-model";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -254,6 +255,24 @@ export function publicFailureCategory(value: unknown): string | undefined {
   const category = text(value);
   return category ? labels[category] : undefined;
 }
+
+/** Keep the recorded taxonomy and exact cause beside their public wording. */
+export function projectRunFailure(
+  run: Record<string, unknown>,
+  canonicalDetail: unknown,
+): Pick<ProductRunReportOverview, "cause" | "technicalCause" | "failureCategory" | "category"> {
+  const technicalCause = text(canonicalDetail) ?? text(run.error);
+  const cause = publicRunCause(technicalCause);
+  const failureCategory = text(run.failureCategory);
+  const category = publicFailureCategory(failureCategory);
+  return {
+    ...(cause ? { cause } : {}),
+    ...(technicalCause ? { technicalCause } : {}),
+    ...(failureCategory ? { failureCategory } : {}),
+    ...(category ? { category } : {}),
+  };
+}
+
 export function humanTargetName(value: unknown): string | undefined {
   const name = text(value);
   if (!name) return undefined;

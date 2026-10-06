@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { TestWorkspaceHeader } from "../components/test-workspace";
 import { Button } from "@relay/ui-react/components/button";
-import { Popover, PopoverContent } from "@relay/ui-react/components/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -9,14 +9,7 @@ import {
   DropdownMenuItem,
 } from "@relay/ui-react/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  ChevronLeft,
-  Circle,
-  MoreHorizontal,
-  Play,
-  SlidersHorizontal,
-} from "lucide-react";
+import { ChevronDown, ChevronLeft, Circle, MoreHorizontal, Play } from "lucide-react";
 import type { MouseEvent, ReactNode, RefObject } from "react";
 
 export function TestWorkspaceActions({
@@ -122,54 +115,51 @@ export function TestWorkspaceActions({
               </Button>
             </div>
           )}
-          {testPresent || attachedRunId || hasRecentRuns ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                ref={configurationTriggerRef}
-                render={
-                  <Button
-                    variant={activeRun ? "ghost" : "outline"}
-                    size={activeRun ? "icon-sm" : "sm"}
-                  />
-                }
-                aria-label={
-                  !activeRun && configurationName !== "Run settings"
-                    ? `Run settings: ${configurationName}`
-                    : "More Test actions"
-                }
+          {testPresent && !activeRun ? (
+            <Popover open={settingsOpen} onOpenChange={onSettingsOpen}>
+              <PopoverTrigger
+                render={<Button ref={configurationTriggerRef} variant="outline" size="sm" />}
+                aria-label={`Run settings: ${configurationName}`}
                 aria-description={`Run settings: ${configurationLabel}`}
                 title={configurationLabel}
               >
-                {activeRun ? (
-                  <MoreHorizontal aria-hidden="true" />
-                ) : (
-                  <>
-                    {configurationName !== "Run settings" ? (
-                      <span className="text-muted-foreground">Run on</span>
-                    ) : null}
-                    <span className="max-w-80 truncate">{configurationName}</span>
-                    <ChevronDown aria-hidden="true" />
-                  </>
-                )}
+                {configurationName !== "Run settings" ? (
+                  <span className="text-muted-foreground">Run on</span>
+                ) : null}
+                <span className="max-w-80 truncate">{configurationName}</span>
+                <ChevronDown aria-hidden="true" />
+              </PopoverTrigger>
+              <PopoverContent
+                finalFocus={configurationTriggerRef}
+                align="end"
+                className="max-h-[min(640px,80dvh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
+                aria-label="Run settings"
+              >
+                {runSettings}
+              </PopoverContent>
+            </Popover>
+          ) : null}
+          {testPresent || attachedRunId || hasRecentRuns ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon-sm" />}
+                aria-label="More Test actions"
+              >
+                <MoreHorizontal aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
                 {!activeRun && testPresent ? (
-                  <>
-                    <DropdownMenuItem onClick={() => onSettingsOpen(true)}>
-                      <SlidersHorizontal aria-hidden="true" /> Run settings
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      render={
-                        <Link
-                          to="/tests/$testId/run-across"
-                          params={{ testId }}
-                          search={{ app: appMapId }}
-                        />
-                      }
-                    >
-                      Run across…
-                    </DropdownMenuItem>
-                  </>
+                  <DropdownMenuItem
+                    render={
+                      <Link
+                        to="/tests/$testId/run-across"
+                        params={{ testId }}
+                        search={{ app: appMapId }}
+                      />
+                    }
+                  >
+                    Run across…
+                  </DropdownMenuItem>
                 ) : null}
                 {attachedRunId ? (
                   <DropdownMenuItem
@@ -184,17 +174,6 @@ export function TestWorkspaceActions({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
-          <Popover open={settingsOpen} onOpenChange={onSettingsOpen}>
-            <PopoverContent
-              anchor={configurationTriggerRef}
-              finalFocus={configurationTriggerRef}
-              align="end"
-              className="max-h-[min(640px,80dvh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
-              aria-label="Run settings"
-            >
-              {runSettings}
-            </PopoverContent>
-          </Popover>
         </>
       }
     />

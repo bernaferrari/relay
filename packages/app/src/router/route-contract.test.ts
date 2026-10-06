@@ -95,6 +95,16 @@ describe("React route contract", () => {
     expect(parentPathForPath("/home")).toBeUndefined();
   });
 
+  it("accepts a device recording link with its exact app context", () => {
+    expect(() =>
+      assertAllowedRouteSearch("/tests/new", {
+        target: "RQCY104BG8X",
+        targetKind: "device",
+        originApplication: "ai.x.grok",
+      }),
+    ).not.toThrow();
+  });
+
   it("keeps recording chrome standard so sidebar and Activity stay available", () => {
     const recording = routeContracts.find((route) => route.id === "/recordings/:recordingId");
     const recordTest = routeContracts.find((route) => route.id === "/tests/:testId/record");

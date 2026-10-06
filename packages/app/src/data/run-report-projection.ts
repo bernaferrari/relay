@@ -45,9 +45,8 @@ import {
   humanTargetName,
   leftoverWrapperStepTitle,
   preludeLaneCheckStepTitle,
-  publicFailureCategory,
+  projectRunFailure,
   publicNetworkUrl,
-  publicRunCause,
   resolvedTestTitle,
   sentenceCase,
   sourceTestId,
@@ -772,9 +771,8 @@ export function projectRunReport(
     rawEvidence,
   );
   const outcome = runOutcome(run.outcome);
-  const technicalCause = text(canonical?.problems[0]?.detail) ?? text(run.error);
-  const cause = publicRunCause(technicalCause);
-  const category = publicFailureCategory(run.failureCategory);
+  const failure = projectRunFailure(run, canonical?.problems[0]?.detail);
+  const cause = failure.cause;
   const traceEvidence = firstTraceEvidence(run, outcome);
   const targetName = humanTargetName(run.deviceName);
   const testId = sourceTestId(run);
@@ -878,9 +876,7 @@ export function projectRunReport(
     ...(outcome ? { outcome } : {}),
     ...(targetName ? { targetName } : {}),
     ...(finite(run.durationMs) === undefined ? {} : { durationMs: finite(run.durationMs) }),
-    ...(cause ? { cause } : {}),
-    ...(technicalCause ? { technicalCause } : {}),
-    ...(category ? { category } : {}),
+    ...failure,
     ...(traceEvidence
       ? { firstEvidence: traceEvidence }
       : outcome !== "passed" && cause

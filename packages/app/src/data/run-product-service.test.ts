@@ -683,6 +683,7 @@ describe("run report projection", () => {
     expect(report.outcome).toBe("harness-failure");
     expect(report.cause).toBe("The device connection ended.");
     expect(report.category).toBe("Setup");
+    expect(report.failureCategory).toBe("environment");
     expect(report.firstEvidence?.label).toBe("Open Language");
     expect(report.evidence).toEqual([]);
     expect(report.timeline).toEqual([

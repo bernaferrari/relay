@@ -3,6 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { StoryAction } from "../data/run-story";
+import type { ProductRunReportOverview } from "../data/run-report-model";
 import { RunStoryFailure } from "./run-story-failure";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -13,8 +14,8 @@ vi.mock("@tanstack/react-router", () => ({
   }: {
     children: ReactNode;
     params: { testId: string };
-    search: { step: string };
-  }) => <a href={`/tests/${params.testId}?step=${search.step}`}>{children}</a>,
+    search: { step?: string; setup?: string };
+  }) => <a href={`/tests/${params.testId}?${new URLSearchParams(search)}`}>{children}</a>,
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -26,7 +27,12 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-function render(action: StoryAction, testId?: string) {
+function render(
+  action: StoryAction,
+  testId?: string,
+  report: Pick<ProductRunReportOverview, "outcome" | "failureCategory"> = {},
+  onInspectEvidence = vi.fn(),
+) {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -36,6 +42,8 @@ function render(action: StoryAction, testId?: string) {
         step={{ id: "settings", title: "Settings layout", state: "failed", actions: [action] }}
         action={action}
         stepNumber={1}
+        report={report}
+        onInspectEvidence={onInspectEvidence}
         {...(testId ? { testId } : {})}
       />,
     );
@@ -81,7 +89,7 @@ it("opens the check neutrally when the retained evidence proves a product overla
   expect(container.textContent).not.toContain("Fix this step");
 });
 
-it("keeps the repair action for a failed step without proven product-overlap evidence", () => {
+it("inspects an unclassified failure before offering a secondary step edit", () => {
   const container = render(
     {
       id: "tap",
@@ -91,7 +99,9 @@ it("keeps the repair action for a failed step without proven product-overlap evi
     },
     "test-settings",
   );
-  expect(container.querySelector("a")?.textContent).toBe("Fix this step");
+  expect(container.querySelector("button")?.textContent?.trim()).toBe("Inspect evidence");
+  expect(container.querySelector("a")?.textContent).toBe("Edit step");
+  expect(container.textContent).not.toContain("Fix this step");
   expect(container.textContent).not.toContain("View check");
 });
 
@@ -105,4 +115,51 @@ it("does not claim an overlap without proven assertion evidence", () => {
   expect(container.querySelector("p")?.textContent).toContain("didn’t work.");
   expect(container.querySelector("p")?.textContent).not.toContain("The two elements overlap.");
   expect(container.querySelector("details")).toBeNull();
+});
+
+it.each([
+  ["product-failure", "deterministic-assertion", "Inspect evidence"],
+  ["product-failure", "semantic-assertion", "Inspect evidence"],
+  ["product-failure", "visual-assertion", "Inspect evidence"],
+  ["product-failure", "locator", "Inspect evidence"],
+  ["harness-failure", "locator", "Edit step"],
+  ["harness-failure", "environment", "Repair setup"],
+  ["harness-failure", "target-state", "Repair setup"],
+  ["harness-failure", "action", "Inspect evidence"],
+  ["harness-failure", "harness-defect", "Inspect evidence"],
+  ["harness-failure", "unknown-category", "Inspect evidence"],
+  ["uncertain", "locator", "Inspect evidence"],
+  ["uncertain", "judge-uncertainty", "Inspect evidence"],
+] as const)("offers %s / %s the recorded next action: %s", (outcome, failureCategory, primary) => {
+  const inspect = vi.fn();
+  const container = render(
+    { id: "failed", kind: "check", label: "Check account balance", state: "failed" },
+    "test-settings",
+    { outcome, failureCategory },
+    inspect,
+  );
+  expect(container.querySelector("button, a")?.textContent?.trim()).toBe(primary);
+  expect(container.textContent).not.toContain("Fix this step");
+  const edit = [...container.querySelectorAll("a")].find(
+    (link) => link.textContent === "Edit step",
+  );
+  expect(edit?.getAttribute("href")).toBe("/tests/test-settings?step=settings");
+  if (primary === "Repair setup")
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "/tests/test-settings?setup=run",
+    );
+  if (primary === "Inspect evidence") {
+    act(() => container.querySelector("button")!.click());
+    expect(inspect).toHaveBeenCalledOnce();
+  }
+});
+
+it("keeps evidence inspection available when the saved Test cannot be edited", () => {
+  const container = render(
+    { id: "tap", kind: "tap", label: "Tap Save", state: "failed" },
+    undefined,
+    { outcome: "harness-failure", failureCategory: "locator" },
+  );
+  expect(container.querySelector("button")?.textContent?.trim()).toBe("Inspect evidence");
+  expect(container.querySelector("a")).toBeNull();
 });

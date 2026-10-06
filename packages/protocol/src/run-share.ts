@@ -67,6 +67,21 @@ export type RunShareReportRun = {
   frames: RunShareFrame[];
 };
 
+/** Read-only correspondence projected from frozen capture obligations. A
+ * missing tile never substitutes another capture or changes a Run verdict. */
+export type RunShareGalleryGroup = {
+  id: string;
+  caption: string;
+  iteration?: number;
+  attempt?: number;
+  phase?: string;
+  tiles: Array<{
+    label: string;
+    runId?: string;
+    frameIndex?: number;
+  }>;
+};
+
 /** Audit-grade identity block for one share report: what was executed,
  * against what build and plan revision, and when. Every field is a
  * projection of data already persisted on the runs. */
@@ -102,6 +117,8 @@ export type RunShareReport = {
    * was planned. Independent of the machine totals above — reported issues
    * never count as execution problems, and passes never erase them. */
   captureReview?: CaptureReviewSummary;
+  /** Captures with no trustworthy cross-run identity remain separate groups. */
+  gallery?: RunShareGalleryGroup[];
   runs: RunShareReportRun[];
 };
 
