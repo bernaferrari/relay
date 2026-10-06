@@ -32,10 +32,12 @@ import { UsageError } from "./errors.js";
 import type { ReplayLabFileIntent } from "./replay-lab-files.js";
 
 export type DoctorIntent = { kind: "doctor" };
+export type InspectCliIntent = { kind: "inspect"; runOrWorkflowId: string };
 
 export type OutcomeCliIntent =
   | ConnectTargetIntent
   | ObserveTargetIntent
+  | InspectCliIntent
   | InspectWorkflowOutcomeIntent
   | CancelRunOutcomeIntent
   | ContinueRepeatOutcomeIntent
@@ -512,8 +514,8 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       confirmRemaining: true,
     };
   }
-  // Everyday aliases: `relay inspect r_123` / `relay export r_123` map onto
-  // the same product operations as inspect-workflow / export-evidence.
+  // The everyday inspect accepts canonical Runs and workflows; the explicit
+  // inspect-workflow spelling and bounded legacy references keep their scope.
   const normalizedVerb =
     verb === "inspect" ? "inspect-workflow" : verb === "export" ? "export-evidence" : verb;
   if (normalizedVerb === "inspect-workflow" && args.length === 1) {
@@ -528,7 +530,9 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
             { legacyRef: unknown }
           >["legacyRef"],
         }
-      : { kind: "inspect-workflow", workflowId: args[0]! };
+      : verb === "inspect"
+        ? { kind: "inspect", runOrWorkflowId: args[0]! }
+        : { kind: "inspect-workflow", workflowId: args[0]! };
   }
   if (verb === "cancel-run" && args.length === 2) {
     if (!tokens.switches.has("--confirm")) {

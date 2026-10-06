@@ -617,7 +617,9 @@ export function TestPage() {
                 </TabsTrigger>
               </TabsList>
             }
-            trailing={<TestLastRunLine history={recentRuns} />}
+            trailing={
+              <TestLastRunLine history={recentRuns} running={Boolean(activeRun || liveRunId)} />
+            }
           />
           {attachedRunId ? (
             <TabsContent

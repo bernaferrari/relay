@@ -130,6 +130,7 @@ export function NewTestDetailedSetup({
   const deviceChoice = (
     <RecordingDeviceChoice
       service={deviceService}
+      loading={targetFetching}
       deviceOnly={deviceOnly}
       onStarted={async (serial) => {
         await onRefreshTargets();

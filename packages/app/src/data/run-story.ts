@@ -91,7 +91,15 @@ export function describeTraceTitle(
   if (/^(?:Tap|Click|Press|Long press)\b/iu.test(text)) {
     const target = quoted(text);
     const verb = /^Long press/iu.test(text) ? "Long press" : "Tap";
-    return { kind: "tap", label: target ? `${verb} “${target}”` : text };
+    const identifier = /^(?:Tap|Click|Press|Long press) identifier (.+)$/iu.exec(text);
+    return {
+      kind: "tap",
+      label: target
+        ? `${verb} “${target}”`
+        : identifier
+          ? `${verb} ${humanizeIdentifier(identifier[1]!)}`
+          : text,
+    };
   }
   if (/^(?:Type|Fill|Enter)\b/iu.test(text)) {
     const value = quoted(text);
@@ -187,18 +195,80 @@ type JobStepLike = {
   finishedAt?: unknown;
   frames?: unknown;
   log?: unknown;
+  recipeId?: unknown;
+  recipeStepId?: unknown;
 };
 
-/** Live job: every action so far, in order, as one running step. */
+type LiveJob = {
+  title?: unknown;
+  status?: unknown;
+  steps?: unknown;
+  frames?: unknown;
+  artifacts?: unknown;
+  recipeSnapshot?: unknown;
+};
+
+/** Pending Test steps come from this execution's frozen recipe, never the current editor. */
+function liveTestGroups(job: LiveJob, traces: readonly JobStepLike[]) {
+  const root = asRecord(job.recipeSnapshot);
+  const rootId = asText(root?.id);
+  if (!rootId) return undefined;
+  const groups = new Map<string, StoryStep>();
+  const ownership = new Map<string, string>();
+  const wrappers = new Map<string, JobStepLike>();
+  const key = (recipe: string, step: string) => JSON.stringify([recipe, step]);
+  for (const value of asArray(root?.steps)) {
+    const step = asRecord(value);
+    const check = asRecord(step?.check);
+    const id = asText(check?.id);
+    const title = asText(check?.title);
+    const rootStepId = asText(step?.id);
+    if (step?.kind !== "module" || !id || !title || !rootStepId) continue;
+    // Repeated invocation identities need their own lineage; do not guess which one a trace belongs to.
+    if (groups.has(id)) return undefined;
+    groups.set(id, { id, title, state: "pending", actions: [] });
+    ownership.set(key(rootId, rootStepId), id);
+    const wrapper = traces.find(
+      (trace) => trace.recipeId === rootId && trace.recipeStepId === rootStepId,
+    );
+    if (wrapper) wrappers.set(id, wrapper);
+  }
+  if (!groups.size) return undefined;
+  const plan = asArray(job.artifacts).flatMap((value) => {
+    const artifact = asRecord(value);
+    const data = asRecord(artifact?.data);
+    const candidate =
+      artifact?.kind === "app-map-test-plan"
+        ? data
+        : artifact?.kind === "app-map-test-execution-intent"
+          ? asRecord(data?.plan)
+          : undefined;
+    return candidate?.rootRecipeId === rootId ? [candidate] : [];
+  })[0];
+  for (const value of asArray(plan?.stepProvenance)) {
+    const origin = asRecord(value);
+    const recipeId = asText(origin?.recipeId);
+    const recipeStepId = asText(origin?.recipeStepId);
+    const testStepId = asText(origin?.testStepId);
+    if (recipeId && recipeStepId && testStepId && groups.has(testStepId))
+      ownership.set(key(recipeId, recipeStepId), testStepId);
+  }
+  return { groups, wrappers, ownership, key };
+}
+
+/** Live job: frozen authored steps and the observed actions belonging to each one. */
 export function storyFromJob(job: {
   title?: unknown;
   status?: unknown;
   steps?: unknown;
   frames?: unknown;
   artifacts?: unknown;
+  recipeSnapshot?: unknown;
 }): { steps: StoryStep[]; latestFrame?: string } {
   const steps = Array.isArray(job.steps) ? (job.steps as JobStepLike[]) : [];
+  const planned = liveTestGroups(job, steps);
   const actions: StoryAction[] = [];
+  const finish: StoryAction[] = [];
   for (const [index, step] of steps.entries()) {
     const rawTitle = typeof step.title === "string" ? step.title : "";
     const layout =
@@ -218,7 +288,7 @@ export function storyFromJob(job: {
         : started && finished
           ? finished - started
           : undefined;
-    actions.push({
+    const action: StoryAction = {
       id: typeof step.id === "string" ? step.id : `step-${index}`,
       kind: described.kind,
       label: described.label,
@@ -228,7 +298,17 @@ export function storyFromJob(job: {
       ...(layout?.failure && step.status === "error"
         ? { failure: layout.failure, detail: layout.failure.summary }
         : {}),
-    });
+    };
+    actions.push(action);
+    if (planned) {
+      const groupId =
+        typeof step.recipeId === "string" && typeof step.recipeStepId === "string"
+          ? planned.ownership.get(planned.key(step.recipeId, step.recipeStepId))
+          : undefined;
+      const group = groupId ? planned.groups.get(groupId) : undefined;
+      if (group) group.actions.push(action);
+      else finish.push(action);
+    }
   }
   const allFrames = Array.isArray(job.frames)
     ? (job.frames as { path?: unknown }[]).flatMap((frame) =>
@@ -236,17 +316,46 @@ export function storyFromJob(job: {
       )
     : [];
   const status = typeof job.status === "string" ? job.status : undefined;
+  const grouped = planned
+    ? [...planned.groups.values()].map((group) => {
+        const wrapper = planned.wrappers.get(group.id);
+        const observed = combine(group.actions.map((action) => action.state));
+        const wrapperState = stateOf(
+          typeof wrapper?.status === "string" ? wrapper.status : undefined,
+        );
+        const state =
+          observed === "failed" || wrapperState === "failed"
+            ? "failed"
+            : wrapperState === "running"
+              ? "running"
+              : wrapperState === "passed" && observed !== "running"
+                ? "passed"
+                : observed === "passed"
+                  ? "running"
+                  : observed;
+        return { ...group, state: state as StoryState };
+      })
+    : undefined;
+  if (grouped && finish.length)
+    grouped.push({
+      id: "finish",
+      title: "Finish",
+      state: combine(finish.map((action) => action.state)),
+      actions: finish,
+    });
   return {
-    steps: actions.length
-      ? [
-          {
-            id: "live",
-            title: typeof job.title === "string" && job.title ? job.title : "Running",
-            state: status === "running" || status === "queued" ? "running" : stateOf(status),
-            actions,
-          },
-        ]
-      : [],
+    steps:
+      grouped ??
+      (actions.length
+        ? [
+            {
+              id: "live",
+              title: typeof job.title === "string" && job.title ? job.title : "Running",
+              state: status === "running" || status === "queued" ? "running" : stateOf(status),
+              actions,
+            },
+          ]
+        : []),
     ...(lastFrame(allFrames) ? { latestFrame: lastFrame(allFrames)! } : {}),
   };
 }

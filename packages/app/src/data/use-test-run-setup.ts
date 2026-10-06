@@ -36,6 +36,7 @@ export function useTestRunSetup(input: TestRunSetupInput) {
   useEffect(() => {
     if (!configuration.pristine || editorDocument.isPending) return;
     if (profiles.isEnabled && profiles.isPending) return;
+    if (targets.isPending) return;
     const ready = (id?: string) =>
       Boolean(id && targets.data?.some((target) => target.targetId === id));
     const recorded = profiles.data?.find((profile) => profile.id === input.recordedProfileId);
@@ -74,6 +75,7 @@ export function useTestRunSetup(input: TestRunSetupInput) {
     input.requestedTargetId,
     input.recordedProfileId,
     targets.data,
+    targets.isPending,
     profiles.data,
     profiles.isEnabled,
     profiles.isPending,

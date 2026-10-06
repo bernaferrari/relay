@@ -274,6 +274,33 @@ export function RunInspection({
     );
   }
 
+  const liveJobId = state?.run?.jobId;
+  if (liveJobId && typeof runService.liveJob === "function") {
+    const liveStory = (
+      <LiveRunStory
+        key={liveJobId}
+        jobId={liveJobId}
+        title={snapshot?.title ?? "Run"}
+        embedded={embedded}
+        {...(snapshot?.target
+          ? {
+              target: snapshot.target,
+              targetName: targetLabel(targetPresentation.data?.[0] ?? snapshot.target).title,
+            }
+          : {})}
+        runService={runService}
+        {...(canCancel ? { onCancel: () => cancel.mutate() } : {})}
+        cancelling={cancel.isPending}
+      />
+    );
+    if (embedded) return liveStory;
+    return (
+      <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-hidden">
+        {liveStory}
+      </WorkbenchPage>
+    );
+  }
+
   if (embedded) {
     return (
       <section
@@ -313,24 +340,6 @@ export function RunInspection({
           </section>
         ) : null}
       </section>
-    );
-  }
-
-  const liveJobId = state?.run?.jobId;
-  if (liveJobId && typeof runService.liveJob === "function") {
-    return (
-      <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-auto">
-        <LiveRunStory
-          jobId={liveJobId}
-          title={snapshot?.title ?? "Run"}
-          {...(snapshot?.target
-            ? { targetName: targetLabel(targetPresentation.data?.[0] ?? snapshot.target).title }
-            : {})}
-          runService={runService}
-          {...(canCancel ? { onCancel: () => cancel.mutate() } : {})}
-          cancelling={cancel.isPending}
-        />
-      </WorkbenchPage>
     );
   }
 

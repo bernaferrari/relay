@@ -79,3 +79,64 @@ it("keeps pending frames neutral and never labels a previous Run's pixels as the
     vi.restoreAllMocks();
   }
 });
+
+it("follows live pixels until a person pins a captured step and can return to live", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient();
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <RunStoryView
+            embedded
+            runId="job"
+            title="Settings"
+            status="running"
+            meta={[]}
+            livePreview={() => <div aria-label="Passive live pixels" />}
+            frameSource={() => "data:image/png;base64,AA=="}
+            steps={[
+              {
+                id: "done",
+                title: "Open Settings",
+                state: "passed",
+                actions: [
+                  {
+                    id: "shot",
+                    kind: "screenshot",
+                    label: "Settings screenshot",
+                    state: "passed",
+                    framePath: "first.png",
+                  },
+                ],
+              },
+              { id: "now", title: "Check Appearance", state: "running", actions: [] },
+              { id: "later", title: "Finish", state: "pending", actions: [] },
+            ]}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    expect(host.querySelector('[aria-label="Passive live pixels"]')).not.toBeNull();
+    expect(host.querySelector('[aria-current="step"]')?.textContent).toContain("Check Appearance");
+    expect(host.querySelector("h1")).toBeNull();
+    const shot = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Settings screenshot"),
+    )!;
+    await act(async () => shot.click());
+    expect(host.querySelector('[aria-label="Passive live pixels"]')).toBeNull();
+    expect(host.querySelector("img")).not.toBeNull();
+    const live = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Live device",
+    )!;
+    await act(async () => live.click());
+    expect(host.querySelector('[aria-label="Passive live pixels"]')).not.toBeNull();
+    expect(host.querySelector("img")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+    host.remove();
+  }
+});

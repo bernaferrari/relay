@@ -26,12 +26,20 @@ export function latestRunOf(runs: readonly ProductRunSummary[] | undefined) {
 /** One stable-height row for every run state, including no run. */
 export function TestLastRunLine({
   history,
+  running = false,
 }: {
   history: { data?: readonly ProductRunSummary[]; isLoading: boolean; isError: boolean };
+  running?: boolean;
 }) {
   const run = latestRunOf(history.data);
   const status = history.isLoading ? "loading" : history.isError ? "unavailable" : undefined;
   const search = useLocation({ select: (location) => location.search }) as Record<string, unknown>;
+  if (running)
+    return (
+      <p className="flex h-8 w-full items-center justify-end text-sm" role="status">
+        <StatusPill state="running" />
+      </p>
+    );
   return (
     <p className="flex h-8 w-full min-w-0 items-center justify-end gap-2 text-sm whitespace-nowrap text-muted-foreground">
       {!run && status === "loading" ? (

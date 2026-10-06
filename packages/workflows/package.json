@@ -11,6 +11,7 @@
     "./proof": "./src/proof-workflow.ts",
     "./recording-outcomes": "./src/recording-outcome-jobs.ts",
     "./recorded-step-presentation": "./src/recorded-step-presentation.ts",
+    "./authoring-input-receipt": "./src/authoring-input-receipt.ts",
     "./target-catalog": "./src/target-catalog.ts",
     "./types": "./src/types.ts",
     "./testing": "./src/testing.ts",

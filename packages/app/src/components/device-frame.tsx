@@ -18,6 +18,7 @@ export function DeviceFrame({
   src,
   alt,
   shape: requested,
+  platform,
   size = "lg",
   placeholder,
   children,
@@ -26,6 +27,8 @@ export function DeviceFrame({
   src?: string;
   alt: string;
   shape?: DeviceShape;
+  /** Native Android pixels already include their device's status area. */
+  platform?: "ios" | "android";
   size?: "sm" | "md" | "lg";
   placeholder?: ReactNode;
   /** Overlays drawn on top of the screen (ignore areas, change boxes). */
@@ -107,7 +110,7 @@ export function DeviceFrame({
       data-shape={shape}
       className={`relative overflow-hidden border-bezel bg-bezel shadow-xl ${bezel} ${width} ${className}`}
     >
-      {shape === "phone" && size !== "sm" ? (
+      {shape === "phone" && size !== "sm" && platform !== "android" ? (
         <span
           aria-hidden="true"
           className={`absolute top-1.5 left-1/2 z-10 -translate-x-1/2 rounded-full bg-bezel ${size === "md" ? "h-3.5 w-14" : "h-5 w-20"}`}
