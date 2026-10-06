@@ -11,6 +11,7 @@ import {
   AppWindow,
   Camera,
   Check,
+  ChevronRight,
   Circle,
   CircleCheck,
   CircleX,
@@ -90,6 +91,9 @@ function useBlobUrl(blob?: Blob): string | undefined {
 
 export function RunStoryView({
   header,
+  embedded = false,
+  livePreview,
+  outlineHeader,
   status,
   title,
   meta,
@@ -109,6 +113,10 @@ export function RunStoryView({
   navigation,
 }: {
   header?: ReactNode;
+  embedded?: boolean;
+  /** Passive live pixels, with the current captured frame as an honest fallback. */
+  livePreview?(fallback?: ReactNode): ReactNode;
+  outlineHeader?: ReactNode;
   status: RunStoryStatus;
   title: string;
   /** Small links above the title (Results · View Test). */
@@ -151,31 +159,72 @@ export function RunStoryView({
   const url = direct ?? blobUrl;
   const loadingFrame = Boolean(loadFrame && framePath && !direct && !frame.isError && !blobUrl);
   const capture = captures?.find((item) => item.framePath && item.framePath === framePath);
-  const listEnd = useRef<HTMLLIElement>(null);
+  const currentStep = steps.find((step) => step.state === "running");
+  const currentRow = useRef<HTMLLIElement>(null);
   useEffect(() => {
-    if (status === "running" && !pinned) listEnd.current?.scrollIntoView({ block: "nearest" });
-  }, [allActions.length, status, pinned]);
+    if (status === "running" && !pinned) currentRow.current?.scrollIntoView?.({ block: "nearest" });
+  }, [currentStep?.id, status, pinned]);
+  const capturedScreen = (
+    <WorkspaceScreenshot>
+      {url ? (
+        <EvidenceImageViewer
+          key={`${runId}:${framePath}`}
+          frame={{
+            id: framePath ?? "current",
+            title: "Screen at this step",
+            media: { kind: "image", src: url },
+          }}
+          onError={() => {}}
+        />
+      ) : loadingFrame ? (
+        <div
+          role="status"
+          aria-label="Loading recorded screen"
+          aria-busy="true"
+          className="h-full w-full rounded-lg bg-muted/15 ring-1 ring-border/30"
+        />
+      ) : framePath && frame.isError ? (
+        <div
+          className="grid justify-items-center gap-3 text-sm text-muted-foreground"
+          role="status"
+        >
+          <p>Screenshot couldn’t load.</p>
+          <Button variant="outline" size="sm" onClick={() => void frame.refetch()}>
+            Retry screenshot
+          </Button>
+        </div>
+      ) : (
+        <p className="px-6 py-16 text-center text-sm text-muted-foreground">
+          {status === "running" ? "Starting…" : "No screen yet"}
+        </p>
+      )}
+    </WorkspaceScreenshot>
+  );
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Run">
-      {header ?? (
-        <TestWorkspaceHeader title={title} actions={actions}>
-          {crumbs ? (
-            <nav aria-label="Breadcrumb" className="flex items-center gap-2">
-              {crumbs}
-            </nav>
-          ) : null}
-          <span role="status">
-            <StatusPill state={PILL[status]} size="md" />
-          </span>
-          <span>{meta.filter(Boolean).join(" · ")}</span>
-          {summary ? <span>{summary}</span> : null}
-        </TestWorkspaceHeader>
-      )}
+      {embedded
+        ? null
+        : (header ?? (
+            <TestWorkspaceHeader title={title} actions={actions}>
+              {crumbs ? (
+                <nav aria-label="Breadcrumb" className="flex items-center gap-2">
+                  {crumbs}
+                </nav>
+              ) : null}
+              <span role="status">
+                <StatusPill state={PILL[status]} size="md" />
+              </span>
+              <span>{meta.filter(Boolean).join(" · ")}</span>
+              {summary ? <span>{summary}</span> : null}
+            </TestWorkspaceHeader>
+          ))}
       {navigation}
       <TestWorkspace
+        layout={status === "running" ? "live" : "sidebar"}
         outline={
           <>
+            {outlineHeader}
             {notice ? (
               <div className="grid gap-2 border-b border-border px-5 py-3 empty:hidden">
                 {notice}
@@ -191,76 +240,69 @@ export function RunStoryView({
                 </li>
               ) : null}
               {steps.map((step, index) => (
-                <li key={step.id} className="mb-3 min-w-0">
-                  <div className="flex items-start gap-2 px-2 py-1.5">
-                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium tabular-nums">
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0 flex-1 text-sm font-semibold leading-6">
-                      {step.title}
-                    </span>
-                    {step.durationMs ? (
-                      <span className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                        {formatDuration(step.durationMs)}
-                      </span>
-                    ) : null}
-                  </div>
-                  <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
-                    {step.actions.map((action) => (
-                      <ActionRow
-                        key={action.id}
-                        action={action}
-                        selected={selected?.id === action.id && Boolean(pinned)}
-                        capture={captures?.find(
-                          (item) => item.framePath && item.framePath === action.framePath,
-                        )}
-                        onSelect={() => setPinned(action.id === pinned ? undefined : action.id)}
-                      />
-                    ))}
-                  </ul>
+                <li
+                  key={step.id}
+                  ref={step.id === currentStep?.id ? currentRow : undefined}
+                  aria-current={step.id === currentStep?.id ? "step" : undefined}
+                  className={`mb-3 min-w-0 rounded-lg ${step.state === "running" ? "bg-accent/60 ring-1 ring-info/30" : ""}`}
+                >
+                  <StepDetails
+                    live={status === "running"}
+                    state={step.state}
+                    heading={
+                      <div className="flex items-start gap-2 px-2 py-1.5">
+                        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium tabular-nums">
+                          {index + 1}
+                        </span>
+                        <span className="min-w-0 flex-1 text-sm font-semibold leading-6">
+                          {step.title}
+                        </span>
+                        {status === "running" ? (
+                          <span className="mt-1">
+                            <StateMark state={step.state} />
+                          </span>
+                        ) : null}
+                        {step.durationMs ? (
+                          <span className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                            {formatDuration(step.durationMs)}
+                          </span>
+                        ) : null}
+                      </div>
+                    }
+                  >
+                    <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
+                      {step.actions.map((action) => (
+                        <ActionRow
+                          key={action.id}
+                          action={action}
+                          selected={selected?.id === action.id && Boolean(pinned)}
+                          capture={captures?.find(
+                            (item) => item.framePath && item.framePath === action.framePath,
+                          )}
+                          onSelect={() => setPinned(action.id === pinned ? undefined : action.id)}
+                        />
+                      ))}
+                    </ul>
+                  </StepDetails>
                 </li>
               ))}
-              <li ref={listEnd} aria-hidden="true" />
             </ol>
             {footer ? <footer className="border-t border-border px-5 py-3">{footer}</footer> : null}
           </>
         }
         preview={
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col items-center gap-4 overflow-hidden bg-stage p-4">
-            <WorkspaceScreenshot>
-              {url ? (
-                <EvidenceImageViewer
-                  key={framePath}
-                  frame={{
-                    id: framePath ?? "current",
-                    title: "Screen at this step",
-                    media: { kind: "image", src: url },
-                  }}
-                  onError={() => {}}
-                />
-              ) : loadingFrame ? (
-                <div
-                  role="status"
-                  aria-label="Loading recorded screen"
-                  aria-busy="true"
-                  className="h-full w-full rounded-lg bg-muted/15 ring-1 ring-border/30"
-                />
-              ) : framePath && frame.isError ? (
-                <div
-                  className="grid justify-items-center gap-3 text-sm text-muted-foreground"
-                  role="status"
-                >
-                  <p>Screenshot couldn’t load.</p>
-                  <Button variant="outline" size="sm" onClick={() => void frame.refetch()}>
-                    Retry screenshot
-                  </Button>
-                </div>
-              ) : (
-                <p className="px-6 py-16 text-center text-sm text-muted-foreground">
-                  {status === "running" ? "Starting…" : "No screen yet"}
-                </p>
-              )}
-            </WorkspaceScreenshot>
+            {livePreview && !pinned
+              ? livePreview(framePath ? capturedScreen : undefined)
+              : capturedScreen}
+            {livePreview && pinned ? (
+              <div className="flex w-full shrink-0 flex-wrap items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">Captured screenshot</span>
+                <Button variant="outline" size="sm" onClick={() => setPinned(undefined)}>
+                  Live device
+                </Button>
+              </div>
+            ) : null}
             {capture ? (
               <CaptureBar
                 item={capture}
@@ -268,7 +310,7 @@ export function RunStoryView({
                 {...(finishedAt ? { finishedAt } : {})}
                 {...(onReview ? { onReview } : {})}
               />
-            ) : selected ? (
+            ) : selected && (!livePreview || pinned) ? (
               <p className="text-sm text-muted-foreground">
                 {selected.framePath === framePath ? selected.label : "Latest captured screenshot"}
               </p>
@@ -277,6 +319,38 @@ export function RunStoryView({
         }
       />
     </section>
+  );
+}
+
+function StepDetails({
+  live,
+  state,
+  heading,
+  children,
+}: {
+  live: boolean;
+  state: StoryState;
+  heading: ReactNode;
+  children: ReactNode;
+}) {
+  if (!live)
+    return (
+      <>
+        {heading}
+        {children}
+      </>
+    );
+  return (
+    <details open={state === "running"} className="group/step">
+      <summary className="relative cursor-pointer list-none rounded-lg pr-3 outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        {heading}
+        <ChevronRight
+          aria-hidden="true"
+          className="absolute top-3 right-0 size-3 text-muted-foreground group-open/step:rotate-90"
+        />
+      </summary>
+      {children}
+    </details>
   );
 }
 

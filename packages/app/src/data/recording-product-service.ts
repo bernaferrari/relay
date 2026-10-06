@@ -597,7 +597,8 @@ export function createRecordingProductService(
     },
     async fetchRecordingInputReceipt(input) {
       const { client } = await product();
-      const { authoringInputReceiptOutcome } = await import("@relay/workflows");
+      const { authoringInputReceiptOutcome } =
+        await import("@relay/workflows/authoring-input-receipt");
       const output = await client.invoke("workflow.get", { workflowId: input.workflowId });
       return { outcome: authoringInputReceiptOutcome(output, input) };
     },

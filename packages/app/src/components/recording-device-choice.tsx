@@ -10,6 +10,7 @@ export function RecordingDeviceChoice({
   onChange,
   onStarted,
   deviceOnly = false,
+  loading = false,
 }: {
   service: DeviceProductService;
   value: string;
@@ -17,6 +18,7 @@ export function RecordingDeviceChoice({
   onChange(value: string): void;
   onStarted(serial: string): Promise<void>;
   deviceOnly?: boolean;
+  loading?: boolean;
 }) {
   const starting = useRef(false);
   const inventory = useQuery({
@@ -43,16 +45,18 @@ export function RecordingDeviceChoice({
     <div className="grid min-w-0 gap-2">
       <SelectField
         label="Record on"
-        disabled={boot.isPending}
+        disabled={boot.isPending || (loading && !options.length)}
         value={options.some((option) => option.value === value) ? value : ""}
         placeholder={
           boot.isPending
             ? "Starting Android emulator…"
-            : value
-              ? "Selected device unavailable"
-              : deviceOnly
-                ? "Choose a phone, tablet or emulator"
-                : "Choose a device or browser"
+            : loading
+              ? "Checking devices…"
+              : value
+                ? "Selected device unavailable"
+                : deviceOnly
+                  ? "Choose a phone, tablet or emulator"
+                  : "Choose a device or browser"
         }
         options={[
           ...options,

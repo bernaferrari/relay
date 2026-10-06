@@ -363,11 +363,27 @@ function fakeEditorService(): TestEditorProductService {
 
 describe("recorded Test destinations", () => {
   it.each([
-    { label: "bound app", originApplication: "ai.x.grok", startup: { mode: "cold" } },
-    { label: "no bound app", originApplication: undefined, startup: undefined },
+    {
+      label: "bound app",
+      path: "/tests/test-1",
+      originApplication: "ai.x.grok",
+      startup: { mode: "cold" },
+    },
+    {
+      label: "bound app and recorded destination",
+      path: "/tests/test-1?target=emulator-5554",
+      originApplication: "ai.x.grok",
+      startup: { mode: "cold" },
+    },
+    {
+      label: "no bound app",
+      path: "/tests/test-1",
+      originApplication: undefined,
+      startup: undefined,
+    },
   ])(
     "uses the intended initial startup for a fresh Android Test with $label",
-    async ({ originApplication, startup }) => {
+    async ({ path, originApplication, startup }) => {
       const fake = fakeRunService();
       const editor = fakeEditorService();
       const get = editor.get;
@@ -379,13 +395,7 @@ describe("recorded Test destinations", () => {
           test: { ...document.test, ...(originApplication ? { originApplication } : {}) },
         };
       };
-      await renderRun(
-        "/tests/test-1",
-        fake.service,
-        platformWithStorage().platform,
-        undefined,
-        editor,
-      );
+      await renderRun(path, fake.service, platformWithStorage().platform, undefined, editor);
       await click(button("Run"));
       expect(fake.startInputs).toHaveLength(1);
       expect(fake.startInputs[0]).toMatchObject({ targetId: "emulator-5554" });
@@ -418,7 +428,9 @@ describe("recorded Test destinations", () => {
           : {},
       );
       await renderRun(
-        "/tests/test-1?target=emulator-5554",
+        scenario === "explicit restart opt-out"
+          ? "/tests/test-1"
+          : "/tests/test-1?target=emulator-5554",
         fake.service,
         storage.platform,
         undefined,
@@ -1930,6 +1942,59 @@ describe("Run and Report", () => {
     expect(fake.calls).toContain("inspect:workflow-run-1");
     expect(document.body.textContent).toContain("Checking Language");
     expect(document.body.textContent).not.toContain("emulator-5554");
+  });
+
+  it("shows live authored steps and a passive device beside an attached running Test", async () => {
+    const fake = fakeRunService();
+    fake.service.liveJob = async () => ({
+      status: "running",
+      recipeSnapshot: {
+        id: "root",
+        steps: [
+          {
+            kind: "module",
+            id: "open",
+            check: { id: "step-open", title: "Open Language settings" },
+          },
+          {
+            kind: "module",
+            id: "check",
+            check: { id: "step-check", title: "Confirm selected language" },
+          },
+        ],
+      },
+      steps: [
+        {
+          id: "opening",
+          recipeId: "root",
+          recipeStepId: "open",
+          title: "Run saved Test",
+          status: "running",
+        },
+      ],
+    });
+    const storage = platformWithStorage({
+      activeRunWorkflow: JSON.stringify({
+        workflowId: "workflow-run-1",
+        runId: "run-1",
+        testId: "test-1",
+      }),
+    });
+    await renderRun("/tests/test-1?view=run&run=run-1", fake.service, storage.platform);
+    const execution = document.querySelector('[aria-label="Run"]')!;
+    expect(execution).not.toBeNull();
+    expect(execution.querySelector('[aria-current="step"]')?.textContent).toContain(
+      "Open Language settings",
+    );
+    expect(execution.querySelector('[aria-label="Steps"]')?.textContent).toContain(
+      "Confirm selected language",
+    );
+    expect(execution.querySelector('[aria-label="Live device preview"]')).not.toBeNull();
+    expect(execution.textContent).not.toContain("Checking Language");
+    expect(execution.querySelector("h1")).toBeNull();
+    expect(button("Stop").disabled).toBe(false);
+    await click(button("Stop"));
+    expect(fake.calls).toContain("cancel");
   });
 
   it("restores an active Run from canonical server state without local storage", async () => {

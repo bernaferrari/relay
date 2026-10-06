@@ -8,16 +8,16 @@ export function TestWorkspace({
 }: {
   outline: ReactNode;
   preview: ReactNode;
-  layout?: "sidebar" | "balanced";
+  layout?: "sidebar" | "balanced" | "live";
 }) {
   return (
     <div className="@container/workspace flex min-h-0 min-w-0 flex-1" data-slot="test-workspace">
       <div
-        className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(20rem,1fr)] @2xl/workspace:grid-rows-1 ${layout === "balanced" ? "@2xl/workspace:grid-cols-2" : "@2xl/workspace:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]"}`}
+        className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 ${layout === "live" ? "grid-rows-[minmax(0,1fr)_minmax(0,2fr)] @min-[520px]/workspace:grid-rows-1 @min-[520px]/workspace:grid-cols-[minmax(14rem,16rem)_minmax(0,1fr)]" : `grid-rows-[auto_minmax(20rem,1fr)] @2xl/workspace:grid-rows-1 ${layout === "balanced" ? "@2xl/workspace:grid-cols-2" : "@2xl/workspace:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]"}`}`}
       >
         <div
           data-slot="workspace-outline"
-          className="flex min-h-0 min-w-0 flex-col overflow-auto border-b border-border bg-card @2xl/workspace:border-r @2xl/workspace:border-b-0"
+          className={`flex min-h-0 min-w-0 flex-col overflow-auto border-b border-border bg-card ${layout === "live" ? "@min-[520px]/workspace:border-r @min-[520px]/workspace:border-b-0" : "@2xl/workspace:border-r @2xl/workspace:border-b-0"}`}
         >
           {outline}
         </div>

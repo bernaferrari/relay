@@ -47,6 +47,7 @@ import { runGuideCommand } from "./guide-command.js";
 import { runReportCommand } from "./report-commands.js";
 import { ensureLocalRelayServer, type LocalServerResult } from "./local-server.js";
 import { readReplayLabTracePacks } from "./replay-lab-files.js";
+import { inspectRunOrWorkflow } from "./inspect-command.js";
 import {
   runVerifyChangeCommand,
   type VerifyChangeJobPoller,
@@ -325,6 +326,11 @@ async function runOutcomeCommand(input: {
     return "workflowId" in intent
       ? jobs.inspect({ workflowId: intent.workflowId })
       : jobs.inspect({ legacyRef: intent.legacyRef });
+  }
+  if (intent.kind === "inspect") {
+    return inspectRunOrWorkflow(client, intent.runOrWorkflowId, signal, (workflowId) =>
+      jobs.inspect({ workflowId }),
+    );
   }
   if (intent.kind === "cancel-run") {
     const cancelled = await jobs.cancelRun(intent);

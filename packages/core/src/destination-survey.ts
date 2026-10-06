@@ -44,32 +44,14 @@ export type DestinationSurveyDependencies = {
   remainingSteps?: readonly Pick<RecipeStep, "kind">[];
 };
 
-const DESTINATION_SURVEY_VIEWPORT_KINDS: Record<string, true> = {
-  tap: true,
-  swipe: true,
-  scroll: true,
-  key: true,
-  interact: true,
-  type: true,
-  "wait-for": true,
-  expect: true,
-  "expect-screen": true,
-  "assert-layout": true,
-  screenshot: true,
-  "capture-surface": true,
-  tour: true,
-  // A sibling module may inspect or mutate this same landing. Its body is
-  // intentionally conservative here; a passive tail never justifies leaving
-  // a taught viewport behind before another instruction executes.
-  module: true,
-};
-
 /** Later checks and screenshots depend on the taught viewport just as input
  * does. Only a genuinely passive terminal tail may skip restoration. */
 export function destinationSurveyShouldRestore(
   remainingSteps: readonly Pick<RecipeStep, "kind">[],
 ): boolean {
-  return remainingSteps.some((step) => DESTINATION_SURVEY_VIEWPORT_KINDS[step.kind] === true);
+  // Keep the safe tail explicit. New check/input kinds must preserve the
+  // landing by default instead of silently joining a non-restoring allowlist.
+  return remainingSteps.some((step) => step.kind !== "sleep");
 }
 
 function remainingRecipeStepsAfter(

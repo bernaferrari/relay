@@ -85,6 +85,90 @@ describe("run story", () => {
     expect(live.steps[0]!.actions.map((action) => action.state)).toEqual(["passed", "running"]);
   });
 
+  it("shows frozen pending Test steps and follows exact execution provenance", () => {
+    const frozen = {
+      recipeSnapshot: {
+        id: "root",
+        steps: [
+          { kind: "module", id: "open-wrapper", check: { id: "open", title: "Open Settings" } },
+          {
+            kind: "module",
+            id: "check-wrapper",
+            check: { id: "check", title: "Check Appearance" },
+          },
+        ],
+      },
+      artifacts: [
+        {
+          kind: "app-map-test-plan",
+          data: {
+            rootRecipeId: "root",
+            stepProvenance: [{ recipeId: "child", recipeStepId: "tap", testStepId: "open" }],
+          },
+        },
+      ],
+    };
+    expect(storyFromJob(frozen).steps.map((step) => [step.title, step.state])).toEqual([
+      ["Open Settings", "pending"],
+      ["Check Appearance", "pending"],
+    ]);
+    const traces = [
+      {
+        id: "wrapper",
+        recipeId: "root",
+        recipeStepId: "open-wrapper",
+        title: "Run saved Test",
+        status: "running",
+      },
+      {
+        id: "tap",
+        recipeId: "child",
+        recipeStepId: "tap",
+        title: 'Tap label "Settings"',
+        status: "ok",
+      },
+      {
+        id: "foreign",
+        recipeId: "other-child",
+        recipeStepId: "tap",
+        title: 'Tap label "Settings"',
+        status: "ok",
+      },
+    ];
+    const during = storyFromJob({ ...frozen, status: "running", steps: traces }).steps;
+    expect(during[0]).toMatchObject({ id: "open", state: "running", actions: [{ id: "tap" }] });
+    expect(during[1]).toMatchObject({ id: "check", state: "pending", actions: [] });
+    expect(during[2]).toMatchObject({ id: "finish", actions: [{ id: "foreign" }] });
+    const next = storyFromJob({
+      ...frozen,
+      steps: [
+        { ...traces[0], status: "ok" },
+        traces[1],
+        {
+          id: "check",
+          recipeId: "root",
+          recipeStepId: "check-wrapper",
+          title: "Run saved Test",
+          status: "running",
+        },
+      ],
+    }).steps;
+    expect(next.map((step) => step.state)).toEqual(["passed", "running"]);
+    const wrongPlan = {
+      ...frozen,
+      artifacts: [
+        {
+          kind: "app-map-test-plan",
+          data: {
+            rootRecipeId: "another-root",
+            stepProvenance: [{ recipeId: "child", recipeStepId: "tap", testStepId: "open" }],
+          },
+        },
+      ],
+    };
+    expect(storyFromJob({ ...wrongPlan, steps: [traces[1]] }).steps[0]!.actions).toEqual([]);
+  });
+
   it("carries the proven layout failure through saved and live stories with exact trace identity", () => {
     const first = { identifier: "team-seats" };
     const second = { identifier: "save-settings" };

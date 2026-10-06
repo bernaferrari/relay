@@ -14,6 +14,10 @@ import { catalogQueryKeys } from "../data/catalog-queries";
 import { formatDuration, storyFromJob, storyFromReport } from "../data/run-story";
 import { RunStoryView, type RunStoryStatus } from "./run-story";
 import { RunStoryFailure } from "./run-story-failure";
+import { LiveNativeRunPreview } from "./live-native-run-preview";
+import type { ProductRunState } from "../data/run-product-service";
+import { buildRunScreenJourney } from "../data/run-screen-journey";
+import { RunScreenJourney } from "./run-screen-journey";
 
 function savedStatus(report: ProductRunReportOverview): RunStoryStatus {
   if (report.outcome === "cancelled") return "cancelled";
@@ -188,6 +192,8 @@ export function LiveRunStory({
   jobId,
   title,
   targetName,
+  target,
+  embedded = false,
   runService,
   onCancel,
   cancelling,
@@ -195,6 +201,8 @@ export function LiveRunStory({
   jobId: string;
   title: string;
   targetName?: string;
+  target?: NonNullable<ProductRunState["snapshot"]>["target"];
+  embedded?: boolean;
   runService: RunProductService;
   onCancel?(): void;
   cancelling?: boolean;
@@ -211,9 +219,23 @@ export function LiveRunStory({
   return (
     <RunStoryView
       status="running"
+      embedded={embedded}
+      runId={jobId}
       title={title}
       meta={[targetName, startedAt ? formatDuration(Date.now() - startedAt) : undefined]}
       steps={story.steps}
+      outlineHeader={<RunScreenJourney journey={buildRunScreenJourney(job.data ?? {})} />}
+      {...(target && (target.platform === "android" || target.platform === "ios")
+        ? {
+            livePreview: (fallback: React.ReactNode) => (
+              <LiveNativeRunPreview
+                target={target as { platform: "android" | "ios"; targetId: string }}
+                {...(targetName ? { targetName } : {})}
+                fallback={fallback}
+              />
+            ),
+          }
+        : {})}
       {...(story.latestFrame ? { latestFrame: story.latestFrame } : {})}
       {...(runService.loadLiveFrame
         ? { loadFrame: (path: string) => runService.loadLiveFrame!(jobId, path) }
@@ -225,7 +247,7 @@ export function LiveRunStory({
               className="size-4 animate-spin motion-reduce:animate-none"
               aria-hidden="true"
             />
-            Testing your app…
+            {job.isError || (job.isFetched && !job.data) ? "Live steps unavailable" : "Running"}
           </span>
           {onCancel ? (
             <Button size="sm" variant="outline" onClick={onCancel} disabled={cancelling}>
