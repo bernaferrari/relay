@@ -93,6 +93,8 @@ export type ProductRunReportOverview = {
   cause?: string;
   /** Original cause retained for exact failure-detail joins; never used as UI copy. */
   technicalCause?: string;
+  /** Persisted failure taxonomy; category below is only its display label. */
+  failureCategory?: string;
   category?: string;
   firstEvidence?: { label: string; detail?: string };
   timeline: readonly ReportTimelineItem[];

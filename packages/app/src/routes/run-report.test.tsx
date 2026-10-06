@@ -5,9 +5,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ProductRunReportOverview } from "../data/run-report-model";
 import type { RunProductService } from "../data/run-product-service";
+import { runQueryKeys } from "../data/run-queries";
 import { RunReport } from "./run-report";
 
-const route = vi.hoisted(() => ({ search: {} as { reportView?: string } }));
+const route = vi.hoisted(() => ({
+  search: {} as { reportView?: string; step?: string; at?: string; attempt?: string },
+}));
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
@@ -85,20 +88,87 @@ function report(): ProductRunReportOverview {
     evidenceUnavailable: true,
   };
 }
-async function render(value: ProductRunReportOverview) {
+async function render(value: ProductRunReportOverview, testId?: string) {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   client = new QueryClient();
+  if (testId)
+    client.setQueryData(runQueryKeys.test(testId), {
+      steps: [{ id: "balance", intent: "Check balance" }],
+    });
   await act(async () =>
     root!.render(
       <QueryClientProvider client={client!}>
-        <RunReport report={value} runService={{} as RunProductService} />
+        <RunReport
+          report={value}
+          {...(testId ? { testId } : {})}
+          runService={
+            {
+              getTest: async () => ({ steps: [{ id: "balance", intent: "Check balance" }] }),
+            } as unknown as RunProductService
+          }
+        />
       </QueryClientProvider>,
     ),
   );
   return container;
 }
+
+it("inspects a product mismatch before offering to edit a valid saved check", async () => {
+  route.search = { step: "9", at: "1234", attempt: "3" };
+  const container = await render(
+    {
+      ...report(),
+      cause: "Expected account balance: 100. Observed account balance: 0.",
+      technicalCause: undefined,
+      timeline: [
+        {
+          id: "account-opened",
+          index: 0,
+          title: "Open account",
+          state: "passed",
+          evidenceCount: 0,
+        },
+        {
+          id: "balance-check",
+          index: 1,
+          title: "Check account balance",
+          state: "failed",
+          evidenceCount: 1,
+          expected: "100",
+          observed: "0",
+        },
+      ],
+      stepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "balance",
+          recipeId: "balance-test",
+          recipeStepId: "balance-check",
+          traceStepId: "balance-check",
+          traceStepIndex: 1,
+          occurrence: 1,
+          evidence: { framePaths: [], eventSequences: [], artifactKinds: [] },
+        },
+      ],
+    },
+    "test-balance",
+  );
+  const inspect = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent?.trim() === "Inspect evidence",
+  );
+  expect(inspect).toBeDefined();
+  expect(container.textContent).not.toContain("Fix this step");
+  expect(container.querySelector("a")?.textContent).toBe("Edit step");
+  await act(async () => inspect!.click());
+  expect(navigate.mock.calls[0]![0].search(route.search)).toEqual({
+    reportView: "steps",
+    step: "2",
+    at: undefined,
+    attempt: undefined,
+  });
+});
 
 it("shows exact failed-trace technical detail once while preserving unrelated notices", async () => {
   const container = await render(report());

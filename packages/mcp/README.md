@@ -375,6 +375,16 @@ it cannot start Runs, capture a live device or accept visual evidence.
 Screenshot bytes are retained artifact data, bounded and checked against their
 recorded SHA-256 before inclusion in result metadata.
 
+Execution completion, canonical check outcome and screenshot acceptance are
+shown separately. A completed execution with pending captures says awaiting
+review; its frozen revision, repair history and missing or blocked obligations
+remain visible. Catalog reads are separate from Run metadata and frame reads:
+`view: "run"` loads at most 40 capture entries, and `view: "frame"` loads one
+entry and its selected PNG with a 2 MB display limit. Next/Previous preserve
+the Run and configuration, reject stale responses, and explain unavailable
+images without substituting another capture. Catalog and manifest truncation
+are explicit; an older Run or another App can be selected by exact id in chat.
+
 On initialization, hosts that advertise the MCP Apps HTML MIME type receive
 the `ui://relay/review` resource and opener metadata. Other hosts receive the
 same bounded state as text with no view metadata or UI resource. The bundled

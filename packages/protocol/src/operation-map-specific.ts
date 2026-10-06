@@ -51,6 +51,7 @@ import type { RunShareOperationMap } from "./run-share.js";
 import type { CaptureReferenceOperationMap } from "./capture-reference-operations.js";
 import type { TracePackExportResponse } from "./trace-pack.js";
 import type { WalkthroughPackExportResponse } from "./walkthrough-pack.js";
+import type { RunPanelManifest } from "./run-panel-manifest.js";
 import type {
   LocalCampaignAdmissionPreflightRequest,
   LocalCampaignAdmissionPreflightResponse,
@@ -404,6 +405,10 @@ export type SpecificOperationMap = {
     output: { runs: RunSummaryDto[]; totalCount?: number; nextCursor?: string };
   };
   "run.get": { input: { runId: string }; output: { run: OperationRecord } };
+  "run.panel-manifest.get": {
+    input: { runId: string; offset?: number; limit?: number };
+    output: { manifest: RunPanelManifest };
+  };
   "run.replay.offline": {
     input: { runId: string };
     output: { report: OperationRecord };

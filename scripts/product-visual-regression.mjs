@@ -13,6 +13,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
 import { prepareReportVideoFixture } from "./product-visual-video-fixture.mjs";
+import { assertTestFixtureActions } from "./product-visual-test-fixtures.mjs";
 import { comparePng, decodedVideoFrameRegion } from "./product-visual-comparison.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -416,36 +417,7 @@ async function assertLayout(page, fixture, viewport) {
       throw new Error(`${fixture.id}/${viewport.id} rendered placeholder copy`);
     }
   }
-  if (fixture.id === "test-detail") {
-    await page.getByRole("button", { name: "Run settings", exact: true }).click();
-    const targetSelect = page.getByRole("combobox", { name: "Device or browser" });
-    if ((await targetSelect.count()) !== 1)
-      throw new Error("Test detail did not render target setup");
-    await targetSelect.click();
-    const targetItemCount = await page.locator('[data-slot="select-item"]').count();
-    if (targetItemCount !== 2) {
-      throw new Error(`Test detail did not render both targets (items ${targetItemCount})`);
-    }
-    await page.locator('[data-slot="select-item"]').first().click();
-    if (await page.getByRole("button", { name: "Run now" }).isDisabled()) {
-      throw new Error("Test detail did not enable Run now after target selection");
-    }
-    await page.getByRole("button", { name: "Run settings" }).click();
-  }
-  if (fixture.recordingReview) {
-    const actions = page.locator('ol[aria-label="Recorded actions"] > li');
-    if ((await actions.count()) !== 4) {
-      throw new Error("Recording review did not render every editable action");
-    }
-    await page.getByRole("button", { name: "Edit steps" }).click();
-    await page.getByRole("button", { name: "Save instruction" }).waitFor();
-    if (await page.getByRole("button", { name: "Save instruction" }).isEnabled()) {
-      throw new Error("Recording review enabled an unchanged instruction");
-    }
-    if ((await page.getByText(/Replay runs these steps .* before saving\./u).count()) !== 1) {
-      throw new Error("Recording review did not explain its replay gate");
-    }
-  }
+  await assertTestFixtureActions(page, fixture);
   if (!fixture.batch) return;
   const reportLinks = page.locator("#main-content a[href^='/runs/']");
   if ((await reportLinks.count()) < 1) {

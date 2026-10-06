@@ -322,6 +322,24 @@ export function RunReport({
           {...(testId ? { testId } : {})}
           runService={runService}
           onViewChange={selectRunView}
+          onInspectFailure={(traceStepId) => {
+            const traceIndex = report.timeline.findIndex((step) => step.id === traceStepId);
+            const index = traceIndex >= 0 ? traceIndex : initialRunStep(report.timeline);
+            const step = report.timeline[index];
+            void navigate({
+              to: "/runs/$runId",
+              params: { runId: report.runId },
+              replace: true,
+              resetScroll: false,
+              search: (previous) => ({
+                ...previous,
+                reportView: "steps",
+                step: String(index + 1),
+                at: step?.startedAt === undefined ? undefined : String(step.startedAt),
+                attempt: step?.attempt === undefined ? undefined : String(step.attempt),
+              }),
+            });
+          }}
           extraActions={actions}
           summary={outcomeSentence(
             report.outcome,

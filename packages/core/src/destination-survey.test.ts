@@ -256,7 +256,7 @@ describe("runExpectScreenStep destination survey", () => {
     }
   });
 
-  it("skips restoring a terminal destination survey", async () => {
+  it("restores the landing before a later visible-element check", async () => {
     const directory = await mkdtemp(join(tmpdir(), "relay-destination-survey-"));
     const landing = landingStep();
     const job = fakeJob(directory);
@@ -283,7 +283,7 @@ describe("runExpectScreenStep destination survey", () => {
             },
           ),
       );
-      assert.equal(captured?.restore, false);
+      assert.equal(captured?.restore, undefined);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -294,6 +294,44 @@ describe("runExpectScreenStep destination survey", () => {
     const landing = landingStep();
     const job = fakeJob(directory);
     job.recipeSnapshot = recipeSnapshot([landing, { kind: "tap", target: { label: "More" } }]);
+    let captured: ScrollSurveyTargetInput | undefined;
+    try {
+      await runWithTargetContext(
+        { kind: "device", platform: "android", serial: "survey-device" },
+        () =>
+          runExpectScreenStep(
+            stubDevice({ snapshot: () => Promise.resolve({ nodes }) }),
+            landing,
+            { log: () => {}, job, runtime: {} },
+            {
+              captureScreenshot: async () => screenshot,
+              captureSurvey: async (input) => {
+                captured = input;
+                return surveyResult(1);
+              },
+            },
+          ),
+      );
+      assert.equal(captured?.restore, undefined);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("restores a child landing before a later Test module waits on that viewport", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "relay-destination-survey-"));
+    const landing = landingStep();
+    const job = fakeJob(directory);
+    const child = { ...recipeSnapshot([landing]), id: "open-settings" };
+    const check = {
+      ...recipeSnapshot([{ kind: "wait-for", target: { label: "Appearance" }, timeoutMs: 60_000 }]),
+      id: "check-settings",
+    };
+    job.recipeSnapshot = recipeSnapshot([
+      { kind: "module", recipeId: child.id },
+      { kind: "module", recipeId: check.id },
+    ]);
+    job.recipeGraph = { [child.id]: child, [check.id]: check };
     let captured: ScrollSurveyTargetInput | undefined;
     try {
       await runWithTargetContext(

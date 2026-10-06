@@ -1,22 +1,30 @@
 /** @jsxImportSource react */
 import { Link } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import { CircleX, Eye, Wrench } from "lucide-react";
+import { CircleX, Eye, Settings, Wrench } from "lucide-react";
 import type { StoryAction, StoryStep } from "../data/run-story";
+import type { ProductRunReportOverview } from "../data/run-report-model";
+import { storyFailureNextAction } from "../data/run-story-failure-cause";
 
 export function RunStoryFailure({
   step,
   action,
   stepNumber,
   testId,
+  report,
+  onInspectEvidence,
 }: {
   step: StoryStep;
   action?: StoryAction;
   stepNumber: number;
   /** Present only when the failed step belongs to this editable saved Test. */
   testId?: string;
+  report: Pick<ProductRunReportOverview, "outcome" | "failureCategory">;
+  onInspectEvidence(): void;
 }) {
-  const productOverlap = action?.failure?.kind === "layout-overlap";
+  const nextAction = storyFailureNextAction(report);
+  const inspect = nextAction === "inspect" || !testId;
+  const productOverlap = inspect && action?.failure?.kind === "layout-overlap";
   return (
     <div className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
       <p className="flex items-start gap-2 text-sm">
@@ -43,19 +51,32 @@ export function RunStoryFailure({
           </pre>
         </details>
       ) : null}
-      {testId ? (
-        <div className="flex flex-wrap gap-2 pl-6">
+      <div className="flex flex-wrap gap-2 pl-6">
+        {inspect ? (
+          <Button size="sm" onClick={onInspectEvidence}>
+            <Eye aria-hidden="true" /> Inspect evidence
+          </Button>
+        ) : nextAction === "setup" && testId ? (
           <Button
             nativeButton={false}
             size="sm"
-            variant={productOverlap ? "outline" : "default"}
+            render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
+          >
+            <Settings aria-hidden="true" /> Repair setup
+          </Button>
+        ) : null}
+        {testId ? (
+          <Button
+            nativeButton={false}
+            size="sm"
+            variant={nextAction === "edit" ? "default" : "outline"}
             render={<Link to="/tests/$testId" params={{ testId }} search={{ step: step.id }} />}
           >
             {productOverlap ? <Eye aria-hidden="true" /> : <Wrench aria-hidden="true" />}
-            {productOverlap ? "View check" : "Fix this step"}
+            {productOverlap ? "View check" : "Edit step"}
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }

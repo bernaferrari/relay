@@ -11,7 +11,12 @@ import type {
 import { destIdentitySourceFrames, failedStepFromTrace } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 import { redactSensitiveEvidenceValue, redactText } from "./redaction.js";
-import { captureReviewQueueForRun } from "./capture-review-queue.js";
+import { readCombineCampaign } from "./combine-campaign.js";
+import {
+  buildRunShareGallery,
+  freezeRunShareCaptureScope,
+  type RunShareCaptureScope,
+} from "./run-share-gallery.js";
 
 const SHARE_STORE = ".run-shares.json";
 const SHARE_SECRET = ".run-share-secret";
@@ -51,6 +56,9 @@ export type RunShareRecord = {
   expiresAt: number;
   createdBy: string;
   frameCount: number;
+  /** Frozen requested capture scope from the existing campaign, including
+   * selected configurations that had no Run when this share was created. */
+  captureScope?: RunShareCaptureScope[];
   revokedAt?: number;
   revokedBy?: string;
 };
@@ -289,6 +297,14 @@ export async function createRunShare(input: {
           (right.caseIndex ?? Number.MAX_SAFE_INTEGER) || left.writtenAt - right.writtenAt,
     )
     .slice(0, MAX_SHARED_RUNS);
+  const campaign =
+    input.includeBatch && input.run.batchId
+      ? await readCombineCampaign(projectId, input.run.batchId)
+      : null;
+  const captureScope =
+    campaign && campaign.ownerId === ownerId
+      ? freezeRunShareCaptureScope(campaign, runs, MAX_SHARED_RUNS)
+      : [];
   const record: RunShareRecord = {
     schemaVersion: 1,
     id: randomUUID(),
@@ -306,6 +322,7 @@ export async function createRunShare(input: {
     expiresAt: input.expiresAt,
     createdBy: input.actorId,
     frameCount: runs.reduce((total, run) => total + shareableFrames(run).length, 0),
+    ...(captureScope.length ? { captureScope } : {}),
   };
   await mutateStore(input.root, (current) => ({ records: [...current, record], value: undefined }));
   const token = await tokenFor(input.root, { v: 1, id: record.id, exp: record.expiresAt });
@@ -475,23 +492,14 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
   const inProgress = projected.filter(
     ({ run }) => run.outcome === undefined && ["queued", "running", "paused"].includes(run.status),
   ).length;
-  // Human review is an independent outcome: aggregate it beside the machine
-  // totals so a reviewer sees reported issues even when execution passed.
-  const reviewTotals = projected.reduce(
-    (acc, { run }) => {
-      const summary = captureReviewQueueForRun(run).summary;
-      return {
-        captured: acc.captured + summary.captured,
-        missing: acc.missing + summary.missing,
-        pending: acc.pending + summary.pending,
-        accepted: acc.accepted + summary.accepted,
-        issue: acc.issue + summary.issue,
-        needMoreEvidence: acc.needMoreEvidence + summary.needMoreEvidence,
-      };
-    },
-    { captured: 0, missing: 0, pending: 0, accepted: 0, issue: 0, needMoreEvidence: 0 },
+  // Human review uses the same frozen obligations as the gallery, including
+  // cases without a Run. It remains independent of all execution totals.
+  const gallery = buildRunShareGallery(
+    record.runIds,
+    projected.map(({ run }) => run),
+    record.captureScope,
+    publicEvidenceText,
   );
-  const hasReview = reviewTotals.captured + reviewTotals.missing > 0;
   return {
     schemaVersion: 1,
     share: {
@@ -510,7 +518,7 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
       screenshots: reportRuns.reduce((total, run) => total + run.frames.length, 0),
       inProgress,
     },
-    ...(hasReview ? { captureReview: reviewTotals } : {}),
+    ...gallery,
     runs: reportRuns,
   };
 }

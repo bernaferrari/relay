@@ -362,6 +362,97 @@ function fakeEditorService(): TestEditorProductService {
 }
 
 describe("recorded Test destinations", () => {
+  it.each([
+    { label: "bound app", originApplication: "ai.x.grok", startup: { mode: "cold" } },
+    { label: "no bound app", originApplication: undefined, startup: undefined },
+  ])(
+    "uses the intended initial startup for a fresh Android Test with $label",
+    async ({ originApplication, startup }) => {
+      const fake = fakeRunService();
+      const editor = fakeEditorService();
+      const get = editor.get;
+      editor.get = async (...args) => {
+        const document = (await get(...args))!;
+        return {
+          ...document,
+          recordedPlatforms: ["android"],
+          test: { ...document.test, ...(originApplication ? { originApplication } : {}) },
+        };
+      };
+      await renderRun(
+        "/tests/test-1",
+        fake.service,
+        platformWithStorage().platform,
+        undefined,
+        editor,
+      );
+      await click(button("Run"));
+      expect(fake.startInputs).toHaveLength(1);
+      expect(fake.startInputs[0]).toMatchObject({ targetId: "emulator-5554" });
+      expect((fake.startInputs[0] as { startup?: unknown }).startup).toEqual(startup);
+    },
+  );
+
+  it.each(["saved warm setup", "explicit restart opt-out"])(
+    "preserves %s for an Android Test with a bound app",
+    async (scenario) => {
+      const fake = fakeRunService();
+      const editor = fakeEditorService();
+      const get = editor.get;
+      editor.get = async (...args) => {
+        const document = (await get(...args))!;
+        return {
+          ...document,
+          recordedPlatforms: ["android"],
+          test: { ...document.test, originApplication: "ai.x.grok" },
+        };
+      };
+      const key = runConfigurationStorageKey({
+        server: "http://127.0.0.1:8787",
+        appId: "settings-language-proof",
+        entity: "test-run:test-1",
+      });
+      const storage = platformWithStorage(
+        scenario === "saved warm setup"
+          ? { [key]: JSON.stringify({ targetId: "emulator-5554" }) }
+          : {},
+      );
+      await renderRun(
+        "/tests/test-1?target=emulator-5554",
+        fake.service,
+        storage.platform,
+        undefined,
+        editor,
+      );
+      await openRunSettings();
+      const restart = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].find(
+        (input) => input.closest("label")?.textContent?.includes("Restart app before running"),
+      );
+      expect(restart).toBeDefined();
+      if (scenario === "explicit restart opt-out") {
+        expect(restart?.getAttribute("aria-checked")).toBe("true");
+        await click(restart!.closest("label") ?? restart!);
+        expect(JSON.parse(storage.values.get(key)!)).not.toHaveProperty("startupMode");
+        await act(async () => roots.pop()!.unmount());
+        await renderRun(
+          "/tests/test-1?target=emulator-5554",
+          fake.service,
+          storage.platform,
+          undefined,
+          editor,
+        );
+        await openRunSettings();
+      }
+      const restoredRestart = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].find(
+        (input) => input.closest("label")?.textContent?.includes("Restart app before running"),
+      );
+      expect(restoredRestart?.getAttribute("aria-checked")).toBe("false");
+      await click(button("Run now"));
+      expect(fake.startInputs).toHaveLength(1);
+      expect((fake.startInputs[0] as { startup?: unknown }).startup).toBeUndefined();
+    },
+  );
+
   it("offers an Android reconnect path instead of browsers for a disconnected Android Test", async () => {
     const fake = fakeRunService();
     fake.service.listTargets = async () => [
@@ -517,8 +608,7 @@ function button(label: string): HTMLButtonElement {
       candidate.textContent?.trim() === label ||
       candidate.getAttribute("aria-label") === label ||
       (label === "Run settings menu" &&
-        (candidate.getAttribute("aria-label") === "More Test actions" ||
-          candidate.getAttribute("aria-label")?.startsWith("Run settings:"))),
+        candidate.getAttribute("aria-label")?.startsWith("Run settings:")),
   );
   if (!(result instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return result;
@@ -546,12 +636,8 @@ async function click(element: HTMLElement) {
 
 async function openRunSettings() {
   await click(button("Run settings menu"));
-  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-    (item) => item.textContent?.trim() === "Run settings",
-  );
-  if (!item) throw new Error("Run settings menu item not found");
-  await act(async () => item.click());
-  await settle();
+  expect(document.querySelector('[role="menuitem"]')).toBeNull();
+  expect(document.querySelector('[aria-label="Run settings"]')).not.toBeNull();
 }
 
 async function selectOption(label: string, option: string) {
@@ -1572,7 +1658,7 @@ describe("Run and Report", () => {
       document.querySelectorAll(
         'button[aria-label="More Test actions"], button[aria-label^="Run settings:"]',
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     await openRunSettings();
     expect(document.body.textContent).toContain("Checkout browser");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
@@ -1600,7 +1686,7 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).not.toContain("Draft issue");
-    await click(button("Run settings menu"));
+    await click(button("More Test actions"));
     expect(document.body.textContent).toContain("Review result");
     expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
@@ -2023,13 +2109,13 @@ describe("Run and Report", () => {
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Checking Language");
-    await click(button("Run settings menu"));
+    await click(button("More Test actions"));
     expect(
       [...document.querySelectorAll('[role="menuitem"]')].some((item) =>
         item.textContent?.includes("Run settings"),
       ),
     ).toBe(false);
-    await click(button("Run settings menu"));
+    await click(button("More Test actions"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("View live run"),
@@ -2043,7 +2129,7 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
     expect(document.body.textContent).toContain("Test passed");
-    await click(button("Run settings menu"));
+    await click(button("More Test actions"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("Review result"),
@@ -2286,7 +2372,7 @@ describe("Run and Report", () => {
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).not.toContain("Run history");
-    await click(button("Run settings menu"));
+    await click(button("More Test actions"));
     const historyAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (item) => item.textContent === "Run history",
     );
@@ -2322,7 +2408,7 @@ describe("Run and Report", () => {
     fake.service.listTestRunsComplete = async () => history;
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
-    await click(button("Run settings menu"));
+    await click(button("More Test actions"));
     const historyAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (item) => item.textContent === "Run history",
     );

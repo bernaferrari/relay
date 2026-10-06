@@ -96,7 +96,7 @@ export function TestEditorWorkspace({
             aria-pressed={workspaceView === view}
             onClick={() => onWorkspaceViewChange(view)}
           >
-            {view === "steps" ? "Steps" : inspectorKind === "device" ? "Device" : "Browser"}
+            {view === "steps" ? "Steps" : "Screen"}
           </Button>
         ))}
       </div>
