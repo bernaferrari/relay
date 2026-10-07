@@ -34,6 +34,9 @@ describe("plan checklist", () => {
     expect(checkState(run({ phase: "running" }))).toBe("running");
     expect(checkState(run({ outcome: "passed" }))).toBe("passed");
     expect(checkState(run({ captureSummary: summary({ pending: 2, changed: 1 }) }))).toBe("review");
+    expect(
+      checkState(run({ outcome: "uncertain", captureSummary: summary({ accepted: 1 }) })),
+    ).toBe("review");
     expect(checkState(run({ phase: "failed" }))).toBe("failed");
     // A reported issue is a failure even when the run itself completed.
     expect(checkState(run({ captureSummary: summary({ issue: 1 }) }))).toBe("failed");

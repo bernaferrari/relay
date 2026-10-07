@@ -21,7 +21,7 @@ export function checkState(run: ProductRunSummary | undefined): CheckState {
     (run.captureSummary?.issue ?? 0) > 0
   )
     return "failed";
-  if ((run.captureSummary?.pending ?? 0) > 0) return "review";
+  if (run.outcome === "uncertain" || (run.captureSummary?.pending ?? 0) > 0) return "review";
   if (run.phase === "completed") return "passed";
   return "not-run";
 }
