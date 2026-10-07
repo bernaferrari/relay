@@ -38,6 +38,7 @@ const { calls, invoke } = vi.hoisted(() => {
           platform: "ios",
           launchedAt: 10,
         },
+        observed: { app: "Shop", matched: true },
       };
     }
     throw new Error(`Unexpected operation ${id}`);
@@ -56,6 +57,7 @@ describe("device product operations", () => {
     await expect(service.launchApp!("ios-id", " com.example.shop", true)).resolves.toMatchObject({
       serial: "ios-serial",
       platform: "ios",
+      observed: { app: "Shop", matched: true },
     });
     expect(calls).toEqual([
       { id: "target.devices.list", input: { targetKind: "device", targetId: "ios-id" } },

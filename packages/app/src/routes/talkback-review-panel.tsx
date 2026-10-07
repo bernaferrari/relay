@@ -22,6 +22,7 @@ import {
   ACCESSIBILITY_LABELS_STORAGE_KEY,
   accessibilityObservationId,
   currentAccessibilityInspection,
+  distinctTalkBackOverlays,
   retainAccessibilityObservation,
   talkBackItemAtPoint,
   talkBackOverlayBox,
@@ -100,6 +101,7 @@ export function TalkBackOverlay({
 }) {
   const [boxes, setBoxes] = useState<
     Array<{
+      key: string;
       item: TalkBackReviewItem;
       box: { left: number; top: number; width: number; height: number };
     }>
@@ -114,10 +116,10 @@ export function TalkBackOverlay({
       return;
     }
     const mapBoxes = () => {
-      const mapped = items.flatMap((item) => {
+      const mapped = distinctTalkBackOverlays(items).flatMap(({ key, item }) => {
         if (!item.rect) return [];
         const box = talkBackOverlayBox(canvas, parent, item.rect, bounds);
-        return box ? [{ item, box }] : [];
+        return box ? [{ key, item, box }] : [];
       });
       setBoxes(mapped);
     };
@@ -139,7 +141,7 @@ export function TalkBackOverlay({
         x: event.clientX - frame.left + parent.scrollLeft,
         y: event.clientY - frame.top + parent.scrollTop,
       });
-      setHoveredId(hit?.item.id);
+      setHoveredId(hit?.key);
     };
     const leave = () => setHoveredId(undefined);
     parent.addEventListener("scroll", leave);
@@ -152,14 +154,14 @@ export function TalkBackOverlay({
     };
   }, [boxes, canvasRef, mode]);
 
-  const visible = mode === "always" ? boxes : boxes.filter((entry) => entry.item.id === hoveredId);
+  const visible = mode === "always" ? boxes : boxes.filter((entry) => entry.key === hoveredId);
   if (!visible.length && mode === "always") return null;
   return (
     <div className="pointer-events-none absolute inset-0 z-10 overflow-visible" aria-hidden="true">
-      {visible.map(({ item, box }) => (
+      {visible.map(({ key, item, box }) => (
         <div
-          key={item.id}
-          className={`absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border border-info/50 ${item.id === hoveredId ? "border-info bg-info/15 ring-1 ring-info" : "bg-info/5"}`}
+          key={key}
+          className={`absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border border-info/50 ${key === hoveredId ? "border-info bg-info/15 ring-1 ring-info" : "bg-info/5"}`}
           style={
             {
               "--box-left": `${box.left}px`,
@@ -169,7 +171,7 @@ export function TalkBackOverlay({
             } as CSSProperties
           }
         >
-          {mode === "always" || item.id === hoveredId ? (
+          {mode === "always" || key === hoveredId ? (
             <span className="absolute start-0 top-0 flex max-w-64 -translate-y-full items-center gap-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs font-medium text-popover-foreground shadow-md ring-1 ring-border">
               <span className="truncate">
                 {item.name || item.text || item.description || "No label"}

@@ -2,6 +2,33 @@ import type { TalkBackReview, TalkBackReviewItem } from "@relay/protocol";
 
 export type OverlayBox = { left: number; top: number; width: number; height: number };
 
+/** Collapse identical visual labels without changing the captured review. */
+export function distinctTalkBackOverlays(
+  items: readonly TalkBackReviewItem[],
+): Array<{ key: string; item: TalkBackReviewItem }> {
+  const seen = new Set<string>();
+  return items.flatMap((item) => {
+    if (!item.rect) return [];
+    const key = JSON.stringify([
+      item.id,
+      item.identifier,
+      item.name,
+      item.text,
+      item.description,
+      item.role,
+      item.announcement,
+      item.interactive,
+      item.rect.x,
+      item.rect.y,
+      item.rect.width,
+      item.rect.height,
+    ]);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ key, item }];
+  });
+}
+
 export const ACCESSIBILITY_LABELS_STORAGE_KEY = "live.accessibilityLabels";
 
 export type AccessibilityLabelMode = "off" | "hover" | "always";

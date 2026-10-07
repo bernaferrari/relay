@@ -12,6 +12,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -33,6 +34,7 @@ type Point = { x: number; y: number };
 
 export function LiveTargetCanvas({
   canvasRef,
+  onCanvasChange,
   status,
   issue,
   busy,
@@ -52,6 +54,7 @@ export function LiveTargetCanvas({
   directBrowser = targetPlatform === "browser" || Boolean(browserContext),
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
+  onCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
   status: LiveTargetStatus;
   issue?: string;
   busy: boolean;
@@ -78,6 +81,13 @@ export function LiveTargetCanvas({
   const wheel = useRef<{ point: Point; x: number; y: number } | undefined>(undefined);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const composing = useRef(false);
+  const attachCanvas = useCallback(
+    (node: HTMLCanvasElement | null) => {
+      if (onCanvasChange) onCanvasChange(node);
+      canvasRef.current = node;
+    },
+    [canvasRef, onCanvasChange],
+  );
   const streaming = status === "streaming";
   const help =
     helpText !== ""
@@ -229,7 +239,7 @@ export function LiveTargetCanvas({
         }
       >
         <canvas
-          ref={canvasRef}
+          ref={attachCanvas}
           data-slot="capture-live-target"
           className={
             directBrowser

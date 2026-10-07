@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { Label } from "@relay/ui-react/components/label";
 import { SelectField } from "../components/filter-select";
+import type { RecordingSetupAdmission } from "../data/recording-setup-admission";
 
 export function RecordingAppChoice({
   apps,
@@ -12,6 +13,7 @@ export function RecordingAppChoice({
   createApp,
   onCreated,
   onCreatingChange,
+  admission,
 }: {
   apps: readonly { id: string; name: string }[];
   value: string;
@@ -19,21 +21,30 @@ export function RecordingAppChoice({
   createApp(name: string): Promise<{ id: string; name: string }>;
   onCreated(app: { id: string; name: string }): void;
   onCreatingChange(creating: boolean): void;
+  admission?: RecordingSetupAdmission;
 }) {
+  const admissionRef = useRef(admission);
+  admissionRef.current = admission;
+  const mayEdit = () => admissionRef.current?.mayEdit() ?? true;
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const open = creating || !apps.length;
   const create = useMutation({
-    mutationFn: () => createApp(name.trim()),
+    mutationFn: async () => {
+      if (!mayEdit()) return;
+      return createApp(name.trim());
+    },
     onSuccess: (app) => {
+      if (!app || !mayEdit()) return;
       onCreated(app);
       setCreating(false);
       onCreatingChange(false);
       setName("");
     },
   });
+  const disabled = create.isPending || Boolean(admission?.busy);
   function submit() {
-    if (name.trim() && !create.isPending) create.mutate();
+    if (mayEdit() && name.trim() && !create.isPending) create.mutate();
   }
   return (
     <div className="grid min-w-0 gap-3">
@@ -44,11 +55,13 @@ export function RecordingAppChoice({
             <Input
               id="recording-app-name"
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                if (mayEdit()) setName(event.target.value);
+              }}
               placeholder="For example, Acme"
               maxLength={120}
               autoFocus
-              disabled={create.isPending}
+              disabled={disabled}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
@@ -67,12 +80,7 @@ export function RecordingAppChoice({
             </p>
           ) : null}
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={!name.trim() || create.isPending}
-              onClick={submit}
-            >
+            <Button type="button" size="sm" disabled={!name.trim() || disabled} onClick={submit}>
               {create.isPending ? "Creating…" : "Create app"}
             </Button>
             {apps.length ? (
@@ -80,8 +88,9 @@ export function RecordingAppChoice({
                 type="button"
                 size="sm"
                 variant="ghost"
-                disabled={create.isPending}
+                disabled={disabled}
                 onClick={() => {
+                  if (!mayEdit()) return;
                   setCreating(false);
                   onCreatingChange(false);
                   create.reset();
@@ -96,6 +105,7 @@ export function RecordingAppChoice({
         <div className="flex min-w-0 items-end gap-2 [&>div]:min-w-0 [&>div]:flex-1">
           <SelectField
             label="App"
+            disabled={disabled}
             value={value}
             placeholder="Choose an app"
             options={[
@@ -103,6 +113,7 @@ export function RecordingAppChoice({
               { value: "__create_app__", label: "+ Create app…" },
             ]}
             onValueChange={(id) => {
+              if (!mayEdit()) return;
               if (id === "__create_app__") {
                 setCreating(true);
                 onCreatingChange(true);

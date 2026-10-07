@@ -73,6 +73,7 @@ export function BrowserSetup({
           <button
             type="button"
             className="justify-self-start text-sm font-medium text-foreground underline-offset-4 hover:underline"
+            disabled={pending}
             onClick={onToggleNewBrowser}
           >
             New website
@@ -95,6 +96,7 @@ export function BrowserSetup({
                 autoComplete="off"
                 placeholder="https://app.example.com"
                 value={browserUrl}
+                disabled={pending}
                 onChange={(event) => onBrowserUrlChange(event.currentTarget.value)}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
@@ -121,7 +123,7 @@ export function BrowserSetup({
         <button
           type="button"
           className="justify-self-start text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          disabled={checking}
+          disabled={checking || pending}
           onClick={onCheckAgain}
         >
           {checking ? "Checking for devices…" : "Refresh devices"}

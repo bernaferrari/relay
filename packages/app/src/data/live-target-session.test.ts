@@ -550,6 +550,78 @@ it("does not reopen an Android stream after close during retry backoff", async (
   expect(openStream).toHaveBeenCalledOnce();
 });
 
+it("does not let a closed iOS JPEG decode overwrite its replacement preview", async () => {
+  const packet = new Uint8Array(17);
+  packet[0] = 2;
+  new DataView(packet.buffer).setUint32(12, 1);
+  const staleBitmap = { width: 640, height: 480, close: vi.fn() };
+  const currentBitmap = { width: 320, height: 240, close: vi.fn() };
+  let resolveStale!: (bitmap: typeof staleBitmap) => void;
+  const decode = vi
+    .fn(async () => currentBitmap)
+    .mockImplementationOnce(() => new Promise((resolve) => (resolveStale = resolve)));
+  vi.stubGlobal("createImageBitmap", decode);
+  const drawImage = vi.fn();
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: () => ({ drawImage }),
+  } as unknown as HTMLCanvasElement;
+  const input = {
+    target: { kind: "device", platform: "ios", targetId: "ipad" } as const,
+    client: {
+      connection: { url: "http://relay.test" },
+      invoke: vi.fn(),
+      openStream: async (_path: string, options: { signal: AbortSignal }) => ({
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(packet);
+            options.signal.addEventListener("abort", () => controller.close(), { once: true });
+          },
+        }),
+      }),
+    } as never,
+  };
+  const previous = createLiveTargetSession(input);
+  const replacement = createLiveTargetSession(input);
+  try {
+    previous.mount(canvas);
+    await vi.waitFor(() => expect(decode).toHaveBeenCalledOnce());
+    previous.close();
+    replacement.mount(canvas);
+    await vi.waitFor(() => expect(replacement.snapshot().status).toBe("streaming"));
+    resolveStale(staleBitmap);
+    await vi.waitFor(() => expect(staleBitmap.close).toHaveBeenCalledOnce());
+
+    expect(drawImage).toHaveBeenCalledExactlyOnceWith(currentBitmap, 0, 0);
+    expect(canvas.width).toBe(320);
+    expect(canvas.height).toBe(240);
+    expect(previous.snapshot().status).toBe("closed");
+  } finally {
+    previous.close();
+    replacement.close();
+  }
+});
+
+it("keeps an iOS preview closed when stream opening completes after close", async () => {
+  let resolveStream!: (response: Response) => void;
+  const openStream = vi.fn(() => new Promise<Response>((resolve) => (resolveStream = resolve)));
+  const live = createLiveTargetSession({
+    target: { kind: "device", platform: "ios", targetId: "ipad" },
+    client: { connection: { url: "http://relay.test" }, invoke: vi.fn(), openStream } as never,
+  });
+  const getReader = vi.fn();
+  live.mount({ width: 0, height: 0 } as HTMLCanvasElement);
+  live.close();
+  resolveStream({ body: { getReader } } as unknown as Response);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(getReader).not.toHaveBeenCalled();
+  expect(live.snapshot().status).toBe("closed");
+  expect(openStream).toHaveBeenCalledOnce();
+});
+
 describe("browser preview gestures", () => {
   const frame = { sessionId: "session", pageId: "page", sequence: 42 };
   const binding = {

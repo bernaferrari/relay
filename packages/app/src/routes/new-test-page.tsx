@@ -1,4 +1,6 @@
 import { useNewTestPreviewSession } from "./use-new-test-preview-session";
+import { createRecordingSetupAdmission } from "../data/recording-setup-admission";
+import { useNativeAppStartContext } from "./use-native-app-start-context";
 import { useNewTestPreviewInput } from "./use-new-test-preview-input";
 import { useNewTestSetup, useNewTestTargets } from "./use-new-test-setup";
 import { NewTestDraftDialog } from "./new-test-draft-dialog";
@@ -69,8 +71,6 @@ export function NewTestPage() {
   const [fallbackAppId, setAppId] = useState(requestedAppId ?? "");
   const appId = requestedAppId ?? fallbackAppId;
   const [targetId, setTargetId] = useState(requestedTargetId ?? "");
-  const [originApplication, setOriginApplication] = useState(requestedOriginApplication ?? "");
-  const [openedApplication, setOpenedApplication] = useState("");
   const [draftRestored, setDraftRestored] = useState(false);
   const previewCanvas = useRef<HTMLCanvasElement>(null);
   const previewSession = useRef<LiveTargetSession | undefined>(undefined);
@@ -80,7 +80,7 @@ export function NewTestPage() {
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [newBrowserOpen, setNewBrowserOpen] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
-  const previousTargetId = useRef<string | undefined>(undefined);
+  const [startup] = useState(createRecordingSetupAdmission);
   const [quickProgress, setQuickProgress] = useState<string>();
   const [wantsDevice, setWantsDevice] = useState(
     search.targetKind === "device" ||
@@ -239,13 +239,13 @@ export function NewTestPage() {
   }, [appId, draftRestored, platform, targetId]);
 
   const selectedTarget = targets.data?.targetOptions.find((target) => target.targetId === targetId);
-  useEffect(() => {
-    if (previousTargetId.current && previousTargetId.current !== targetId) {
-      setOriginApplication("");
-      setOpenedApplication("");
-    }
-    previousTargetId.current = targetId;
-  }, [targetId]);
+  const { originApplication, setOriginApplication, openedApplication, markOpened } =
+    useNativeAppStartContext({
+      service: deviceService,
+      target: selectedTarget,
+      targetId,
+      requestedOriginApplication,
+    });
   const reconnectPreview = useMutation({
     mutationFn: async (serial: string) => deviceService.recover(serial, "connect"),
     onSuccess: (_result, serial) => {
@@ -277,7 +277,7 @@ export function NewTestPage() {
     },
   });
   function openedApp(application: string) {
-    setOpenedApplication(application);
+    markOpened(application);
     if (!application) return;
     // Launch succeeded; retain input uncertainty while reopening observation only.
     setPreviewStatus("connecting");
@@ -396,13 +396,15 @@ export function NewTestPage() {
       await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.apps });
       setAppId(chosenApp);
       setTargetId(browserTargetId);
-      await begin.mutateAsync({
-        appId: chosenApp,
-        targetId: browserTargetId,
-        targetKind: "browser",
-        title: `Test on ${host}`,
-        ...(account ? { authenticationFixtureId: account.reference } : {}),
-      });
+      await startup.run(() =>
+        begin.mutateAsync({
+          appId: chosenApp,
+          targetId: browserTargetId,
+          targetKind: "browser",
+          title: `Test on ${host}`,
+          ...(account ? { authenticationFixtureId: account.reference } : {}),
+        }),
+      );
     } catch (error) {
       setQuickError(
         error instanceof Error && error.message
@@ -417,7 +419,7 @@ export function NewTestPage() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!formReady) return;
-    begin.mutate();
+    void startup.run(() => begin.mutateAsync()).catch(() => undefined);
   }
 
   const loading = apps.isPending || activePointer.isPending;
@@ -464,6 +466,7 @@ export function NewTestPage() {
                     : "Start recording";
 
   function chooseTarget(nextTargetId: string) {
+    if (!startup.mayEdit()) return;
     setTargetId(nextTargetId);
     void navigate({
       to: "/tests/new",
@@ -476,6 +479,7 @@ export function NewTestPage() {
   }
 
   function chooseApp(nextAppId: string) {
+    if (!startup.mayEdit()) return;
     setAppId(nextAppId);
     void navigate({
       to: "/tests/new",
@@ -510,6 +514,7 @@ export function NewTestPage() {
               device={setupMode === "detailed" && (deviceOnly || selectedTarget?.kind === "device")}
               disabled={begin.isPending || Boolean(quickProgress)}
               onChange={(device) => {
+                if (!startup.mayEdit()) return;
                 setWantsDevice(device);
                 setSetupMode(device ? "detailed" : "website");
                 if (device && selectedTarget?.kind === "browser") chooseTarget("");
@@ -659,7 +664,7 @@ export function NewTestPage() {
             onOpened={openedApp}
             formReady={formReady}
             startHint={startHint}
-            beginPending={begin.isPending}
+            admission={{ busy: begin.isPending, mayEdit: startup.mayEdit }}
             submit={submit}
             browserContext={browserContext}
             previewIssue={previewInput.issue ?? previewIssue}

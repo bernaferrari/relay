@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { DeviceProductService } from "../data/device-product-service";
+import type { RecordingSetupAdmission } from "../data/recording-setup-admission";
 import { SelectField, type FilterSelectOption } from "./filter-select";
 
 export function RecordingDeviceChoice({
@@ -11,6 +12,7 @@ export function RecordingDeviceChoice({
   onStarted,
   deviceOnly = false,
   loading = false,
+  admission,
 }: {
   service: DeviceProductService;
   value: string;
@@ -19,7 +21,11 @@ export function RecordingDeviceChoice({
   onStarted(serial: string): Promise<void>;
   deviceOnly?: boolean;
   loading?: boolean;
+  admission?: RecordingSetupAdmission;
 }) {
+  const admissionRef = useRef(admission);
+  admissionRef.current = admission;
+  const mayEdit = () => admissionRef.current?.mayEdit() ?? true;
   const starting = useRef(false);
   const inventory = useQuery({
     queryKey: ["android-emulators"],
@@ -29,12 +35,17 @@ export function RecordingDeviceChoice({
     retry: false,
   });
   const boot = useMutation({
-    mutationFn: (name: string) => service.startEmulator!(name),
+    mutationFn: async (name: string) => {
+      if (!mayEdit()) return;
+      return service.startEmulator!(name);
+    },
     onSettled: () => {
       starting.current = false;
     },
     onSuccess: async (result) => {
+      if (!result || !mayEdit()) return;
       await onStarted(result.serial);
+      if (!mayEdit()) return;
       await inventory.refetch();
     },
   });
@@ -45,7 +56,7 @@ export function RecordingDeviceChoice({
     <div className="grid min-w-0 gap-2">
       <SelectField
         label="Record on"
-        disabled={boot.isPending || (loading && !options.length)}
+        disabled={boot.isPending || Boolean(admission?.busy) || (loading && !options.length)}
         value={options.some((option) => option.value === value) ? value : ""}
         placeholder={
           boot.isPending
@@ -66,7 +77,7 @@ export function RecordingDeviceChoice({
           })),
         ]}
         onValueChange={(next) => {
-          if (starting.current) return;
+          if (!mayEdit() || starting.current) return;
           boot.reset();
           if (next.startsWith("avd:")) {
             starting.current = true;

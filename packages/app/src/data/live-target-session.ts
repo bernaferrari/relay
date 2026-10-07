@@ -1,6 +1,13 @@
 import type { TalkBackCaptureResult } from "./talkback-overlay";
 import { reviewAndroidTalkBack } from "@relay/protocol";
 import { RecordingInputNotSentError } from "./recording-input-outcome";
+import { drawJpeg } from "./live-target-jpeg";
+import { createIosPreviewFreshness, IOS_PREVIEW_STALLED_MESSAGE } from "./ios-preview-freshness";
+import {
+  nativePreviewDimensions,
+  nativePreviewNeedsLogicalCoordinates,
+  sendIosPreviewInput,
+} from "./live-native-preview-input";
 import { ApiError, type BinaryResource, type RelayClient } from "@relay/client";
 import type {
   AuthoringInteraction,
@@ -184,27 +191,6 @@ function decodeBinaryFrame(resource: BinaryResource): {
   return { metadata, bytes };
 }
 
-async function drawJpeg(
-  canvas: HTMLCanvasElement,
-  bytes: Uint8Array,
-): Promise<{ width: number; height: number }> {
-  const owned = new Uint8Array(bytes.byteLength);
-  owned.set(bytes);
-  const image = await createImageBitmap(new Blob([owned.buffer], { type: "image/jpeg" }));
-  try {
-    if (canvas.width !== image.width || canvas.height !== image.height) {
-      canvas.width = image.width;
-      canvas.height = image.height;
-    }
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Live target canvas context is unavailable");
-    context.drawImage(image, 0, 0);
-    return { width: image.width, height: image.height };
-  } finally {
-    image.close();
-  }
-}
-
 /** The 16-byte Relay video packet envelope used by the existing target stream. */
 async function* videoPackets(body: ReadableStream<Uint8Array>) {
   const reader = body.getReader();
@@ -318,6 +304,13 @@ export function createLiveTargetSession(input: {
   let streamTask: Promise<void> | undefined;
   let closed = false;
   let firstFrameTimer: ReturnType<typeof setTimeout> | undefined;
+  const iosFreshness =
+    target.kind === "device" && target.platform === "ios"
+      ? createIosPreviewFreshness(() => {
+          controller?.abort();
+          publish({ status: "degraded", issue: IOS_PREVIEW_STALLED_MESSAGE });
+        })
+      : undefined;
 
   function browserContext(
     session: BrowserDeviceSession,
@@ -371,7 +364,8 @@ export function createLiveTargetSession(input: {
   }
 
   function fail(error: unknown): void {
-    if (closed) return;
+    if (closed || controller?.signal.aborted) return;
+    iosFreshness?.close();
     publish({ status: "degraded", issue: errorText(error) });
   }
 
@@ -451,7 +445,15 @@ export function createLiveTargetSession(input: {
             // A navigating page can reject inspection; show pixels without old labels.
           }
         }
-        if (canvas) await drawJpeg(canvas, bytes);
+        if (canvas) {
+          const mountedCanvas = canvas;
+          const painted = await drawJpeg(
+            mountedCanvas,
+            bytes,
+            () => !closed && !controller?.signal.aborted && canvas === mountedCanvas,
+          );
+          if (!painted) continue;
+        }
         browserFrame = frame;
         publish({
           status: "streaming",
@@ -493,6 +495,7 @@ export function createLiveTargetSession(input: {
         if (await waitForStreamRetry(controller?.signal, 250 * attempt)) return;
       }
     }
+    if (closed || controller?.signal.aborted) return;
     if (!response.body) throw new Error("Live target stream has no response body");
     publish({ status: "connecting" });
     let sequence = 0;
@@ -532,8 +535,19 @@ export function createLiveTargetSession(input: {
       if (closed || controller?.signal.aborted) return;
       if (packet.type === "jpeg") {
         if (!canvas) continue;
-        await drawJpeg(canvas, packet.data);
+        const mountedCanvas = canvas;
+        const painted = await drawJpeg(
+          mountedCanvas,
+          packet.data,
+          () =>
+            !closed &&
+            !controller?.signal.aborted &&
+            canvas === mountedCanvas &&
+            iosFreshness?.mayPaint() !== false,
+        );
+        if (!painted) continue;
         if (closed || controller?.signal.aborted) return;
+        iosFreshness?.decodedFrame();
         sequence += 1;
         publish({ status: "streaming", lastFrameAt: Date.now(), frameSequence: sequence });
       } else if (packet.type === "configuration" || packet.type === "data") {
@@ -542,7 +556,10 @@ export function createLiveTargetSession(input: {
     }
     await writer?.close().catch(() => undefined);
     decoder?.dispose();
-    if (!closed) publish({ status: "offline", issue: "The live target stream ended." });
+    if (!closed && !controller?.signal.aborted) {
+      iosFreshness?.close();
+      publish({ status: "offline", issue: "The live target stream ended." });
+    }
   }
 
   function start(canvasElement: HTMLCanvasElement): void {
@@ -563,43 +580,17 @@ export function createLiveTargetSession(input: {
 
   async function send(value: LiveTargetInput): Promise<void> {
     if (closed) throw new RecordingInputNotSentError("The live preview is disconnected.");
+    iosFreshness?.assertFresh();
     if (target.kind === "browser" && (!browserSession || !browserFrame)) {
       throw new RecordingInputNotSentError("Wait for the browser preview to connect.");
     }
     let authoredValue = value;
-    if (
-      (input.onInteraction || value.kind === "scroll") &&
-      target.kind !== "browser" &&
-      (value.kind === "touch" || value.kind === "scroll")
-    ) {
+    if (nativePreviewNeedsLogicalCoordinates(target, value, Boolean(input.onInteraction))) {
       if (!canvas?.width || !canvas.height)
         throw new RecordingInputNotSentError("Wait for the live preview to connect.");
       const frameWidth = canvas.width;
       const frameHeight = canvas.height;
-      let size: { width?: number; height?: number } | undefined;
-      try {
-        const snapshot = await input.client.invoke("target.snapshot.capture", {
-          serial: target.targetId,
-        });
-        size = snapshot.bounds;
-      } catch {
-        // A failed accessibility request must not skip the pixel fallback.
-      }
-      if (!size?.width || !size.height) {
-        try {
-          size = await input.client.invoke("target.screenshot.capture", {
-            serial: target.targetId,
-            ephemeral: true,
-          });
-        } catch {
-          throw new RecordingInputNotSentError(
-            "Couldn’t read the screen dimensions. Reconnect the preview and try again.",
-          );
-        }
-      }
-      if (!size?.width || !size.height) {
-        throw new RecordingInputNotSentError("Relay couldn’t read the device screen size.");
-      }
+      const size = await nativePreviewDimensions(input.client, target.targetId, target.platform);
       const sx = size.width / frameWidth;
       const sy = size.height / frameHeight;
       authoredValue = {
@@ -611,6 +602,7 @@ export function createLiveTargetSession(input: {
           : {}),
       };
     }
+    iosFreshness?.assertFresh();
     const interaction = normalizeInteraction(authoredValue, browserFrame);
     if (input.onInteraction) {
       if (!interaction) {
@@ -663,6 +655,11 @@ export function createLiveTargetSession(input: {
       }
       return;
     }
+    if (
+      target.platform === "ios" &&
+      (await sendIosPreviewInput(input.client, target.targetId, authoredValue))
+    )
+      return;
     if (value.kind === "touch") {
       if (!canvas?.width || !canvas.height)
         throw new RecordingInputNotSentError("Wait for the live preview to connect.");
@@ -758,6 +755,7 @@ export function createLiveTargetSession(input: {
       if (closed) return;
       closed = true;
       clearTimeout(firstFrameTimer);
+      iosFreshness?.close();
       controller?.abort();
       canvas = undefined;
       publish({ status: "closed" });
