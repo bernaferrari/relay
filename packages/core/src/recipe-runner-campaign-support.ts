@@ -14,6 +14,7 @@ import {
 import { now, publish } from "./events.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
+import { RecipeScreenInspectionError } from "./recipe-screen-inspection.js";
 import {
   sourceProofAfterLeftoverWarm,
   waitForIsIndependentlySourceProven,
@@ -219,13 +220,57 @@ export function independentlySourceProvenLeafRecipe(
   );
 }
 
+export class RecipeNavigationPrerequisiteError extends Error {
+  constructor(
+    readonly checkId: string,
+    checkTitle: string,
+    reason: string,
+  ) {
+    super(`navigation-proof-unavailable: ${checkTitle.slice(0, 160)}; ${reason.slice(0, 1500)}`);
+    this.name = "RecipeNavigationPrerequisiteError";
+  }
+}
+
+export function isCampaignPrerequisiteError(
+  error: unknown,
+): error is RecipeScreenInspectionError | RecipeNavigationPrerequisiteError {
+  return (
+    error instanceof RecipeScreenInspectionError ||
+    error instanceof RecipeNavigationPrerequisiteError
+  );
+}
+
+export function retainFailedCampaignPrerequisite(
+  ctx: RecipeStepContext,
+  check: NonNullable<RecipeStep["check"]>,
+  startedAt: number,
+  error: RecipeScreenInspectionError | RecipeNavigationPrerequisiteError,
+  phase: "primary" | "cleanup",
+): void {
+  ctx.job?.artifacts.push({
+    kind: "campaign-check-result",
+    capturedAt: now(),
+    data: {
+      ...check,
+      status: "failed",
+      phase,
+      error: error.message,
+      ...(error instanceof RecipeScreenInspectionError
+        ? { inspection: error.inspection }
+        : { prerequisiteCheckId: error.checkId }),
+      startedAt,
+      finishedAt: now(),
+    },
+  });
+}
+
 export async function blockUnprovenCampaignMutation(
   device: Device,
   check: NonNullable<RecipeStep["check"]>,
   ctx: RecipeStepContext,
   startedAt: number,
   reason: string,
-): Promise<void> {
+): Promise<never> {
   const job = ctx.job;
   const cursor = ctx.runtime?.navigationCursor;
   const expectedOriginScreenId =
@@ -340,4 +385,5 @@ export async function blockUnprovenCampaignMutation(
     },
   });
   ctx.log(`check blocked before mutation: ${check.title} — ${reason}`);
+  throw new RecipeNavigationPrerequisiteError(check.id, check.title, reason);
 }

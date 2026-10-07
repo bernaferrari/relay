@@ -151,6 +151,8 @@ export function assertActions(actions: ActionSpec[], label: string): void {
     }
     switch (action.kind) {
       case "recorded":
+        if (action.entranceCaptureVersion !== undefined && action.entranceCaptureVersion !== 1)
+          appMapFail("invalid-map", `${item}.entranceCaptureVersion must be 1`);
         identifier(action.takeId, `${item}.takeId`);
         safeInteger(action.takeRevision, `${item}.takeRevision`);
         if (action.takeRevision === 0)

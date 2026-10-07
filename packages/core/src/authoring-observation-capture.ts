@@ -21,6 +21,8 @@ export type CapturedAuthoringObservation = {
   foregroundApp?: string;
   bounds?: { width: number; height: number };
   nodes?: Array<Record<string, unknown>>;
+  /** Same-observation catalog plane; supplemental selector nodes stay in raw evidence only. */
+  catalogNodes?: Array<Record<string, unknown>>;
   /** Timestamp of the primary pixel evidence. `capturedAt` remains the
    * complete observation boundary, which may be later than this raster after
    * an iOS pixels → AX → pixels bracket. */
@@ -30,6 +32,11 @@ export type CapturedAuthoringObservation = {
    * retained as immutable diagnostic evidence, never substituted for the
    * opening frame that established the observation's screen fingerprint. */
   bracketScreenshot?: { data: Uint8Array; mime: string; capturedAt: number };
+};
+
+export type AuthoringObservationRequest = {
+  includeIdentifiers?: readonly string[];
+  includeLabels?: readonly string[];
 };
 
 function observationId(capturedAt: number, fingerprint: string): string {
@@ -63,6 +70,7 @@ export async function persistCapturedAuthoringObservation(
   const semanticCapturedAt = proof.semantics.capturedAt ?? captured.capturedAt;
   const primaryPixelCapturedAt =
     captured.screenshotCapturedAt ?? proof.pixels.capturedAt ?? captured.capturedAt;
+  const id = observationId(captured.capturedAt, captured.fingerprint);
   const snapshot = await persistAuthoringEvidence({
     kind: "snapshot",
     // A snapshot is the semantic plane, not the enclosing observation. Keep
@@ -72,6 +80,7 @@ export async function persistCapturedAuthoringObservation(
       schemaVersion: 1,
       capturedAt: semanticCapturedAt,
       observationCapturedAt: captured.capturedAt,
+      observationId: id,
       targetId: captured.targetId,
       fingerprint: captured.fingerprint,
       proof,
@@ -79,6 +88,7 @@ export async function persistCapturedAuthoringObservation(
       ...(captured.foregroundApp ? { foregroundApp: captured.foregroundApp } : {}),
       bounds: captured.bounds,
       nodes: captured.nodes?.slice(0, 256) ?? [],
+      ...(captured.catalogNodes ? { catalogNodes: captured.catalogNodes.slice(0, 256) } : {}),
     }),
     mime: "application/json",
   });
@@ -103,7 +113,6 @@ export async function persistCapturedAuthoringObservation(
       }),
     );
   }
-  const id = observationId(captured.capturedAt, captured.fingerprint);
   return {
     observation: {
       id,
@@ -122,7 +131,9 @@ export async function persistCapturedAuthoringObservation(
       ...(captured.capture ? { capture: clone(captured.capture) } : {}),
       ...(captured.bounds ? { bounds: { ...captured.bounds } } : {}),
       ...(captured.foregroundApp ? { foregroundApp: captured.foregroundApp } : {}),
-      ...(captured.nodes ? { nodes: clone(captured.nodes.slice(0, 256)) } : {}),
+      ...(captured.nodes
+        ? { nodes: clone((captured.catalogNodes ?? captured.nodes).slice(0, 256)) }
+        : {}),
     },
     evidence,
   };

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Recipe } from "./recipes.js";
 import type { AppMap, AppMapEntity, Connection, Screen } from "@relay/protocol";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import {
   composeOptionRunRecipes,
   resolveVariableApply,
@@ -654,6 +655,31 @@ const scope = { organizationId: "org", projectId: "p", appMapId: "map-1" };
 function entity(id: string): AppMapEntity {
   return { ...scope, id, createdAt: at, updatedAt: at };
 }
+
+function savedScriptProfiles(map: AppMap, profileIds: string[]): void {
+  map.screenVariants = Object.fromEntries(
+    profileIds.map((id) => [
+      id,
+      {
+        ...entity(id),
+        screenId: "home",
+        targetProfile: {
+          id,
+          targetId: "fixture-pixel",
+          source: "device" as const,
+          platform: "android" as const,
+          name: "Pixel fixture",
+          viewport: { width: 1080, height: 2340 },
+          capabilities: ["snapshot" as const],
+          observedAt: 1,
+        },
+        observation: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
+        evidenceIds: [],
+      },
+    ]),
+  );
+  map.screens.home!.variantIds = profileIds;
+}
 function screen(id: string, title: string): Screen {
   return {
     ...entity(id),
@@ -777,6 +803,7 @@ test("an explicit empty selection never expands to every saved option", async ()
 test("combine preflight reports the exact device and screenshot expansion", async () => {
   const base = sandwichMap();
   for (const screen of Object.values(base.screens)) delete screen.identity;
+  savedScriptProfiles(base, ["pixel-en", "pixel-it"]);
   const variable = {
     ...entity("language"),
     name: "Language",
@@ -894,6 +921,10 @@ test("combine preflight previews the requested pilot selection", async () => {
 test("40 screens across 40 locales stay 40 device runs, not 1600 locale switches", async () => {
   const base = sandwichMap();
   for (const screen of Object.values(base.screens)) delete screen.identity;
+  savedScriptProfiles(
+    base,
+    Array.from({ length: 40 }, (_, index) => `pixel-locale-${index + 1}`),
+  );
   const variable = {
     ...entity("language"),
     name: "Language",
@@ -1056,6 +1087,7 @@ test("logged-out account worlds do not invent Sign in navigation", async () => {
         source: "browser",
         platform: "browser",
         name: "Grok.com",
+        browserCaseProfile: compileBrowserEnvironment({}),
         capabilities: ["snapshot"],
         observedAt: 1,
       },

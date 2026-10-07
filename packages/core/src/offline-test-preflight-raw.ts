@@ -20,6 +20,13 @@ export type OfflineTestPreflightRawEvidenceStatus = "missing" | "unreadable" | "
 /** Device-free inputs to preflight. Canonical sources keep bytes, identity, and
  * parsed nodes together; the parallel fields remain only for legacy callers. */
 export type OfflineTestPreflightEvidence = {
+  rawEntrancesByStepKey?: Record<
+    string,
+    {
+      sources: ReadonlyArray<OfflineTestPreflightRawSource>;
+      status?: OfflineTestPreflightRawEvidenceStatus;
+    }
+  >;
   rawSourcesByScreenId?: Readonly<Record<string, ReadonlyArray<OfflineTestPreflightRawSource>>>;
   rawObservationsByScreenId?: Readonly<Record<string, ReadonlyArray<ReadonlyArray<SnapshotNode>>>>;
   rawEvidenceReferencesByScreenId?: Readonly<Record<string, ReadonlyArray<string>>>;

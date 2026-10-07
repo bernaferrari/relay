@@ -1,3 +1,4 @@
+import { observedIosApplication } from "./recorded-entrance-proof.js";
 /**
  * Snapshot, screenshot, and recorded-video capture for attached targets.
  */
@@ -15,6 +16,14 @@ import {
   type Device,
   type SnapshotNode,
 } from "./device.js";
+import {
+  isAndroidSnapshotOwnershipUnreleased,
+  iosInspectionErrorMessage,
+} from "./workspace-inspection-errors.js";
+export {
+  isAndroidSnapshotOwnershipUnreleased,
+  iosInspectionErrorMessage,
+} from "./workspace-inspection-errors.js";
 import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
 import { observeScreenIdentityForHost, observeVisualScreenFingerprint } from "./screen-identity.js";
@@ -30,13 +39,7 @@ import {
   type AndroidSnapshotBackend,
 } from "./android-ui-snapshot.js";
 import { currentTargetContext, runWithTargetContext, targetIdentity } from "./target-context.js";
-import {
-  diagnoseIosRunnerError,
-  IosDeviceAttentionError,
-  IosRunnerSetupError,
-  IosXCTestSessionUnavailableError,
-  readIosDisplayOrientation,
-} from "./ios-device-adapter.js";
+import { readIosDisplayOrientation } from "./ios-device-adapter.js";
 import { captureIosPngViaGoIos } from "./ios-app-launch.js";
 import { annotateTapPreview, tapPreviewLogicalBounds } from "./tap-preview.js";
 import {
@@ -85,6 +88,7 @@ export type SnapshotPayload = {
   serial?: string;
   capturedAt: number;
   nodes: SnapshotNode[];
+  catalogNodes?: SnapshotNode[];
   interactive: SnapshotNode[];
   /** rough screen bounds from max rect extents (for overlay scaling) */
   bounds?: { width: number; height: number };
@@ -214,59 +218,23 @@ export function inferSnapshotBounds(
   return { width: Math.round(maxX), height: Math.round(maxY) };
 }
 
+type SelectorCaptureOptions = {
+  includeIdentifiers?: readonly string[];
+  includeLabels?: readonly string[];
+  separateRequestedSelectorEvidence?: boolean;
+};
+
 async function snapshotThroughSdk(
   device: Device,
   interactiveOnly: boolean,
   operation: "preview" | "snapshot",
+  selectors?: SelectorCaptureOptions,
 ): Promise<SnapshotNode[]> {
-  return await withSession(device, () => snapshot(device, { interactiveOnly }), operation);
-}
-
-/** A timed-out agent-device helper may still own Android's sole UiAutomation
- * slot. Starting Relay's second helper in that state creates a deterministic
- * ownership collision, so this failure must remain semantic-unavailable until
- * explicit target recovery retires the original owner. */
-export function isAndroidSnapshotOwnershipUnreleased(error: unknown, depth = 0): boolean {
-  if (depth > 4 || !error || typeof error !== "object") return false;
-  const record = error as {
-    code?: unknown;
-    message?: unknown;
-    details?: unknown;
-    cause?: unknown;
-  };
-  if (
-    record.code === "android_snapshot_helper_retirement_unconfirmed" ||
-    (typeof record.message === "string" &&
-      /could not confirm release of device automation ownership/iu.test(record.message))
-  ) {
-    return true;
-  }
-  return (
-    isAndroidSnapshotOwnershipUnreleased(record.details, depth + 1) ||
-    isAndroidSnapshotOwnershipUnreleased(record.cause, depth + 1)
+  return await withSession(
+    device,
+    () => snapshot(device, { interactiveOnly, ...selectors }),
+    operation,
   );
-}
-
-/**
- * iOS runner diagnostics may contain Xcode paths and raw daemon output. The
- * snapshot API exposes only errors that were converted to product-safe copy
- * (or Relay's own single-flight guard), never the original native message.
- */
-export async function iosInspectionErrorMessage(
-  error: unknown,
-  serial: string | undefined,
-): Promise<string | undefined> {
-  if (!error) return undefined;
-  if (isIosAccessibilityQueryInFlightError(error)) return error.message;
-  const diagnosed = await diagnoseIosRunnerError(error, serial).catch(() => undefined);
-  if (
-    diagnosed instanceof IosRunnerSetupError ||
-    diagnosed instanceof IosDeviceAttentionError ||
-    diagnosed instanceof IosXCTestSessionUnavailableError
-  ) {
-    return diagnosed.message;
-  }
-  return undefined;
 }
 
 type SnapshotCapture = Pick<
@@ -286,6 +254,7 @@ async function snapshotForTarget(
   target: Awaited<ReturnType<typeof resolveRuntimeTarget>>,
   interactiveOnly: boolean,
   operation: "preview" | "snapshot",
+  selectors?: SelectorCaptureOptions,
 ): Promise<SnapshotCapture> {
   if (
     target.context.kind !== "device" ||
@@ -300,13 +269,13 @@ async function snapshotForTarget(
     let iosSnapshotError: unknown;
     if (iosSerial) {
       try {
-        appleNodes = await snapshotThroughSdk(target.device, interactiveOnly, operation);
+        appleNodes = await snapshotThroughSdk(target.device, interactiveOnly, operation, selectors);
       } catch (error) {
         appleNodes = [];
         iosSnapshotError = error;
       }
     } else {
-      appleNodes = await snapshotThroughSdk(target.device, interactiveOnly, operation);
+      appleNodes = await snapshotThroughSdk(target.device, interactiveOnly, operation, selectors);
     }
     // A root/window-only XCTest response tells us that the runner answered,
     // not that Relay can name or safely activate a control. Keep this fact in
@@ -323,6 +292,10 @@ async function snapshotForTarget(
           : undefined));
     const semanticProbeInFlight = isIosAccessibilityQueryInFlightError(iosSnapshotError);
     const rememberedApp = iosSerial ? await rememberedTargetApplication(target.context) : undefined;
+    const treeApp =
+      iosSerial && selectors?.separateRequestedSelectorEvidence
+        ? observedIosApplication(appleNodes)
+        : undefined;
     return {
       nodes: appleNodes,
       inspectable,
@@ -331,6 +304,7 @@ async function snapshotForTarget(
       ...(inspectionError ? { inspectionError } : {}),
       ...(semanticProbeInFlight ? { semanticProbeInFlight: true } : {}),
       ...(rememberedApp ? { foregroundApp: rememberedApp } : {}),
+      ...(treeApp ? { treeApp } : {}),
     };
   }
 
@@ -424,6 +398,9 @@ export async function captureSnapshot(opts?: {
   overlay?: RuntimeTargetOverlay;
   /** Preview remains a single read-only AX attempt with distinct diagnostics. */
   iosOperation?: "preview" | "snapshot";
+  includeIdentifiers?: readonly string[];
+  includeLabels?: readonly string[];
+  separateRequestedSelectorEvidence?: boolean;
 }): Promise<SnapshotPayload> {
   const captureStartedAt = now();
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device, opts?.overlay);
@@ -446,6 +423,7 @@ export async function captureSnapshot(opts?: {
         target,
         opts?.interactiveOnly ?? false,
         opts?.iosOperation ?? "snapshot",
+        opts,
       );
     } catch (error) {
       if (target.context.kind === "device" && target.context.platform === "ios") {
@@ -533,7 +511,10 @@ export async function captureSnapshot(opts?: {
     );
     const serial = targetIdentity();
     publish({ type: "snapshot.captured", at: semanticCapturedAt, serial, nodeCount: nodes.length });
-    const observedIdentity = observeScreenIdentityForHost(nodes, {
+    const catalogNodes = opts?.separateRequestedSelectorEvidence
+      ? nodes.filter((node) => node.recordingSelectorSupplemental !== true)
+      : undefined;
+    const observedIdentity = observeScreenIdentityForHost(catalogNodes ?? nodes, {
       browserTargetId: context.kind === "browser" ? context.targetId : opts?.serial,
     });
     let visualFingerprint: string | undefined;
@@ -576,6 +557,7 @@ export async function captureSnapshot(opts?: {
       serial,
       capturedAt,
       nodes,
+      ...(catalogNodes ? { catalogNodes } : {}),
       interactive,
       bounds,
       screenIdentity: observedIdentity,

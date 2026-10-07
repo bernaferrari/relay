@@ -13,7 +13,11 @@ import {
 import { runTargetMutation } from "./target-control.js";
 import { bindNativeDeviceMutations } from "./device-mutation-adapter.js";
 import { execAndroidAdb } from "./android-adb-host.js";
-import { type Device, type SnapshotNode } from "./device-capabilities.js";
+import {
+  type Device,
+  type SnapshotNode,
+  type DeviceSnapshotOptions,
+} from "./device-capabilities.js";
 import * as observationDevice from "./device-observation-membrane.js";
 export type { Device, SnapshotNode } from "./device-capabilities.js";
 import {
@@ -193,17 +197,7 @@ export async function sleep(ms: number, device: Device = createDevice()): Promis
 
 export async function snapshot(
   device: Device,
-  opts?: {
-    interactiveOnly?: boolean;
-    raw?: boolean;
-    timeoutMs?: number;
-    /** Override the normal read retry budget for latency-sensitive callers. */
-    retryAttempts?: number;
-    includeIdentifiers?: readonly string[];
-    includeLabels?: readonly string[];
-    requestedChromeOnly?: boolean;
-    controlBoundsOnlyForApp?: string;
-  },
+  opts?: DeviceSnapshotOptions,
 ): Promise<SnapshotNode[]> {
   const run = () =>
     device.capture.snapshot({

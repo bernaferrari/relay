@@ -24,6 +24,11 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
       inputHelp: [
         { name: "appMapId", type: "string", required: true, description: "App Map identifier" },
         { name: "target", type: "object", required: true, description: "Device or browser target" },
+        {
+          name: "originApplication",
+          type: "string",
+          description: "Explicit native application package or bundle identifier",
+        },
         { name: "leaseId", type: "string", required: true, description: "Exclusive target lease" },
         {
           name: "expectedAppMapRevision",
@@ -53,6 +58,11 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
       inputHelp: [
         { name: "appMapId", type: "string", required: true, description: "App Map identifier" },
         { name: "target", type: "object", required: true, description: "Device or browser target" },
+        {
+          name: "originApplication",
+          type: "string",
+          description: "Explicit native application package or bundle identifier",
+        },
         { name: "leaseId", type: "string", required: true, description: "Exclusive target lease" },
         {
           name: "expectedAppMapRevision",
@@ -82,12 +92,24 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
     "authoring.session.begin",
     path("session begin", [], undefined, {
       summary: "Create a session, observe the target, and start Relay-controlled recording",
+      inputHelp: [
+        {
+          name: "originApplication",
+          type: "string",
+          description: "Explicit native application package or bundle identifier",
+        },
+      ],
     }),
     path("proposal begin", [], undefined, {
       summary: "Begin a ready-to-record proposal in one operation",
       inputHelp: [
         { name: "appMapId", type: "string", required: true, description: "App Map identifier" },
         { name: "target", type: "object", required: true, description: "Device or browser target" },
+        {
+          name: "originApplication",
+          type: "string",
+          description: "Explicit native application package or bundle identifier",
+        },
         { name: "leaseId", type: "string", required: true, description: "Exclusive target lease" },
         {
           name: "expectedAppMapRevision",

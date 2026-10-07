@@ -16,6 +16,7 @@ import {
   runCampaignCheck,
 } from "./recipe-runner-campaign-checks.js";
 import { IosSnapshotStaleAfterInputError } from "./ios-snapshot-flight.js";
+import { RecipeNavigationPrerequisiteError } from "./recipe-runner-campaign-support.js";
 
 it("recognizes right-to-left app locales for mirrored point fallbacks", () => {
   assert.equal(isRightToLeftRun({ language: "ar" }), true);
@@ -1845,14 +1846,17 @@ describe("runRecipeStep campaign check policy", () => {
       },
       { log: (line) => logs.push(line), job, runtime, recipeGraph },
     );
-    await runRecipeStep(
-      device,
-      {
-        kind: "module",
-        recipeId: "warm",
-        check: { id: "next", title: "Next leaf", recovery },
-      },
-      { log: (line) => logs.push(line), job, runtime, recipeGraph },
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "warm",
+          check: { id: "next", title: "Next leaf", recovery },
+        },
+        { log: (line) => logs.push(line), job, runtime, recipeGraph },
+      ),
+      RecipeNavigationPrerequisiteError,
     );
     const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
     finalizeDeferredCampaignChecks(context);
@@ -2015,33 +2019,39 @@ describe("runRecipeStep campaign check policy", () => {
       },
       context,
     );
-    await runRecipeStep(
-      device,
-      {
-        kind: "module",
-        recipeId: "supergrok-more",
-        check: {
-          id: "visit-supergrok-more",
-          title: "Visit SuperGrok More",
-          recovery: moreRecovery,
-          transitionDependencies: [sharedDependency, leafDependency, moreDependency],
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "supergrok-more",
+          check: {
+            id: "visit-supergrok-more",
+            title: "Visit SuperGrok More",
+            recovery: moreRecovery,
+            transitionDependencies: [sharedDependency, leafDependency, moreDependency],
+          },
         },
-      },
-      context,
+        context,
+      ),
+      RecipeNavigationPrerequisiteError,
     );
-    await runRecipeStep(
-      device,
-      {
-        kind: "module",
-        recipeId: "appearance",
-        check: {
-          id: "visit-appearance",
-          title: "Visit Appearance",
-          recovery: appearanceRecovery,
-          transitionDependencies: [sharedDependency, appearanceDependency],
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "appearance",
+          check: {
+            id: "visit-appearance",
+            title: "Visit Appearance",
+            recovery: appearanceRecovery,
+            transitionDependencies: [sharedDependency, appearanceDependency],
+          },
         },
-      },
-      context,
+        context,
+      ),
+      RecipeNavigationPrerequisiteError,
     );
 
     assert.equal(runtime.campaignTransitionProofs?.["open-navigation"]?.status, "verified");
@@ -2130,14 +2140,17 @@ describe("runRecipeStep campaign check policy", () => {
       },
       { log: (line) => logs.push(line), job, runtime, recipeGraph },
     );
-    await runRecipeStep(
-      device,
-      {
-        kind: "module",
-        recipeId: "warm",
-        check: { id: "next", title: "Next leaf" },
-      },
-      { log: (line) => logs.push(line), job, runtime, recipeGraph },
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "warm",
+          check: { id: "next", title: "Next leaf" },
+        },
+        { log: (line) => logs.push(line), job, runtime, recipeGraph },
+      ),
+      RecipeNavigationPrerequisiteError,
     );
     const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
     finalizeDeferredCampaignChecks(context);
@@ -2202,14 +2215,17 @@ describe("runRecipeStep campaign check policy", () => {
       },
       context,
     );
-    await runRecipeStep(
-      device,
-      {
-        kind: "module",
-        recipeId: "warm",
-        check: { id: "next", title: "Next leaf", recovery },
-      },
-      context,
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "warm",
+          check: { id: "next", title: "Next leaf", recovery },
+        },
+        context,
+      ),
+      RecipeNavigationPrerequisiteError,
     );
 
     assert.equal(
@@ -2442,13 +2458,19 @@ describe("runRecipeStep campaign check policy", () => {
       { ...failingTap, check: { id: "first", title: "First leaf", recovery } },
       context,
     );
-    await runRecipeStep(
-      device,
-      { ...failingTap, check: { id: "second", title: "Second leaf", recovery } },
-      context,
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        { ...failingTap, check: { id: "second", title: "Second leaf", recovery } },
+        context,
+      ),
+      RecipeNavigationPrerequisiteError,
     );
-    await retryDeferredCampaignChecks(device, context, (recipeId) =>
-      runRecipeStep(device, { kind: "module", recipeId }, context),
+    await assert.rejects(
+      retryDeferredCampaignChecks(device, context, (recipeId) =>
+        runRecipeStep(device, { kind: "module", recipeId }, context),
+      ),
+      RecipeNavigationPrerequisiteError,
     );
 
     assert.deepEqual(
@@ -2531,46 +2553,55 @@ describe("runRecipeStep campaign check policy", () => {
       },
       context,
     );
-    await runRecipeStep(
-      device,
-      {
-        kind: "module",
-        recipeId: "dependent-warm",
-        check: {
-          id: "usage",
-          title: "Usage",
-          recovery,
-          transitionDependencies: [sharedDependency],
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "dependent-warm",
+          check: {
+            id: "usage",
+            title: "Usage",
+            recovery,
+            transitionDependencies: [sharedDependency],
+          },
         },
-      },
-      context,
+        context,
+      ),
+      RecipeNavigationPrerequisiteError,
     );
-    await runRecipeStep(
-      device,
-      {
-        kind: "module",
-        recipeId: "dependent-warm",
-        check: {
-          id: "privacy",
-          title: "Privacy",
-          recovery,
-          transitionDependencies: [sharedDependency],
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "dependent-warm",
+          check: {
+            id: "privacy",
+            title: "Privacy",
+            recovery,
+            transitionDependencies: [sharedDependency],
+          },
         },
-      },
-      context,
+        context,
+      ),
+      RecipeNavigationPrerequisiteError,
     );
-    await runRecipeStep(
-      device,
-      {
-        kind: "module",
-        recipeId: "unrelated",
-        check: {
-          id: "profile",
-          title: "Profile",
-          transitionDependencies: [unrelatedDependency],
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        {
+          kind: "module",
+          recipeId: "unrelated",
+          check: {
+            id: "profile",
+            title: "Profile",
+            transitionDependencies: [unrelatedDependency],
+          },
         },
-      },
-      context,
+        context,
+      ),
+      RecipeNavigationPrerequisiteError,
     );
     finalizeDeferredCampaignChecks(context);
 
@@ -2655,39 +2686,48 @@ describe("runRecipeStep campaign check policy", () => {
         await runCampaignCheck(device, failedCheck, context, async () => {
           throw new Error("Settings origin was not found");
         });
-        await runCampaignCheck(
-          device,
-          {
-            ...failedCheck,
-            check: {
-              ...failedCheck.check,
-              id: "visit-cloud-storage",
-              title: "Visit Cloud Storage",
+        await assert.rejects(
+          runCampaignCheck(
+            device,
+            {
+              ...failedCheck,
+              check: {
+                ...failedCheck.check,
+                id: "visit-cloud-storage",
+                title: "Visit Cloud Storage",
+              },
             },
-          },
-          context,
-          async (recipeId) => {
-            if (recipeId === "legacy-cold-open-settings") coldExecutions += 1;
-          },
+            context,
+            async (recipeId) => {
+              if (recipeId === "legacy-cold-open-settings") coldExecutions += 1;
+            },
+          ),
+          RecipeNavigationPrerequisiteError,
         );
-        await runCampaignCheck(
-          device,
-          {
-            ...failedCheck,
-            check: { ...failedCheck.check, id: "visit-privacy", title: "Visit Privacy" },
-          },
-          context,
-          async (recipeId) => {
-            if (recipeId === "legacy-cold-open-settings") coldExecutions += 1;
-          },
+        await assert.rejects(
+          runCampaignCheck(
+            device,
+            {
+              ...failedCheck,
+              check: { ...failedCheck.check, id: "visit-privacy", title: "Visit Privacy" },
+            },
+            context,
+            async (recipeId) => {
+              if (recipeId === "legacy-cold-open-settings") coldExecutions += 1;
+            },
+          ),
+          RecipeNavigationPrerequisiteError,
         );
-        await runCampaignCheck(
-          device,
-          { kind: "sleep", ms: 1, check: { id: "visit-profile", title: "Visit Profile" } },
-          context,
-          async () => {
-            unrelatedExecutions += 1;
-          },
+        await assert.rejects(
+          runCampaignCheck(
+            device,
+            { kind: "sleep", ms: 1, check: { id: "visit-profile", title: "Visit Profile" } },
+            context,
+            async () => {
+              unrelatedExecutions += 1;
+            },
+          ),
+          RecipeNavigationPrerequisiteError,
         );
       },
     );

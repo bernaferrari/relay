@@ -1,3 +1,4 @@
+import { recordedEntranceStepKey } from "./frozen-recorded-entrance.js";
 import type {
   AppMapCompiledRawAccessibilityTargetProfile,
   AppMapCompiledRawAccessibilityVariant,
@@ -203,28 +204,45 @@ export function preflightCompiledAppMapTestOffline(
         const navigationObservations =
           step.kind === "reveal" ? observationsFromNavigation(step.navigation) : [];
         const sourceObservations = observations.length ? observations : navigationObservations;
-        const sourceRawSources = rawSourcesForScreen(evidence, sourceScreenId);
+        const entrance = step.recordedEntrance;
+        const frozenEntrance = entrance
+          ? evidence.rawEntrancesByStepKey?.[recordedEntranceStepKey(recipe.id, step)]
+          : undefined;
+        const sourceRawSources = entrance
+          ? (frozenEntrance?.sources ?? [])
+          : rawSourcesForScreen(evidence, sourceScreenId);
         const assessment = selectorAssessment({
           recipeId: recipe.id,
           step,
           ...(sourceScreenId ? { screenId: sourceScreenId } : {}),
           ...(sourceScreenTitle ? { screenTitle: sourceScreenTitle } : {}),
-          observations: sourceObservations,
+          observations: entrance ? [] : sourceObservations,
           ...(sourceRawSources.length ? { rawSources: sourceRawSources } : {}),
-          ...(sourceScreenId && plan.rawAccessibilityVariantsByScreenId?.[sourceScreenId]
+          ...(!entrance &&
+          sourceScreenId &&
+          plan.rawAccessibilityVariantsByScreenId?.[sourceScreenId]
             ? { rawVariants: plan.rawAccessibilityVariantsByScreenId[sourceScreenId] }
             : {}),
-          ...(plan.rawAccessibilityTargetProfiles
-            ? { rawTargetProfiles: plan.rawAccessibilityTargetProfiles }
-            : {}),
+          ...(entrance?.status === "captured"
+            ? { rawTargetProfiles: [entrance.profile] }
+            : plan.rawAccessibilityTargetProfiles
+              ? { rawTargetProfiles: plan.rawAccessibilityTargetProfiles }
+              : {}),
           ...(options.targetProfileId ? { selectedTargetProfileId: options.targetProfileId } : {}),
-          ...(sourceScreenId && evidence.rawEvidenceReferencesByScreenId?.[sourceScreenId]
+          ...(!entrance &&
+          sourceScreenId &&
+          evidence.rawEvidenceReferencesByScreenId?.[sourceScreenId]
             ? { rawEvidenceReferences: evidence.rawEvidenceReferencesByScreenId[sourceScreenId] }
             : {}),
-          ...(sourceScreenId && evidence.rawEvidenceStatusByScreenId?.[sourceScreenId]
+          ...(entrance && (!frozenEntrance || frozenEntrance.status)
+            ? { rawEvidenceStatus: frozenEntrance?.status ?? "unbound" }
+            : {}),
+          ...(!entrance && sourceScreenId && evidence.rawEvidenceStatusByScreenId?.[sourceScreenId]
             ? { rawEvidenceStatus: evidence.rawEvidenceStatusByScreenId[sourceScreenId] }
             : {}),
-          ...(sourceScreenId &&
+          ...(entrance ? { rawEvidenceDeclared: true } : {}),
+          ...(!entrance &&
+          sourceScreenId &&
           (Object.hasOwn(evidence.rawSourcesByScreenId ?? {}, sourceScreenId) ||
             Object.hasOwn(evidence.rawObservationsByScreenId ?? {}, sourceScreenId) ||
             Object.hasOwn(evidence.rawEvidenceReferencesByScreenId ?? {}, sourceScreenId) ||
@@ -233,6 +251,9 @@ export function preflightCompiledAppMapTestOffline(
             : {}),
           postTextMutation,
         });
+        if (entrance && assessment.selector.status === "resolved")
+          assessment.selector.detail =
+            "This exact recorded entrance contains the selector in an incomplete catalog. Native dispatch must still prove current tap uniqueness.";
         selectors.push(assessment.selector);
         findings.push(...assessment.findings);
         if (step.kind === "tap" || step.kind === "reveal") postTextMutation = false;

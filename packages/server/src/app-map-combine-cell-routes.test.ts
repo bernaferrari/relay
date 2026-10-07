@@ -1895,6 +1895,11 @@ test("a named cell persists only that selection; an unnamed pilot keeps the full
       cell: "it",
     });
     const namedCampaign = named.campaign as CombineCampaign;
+    assert.equal(
+      namedCampaign.cases.length,
+      1,
+      "named selection must not freeze unrequested executable cases",
+    );
     const namedSelected = namedCampaign.execution?.selectedCellIds ?? [];
     assert.equal(namedSelected.length, 1);
     assert.equal(

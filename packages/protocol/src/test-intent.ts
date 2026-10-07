@@ -679,6 +679,11 @@ export type OfflineTestPreflightFinding = {
  * a selector decision without consulting the current map or device. */
 export type OfflineTestPreflightEvidenceSource = {
   reference: string;
+  recordedEntrance?: {
+    actionId: string;
+    observationId: string;
+    scope: "requested-selector-catalog";
+  };
   evidenceId?: string;
   sha256?: string;
   /** Present for source-aware compiled plans. These facts identify the exact

@@ -1,3 +1,5 @@
+import type { AuthoringCaptureContext } from "./recorded-entrance.js";
+export type { AuthoringCaptureContext } from "./recorded-entrance.js";
 import type { RecipeStep, StepTarget } from "./recipes.js";
 import type { BrowserDeviceInputResolution } from "./browser-device.js";
 import {
@@ -90,18 +92,6 @@ export type AuthoringObservationProof = {
   };
 };
 
-/** Capture diagnostics retained with an observation so a later optimizer can
- * distinguish a real semantic tree from an unavailable, rebound, or
- * pixels-only capture without reconnecting the device. */
-export type AuthoringCaptureContext = {
-  snapshotSource?: "sdk" | "android-system" | "pixels-only";
-  inspectable?: boolean;
-  inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
-  bindingState?: "matched" | "rebound" | "unavailable";
-  treeApp?: string;
-  visualFingerprint?: string;
-};
-
 /** The honest validation level for one recorded action's entrance and exit.
  * Pixels-only remains a usable, reviewable device path; it is never reported
  * as a current semantic proof. */
@@ -152,6 +142,10 @@ export type AuthoringAction = {
    * action's source and destination reviewable without reusing a later screen
    * as its entrance proof. */
   entranceObservationId?: string;
+  /** Modern native taps require their exact current selector entrance, including after edits. */
+  entranceCaptureVersion?: 1;
+  entranceCaptureRevision?: number;
+  entranceStepDigest?: string;
   exitObservationId?: string;
   proofStatus?: AuthoringTransitionProofStatus;
   label?: string;
@@ -260,6 +254,8 @@ export type AuthoringInteraction =
   | { kind: "steps"; steps: RecipeStep[]; label?: string; applied?: boolean };
 
 export type AuthoringTakeRevision = {
+  /** Explicit capability: native named steps require exact entrance proof after edits. */
+  entranceCaptureVersion?: 1;
   id: string;
   takeId: string;
   revision: number;

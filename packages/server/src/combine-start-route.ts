@@ -43,7 +43,6 @@ import {
   readAppMap,
   snapshotPlayerMap,
   listTargets,
-  resolveCombineCellSelector,
   stagePreparedAppMapCombineCells,
   summarizeJob,
 } from "@relay/core";
@@ -314,6 +313,7 @@ async function executeCombineStartUnlocked(
       cellRuntimeProfiles: body.cellRuntimeProfiles ?? scopedCombine.cellRuntimeProfiles,
       cellTargetBindings: body.cellTargetBindings,
       selectedCellIds: body.selectedCellIds,
+      cell: body.cell,
       defaultTargetProfileId: body.defaultTargetProfileId,
       readAppMap: (id: string) => readAppMap(scope.projectId, id),
       ...(targetId && !body.profileTargets?.length
@@ -486,20 +486,6 @@ async function executeCombineStartUnlocked(
         : prepareAppMapCombineCells(prepareInput)),
     );
     let selectedCells = prepared.selectedCells;
-    if (body.cell?.trim()) {
-      try {
-        const selected = new Set(resolveCombineCellSelector(prepared.cells, body.cell));
-        selectedCells = prepared.cells.filter((cell) => selected.has(cell.cellId));
-      } catch (error) {
-        if (error instanceof AppMapCombineWorldError) {
-          throw new HttpError(409, error.message, { code: error.code });
-        }
-        throw error;
-      }
-      if (!selectedCells.length) {
-        throw new HttpError(409, `Unknown Combine cell ${body.cell.trim()}.`);
-      }
-    }
     if (body.pilotCase) {
       const expectedIds = scopedCombine.variableIds;
       const actualIds = Object.keys(body.pilotCase);
@@ -881,7 +867,10 @@ async function executeCombineStartUnlocked(
     };
   } catch (error) {
     return await compensateCombineStartFailure({
-      error,
+      error:
+        error instanceof AppMapCombineWorldError
+          ? new HttpError(409, error.message, { code: error.code })
+          : error,
       scope,
       map,
       targetId,

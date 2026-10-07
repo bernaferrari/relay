@@ -103,4 +103,19 @@ export type SnapshotNode = {
   hiddenContentBelow?: boolean;
   /** Listener querySelector nodes already use the logical interface space. */
   logicalCoordinates?: boolean;
+  /** Internal same-census recording provenance, never native uniqueness. */
+  recordingSelectorSupplemental?: boolean;
+};
+
+export type DeviceSnapshotOptions = {
+  interactiveOnly?: boolean;
+  raw?: boolean;
+  timeoutMs?: number;
+  /** Override the normal read retry budget for latency-sensitive callers. */
+  retryAttempts?: number;
+  includeIdentifiers?: readonly string[];
+  includeLabels?: readonly string[];
+  requestedChromeOnly?: boolean;
+  controlBoundsOnlyForApp?: string;
+  separateRequestedSelectorEvidence?: boolean;
 };

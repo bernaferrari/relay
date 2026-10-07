@@ -1,3 +1,4 @@
+import { loadFrozenRecordedEntrances } from "./frozen-recorded-entrance.js";
 import { createHash } from "node:crypto";
 import type {
   AppMapCompiledRawAccessibilitySource,
@@ -231,6 +232,7 @@ export async function loadFrozenRawAccessibilityEvidence(
     }
   }
   return {
+    rawEntrancesByStepKey: await loadFrozenRecordedEntrances(plan, readEvidence),
     rawSourcesByScreenId,
     rawEvidenceReferencesByScreenId,
     rawEvidenceStatusByScreenId,

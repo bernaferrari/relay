@@ -5,6 +5,7 @@ const STEP_METADATA_FIELDS = [
   "coverage",
   "group",
   "evidence",
+  "recordedEntrance",
   "note",
   "reviewedExternalEffects",
   "optional",

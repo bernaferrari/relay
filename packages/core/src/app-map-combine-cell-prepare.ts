@@ -9,12 +9,7 @@ import type {
   AppMapCompiledTest,
   AppMapNativeCompanionCompile,
   AppMapScenarioTest,
-  ExecutionTargetRef,
 } from "@relay/protocol";
-import {
-  appMapRuntimeTargetProfileFromSaved,
-  appMapRuntimeTargetProfileKey,
-} from "./app-map-runtime-target-profile.js";
 import {
   appMapCombineCellBindingId,
   appMapCombineCellId,
@@ -22,25 +17,13 @@ import {
   canonicalAppMapCombineCellValues,
   sameAppMapCombineCellValues,
 } from "./app-map-combine-cell.js";
+import { type AppMapCombineCellExecutionIntent } from "./app-map-combine-cell-intent.js";
 import {
-  createAppMapCombineCellExecutionIntent,
-  type AppMapCombineCellExecutionIntent,
-} from "./app-map-combine-cell-intent.js";
-import {
-  composeAppMapCombineCellWrapper,
-  declaredCombineCellStaticInputs,
-  wrapperInputsForStatic,
   type CombineCellStaticInputs,
   type CombineCellWrapperInputs,
 } from "./app-map-combine-cell-wrapper.js";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
-import { compileOptionsForVisualSurface } from "./combine-visual-surface.js";
-import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
-import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
-import { compileAppMapTest } from "./map-work.js";
-import { resolveCombineCellCompanion } from "./app-map-native-companion-combine.js";
-import { parseUnrecordedNativeRuntimeProfile } from "./app-map-unrecorded-runtime-profile.js";
-import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
+import type { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
 import {
   assertOptionSandwichReady,
   defaultOptionMatrixStrategy,
@@ -52,23 +35,30 @@ import {
   localExecutionTargetRef,
   type LocalExecutionTarget,
 } from "./app-map-combine-cell-target-binding.js";
-import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
+import {
+  resolveCombineCellSelector,
+  synthesizeCombineCellRuntimeProfiles,
+} from "./app-map-combine-from-test.js";
 import type { Recipe } from "./recipes.js";
 import type { PreparedCasePlan } from "./case-plan.js";
 import type { PreparedFrozenRecipeInputs } from "./frozen-recipe-inputs.js";
-import { selectedCombineDataRows } from "./app-map-combine-cell-inputs.js";
-
-export class AppMapCombineCellContractError extends Error {
-  readonly code = "APP_MAP_COMBINE_CELL_CONTRACT";
-  constructor(
-    message: string,
-    readonly issues: AppMapCombinePreflightIssue[],
-    readonly cells: AppMapCombineCellState[],
-  ) {
-    super(message);
-    this.name = "AppMapCombineCellContractError";
-  }
-}
+import type { selectedCombineDataRows } from "./app-map-combine-cell-inputs.js";
+import {
+  AppMapCombineCellContractError,
+  savedAppMapTargetProfileIdsForTarget,
+  targetProfileLabel,
+} from "./app-map-combine-runtime-profile.js";
+export {
+  AppMapCombineCellContractError,
+  savedAppMapTargetProfileIdsForTarget,
+  resolveSavedAppMapRuntimeTargetProfile,
+  unresolvedTargetProfileMessage,
+} from "./app-map-combine-runtime-profile.js";
+import {
+  compileAppMapCombineCell,
+  resolveAppMapCombineCell,
+  type ResolvedAppMapCombineCell,
+} from "./app-map-combine-cell-compile.js";
 
 export type PreparedAppMapCombineCell = {
   cellId: string;
@@ -149,136 +139,6 @@ export function optionSetsForAppMapCombine(map: AppMap, combine: AppMapCombine):
       screenshotEach: set.screenshotEach,
     };
   });
-}
-
-/** Deduped saved runtime-profile ids that bind to one concrete target, in
- * stable message order. These are the only ids a failed binding can accept,
- * so every recovery message lists them instead of hiding them in raw map data. */
-export function savedAppMapTargetProfileIdsForTarget(
-  map: AppMap,
-  target: { targetId: string; platform: string },
-): string[] {
-  const ids = new Set(
-    Object.values(map.screenVariants ?? {})
-      .map((variant) => variant.targetProfile)
-      .filter(
-        (profile) =>
-          profile.id &&
-          profile.targetId === target.targetId &&
-          profile.platform === target.platform,
-      )
-      .map((profile) => profile.id),
-  );
-  return [...ids].sort((left, right) => left.localeCompare(right));
-}
-
-function targetProfileLabel(target: { targetId: string; platform: string }): string {
-  return `${target.platform}:${target.targetId}`;
-}
-
-export function unresolvedTargetProfileMessage(
-  target: { targetId: string; platform: string },
-  candidates: string[],
-): string {
-  return candidates.length
-    ? `Multiple saved runtime profiles bind to ${targetProfileLabel(target)}: ${candidates.join(", ")}. Bind an explicit targetProfileId.`
-    : `No saved runtime profile for target ${targetProfileLabel(target)} — capture a screen on this target first.`;
-}
-
-function savedTargetProfileHint(
-  map: AppMap,
-  target: { targetId: string; platform: string },
-): string {
-  const candidates = savedAppMapTargetProfileIdsForTarget(map, target);
-  return candidates.length
-    ? ` Saved runtime profiles for ${targetProfileLabel(target)}: ${candidates.join(", ")}.`
-    : ` No saved runtime profile for target ${targetProfileLabel(target)} — capture a screen on this target first.`;
-}
-
-export function resolveSavedAppMapRuntimeTargetProfile(input: {
-  map: AppMap;
-  /** Explicit saved profile id. When omitted or blank, the single saved
-   * profile that binds to `target` is inherited; ambiguity stays an error. */
-  targetProfileId?: string;
-  target: { targetId: string; platform: "android" | "ios" | "browser" };
-}): AppMapCompiledRuntimeTargetProfile {
-  const targetProfileId = input.targetProfileId?.trim() ?? "";
-  const unrecorded = parseUnrecordedNativeRuntimeProfile(targetProfileId, input.target);
-  if (unrecorded) return unrecorded;
-  if (!targetProfileId) {
-    const candidates = savedAppMapTargetProfileIdsForTarget(input.map, input.target);
-    if (candidates.length !== 1) {
-      const message = unresolvedTargetProfileMessage(input.target, candidates);
-      throw new AppMapCombineCellContractError(message, [issue("missing-binding", message)], []);
-    }
-    return resolveSavedAppMapRuntimeTargetProfile({
-      map: input.map,
-      targetProfileId: candidates[0]!,
-      target: input.target,
-    });
-  }
-  const profiles = Object.values(input.map.screenVariants)
-    .map((variant) => variant.targetProfile)
-    .filter((profile) => profile.id === targetProfileId);
-  if (!profiles.length) {
-    const message = `Target profile ${targetProfileId} is not saved in this App Map.${savedTargetProfileHint(input.map, input.target)}`;
-    throw new AppMapCombineCellContractError(
-      message,
-      [
-        issue("mismatched-binding", message, {
-          targetProfileId,
-        }),
-      ],
-      [],
-    );
-  }
-  const mismatched = profiles.filter(
-    (profile) =>
-      profile.targetId !== input.target.targetId || profile.platform !== input.target.platform,
-  );
-  if (mismatched.length) {
-    const message = `Target profile ${targetProfileId} does not bind to ${input.target.platform}:${input.target.targetId}.${savedTargetProfileHint(input.map, input.target)}`;
-    throw new AppMapCombineCellContractError(
-      message,
-      [
-        issue("mismatched-binding", message, {
-          targetProfileId,
-        }),
-      ],
-      [],
-    );
-  }
-  const identity = (profile: (typeof profiles)[number]) =>
-    appMapRuntimeTargetProfileKey(appMapRuntimeTargetProfileFromSaved(profile));
-  if (new Set(profiles.map(identity)).size !== 1) {
-    throw new AppMapCombineCellContractError(
-      `Target profile ${targetProfileId} has conflicting saved identities`,
-      [
-        issue(
-          "mismatched-binding",
-          `Target profile ${targetProfileId} has conflicting saved identities`,
-          {
-            targetProfileId,
-          },
-        ),
-      ],
-      [],
-    );
-  }
-  const frozen = appMapRuntimeTargetProfileFromSaved(profiles[0]!);
-  if (frozen.platform === "browser" && !frozen.browserCaseProfile) {
-    const message = `Saved runtime profile ${frozen.id} has no frozen browser environment`;
-    throw new AppMapCombineCellContractError(
-      message,
-      [
-        issue("mismatched-binding", message, {
-          targetProfileId: frozen.id,
-        }),
-      ],
-      [],
-    );
-  }
-  return frozen;
 }
 
 export type AppMapCombineEnumeratedCell = {
@@ -547,159 +407,6 @@ function completeCellRuntimeProfileBindings(input: {
   return { bindings, inheritedProfileByCellId, issues, unresolvedCellIds };
 }
 
-async function prepareOneCell(input: {
-  map: AppMap;
-  combine: AppMapCombine;
-  cell: AppMapCombineEnumeratedCell;
-  binding: AppMapCombineCellRuntimeProfile;
-  sets: OptionRunSet[];
-  worldValues: Record<string, string>;
-  target: LocalExecutionTarget;
-  /** Provenance of the binding's profile id, recorded for audit. */
-  targetProfileIdSource: "explicit" | "inherited";
-  compileOptions: AppMapTestCompileOptions;
-  readAppMap?: (appMapId: string) => Promise<AppMap | null>;
-  laneId?: string;
-}): Promise<PreparedAppMapCombineCell> {
-  const test = input.map.tests[input.cell.testId] as AppMapScenarioTest | undefined;
-  if (!test) {
-    throw new AppMapCombineCellContractError(
-      `Test ${input.cell.testId} is no longer on this map.`,
-      [
-        issue("missing-test", `Test “${input.cell.testId}” is no longer on this map.`, {
-          cellId: input.cell.cellId,
-          testId: input.cell.testId,
-        }),
-      ],
-      [],
-    );
-  }
-  const companion = await resolveCombineCellCompanion({
-    map: input.map,
-    test,
-    requestedProfileId: input.binding.targetProfileId,
-    requestedTarget: input.target,
-    ...(input.readAppMap ? { readAppMap: input.readAppMap } : {}),
-  });
-  const executionMap = companion?.map ?? input.map;
-  const executionTest = companion?.test ?? test;
-  const executionTarget = companion?.executionTarget ?? input.target;
-  const selectedRuntimeTargetProfile =
-    companion?.runtimeTargetProfile ??
-    resolveSavedAppMapRuntimeTargetProfile({
-      map: input.map,
-      targetProfileId: input.binding.targetProfileId,
-      target: { targetId: input.target.targetId, platform: input.target.platform },
-    });
-  const sameMap = executionMap.id === input.map.id;
-  const effectiveTest = {
-    ...executionTest,
-    ...(sameMap && input.combine.captures?.[test.id]
-      ? { capture: input.combine.captures[test.id] }
-      : {}),
-  };
-  const compiled = compileAppMapTest(
-    executionMap,
-    effectiveTest,
-    compileOptionsForVisualSurface(effectiveTest, {
-      ...(sameMap
-        ? input.compileOptions
-        : input.compileOptions.startupMode
-          ? { startupMode: input.compileOptions.startupMode }
-          : {}),
-      runtimeTargetProfile: selectedRuntimeTargetProfile,
-    }),
-  );
-  const plan = compiled.plan;
-  const preflight = preflightCompiledAppMapTestOffline(
-    plan,
-    await loadFrozenRawAccessibilityEvidence(plan),
-    { targetProfileId: selectedRuntimeTargetProfile.id },
-  );
-  if (preflight.summary.blockers) {
-    throw new AppMapCombineCellContractError(
-      `Offline preflight blocked ${input.cell.testName} · ${input.cell.worldLabel}`,
-      [
-        issue(
-          "compile-failed",
-          `Offline preflight blocked ${input.cell.testName} · ${input.cell.worldLabel}`,
-          {
-            cellId: input.cell.cellId,
-            testId: input.cell.testId,
-            values: input.cell.values,
-            targetProfileId: selectedRuntimeTargetProfile.id,
-          },
-        ),
-      ],
-      [
-        {
-          cellId: input.cell.cellId,
-          testId: input.cell.testId,
-          testName: input.cell.testName,
-          values: input.cell.values,
-          worldLabel: input.cell.worldLabel,
-          targetProfileId: selectedRuntimeTargetProfile.id,
-          binding: "bound",
-          preflight: "blocked",
-          message: "Offline preflight blocked this cell",
-        },
-      ],
-    );
-  }
-  const recipeGraph = Object.fromEntries(
-    Object.values(compiled.graph).map((recipe) => [recipe.id, structuredClone(recipe)]),
-  );
-  const laneId = input.laneId?.trim();
-  const childIntent = createAppMapTestExecutionIntent({
-    plan,
-    recipeGraph,
-    preflight,
-    ...(laneId ? { laneId } : {}),
-  });
-  const staticInputs = declaredCombineCellStaticInputs(input.sets, input.worldValues);
-  const wrapper = composeAppMapCombineCellWrapper({
-    cellId: input.cell.cellId,
-    childRootId: childIntent.sourcePlan.rootRecipeId,
-    childGraph: childIntent.recipeGraph,
-    sets: input.sets,
-    map: input.map,
-    at: 0,
-  });
-  const wrapperInputs = wrapperInputsForStatic(wrapper.prefixes, staticInputs);
-  const outerIntent = createAppMapCombineCellExecutionIntent({
-    cellId: input.cell.cellId,
-    testId: input.cell.testId,
-    values: input.cell.values,
-    selectedRuntimeTargetProfile,
-    child: childIntent,
-    wrapperRoot: wrapper.root,
-    recipeGraph: wrapper.graph,
-    staticInputs,
-    ...(companion?.nativeCompanion ? { nativeCompanion: companion.nativeCompanion } : {}),
-  });
-  return {
-    cellId: input.cell.cellId,
-    testId: input.cell.testId,
-    testName: input.cell.testName,
-    values: input.cell.values,
-    selectedDataRows: selectedCombineDataRows(input.sets, input.cell.values),
-    worldLabel: input.cell.worldLabel,
-    worldIndex: input.cell.worldIndex,
-    targetProfileId: selectedRuntimeTargetProfile.id,
-    targetProfileIdSource: input.targetProfileIdSource,
-    executionTarget: structuredClone(executionTarget),
-    selectedRuntimeTargetProfile,
-    ...(companion?.nativeCompanion ? { nativeCompanion: companion.nativeCompanion } : {}),
-    plan,
-    staticInputs,
-    wrapperInputs,
-    childIntent,
-    outerIntent,
-    recipeSnapshot: wrapper.root,
-    recipeGraph: wrapper.graph,
-  };
-}
-
 export async function prepareAppMapCombineCells(input: {
   map: AppMap;
   combine: AppMapCombine;
@@ -709,6 +416,11 @@ export async function prepareAppMapCombineCells(input: {
   /** Explicit execution target per Test × world cell. Required for multi-target runs. */
   cellTargetBindings?: AppMapCombineCellTargetBinding[];
   selectedCellIds?: string[];
+  /** Canonical named cell selector, resolved before offline preparation. */
+  cell?: string;
+  /** Internal resume universe, taken only from persisted campaign cases.
+   * Startup leaves this absent and validates every authored cell. */
+  frozenCellIds?: readonly string[];
   rejectUnselectedBindings?: boolean;
   /** Backward-compatible single local target. It is expanded to every cell. */
   target?: { targetId: string; platform: "android" | "ios" | "browser" };
@@ -763,12 +475,25 @@ export async function prepareAppMapCombineCells(input: {
         input.seed,
       )
     : { ...implicitPairedCasePlan(), ...(input.seed !== undefined ? { seed: input.seed } : {}) };
-  const cells = enumerateAppMapCombineCells({
+  const authoredCells = enumerateAppMapCombineCells({
     combine: input.combine,
     tests,
     matrix,
     variableIds: input.combine.variableIds,
   });
+  if (input.frozenCellIds !== undefined) {
+    const known = new Set(authoredCells.map((cell) => cell.cellId));
+    const unknown = input.frozenCellIds.find((id) => !known.has(id));
+    if (!input.frozenCellIds.length || unknown !== undefined) {
+      throw new AppMapCombineCellContractError(
+        "The frozen campaign includes a cell that is no longer in this Combine.",
+        [issue("foreign-binding", "Choose cells from the frozen campaign.", { cellId: unknown })],
+        [],
+      );
+    }
+  }
+  const frozen = input.frozenCellIds ? new Set(input.frozenCellIds) : undefined;
+  const cells = frozen ? authoredCells.filter((cell) => frozen.has(cell.cellId)) : authoredCells;
   const suppliedBindings = input.cellRuntimeProfiles ?? input.combine.cellRuntimeProfiles ?? [];
   const synthesized = synthesizeCombineCellRuntimeProfiles({
     cells,
@@ -829,7 +554,9 @@ export async function prepareAppMapCombineCells(input: {
       cellStates,
     );
   }
-  const requestedSelected = input.selectedCellIds?.map((id) => id.trim()).filter(Boolean);
+  const requestedSelected = input.cell?.trim()
+    ? resolveCombineCellSelector(cells, input.cell)
+    : input.selectedCellIds?.map((id) => id.trim());
   const known = new Set(cells.map((cell) => cell.cellId));
   if (requestedSelected) {
     const unknown = requestedSelected.filter((id) => !known.has(id));
@@ -844,8 +571,38 @@ export async function prepareAppMapCombineCells(input: {
   const selectedCellIds = requestedSelected?.length
     ? [...new Set(requestedSelected)]
     : cells.map((cell) => cell.cellId);
+  const subjects = new Map<string, ResolvedAppMapCombineCell>();
+  for (const cell of cells) {
+    try {
+      subjects.set(
+        cell.cellId,
+        await resolveAppMapCombineCell({
+          map: input.map,
+          combine: input.combine,
+          cell,
+          binding: assessed.byCellId.get(cell.cellId)!,
+          target: assessedTargets.byCellId.get(cell.cellId)!,
+          ...(input.readAppMap ? { readAppMap: input.readAppMap } : {}),
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof AppMapCombineCellContractError)) throw error;
+      throw new AppMapCombineCellContractError(
+        error.message,
+        error.issues.map((item) => ({
+          ...item,
+          cellId: cell.cellId,
+          testId: cell.testId,
+          values: cell.values,
+        })),
+        cellStates,
+      );
+    }
+  }
+  const requested = new Set(selectedCellIds);
   const prepared: PreparedAppMapCombineCell[] = [];
   for (const cell of cells) {
+    if (!requested.has(cell.cellId)) continue;
     const world = matrix.cases[cell.worldIndex];
     if (!world) {
       throw new AppMapCombineCellContractError(
@@ -858,25 +615,22 @@ export async function prepareAppMapCombineCells(input: {
         cellStates,
       );
     }
-    const preparedCell = await prepareOneCell({
-      map: input.map,
-      combine: input.combine,
-      cell,
-      binding: assessed.byCellId.get(cell.cellId)!,
-      sets,
-      worldValues: world.values,
-      target: assessedTargets.byCellId.get(cell.cellId)!,
-      targetProfileIdSource: completed.inheritedProfileByCellId.has(cell.cellId)
-        ? "inherited"
-        : "explicit",
-      compileOptions: input.compileOptions ?? {},
-      ...(input.readAppMap ? { readAppMap: input.readAppMap } : {}),
-      ...(input.laneId?.trim() ? { laneId: input.laneId.trim() } : {}),
-    });
-    prepared.push({
-      ...preparedCell,
-      worldLabel: cell.worldLabel,
-    });
+    prepared.push(
+      await compileAppMapCombineCell(
+        {
+          map: input.map,
+          cell,
+          sets,
+          worldValues: world.values,
+          targetProfileIdSource: completed.inheritedProfileByCellId.has(cell.cellId)
+            ? "inherited"
+            : "explicit",
+          compileOptions: input.compileOptions ?? {},
+          ...(input.laneId?.trim() ? { laneId: input.laneId.trim() } : {}),
+        },
+        subjects.get(cell.cellId)!,
+      ),
+    );
   }
   const byId = new Map(prepared.map((cell) => [cell.cellId, cell]));
   return {
@@ -884,17 +638,15 @@ export async function prepareAppMapCombineCells(input: {
     selectedCellIds,
     selectedCells: selectedCellIds.map((id) => byId.get(id)!),
     matrix,
-    cellStates: prepared.map((cell) => ({
-      cellId: cell.cellId,
-      testId: cell.testId,
-      testName: cell.testName,
-      values: cell.values,
-      worldLabel: cell.worldLabel,
-      targetProfileId: cell.targetProfileId,
-      target: structuredClone(cell.executionTarget) as ExecutionTargetRef,
-      binding: "bound",
-      preflight: "ready",
-    })),
+    cellStates: cellStates.map((state) => {
+      const subject = subjects.get(state.cellId)!;
+      return {
+        ...state,
+        targetProfileId: subject.selectedRuntimeTargetProfile.id,
+        target: structuredClone(subject.executionTarget),
+        ...(byId.has(state.cellId) ? { preflight: "ready" as const } : {}),
+      };
+    }),
     sets,
   };
 }

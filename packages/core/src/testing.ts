@@ -3,7 +3,10 @@ import { createDeviceObservationFacade } from "./device-observation-membrane.js"
 
 // Cross-package recording regressions exercise the canonical lifecycle and
 // listener boundary without importing private source files or contacting iOS.
-export { recordAuthoringInteraction } from "./authoring-recording-lifecycle.js";
+export {
+  recordAuthoringInteraction,
+  finishAuthoringRecording,
+} from "./authoring-recording-lifecycle.js";
 export { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
 export {
   setLiveIosRunnerCommandPostForTests,
