@@ -14,6 +14,7 @@ enum CommandType: String, Codable, CaseIterable {
   case desktopScroll
   case findText
   case querySelector
+  case querySelectorTapCandidate
   case readText
   case snapshot
   case screenshot
@@ -285,7 +286,7 @@ extension Command {
         ? .presentedSurfaceQuery
         : .presentedSurfaceMutation
 
-    case .recordStop, .uptime, .appWindowBounds, .terminate, .targetReset, .shutdown:
+    case .recordStop, .uptime, .appWindowBounds, .querySelectorTapCandidate, .terminate, .targetReset, .shutdown:
       return .runnerLifecycle
 
     case .pasteboardWrite:
@@ -458,6 +459,7 @@ struct DataPayload: Codable {
   var coordinateSpace: String?
   var geometrySource: String?
   var bounds: ApplicationWindowBounds?
+  var selectorCandidateReceipt: SelectorCandidateReceipt?
   var commandId: String?
   var lifecycleState: String?
   var lifecycleCommand: String?

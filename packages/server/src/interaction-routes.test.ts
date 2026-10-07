@@ -7,9 +7,12 @@ import {
   proveConnectionOnDevice,
   type SnapshotNode,
 } from "@relay/core";
-import type { Connection } from "@relay/protocol";
+import { operationDefinition, type Connection } from "@relay/protocol";
 import { HttpError } from "./http.js";
-import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
+import {
+  interactionPreviewHttpBody,
+  iosMutationOutcomeUnknownHttpError,
+} from "./interaction-routes.js";
 
 function unknownIosScroll(): IosMutationOutcomeUnknownError {
   return new IosMutationOutcomeUnknownError(
@@ -260,4 +263,36 @@ test("the App Map proof boundary keeps the last proven source evidence with an i
       expectedSource: connection.return.expectedDestination,
     },
   });
+});
+
+test("the actual preview HTTP projection preserves authoritative selection states without private capture fields", () => {
+  const shot = {
+    path: "/private/capture.png",
+    capturedAt: 1,
+    mime: "image/png" as const,
+    base64: "cG5n",
+    bytes: 3,
+    width: 2224,
+    height: 1668,
+    inspectable: true,
+    preview: true as const,
+  };
+  const resolution = {
+    method: "label" as const,
+    point: { x: 180, y: 185 },
+    bounds: { x: 80, y: 160, width: 200, height: 50 },
+  };
+  for (const resolutionState of ["resolved", "ambiguous", "unresolved", "unavailable"] as const) {
+    const result = interactionPreviewHttpBody({
+      ...shot,
+      resolutionState,
+      ...(resolutionState === "resolved" ? { resolution } : {}),
+    });
+    const parsed = operationDefinition("target.interact").output.parse(result);
+    assert.ok("preview" in parsed && parsed.preview === true);
+    assert.equal(parsed.resolutionState, resolutionState);
+    assert.deepEqual(parsed.resolution, resolutionState === "resolved" ? resolution : undefined);
+    assert.equal("path" in result, false);
+    assert.equal("capturedAt" in result, false);
+  }
 });

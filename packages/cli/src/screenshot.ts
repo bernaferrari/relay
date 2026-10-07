@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
-import { presentPersistedSnapshot } from "@relay/protocol";
+import { interactPreviewSelectionSchema, presentPersistedSnapshot } from "@relay/protocol";
 import type { ScreenshotOutput } from "./config.js";
 import { CliError, ExitCode } from "./errors.js";
 import type { CliOutput } from "./output.js";
@@ -12,6 +12,39 @@ function screenshotRecord(value: unknown): Record<string, unknown> {
     throw new CliError("Malformed screenshot response: expected an object", ExitCode.validation);
   }
   return value as Record<string, unknown>;
+}
+
+function optionalRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function previewFileMetadata(operationId: string, source: Record<string, unknown>) {
+  if (operationId !== "target.interact" || source.preview !== true) return {};
+  const resolution = optionalRecord(source.resolution);
+  const point = optionalRecord(resolution?.point);
+  const bounds = optionalRecord(resolution?.bounds);
+  // Project before validating: the file receipt never inherits transport,
+  // accessibility, lifecycle or arbitrary nested provider fields.
+  const selection = interactPreviewSelectionSchema.safeParse({
+    resolutionState: source.resolutionState,
+    resolution: resolution
+      ? {
+          method: resolution.method,
+          point: point ? { x: point.x, y: point.y } : undefined,
+          bounds: bounds
+            ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+            : undefined,
+          ...(resolution.activation !== undefined ? { activation: resolution.activation } : {}),
+        }
+      : source.resolution,
+  });
+  return {
+    preview: true,
+    ...(typeof source.inspectable === "boolean" ? { inspectable: source.inspectable } : {}),
+    ...(selection.success ? selection.data : {}),
+  };
 }
 
 export function screenshotPng(value: unknown): Buffer {
@@ -75,6 +108,7 @@ export async function emitScreenshot(
     bytes: png.byteLength,
     mime: "image/png",
     ...(typeof source.path === "string" ? { sourcePath: source.path } : {}),
+    ...previewFileMetadata(operationId, source),
   });
 }
 

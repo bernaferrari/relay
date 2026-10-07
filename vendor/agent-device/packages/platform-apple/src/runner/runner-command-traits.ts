@@ -63,6 +63,7 @@ export const RUNNER_COMMAND_TRAITS = {
   desktopScroll: PREFLIGHT_SKIPPABLE_TOUCH_MUTATION_TRAITS,
   findText: READ_ONLY_TRAITS,
   querySelector: READ_ONLY_TRAITS,
+  querySelectorTapCandidate: READ_ONLY_TRAITS,
   readText: READ_ONLY_TRAITS,
   snapshot: READ_ONLY_TRAITS,
   screenshot: READ_ONLY_TRAITS,

@@ -19,12 +19,9 @@ import {
   lastIosMutationAttemptDiagnostic,
   type IosMutationAttemptDiagnostic,
   type SnapshotNode,
-  rememberedTargetApplication,
 } from "./device.js";
-import {
-  identifierNodesViaLiveIosRunnerListener,
-  labelNodesViaLiveIosRunnerListener,
-} from "./ios-runner-listener-command.js";
+import { observeIosSelectorPreview } from "./ios-selector-preview.js";
+import type { InteractPreviewResolutionState } from "@relay/protocol";
 import {
   explicitPointResolution,
   resolveNamedControlOutcome,
@@ -362,16 +359,67 @@ export function resolveInteractPreview(
 
 export async function previewInteract(
   input: InteractInput,
-  opts?: { serial?: string; overlay?: RuntimeTargetOverlay },
+  opts?: { serial?: string; device?: Device; overlay?: RuntimeTargetOverlay },
 ): Promise<
   ScreenshotPayload & {
     preview: true;
     resolution?: NamedControlResolution;
+    resolutionState?: InteractPreviewResolutionState;
     iosSessionLifecycle?: IosSessionOperationDiagnostic;
   }
 > {
-  const target = await resolveRuntimeTarget(opts?.serial, undefined, opts?.overlay);
+  const target = await resolveRuntimeTarget(opts?.serial, opts?.device, opts?.overlay);
   return runWithTargetContext(target.context, async () => {
+    if (
+      target.context.kind === "device" &&
+      target.context.platform === "ios" &&
+      ["identifier", "label", "ref", "find", "text-match"].includes(input.kind)
+    ) {
+      const selector =
+        input.kind === "identifier"
+          ? { key: "id" as const, value: input.identifier }
+          : input.kind === "label" && !input.heading
+            ? { key: "label" as const, value: input.label }
+            : undefined;
+      const proof = await observeIosSelectorPreview(target.context, selector);
+      // Capture pixels after the one authoritative enumeration. This remains a
+      // location observation, never a guarantee that a later tap will resolve.
+      const shot = await captureScreenshot({
+        serial: opts?.serial,
+        device: target.device,
+        ephemeral: true,
+        includeScreenMatch: false,
+      });
+      const bytes = Buffer.from(shot.base64, "base64");
+      const logical = tapPreviewLogicalBounds(bytes, proof.windowBounds);
+      if (!proof.resolution || !logical)
+        return {
+          ...shot,
+          preview: true as const,
+          inspectable: proof.resolutionState !== "unavailable",
+          resolutionState:
+            proof.resolutionState === "resolved" ? ("unavailable" as const) : proof.resolutionState,
+        };
+      const marked = Buffer.from(
+        annotateTapPreview(
+          bytes,
+          {
+            point: proof.resolution.point,
+            bounds: proof.resolution.bounds,
+          },
+          logical,
+        ),
+      );
+      return {
+        ...shot,
+        preview: true as const,
+        inspectable: true,
+        resolutionState: "resolved" as const,
+        resolution: proof.resolution,
+        base64: marked.toString("base64"),
+        bytes: marked.byteLength,
+      };
+    }
     const shot = await captureScreenshot({
       serial: opts?.serial,
       device: target.device,
@@ -392,40 +440,6 @@ export async function previewInteract(
       iosSessionLifecycle = snap.iosSessionLifecycle;
     } catch {
       inspectable = false;
-    }
-    if (
-      input.kind === "identifier" &&
-      input.identifier.trim() &&
-      !resolveInteractPreview(nodes, input)
-    ) {
-      try {
-        const context = currentTargetContext();
-        if (context.kind === "device" && context.platform === "ios") {
-          const extra = await identifierNodesViaLiveIosRunnerListener({
-            serial: context.serial,
-            identifier: input.identifier,
-            appBundleId: await rememberedTargetApplication(context),
-          });
-          if (extra?.length) nodes = [...nodes, ...extra];
-        }
-      } catch {
-        // Preview stays unmarked when the identifier is still absent.
-      }
-    }
-    if (input.kind === "label" && input.label.trim() && !resolveInteractPreview(nodes, input)) {
-      try {
-        const context = currentTargetContext();
-        if (context.kind === "device" && context.platform === "ios") {
-          const extra = await labelNodesViaLiveIosRunnerListener({
-            serial: context.serial,
-            label: input.label,
-            appBundleId: await rememberedTargetApplication(context),
-          });
-          if (extra?.length) nodes = [...nodes, ...extra];
-        }
-      } catch {
-        // Preview stays unmarked when the label is still absent.
-      }
     }
     const resolution = resolveInteractPreview(nodes, input);
     const fallbackPoint =

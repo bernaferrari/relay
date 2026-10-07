@@ -4,6 +4,9 @@ Read this before changing selector capture, polling, snapshot caching, or intera
 These are cross-route behavior requirements; their rationale and owning decisions live in ADRs
 0002, 0004, 0005, 0011, 0014, and 0015.
 
+- Relay named iOS previews use the no-activation `querySelectorTapCandidate` census
+  from ADR 0011. A bounded chrome match or ordinary query read cannot prove a preview
+  location; a preview receipt is observation-time evidence, never future tap permission.
 - Direct iOS selectors are a narrow fast path for simple one-term selectors and are disabled while
   post-gesture stabilization is pending. A structured selector miss may return to snapshot
   resolution; ambiguity and other runner failures remain failures.

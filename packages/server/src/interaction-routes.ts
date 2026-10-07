@@ -1,4 +1,5 @@
 import type http from "node:http";
+import { interactPreviewSelectionSchema } from "@relay/protocol";
 import {
   getActiveJob,
   groundAndInteract,
@@ -26,6 +27,25 @@ type InteractionRouteInput = {
   response: http.ServerResponse;
   scope: RequestContext;
 };
+
+/** The actual /interact preview wire projection; private capture paths and native receipts stay internal. */
+export function interactionPreviewHttpBody(result: Awaited<ReturnType<typeof previewInteract>>) {
+  const selection = interactPreviewSelectionSchema.parse({
+    resolutionState: result.resolutionState,
+    resolution: result.resolution,
+  });
+  return {
+    ok: true as const,
+    preview: true as const,
+    mime: "image/png" as const,
+    base64: result.base64,
+    bytes: result.bytes,
+    width: result.width,
+    height: result.height,
+    inspectable: result.inspectable,
+    ...selection,
+  };
+}
 
 type GroundingRequestBody = {
   serial?: string;
@@ -217,17 +237,7 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
         serial: resolved.serial,
         ...(overlay ? { overlay } : {}),
       });
-      json(response, 200, {
-        ok: true,
-        preview: true,
-        mime: "image/png",
-        base64: result.base64,
-        bytes: result.bytes,
-        width: result.width,
-        height: result.height,
-        inspectable: result.inspectable,
-        ...(result.resolution ? { resolution: result.resolution } : {}),
-      });
+      json(response, 200, interactionPreviewHttpBody(result));
       return true;
     }
     assertNoRunningJob(resolved.serial);

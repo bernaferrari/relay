@@ -223,7 +223,8 @@ test("interact preview summaries drop inlined PNG base64", () => {
   assert.equal(result.preview, true);
   assert.equal(result.base64, undefined);
   assert.equal(result.bytes, 68);
-  assert.match(result.nextHint ?? "", /preview:false/);
+  assert.match(result.nextHint ?? "", /current screen/);
+  assert.doesNotMatch(result.nextHint ?? "", /preview:false|commit/i);
   assert.doesNotMatch(JSON.stringify(result), new RegExp(base64));
 });
 
