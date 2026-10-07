@@ -14,6 +14,7 @@ import { ResultsBar } from "../components/results-bar";
 import { RunThumb } from "../components/run-thumb";
 import { StatusPill, type RunState } from "../components/run-status";
 import { batchCaseInspectionReference } from "./batch-case-inspection";
+import { formatBatchWorldLabel } from "./batch-result-view";
 
 /** What a person wants from a plan run: how far along it is and how each test did. */
 export function PlanRunChecklist({
@@ -80,12 +81,16 @@ export function PlanRunChecklist({
       <ol className="m-0 grid list-none divide-y divide-border overflow-hidden rounded-xl border border-border bg-card p-0">
         {cases.map((item) => {
           const inspection = batchCaseInspectionReference(item);
-          const testName =
-            (item.identity?.testId && testNames[item.identity.testId]) || `Test ${item.index + 1}`;
-          const name =
-            item.identity?.testId && (testCounts.get(item.identity.testId) ?? 0) > 1
-              ? `${testName} · Case ${item.index + 1}`
-              : testName;
+          // Name the case by what makes it different (account, language…), not its position.
+          const variant = item.world ? formatBatchWorldLabel(item.world) : undefined;
+          const knownTest = item.identity?.testId && testNames[item.identity.testId];
+          const repeated =
+            !item.identity?.testId || (testCounts.get(item.identity.testId) ?? 0) > 1;
+          const name = knownTest
+            ? repeated
+              ? `${knownTest} · ${variant ?? `Case ${item.index + 1}`}`
+              : knownTest
+            : (variant ?? `Test ${item.index + 1}`);
           const detail = [
             caseDetail(item),
             environments.size > 1

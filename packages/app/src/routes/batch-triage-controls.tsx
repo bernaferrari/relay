@@ -83,9 +83,7 @@ export function BatchTriageControls({
         </form>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        {selectedCount
-          ? `${selectedCount} selected. Resolved is a review state, not a passing Run.`
-          : "Select a group or case to rerun or assign. Resolved is a review state, not a passing Run."}
+        {selectedCount} {selectedCount === 1 ? "case" : "cases"} selected
       </p>
     </div>
   );

@@ -30,6 +30,7 @@ import type { BrowserSpacesProductService } from "../data/browser-spaces-product
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import type { Platform } from "../platform/types";
 import { createFixtureLiveTarget } from "./live-target-fixture";
+import { planCaptureQueue, planCaptureSvg, reviewPlanCaptures } from "./plan-capture-fixture";
 import "../styles/globals.css";
 
 try {
@@ -46,6 +47,16 @@ if (!fixture || !definitions[fixture]) throw new TypeError(`Unknown visual fixtu
 const platform: Platform = {
   platform: "web",
   getServerUrl: () => "http://visual-fixture.invalid",
+  fetch: async (input, init) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    const frame = /\/runs\/batch-run-(\d+)\/(frames\/[^?]+|thumbnail)/u.exec(url.pathname);
+    if (url.hostname === "visual-fixture.invalid" && frame) {
+      const caseIndex = Math.floor((Number(frame[1]) - 1) / 2);
+      const path = frame[2] === "thumbnail" ? `frames/${caseIndex}-5.png` : frame[2]!;
+      return new Response(planCaptureSvg(path), { headers: { "content-type": "image/svg+xml" } });
+    }
+    return fetch(input, init);
+  },
   storage: {
     get: (key) => window.localStorage.getItem(`visual:${key}`),
     set: (key, value) => window.localStorage.setItem(`visual:${key}`, value),
@@ -516,6 +527,9 @@ const runAcrossService = {
   preview: previewProductRunAcross,
   getReport: async () => batchReport,
   getFailureClusters: async () => ({ batchId: batchReport.id, clusters: [] }),
+  getCaptureReview: async () => planCaptureQueue(),
+  reviewCaptures: async (_batchId: string, input: Parameters<typeof reviewPlanCaptures>[0]) =>
+    reviewPlanCaptures(input),
   getFindings: async () => emptyPlanFindings(batchReport.id),
   exportReport: async () => ({
     ...batchReport,

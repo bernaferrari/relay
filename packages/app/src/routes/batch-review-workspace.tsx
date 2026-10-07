@@ -36,6 +36,7 @@ export function BatchReviewWorkspace({
 }) {
   const [view, setView] = useState<"queue" | "matrix" | "groups">("queue");
   const [focusedId, setFocusedId] = useState<string | undefined>(focusedCaseId);
+  const [showPassing, setShowPassing] = useState(false);
   useEffect(() => {
     if (focusedCaseId) {
       setFocusedId(focusedCaseId);
@@ -51,9 +52,16 @@ export function BatchReviewWorkspace({
   const focused =
     report.cases.find((item) => item.id === focusedId) ?? unresolved[0] ?? report.cases[0];
   const inspection = focused ? batchCaseInspectionReference(focused) : undefined;
-  const queue = [...report.cases].sort(
-    (a, b) => Number(isBatchCaseProblem(b)) - Number(isBatchCaseProblem(a)) || a.index - b.index,
-  );
+  const problemCount = report.cases.filter(isBatchCaseProblem).length;
+  const passingCount = report.cases.length - problemCount;
+  // Problems lead; passing cases stay one click away instead of crowding the list.
+  const queue = [...report.cases]
+    .filter(
+      (item) => showPassing || !problemCount || isBatchCaseProblem(item) || item.id === focusedId,
+    )
+    .sort(
+      (a, b) => Number(isBatchCaseProblem(b)) - Number(isBatchCaseProblem(a)) || a.index - b.index,
+    );
   const next =
     unresolved.find((item) => item.index > (focused?.index ?? -1) && item.id !== focused?.id) ??
     unresolved.find((item) => item.id !== focused?.id);
@@ -72,9 +80,15 @@ export function BatchReviewWorkspace({
     <section className="mt-6 grid min-w-0 gap-4" aria-label="Case review workspace">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">Review cases</h2>
-          <p className="mt-1 text-sm text-muted-foreground" role="status">
-            {unresolved.length} unresolved · {report.cases.length} total
+          <h2 className="text-base font-semibold">
+            {unresolved.length
+              ? `${unresolved.length} ${unresolved.length === 1 ? "problem" : "problems"} to look at`
+              : problemCount
+                ? "All problems resolved"
+                : "Every case passed"}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground" role="status">
+            {report.cases.length} {report.cases.length === 1 ? "case" : "cases"} in this Plan run
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -87,24 +101,21 @@ export function BatchReviewWorkspace({
                 variant={view === item ? "secondary" : "ghost"}
                 onClick={() => setView(item)}
               >
-                {item === "queue"
-                  ? "Review queue"
-                  : item === "matrix"
-                    ? "Matrix"
-                    : "Failure groups"}
+                {item === "queue" ? "List" : item === "matrix" ? "Grid" : "Groups"}
               </Button>
             ))}
           </div>
-          <Button
-            variant="outline"
-            disabled={!next}
-            onClick={() => {
-              setFocusedId(next?.id);
-              setView("queue");
-            }}
-          >
-            Next unresolved
-          </Button>
+          {next ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFocusedId(next.id);
+                setView("queue");
+              }}
+            >
+              Next problem
+            </Button>
+          ) : null}
         </div>
       </header>
       {view === "matrix" ? (
@@ -135,18 +146,27 @@ export function BatchReviewWorkspace({
                   onClick={() => setFocusedId(item.id)}
                   className="grid min-h-11 min-w-0 flex-1 gap-1 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-ring"
                 >
-                  <span className="text-sm font-medium">
-                    {item.world
-                      ? formatBatchWorldLabel(item.world)
-                      : Object.values(item.values).map(humanizeBatchIdentity).join(" · ") ||
-                        `Case ${item.index + 1}`}
-                  </span>
-                  <span className="text-xs text-foreground">
-                    {item.status} · {item.triageStatus ?? "unreviewed"}
+                  <span className="text-sm font-medium">{caseName(item)}</span>
+                  <span
+                    className={`text-xs ${isBatchCaseProblem(item) ? "text-destructive" : "text-muted-foreground"}`}
+                  >
+                    {caseStatusLabel(item)}
                   </span>
                 </button>
               </li>
             ))}
+            {problemCount && passingCount ? (
+              <li>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start text-muted-foreground"
+                  onClick={() => setShowPassing((value) => !value)}
+                >
+                  {showPassing ? "Hide passing cases" : `Show ${passingCount} passing`}
+                </Button>
+              </li>
+            ) : null}
             {queue.length > 50 ? (
               <li className="flex flex-wrap items-center justify-between gap-2 border-t border-border p-2">
                 <Button
@@ -174,93 +194,94 @@ export function BatchReviewWorkspace({
           <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
             {focused ? (
               <>
-                <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold">
-                      Case {focused.index + 1} · {focused.status}
-                    </h3>
-                    {focused.error ? (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {formatBatchCaseError(focused.error)}
-                      </p>
-                    ) : null}
+                <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 border-b border-border p-4">
+                  <div className="min-w-64 flex-1">
+                    <h3 className="text-base font-semibold">{caseName(focused)}</h3>
+                    <p
+                      className={`mt-0.5 text-sm ${isBatchCaseProblem(focused) ? "text-destructive" : "text-muted-foreground"}`}
+                    >
+                      {focused.error
+                        ? formatBatchCaseError(focused.error)
+                        : caseStatusLabel(focused)}
+                    </p>
                   </div>
-                  {inspection ? (
-                    <>
-                      <Button
-                        nativeButton={false}
-                        variant="ghost"
-                        className="min-h-11"
-                        render={
-                          <Link
-                            to="/runs/$runId"
-                            params={{ runId: inspection.id }}
-                            search={inspection.kind === "saved" ? { reportView: "captures" } : {}}
-                          />
-                        }
-                      >
-                        {inspection.kind === "live" ? "Open Run" : "Open full report"}
-                      </Button>
-                      {focused.runId ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {inspection ? (
+                      <>
                         <Button
                           nativeButton={false}
                           variant="ghost"
-                          className="min-h-11"
                           render={
                             <Link
-                              to="/runs/$runId/walkthrough"
-                              params={{ runId: focused.runId }}
-                              search={{ state: undefined, variant: undefined, capture: undefined }}
+                              to="/runs/$runId"
+                              params={{ runId: inspection.id }}
+                              search={inspection.kind === "saved" ? { reportView: "captures" } : {}}
                             />
                           }
                         >
-                          Walk through
+                          {inspection.kind === "live" ? "Open Run" : "Open report"}
                         </Button>
-                      ) : null}
-                    </>
-                  ) : focused.identity?.testId ? (
-                    <Button
-                      nativeButton={false}
-                      variant="outline"
-                      render={
-                        <Link
-                          to="/tests/$testId"
-                          params={{ testId: focused.identity.testId }}
-                          search={{ setup: "run" }}
-                        />
-                      }
-                    >
-                      Open Test setup
-                    </Button>
-                  ) : null}
-                  {isBatchCaseProblem(focused) &&
-                  focused.triageStatus !== "resolved" &&
-                  focused.triageStatus !== "wont-fix" ? (
-                    <>
-                      {isBatchCaseRerunnable(focused) ? (
-                        <Button disabled={rerunning} onClick={() => onRerun(focused.id)}>
-                          {rerunning ? "Starting rerun…" : "Rerun this case"}
-                        </Button>
-                      ) : null}
+                        {focused.runId ? (
+                          <Button
+                            nativeButton={false}
+                            variant="ghost"
+                            render={
+                              <Link
+                                to="/runs/$runId/walkthrough"
+                                params={{ runId: focused.runId }}
+                                search={{
+                                  state: undefined,
+                                  variant: undefined,
+                                  capture: undefined,
+                                }}
+                              />
+                            }
+                          >
+                            Walk through
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : focused.identity?.testId ? (
                       <Button
+                        nativeButton={false}
                         variant="outline"
-                        disabled={pending}
-                        onClick={async () => {
-                          try {
-                            await onResolve(focused.id);
-                            setFocusedId(next?.id ?? focused.id);
-                          } catch {
-                            /* The parent presents mutation errors. */
-                          }
-                        }}
+                        render={
+                          <Link
+                            to="/tests/$testId"
+                            params={{ testId: focused.identity.testId }}
+                            search={{ setup: "run" }}
+                          />
+                        }
                       >
-                        {pending ? "Saving…" : "Mark resolved"}
+                        Open Test setup
                       </Button>
-                    </>
-                  ) : null}
-                  <p className="w-full text-xs text-muted-foreground">
-                    Review decisions do not change execution outcomes or approve visual baselines.
-                  </p>
+                    ) : null}
+                    {isBatchCaseProblem(focused) &&
+                    focused.triageStatus !== "resolved" &&
+                    focused.triageStatus !== "wont-fix" ? (
+                      <>
+                        {isBatchCaseRerunnable(focused) ? (
+                          <Button disabled={rerunning} onClick={() => onRerun(focused.id)}>
+                            {rerunning ? "Starting…" : "Run again"}
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="outline"
+                          disabled={pending}
+                          onClick={async () => {
+                            try {
+                              await onResolve(focused.id);
+                              setFocusedId(next?.id ?? focused.id);
+                            } catch {
+                              /* The parent presents mutation errors. */
+                            }
+                          }}
+                        >
+                          {pending ? "Saving…" : "Mark resolved"}
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
                 </header>
                 <div className="min-h-96 overflow-auto">
                   {inspection ? (
@@ -282,4 +303,34 @@ export function BatchReviewWorkspace({
       )}
     </section>
   );
+}
+
+function caseName(item: ProductBatchReport["cases"][number]): string {
+  return item.world
+    ? formatBatchWorldLabel(item.world)
+    : Object.values(item.values).map(humanizeBatchIdentity).join(" · ") || `Case ${item.index + 1}`;
+}
+
+function caseStatusLabel(item: ProductBatchReport["cases"][number]): string {
+  const outcome =
+    item.status === "passed"
+      ? "Passed"
+      : item.status === "failed"
+        ? "Failed"
+        : item.status === "blocked"
+          ? "Couldn’t run"
+          : item.status === "cancelled"
+            ? "Stopped"
+            : item.status === "running"
+              ? "Running"
+              : "Waiting";
+  const triage =
+    item.triageStatus === "resolved"
+      ? "resolved"
+      : item.triageStatus === "wont-fix"
+        ? "won’t fix"
+        : item.triageStatus === "investigating"
+          ? "investigating"
+          : undefined;
+  return triage ? `${outcome} · ${triage}` : outcome;
 }
