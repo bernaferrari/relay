@@ -1,4 +1,4 @@
-import type { SnapshotNode } from "./device-capabilities.js";
+import type { SnapshotNode } from "./device.js";
 import { JobCancelledError, raceCancel } from "./control.js";
 import { NativeTextEntryVerificationError } from "./input-not-dispatched.js";
 

@@ -124,3 +124,37 @@ test("missing, damaged, unbound or mismatched frozen sources cannot add proof", 
     [],
   );
 });
+
+test("frozen owned Home evidence admits its advisory state without changing the recorded criterion", async () => {
+  const home = JSON.parse(
+    readFileSync(new URL("./fixtures/grok-chat-home-keyboard.json", import.meta.url), "utf8"),
+  ).nodes as SnapshotNode[];
+  const advisory = JSON.parse(
+    readFileSync(new URL("./fixtures/grok-home-advisory.json", import.meta.url), "utf8"),
+  ).nodes as SnapshotNode[];
+  const homeBytes = Buffer.from(JSON.stringify({ nodes: home }));
+  const homeDigest = createHash("sha256").update(homeBytes).digest("hex");
+  const homePlan = structuredClone(plan);
+  const source = homePlan.rawAccessibilitySourcesByScreenId!.imagine![0]!;
+  source.tree = {
+    ...source.tree,
+    sha256: homeDigest,
+    uri: `relay-evidence://${homeDigest}`,
+    bytes: homeBytes.length,
+  };
+  const homeStep = {
+    ...step,
+    screenTitle: "Grok home",
+    fingerprint: observeScreenIdentity(home).fingerprint,
+  };
+  const frozen = await frozenScreenIdentityObservations(homePlan, homeStep, options, {
+    readEvidence: async () => homeBytes,
+  });
+  assert.equal(frozen.length, 1);
+  assert.equal(frozen[0]?.fingerprint, observeScreenIdentity(advisory, options).fingerprint);
+  const wrongMode = advisory.map((node) =>
+    node.label === "Fast" ? { ...node, label: "Expert", value: "Expert" } : node,
+  );
+  assert.notEqual(frozen[0]?.fingerprint, observeScreenIdentity(wrongMode, options).fingerprint);
+  assert.equal(source.tree.sha256, homeDigest, "the original raw tree remains the proof source");
+});

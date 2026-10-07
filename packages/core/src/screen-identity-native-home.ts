@@ -23,21 +23,39 @@ export function nativeHomeIdentityNodes(
   };
   const root = unique((node) => node.identifier === `${packageName}:id/action_bar_root`);
   const header = unique((node) => node.identifier === "conversation_top_bar");
-  if (!root?.rect || !header?.rect || header.rect.y !== 0 || header.rect.height > root.rect.height * 0.2)
+  if (
+    !root?.rect ||
+    !header?.rect ||
+    header.rect.y !== 0 ||
+    header.rect.height > root.rect.height * 0.2
+  )
     return undefined;
   const headerBottom = header.rect.y + header.rect.height;
   const inHeader = (node: SnapshotNode) =>
     Boolean(node.rect && node.rect.y >= 0 && node.rect.y + node.rect.height <= headerBottom);
   const ask = unique((node) => node.label === "Ask" && inHeader(node));
   const selected = visible.find((node) => node.index === ask?.parentIndex);
-  if (!ask || selected?.selected !== true || selected.enabled === false || !inHeader(selected))
+  if (
+    !ask ||
+    ask.enabled === false ||
+    selected?.selected !== true ||
+    selected.enabled === false ||
+    !inHeader(selected)
+  )
     return undefined;
   for (const label of ["Imagine", "Build", "Show navigation drawer", "Private Chat"]) {
     if (!unique((node) => node.label === label && node.enabled !== false && inHeader(node)))
       return undefined;
   }
-  const input = unique((node) => node.identifier === "chat_text_input" && node.type === "android.widget.EditText");
-  if (!input?.rect || input.enabled === false || input.value?.trim() || input.rect.y <= headerBottom)
+  const input = unique(
+    (node) => node.identifier === "chat_text_input" && node.type === "android.widget.EditText",
+  );
+  if (
+    !input?.rect ||
+    input.enabled === false ||
+    input.value?.trim() ||
+    input.rect.y <= headerBottom
+  )
     return undefined;
   const byIndex = new Map(visible.map((node) => [node.index, node]));
   const composer = byIndex.get(input.parentIndex);
@@ -50,13 +68,25 @@ export function nativeHomeIdentityNodes(
     }
     return false;
   };
-  for (const label of ["Launch gallery selector", "Ask anything", "Start dictation", "Start Grok Voice"]) {
+  for (const label of [
+    "Launch gallery selector",
+    "Ask anything",
+    "Start dictation",
+    "Start Grok Voice",
+  ]) {
     if (!unique((node) => node.label === label && node.enabled !== false && inComposer(node)))
       return undefined;
   }
   return visible.filter(
     (node) =>
       (node === root || inHeader(node) || inComposer(node)) &&
-      Boolean(node.label || node.value || node.identifier || node.selected || node === input || /Button$/u.test(node.type ?? "")),
+      Boolean(
+        node.label ||
+        node.value ||
+        node.identifier ||
+        node.selected ||
+        node === input ||
+        /Button$/u.test(node.type ?? ""),
+      ),
   );
 }

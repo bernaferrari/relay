@@ -2,6 +2,7 @@ import {
   bindPreparedCombineCellInputs,
   CasePlanError,
   combineCellInputSeed,
+  combineCellRuntimeInputValues,
   freezeRecipeInputs,
   readProjectVariables,
   requirePreparedCombineCellInputs,
@@ -31,12 +32,19 @@ export async function freezeCombineRunInputs(input: {
   try {
     const definitions = await (input.readProjectVariables ?? readProjectVariables)(input.projectId);
     const cells = [...new Set(input.cells)];
+    const runtimeValues = cells.map((cell) =>
+      combineCellRuntimeInputValues({
+        cell,
+        definitions: definitions.value,
+        runtimeValues: input.variables,
+      }),
+    );
     const prepared = await Promise.all(
-      cells.map((cell) =>
+      cells.map((cell, index) =>
         freezeRecipeInputs({
           recipeGraph: cell.childIntent.recipeGraph,
           definitions,
-          runtimeValues: input.variables,
+          runtimeValues: runtimeValues[index],
           seed: combineCellInputSeed(input.seed, cell),
         }),
       ),

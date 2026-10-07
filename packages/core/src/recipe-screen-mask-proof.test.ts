@@ -51,7 +51,10 @@ test("physical Home mask cannot invalidate an exact approved full semantic alias
     observeScreenIdentity(fixture.nodes, { ignoreRegions: fixture.ignoreRegions }).fingerprint,
     fixture.approvedFingerprint,
   );
-  assert.equal(nativeWorkspaceIdentityNodes(fixture.nodes, GROK_ANDROID_APP_POLICY), fixture.nodes);
+  assert.notEqual(
+    nativeWorkspaceIdentityNodes(fixture.nodes, GROK_ANDROID_APP_POLICY),
+    fixture.nodes,
+  );
   const ctx = context();
   await runExpectScreenStep(device, step, ctx, {
     observeSnapshot: async () => fixture.nodes,
@@ -83,7 +86,10 @@ test("a mask adds no full semantic proof for an unapproved captured state", asyn
     nodes: SnapshotNode[];
   };
   assert.equal(tree.phase, "destination-mismatch");
-  assert.equal(tree.unmaskedFingerprint, fixture.approvedFingerprint);
+  assert.equal(
+    tree.unmaskedFingerprint,
+    observeScreenIdentity(fixture.nodes, { policy: GROK_ANDROID_APP_POLICY }).fingerprint,
+  );
   assert.notEqual(tree.fingerprint, tree.unmaskedFingerprint);
   assert.deepEqual(tree.nodes, fixture.nodes);
   assert.notEqual(tree.nodes, fixture.nodes, "retain the assessed tree as immutable evidence");

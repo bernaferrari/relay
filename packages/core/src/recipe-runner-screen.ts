@@ -70,7 +70,10 @@ import {
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { isTransientError } from "./retry.js";
 import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
-import { frozenScreenIdentityObservations } from "./recipe-screen-frozen-identity.js";
+import {
+  frozenScreenIdentityObservations,
+  matchesRecordedUnmaskedScreen,
+} from "./recipe-screen-frozen-identity.js";
 import { retainScreenMismatch } from "./recipe-screen-mismatch.js";
 import { nativeWorkspaceIdentityNodes } from "./screen-identity-native-workspace.js";
 import { nativeImaginePendingModelSelection } from "./recipe-native-model-entry.js";
@@ -571,12 +574,12 @@ export async function runExpectScreenStep(
     // their rectangles are intentionally absent. Exact full semantic proof
     // remains valid when its fingerprint was explicitly retained by the Test.
     // Qualified Imagine workspaces keep their stricter selected-model policy.
-    const exactUnmaskedMatch =
-      !exactNativeWorkspace &&
-      Boolean(scopedIdentityOptions.ignoreRegions?.length) &&
-      unmaskedExpected.has(
-        observeScreenIdentity(nodes, { ...scopedIdentityOptions, ignoreRegions: [] }).fingerprint,
-      );
+    const exactUnmaskedMatch = matchesRecordedUnmaskedScreen(
+      nodes,
+      scopedIdentityOptions,
+      unmaskedExpected,
+      exactNativeWorkspace,
+    );
     const semanticMatch =
       !exactNativeWorkspace &&
       compareObservations.some(

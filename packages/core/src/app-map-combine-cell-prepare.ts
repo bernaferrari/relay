@@ -56,6 +56,7 @@ import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-tes
 import type { Recipe } from "./recipes.js";
 import type { PreparedCasePlan } from "./case-plan.js";
 import type { PreparedFrozenRecipeInputs } from "./frozen-recipe-inputs.js";
+import { selectedCombineDataRows } from "./app-map-combine-cell-inputs.js";
 
 export class AppMapCombineCellContractError extends Error {
   readonly code = "APP_MAP_COMBINE_CELL_CONTRACT";
@@ -77,6 +78,8 @@ export type PreparedAppMapCombineCell = {
   testId: string;
   testName: string;
   values: Record<string, string>;
+  /** Captured dimension aliases; row IDs remain canonical cell values. */
+  selectedDataRows?: ReturnType<typeof selectedCombineDataRows>;
   worldLabel: string;
   worldIndex: number;
   targetProfileId: string;
@@ -679,6 +682,7 @@ async function prepareOneCell(input: {
     testId: input.cell.testId,
     testName: input.cell.testName,
     values: input.cell.values,
+    selectedDataRows: selectedCombineDataRows(input.sets, input.cell.values),
     worldLabel: input.cell.worldLabel,
     worldIndex: input.cell.worldIndex,
     targetProfileId: selectedRuntimeTargetProfile.id,
