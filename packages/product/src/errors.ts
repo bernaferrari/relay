@@ -1,5 +1,6 @@
 import { ApiError } from "@relay/client";
 import type { WorkflowProblem } from "@relay/workflows";
+import { NativeRecordingTargetNotReadyError } from "@relay/workflows/target-catalog";
 export type HumanError = {
   title: string;
   detail: string;
@@ -30,6 +31,21 @@ export function capturedSetupRecovery(problem: {
 }
 
 export function projectError(error: unknown): HumanError {
+  if (error instanceof NativeRecordingTargetNotReadyError) {
+    return {
+      title:
+        error.readiness.reason === "runtime-unavailable"
+          ? "Device needs reconnecting"
+          : "Device is not ready for recording",
+      detail:
+        error.pixelsAvailable && error.controlUnavailable
+          ? "Relay can show the screen, but recording control is unavailable."
+          : "Relay could not verify that the selected device is ready to record.",
+      recovery: error.readiness.recovery,
+      retryable: false,
+      sourceCode: "native-recording-target-not-ready",
+    };
+  }
   if (isWorkflowProblem(error))
     return (
       capturedSetupRecovery(error) ?? {

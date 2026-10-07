@@ -1,10 +1,12 @@
 import type { AuthorTestSnapshot, DebugBugOutcome, DebugBugOutcomeIntent } from "./types.js";
+import { targetExecutionReadiness } from "@relay/core/target-execution-readiness";
 import { CanonicalAuthoringWorkflow } from "./authoring-workflow.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
 import { recordingPathContext } from "./recording-path-context.js";
 import {
   acquireOwnLease,
   findTargetCatalogEntry,
+  NativeRecordingTargetNotReadyError,
   selectAppMap,
   selectTarget,
   targetCatalog,
@@ -74,6 +76,15 @@ export function createRelayRecordingOutcomeJobs(
           ? available[0]
           : undefined;
       if (intent.targetId && !current) {
+        const blocked = findTargetCatalogEntry(catalog, intent.targetId);
+        if (
+          blocked &&
+          (blocked.device.platform === "ios" || blocked.device.platform === "android")
+        ) {
+          const readiness = targetExecutionReadiness(blocked.device);
+          if (!readiness.runnable)
+            throw new NativeRecordingTargetNotReadyError(blocked.device, readiness);
+        }
         await selectTarget(operations, intent.targetId, intent.targetKind, intent.phase);
         throw new TypeError(`Target ${intent.targetId} is not ready.`);
       }

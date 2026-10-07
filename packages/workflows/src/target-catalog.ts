@@ -1,6 +1,27 @@
-import { targetExecutionReadiness } from "@relay/core/target-execution-readiness";
+import {
+  targetExecutionReadiness,
+  type TargetExecutionReadiness,
+} from "@relay/core/target-execution-readiness";
 import type { AuthoringTarget, DeviceLease, DeviceSummary, OperationOutput } from "@relay/protocol";
 import type { RelayOperationPort } from "./operation-port.js";
+
+/** A rejected native recording connection, before any control is acquired. */
+export class NativeRecordingTargetNotReadyError extends TypeError {
+  readonly pixelsAvailable: boolean;
+  readonly controlUnavailable: boolean;
+
+  constructor(
+    device: DeviceSummary,
+    readonly readiness: Extract<TargetExecutionReadiness, { runnable: false }>,
+  ) {
+    super(readiness.recovery);
+    this.name = "NativeRecordingTargetNotReadyError";
+    this.pixelsAvailable =
+      device.readiness?.previewPixels.state === "proven" &&
+      device.readiness.previewPixels.freshness === "current";
+    this.controlUnavailable = device.readiness?.semanticControl.state === "unavailable";
+  }
+}
 
 type TargetCatalogEntry = {
   identity: string;

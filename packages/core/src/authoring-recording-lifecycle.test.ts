@@ -172,6 +172,66 @@ test("interaction lifecycle writes the raw intent before dispatch and links its 
   assert.doesNotMatch(JSON.stringify(session.take?.rawEvents), /Private button/u);
 });
 
+test("recording an iPad navigation region retains and executes the original Close point", async () => {
+  let tick = 100;
+  const entrance = observation("entrance", 110);
+  entrance.bounds = { width: 1112, height: 834 };
+  entrance.proof!.semantics = { status: "current", capturedAt: 110, fingerprint: "entrance" };
+  entrance.nodes = [
+    {
+      index: 5,
+      parentIndex: 4,
+      identifier: "Settings",
+      label: "Close",
+      type: "NavigationBar",
+      hittable: true,
+      enabled: true,
+      rect: { x: 204, y: 40, width: 704, height: 56 },
+    },
+  ];
+  const target = { point: { anchored: true, x: 239, y: 67 } };
+  const interaction: Extract<AuthoringInteraction, { kind: "tap" }> = {
+    kind: "tap",
+    target,
+  };
+  let captures = 0;
+  const result = await recordAuthoringInteraction(
+    recordingSession(),
+    interaction,
+    {
+      async execute(_session, executable) {
+        assert.deepEqual(executable, interaction);
+      },
+      async observe() {
+        return ++captures === 1 ? "entrance" : "exit";
+      },
+    },
+    dependencies({
+      now: () => ++tick,
+      async persistObservation(captured) {
+        return {
+          observation: captured === "entrance" ? entrance : observation("exit", 130),
+          evidence: [],
+        };
+      },
+      async persistEvidence() {
+        throw new Error("no video");
+      },
+      async writeSession() {},
+    }),
+  );
+  const step = result.take!.revisions.at(-1)!.actions[0]!.steps[0]!;
+  assert.ok(step.kind === "tap");
+  assert.deepEqual(step.target, target);
+  const intent = result.take!.rawEvents!.find((event) => event.kind === "interaction-intent");
+  assert.ok(intent && intent.kind === "interaction-intent");
+  assert.ok(intent.interaction.kind === "tap");
+  assert.deepEqual(intent.interaction.target, {
+    point: { x: 239, y: 67 },
+    strategies: ["point"],
+  });
+});
+
 test("finish lifecycle seals video before endpoint capture and appends a raw stop", async () => {
   const order: string[] = [];
   const exit = observation("exit", 230);

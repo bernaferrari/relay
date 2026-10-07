@@ -3,6 +3,7 @@ import { createRecordingSetupAdmission } from "../data/recording-setup-admission
 import { useNativeAppStartContext } from "./use-native-app-start-context";
 import { useNewTestPreviewInput } from "./use-new-test-preview-input";
 import { useNewTestSetup, useNewTestTargets } from "./use-new-test-setup";
+import { NewTestSetupProblem, useNewTestDeviceRecovery } from "./use-new-test-device-recovery";
 import { NewTestDraftDialog } from "./new-test-draft-dialog";
 import { NewTestDetailedSetup } from "./new-test-detailed-setup";
 import { NewTestTargetMode } from "./new-test-target-mode";
@@ -246,15 +247,14 @@ export function NewTestPage() {
       targetId,
       requestedOriginApplication,
     });
-  const reconnectPreview = useMutation({
-    mutationFn: async (serial: string) => deviceService.recover(serial, "connect"),
-    onSuccess: (_result, serial) => {
-      if (serial === targetId) setPreviewAttempt((value) => value + 1);
-    },
-    onError: (_error, serial) => {
-      if (serial === targetId)
-        setPreviewIssue("Could not connect to this device. Keep it running, then try again.");
-    },
+  const reconnectPreview = useNewTestDeviceRecovery({
+    deviceService,
+    targetId,
+    admission: startup,
+    refetchTargets: () => targets.refetch(),
+    onRecovered: () => setPreviewAttempt((value) => value + 1),
+    onError: () =>
+      setPreviewIssue("Could not connect to this device. Keep it running, then try again."),
   });
   useNewTestPreviewSession({
     target: selectedTarget,
@@ -426,11 +426,18 @@ export function NewTestPage() {
   const noTargets = Boolean(targets.data && targets.data.targetOptions.length === 0);
   const targetError = setupMode === "detailed" ? targets.error : undefined;
   const targetRecovery = setupMode === "detailed" ? targets.data?.recovery : undefined;
+  const nativeTargetRecovery = reconnectPreview.canReconnect(targetRecovery, targetKind);
   const setupOpen =
-    !loading && !apps.isError && !targetError && !targetRecovery && !blocksNewRecording;
+    !loading &&
+    !apps.isError &&
+    !targetError &&
+    (!targetRecovery || nativeTargetRecovery) &&
+    !blocksNewRecording;
   const formReady = Boolean(
     appId &&
     selectedTarget &&
+    !targetError &&
+    !targetRecovery &&
     !begin.isPending &&
     !creatingApp &&
     (previewStatus === "streaming" || !productService.previewTarget) &&
@@ -512,7 +519,7 @@ export function NewTestPage() {
           {!startsFromPath && !blocksNewRecording ? (
             <NewTestTargetMode
               device={setupMode === "detailed" && (deviceOnly || selectedTarget?.kind === "device")}
-              disabled={begin.isPending || Boolean(quickProgress)}
+              disabled={begin.isPending || reconnectPreview.isPending || Boolean(quickProgress)}
               onChange={(device) => {
                 if (!startup.mayEdit()) return;
                 setWantsDevice(device);
@@ -555,21 +562,14 @@ export function NewTestPage() {
         ) : null}
 
         {loading ? <PageLoading label="Finding your apps and ready devices…" /> : null}
-        <RecordingProblem
-          layout={setupOpen ? "compact" : "centered"}
-          className={setupOpen ? undefined : "!mt-0 !max-w-none min-h-0 w-full flex-1"}
-          error={apps.error ?? targetError ?? pathContext.error}
-          recovery={targetRecovery}
-          onRetry={() => {
-            if (apps.isError) void apps.refetch();
-            if (targetError || targetRecovery) void targets.refetch();
-            if (pathContext.isError) void pathContext.refetch();
-          }}
-          retrying={
-            apps.isFetching ||
-            (setupMode === "detailed" && targets.isFetching) ||
-            pathContext.isFetching
-          }
+        <NewTestSetupProblem
+          open={setupOpen}
+          apps={apps}
+          targets={targets}
+          path={pathContext}
+          detailed={setupMode === "detailed"}
+          onReconnect={nativeTargetRecovery ? () => reconnectPreview.mutate(targetId) : undefined}
+          reconnecting={reconnectPreview.isPending}
         />
         <RecordingProblem
           error={begin.error}
@@ -664,7 +664,7 @@ export function NewTestPage() {
             onOpened={openedApp}
             formReady={formReady}
             startHint={startHint}
-            admission={{ busy: begin.isPending, mayEdit: startup.mayEdit }}
+            admission={reconnectPreview.admission}
             submit={submit}
             browserContext={browserContext}
             previewIssue={previewInput.issue ?? previewIssue}
