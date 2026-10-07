@@ -200,7 +200,23 @@ describe("suite and environment product projections", () => {
       revision: 11,
       tests: {
         ...map.tests,
-        empty: { id: "empty", name: "Empty", steps: [] },
+        empty: { id: "empty", name: "Empty", steps: [], updatedAt: 100 },
+        speed: {
+          ...map.tests.login!,
+          id: "speed",
+          name: "Speed",
+          updatedAt: 200,
+          steps: [
+            {
+              id: "choose",
+              intent: "Choose mode",
+              kind: "decision",
+              binding: { status: "resolved" },
+              thenSteps: map.tests.login!.steps,
+              elseSteps: map.tests.login!.steps,
+            },
+          ],
+        },
       },
       variables: {
         locale: {
@@ -222,8 +238,12 @@ describe("suite and environment product projections", () => {
       revision: 11,
       dataSets: [{ id: "locale", name: "Locale", kind: "language", optionCount: 2 }],
     });
-    expect(editor.tests.map(({ id }) => id)).toEqual(["empty", "login"]);
+    expect(editor.tests.map(({ id }) => id)).toEqual(["empty", "login", "speed"]);
     expect(editor.tests.find(({ id }) => id === "empty")?.status).toBe("needs-review");
+    expect(editor.tests.find(({ id }) => id === "speed")).toMatchObject({
+      stepCount: 3,
+      updatedAt: 200,
+    });
     expect(relay.invoke).toHaveBeenCalledWith("app-map.get", { appMapId: "app-1" });
   });
 

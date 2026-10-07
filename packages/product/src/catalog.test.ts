@@ -241,6 +241,47 @@ test("projects Run views with durable identity, human joins, phases, and filters
   assert.equal(runs[0]?.review?.status, "pending");
 });
 
+test("Run summaries preserve only the exact saved Plan attribution of their canonical matrix case", () => {
+  const matrixCase = {
+    kind: "combine" as const,
+    appMapId: "grok",
+    testId: "speed",
+    combineId: "prompts",
+    world: "one",
+    values: { prompts: "value-1" },
+  };
+  const projected = projectProductRuns([
+    run({ id: "plan", action: "test.run", status: "ok", queuedAt: 1, matrixCase }),
+    run({ id: "standalone", action: "app-map:grok:test:speed:run", status: "error", queuedAt: 2 }),
+    run({
+      id: "legacy",
+      action: "test.run",
+      title: "prompts",
+      status: "error",
+      queuedAt: 3,
+      matrixCase: { ...matrixCase, combineId: undefined },
+    }),
+    run({
+      id: "conflict",
+      action: "test.run",
+      status: "error",
+      queuedAt: 4,
+      matrixCase,
+      sourceTest: { appMapId: "different-app", testId: "speed" },
+    }),
+    run({
+      id: "test-conflict",
+      action: "test.run",
+      status: "error",
+      queuedAt: 5,
+      matrixCase,
+      sourceTest: { appMapId: "grok", testId: "fast" },
+    }),
+  ]);
+  assert.equal(projected[0]?.combineId, "prompts");
+  for (const item of projected.slice(1)) assert.equal(item.combineId, undefined);
+});
+
 test("catalog calls canonical operations and fails closed on ambiguous Test identity", async () => {
   const one = app("app-one", "Shopping", { duplicate: scenario("duplicate", "One") });
   const two = app("app-two", "Admin", { duplicate: scenario("duplicate", "Two") });

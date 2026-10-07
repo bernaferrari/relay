@@ -132,3 +132,69 @@ it("retains the unsaved Plan and Test selection while adding prompt values, then
     }),
   );
 });
+
+it("disambiguates similar saved Speed Tests by canonical step count and update time while retaining the Plan draft", async () => {
+  const saveSuite = vi.fn(async () => ({ id: "plan", appMapId: "grok" }));
+  const tests = [
+    {
+      id: "speed-old",
+      name: "Imagine Speed image generation",
+      status: "ready",
+      stepCount: 7,
+      updatedAt: Date.UTC(2026, 9, 6, 12),
+    },
+    {
+      id: "speed-new",
+      name: "Imagine Speed image generation",
+      status: "ready",
+      stepCount: 10,
+      updatedAt: Date.UTC(2026, 9, 7, 14),
+    },
+  ];
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  context.value = {
+    queryClient: client,
+    productService: { listApps: async () => [{ id: "grok", name: "Grok" }] },
+    suiteProfileService: {
+      getSuiteEditor: async () => ({
+        appMapId: "grok",
+        appName: "Grok",
+        revision: 4,
+        tests,
+        dataSets: [],
+      }),
+      saveSuite,
+    },
+  };
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <NewPlanDialog appId="grok" />
+      </QueryClientProvider>,
+    ),
+  );
+  await wait(() => expect(button("New plan").disabled).toBe(false));
+  await click("New plan");
+  await wait(() => expect(document.querySelectorAll('[role="checkbox"]').length).toBe(2));
+  const choices = [...document.querySelectorAll('[role="checkbox"]')].map((item) =>
+    item.closest("label")!,
+  );
+  expect(choices[0]!.textContent).toContain("7 steps");
+  expect(choices[1]!.textContent).toContain("10 steps");
+  expect(choices[0]!.querySelector("[title]")?.getAttribute("title")).not.toBe(
+    choices[1]!.querySelector("[title]")?.getAttribute("title"),
+  );
+  expect(choices.every((item) => !item.textContent?.includes("Ready"))).toBe(true);
+  await fill("suite-name", "Grok prompt checks");
+  await act(async () => choices[1]!.click());
+  await fill("suite-name", "Grok paired prompt checks");
+  expect(document.querySelectorAll('[role="checkbox"][aria-checked="true"]').length).toBe(1);
+  await click("Save Plan");
+  await wait(() => expect(saveSuite).toHaveBeenCalledOnce());
+  expect(saveSuite).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "Grok paired prompt checks", testIds: ["speed-new"] }),
+  );
+});

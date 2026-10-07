@@ -104,6 +104,9 @@ export type ProductRunSummary = {
   appMapId?: string;
   testId?: string;
   appName?: string;
+  /** Saved Plan attribution from the canonical matrix case. Absent for
+   * standalone or legacy Runs whose Plan membership is unknown. */
+  combineId?: string;
   testName?: string;
   targetName?: string;
   platform?: string;
@@ -320,6 +323,15 @@ function identityFromRun(run: RunSummary): ProductRunIdentity {
 
 function projectRun(run: RunSummary, maps: readonly AppMap[]): ProductRunSummary {
   const identity = identityFromRun(run);
+  const matrix = run.matrixCase;
+  const combineId =
+    matrix &&
+    identity.appMapId &&
+    identity.testId &&
+    matrix.appMapId === identity.appMapId &&
+    matrix.testId === identity.testId
+      ? nonEmpty(matrix.combineId)
+      : undefined;
   const map = identity.appMapId
     ? maps.find((candidate) => candidate.id === identity.appMapId)
     : undefined;
@@ -342,6 +354,7 @@ function projectRun(run: RunSummary, maps: readonly AppMap[]): ProductRunSummary
     ...(outcome(run.outcome) ? { outcome: outcome(run.outcome) } : {}),
     ...(identity.appMapId ? { appMapId: identity.appMapId } : {}),
     ...(identity.testId ? { testId: identity.testId } : {}),
+    ...(combineId ? { combineId } : {}),
     ...(map ? { appName: map.name } : {}),
     ...(test ? { testName: test.name } : {}),
     ...(targetName(run) ? { targetName: targetName(run) } : {}),

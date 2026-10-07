@@ -10,6 +10,7 @@ import type {
   TargetPreflight,
 } from "@relay/protocol";
 import { unrecordedProductName } from "@relay/protocol";
+import { projectProductTests } from "@relay/product/catalog";
 import { scenarioTestOriginMissingEvidence } from "@relay/product/test-origin-readiness";
 import { accountReloginBatchIdFromError } from "@relay/product/plan-findings";
 import {
@@ -42,6 +43,8 @@ export type ProductSuiteTest = {
   readonly id: string;
   readonly name: string;
   readonly status: "ready" | "needs-review";
+  readonly stepCount?: number;
+  readonly updatedAt?: number;
 };
 
 export type ProductSuite = {
@@ -483,11 +486,15 @@ function projectSuiteEditor(appMap: AppMap): ProductSuiteEditor {
     appMapId: appMap.id,
     appName: text(appMap.name, "App"),
     revision: appMap.revision,
-    tests: Object.values(appMap.tests)
+    tests: projectProductTests([appMap])
       .map((test) => ({
         id: test.id,
         name: text(test.name, test.id),
-        status: testStatus(appMap, test),
+        status: testStatus(appMap, appMap.tests[test.id]!),
+        stepCount: test.stepCount,
+        ...(Number.isFinite(test.updatedAt) && test.updatedAt > 0
+          ? { updatedAt: test.updatedAt }
+          : {}),
       }))
       .sort((left, right) => left.name.localeCompare(right.name)),
     dataSets: Object.values(appMap.variables)
