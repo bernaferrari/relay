@@ -1,6 +1,6 @@
 import { catalogQueryKeys } from "../data/catalog-queries";
 /** @jsxImportSource react */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CaptureReviewAction, PlanCaptureReviewItem } from "@relay/protocol";
 import {
@@ -128,6 +128,14 @@ export function PlanCaptureReviewSection({
     staleTime: 5_000,
     refetchInterval: streaming ? 5_000 : false,
   });
+  const wasStreaming = useRef(streaming);
+  useEffect(() => {
+    const finished = wasStreaming.current && !streaming;
+    wasStreaming.current = streaming;
+    // The last polling response can precede the final Run's durable evidence.
+    // Fetch once at completion before stopping, rather than retaining that partial queue.
+    if (finished && runAcrossService.getCaptureReview) void captures.refetch();
+  }, [streaming, captures.refetch, runAcrossService.getCaptureReview]);
   const review = useMutation({
     mutationFn: (input: {
       action: CaptureReviewAction;

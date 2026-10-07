@@ -30,6 +30,11 @@ export function PlanRunChecklist({
   stopping: boolean;
 }) {
   const cases = [...report.cases].sort((left, right) => left.index - right.index);
+  const testCounts = new Map<string, number>();
+  for (const item of cases) {
+    const testId = item.identity?.testId;
+    if (testId) testCounts.set(testId, (testCounts.get(testId) ?? 0) + 1);
+  }
   const states = cases.map(caseState);
   const done = cases.filter((item) => isFinished(item.status)).length;
   // Several devices or accounts: say which one each row ran on.
@@ -55,7 +60,7 @@ export function PlanRunChecklist({
             where,
             active
               ? `${done} of ${cases.length} done`
-              : `${cases.length} ${cases.length === 1 ? "test" : "tests"}`,
+              : `${cases.length} ${cases.length === 1 ? "test run" : "test runs"}`,
             `started ${new Date(report.createdAt).toLocaleString(undefined, {
               weekday: "short",
               hour: "numeric",
@@ -75,8 +80,12 @@ export function PlanRunChecklist({
       <ol className="m-0 grid list-none divide-y divide-border overflow-hidden rounded-xl border border-border bg-card p-0">
         {cases.map((item) => {
           const inspection = batchCaseInspectionReference(item);
-          const name =
+          const testName =
             (item.identity?.testId && testNames[item.identity.testId]) || `Test ${item.index + 1}`;
+          const name =
+            item.identity?.testId && (testCounts.get(item.identity.testId) ?? 0) > 1
+              ? `${testName} · Case ${item.index + 1}`
+              : testName;
           const detail = [
             caseDetail(item),
             environments.size > 1
