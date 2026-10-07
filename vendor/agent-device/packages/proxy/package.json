@@ -1,6 +1,6 @@
 {
   "name": "@agent-device/proxy",
-  "version": "0.21.22",
+  "version": "0.21.23",
   "type": "module",
   "description": "Transport-neutral authenticating proxy in front of an agent-device daemon.",
   "license": "MIT",
@@ -18,10 +18,6 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    },
-    "./node": {
-      "types": "./src/node.ts",
-      "default": "./src/node.ts"
     },
     "./package.json": "./package.json"
   },
@@ -42,10 +38,6 @@
       ".": {
         "types": "./dist/index.d.mts",
         "import": "./dist/index.mjs"
-      },
-      "./node": {
-        "types": "./dist/node.d.mts",
-        "import": "./dist/node.mjs"
       },
       "./package.json": "./package.json"
     }
