@@ -1,5 +1,5 @@
 import type { Device, SnapshotNode } from "./device.js";
-import { snapshot, sleep } from "./device.js";
+import { sleep } from "./device.js";
 import { now } from "./events.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
@@ -13,15 +13,24 @@ import {
   type ResponseBoundary,
 } from "./recipe-response-boundary.js";
 import { captureStillScreenFingerprint, stillScreenUnchanged } from "./still-screen-wait.js";
+import {
+  observeRecipeResponse,
+  requireCurrentActionResponseBoundary,
+} from "./recipe-response-observation.js";
 
 export function recordInitiatingResponseBoundary(
   nodes: readonly SnapshotNode[],
   ctx: RecipeStepContext,
   initiatingActionId?: string,
+  nativeApplication?: ResponseBoundary["nativeApplication"],
 ): ResponseBoundary {
-  const boundary = captureResponseBoundary(nodes, "initiating-action", initiatingActionId);
+  const boundary = {
+    ...captureResponseBoundary(nodes, "initiating-action", initiatingActionId),
+    ...(nativeApplication ? { nativeApplication } : {}),
+  };
   ctx.runtime ??= {};
   ctx.runtime.responseBoundary = boundary;
+  delete ctx.runtime.responseBoundaryUnavailable;
   return boundary;
 }
 
@@ -52,6 +61,7 @@ export async function waitForResponseCompletion(
   step: Extract<RecipeStep, { kind: "wait-response" }>,
   ctx: RecipeStepContext,
 ): Promise<void> {
+  await requireCurrentActionResponseBoundary(ctx);
   const timeoutMs = Math.min(step.timeoutMs ?? 90_000, MAX_WAIT_MS);
   const stableForMs = step.stableForMs ?? 2_000;
   const pollMs = 250;
@@ -62,7 +72,7 @@ export async function waitForResponseCompletion(
     boundary?.source === "initiating-action" ? "input-to-readiness" : "wait-to-readiness";
   const deadline = beganAt + timeoutMs;
   const observedInitially = now() < deadline;
-  const initialNodes = observedInitially ? await snapshot(device) : [];
+  const initialNodes = observedInitially ? (await observeRecipeResponse(device, ctx)).nodes : [];
   const initialCapturedAt = now();
   const initialText = textForTarget(initialNodes, step.target);
   let previousText = initialText;
@@ -153,7 +163,7 @@ export async function waitForResponseCompletion(
   while (now() < deadline) {
     await sleep(Math.min(pollMs, Math.max(0, deadline - now())), device);
     if (now() >= deadline) break;
-    const nodes = await snapshot(device);
+    const { nodes } = await observeRecipeResponse(device, ctx);
     const capturedAt = now();
     // A slow read cannot make evidence arriving after the budget look timely.
     if (capturedAt >= deadline) break;

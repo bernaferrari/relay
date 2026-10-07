@@ -253,6 +253,25 @@ describe("current-action response provenance", () => {
     await assert.rejects(() => runRecipeStep(device, extract, ctx), /no verified new answer/u);
   });
 
+  it("a failed second Type baseline clears the first prompt and cannot extract leftover content", async () => {
+    const owner = job();
+    const ctx: RecipeStepContext = { log() {}, job: owner, runtime: {} };
+    const device = stubDevice([grok([turn("old", "@old")])]);
+    await runRecipeStep(device, { kind: "type", id: "first-prompt", text: "First question" }, ctx);
+    device.capture.snapshot = async () => {
+      throw new Error("baseline unavailable");
+    };
+    await runRecipeStep(
+      device,
+      { kind: "type", id: "second-prompt", text: "Second question" },
+      ctx,
+    );
+    assert.equal(ctx.runtime?.responseBoundary, undefined);
+    device.capture.snapshot = async () => ({ nodes: grok([turn("old", "@reminted")]) });
+    await assert.rejects(() => runRecipeStep(device, extract, ctx), /baseline.*unavailable/);
+    assert.equal(owner.resolvedInputs.response, undefined);
+  });
+
   it("does not let a semantic judge rescue a failed deterministic assertion", async () => {
     const unregister = registerEvaluationProvider({
       id: "rescue-judge",

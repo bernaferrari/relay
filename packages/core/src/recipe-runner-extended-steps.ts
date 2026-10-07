@@ -50,6 +50,7 @@ import {
   type RecipeStepContext,
 } from "./recipe-runner-context.js";
 import { recordInitiatingResponseBoundary } from "./recipe-response-completion.js";
+import { observeRecipeResponse } from "./recipe-response-observation.js";
 import { NativeTextEntryVerificationError } from "./input-not-dispatched.js";
 import {
   advanceSemanticRevealNavigation,
@@ -118,8 +119,17 @@ export async function runTypeStep(
   ctx: RecipeStepContext,
 ): Promise<void> {
   if (step.mode === "replace" && !step.target) throw new Error("replace text requires a target");
+  ctx.runtime ??= {};
+  delete ctx.runtime.responseBoundary;
+  ctx.runtime.responseBoundaryUnavailable = { initiatingActionId: step.id };
   try {
-    recordInitiatingResponseBoundary(await snapshot(device), ctx, step.id);
+    const observation = await observeRecipeResponse(device, ctx);
+    recordInitiatingResponseBoundary(
+      observation.nodes,
+      ctx,
+      step.id,
+      observation.nativeApplication,
+    );
   } catch (error) {
     if (isCancel(error)) throw error;
     // Snapshot is evidence for the next extract. Typing still proceeds.

@@ -14,6 +14,10 @@ import {
 } from "./recipe-runner-support.js";
 import { waitForResponseCompletion } from "./recipe-response-completion.js";
 import {
+  observeRecipeResponse,
+  requireCurrentActionResponseBoundary,
+} from "./recipe-response-observation.js";
+import {
   describeCoverageStepReason,
   inspectSetupSkip,
   leftoverSkipForbidden,
@@ -316,10 +320,17 @@ async function runRequiredRecipeStep(
     case "extract": {
       const variables = job?.resolvedInputs ?? ctx.variables;
       if (!variables) throw new Error("extract: no execution context");
-      const nodes = await snapshot(device);
+      if (step.role === "assistant") await requireCurrentActionResponseBoundary(ctx);
+      const observation = await observeRecipeResponse(device, ctx);
+      const { nodes } = observation;
       const assistant =
         step.role === "assistant"
-          ? extractCurrentActionAssistantTurn(nodes, step.target, ctx.runtime?.responseBoundary)
+          ? extractCurrentActionAssistantTurn(
+              nodes,
+              step.target,
+              ctx.runtime?.responseBoundary,
+              Boolean(observation.nativeApplication),
+            )
           : undefined;
       const text = assistant?.text ?? extractJoinedTargetText(nodes, step.target);
       variables[step.as] = text;
