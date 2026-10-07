@@ -45,6 +45,15 @@ export function setLiveIosRunnerCommandPostForTests(post?: LiveIosRunnerCommandP
   };
 }
 
+/** Same adopted transport and test seam used by the existing listener routes. */
+export function postAdoptedIosRunnerCommand(
+  listener: LiveIosRunnerListener,
+  command: LiveIosRunnerCommand,
+  timeoutMs: number,
+): Promise<LiveIosRunnerCommandResult> {
+  return (injectedPost ?? postLiveIosRunnerCommand)(listener, command, timeoutMs);
+}
+
 export function isIosSessionMissingSnapshotError(error: unknown): boolean {
   return /session|open first/i.test(unknownErrorMessage(error));
 }
@@ -189,7 +198,7 @@ async function snapshotIosDisambiguationTreeViaListener(
     },
     input.timeoutMs ?? 20_000,
   );
-  if (result.ok === false) {
+  if (result.ok === false || (input.requireComplete && result.ok !== true)) {
     throw new Error(liveIosRunnerFailureMessage(result, "Live XCTest listener snapshot failed"));
   }
   if (input.requireComplete && result.data?.truncated !== false) {

@@ -23,6 +23,7 @@ import {
   type SnapshotNode,
 } from "./device.js";
 import { identifierPresentViaLiveIosRunnerListener } from "./ios-runner-listener-command.js";
+import { iosSemanticTargetPresent } from "./ios-target-presence.js";
 import { resolveNamedControlOutcome } from "./device-target-resolution.js";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { TargetControlReservedError } from "./target-control.js";
@@ -695,20 +696,31 @@ function isAccessibilityTreeUnreadable(err: unknown): boolean {
  * genuine "No match" reads as absent, so `expect ... gone` cannot pass just
  * because the device went away.
  */
-async function targetPresent(device: Device, target: StepTarget): Promise<boolean> {
-  if (target.identifier) {
-    let context;
-    try {
-      context = currentTargetContext();
-    } catch {
-      context = undefined;
+async function targetPresent(
+  device: Device,
+  target: StepTarget,
+  expectedAppBundleId?: string,
+): Promise<boolean> {
+  let context;
+  try {
+    context = currentTargetContext();
+  } catch {
+    context = undefined;
+  }
+  if (context?.kind === "device" && context.platform === "ios") {
+    const appBundleId = await rememberedTargetApplication(context);
+    if (expectedAppBundleId && appBundleId !== expectedAppBundleId) {
+      throw new Error("Live XCTest presence is not bound to the recording application");
     }
-    if (context?.kind === "device" && context.platform === "ios") {
+    if (target.identifier) {
       const present = await identifierPresentViaLiveIosRunnerListener({
         serial: context.serial,
         identifier: target.identifier,
-        appBundleId: await rememberedTargetApplication(context),
+        appBundleId,
       });
+      if (present !== undefined) return present;
+    } else {
+      const present = await iosSemanticTargetPresent({ context, target, expectedAppBundleId });
       if (present !== undefined) return present;
     }
   }
@@ -745,8 +757,9 @@ async function targetPresent(device: Device, target: StepTarget): Promise<boolea
 async function conditionalTargetPresent(
   device: Device,
   condition: NonNullable<RecipeStep["when"]>,
+  expectedAppBundleId?: string,
 ): Promise<boolean> {
-  if (!condition.region) return targetPresent(device, condition.target);
+  if (!condition.region) return targetPresent(device, condition.target, expectedAppBundleId);
   const nodes = await snapshot(device);
   const viewport =
     nodes.find((node) => (node.type ?? node.role)?.toLowerCase() === "application")?.rect ??

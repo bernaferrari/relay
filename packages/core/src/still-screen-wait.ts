@@ -15,6 +15,14 @@ export const RECIPE_TRANSIENT_PRESENCE_SLEEP_MS = 2_000;
 export const STILL_SCREEN_NEXT_HINT =
   "Unchanged pixels are diagnostic, not a reason to stop waiting. Inspect the last screenshot after the authored timeout; raise timeoutMs only if the condition is still expected.";
 
+/** Only the wait loop spending its condition budget is an assertion timeout. */
+export class TargetVisibleWaitTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TargetVisibleWaitTimeoutError";
+  }
+}
+
 export function boundRecipeWaitMs(
   timeoutMs: number | undefined,
   fallback = RECIPE_WAIT_DEFAULT_MS,
@@ -180,7 +188,7 @@ export async function waitForTargetVisible(input: {
     );
   }
   throw attachWaitForReadiness(
-    new Error(
+    new TargetVisibleWaitTimeoutError(
       stillScreenTimeoutMessage({
         kind: input.kind,
         expected: input.expected,
