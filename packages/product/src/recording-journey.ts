@@ -395,7 +395,7 @@ export function createProductRecordingJourney(input: {
       decision.mutationId &&
       snapshot.workflow &&
       snapshot.authoring?.sessionId &&
-      snapshot.frozen?.target.kind === "browser"
+      snapshot.frozen?.target
         ? {
             mutationId: decision.mutationId,
             workflowId: snapshot.workflow.workflowId,

@@ -11,6 +11,7 @@ import {
   type NativeDeviceFacts,
 } from "./native-target-profile.js";
 import { recordNativeScreenshotViewport } from "./workspace-capture-presentation.js";
+import { appMapRuntimeTargetProfileFromSaved } from "./app-map-runtime-target-profile.js";
 
 const target = { targetId: "RQCY104BG8X", platform: "android" } as const;
 const viewport = { width: 1080, height: 2340 };
@@ -104,6 +105,48 @@ test("runtime facts from another phone cannot resolve a native profile", () => {
   );
 });
 
+test("native capture IDs freeze the complete runtime identity, not just the viewport", () => {
+  const input = { ...target, observedAt: 10, viewport, model: "device", osVersion: "16" };
+  const captured = nativeCaptureTargetProfile(input);
+  assert.match(captured.id, /^device:RQCY104BG8X-1080x2340-[a-f0-9]{16}$/u);
+  assert.equal(
+    nativeCaptureTargetProfile({ ...input, observedAt: 20, name: "New label" }).id,
+    captured.id,
+  );
+  for (const changed of [
+    { osVersion: "17" },
+    { model: "SM-S931B" },
+    { androidAvdName: "Phone_API_36" },
+    { viewport: { width: 2340, height: 1080 } },
+    { osVersion: undefined },
+  ])
+    assert.notEqual(nativeCaptureTargetProfile({ ...input, ...changed }).id, captured.id);
+});
+
+test("a validated canonical native identity is preferred to exact legacy aliases only", () => {
+  const canonical = appMapRuntimeTargetProfileFromSaved(
+    nativeCaptureTargetProfile({
+      ...target,
+      viewport,
+      osVersion: "16",
+      model: "device",
+      observedAt: 10,
+    }),
+  );
+  assert.deepEqual(select([complete, canonical]), canonical);
+  assert.deepEqual(select([canonical, complete, legacy]), canonical);
+  assert.throws(() => select([canonical, { ...complete, model: "SM-S931B" }]), /more than one/);
+  assert.throws(() => select([canonical, { ...complete, capabilities: [] }]), /more than one/);
+  assert.throws(
+    () => select([canonical, { ...complete, id: "language-specific-profile" }]),
+    /more than one/,
+  );
+  assert.throws(
+    () => select([complete, { ...canonical, id: `${canonical.id}-forged` }]),
+    /more than one/,
+  );
+});
+
 test("native captures and recordings share the same canonical profile constructor", () => {
   assert.deepEqual(
     nativeCaptureTargetProfile({
@@ -114,7 +157,7 @@ test("native captures and recordings share the same canonical profile constructo
       osVersion: "16",
     }),
     {
-      id: complete.id,
+      id: "device:RQCY104BG8X-1080x2340-c98a436fda2e5edc",
       targetId: target.targetId,
       source: "device",
       platform: "android",
@@ -126,10 +169,10 @@ test("native captures and recordings share the same canonical profile constructo
       observedAt: 10,
     },
   );
-  assert.equal(
+  assert.match(
     nativeCaptureTargetProfile({ ...target, observedAt: 10, viewport: { width: 0, height: 2340 } })
       .id,
-    legacy.id,
+    /^device:RQCY104BG8X-[a-f0-9]{16}$/u,
   );
 });
 

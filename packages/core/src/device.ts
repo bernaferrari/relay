@@ -94,6 +94,7 @@ export { selectedPlatform } from "./target-context.js";
 export * from "./android-app-build.js";
 import { captureNativeCrashEvidence } from "./crash-evidence.js";
 import { openPhysicalIosApp } from "./ios-app-open.js";
+import { namedControlObservationOptions } from "./named-control-observation.js";
 import {
   center,
   explicitPointResolution,
@@ -945,10 +946,7 @@ export async function pressNamedControl(
   }
   let nodes: SnapshotNode[];
   try {
-    nodes = await snapshot(device, {
-      ...(target.identifier?.trim() ? { includeIdentifiers: [target.identifier] } : {}),
-      ...(target.label?.trim() ? { includeLabels: [target.label] } : {}),
-    });
+    nodes = await snapshot(device, namedControlObservationOptions(target, selectedPlatform()));
   } catch (error) {
     if (pointOnly) {
       await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);

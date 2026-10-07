@@ -552,6 +552,42 @@ test("launch summaries name the observed foreground app so launch is not foregro
   assert.deepEqual(summarizeLaunchedForeground("Chrome", undefined), { matched: false });
 });
 
+test("launch match uses the returned app instead of a conflicting lower-priority candidate", () => {
+  const settings = { type: "Application", label: "Settings" };
+  assert.deepEqual(
+    summarizeLaunchedForeground("Grok", {
+      nodes: [settings],
+      treeApp: "ai.x.GrokApp",
+      foregroundApp: "ai.x.GrokApp",
+    }),
+    { app: "Settings", matched: false },
+  );
+  assert.deepEqual(
+    summarizeLaunchedForeground("ai.x.GrokApp", {
+      treeApp: "com.apple.Preferences",
+      foregroundApp: "ai.x.GrokApp",
+    }),
+    { app: "com.apple.Preferences", matched: false },
+  );
+  assert.deepEqual(
+    summarizeLaunchedForeground("com.android.chrome", {
+      nodes: [{ type: "Application", label: "Chrome" }],
+      treeApp: "com.android.settings",
+      foregroundApp: "com.android.settings",
+    }),
+    { app: "Chrome", matched: true },
+  );
+  assert.deepEqual(summarizeLaunchedForeground("Grok", { treeApp: "ai.x.GrokApp" }), {
+    app: "ai.x.GrokApp",
+    matched: true,
+  });
+  assert.deepEqual(summarizeLaunchedForeground("Grok", { foregroundApp: "ai.x.GrokApp" }), {
+    app: "ai.x.GrokApp",
+    matched: true,
+  });
+  assert.deepEqual(summarizeLaunchedForeground("Grok", {}), { matched: false });
+});
+
 test("non-device and malformed results remain unchanged", () => {
   const value = { devices: [{ id: "bad" }] };
   assert.equal(summarizeTargetOperationResult("target.devices.list", value), value);

@@ -718,7 +718,7 @@ test("authored waits retain their deadline through durable and direct recording 
   await assert.rejects(client.invoke("system.health.get", {}));
   const explicit = new RelayClient(connection, { fetch: fetcher, timeoutMs: 1234 });
   await assert.rejects(explicit.invoke("workflow.transition", decision));
-  assert.deepEqual(budgets, [50_000, 620_000, 80_000, 20_000, 1234]);
+  assert.deepEqual(budgets, [210_000, 780_000, 240_000, 20_000, 1234]);
   assert.equal(requests, 5, "a longer acknowledgement budget must never retry a mutation");
 });
 

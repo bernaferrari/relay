@@ -192,7 +192,9 @@ async function snapshotIosDisambiguationTreeViaListener(
       "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
     );
   }
-  return nodes;
+  // The current runner normalizes full-tree frames before presenting them.
+  // Carry that provenance so Relay does not rotate landscape descendants twice.
+  return nodes.map((node) => ({ ...node, logicalCoordinates: true }));
 }
 
 async function snapshotRequestedIosChromeViaListener(
@@ -301,7 +303,7 @@ export async function snapshotViaLiveIosRunnerListener(input: {
       "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
     );
   }
-  return nodes;
+  return nodes.map((node) => ({ ...node, logicalCoordinates: true }));
 }
 
 function chromeValuesToQuery(known: readonly string[], extra?: readonly string[]): string[] {

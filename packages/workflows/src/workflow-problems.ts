@@ -23,12 +23,12 @@ function capturedSetupConflict(error: unknown): WorkflowProblem | undefined {
   const body = error.body;
   if (!body || typeof body !== "object") return undefined;
   const details =
-    "code" in body && body.code === "target-profile-ambiguous"
+    "code" in body && isSavedSetupConflictCode(body.code)
       ? body
       : "details" in body && body.details && typeof body.details === "object"
         ? body.details
         : body;
-  if (!("code" in details) || details.code !== "target-profile-ambiguous") return undefined;
+  if (!("code" in details) || !isSavedSetupConflictCode(details.code)) return undefined;
   const stepId =
     "stepId" in details && typeof details.stepId === "string"
       ? details.stepId.trim().slice(0, 8_192)
@@ -43,6 +43,10 @@ function capturedSetupConflict(error: unknown): WorkflowProblem | undefined {
     sourceCode: "target-profile-ambiguous",
     ...(stepId ? { sourceStepId: stepId } : {}),
   };
+}
+
+function isSavedSetupConflictCode(code: unknown): boolean {
+  return code === "target-profile-ambiguous" || code === "TARGET_PROFILE_AMBIGUOUS";
 }
 
 export function mutationUnknownWorkflowProblem(action: string, error: unknown): WorkflowProblem {

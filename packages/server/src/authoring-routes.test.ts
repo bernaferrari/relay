@@ -785,6 +785,11 @@ test("raw Take optimization is a scoped read-only proposal with no device access
       leaseId: lease.lease.id,
       expectedAppMapRevision: appMap.appMap.revision,
     });
+    assert.equal(
+      observationCalls,
+      1,
+      "atomic begin retains one fresh capture instead of reading twice",
+    );
     await client.interactAuthoringSession(begun.session.id, {
       kind: "observe",
       label: "Private generated copy that must never leave the raw source",

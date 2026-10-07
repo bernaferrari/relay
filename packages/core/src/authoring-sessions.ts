@@ -57,6 +57,10 @@ import {
 } from "./authoring-session-review-lifecycle.js";
 import { pruneAbandonedAuthoringSessions } from "./authoring-session-retention.js";
 import { persistCapturedAuthoringObservation } from "./authoring-observation-capture.js";
+import {
+  startAuthoringRecording,
+  type AuthoringRecordingStartResult,
+} from "./authoring-recording-start.js";
 export type { CapturedAuthoringObservation } from "./authoring-observation-capture.js";
 import type {
   AuthoringCommitFault,
@@ -265,54 +269,25 @@ export class AuthoringSessionStore {
     });
   }
 
+  /** Atomic Begin owns its capture through the same per-session queue as
+   * recording input. No intermediate observation is discarded or reused. */
+  async begin(id: string, runtime: AuthoringRuntime): Promise<AuthoringRecordingStartResult> {
+    let failure: AuthoringRecordingStartResult["failure"];
+    const session = await this.#mutate(id, async (session) => {
+      assertOwner(session);
+      requireState(session, "preparing");
+      const result = await startAuthoringRecording(session, runtime);
+      failure = result.failure;
+      return result.session;
+    });
+    return { session, ...(failure ? { failure } : {}) };
+  }
+
   async start(id: string, runtime: AuthoringRuntime): Promise<AuthoringSession> {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
       requireState(session, "ready");
-      let captured;
-      try {
-        captured = await persistCapturedAuthoringObservation(await runtime.observe(session));
-        await assertExpectedSource(session, captured.observation);
-        await runtime.startVideo?.(session);
-      } catch (error) {
-        const failed = transition(session, "failed");
-        failed.error = error instanceof Error ? error.message : String(error);
-        failed.recoverable = Boolean(failed.take);
-        return failed;
-      }
-      const at = now();
-      const takeId = `take-${randomUUID()}`;
-      session = transition(session, "recording");
-      session.take = {
-        id: takeId,
-        state: "recording",
-        createdAt: at,
-        updatedAt: at,
-        currentRevision: 1,
-        revisions: [
-          {
-            id: `${takeId}:revision:1`,
-            takeId,
-            revision: 1,
-            createdAt: at,
-            createdBy: session.actorId,
-            reason: "recording",
-            actions: [],
-            evidence: captured.evidence,
-            observations: [captured.observation],
-            before: captured.observation,
-          },
-        ],
-        replayAttempts: [],
-        ...seedAuthoringRawRecording({
-          target: session.target,
-          captureProvenance: session.captureProvenance,
-          trigger: "recording",
-          recordedAt: at,
-          observation: captured.observation,
-        }),
-      };
-      return session;
+      return (await startAuthoringRecording(session, runtime)).session;
     });
   }
 

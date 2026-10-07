@@ -72,6 +72,25 @@ test("the exact completed or reconciled recording receipt proves applied input",
   assert.equal(authoringInputReceiptOutcome(completed, expected), "applied");
 });
 
+for (const platform of ["ios", "android"] as const) {
+  test(`${platform} late acknowledgement requires the exact completed mutation`, () => {
+    const native = { kind: "device", platform, targetId: "native-1" } as const;
+    const receipt = output();
+    const nativeExpected = { ...expected, target: native };
+    const nativeSession = receipt.session as AuthoringSession;
+    nativeSession.target = native;
+    assert.equal(authoringInputReceiptOutcome(receipt, nativeExpected), "applied");
+    nativeSession.workflowMutation!.mutationId = "another-native-command";
+    assert.equal(authoringInputReceiptOutcome(receipt, nativeExpected), "unknown");
+    nativeSession.workflowMutation!.mutationId = nativeExpected.mutationId;
+    nativeSession.state = "failed";
+    assert.equal(authoringInputReceiptOutcome(receipt, nativeExpected), "unknown");
+    nativeSession.state = "recording";
+    receipt.workflow.record.lastTransition = "authoring-record-requested";
+    assert.equal(authoringInputReceiptOutcome(receipt, nativeExpected), "unknown");
+  });
+}
+
 for (const [label, change] of [
   [
     "another caller's identical input",

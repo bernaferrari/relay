@@ -9,6 +9,7 @@ import {
   type NamedControlResolution,
   pressMatchingText,
   pressKey,
+  keyboardAction,
   pressPoint,
   pressRef,
   replaceText,
@@ -728,6 +729,14 @@ export async function interact(
               await typeText(target.device, input.text);
               return {};
             case "key":
+              if (input.key === "enter") {
+                await keyboardAction(target.device, "enter");
+                return {};
+              }
+              if (input.key === "backspace") {
+                await typeText(target.device, "\b");
+                return {};
+              }
               if (input.key === "back" || input.key === "home") {
                 await pressKey(target.device, input.key);
                 return {};

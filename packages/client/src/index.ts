@@ -528,7 +528,7 @@ export class RelayClient {
   scoped(projectId: string): RelayClient {
     return new RelayClient(
       { ...this.connection, projectId },
-      { fetch: this.fetcher, timeoutMs: this.timeoutMs },
+      { fetch: this.fetcher, timeoutMs: this.explicitTimeoutMs },
     );
   }
 
