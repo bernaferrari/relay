@@ -63,6 +63,40 @@ function sourceTargetProfile(
   return appMapRuntimeTargetProfileFromSaved(variant.targetProfile);
 }
 
+function* consolidatedVariants(
+  screen: AppMap["screens"][string],
+): Generator<AppMap["screenVariants"][string]> {
+  for (const record of screen.consolidations ?? []) {
+    for (const captured of record.sourceVariants) {
+      if (record.sourceScreens.some((source) => source.id === captured.screenId)) yield captured;
+    }
+    for (const source of record.sourceScreens) yield* consolidatedVariants(source);
+  }
+}
+
+/** A reviewed logical screen retains its captured focus/text states. Their
+ * immutable trees remain in consolidation lineage after same-profile Variant
+ * merging; the current Variant's observation and preview still stay intact. */
+function retainedStateTrees(map: AppMap, variant: AppMap["screenVariants"][string]) {
+  const key = appMapRuntimeTargetProfileKey(sourceTargetProfile(variant));
+  const captured = [...consolidatedVariants(map.screens[variant.screenId]!)].filter(
+    (source) =>
+      !source.refreshCapture &&
+      source.organizationId === variant.organizationId &&
+      source.projectId === variant.projectId &&
+      source.appMapId === variant.appMapId &&
+      source.captureProvenance?.kind === variant.captureProvenance?.kind &&
+      source.captureProvenance?.locale === variant.captureProvenance?.locale &&
+      appMapRuntimeTargetProfileKey(sourceTargetProfile(source)) === key &&
+      source.rawAccessibilityTree &&
+      source.evidenceIds.includes(source.rawAccessibilityTree.id) &&
+      source.evidenceUris?.includes(source.rawAccessibilityTree.uri),
+  );
+  return [variant, ...captured].flatMap((source) =>
+    source.rawAccessibilityTree ? [source.rawAccessibilityTree] : [],
+  );
+}
+
 /** Freeze every distinct saved target/profile identity for the whole Test.
  * The key includes viewport: a corrupted map that reuses an ID at two shapes
  * stays visibly ambiguous instead of permitting cross-shape selector reuse. */
@@ -137,24 +171,16 @@ export function frozenRawAccessibilitySources(
     // environment or selector source. Keep its observed profile on the map.
     if (variant.refreshCapture) continue;
     const variantSource = sourceVariant(variant);
-    const sources: RawSource[] = variant.rawAccessibilityTree
-      ? [
-          {
-            screenId: variant.screenId,
-            variant: variantSource,
-            origin: {
-              kind: "screen-variant",
-              ...(variant.rawAccessibilityTree.observationId
-                ? { observationId: variant.rawAccessibilityTree.observationId }
-                : {}),
-              ...(variant.rawAccessibilityTree.capturedAt !== undefined
-                ? { capturedAt: variant.rawAccessibilityTree.capturedAt }
-                : {}),
-            },
-            tree: variant.rawAccessibilityTree,
-          },
-        ]
-      : [];
+    const sources: RawSource[] = retainedStateTrees(map, variant).map((tree) => ({
+      screenId: variant.screenId,
+      variant: variantSource,
+      origin: {
+        kind: "screen-variant",
+        ...(tree.observationId ? { observationId: tree.observationId } : {}),
+        ...(tree.capturedAt !== undefined ? { capturedAt: tree.capturedAt } : {}),
+      },
+      tree,
+    }));
     const latestSurface = [...(variant.scrollSurfaces ?? [])].sort(
       (left, right) => right.capturedAt - left.capturedAt || left.id.localeCompare(right.id),
     )[0];

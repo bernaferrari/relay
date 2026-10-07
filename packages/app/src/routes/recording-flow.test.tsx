@@ -1669,12 +1669,137 @@ describe("record, review, replay, and save", () => {
     expect(fake.calls).toContain("approve");
   });
 
+  it.each(["replay", "save"] as const)(
+    "watches native review %s without taking control and restores the selected capture",
+    async (operation) => {
+      const initial = state("reviewing", ["inspect", "edit", "replay"]);
+      initial.snapshot!.review!.currentRevision = 7;
+      const fake = fakeService(initial);
+      let finishReplay!: () => void;
+      const replaying = new Promise<void>((resolve) => {
+        finishReplay = resolve;
+      });
+      let finishSave!: () => void;
+      const saving = new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      const replay = fake.service.replay;
+      fake.service.replay = async () => {
+        await replaying;
+        return replay();
+      };
+      if (operation === "save") {
+        fake.service.save = async (input) => {
+          input.onProgress?.("checking");
+          await replaying;
+          input.onProgress?.("saving");
+          await saving;
+          return fake.service.approve(input.testName);
+        };
+      }
+      const input = vi.fn(async () => {});
+      const inspection = vi.fn();
+      const close = vi.fn();
+      const stop = vi.fn();
+      let publish!: (status: "streaming" | "degraded") => void;
+      fake.service.previewTarget = vi.fn(async (selected): Promise<LiveTargetSession> => {
+        let current: ReturnType<LiveTargetSession["snapshot"]> = {
+          status: "connecting",
+          target: selected,
+        };
+        let listener: Parameters<LiveTargetSession["subscribe"]>[0] | undefined;
+        publish = (status) => {
+          current = {
+            status,
+            target: selected,
+            issue: status === "degraded" ? "Stream ended" : undefined,
+          };
+          listener?.(current);
+        };
+        return {
+          snapshot: () => current,
+          subscribe(next) {
+            listener = next;
+            next(current);
+            return () => {
+              listener = undefined;
+            };
+          },
+          mount(canvas) {
+            canvas.width = 1080;
+            canvas.height = 1920;
+            return stop;
+          },
+          setAccessibilityInspection: inspection,
+          input,
+          close,
+        };
+      });
+      await renderJourney(
+        "/recordings/workflow-1/review",
+        fake.service,
+        platformWithStorage().platform,
+      );
+      await click(button("Open Settings"));
+      const recordedSource = document.querySelector<HTMLImageElement>(
+        'img[alt="After the step: Open Settings"]',
+      )?.src;
+      expect(recordedSource).toBeTruthy();
+      expect(fake.service.previewTarget).not.toHaveBeenCalled();
+      await click(button(operation === "save" ? "Run and save" : "Run test"));
+      expect(fake.service.previewTarget).toHaveBeenCalledExactlyOnceWith(target, undefined);
+      expect(inspection).toHaveBeenCalledExactlyOnceWith(false);
+      expect(
+        document.querySelector('[aria-label="Connecting to live device preview"]'),
+      ).not.toBeNull();
+      expect(document.body.textContent).not.toContain("Recorded screenshot · not live");
+      await act(async () => publish("streaming"));
+      const canvas = document.querySelector<HTMLCanvasElement>(
+        '[data-slot="live-native-run-canvas"]',
+      )!;
+      expect(canvas).not.toBeNull();
+      expect(canvas.tabIndex).toBe(-1);
+      expect(document.body.textContent).toContain("Live device · read only");
+      await act(async () => {
+        canvas.dispatchEvent(
+          new PointerEvent("pointerup", { bubbles: true, clientX: 30, clientY: 40 }),
+        );
+        canvas.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+        publish("degraded");
+      });
+      expect(input).not.toHaveBeenCalled();
+      expect(fake.calls).not.toContain("observe-target");
+      expect(fake.calls).not.toContain("inspect-target-health");
+      expect(document.body.textContent).toContain("Recorded screenshot · not live");
+      expect(document.querySelector<HTMLImageElement>('img[alt="Recorded screenshot"]')?.src).toBe(
+        recordedSource,
+      );
+      await act(async () => finishReplay());
+      await settle();
+      expect(close).toHaveBeenCalledOnce();
+      expect(stop).toHaveBeenCalledOnce();
+      expect(document.querySelector('[data-slot="live-native-run-preview"]')).toBeNull();
+      expect(
+        document.querySelector<HTMLImageElement>('img[alt="After the step: Open Settings"]')?.src,
+      ).toBe(recordedSource);
+      expect(
+        document.querySelector('[aria-label="Recorded actions"] li.bg-muted\\/60')?.textContent,
+      ).toContain("Open Settings");
+      if (operation === "save") {
+        expect(button("Saving…").disabled).toBe(true);
+        await act(async () => finishSave());
+        await settle();
+      }
+    },
+  );
+
   it("keeps a verified recording as Save test without a separate execution", async () => {
     const initial = state("reviewing", ["inspect", "edit", "replay", "approve"], {
       replay: "passed",
     });
     initial.snapshot!.review!.currentRevision = 7;
     const fake = fakeService(initial);
+    const preview = vi.spyOn(fake.service, "previewTarget");
     fake.service.save = vi.fn((input) => fake.service.approve(input.testName));
     await renderJourney(
       "/recordings/workflow-1/review",
@@ -1686,6 +1811,7 @@ describe("record, review, replay, and save", () => {
     await click(button("Save test"));
     expect(fake.service.save).toHaveBeenCalledWith(expect.objectContaining({ reviewRevision: 7 }));
     expect(fake.calls).not.toContain("replay");
+    expect(preview).not.toHaveBeenCalled();
   });
 
   it("names execution when an unsaved instruction changes a verified recording", async () => {
@@ -2375,7 +2501,7 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
     expect(document.body.textContent).toContain(
-      "Replay was interrupted. Your saved steps are safe.",
+      "Replay status needs checking. Your saved steps are safe.",
     );
     expect(document.body.textContent).not.toContain("Earlier failure");
     expect(document.body.textContent).not.toContain("Step status needs checking");

@@ -319,6 +319,49 @@ it("labels the captured result separately and shows the selected step image duri
   }
 });
 
+it("opens a failed run at the failure instead of a later blocked capture", () => {
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <EmbeddedRunResult
+        report={
+          {
+            outcome: "failed",
+            timeline: [
+              {
+                id: "open",
+                index: 0,
+                title: "Open model menu",
+                state: "failed",
+                framePaths: ["failure.png"],
+              },
+              {
+                id: "send",
+                index: 1,
+                title: "Send message",
+                state: "blocked",
+                framePaths: ["blocked.png"],
+              },
+            ],
+            evidence: [
+              {
+                id: "screenshot",
+                items: [
+                  { id: "failure.png", media: { kind: "image", src: "/failure.png" } },
+                  { id: "blocked.png", media: { kind: "image", src: "/blocked.png" } },
+                ],
+              },
+            ],
+          } as unknown as ProductRunReportOverview
+        }
+      />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("/failure.png");
+  expect(html).not.toContain("/blocked.png");
+  expect(html).toContain("Last screenshot");
+  expect(html).not.toContain("Captured result");
+});
+
 it("uses the final executed screen when every step has a review capture", async () => {
   const html = renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>

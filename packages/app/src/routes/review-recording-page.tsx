@@ -29,12 +29,13 @@ import {
 } from "../data/record-into-test";
 import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, targetLabel } from "./recording-shared";
-import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
+import { RecordingActionsPanel } from "./recording-review-panels";
 import { useRecordingReviewEvidence } from "./use-recording-review-evidence";
 import { RecordingReviewProblem, useReviewSelection } from "./recording-replay-feedback";
 import { reviewPersistence } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingReviewInspector } from "./recording-review-inspector";
+import { RecordingReviewStage } from "./recording-review-stage";
 
 export function ReviewRecordingPage({
   recordingId: recordingIdProp,
@@ -286,14 +287,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     enabled: false,
   });
   const failedReplay = reviewReady ? review?.latestReplay?.failedAction : undefined;
-  const {
-    matchingEvidence,
-    evidence,
-    evidencePreview,
-    evidenceUrl,
-    failureEvidence,
-    showingReplayFailure,
-  } = useRecordingReviewEvidence({
+  const evidenceView = useRecordingReviewEvidence({
     service: productService,
     sessionId,
     action: selectedAction,
@@ -301,6 +295,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     selectedEvidenceId,
     failure: failedReplay,
   });
+  const { evidencePreview, evidenceUrl, failureEvidence } = evidenceView;
 
   useEffect(() => {
     if (!saved) return;
@@ -411,6 +406,10 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
       verificationSource={review?.latestReplay?.source}
     />
   );
+  const replayRunning =
+    transition.isPending &&
+    (transition.variables?.action === "replay" ||
+      (transition.variables?.action === "approve" && savePhase === "checking"));
 
   return (
     <WorkbenchPage className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card !p-0">
@@ -618,20 +617,15 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
               />
             }
             stage={
-              <RecordingEvidencePanel
+              <RecordingReviewStage
+                replaying={replayRunning}
+                target={replayTarget}
+                targetName={replayDeviceName}
+                evidence={evidenceView}
                 action={selectedAction}
                 stepNumber={selectedIndex >= 0 ? selectedIndex + 1 : undefined}
-                exactMoment={Boolean(matchingEvidence)}
-                controls={evidencePreview.data?.controls ?? []}
                 evidenceRole={evidenceRole}
-                previewUrl={evidenceUrl}
-                loading={Boolean(
-                  evidence && !evidencePreview.error && (!evidencePreview.data || !evidenceUrl),
-                )}
-                fullPage={evidencePreview.data?.fullPage}
-                onEvidenceSelect={(id) => setSelectedEvidenceId(id)}
-                failureEvidence={Boolean(failureEvidence)}
-                showingReplayFailure={showingReplayFailure}
+                onEvidenceSelect={setSelectedEvidenceId}
                 onShowReplayFailure={() => setSelectedEvidenceId(failureEvidence?.id)}
                 onEvidenceRoleChange={(role) => {
                   setSelectedEvidenceId(undefined);

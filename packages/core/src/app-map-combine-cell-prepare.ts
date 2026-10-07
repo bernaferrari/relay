@@ -55,6 +55,7 @@ import {
 import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
 import type { Recipe } from "./recipes.js";
 import type { PreparedCasePlan } from "./case-plan.js";
+import type { PreparedFrozenRecipeInputs } from "./frozen-recipe-inputs.js";
 
 export class AppMapCombineCellContractError extends Error {
   readonly code = "APP_MAP_COMBINE_CELL_CONTRACT";
@@ -93,6 +94,7 @@ export type PreparedAppMapCombineCell = {
   outerIntent: AppMapCombineCellExecutionIntent;
   recipeSnapshot: Recipe;
   recipeGraph: Record<string, Recipe>;
+  runtimeInputs?: PreparedFrozenRecipeInputs;
 };
 
 export type PreparedAppMapCombine = {
@@ -712,6 +714,7 @@ export async function prepareAppMapCombineCells(input: {
   readAppMap?: (appMapId: string) => Promise<AppMap | null>;
   /** Invoked Lane (`--lane grok-lab`). Stamped onto each child execution intent. */
   laneId?: string;
+  seed?: number;
 }): Promise<PreparedAppMapCombine> {
   const tests = input.combine.testIds.map((id) => {
     const test = input.map.tests?.[id];
@@ -746,13 +749,16 @@ export async function prepareAppMapCombineCells(input: {
   const strategy =
     input.strategy ?? input.combine.strategy ?? defaultOptionMatrixStrategy(sets.length);
   const matrix = sets.length
-    ? await prepareOptionCasePlan({
-        sets,
-        selected,
-        strategy,
-        map: input.map,
-      })
-    : implicitPairedCasePlan();
+    ? await prepareOptionCasePlan(
+        {
+          sets,
+          selected,
+          strategy,
+          map: input.map,
+        },
+        input.seed,
+      )
+    : { ...implicitPairedCasePlan(), ...(input.seed !== undefined ? { seed: input.seed } : {}) };
   const cells = enumerateAppMapCombineCells({
     combine: input.combine,
     tests,

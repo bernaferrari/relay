@@ -872,3 +872,198 @@ it("keeps an unsaved checkpoint when leaving for Runs until leaving is confirmed
   expect(history.location.search).toBe("?app=app-private-id");
   expect(harness.edits).toHaveLength(0);
 });
+
+it("edits shared recorded text, gates pending saves, and runs the saved parameter with one supplied value", async () => {
+  const source = structuredClone(initialDocument);
+  const action = {
+    key: "text-address",
+    connectionId: "prompt",
+    actionId: "take-action",
+    recipeStepId: "type-value",
+    text: "Original prompt",
+    sharedTestNames: ["Other chat"],
+  };
+  source.textActions = { "step-cart": [action] };
+  const harness = service(source);
+  let current = source;
+  harness.editor.get = async () => structuredClone(current);
+  harness.editor.listTextParameters = async () => [
+    {
+      id: "prompt-data",
+      name: "chat_prompt",
+      scope: "shared",
+      source: "list",
+      values: ["Saved prompt A", "Saved prompt B"],
+    },
+  ];
+  let finishSave!: () => void;
+  const saving = new Promise<void>((resolve) => {
+    finishSave = resolve;
+  });
+  harness.editor.saveText = vi.fn(async ({ text }) => {
+    await saving;
+    current = { ...current, revision: 8, textActions: { "step-cart": [{ ...action, text }] } };
+    return structuredClone(current);
+  });
+  const availableRun = runService(harness.editor);
+  availableRun.listTargets = async () => [
+    {
+      kind: "browser",
+      platform: "browser",
+      targetId: "checkout-browser",
+      name: "Browser",
+      detail: "Ready",
+    },
+  ];
+  availableRun.start = vi.fn(async () => ({ status: "idle" as const }));
+  await render(harness.editor, "/tests/test-checkout?step=step-cart", platform, availableRun);
+  expect(
+    document.querySelector<HTMLTextAreaElement>('form[aria-label="Recorded text"] textarea')!.value,
+  ).toBe("Original prompt");
+  expect(document.body.textContent).toContain("Also updates 1 other Test.");
+  const selectedEditor = document.querySelector('[aria-label="Selected step editor"]')!;
+  const details = selectedEditor.querySelector("details")!;
+  expect(selectedEditor.firstElementChild?.getAttribute("aria-label")).toBe("Recorded text");
+  expect(details.open).toBe(false);
+  expect(details.querySelector("summary")?.textContent).toContain("Step details");
+  const sourceSelect = document.querySelector<HTMLSelectElement>(
+    'form[aria-label="Recorded text"] select',
+  )!;
+  expect([...sourceSelect.options].map((option) => option.textContent)).toEqual([
+    "Fixed text",
+    "Run input",
+  ]);
+  await act(async () => {
+    sourceSelect.value = "parameter";
+    sourceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+  expect(
+    document.querySelector<HTMLInputElement>('form[aria-label="Recorded text"] input')!.value,
+  ).toBe("chat_prompt");
+  expect(document.querySelector('form[aria-label="Recorded text"] label')?.textContent).toContain(
+    "Text source",
+  );
+  expect(details.open).toBe(false);
+  await click("Save input");
+  await click("Run settings");
+  const runButton = () =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (candidate) => candidate.textContent?.trim() === "Run now",
+    )!;
+  expect(runButton().disabled).toBe(true);
+  expect(availableRun.start).not.toHaveBeenCalled();
+  await act(async () => finishSave());
+  await settle();
+  expect(harness.editor.saveText).toHaveBeenCalledWith(
+    expect.objectContaining({ stepId: "step-cart", action, text: "{{chat_prompt}}" }),
+  );
+  const savedValue = document.querySelector<HTMLSelectElement>('[aria-label="Run inputs"] select')!;
+  expect(savedValue.value).toBe("Saved prompt A");
+  await act(async () => {
+    savedValue.value = "Saved prompt B";
+    savedValue.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+  expect(runButton().disabled).toBe(false);
+  await click("Run now");
+  expect(availableRun.start).toHaveBeenCalledWith(
+    expect.objectContaining({
+      documentRevision: 8,
+      targetId: "checkout-browser",
+      variables: { chat_prompt: "Saved prompt B" },
+    }),
+  );
+});
+
+it("preserves recorded text drafts after a rejected save and never retries the mutation", async () => {
+  const source = structuredClone(initialDocument);
+  source.textActions = {
+    "step-cart": [
+      {
+        key: "text",
+        connectionId: "prompt",
+        actionId: "type",
+        text: "Original",
+        sharedTestNames: [],
+      },
+    ],
+  };
+  const harness = service(source);
+  harness.editor.saveText = vi.fn(async () => {
+    throw new TypeError("The saved Test changed. Reload before saving this text.");
+  });
+  await render(harness.editor, "/tests/test-checkout?step=step-cart");
+  await fill(
+    document.querySelector<HTMLTextAreaElement>('form[aria-label="Recorded text"] textarea')!,
+    "A draft prompt",
+  );
+  await click("Save text");
+  expect(
+    document.querySelector<HTMLTextAreaElement>('form[aria-label="Recorded text"] textarea')!.value,
+  ).toBe("A draft prompt");
+  expect(
+    document.querySelector('[data-slot="editor-save-status"]')?.getAttribute("data-state"),
+  ).toBe("failed");
+  expect(harness.editor.saveText).toHaveBeenCalledTimes(1);
+  expect(harness.edits).toEqual([]);
+});
+
+it("keeps unsaved step details discoverable after saving recorded text", async () => {
+  const source = structuredClone(initialDocument);
+  const action = {
+    key: "text",
+    connectionId: "prompt",
+    actionId: "type",
+    text: "Original",
+    sharedTestNames: [],
+  };
+  source.textActions = { "step-cart": [action] };
+  const harness = service(source);
+  let current = source;
+  harness.editor.get = async () => structuredClone(current);
+  harness.editor.saveText = vi.fn(async ({ text }) => {
+    current = { ...current, revision: 8, textActions: { "step-cart": [{ ...action, text }] } };
+    return structuredClone(current);
+  });
+  const availableRun = runService(harness.editor);
+  availableRun.listTargets = async () => [
+    {
+      kind: "browser",
+      platform: "browser",
+      targetId: "checkout-browser",
+      name: "Browser",
+      detail: "Ready",
+    },
+  ];
+  availableRun.start = vi.fn(async () => ({ status: "idle" as const }));
+  await render(harness.editor, "/tests/test-checkout?step=step-cart", platform, availableRun);
+  const details = document.querySelector<HTMLDetailsElement>(
+    '[aria-label="Selected step editor"] details',
+  )!;
+  expect(details.open).toBe(false);
+  await act(async () => details.querySelector("summary")!.click());
+  await fill(
+    document.querySelector<HTMLTextAreaElement>("#selected-step-intent")!,
+    "A clearer step",
+  );
+  await fill(
+    document.querySelector<HTMLTextAreaElement>('form[aria-label="Recorded text"] textarea')!,
+    "A new prompt",
+  );
+  await click("Save text");
+  expect(details.open).toBe(true);
+  expect(details.querySelector("summary")?.textContent).toContain("Unsaved changes");
+  expect(document.querySelector<HTMLTextAreaElement>("#selected-step-intent")!.value).toBe(
+    "A clearer step",
+  );
+  expect(harness.edits).toEqual([]);
+  expect(harness.editor.saveText).toHaveBeenCalledTimes(1);
+  await click("Run settings");
+  expect(
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Run now",
+    )!.disabled,
+  ).toBe(true);
+  expect(availableRun.start).not.toHaveBeenCalled();
+});

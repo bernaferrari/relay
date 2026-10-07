@@ -9,6 +9,7 @@ import type { SourceRevision } from "./source-revision.js";
 import type { AuthoringTarget } from "./authoring.js";
 import type { RepeatSpec, ResolvedRepeatSpec } from "./repeat-spec.js";
 import type { CombineEvidenceFindingCode } from "./combine-evidence-contract.js";
+import type { FrozenRecipeInputReceipt } from "./frozen-recipe-inputs.js";
 
 /**
  * Shared, serialized local-deadline request. Every selected target ×
@@ -99,6 +100,7 @@ export type CombineCampaignCase = {
   outerIntentDigest: string;
   wrapperGraphDigest: string;
   staticInputDigest: string;
+  frozenInputs?: FrozenRecipeInputReceipt;
   phase: "pilot" | "coverage";
   status: CombineCampaignCaseStatus;
   jobId?: string;

@@ -3,6 +3,7 @@ import { sourceRevisionSchema, testCapturePolicy } from "./app-map-test-operatio
 import { combineProfileTargetInputSchema } from "./combine-profile-target-schema.js";
 import { executionTargetInputSchema } from "./core-target-operation-input-schemas.js";
 import { identifier, unknownRecord } from "./operation-schema-primitives.js";
+import { testRuntimeVariablesSchema } from "./app-map-test-run-schemas.js";
 
 export const combineStartOperationInputSchemas = {
   "job.combine.start": z
@@ -20,6 +21,7 @@ export const combineStartOperationInputSchemas = {
       browserTargetId: identifier("Managed browser target identifier").optional(),
       title: z.string().optional(),
       seed: z.number().int().optional(),
+      variables: testRuntimeVariablesSchema.optional(),
       capture: testCapturePolicy.optional(),
       executionMode: z.enum(["pilot", "all"]).optional(),
       sourceRevision: sourceRevisionSchema.optional(),

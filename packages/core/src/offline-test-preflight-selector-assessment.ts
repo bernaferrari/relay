@@ -15,6 +15,7 @@ import type {
 } from "@relay/protocol";
 import { preflightSemanticActivation } from "./device-target-resolution.js";
 import type { SnapshotNode } from "./device.js";
+import { goneSelectorAssessment } from "./offline-test-preflight-gone-selector.js";
 import {
   rawCandidateLedger,
   rawSourceMetadata,
@@ -78,6 +79,11 @@ export function selectorAssessment(input: {
     postTextMutation = false,
   } = input;
   const target = step.target;
+  const checksGone =
+    step.kind === "expect" &&
+    step.condition === "gone" &&
+    !target.relation &&
+    Boolean(target.identifier || target.label || target.text);
   const description = targetDescription(target);
   const hasReviewedFallback =
     target.point?.fallbackPolicy === "reviewed" ||
@@ -266,6 +272,23 @@ export function selectorAssessment(input: {
     const attempts = allAttempts.filter(({ source, attempt }) =>
       canUseScopedAttempt(source, attempt),
     );
+    const presenceSources = attempts.filter(
+      ({ source }) => variantScope.state !== "selected" || sourceIsSelectedVariant(source),
+    );
+    if (checksGone && presenceSources.length) {
+      return goneSelectorAssessment({
+        base: {
+          ...selectorBase,
+          ...variantScopeFields,
+          ...(rawLedger.candidates.length ? { rawCandidates: rawLedger.candidates } : {}),
+          ...(rawLedger.count ? { rawCandidateCount: rawLedger.count } : {}),
+        },
+        evidence: rawEvidence,
+        observations: presenceSources.map(({ source }) => ({
+          nodes: source.nodes!.map((node) => ({ ...node, role: node.role ?? node.type ?? "" })),
+        })),
+      });
+    }
     const proven = attempts.find((attempt) => attempt.attempt.status === "proven");
     if (proven?.attempt.status === "proven") {
       return {
@@ -504,6 +527,12 @@ export function selectorAssessment(input: {
   // omits geometry and parentage, so two identical rows are still ambiguous
   // offline; collapsing them would turn an unsafe activation into a fake pass.
   const matches = flattenedMatches;
+  if (checksGone)
+    return goneSelectorAssessment({
+      base: selectorBase,
+      evidence: { kind: "screen-observation", references: normalizedReferences },
+      observations,
+    });
   if (!matches.length) {
     return {
       selector: {

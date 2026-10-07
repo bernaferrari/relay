@@ -7,6 +7,7 @@ import type { RecipeStepContext } from "./recipe-runner-context.js";
 import type { TestJob } from "./session.js";
 import type { Device } from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
+import { JobCancelledError } from "./control.js";
 
 const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
   runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-com" }, () =>
@@ -17,14 +18,17 @@ function job(): TestJob {
   return { resolvedInputs: {}, artifacts: [], status: "running" } as unknown as TestJob;
 }
 
-function stubDevice(pages: SnapshotNode[][]): Device {
+function stubDevice(
+  pages: SnapshotNode[][],
+  fill: () => Promise<unknown> = async () => ({}),
+): Device {
   let sample = 0;
   return {
     interactions: {
       find: async () => ({}),
       press: async () => ({}),
       type: async () => ({}),
-      fill: async () => ({}),
+      fill,
     },
     command: {
       wait: () => new Promise((resolve) => setTimeout(resolve, 20)),
@@ -79,6 +83,99 @@ const assertFour = {
 };
 
 describe("current-action response provenance", () => {
+  const replacePrompt = {
+    kind: "type" as const,
+    id: "ask-replaced-prompt",
+    text: "2+2",
+    mode: "replace" as const,
+    target: { identifier: "composer" },
+  };
+
+  it("replace input captures the old turn before dispatch and rejects an idle leftover", async () => {
+    const owner = job();
+    const leftover = grok([turn("4", "@old"), { identifier: "response.done" }]);
+    const ctx: RecipeStepContext = { log: () => {}, job: owner, runtime: {} };
+    let boundaryAtFill: unknown;
+    const device = stubDevice([leftover], async () => {
+      boundaryAtFill = ctx.runtime?.responseBoundary;
+      return {};
+    });
+    await runRecipeStep(device, replacePrompt, ctx);
+    assert.equal(ctx.runtime?.responseBoundary?.source, "initiating-action");
+    assert.equal(ctx.runtime?.responseBoundary?.initiatingActionId, replacePrompt.id);
+    assert.equal(boundaryAtFill, ctx.runtime?.responseBoundary);
+    assert.equal(ctx.runtime?.responseBoundary?.turnIds.length, 1);
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          device,
+          {
+            kind: "wait-response",
+            target: { identifier: "assistant-message" },
+            idleTarget: { identifier: "response.done" },
+            timeoutMs: 60,
+            stableForMs: 20,
+          },
+          ctx,
+        ),
+      /response completion: timed out/u,
+    );
+    await assert.rejects(() => runRecipeStep(device, extract, ctx), /no verified new answer/u);
+    assert.equal(owner.resolvedInputs.response, undefined);
+  });
+
+  it("replace input then identical new answer retains current-action turn identity", async () => {
+    const owner = job();
+    const leftover = grok([turn("4", "@old")]);
+    const next = grok([turn("4", "@old"), turn("4", "@new", 80)]);
+    const device = stubDevice([leftover, leftover, leftover, next, next, next]);
+    const ctx: RecipeStepContext = { log: () => {}, job: owner, runtime: {} };
+    await runRecipeStep(device, replacePrompt, ctx);
+    await runRecipeStep(
+      device,
+      { kind: "wait-response", target: extract.target, timeoutMs: 2_000, stableForMs: 20 },
+      ctx,
+    );
+    await runRecipeStep(device, extract, ctx);
+    await runRecipeStep(device, assertFour, ctx);
+    assert.equal(owner.resolvedInputs.response, "4");
+    const artifact = owner.artifacts.find((item) => item.kind === "conversation-turn");
+    assert.equal(
+      (artifact?.data as { initiatingActionId?: string }).initiatingActionId,
+      replacePrompt.id,
+    );
+  });
+
+  it("replace input never extracts leftover content after a new quota or error", async () => {
+    for (const label of ["Try again in 10 minutes", "Something went wrong"]) {
+      const owner = job();
+      const leftover = grok([turn("4", "@old")]);
+      const quota = grok([turn("4", "@old"), { role: "text", label }]);
+      const device = stubDevice([leftover, leftover, quota, quota]);
+      const ctx: RecipeStepContext = { log: () => {}, job: owner, runtime: {} };
+      await runRecipeStep(device, replacePrompt, ctx);
+      await assert.rejects(() => runRecipeStep(device, extract, ctx), /no verified new answer/u);
+      assert.equal(owner.resolvedInputs.response, undefined);
+    }
+  });
+
+  it("cancellation during the replacement boundary probe never dispatches input", async () => {
+    const cancellation = new JobCancelledError();
+    let fills = 0;
+    const device = stubDevice([[]], async () => {
+      fills += 1;
+      return {};
+    });
+    device.capture.snapshot = async () => {
+      throw cancellation;
+    };
+    await assert.rejects(
+      () => runRecipeStep(device, replacePrompt, { log: () => {}, job: job(), runtime: {} }),
+      (error) => error === cancellation,
+    );
+    assert.equal(fills, 0);
+  });
+
   it("type then extract refuses leftover 4 when the new observation is quota", async () => {
     const owner = job();
     const leftover = grok([turn("4", "@old")]);

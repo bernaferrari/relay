@@ -62,6 +62,7 @@ export type RunTestIntent = {
   /** Current is read once and frozen before compilation. */
   revision?: "current" | { exact: number };
   startup?: AppMapTestStartup;
+  variables?: Record<string, string>;
   targetProfileId?: string;
   sourceRevision?: SourceRevision;
   engine?: BrowserEngine;
@@ -170,6 +171,8 @@ export type WorkflowProblem = {
   recovery: string;
   retryable: boolean;
   sourceCode?: string;
+  /** Canonical source step, when Relay identifies the affected saved step. */
+  sourceStepId?: string;
 };
 
 export type FrozenRunTestIdentity = {
@@ -512,6 +515,7 @@ export type RunTestOutcomeIntent = OutcomeTargetSelection & {
   targetProfileId?: string;
   sourceRevision?: SourceRevision;
   startup?: AppMapTestStartup;
+  variables?: Record<string, string>;
   engine?: BrowserEngine;
   account?: RunTestAccountBinding;
   confirmRisk?: true;

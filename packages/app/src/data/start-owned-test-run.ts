@@ -17,8 +17,11 @@ export function testStartRequests(input: {
   sourceRevision?: ProductRunStartInput["sourceRevision"];
   startup?: ProductRunStartInput["startup"];
   profiles?: readonly PairedStartProfile[];
+  variables?: Record<string, string>;
 }): ProductRunStartInput[] {
   if (input.usePairedWorkspace) {
+    if (input.variables && Object.keys(input.variables).length)
+      throw new TypeError("Prompt inputs need a single device or browser.");
     return compileTestStarts({
       testId: input.testId,
       appMapId: input.appMapId,
@@ -34,6 +37,9 @@ export function testStartRequests(input: {
   return [
     {
       testId: input.testId,
+      ...(input.variables && Object.keys(input.variables).length
+        ? { variables: { ...input.variables } }
+        : {}),
       appMapId: input.appMapId,
       ...(input.documentRevision !== undefined ? { documentRevision: input.documentRevision } : {}),
       targetId: input.targetId,

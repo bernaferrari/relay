@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Platform } from "../platform/types";
+import type { AppMapScenarioTestEdit, AppMapScenarioTestStep } from "@relay/protocol";
+import { validationDraft } from "../components/test-editor-step";
 
 import { sameValidationDraft } from "../components/test-editor-assertion-model";
 import type { StepDraft } from "../components/test-editor-step";
@@ -65,6 +67,12 @@ function isStepDraftRecord(value: unknown): value is Record<string, StepDraft> {
       typeof (draft as StepDraft).intent === "string" &&
       typeof (draft as StepDraft).note === "string" &&
       typeof (draft as StepDraft).capture === "boolean" &&
+      (!(draft as StepDraft).textValues ||
+        (typeof (draft as StepDraft).textValues === "object" &&
+          !Array.isArray((draft as StepDraft).textValues) &&
+          Object.values((draft as StepDraft).textValues!).every(
+            (text) => typeof text === "string",
+          ))) &&
       validExpected((draft as StepDraft).expected),
   );
 }
@@ -179,6 +187,7 @@ export function useTestStepDrafts(
         draft.intent !== expected.intent ||
         draft.note !== expected.note ||
         draft.capture !== expected.capture ||
+        Object.keys(draft.textValues ?? {}).length > 0 ||
         !sameValidationDraft(draft.expected, expected.expected)
       ) {
         return current;
@@ -189,5 +198,66 @@ export function useTestStepDrafts(
     });
   }
 
-  return { stepDrafts, updateStepDraft, clearStepDraftIfUnchanged };
+  function acknowledgeStepDrafts(edits: readonly AppMapScenarioTestEdit[]) {
+    for (const edit of edits) {
+      if (edit.kind === "step.add")
+        clearStepDraftIfUnchanged(edit.step.id, {
+          intent: edit.step.intent,
+          note: edit.step.note ?? "",
+          capture: edit.step.capture === true,
+          expected: validationDraft(edit.step),
+        });
+      if (
+        edit.kind !== "step.patch" ||
+        edit.patch.intent === undefined ||
+        edit.patch.note === undefined ||
+        edit.patch.capture === undefined
+      )
+        continue;
+      clearStepDraftIfUnchanged(edit.stepId, {
+        intent: edit.patch.intent,
+        note: edit.patch.note ?? "",
+        capture: edit.patch.capture,
+        ...(edit.patch.binding?.status === "resolved" &&
+        (edit.patch.binding.kind === "assertion" || edit.patch.binding.kind === "recipe-step")
+          ? {
+              expected: validationDraft({
+                id: edit.stepId,
+                kind: "validation",
+                intent: edit.patch.intent,
+                binding: edit.patch.binding,
+              }),
+            }
+          : {}),
+      });
+    }
+  }
+
+  function acknowledgeTextDraft(step: AppMapScenarioTestStep, key: string, text: string) {
+    setStepDrafts((current) => {
+      const draft = current[step.id];
+      if (!draft || draft.textValues?.[key] !== text) return current;
+      const textValues = { ...draft.textValues };
+      delete textValues[key];
+      const next = { ...current };
+      if (
+        !Object.keys(textValues).length &&
+        draft.intent === step.intent &&
+        draft.note === (step.note ?? "") &&
+        draft.capture === (step.capture === true) &&
+        sameValidationDraft(draft.expected, validationDraft(step))
+      )
+        delete next[step.id];
+      else next[step.id] = { ...draft, textValues };
+      return next;
+    });
+  }
+
+  return {
+    stepDrafts,
+    updateStepDraft,
+    clearStepDraftIfUnchanged,
+    acknowledgeStepDrafts,
+    acknowledgeTextDraft,
+  };
 }

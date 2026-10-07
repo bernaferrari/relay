@@ -45,6 +45,7 @@ import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js"
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { JobRouteContext } from "./job-routes.js";
 import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
+import { restoreCombineRunInputs, requireCombineRunInputs } from "./combine-run-inputs.js";
 import {
   admitAndStageLocalCombineCampaign,
   localCampaignAdmissionRequestForActiveWorkItems,
@@ -300,6 +301,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           combine,
           selected: projected.execution.selected ?? combine.selected,
           strategy: projected.execution.strategy ?? combine.strategy,
+          seed: projected.execution.seed,
           cellRuntimeProfiles: projected.cases.map((item) => ({
             testId: item.testId,
             values: { ...item.values },
@@ -310,6 +312,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           compileOptions: { reviewedDocumentOrigins },
           ...(projected.execution.laneId ? { laneId: projected.execution.laneId } : {}),
         });
+        restoreCombineRunInputs(prepared.cells, projected.cases);
         const preparedById = new Map(
           prepared.cells.map((cell) => [
             cell.executionCaseId ??
@@ -422,6 +425,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           (item) =>
             preparedById.get(item.executionCaseId ?? item.cellId) ?? preparedById.get(item.cellId)!,
         );
+        requireCombineRunInputs(toQueue);
         const resumeAccountBlocker = await preparedCellsFixtureStartBlocker({
           projectId: scope.projectId,
           cells: toQueue,

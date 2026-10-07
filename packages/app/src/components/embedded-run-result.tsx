@@ -59,7 +59,7 @@ export function EmbeddedRunResult({
       : passed
         ? undefined
         : "Open the full report to inspect where the run stopped.";
-  const [inspectingSteps, setInspectingSteps] = useState(false);
+  const [inspectingSteps, setInspectingSteps] = useState(() => !passed);
   const [stepIndex, setStepIndex] = useState(() => initialRunStep(report.timeline));
   const step = report.timeline[stepIndex];
   const authoredFrames = step
@@ -143,7 +143,7 @@ export function EmbeddedRunResult({
                 selected={showingCapturedResult}
                 onClick={() => setInspectingSteps(false)}
               >
-                Captured result
+                {passed ? "Captured result" : "Last screenshot"}
               </TestStepButton>
             ) : null}
             {report.timeline.length ? (

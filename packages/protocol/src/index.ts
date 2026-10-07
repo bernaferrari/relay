@@ -799,3 +799,5 @@ export function normalizeConnection(connection: ServerConnection): ServerConnect
     actorId: connection.actorId.trim(),
   };
 }
+
+export type { FrozenRecipeInputReceipt } from "./frozen-recipe-inputs.js";

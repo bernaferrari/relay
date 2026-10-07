@@ -404,6 +404,9 @@ export type DeviceSummary = {
   platform: "android" | "ios" | "browser";
   connectionState?: string;
   osVersion?: string;
+  /** Recent full native capture coordinates, never scaled preview dimensions. */
+  viewport?: { width: number; height: number };
+  avdName?: string;
   /** Physical Apple targets expose these when CoreDevice can inspect them. */
   developerMode?: "enabled" | "disabled";
   developerServicesAvailable?: boolean;

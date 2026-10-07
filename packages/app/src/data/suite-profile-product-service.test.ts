@@ -880,6 +880,123 @@ describe("suite and environment product projections", () => {
     ).resolves.toEqual({ id: "sched-1" });
   });
 
+  it.each([30, 60])(
+    "round trips a native Plan interval of %i minutes without a daily hour",
+    async (intervalMinutes) => {
+      let saved: Record<string, unknown> | undefined;
+      relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
+        if (operation === "target.list") return { targets: [target("android-1", "android")] };
+        if (operation === "build.list") return { builds: [] };
+        if (operation === "schedule.create") {
+          expect(input).toEqual({
+            combineId: combine.id,
+            appMapId: "app-1",
+            targetKind: "device",
+            targetId: "android-1",
+            platform: "android",
+            intervalMinutes,
+            timezone: "UTC",
+            profileTargets: [
+              {
+                profileId: "android-1",
+                target: { targetKind: "device", serial: "android-1", platform: "android" },
+              },
+            ],
+          });
+          saved = { ...(input as object), id: "native-schedule", nextRunAt: 30, enabled: true };
+          return { schedule: saved };
+        }
+        if (operation === "schedule.list") return { schedules: [saved] };
+        throw new Error(`Unexpected operation ${operation}`);
+      });
+      const service = createSuiteProfileProductService({} as never);
+      await expect(
+        service.schedulePlan!({
+          appMapId: "app-1",
+          combineId: combine.id,
+          profileId: "android-1",
+          intervalMinutes,
+          timezone: "UTC",
+        }),
+      ).resolves.toEqual({ id: "native-schedule" });
+      await expect(service.listPlanSchedules!({ combineId: combine.id })).resolves.toEqual([
+        { id: "native-schedule", intervalMinutes, timezone: "UTC", nextRunAt: 30, enabled: true },
+      ]);
+    },
+  );
+
+  it("changes a daily schedule by exact identity while preserving its native setup and paused state", async () => {
+    const saved = {
+      id: "native-daily",
+      appMapId: "app-1",
+      combineId: combine.id,
+      targetKind: "device",
+      targetId: "physical-android",
+      platform: "android",
+      hour: 8,
+      timezone: "UTC",
+      intervalMinutes: 1_440,
+      repetitions: 2,
+      enabled: false,
+      profileTargets: [
+        {
+          profileId: "native-profile",
+          target: { targetKind: "device", serial: "physical-android", platform: "android" },
+        },
+      ],
+    };
+    relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
+      if (operation === "schedule.list") return { schedules: [saved] };
+      if (operation === "schedule.create") {
+        expect(input).toEqual({
+          id: saved.id,
+          appMapId: saved.appMapId,
+          combineId: saved.combineId,
+          targetKind: saved.targetKind,
+          targetId: saved.targetId,
+          platform: saved.platform,
+          intervalMinutes: 30,
+          timezone: "UTC",
+          repetitions: saved.repetitions,
+          enabled: false,
+          profileTargets: saved.profileTargets,
+        });
+        return { schedule: { ...(input as object), id: saved.id } };
+      }
+      throw new Error(`Unexpected operation ${operation}`);
+    });
+    await expect(
+      createSuiteProfileProductService({} as never).schedulePlan!({
+        appMapId: "app-1",
+        combineId: combine.id,
+        profileId: "different-browser",
+        scheduleId: saved.id,
+        intervalMinutes: 30,
+        hour: 8,
+        timezone: "UTC",
+      }),
+    ).resolves.toEqual({ id: saved.id });
+    expect(relay.invoke.mock.calls.map(([operation]) => operation)).toEqual([
+      "schedule.list",
+      "schedule.create",
+    ]);
+  });
+
+  it("refuses an absent saved schedule instead of creating a replacement", async () => {
+    relay.invoke.mockReset().mockResolvedValue({ schedules: [] });
+    await expect(
+      createSuiteProfileProductService({} as never).schedulePlan!({
+        appMapId: "app-1",
+        combineId: combine.id,
+        profileId: "android-1",
+        scheduleId: "deleted-schedule",
+        intervalMinutes: 30,
+        timezone: "UTC",
+      }),
+    ).rejects.toThrow("That schedule changed");
+    expect(relay.invoke).toHaveBeenCalledExactlyOnceWith("schedule.list", {});
+  });
+
   it("lists this Plan's schedules and keeps another Plan's run out", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string) => {
       if (operation === "schedule.list") {
@@ -932,6 +1049,7 @@ describe("suite and environment product projections", () => {
     ).resolves.toEqual([
       {
         id: "ours",
+        intervalMinutes: 1_440,
         hour: 8,
         timezone: "UTC",
         nextRunAt: 3,

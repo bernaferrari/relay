@@ -5,7 +5,10 @@ import {
   captureReviewOutputParser,
 } from "./capture-review-operation-parser.js";
 import { assertTargetRuntimeReadiness } from "./target-runtime-readiness-parser.js";
-import { targetDevicesInputParser } from "./target-inventory-input-parser.js";
+import {
+  targetDevicesInputParser,
+  targetDevicesOutputParser,
+} from "./target-inventory-input-parser.js";
 import {
   authoringInteractionParser,
   authoringSessionListInputParser,
@@ -132,17 +135,6 @@ const { targetRecoverInputParser, targetRecoverOutputParser } =
   createTargetRecoveryOperationParsers({
     assertTargetRuntimeReadiness,
   });
-const devicesParser = objectParser<{ devices: DeviceSummary[] }>("devices response", (input) => {
-  if (!Array.isArray(input.devices)) fail("devices", "must be an array");
-  for (const item of input.devices) {
-    const device = record(item, "device");
-    string(device.id, "device id");
-    string(device.serial, "device serial");
-    string(device.name, "device name");
-    if (device.readiness !== undefined)
-      assertTargetRuntimeReadiness(device.readiness, "device readiness");
-  }
-});
 const androidAvdInventoryParser = objectParser<{ inventory: AndroidAvdInventory }>(
   "target.avds.list output",
   (input) => {
@@ -651,7 +643,7 @@ export const operationDefinitions = [
   query("target.devices.list", "List connected targets", "/devices", {
     category: "target",
     input: targetDevicesInputParser,
-    output: devicesParser,
+    output: targetDevicesOutputParser,
   }),
   query("target.avds.list", "List configured Android emulators", "/devices/avds", {
     category: "target",

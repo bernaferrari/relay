@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { DurableWorkflowRead, TargetPreflight } from "@relay/protocol";
 import { createRelayRunOutcomeJobs } from "./run-outcome-jobs.js";
+import { createRelayOutcomeJobs } from "./outcome-jobs.js";
 import { createScriptedRelayClient } from "./testing.js";
 
 const browser = {
@@ -160,6 +161,97 @@ test("public run entrypoint forwards cold startup into compilation", async () =>
     startup: { mode: "cold" },
   });
   assert.equal(result.phase, "blocked");
+});
+
+test("both public Run entrypoints carry runtime prompts to canonical Test admission", async () => {
+  const variables = { chat_prompt: "Prompt C", token: "private runtime input" };
+  const native = {
+    id: "native-fixture",
+    serial: "native-fixture",
+    name: "Native fixture",
+    booted: true,
+    platform: "android" as const,
+  };
+  const reserved = workflow(1);
+  const { resource: _resource, ...unstarted } = reserved.record;
+  for (const createJobs of [createRelayRunOutcomeJobs, createRelayOutcomeJobs]) {
+    const scripted = createScriptedRelayClient([
+      { id: "app-map.get", output: { appMap: { revision: 7 } } },
+      { id: "target.devices.list", output: { devices: [native] } },
+      { id: "app-map.get", output: { appMap: { revision: 7 } } },
+      {
+        id: "app-map.test.compile",
+        output: {
+          plan: { rootRecipeId: "root" },
+          preflight: {
+            schemaVersion: 1,
+            mode: "offline-test-preflight",
+            appMapId: "app-1",
+            appMapRevision: 7,
+            testId: "test-1",
+            planDigest: "plan-7",
+            executionRisk: {
+              schemaVersion: 1,
+              level: "safe",
+              reasons: [],
+              externalEffects: [],
+              confirmation: "none",
+              expectedAppBoundaries: [],
+              maximumActions: 0,
+              maximumDurationMs: 0,
+              cleanupRequired: false,
+            },
+            summary: {
+              recipes: 1,
+              checkedSelectors: 0,
+              resolvedSelectors: 0,
+              unknownCursorTransitions: 0,
+              reviewRequiredReturns: 0,
+              blockers: 0,
+              warnings: 0,
+            },
+            selectors: [],
+            cursorTimeline: [],
+            findings: [],
+          },
+        },
+      },
+      {
+        id: "workflow.create",
+        output: {
+          disposition: "created",
+          workflow: {
+            ...reserved,
+            record: {
+              ...unstarted,
+              frozenIdentity: {
+                ...frozen,
+                target: { kind: "device", platform: "android", targetId: native.id },
+              },
+            },
+          },
+        },
+      },
+      { id: "app-map.test.run", error: new Error("fixture stops after receiving admission") },
+    ]);
+    const result = await createJobs(scripted.client, { actorId: "agent:test" }).run({
+      kind: "run-test",
+      appMapId: "app-1",
+      testId: "test-1",
+      targetId: native.id,
+      variables,
+    });
+    const runs = scripted.invocations.filter(({ id }) => id === "app-map.test.run");
+    assert.equal(
+      runs.length,
+      1,
+      JSON.stringify({ result, invoked: scripted.invocations.map(({ id }) => id) }),
+    );
+    assert.deepEqual((runs[0]!.input as { variables?: unknown }).variables, variables);
+    assert.equal(result.phase, "needs-attention");
+    assert.equal(JSON.stringify(result).includes(variables.token), false);
+    assert.equal(scripted.remaining(), 0);
+  }
 });
 
 test("cancel requires consent and forwards the latest durable CAS version", async () => {

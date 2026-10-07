@@ -10,7 +10,11 @@ import {
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry, type RetryOptions } from "./retry.js";
 import { currentTargetContext, selectedPlatform } from "./target-context.js";
-import { InputNotDispatchedError, InputOutcomeUnknownError } from "./input-not-dispatched.js";
+import {
+  InputNotDispatchedError,
+  InputOutcomeUnknownError,
+  isTerminalInputError,
+} from "./input-not-dispatched.js";
 import { iosSelectorWasNotDispatched } from "./ios-mutation-policy.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
 
@@ -94,7 +98,7 @@ export async function controlledMutation<T>(
     if (
       error instanceof Error &&
       (error instanceof IosMutationOutcomeUnknownError ||
-        error instanceof InputOutcomeUnknownError ||
+        isTerminalInputError(error) ||
         error instanceof InputNotDispatchedError ||
         error.name === "JobCancelledError" ||
         iosSelectorWasNotDispatched(error) ||

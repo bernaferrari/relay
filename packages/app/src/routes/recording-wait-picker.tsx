@@ -10,7 +10,7 @@ import {
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
 
-/** A condition, not a fixed pause: replay continues as soon as the control appears. */
+/** Replay continues as soon as the authored control condition matches. */
 export function RecordingWaitPicker({
   canEdit,
   onInsert,
@@ -19,16 +19,18 @@ export function RecordingWaitPicker({
   onInsert(interaction: AuthoringInteraction): void;
 }) {
   const [open, setOpen] = useState(false);
+  const [condition, setCondition] = useState<"visible" | "gone">("visible");
   const [strategy, setStrategy] = useState<"identifier" | "label">("identifier");
   const [value, setValue] = useState("");
   const [seconds, setSeconds] = useState("15");
   const timeout = Number(seconds);
   const valid =
     value.trim().length > 0 &&
+    value.trim().length <= 500 &&
     seconds.trim() !== "" &&
     Number.isFinite(timeout) &&
     timeout >= 1 &&
-    timeout <= 120;
+    timeout <= 900;
   return (
     <>
       <Button size="sm" variant="ghost" disabled={!canEdit} onClick={() => setOpen(true)}>
@@ -39,9 +41,25 @@ export function RecordingWaitPicker({
         <DialogContent className="sm:max-w-md">
           <DialogTitle>Wait for a control</DialogTitle>
           <DialogDescription>
-            Continue when a control appears, such as Stop when a timer finishes. If it never
-            appears, the test stops.
+            Continue when a control appears or disappears. If the condition is not met before the
+            limit, the Test stops.
           </DialogDescription>
+          <div role="group" aria-label="Wait until" className="flex gap-2">
+            <Button
+              variant={condition === "visible" ? "secondary" : "ghost"}
+              aria-pressed={condition === "visible"}
+              onClick={() => setCondition("visible")}
+            >
+              Appears
+            </Button>
+            <Button
+              variant={condition === "gone" ? "secondary" : "ghost"}
+              aria-pressed={condition === "gone"}
+              onClick={() => setCondition("gone")}
+            >
+              Disappears
+            </Button>
+          </div>
           <div role="group" aria-label="Find by" className="flex gap-2">
             <Button
               variant={strategy === "identifier" ? "secondary" : "ghost"}
@@ -63,19 +81,21 @@ export function RecordingWaitPicker({
             <Input
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              maxLength={500}
               placeholder={strategy === "identifier" ? "com.example:id/timer_stop" : "Stop"}
             />
           </label>
           <p className="text-xs text-muted-foreground">
-            Use a control unique to the finished state. A control already visible will continue
-            immediately. Labels may change with the app’s language.
+            {condition === "gone"
+              ? "An already absent control continues immediately. Check for a result appearing next."
+              : "An already visible control continues immediately. Choose a control unique to the finished state."}
           </p>
           <label className="grid gap-1.5 text-sm">
             Maximum wait (seconds)
             <Input
               type="number"
               min="1"
-              max="120"
+              max="900"
               value={seconds}
               onChange={(e) => setSeconds(e.target.value)}
             />
@@ -89,13 +109,23 @@ export function RecordingWaitPicker({
               onClick={() => {
                 onInsert({
                   kind: "steps",
-                  label: `Wait for ${value.trim()}`,
+                  label:
+                    condition === "gone"
+                      ? `Wait until ${value.trim()} disappears`
+                      : `Wait for ${value.trim()}`,
                   steps: [
-                    {
-                      kind: "wait-for",
-                      target: { [strategy]: value.trim() },
-                      timeoutMs: timeout * 1000,
-                    },
+                    condition === "gone"
+                      ? {
+                          kind: "expect",
+                          condition: "gone",
+                          target: { [strategy]: value.trim() },
+                          timeoutMs: timeout * 1000,
+                        }
+                      : {
+                          kind: "wait-for",
+                          target: { [strategy]: value.trim() },
+                          timeoutMs: timeout * 1000,
+                        },
                   ],
                 });
                 setOpen(false);

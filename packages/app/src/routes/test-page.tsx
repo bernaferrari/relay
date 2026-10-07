@@ -48,6 +48,7 @@ import { TestWorkspaceActions } from "./test-workspace-actions";
 import { TestWorkspaceStage } from "./test-stage";
 import { productLinkClassName } from "../lib/class-names";
 import { testRunDestinationCopy } from "../data/test-run-targets";
+import { useTestTextInputs } from "../data/use-test-text-inputs";
 
 const routeApi = getRouteApi("/tests/$testId");
 const staleTestMessage = "The saved Test changed.";
@@ -163,6 +164,7 @@ export function TestPage() {
       testEditorService,
     });
   const targetId = configuration.selection.targetId ?? "";
+  const textInputs = useTestTextInputs(editorDocument.data, testEditorService);
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
   const selectedProfile = runSetupProfile(
     profiles.data,
@@ -205,6 +207,8 @@ export function TestPage() {
     (usePairs ? pairedPlatformReady && paired.workspace.rows.length > 0 : targetReady) &&
     !configuration.loading &&
     admission.status === "ready" &&
+    textInputs.ready &&
+    !(usePairs && Object.keys(textInputs.variables).length) &&
     editorState === "saved";
   const start = useMutation({
     mutationFn: async () => {
@@ -232,6 +236,7 @@ export function TestPage() {
           targetId,
           targetProfileId: admission.start.targetProfileId,
           profiles: profiles.data,
+          variables: textInputs.variables,
           sourceRevision: admission.start.sourceRevision,
           startup:
             configuration.selection.startupMode === "cold" ? { mode: "cold" as const } : undefined,
@@ -421,6 +426,7 @@ export function TestPage() {
   const runSettings = (
     <TestRunSettings
       testId={testId}
+      textInputs={textInputs}
       activeRun={Boolean(activeRun)}
       targets={targets}
       recordedPlatforms={recordedPlatforms}
@@ -533,6 +539,7 @@ export function TestPage() {
         className="mx-4 my-3 !mt-3 !max-w-none"
         operation="run"
         error={start.error}
+        testContext={{ testId, appMapId: test.data?.appMapId }}
         recovery={
           start.error instanceof TypeError && start.error.message === staleTestMessage
             ? {
@@ -618,7 +625,9 @@ export function TestPage() {
               </TabsList>
             }
             trailing={
-              <TestLastRunLine history={recentRuns} running={Boolean(activeRun || liveRunId)} />
+              showRecording ? (
+                <TestLastRunLine history={recentRuns} running={Boolean(activeRun || liveRunId)} />
+              ) : undefined
             }
           />
           {attachedRunId ? (

@@ -1,8 +1,7 @@
 /**
  * Text replacement entry points split out of device.ts.
- * Pure code motion: replaceText / replaceTextValue and their Android
- * focused-field clearing helper live here so device.ts stays within its
- * source budget. All platform plumbing remains owned by device.ts.
+ * Native text entry owns replacement and the physical iOS listener path.
+ * The device facade supplies observation and target mutation plumbing.
  */
 import { getExecutingJobId } from "./control.js";
 import { clearAndroidTextWithAdb } from "./device-mutation-adapter.js";
@@ -15,6 +14,11 @@ import {
 } from "./device-dispatch.js";
 import { iosSnapshotFallbackPoint, snapshot, typeText, type Device } from "./device.js";
 import { currentTargetContext, selectedPlatform, targetIdentity } from "./target-context.js";
+import { isPhysicalRunnerRoute, resolveAppleControlRoute } from "./apple-control-route.js";
+import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
+import { typeViaLiveIosRunnerListener } from "./ios-runner-listener-command.js";
+import { rememberedTargetApplication } from "./device-target-applications.js";
+import type { AndroidTextEntryReceipt } from "./android-text-entry-verification.js";
 
 export async function replaceText(
   device: Device,
@@ -26,7 +30,7 @@ export async function replaceText(
     point?: { x: number; y: number };
   },
   text: string,
-): Promise<void> {
+): Promise<AndroidTextEntryReceipt | undefined> {
   const interactionTarget = target.identifier
     ? { selector: `id="${target.identifier.replaceAll('"', '\\"')}"` }
     : target.ref
@@ -50,8 +54,7 @@ export async function replaceText(
       nativeDevice(device).interactions.press({ ...base(), ...interactionTarget }),
     );
     await clearAndroidFocusedText(targetIdentity());
-    if (text.length > 0) await typeText(device, text);
-    return;
+    return typeText(device, text);
   }
   // The selector fill carries the same non-hittable coordination fields a
   // press does: the runner can fall back to the snapshot-derived coordinate
@@ -132,4 +135,27 @@ export async function replaceTextValue(
   }
   await adapter.fill("x");
   await adapter.type("\b");
+}
+
+export async function typeViaLiveIosListener(text: string): Promise<boolean> {
+  if (selectedPlatform() !== "ios") return false;
+  let context: ReturnType<typeof currentTargetContext>;
+  try {
+    context = currentTargetContext();
+  } catch {
+    return false;
+  }
+  const typeRoute = resolveAppleControlRoute(context);
+  if (!isPhysicalRunnerRoute(typeRoute)) return false;
+  const live = await probeLiveIosRunnerListener(typeRoute.udid);
+  if (!live) return false;
+  const appBundleId = await rememberedTargetApplication(context);
+  await controlledMutation("type", () =>
+    typeViaLiveIosRunnerListener({
+      serial: typeRoute.udid,
+      text,
+      ...(appBundleId ? { appBundleId } : {}),
+    }),
+  );
+  return true;
 }

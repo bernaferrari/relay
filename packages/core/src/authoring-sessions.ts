@@ -532,9 +532,8 @@ export class AuthoringSessionStore {
               const action = revision.actions[index]!;
               try {
                 await replayAction(session, action);
-                // This endpoint is deliberately immediate. It must not settle or
-                // start a fresh AX query: pixels remain valid proof while an iOS
-                // tree is delayed, and the final destination check keeps its
+                // The adapter captures fresh Android/browser semantics or
+                // immediate iOS pixels. The final destination check keeps its
                 // existing bounded settle behavior below.
                 const exit = await persistCapturedAuthoringObservation(
                   await observeReplayActionEndpoint(session),

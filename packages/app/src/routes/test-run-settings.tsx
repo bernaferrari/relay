@@ -15,6 +15,8 @@ import type { usePersistedRunConfiguration } from "../data/use-persisted-run-con
 import type { PlanPlatform } from "@relay/product/test-route-platforms";
 import { testRunDestinationCopy } from "../data/test-run-targets";
 import { runSetupProfile } from "../data/run-setup-profile";
+import { TestTextRunInputs } from "../components/test-text-run-inputs";
+import type { useTestTextInputs } from "../data/use-test-text-inputs";
 
 type Configuration = ReturnType<typeof usePersistedRunConfiguration>;
 
@@ -36,6 +38,7 @@ export function TestRunSettings({
   onRetryScope,
   startPending,
   onStart,
+  textInputs,
 }: {
   testId: string;
   activeRun: boolean;
@@ -59,6 +62,7 @@ export function TestRunSettings({
   onRetryScope(): void;
   startPending: boolean;
   onStart(): void;
+  textInputs?: ReturnType<typeof useTestTextInputs>;
 }) {
   const selectedProfile = runSetupProfile(
     profiles.data,
@@ -137,6 +141,16 @@ export function TestRunSettings({
           },
           validated: canStart,
           blockers: [
+            ...(configuration.selection.usePairedWorkspace &&
+            Object.keys(textInputs?.variables ?? {}).length
+              ? [
+                  {
+                    id: "prompt-inputs",
+                    label: "Use one device for prompt inputs",
+                    detail: "Turn off the saved workspace to run with these values.",
+                  },
+                ]
+              : []),
             ...(!browserSetup && configuration.selection.usePairedWorkspace
               ? [
                   {
@@ -200,6 +214,7 @@ export function TestRunSettings({
         error={scopeError ?? configuration.error}
         onRetry={scopeError ? onRetryScope : configuration.retry}
       >
+        {textInputs ? <TestTextRunInputs state={textInputs} /> : null}
         {hasSavedLogins ? profilePicker : null}
         {hasTargets && browserSetup && selectedProfile?.account ? (
           <p className="grid gap-1 text-xs leading-4 text-muted-foreground">
@@ -216,11 +231,7 @@ export function TestRunSettings({
         {hasTargets ? (
           <details
             className="group border-t border-border/60 pt-3"
-            open={
-              configuration.selection.buildId || configuration.selection.startupMode === "cold"
-                ? true
-                : undefined
-            }
+            open={configuration.selection.buildId ? true : undefined}
           >
             <summary className="min-h-10 cursor-pointer text-sm font-medium">
               Advanced run options

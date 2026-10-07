@@ -28,7 +28,12 @@ export type ValidationDraft =
         { kind: "target" }
       >;
     }
-  | { kind: "wait-response"; label: string; maxMs: string }
+  | {
+      kind: "wait-response";
+      label: string;
+      maxMs: string;
+      source?: Extract<RecipeStep, { kind: "wait-response" }>;
+    }
   | { kind: "extract"; as: string; label: string; role: "assistant" | "user" | "" }
   | { kind: "identity-ignore"; name: string; region: string }
   | { kind: "upload"; file: string; label: string };
@@ -98,9 +103,7 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
     return "A visual judge will score this screenshot. Disagreement stays Needs review. Do not auto-accept.";
   if (recipe.kind === "evaluate-semantic") return "A semantic judge will score the reply.";
   if (recipe.kind === "upload") {
-    return recipe.file
-      ? `Attaches ${recipe.file}. iOS compile-blocks without a recorded Files-app path. Not a Grok Files pass. Does not accept a visual baseline.`
-      : "Attaches a workspace file. iOS compile-blocks without a recorded Files-app path. Not a Grok Files pass. Does not accept a visual baseline.";
+    return `Browser attaches ${recipe.file || "a workspace file"} through a file input or chooser. Android stages it in Downloads; follow with recorded picker steps and check the attachment. iOS upload is blocked; use a reviewed Files-app handoff. Does not accept a visual baseline.`;
   }
   return undefined;
 }
@@ -135,8 +138,9 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
   if (step.binding.kind === "recipe-step" && step.binding.step.kind === "wait-response") {
     return {
       kind: "wait-response",
-      label: step.binding.step.target.label ?? step.binding.step.target.text ?? "",
+      label: controlLabel(step.binding.step.target) ?? step.binding.step.target.ref ?? "",
       maxMs: step.binding.step.maxMs === undefined ? "" : String(step.binding.step.maxMs),
+      source: structuredClone(step.binding.step),
     };
   }
   if (step.binding.kind === "recipe-step" && step.binding.step.kind === "extract") {
@@ -225,7 +229,14 @@ export function isValidationDraftReady(draft: ValidationDraft): boolean {
     return true;
   }
   if (draft.kind === "semantic") return Boolean(draft.input.trim() && draft.criteria.trim());
-  if (draft.kind === "wait-response") return Boolean(draft.label.trim());
+  if (draft.kind === "wait-response") {
+    const maxMs = Number(draft.maxMs);
+    return Boolean(
+      draft.label.trim() &&
+      (draft.maxMs.trim() === "" ||
+        (Number.isSafeInteger(maxMs) && maxMs >= 1 && maxMs <= 900_000)),
+    );
+  }
   if (draft.kind === "extract") return Boolean(draft.as.trim() && draft.label.trim());
   if (draft.kind === "identity-ignore") return Boolean(parseRegion(draft.region));
   if (draft.match === "field")
@@ -308,15 +319,26 @@ export function validationBindingFromDraft(
     };
   }
   if (draft.kind === "wait-response") {
-    const maxMs = Number.parseInt(draft.maxMs, 10);
+    if (!isValidationDraftReady(draft))
+      throw new Error("Enter a reply control and a maximum duration between 1 and 900000 ms.");
+    const originalTarget = draft.source?.target;
+    const originalLabel = originalTarget
+      ? (controlLabel(originalTarget) ?? originalTarget.ref)
+      : undefined;
+    const step: Extract<RecipeStep, { kind: "wait-response" }> = {
+      ...draft.source,
+      kind: "wait-response",
+      target:
+        originalTarget && originalLabel?.trim() === draft.label.trim()
+          ? { ...originalTarget }
+          : { label: draft.label.trim() },
+    };
+    delete step.maxMs;
+    if (draft.maxMs.trim() !== "") step.maxMs = Number(draft.maxMs);
     return {
       status: "resolved",
       kind: "recipe-step",
-      step: {
-        kind: "wait-response",
-        target: { label: draft.label.trim() },
-        ...(Number.isFinite(maxMs) && maxMs > 0 ? { maxMs } : {}),
-      },
+      step,
     };
   }
   if (draft.kind === "extract") {

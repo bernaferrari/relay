@@ -3,11 +3,13 @@ import type {
   AppMapCompiledTest,
   OfflineTestPreflightReport,
   RecipeStep,
+  FrozenRecipeInputReceipt,
 } from "@relay/protocol";
 import { createHash } from "node:crypto";
 import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import { validateRecipeParameters, validateRecipeSteps, type Recipe } from "./recipes.js";
 import { CURRENT_RECORDING_FORMAT_VERSION } from "./recording-format.js";
+import { parseFrozenRecipeInputReceipt } from "./frozen-recipe-inputs.js";
 import {
   appMapRuntimeTargetProfileKey,
   parseAppMapRuntimeTargetProfile,
@@ -35,6 +37,7 @@ export type AppMapTestExecutionIntent = {
   preflight: OfflineTestPreflightReport;
   /** Invoked Lane (`--lane grok-lab`). Optional so older intents still parse. */
   laneId?: string;
+  frozenInputs?: FrozenRecipeInputReceipt;
 };
 
 function profileKey(profile: AppMapCompiledRuntimeTargetProfile | undefined): string {
@@ -621,6 +624,7 @@ export function createAppMapTestExecutionIntent(input: {
   recipeGraph: Record<string, Recipe>;
   preflight: OfflineTestPreflightReport;
   laneId?: string;
+  frozenInputs?: FrozenRecipeInputReceipt;
 }): AppMapTestExecutionIntent {
   const rootRecipe = input.recipeGraph[input.plan.rootRecipeId];
   if (!rootRecipe || rootRecipe.id !== input.plan.rootRecipeId) {
@@ -647,6 +651,7 @@ export function createAppMapTestExecutionIntent(input: {
     recipeGraph: structuredClone(input.recipeGraph),
     preflight: structuredClone(input.preflight),
     ...(laneId ? { laneId } : {}),
+    ...(input.frozenInputs ? { frozenInputs: structuredClone(input.frozenInputs) } : {}),
   };
   if (!parseAppMapTestExecutionIntent(intent)) {
     throw new Error("Cannot persist an inconsistent App Map Test execution intent");
@@ -684,6 +689,7 @@ function parseAppMapTestExecutionIntentValue(
       "recipeGraph",
       "preflight",
       "laneId",
+      "frozenInputs",
     ]) ||
     value.schemaVersion !== 1 ||
     value.kind !== appMapTestExecutionIntentArtifactKind
@@ -691,6 +697,8 @@ function parseAppMapTestExecutionIntentValue(
     return undefined;
   }
   const sourcePlan = isRecord(value.sourcePlan) ? value.sourcePlan : undefined;
+  if (value.frozenInputs !== undefined && !parseFrozenRecipeInputReceipt(value.frozenInputs))
+    return undefined;
   const plan = parseCanonicalAppMapTestPlan(value.plan);
   const recipeGraph = parseCanonicalAppMapTestRecipeGraph(value.recipeGraph);
   const preflight = isRecord(value.preflight)

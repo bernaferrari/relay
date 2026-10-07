@@ -156,6 +156,70 @@ test("several matching saved profiles fail with the candidate ids in the recover
   );
 });
 
+test("raw server native admission uses the same current geometry and OS selection as workflows", () => {
+  const legacy: AppMapCompiledRuntimeTargetProfile = {
+    ...pixelEn,
+    id: "device:pixel-1",
+    viewport: { width: 1080, height: 2340 },
+    capabilities: [],
+  };
+  const complete: AppMapCompiledRuntimeTargetProfile = {
+    ...legacy,
+    id: "device:pixel-1-1080x2340",
+    osVersion: "16",
+    model: "device",
+    capabilities: ["snapshot", "screenshot"],
+  };
+  assert.deepEqual(
+    frozenEvidenceTargetProfileForTarget({
+      target: pixel,
+      profiles: [legacy, complete],
+      observedDevice: {
+        serial: "pixel-1",
+        platform: "android",
+        osVersion: "16",
+        viewport: legacy.viewport,
+      },
+    }),
+    complete,
+  );
+  for (const observedDevice of [
+    undefined,
+    { serial: "pixel-1", platform: "android", osVersion: "17", viewport: legacy.viewport },
+    {
+      serial: "pixel-1",
+      platform: "android",
+      osVersion: "16",
+      viewport: { width: 2340, height: 1080 },
+    },
+  ])
+    assert.throws(
+      () =>
+        frozenEvidenceTargetProfileForTarget({
+          target: pixel,
+          profiles: [legacy, complete],
+          observedDevice,
+        }),
+      (error: unknown) =>
+        error instanceof HttpError && error.body?.code === "TARGET_PROFILE_SELECTION_REQUIRED",
+    );
+  assert.throws(
+    () =>
+      frozenEvidenceTargetProfileForTarget({
+        target: pixel,
+        profiles: [complete, { ...complete, id: "italian" }],
+        observedDevice: {
+          serial: "pixel-1",
+          platform: "android",
+          osVersion: "16",
+          viewport: legacy.viewport,
+        },
+      }),
+    (error: unknown) =>
+      error instanceof HttpError && error.body?.code === "TARGET_PROFILE_SELECTION_REQUIRED",
+  );
+});
+
 test("a target with only foreign saved profiles fails with capture guidance", () => {
   assert.throws(
     () => frozenEvidenceTargetProfileForTarget({ target: { ...pixel }, profiles: [ipadEn] }),

@@ -44,6 +44,13 @@ import {
 } from "./app-map-test-execution-intent.js";
 import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import type { Recipe } from "./recipes.js";
+import {
+  bindPreparedCombineCellInputs,
+  combineCellInputSeed,
+  requirePreparedCombineCellInputs,
+  restorePreparedCombineCellInputs,
+} from "./app-map-combine-cell-inputs.js";
+import { freezeRecipeInputs } from "./frozen-recipe-inputs.js";
 
 test("cell IDs stay identifier-safe for punctuation and large tuples", () => {
   const values = Object.fromEntries(
@@ -1289,4 +1296,113 @@ test("wrapper preserves a child Test that still carries an unused compiled conne
     staticInputs: declaredCombineCellStaticInputs([set], { language: "en" }),
   });
   assert.equal(parseAppMapCombineCellExecutionIntent(intent)?.cell.cellId, cellId);
+});
+
+test("Combine input receipts seal the child and outer intent and restore pending cases without generation", async () => {
+  const map = localeMap();
+  map.tests["script-only"]!.steps[0]!.binding = {
+    status: "resolved",
+    kind: "script",
+    source: 'return "{{prompt}}";',
+  };
+  const prepare = () =>
+    prepareAppMapCombineCells({
+      map,
+      combine: map.combines.locales!,
+      seed: 1000,
+      target: { targetId: "pixel-1", platform: "android" },
+    });
+  const prepared = await prepare();
+  const originalGraphs = prepared.cells.map((cell) => JSON.stringify(cell.recipeGraph));
+  const originalDigests = prepared.cells.map((cell) => cell.outerIntent.digest);
+  const seeds = prepared.cells.map((cell) => combineCellInputSeed(1000, cell));
+  assert.notEqual(seeds[0], seeds[1]);
+  assert.notEqual(seeds[0], combineCellInputSeed(2000, prepared.cells[0]!));
+  for (const [index, cell] of prepared.cells.entries()) {
+    const inputs = await freezeRecipeInputs({
+      recipeGraph: cell.childIntent.recipeGraph,
+      definitions: {
+        revision: 7,
+        value: [
+          {
+            id: "prompt-data",
+            name: "prompt",
+            scope: "shared",
+            source: "generated",
+            prompt: "Ask about geography",
+          },
+        ],
+      },
+      seed: seeds[index]!,
+    });
+    assert.ok(inputs);
+    bindPreparedCombineCellInputs(cell, inputs);
+    assert.equal(JSON.stringify(cell.recipeGraph), originalGraphs[index]);
+    assert.notEqual(cell.outerIntent.digest, originalDigests[index]);
+    assert.equal(
+      parseAppMapCombineCellExecutionIntent(cell.outerIntent)?.child.frozenInputs
+        ?.projectDataRevision,
+      7,
+    );
+    assert.equal(
+      cell.childIntent.sourcePlan.recipeGraphDigest,
+      digestAppMapTestExecutionValue(cell.childIntent.recipeGraph),
+    );
+  }
+  requirePreparedCombineCellInputs(prepared.cells);
+  const cases = prepared.cells.map((cell, index) =>
+    combineCampaignCaseFromPreparedCell(cell, { index, phase: "coverage", status: "pending" }),
+  );
+  const restored = await prepare();
+  for (const [index, cell] of restored.cells.entries()) {
+    restorePreparedCombineCellInputs(cell, cases[index]!.frozenInputs!);
+    assert.deepEqual(
+      cell.runtimeInputs?.variables,
+      prepared.cells[index]!.runtimeInputs?.variables,
+    );
+    assert.equal(cell.outerIntent.digest, prepared.cells[index]!.outerIntent.digest);
+  }
+  requirePreparedCombineCellInputs(restored.cells);
+  restored.cells[0]!.runtimeInputs!.variables.prompt = "tampered";
+  assert.throws(
+    () => requirePreparedCombineCellInputs(restored.cells),
+    /frozen Test inputs are unavailable/,
+  );
+});
+
+test("private pending Combine inputs stay redacted and require local values before resume", async () => {
+  const map = localeMap();
+  map.tests["script-only"]!.steps[0]!.binding = {
+    status: "resolved",
+    kind: "script",
+    source: 'return "{{prompt}}";',
+  };
+  const prepared = await prepareAppMapCombineCells({
+    map,
+    combine: map.combines.locales!,
+    target: { targetId: "pixel-1", platform: "android" },
+  });
+  const cell = prepared.cells[0]!;
+  const inputs = await freezeRecipeInputs({
+    recipeGraph: cell.childIntent.recipeGraph,
+    definitions: {
+      revision: 1,
+      value: [{ id: "prompt-data", name: "prompt", scope: "private", source: "static" }],
+    },
+    runtimeValues: { prompt: "abc" },
+    seed: 1,
+  });
+  assert.ok(inputs);
+  bindPreparedCombineCellInputs(cell, inputs);
+  const receipt = combineCampaignCaseFromPreparedCell(cell, {
+    index: 0,
+    phase: "coverage",
+    status: "pending",
+  });
+  assert.equal(JSON.stringify(receipt).includes("abc"), false);
+  restorePreparedCombineCellInputs(cell, receipt.frozenInputs!);
+  assert.throws(
+    () => requirePreparedCombineCellInputs([cell]),
+    /frozen Test inputs are unavailable/,
+  );
 });

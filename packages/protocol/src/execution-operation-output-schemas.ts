@@ -201,6 +201,18 @@ const preparedCasePlanSchema = z
   })
   .strict();
 
+const frozenRecipeInputReceiptSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    projectDataRevision: z.number().int().nonnegative(),
+    seed: z.number().int(),
+    values: z.record(z.string(), z.string()),
+    sensitiveInputNames: z.array(z.string()),
+    valuesDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+    case: preparedCasePlanSchema.shape.cases.element.optional(),
+  })
+  .strict();
+
 const combineEvidenceFindingSchema = z
   .object({
     id: z.string(),
@@ -475,6 +487,7 @@ export const combineCampaignSchema = z
           outerIntentDigest: z.string(),
           wrapperGraphDigest: z.string(),
           staticInputDigest: z.string(),
+          frozenInputs: frozenRecipeInputReceiptSchema.optional(),
           phase: z.enum(["pilot", "coverage"]),
           status: z.enum([
             "pending",

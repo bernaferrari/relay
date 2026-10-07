@@ -36,6 +36,7 @@ import {
   reobserveScreenIdentities,
   resilientScreenIdentityMatch,
   longPressRecordedTarget,
+  isCancel,
   tapRecordedTarget,
 } from "./recipe-runner-support.js";
 import { screenIdentityMatches } from "./recipe-target-match.js";
@@ -49,6 +50,7 @@ import {
   type RecipeStepContext,
 } from "./recipe-runner-context.js";
 import { recordInitiatingResponseBoundary } from "./recipe-response-completion.js";
+import { NativeTextEntryVerificationError } from "./input-not-dispatched.js";
 import {
   advanceSemanticRevealNavigation,
   estimateSemanticRevealMovement,
@@ -115,17 +117,36 @@ export async function runTypeStep(
   step: Extract<RecipeStep, { kind: "type" }>,
   ctx: RecipeStepContext,
 ): Promise<void> {
-  if (step.mode === "replace") {
-    if (!step.target) throw new Error("replace text requires a target");
-    return replaceText(device, step.target, step.text);
-  }
+  if (step.mode === "replace" && !step.target) throw new Error("replace text requires a target");
   try {
     recordInitiatingResponseBoundary(await snapshot(device), ctx, step.id);
-  } catch {
+  } catch (error) {
+    if (isCancel(error)) throw error;
     // Snapshot is evidence for the next extract. Typing still proceeds.
   }
-  if (step.target) await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
-  await typeText(device, step.text);
+  const retainReceipt = (data: NonNullable<Awaited<ReturnType<typeof typeText>>>) => {
+    const artifact = {
+      kind: "text-entry-verification",
+      capturedAt: now(),
+      data: { schemaVersion: 1, stepId: step.id, ...data },
+    };
+    ctx.job?.artifacts.push(artifact);
+    ctx.artifacts?.push(artifact);
+    ctx.log(`text entry: ${data.verification}${data.reason ? ` — ${data.reason}` : ""}`);
+  };
+  try {
+    if (step.mode !== "replace" && step.target)
+      await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
+    const receipt =
+      step.mode === "replace"
+        ? await replaceText(device, step.target!, step.text)
+        : await typeText(device, step.text);
+    if (receipt) retainReceipt(receipt);
+  } catch (error) {
+    if (error instanceof NativeTextEntryVerificationError && error.textEntry)
+      retainReceipt(error.textEntry);
+    throw error;
+  }
 }
 
 export async function runSemanticScrollStep(

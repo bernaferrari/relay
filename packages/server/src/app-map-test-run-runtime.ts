@@ -5,6 +5,7 @@ import {
   listDevices,
   prepareRegisteredBuildForProof,
   readBuild,
+  readProjectVariables,
 } from "@relay/core";
 import { assertTargetControl } from "./access-control.js";
 import type { AppMapProofExecutionAuthority } from "./app-map-proof-execution-admission.js";
@@ -18,6 +19,7 @@ export type AppMapTestRunRouteRuntime = {
   createAppMapTestExecutionIntent: typeof createAppMapTestExecutionIntent;
   enqueueJob: typeof enqueueJob;
   readBuild: typeof readBuild;
+  readProjectVariables: typeof readProjectVariables;
   prepareBuildForProof: typeof prepareRegisteredBuildForProof;
 };
 
@@ -27,6 +29,7 @@ export const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
   createAppMapTestExecutionIntent,
   enqueueJob,
   readBuild,
+  readProjectVariables,
   prepareBuildForProof: prepareRegisteredBuildForProof,
 };
 

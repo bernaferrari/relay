@@ -81,7 +81,21 @@ export async function runDueSchedules(
           throw new Error("Plan schedules require a Combine starter");
         }
         if (!schedule.appMapId) throw new Error("A Plan schedule requires appMapId");
-        await runtime.startCombine(schedule);
+        const occurrenceId = `schedule:${schedule.id}:${schedule.nextRunAt}`;
+        await runWithOperationContext(
+          {
+            schemaVersion: 1,
+            actorId: "system:scheduler",
+            actorKind: "system",
+            organizationId: "local",
+            projectId: schedule.projectId,
+            operationId: "job.combine.start",
+            requestId: occurrenceId,
+            idempotencyKey: occurrenceId,
+            issuedAt: at,
+          },
+          () => runtime.startCombine!(schedule),
+        );
         await runtime.markScheduleRun(schedule.id, at);
         await runtime.notify?.({
           at,

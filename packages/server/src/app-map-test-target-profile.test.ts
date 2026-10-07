@@ -80,6 +80,32 @@ test("queued Android emulator Tests carry observed AVD identity for legacy saved
   );
 });
 
+test("a generic native model label is not an exact hardware identity and known geometry still guards admission", () => {
+  const saved = { ...frozen, model: "device", viewport: { width: 1080, height: 2340 } };
+  const actual = {
+    ...observed("Pixel_9_API_36"),
+    model: "SM-S931B",
+    viewport: { width: 1080, height: 2340 },
+  };
+  assert.ok(
+    queuedAppMapTestTargetProfile({
+      runtimeTargetProfile: saved,
+      observedTargetProfile: actual,
+      target: { kind: "device", targetId: saved.targetId, platform: "android" },
+    }),
+  );
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile: saved,
+        observedTargetProfile: { ...actual, viewport: { width: 2340, height: 1080 } },
+        target: { kind: "device", targetId: saved.targetId, platform: "android" },
+      }),
+    (error: unknown) =>
+      error instanceof HttpError && error.body?.code === "TARGET_PROFILE_TARGET_MISMATCH",
+  );
+});
+
 test("queued browser Tests overlay an account fixture onto an unsigned managed target", () => {
   const unsigned = compileBrowserEnvironment({
     engine: "chromium",

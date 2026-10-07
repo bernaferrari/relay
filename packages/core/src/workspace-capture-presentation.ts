@@ -1,5 +1,20 @@
 import { PNG } from "pngjs";
 import type { SnapshotNode } from "./device.js";
+import { pngDimensions } from "./ios-geometry.js";
+import { recordNativeViewport } from "./native-target-profile.js";
+
+/** Called with the full normalized transport raster, before preview annotations. */
+export function recordNativeScreenshotViewport(
+  target: { targetId: string; platform: "android" | "ios" },
+  bytes: Uint8Array,
+  logicalBounds: { width: number; height: number } | undefined,
+  at: number,
+): void {
+  if (!bytes.byteLength || isBlankScreenshot(bytes)) return;
+  const viewport =
+    target.platform === "android" ? pngDimensions(Buffer.from(bytes)) : logicalBounds;
+  if (viewport?.width && viewport.height) recordNativeViewport(target, viewport, at);
+}
 
 /**
  * An all-black PNG is a transport/display failure, not valid visual evidence.

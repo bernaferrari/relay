@@ -722,6 +722,117 @@ test("authored waits retain their deadline through durable and direct recording 
   assert.equal(requests, 5, "a longer acknowledgement budget must never retry a mutation");
 });
 
+test("replay reads the canonical Take deadline and sends exactly one mutation", async (t) => {
+  const budgets: number[] = [];
+  const requests: Request[] = [];
+  t.mock.method(AbortSignal, "timeout", (ms: number) => {
+    budgets.push(ms);
+    return new AbortController().signal;
+  });
+  const record = {
+    schemaVersion: 1,
+    workflowId: "wf_replay",
+    organizationId: "local",
+    projectId: "default",
+    kind: "author-test",
+    version: 2,
+    status: "active",
+    frozenIdentity: {},
+    createdBy: "human:test",
+    lastActorId: "human:test",
+    createdAt: 1,
+    updatedAt: 2,
+    expiresAt: 9999999999999,
+    lastTransition: "authoring-stop-completed",
+  };
+  const fetcher: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    requests.push(request);
+    return request.method === "GET"
+      ? new Response(
+          JSON.stringify({
+            workflow: { record, audit: [] },
+            session: {
+              take: {
+                currentRevision: 2,
+                revisions: [
+                  { revision: 1, actions: [{ steps: [{ kind: "sleep", ms: 9999 }] }] },
+                  {
+                    revision: 2,
+                    actions: [
+                      {
+                        steps: [
+                          { kind: "sleep", ms: 1000 },
+                          { kind: "wait-for", target: { text: "Ready" }, timeoutMs: 600000 },
+                          {
+                            kind: "expect",
+                            target: { text: "Generating" },
+                            condition: "gone",
+                            timeoutMs: 900000,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          }),
+        )
+      : new Response(JSON.stringify({ error: "Receipt unavailable" }), { status: 503 });
+  };
+  const connection = {
+    url: "https://relay.test",
+    auth: { type: "none" as const },
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:test",
+    actorKind: "human" as const,
+  };
+  const client = new RelayClient(connection, { fetch: fetcher });
+  const decision = {
+    workflowId: "wf_replay",
+    expectedVersion: 2,
+    action: "authoring-replay" as const,
+  };
+  await assert.rejects(client.invoke("workflow.transition", decision));
+  assert.deepEqual(budgets, [20_000, 1_681_000]);
+  assert.deepEqual(
+    requests.map((request) => request.method),
+    ["GET", "POST"],
+  );
+  assert.ok(requests.every((request) => request.headers.get("x-relay-actor-id") === "human:test"));
+  const explicit = new RelayClient(connection, { fetch: fetcher, timeoutMs: 1234 });
+  await assert.rejects(explicit.invoke("workflow.transition", decision));
+  assert.deepEqual(budgets, [20_000, 1_681_000, 1234]);
+  assert.deepEqual(
+    requests.map((request) => request.method),
+    ["GET", "POST", "POST"],
+  );
+});
+
+test("unavailable canonical replay inspection never dispatches the device mutation", async () => {
+  const methods: string[] = [];
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async (_input, init) => {
+        methods.push(init?.method ?? "GET");
+        return new Response("{}", { status: 503 });
+      },
+    },
+  );
+  await assert.rejects(client.invoke("authoring.take.replay", { sessionId: "recording" }));
+  assert.deepEqual(methods, ["GET"]);
+});
+
 test("a rejected app launch remains a failure under its longer deadline", async () => {
   const client = new RelayClient(
     {

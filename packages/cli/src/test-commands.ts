@@ -223,6 +223,12 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
             "Variable id → value ids. `relay test run map test --in language=ja,pt` upserts a Combine and starts a campaign. ios/android targetProfileId follows the same native companion as compile/run. Omit --in to run the Test once.",
         },
         {
+          name: "variables",
+          type: "object",
+          description:
+            "Runtime string inputs for referenced {{name}} placeholders in one Test. Project Data sets supply defaults; values are frozen before control. Cannot combine with in.",
+        },
+        {
           name: "lens",
           type: "visual | smoke | every-screen | failures-only | final-screen | none",
           description:
@@ -261,6 +267,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         "relay test run grok-android-manual-v2 supergrok-locale-tour --in language=hu,ro --lens visual --target current --revision current",
         "relay combine export <batch-id>",
         "relay test run checkout smoke --target current --revision current",
+        'relay test run grok-android chat --target current --revision current --input \'{"variables":{"chat_prompt":"Explain why sailboats need a keel."}}\'',
         "relay test run grok-ios settings-tour --in language=ja,pt --lens visual --target current --revision current",
         'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"startup":{"mode":"verified-checkpoint","screenId":"settings"}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',

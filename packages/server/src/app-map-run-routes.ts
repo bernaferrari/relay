@@ -23,7 +23,6 @@ import {
   prepareRegisteredBuildForProof,
   readBuild,
   readAppMap,
-  playerMapSnapshotArtifact,
   readProjectVariables,
   referencedRuntimeInputs,
   redactCasePlan,
@@ -53,6 +52,8 @@ import {
   offlinePreflightProfileRecovery,
 } from "./app-map-run-target-admission.js";
 import { appMapProofExecutionAdmission } from "./app-map-proof-execution-admission.js";
+import { prepareTestRunInputs } from "./app-map-test-run-inputs.js";
+import { queuedAppMapTestArtifacts } from "./app-map-test-run-artifacts.js";
 import { assertAppMapTestBrowserIdentity } from "./app-map-browser-identity-admission.js";
 
 export {
@@ -239,12 +240,20 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     }
 
     const targetProfileId = body.targetProfileId?.trim() || undefined;
+    let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
+    if (!targetProfileId && body.target.kind === "device") {
+      observedDevices = await runtime.listDevices().catch(() => undefined);
+    }
     const prepared = await prepareAppMapCompanionTestRun({
       map,
       test,
       target: body.target,
       ...(targetProfileId ? { targetProfileId } : {}),
       projectId: input.scope.projectId,
+      observedDevice: observedDevices?.find(
+        (device) =>
+          device.serial === body.target.targetId && device.platform === body.target.platform,
+      ),
       compileOptions: {
         forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
         entryCheckpointScreenId:
@@ -311,12 +320,20 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     const operation = currentOperationContext();
     if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
     const queuedAt = Date.now();
+    const frozenInputs = await prepareTestRunInputs({
+      projectId: input.scope.projectId,
+      recipeGraph,
+      variables: body.variables,
+      queuedAt,
+      readProjectVariables: runtime.readProjectVariables,
+    });
     let executionIntent;
     try {
       executionIntent = runtime.createAppMapTestExecutionIntent({
         plan,
         recipeGraph,
         preflight,
+        frozenInputs: frozenInputs.receipt,
         ...(body.laneId?.trim() ? { laneId: body.laneId.trim() } : {}),
       });
     } catch (error) {
@@ -331,7 +348,6 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       );
     }
 
-    let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
     if (executionTarget.kind === "device") {
       const operation = currentOperationContext();
       const activeLease = operation
@@ -552,6 +568,8 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       title: recipeSnapshot.title,
       recipeSnapshot,
       recipeGraph,
+      variables: frozenInputs.variables,
+      sensitiveInputNames: frozenInputs.sensitiveInputNames,
       serial: executionTarget.kind === "device" ? targetId : undefined,
       platform: executionTarget.kind === "device" ? executionTarget.platform : undefined,
       targetKind: executionTarget.kind,
@@ -562,76 +580,21 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       ...(authenticationHealth ? { authenticationHealth } : {}),
       ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
       ...(proofEvidencePolicy ? { evidencePolicy: proofEvidencePolicy } : {}),
-      artifacts: [
-        ...(input.proofExecutionAuthority?.humanInterventionEvidence
-          ? [
-              {
-                kind: "proof-human-intervention-evidence",
-                capturedAt: input.proofExecutionAuthority.humanInterventionEvidence.recordedAt,
-                data: structuredClone(input.proofExecutionAuthority.humanInterventionEvidence),
-              },
-            ]
-          : []),
-        ...(buildProvenance
-          ? [
-              {
-                kind: "proof-build-provenance",
-                capturedAt: buildProvenance.observation.observedAt,
-                data: structuredClone(buildProvenance),
-              },
-            ]
-          : []),
-        ...(webBuildBinding
-          ? [
-              {
-                kind: "proof-web-deployment-binding",
-                capturedAt: queuedAt,
-                data: {
-                  ...structuredClone(webBuildBinding),
-                  schemaVersion: 1,
-                  buildId: webBuildBinding.id,
-                  target: { kind: "browser", id: targetId, platform: "browser" },
-                  observation: {
-                    status: "verified",
-                    observedAt: queuedAt,
-                    artifactDigest: webBuildBinding.artifactDigest,
-                  },
-                },
-              },
-            ]
-          : []),
-        ...(body.workflowRequestId
-          ? [
-              {
-                kind: "app-map-test-workflow-request",
-                capturedAt: queuedAt,
-                data: { schemaVersion: 1, requestId: body.workflowRequestId },
-              },
-            ]
-          : []),
-        {
-          kind: "app-map-test-execution-intent",
-          capturedAt: queuedAt,
-          data: executionIntent,
-        },
-        {
-          kind: "app-map-test-plan",
-          capturedAt: queuedAt,
-          data: plan,
-        },
-        playerMapSnapshotArtifact(map, queuedAt),
-        {
-          kind: "app-map-test-preflight",
-          capturedAt: queuedAt,
-          data: {
-            schemaVersion: 1,
-            ...(runtimeTargetProfile
-              ? { runtimeTargetProfile: structuredClone(runtimeTargetProfile) }
-              : {}),
-            report: structuredClone(preflight),
-          },
-        },
-      ],
+      artifacts: queuedAppMapTestArtifacts({
+        map,
+        plan,
+        executionIntent,
+        preflight,
+        runtimeTargetProfile,
+        queuedAt,
+        targetId,
+        workflowRequestId: body.workflowRequestId,
+        proofExecutionAuthority: input.proofExecutionAuthority,
+        buildProvenance,
+        webBuildBinding,
+        queuedSourceRevision,
+        inputArtifacts: frozenInputs.artifacts,
+      }),
       projectId: input.scope.projectId,
       ownerId: operation.actorId,
     });

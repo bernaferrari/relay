@@ -1,13 +1,15 @@
 /** @jsxImportSource react */
 import { Skeleton } from "@relay/ui-react/components/skeleton";
 import { Button } from "@relay/ui-react/components/button";
-import { projectError } from "@relay/product/errors";
+import { capturedSetupRecovery, projectError } from "@relay/product/errors";
+import { Link } from "@tanstack/react-router";
 import { CircleAlert, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import { RecoveryState } from "../components/product-patterns";
 type ProductRecovery = {
   code?: string;
   sourceCode?: string;
+  sourceStepId?: string;
   title: string;
   detail: string;
   recovery: string;
@@ -105,6 +107,7 @@ export function RecordingProblem({
   className,
   action,
   operation = "step",
+  testContext,
 }: {
   recovery?: ProductRecovery;
   error?: unknown;
@@ -115,6 +118,7 @@ export function RecordingProblem({
   className?: string;
   action?: ReactNode;
   operation?: "step" | "run" | "replay" | "recording";
+  testContext?: { testId: string; appMapId?: string };
 }) {
   if (!recovery && !error) return null;
   if (recovery?.code === "mutation-outcome-unknown") {
@@ -128,7 +132,7 @@ export function RecordingProblem({
           {checking
             ? `Checking ${operation} status…`
             : operation === "replay"
-              ? "Replay was interrupted. Your saved steps are safe."
+              ? "Replay status needs checking. Your saved steps are safe."
               : operation === "recording"
                 ? "Recording status needs checking."
                 : operation === "run"
@@ -157,11 +161,14 @@ export function RecordingProblem({
     );
   }
   const projectedError = error ? projectError(error) : undefined;
-  const publicRecovery = recovery
-    ? recoveryCopy(recovery)
-    : projectedError?.title !== "Something went wrong"
-      ? projectedError
-      : undefined;
+  const capturedSetup = capturedSetupRecovery(recovery ?? projectedError ?? {});
+  const publicRecovery =
+    capturedSetup ??
+    (recovery
+      ? recoveryCopy(recovery)
+      : projectedError?.title !== "Something went wrong"
+        ? projectedError
+        : undefined);
   if (layout === "compact" && recovery?.title === "Replay did not prove the reviewed recording") {
     return (
       <div
@@ -184,18 +191,41 @@ export function RecordingProblem({
       recovery={publicRecovery?.recovery}
       layout={layout}
       action={
-        action ??
-        (onRetry && (recovery?.retryable ?? (publicRecovery ? projectedError?.retryable : true)) ? (
-          <Button
-            size={layout === "centered" ? "default" : "sm"}
-            variant="outline"
-            onClick={onRetry}
-            disabled={retrying}
-          >
-            <RotateCcw aria-hidden="true" />
-            {retrying ? "Trying again…" : "Try again"}
-          </Button>
-        ) : undefined)
+        capturedSetup ? (
+          testContext ? (
+            <Button
+              nativeButton={false}
+              size={layout === "centered" ? "default" : "sm"}
+              variant="outline"
+              render={
+                <Link
+                  to="/tests/$testId"
+                  params={{ testId: testContext.testId }}
+                  search={{
+                    ...(testContext.appMapId ? { app: testContext.appMapId } : {}),
+                    ...(capturedSetup.sourceStepId ? { step: capturedSetup.sourceStepId } : {}),
+                  }}
+                />
+              }
+            >
+              {capturedSetup.sourceStepId ? "Review affected step" : "Review Test"}
+            </Button>
+          ) : undefined
+        ) : (
+          (action ??
+          (onRetry &&
+          (recovery?.retryable ?? (publicRecovery ? projectedError?.retryable : true)) ? (
+            <Button
+              size={layout === "centered" ? "default" : "sm"}
+              variant="outline"
+              onClick={onRetry}
+              disabled={retrying}
+            >
+              <RotateCcw aria-hidden="true" />
+              {retrying ? "Trying again…" : "Try again"}
+            </Button>
+          ) : undefined))
+        )
       }
     />
   );

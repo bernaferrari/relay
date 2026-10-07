@@ -90,7 +90,7 @@ test("start adopts canonical inspection and keeps the durable Run identity", asy
   assert.equal(current.snapshot?.target?.targetId, "pixel-9");
 });
 
-test("forwards selected target profile, build provenance, and cold startup as one frozen request", async () => {
+test("forwards selected setup and runtime prompt values as one canonical start request", async () => {
   let received: unknown;
   const journey = createProductRunJourney({
     jobs: {
@@ -116,6 +116,7 @@ test("forwards selected target profile, build provenance, and cold startup as on
     targetProfileId: "profile-1",
     sourceRevision: { vcs: "git", sha: "abcdef1", buildId: "build-1" },
     startup: { mode: "cold" },
+    variables: { chat_prompt: "Prompt B" },
   });
   assert.deepEqual(received, {
     kind: "run-test",
@@ -125,6 +126,7 @@ test("forwards selected target profile, build provenance, and cold startup as on
     targetProfileId: "profile-1",
     sourceRevision: { vcs: "git", sha: "abcdef1", buildId: "build-1" },
     startup: { mode: "cold" },
+    variables: { chat_prompt: "Prompt B" },
   });
   assert.equal(state.snapshot?.phase, "queued");
 });
@@ -331,6 +333,33 @@ test("public state does not leak compiled plans, refs, frozen internals, or raw 
   assert.equal("compiled" in (state.snapshot ?? {}), false);
   assert.equal("frozen" in (state.snapshot ?? {}), false);
   assert.doesNotMatch(serialized, /private|secret|payload/u);
+});
+
+test("captured setup recovery retains the canonical source step in public Run state", async () => {
+  const blocked = snapshot("blocked", 1, {
+    workflow: undefined,
+    execution: undefined,
+    problems: [
+      {
+        code: "compile-blocked",
+        sourceCode: "target-profile-ambiguous",
+        sourceStepId: "step-d950-source",
+        title: "The Test has 1 compile blocker",
+        detail:
+          "Saved target profile device:private-phone:1080x2340 has conflicting route-selection facts",
+        recovery: "Open the Test editor and resolve its blocking compile diagnostics.",
+        retryable: false,
+      },
+    ],
+  });
+  const journey = createProductRunJourney({ jobs: jobsFor({ started: blocked }) });
+  const state = await journey.start({ testId: "test-speed" });
+  assert.equal(state.recovery?.sourceStepId, "step-d950-source");
+  assert.equal(state.snapshot?.problems[0]?.sourceStepId, "step-d950-source");
+  assert.equal(state.recovery?.title, "Saved setup needs review");
+  assert.equal(state.recovery?.retryable, false);
+  assert.doesNotMatch(JSON.stringify(state.recovery), /private-phone|1080x2340|route-selection/u);
+  assert.equal(state.run, undefined);
 });
 
 test("an inspect transport failure never starts or cancels another Run", async () => {

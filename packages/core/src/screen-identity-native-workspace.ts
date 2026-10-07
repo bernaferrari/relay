@@ -1,5 +1,6 @@
 import type { AppIdentityPolicy } from "./app-identity-policy.js";
 import type { SnapshotNode } from "./device.js";
+import { nativeHomeIdentityNodes } from "./screen-identity-native-home.js";
 
 /** The reviewed Imagine canvas changes from templates to generated media.
  * Qualify its owned, selected workspace before removing that canvas; retain
@@ -11,6 +12,8 @@ export function nativeWorkspaceIdentityNodes(
 ): readonly SnapshotNode[] {
   const pack = policy?.nativeImagineWorkspace;
   if (!pack) return nodes;
+  const home = nativeHomeIdentityNodes(nodes, pack.packageName);
+  if (home) return home;
   const visible = nodes.filter(
     (node) =>
       node.visibleToUser !== false &&

@@ -4,10 +4,16 @@ import {
   type AndroidAdbExecutor,
 } from "agent-device/android-adb";
 import type { Device, SnapshotNode } from "./device-capabilities.js";
-import { controlled, controlledMutation, nativeDevice, base } from "./device-dispatch.js";
+import { controlledMutation, nativeDevice, base } from "./device-dispatch.js";
 import { execAndroidAdb } from "./android-adb-host.js";
-import { raceCancel } from "./control.js";
+import { JobCancelledError, raceCancel } from "./control.js";
 import { currentTargetContext, selectedPlatform, targetIdentity } from "./target-context.js";
+import {
+  androidTextEntryField,
+  verifyAndroidTextEntry,
+  type AndroidTextEntryReceipt,
+} from "./android-text-entry-verification.js";
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 
 export type AndroidTextPasteAdapter = {
   readClipboard: () => Promise<string>;
@@ -19,6 +25,7 @@ export type DeviceTextInputDependencies = {
   snapshot: (device: Device) => Promise<SnapshotNode[]>;
   mutateCurrentTarget: <T>(operation: () => Promise<T>) => Promise<T>;
   typeViaLiveIosListener: (text: string) => Promise<boolean>;
+  execAndroidAdb?: typeof execAndroidAdb;
 };
 
 const ANDROID_IME_PACKAGES = new Set([
@@ -30,9 +37,7 @@ const ANDROID_IME_PACKAGES = new Set([
 
 const ANDROID_SHELL_META = /[\\'"`$&;|<>()[\]{}*?!#~]/g;
 
-/** Escape one logical text payload for agent-device's adb-shell fallback.
- * Spaces and line breaks remain logical here: agent-device owns their Android
- * `%s` and Enter translation after this remote-shell safety layer. */
+/** Escape one logical line for Android's remote-shell input text command. */
 export function escapeAndroidShellText(text: string): string {
   return text.replace(ANDROID_SHELL_META, "\\$&");
 }
@@ -118,7 +123,15 @@ export async function pasteAndroidText(
     // Clipboard reads can be restricted while writes and paste remain available.
   }
 
-  await adapter.writeClipboard(text);
+  try {
+    await adapter.writeClipboard(text);
+  } catch (error) {
+    if (error instanceof JobCancelledError) throw error;
+    throw new InputNotDispatchedError(
+      `Clipboard write did not dispatch typing: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
   try {
     await adapter.paste();
   } finally {
@@ -160,33 +173,41 @@ async function typeAndroidShellTextExactly(
   text: string,
   dependencies: DeviceTextInputDependencies,
 ): Promise<void> {
-  const lines = text.split("\n");
-  for (const [index, line] of lines.entries()) {
-    const firstCased = firstCasedCharacter(line);
-    if (firstCased && firstCased === firstCased.toLocaleLowerCase()) {
-      const shifted = await dependencies
-        .snapshot(device)
-        .then(androidKeyboardShifted)
-        .catch(() => undefined);
-      if (shifted) {
-        await dependencies.mutateCurrentTarget(() =>
-          raceCancel(
-            execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_SHIFT_LEFT"]),
-          ),
-        );
-      }
-    }
-    if (line) {
-      await nativeDevice(device).interactions.type({
-        ...base(),
-        text: escapeAndroidShellText(line),
-      });
-    }
-    if (index < lines.length - 1) {
+  const adb = dependencies.execAndroidAdb ?? execAndroidAdb;
+  if (text.length > 4096 || /[^\x20-\x7e]/u.test(text) || text.includes("%s"))
+    throw new InputNotDispatchedError(
+      "The Android clipboard fallback supports one bounded ASCII line only; no text was dispatched.",
+    );
+  const firstCased = firstCasedCharacter(text);
+  if (firstCased && firstCased === firstCased.toLocaleLowerCase()) {
+    const shifted = await dependencies
+      .snapshot(device)
+      .then(androidKeyboardShifted)
+      .catch(() => undefined);
+    if (shifted) {
       await dependencies.mutateCurrentTarget(() =>
-        raceCancel(execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_ENTER"])),
+        raceCancel(adb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_SHIFT_LEFT"])),
       );
     }
+  }
+  if (text) {
+    // One bounded logical line avoids SDK chunk boundaries that let the IME
+    // replace an in-progress token. Readback remains the acceptance proof.
+    await dependencies.mutateCurrentTarget(() =>
+      raceCancel(
+        adb(
+          [
+            "-s",
+            serial,
+            "shell",
+            "input",
+            "text",
+            escapeAndroidShellText(text).replaceAll(" ", "%s"),
+          ],
+          { timeout: 10_000 },
+        ),
+      ),
+    );
   }
 }
 
@@ -194,29 +215,64 @@ export async function typeDeviceText(
   device: Device,
   text: string,
   dependencies: DeviceTextInputDependencies,
-): Promise<void> {
+): Promise<AndroidTextEntryReceipt | undefined> {
+  const android = currentTargetContext().kind !== "browser" && selectedPlatform() === "android";
+  let before: SnapshotNode | undefined;
+  if (android) {
+    try {
+      before = androidTextEntryField(await dependencies.snapshot(device));
+    } catch (error) {
+      if (error instanceof JobCancelledError) throw error;
+    }
+  }
+  const transport = await dispatchDeviceText(device, text, dependencies);
+  if (!transport) return undefined;
+  if (!before)
+    return {
+      platform: "android",
+      transport,
+      verification: "unverified",
+      reason: "focused-field-unavailable",
+    };
+  return verifyAndroidTextEntry({
+    before,
+    text,
+    transport,
+    snapshot: () => dependencies.snapshot(device),
+  });
+}
+
+async function dispatchDeviceText(
+  device: Device,
+  text: string,
+  dependencies: DeviceTextInputDependencies,
+): Promise<AndroidTextEntryReceipt["transport"] | undefined> {
   if (currentTargetContext().kind !== "browser" && selectedPlatform() === "android") {
-    // Test doubles and older agent-device clients may not expose clipboard
-    // control. Keep their deterministic fallback while production Android
-    // clients use paste so the IME cannot autocorrect or capitalize input.
+    // Prefer whole-payload paste. If writing is unsupported before paste begins,
+    // use one bounded shell command per line and retain the readback outcome.
     if (typeof nativeDevice(device).command.clipboard !== "function") {
       const serial = targetIdentity();
       try {
         await controlledMutation("type", () =>
           dependencies.mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)),
         );
+        return "clipboard";
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (!isAndroidClipboardTransportFailure(message)) throw error;
-        await controlled(() =>
-          nativeDevice(device).interactions.type({ ...base(), text: escapeAndroidShellText(text) }),
+        if (
+          !(error instanceof InputNotDispatchedError) ||
+          !isAndroidClipboardTransportFailure(message)
+        )
+          throw error;
+        await controlledMutation("type", () =>
+          typeAndroidShellTextExactly(device, serial, text, dependencies),
         );
+        return "adb-shell";
       }
-      return;
     }
     const serial = targetIdentity();
     try {
-      await controlled(() =>
+      await controlledMutation("type", () =>
         pasteAndroidText(text, {
           readClipboard: async () => {
             const result = await nativeDevice(device).command.clipboard({
@@ -238,12 +294,20 @@ export async function typeDeviceText(
           paste: async () => {
             await dependencies.mutateCurrentTarget(() =>
               raceCancel(
-                execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
+                (dependencies.execAndroidAdb ?? execAndroidAdb)([
+                  "-s",
+                  serial,
+                  "shell",
+                  "input",
+                  "keyevent",
+                  "KEYCODE_PASTE",
+                ]),
               ),
             );
           },
         }),
       );
+      return "clipboard";
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // Physical Android devices commonly expose the clipboard command but
@@ -252,24 +316,35 @@ export async function typeDeviceText(
       // to make the whole interaction unusable. Fall back to the platform's
       // input channel for clipboard command failures while still surfacing
       // cancellation and unrelated session errors.
-      if (isAndroidProviderTextInjectionUnavailable(message)) {
+      if (
+        error instanceof InputNotDispatchedError &&
+        isAndroidProviderTextInjectionUnavailable(message)
+      ) {
         try {
           await controlledMutation("type", () =>
             dependencies.mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)),
           );
-          return;
+          return "clipboard";
         } catch (fallbackError) {
           const fallbackMessage =
             fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-          if (!isAndroidClipboardTransportFailure(fallbackMessage)) throw fallbackError;
+          if (
+            !(fallbackError instanceof InputNotDispatchedError) ||
+            !isAndroidClipboardTransportFailure(fallbackMessage)
+          )
+            throw fallbackError;
         }
       }
-      if (!isAndroidClipboardTransportFailure(message)) throw error;
+      if (
+        !(error instanceof InputNotDispatchedError) ||
+        !isAndroidClipboardTransportFailure(message)
+      )
+        throw error;
       await controlledMutation("type", () =>
         typeAndroidShellTextExactly(device, serial, text, dependencies),
       );
+      return "adb-shell";
     }
-    return;
   }
   if (await dependencies.typeViaLiveIosListener(text)) return;
   await controlledMutation("type", () =>

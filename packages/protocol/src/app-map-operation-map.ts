@@ -616,6 +616,8 @@ export type AppMapOperationMap = {
       /** Explicit startup behavior. Verified checkpoint performs a fresh
        * destination proof and never falls back to an app relaunch. */
       startup?: AppMapTestStartup;
+      /** Referenced prompt/input values for one run. Frozen before target control. */
+      variables?: Record<string, string>;
       /** Variable id → selected value ids. When present, Relay upserts a
        * Combine for this Test × those worlds and starts a campaign. */
       in?: Record<string, string[]>;

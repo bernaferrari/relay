@@ -318,19 +318,18 @@ export async function captureAuthoringObservation(
 }
 
 /**
- * Capture a replay action endpoint without starting a new accessibility
- * request. This is intentionally a pixels-only fact: `captureScreenshot`
- * owns physical iOS orientation normalization, while a cached tree must never
- * be presented as current after the action changed the device.
+ * Retain current selectors for Android/browser replay endpoints. iOS keeps an
+ * immediate pixels-only endpoint because its delayed XCTest query cannot
+ * establish current geometry after a mutation.
  */
 export async function captureAuthoringReplayActionEndpoint(
   session: AuthoringSession,
   dependencies: AuthoringObservationDependencies = authoringObservationDependencies,
 ): Promise<CapturedAuthoringObservation> {
-  // Browser DOM snapshots are bounded and available in the same controlled
-  // context. Keep their raw selectors so an edited replay can become a runnable
-  // mapped path. Physical-device endpoints retain the immediate pixel path.
-  if (session.target.kind === "browser") {
+  // Android's independent capture transports and browser DOM snapshots use
+  // the normal observation path. Persist a fresh tree with each endpoint so
+  // edited actions can become an executable map path on that exact profile.
+  if (session.target.kind === "browser" || session.target.platform === "android") {
     return captureAuthoringObservation(session, dependencies);
   }
   const device = await dependencies.resolveDevice(session);

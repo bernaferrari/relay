@@ -32,10 +32,9 @@ export type AuthoringRuntime = {
    * runtimes keep the final-only replay path instead of inventing links. */
   replayAction?(session: AuthoringSession, action: AuthoringAction): Promise<void>;
   /**
-   * Captures the endpoint immediately after one replayed action. This must be
-   * pixels-first and must not wait for a new accessibility query: an iOS
-   * endpoint is still useful while XCTest semantics are delayed, but stale
-   * geometry must never be promoted to a current proof.
+   * Captures the endpoint after one replayed action. Android/browser retain a
+   * fresh tree for later map execution. iOS captures immediate pixels without
+   * waiting for XCTest; delayed geometry must never become current proof.
    */
   observeReplayActionEndpoint?(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
   /** Allow asynchronous application and system UI to settle before Relay

@@ -31,6 +31,8 @@ import {
 import { targetRuntimeReadiness } from "./target-runtime-readiness.js";
 import { androidAvdNameForSerial, observeAndroidAvdName } from "./android-avd.js";
 import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
+import { nativeViewportForTarget } from "./native-target-profile.js";
+import { observeAndroidNativeViewport } from "./android-native-viewport.js";
 
 export type ListedDevice = {
   id: string;
@@ -45,6 +47,8 @@ export type ListedDevice = {
   connectionState?: AndroidConnectionState;
   /** Observed by the adapter or the platform tool; omitted when unavailable. */
   osVersion?: string;
+  /** Recent full capture bounds; discovery never probes AX to populate this. */
+  viewport?: { width: number; height: number };
   /** Physical iOS devices need Developer Mode before Xcode can install Relay's local runner. */
   developerMode?: "enabled" | "disabled";
   /** Xcode has mounted the platform services needed to install and run Relay's local iOS runner. */
@@ -274,7 +278,12 @@ export async function listAndroidDevicesFast(): Promise<ListedDevice[]> {
 }
 
 function withRuntimeReadiness(device: ListedDevice): ListedDevice {
-  return { ...device, readiness: targetRuntimeReadiness(device) };
+  const viewport = nativeViewportForTarget({ targetId: device.serial, platform: device.platform });
+  return {
+    ...device,
+    ...(viewport ? { viewport } : {}),
+    readiness: targetRuntimeReadiness(device),
+  };
 }
 
 export async function listDevices(): Promise<ListedDevice[]> {
@@ -413,7 +422,22 @@ export async function listDevices(): Promise<ListedDevice[]> {
   for (const device of merged) {
     observedDevicePlatforms.set(device.serial, { platform: device.platform, expiresAt });
   }
-  const withReadiness = merged.map(withRuntimeReadiness);
+  const withReadiness = await Promise.all(
+    merged.map(async (device) => {
+      if (device.platform !== "android" || device.connectionState !== "connected")
+        return withRuntimeReadiness(device);
+      const [viewport, osVersion] = await Promise.all([
+        observeAndroidNativeViewport(device.serial).catch(() => undefined),
+        observedAndroidVersion(device.serial),
+      ]);
+      const { osVersion: _oldOsVersion, ...currentDevice } = device;
+      return withRuntimeReadiness({
+        ...currentDevice,
+        ...(viewport ? { viewport } : {}),
+        ...(osVersion ? { osVersion } : {}),
+      });
+    }),
+  );
   publish({ type: "device.list", at: now(), count: withReadiness.length });
   return withReadiness;
 }

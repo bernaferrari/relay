@@ -9,6 +9,11 @@ import type {
   UpdateScreenInput,
 } from "@relay/protocol";
 import { compileBrowserEnvironment } from "@relay/protocol";
+import { createHash } from "node:crypto";
+import { compileAppMapScenarioTest } from "./app-map-test-compiler.js";
+import { frozenRawAccessibilitySources } from "./app-map-test-raw-accessibility.js";
+import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
+import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
 import {
   AppMapDomainError,
   addAppMapScreen,
@@ -2177,4 +2182,124 @@ test("same-screen merge rewires outgoing actions without adding scroll reveal", 
   );
   assert.equal(merged.connections.exit!.fromScreenId, "home");
   assert.deepEqual(merged.connections.exit!.actions, map.connections.exit!.actions);
+});
+
+test("same-screen consolidation retains raw filled-state selectors beside a saved scroll surface", async () => {
+  const map = mapFixture();
+  const bytesByHash = new Map<string, Buffer>();
+  const raw = (id: string, identifier: string) => {
+    const bytes = Buffer.from(
+      JSON.stringify({
+        nodes: [
+          {
+            index: 0,
+            role: "button",
+            identifier,
+            enabled: true,
+            hittable: true,
+            rect: { x: 20, y: 20, width: 100, height: 44 },
+          },
+        ],
+      }),
+    );
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    bytesByHash.set(sha256, bytes);
+    return {
+      id,
+      uri: `relay-evidence://${sha256}`,
+      sha256,
+      mime: "application/json" as const,
+      bytes: bytes.length,
+      observationId: `observation-${id}`,
+      capturedAt: at,
+    };
+  };
+  const empty = raw("empty-composer", "composer");
+  const filled = raw("filled-composer", "input_send_button");
+  map.screenVariants["variant-home"]!.rawAccessibilityTree = empty;
+  map.screenVariants["variant-start"]!.rawAccessibilityTree = filled;
+  map.screenVariants["variant-home"]!.evidenceIds.push(empty.id);
+  map.screenVariants["variant-start"]!.evidenceIds.push(filled.id);
+  map.screenVariants["variant-home"]!.evidenceUris!.push(empty.uri);
+  map.screenVariants["variant-start"]!.evidenceUris!.push(filled.uri);
+  map.screens.start!.identity!.fingerprint = "b".repeat(64);
+  const surface = importedSettingsSurface();
+  surface.viewports = [{ ...surface.viewports[0]!, accessibilityTree: empty }];
+  for (const item of [surface.viewports[0]!.screenshot, surface.mergedTree, surface.manifest]) {
+    map.screenVariants["variant-home"]!.evidenceIds.push(item.id);
+    map.screenVariants["variant-home"]!.evidenceUris!.push(item.uri);
+  }
+  map.screenVariants["variant-home"]!.scrollSurfaces = [surface];
+  map.connections["open-home"]!.actions = [
+    { id: "send", kind: "tap", target: { identifier: "input_send_button" } },
+  ];
+  map.tests.send = {
+    ...entity("send-test"),
+    id: "send",
+    name: "Send the filled composer",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "send",
+        kind: "instruction",
+        intent: "Send message",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["open-home"] },
+      },
+    ],
+  };
+  const merged = consolidateAppMapScreens(
+    map,
+    { targetScreenId: "home", sourceScreenIds: ["start"], mode: "same-screen" },
+    context(map, "merge-filled-composer"),
+  );
+  const compiled = compileAppMapScenarioTest(merged, merged.tests.send!, {
+    runtimeTargetProfile: {
+      id: "pixel-8",
+      targetId: "target-pixel-8",
+      platform: "android",
+      capabilities: [],
+    },
+  });
+  const sources = compiled.plan.rawAccessibilitySourcesByScreenId!.home!;
+  const capturedFilled = sources.find((source) => source.tree.sha256 === filled.sha256);
+  assert.ok(capturedFilled, "Filled-state raw capture must survive consolidation in the ledger");
+  assert.equal(capturedFilled.variant.id, "variant-home");
+  assert.deepEqual(capturedFilled.origin, {
+    kind: "screen-variant",
+    observationId: filled.observationId,
+    capturedAt: filled.capturedAt,
+  });
+  assert.ok(sources.some((source) => source.origin.kind === "scroll-surface-viewport"));
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled.plan, {
+    readEvidence: async (sha256) => bytesByHash.get(sha256) ?? null,
+  });
+  const preflight = preflightCompiledAppMapTestOffline(compiled.plan, evidence, {
+    targetProfileId: "pixel-8",
+  });
+  assert.equal(preflight.summary.blockers, 0, JSON.stringify(preflight.findings));
+  assert.equal(merged.screenVariants["variant-home"]!.rawAccessibilityTree?.sha256, empty.sha256);
+
+  const incompatible = structuredClone(merged);
+  incompatible.screens.home!.consolidations![0]!.sourceVariants[0]!.targetProfile.viewport = {
+    width: 800,
+    height: 400,
+  };
+  assert.ok(
+    !frozenRawAccessibilitySources(incompatible).home!.some(
+      (source) => source.tree.sha256 === filled.sha256,
+    ),
+    "A capture from a different frozen viewport cannot supply selectors",
+  );
+  const presentationOnly = structuredClone(merged);
+  presentationOnly.screens.home!.consolidations![0]!.sourceVariants[0]!.refreshCapture = {
+    captureId: "presentation-refresh",
+    capturedAt: at,
+  };
+  assert.ok(
+    !frozenRawAccessibilitySources(presentationOnly).home!.some(
+      (source) => source.tree.sha256 === filled.sha256,
+    ),
+    "Presentation refresh cannot become executable raw proof",
+  );
 });

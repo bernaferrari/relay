@@ -389,4 +389,99 @@ describe("manual test drafts", () => {
       }),
     );
   });
+  it("edits only the addressed recorded text through a revisioned connection patch", async () => {
+    const current = map(10);
+    current.tests.checkout!.steps = [
+      {
+        id: "type-prompt",
+        kind: "instruction",
+        intent: "Type text",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["prompt"] },
+      },
+    ];
+    current.tests.other = {
+      ...test,
+      id: "other",
+      name: "Other chat",
+      steps: structuredClone(current.tests.checkout!.steps),
+    };
+    const actions = [
+      {
+        id: "take-action",
+        kind: "recorded",
+        takeId: "take",
+        takeRevision: 12,
+        evidenceIds: ["before", "after"],
+        steps: [
+          { id: "focus", kind: "tap", target: { identifier: "composer" } },
+          {
+            id: "type-value",
+            kind: "type",
+            text: "Original prompt",
+            mode: "replace",
+            target: { identifier: "composer" },
+            evidence: { screenshotEvidenceId: "before" },
+          },
+          { id: "send", kind: "tap", target: { identifier: "send" } },
+        ],
+      },
+      { id: "wait", kind: "wait", ms: 10 },
+    ];
+    current.connections.prompt = {
+      id: "prompt",
+      fromScreenId: "home",
+      destination: { kind: "end" },
+      state: "ready",
+      actions,
+    } as never;
+    const document = documentFromMap(current, "checkout")!;
+    const action = document.textActions!["type-prompt"]![0]!;
+    expect(action.sharedTestNames).toEqual(["Other chat"]);
+    expect(action.recipeStepId).toBe("type-value");
+    const next = structuredClone(current);
+    next.revision = 11;
+    clientRef.current.invoke.mockReset();
+    clientRef.current.invoke
+      .mockResolvedValueOnce({ appMap: current })
+      .mockResolvedValueOnce({ appMap: next });
+    await createTestEditorProductService(platform).saveText!({
+      document,
+      stepId: "type-prompt",
+      action,
+      text: "{{chat_prompt}}",
+    });
+    const expected = structuredClone(actions);
+    (expected[0]!.steps![1]! as { text: string }).text = "{{chat_prompt}}";
+    expect(clientRef.current.invoke).toHaveBeenLastCalledWith("app-map.connection.update", {
+      appMapId: "store",
+      connectionId: "prompt",
+      expectedRevision: 10,
+      patch: { actions: expected },
+    });
+    expect(current.connections.prompt.actions).toEqual(actions);
+    clientRef.current.invoke.mockReset();
+    clientRef.current.invoke.mockResolvedValue({ appMap: { ...current, revision: 12 } });
+    await expect(
+      createTestEditorProductService(platform).saveText!({
+        document,
+        stepId: "type-prompt",
+        action,
+        text: "new",
+      }),
+    ).rejects.toThrow("saved Test changed");
+    expect(clientRef.current.invoke).toHaveBeenCalledTimes(1);
+    clientRef.current.invoke.mockReset();
+    const unbound = structuredClone(current);
+    unbound.tests.checkout!.steps = [];
+    clientRef.current.invoke.mockResolvedValue({ appMap: unbound });
+    await expect(
+      createTestEditorProductService(platform).saveText!({
+        document,
+        stepId: "type-prompt",
+        action,
+        text: "new",
+      }),
+    ).rejects.toThrow("text action changed");
+    expect(clientRef.current.invoke).toHaveBeenCalledTimes(1);
+  });
 });

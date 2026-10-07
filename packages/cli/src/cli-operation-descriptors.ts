@@ -281,7 +281,90 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   },
 
   mapped("schedule.list", path("schedule list")),
-  mapped("schedule.create", path("schedule create")),
+  mapped(
+    "schedule.create",
+    path("schedule create", [], undefined, {
+      summary: "Schedule a saved Plan/Combine or compiled recipe",
+      inputHelp: [
+        {
+          name: "recipeId",
+          type: "string",
+          description: "Compiled execution-plan identifier; choose this or combineId.",
+        },
+        {
+          name: "combineId",
+          type: "string",
+          description: "Saved Run Across Plan/Combine identifier; choose this or recipeId.",
+        },
+        {
+          name: "appMapId",
+          type: "string",
+          description: "Required with combineId; native App Map that owns the saved Combine.",
+        },
+        {
+          name: "targetKind",
+          type: '"device" | "browser"',
+          required: true,
+          description: "Scheduled target type.",
+        },
+        {
+          name: "targetId",
+          type: "string",
+          required: true,
+          description: "Exact connected device serial or browser target identifier.",
+        },
+        {
+          name: "platform",
+          type: '"android" | "ios" | "browser"',
+          required: true,
+          description: "Target platform.",
+        },
+        {
+          name: "intervalMinutes",
+          type: "integer (1..43200)",
+          required: true,
+          description: "Time between schedule runs; use 30 for every 30 minutes.",
+        },
+        {
+          name: "hour",
+          type: "integer (0..23)",
+          description: "Optional local hour for a daily schedule.",
+        },
+        {
+          name: "timezone",
+          type: "string",
+          description: "Optional IANA timezone for a daily schedule.",
+        },
+        {
+          name: "repetitions",
+          type: "integer (1..20)",
+          description:
+            "Optional case repetition count for compiled recipe schedules; Combine schedules run their saved cases.",
+        },
+        {
+          name: "enabled",
+          type: "boolean",
+          description: "Optional enabled state; defaults to enabled.",
+        },
+        {
+          name: "profileTargets",
+          type: "array",
+          description: "Optional frozen profile-to-target bindings for a multi-profile Combine.",
+        },
+      ],
+      examples: [
+        `relay schedule create --input '${JSON.stringify({
+          appMapId: "grok-android",
+          combineId: "grok-android-chat-prompts",
+          targetKind: "device",
+          targetId: "<android-device-serial>",
+          platform: "android",
+          intervalMinutes: 30,
+        })}'`,
+      ],
+      note: "A saved native Test is scheduled through Run Across: include it in a saved Plan/Combine first, then schedule that combineId with appMapId. Referenced prompt inputs are resolved from the Test's project Data set when each scheduled Run is prepared; use static, list, or generated sources there. Schedules accept recipeId or combineId, not a testId or per-schedule runtime variables.",
+    }),
+  ),
   mapped("schedule.delete", path("schedule delete", ["scheduleId"])),
   mapped("matrix.list", path("matrix list")),
   mapped("matrix.create", path("matrix create")),

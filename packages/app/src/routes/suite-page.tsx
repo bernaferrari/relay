@@ -31,6 +31,7 @@ import {
 } from "../data/paired-configuration";
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PlanDailySchedule } from "./plan-daily-schedule";
+import type { ProductPlanScheduleTiming } from "../data/suite-profile-product-service";
 import { PlanChecklist } from "./plan-checklist";
 import { PlanEditDialog, PlanRemoveSection } from "./plan-edit-dialog";
 import { PageLoading } from "./recording-shared";
@@ -169,7 +170,7 @@ export function SuitePage() {
     },
   });
   const schedule = useMutation({
-    mutationFn: (input: { hour: number; timezone: string }) => {
+    mutationFn: (input: ProductPlanScheduleTiming) => {
       if (!suiteProfileService.schedulePlan)
         throw new TypeError("Scheduling this Plan is unavailable.");
       if (missingAccountMessage) throw new TypeError(missingAccountMessage);
@@ -185,8 +186,7 @@ export function SuitePage() {
               accounts: accountColumns.accounts,
             }
           : {}),
-        hour: input.hour,
-        timezone: input.timezone,
+        ...input,
       });
     },
     onSuccess: async () => {
@@ -602,7 +602,10 @@ export function SuitePage() {
             <PlanDailySchedule
               disabled={
                 !selectedProfileIds.length ||
+                !preview.data ||
                 Boolean(previewBlockers.length) ||
+                preview.data.execution?.capacity === "unavailable" ||
+                configuration.targetUnavailable ||
                 planSchedules.isLoading
               }
               pending={schedule.isPending || removeSchedule.isPending}

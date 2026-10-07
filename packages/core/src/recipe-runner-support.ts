@@ -1,4 +1,4 @@
-import { InputNotDispatchedError, InputOutcomeUnknownError } from "./input-not-dispatched.js";
+import { InputNotDispatchedError, isTerminalInputError } from "./input-not-dispatched.js";
 import type { Device } from "./device.js";
 import { createHash } from "node:crypto";
 import { resolveStepPoint, type StepPoint } from "@relay/protocol";
@@ -417,11 +417,8 @@ async function tapTarget(
         ...(attemptedPoint ? { point: attemptedPoint } : {}),
       };
     } catch (err) {
-      if (err instanceof InputOutcomeUnknownError) {
-        throw new InputOutcomeUnknownError(
-          `tap failed: ${describeTarget(target)}: ${err.message}`,
-          { cause: err },
-        );
+      if (isTerminalInputError(err)) {
+        throw err;
       }
       rethrowIosMutationOutcomeUnknown(err);
       if (isCancel(err)) throw err;
@@ -553,7 +550,7 @@ async function tapRecordedTarget(
       return;
     } catch (error) {
       rethrowIosMutationOutcomeUnknown(error);
-      if (error instanceof InputOutcomeUnknownError) throw error;
+      if (isTerminalInputError(error)) throw error;
       if (isCancel(error)) throw error;
       // A later candidate cannot erase an earlier attempt's uncertain outcome.
       if (index === 0 && error instanceof InputNotDispatchedError) throw error;

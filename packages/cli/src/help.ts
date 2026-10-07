@@ -284,6 +284,22 @@ function renderDetails(descriptor: CommandPathDescriptor): string {
 }
 
 function renderFamilyHelp(family: string): string {
+  if (family === "edit-recording")
+    return `Relay recording edits
+
+Usage:
+  relay edit-recording <workflowId> <expectedVersion> remove <actionId,...>
+  relay edit-recording <workflowId> <expectedVersion> reorder <actionId,...>
+  relay edit-recording <workflowId> <expectedVersion> replace <actionId> '<interaction JSON>'
+  relay edit-recording <workflowId> <expectedVersion> merge <actionId,...> [intent]
+  relay edit-recording <workflowId> <expectedVersion> split <actionId> <stepPosition>
+  relay edit-recording <workflowId> <expectedVersion> rename <actionId> <intent>
+
+Inspect the workflow with the same --actor to read its current version and
+action IDs. Replacement retains the action ID and captured source evidence;
+the edited Take needs replay before it can be saved.
+
+${globalOptions}`;
   if (family === "browser")
     return `Relay browser commands
 
