@@ -6,7 +6,10 @@ import type {
   AppMap,
   RecipeStep,
 } from "@relay/protocol";
-import type { CapturedAuthoringObservation } from "./authoring-observation-capture.js";
+import type {
+  AuthoringObservationRequest,
+  CapturedAuthoringObservation,
+} from "./authoring-observation-capture.js";
 import { currentRevision } from "./authoring-session-screen-proof.js";
 import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
 import { screenExpectation } from "./app-map-compiler.js";
@@ -17,7 +20,10 @@ export type AuthoringRuntime = {
   captureFullPage?(
     session: AuthoringSession,
   ): Promise<{ evidence: AuthoringEvidence[]; label: string }>;
-  observe(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
+  observe(
+    session: AuthoringSession,
+    request?: AuthoringObservationRequest,
+  ): Promise<CapturedAuthoringObservation>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
   replay(session: AuthoringSession, steps: RecipeStep[]): Promise<void>;
   /**

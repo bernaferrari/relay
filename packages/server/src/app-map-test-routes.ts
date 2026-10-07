@@ -58,6 +58,10 @@ type AppMapTestRouteInput = {
   request: http.IncomingMessage;
   response: http.ServerResponse;
   scope: RequestContext;
+  combinePreflightRuntime?: {
+    listDevices: typeof listDevices;
+    preflightRequestedPlanColumnsAgainstWorkspace: typeof preflightRequestedPlanColumnsAgainstWorkspace;
+  };
 };
 
 export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promise<boolean> {
@@ -349,7 +353,11 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
     const serial = body.serial?.trim();
     const browserTargetId = body.browserTargetId?.trim();
-    const devices = serial ? await listDevices().catch(() => []) : [];
+    const passiveRuntime = input.combinePreflightRuntime ?? {
+      listDevices,
+      preflightRequestedPlanColumnsAgainstWorkspace,
+    };
+    const devices = serial ? await passiveRuntime.listDevices().catch(() => []) : [];
     const device = serial ? devices.find((candidate) => candidate.serial === serial) : undefined;
     const preflight = await preflightAppMapCombine(
       appMap,
@@ -357,6 +365,8 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       {
         ...(body.selected ? { selected: body.selected } : {}),
         ...(body.strategy ? { strategy: body.strategy } : {}),
+        ...(body.selectedCellIds ? { selectedCellIds: body.selectedCellIds } : {}),
+        ...(body.profileTargets?.length ? { profileTargets: body.profileTargets } : {}),
         ...(serial && device?.platform
           ? { target: { targetId: serial, platform: device.platform } }
           : browserTargetId
@@ -392,7 +402,7 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       observed: preflight.observedDuration,
       liveFixtureReferences,
     });
-    const columnBlockers = await preflightRequestedPlanColumnsAgainstWorkspace({
+    const columnBlockers = await passiveRuntime.preflightRequestedPlanColumnsAgainstWorkspace({
       projectId: scope.projectId,
       profileTargets: body.profileTargets ?? [],
     });

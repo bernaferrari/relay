@@ -9,6 +9,11 @@ export const createAuthoringSessionParser = objectParser<CreateAuthoringSessionI
     string(input.appMapId, "appMapId");
     if (input.workflowRequestId !== undefined) string(input.workflowRequestId, "workflowRequestId");
     if (input.testName !== undefined) string(input.testName, "testName");
+    if (input.originApplication !== undefined) {
+      if (!string(input.originApplication, "originApplication").trim()) {
+        fail("originApplication", "must be a non-empty string");
+      }
+    }
     string(input.leaseId, "leaseId");
     const target = record(input.target, "authoring target");
     string(target.targetId, "authoring target targetId");

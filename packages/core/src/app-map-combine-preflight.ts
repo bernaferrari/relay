@@ -3,6 +3,7 @@ import type {
   AppMapCombine,
   AppMapCombinePreflight,
   AppMapCombinePreflightIssue,
+  CombineProfileTargetInput,
 } from "@relay/protocol";
 import {
   listDeclaredRouteVariantConfigurations,
@@ -21,6 +22,11 @@ import { bindCompanionCombineCells } from "./app-map-native-companion-combine.js
 import { nativePlatformProfileAlias } from "./app-map-native-companion-compile.js";
 import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
 import { unusedInputDataSetWarnings } from "./app-map-combine-input-usage.js";
+import {
+  assessAppMapCombineCellReadiness,
+  firstCombinePreflightColumn,
+  selectedCombinePreflightCells,
+} from "./app-map-combine-cell-readiness.js";
 import { readProjectVariables } from "./collaboration.js";
 import { externalRecipeInputNames } from "./recipe-input-dependencies.js";
 import { reachableRecipeGraph } from "./app-map-combine-cell-intent.js";
@@ -64,6 +70,8 @@ export async function preflightAppMapCombine(
     strategy?: "zip" | "cartesian" | "pairwise";
     target?: { targetId: string; platform: string };
     defaultTargetProfileId?: string;
+    selectedCellIds?: string[];
+    profileTargets?: readonly CombineProfileTargetInput[];
     readAppMap?: (appMapId: string) => Promise<AppMap | null>;
   } = {},
   compileOptions: AppMapTestCompileOptions = {},
@@ -73,6 +81,9 @@ export async function preflightAppMapCombine(
     ...(overrides.selected ? { selected: overrides.selected } : {}),
     ...(overrides.strategy ? { strategy: overrides.strategy } : {}),
   };
+  const firstColumn = firstCombinePreflightColumn(overrides.profileTargets);
+  const target = firstColumn.target ?? overrides.target;
+  const defaultTargetProfileId = firstColumn.targetProfileId ?? overrides.defaultTargetProfileId;
   const blockers: AppMapCombinePreflightIssue[] = [];
   const warnings: AppMapCombinePreflightIssue[] = [];
   const variables = combine.variableIds.flatMap((id) => {
@@ -102,7 +113,7 @@ export async function preflightAppMapCombine(
       testId: starting.testId,
     });
   }
-  const requiresCellCompilation =
+  let requiresCellCompilation =
     !compileOptions.runtimeTargetProfile && tests.some((test) => test.family !== undefined);
 
   const sets: OptionRunSet[] = variables.map((variable) => {
@@ -153,6 +164,12 @@ export async function preflightAppMapCombine(
       };
     } catch (error) {
       completeInputUsage = false;
+      if (error instanceof AppMapTestCompileError && error.code === "target-profile-ambiguous") {
+        // An unscoped metadata compile cannot adjudicate the case's selected
+        // setup. The exact-profile read-only pass below owns this blocker.
+        requiresCellCompilation = true;
+        return { id: test.id, name: test.name, kind: test.kind };
+      }
       blockers.push(
         issue(
           "invalid-test",
@@ -281,16 +298,16 @@ export async function preflightAppMapCombine(
         matrix,
         variableIds: combine.variableIds,
       });
-      const alias = overrides.defaultTargetProfileId
-        ? nativePlatformProfileAlias(overrides.defaultTargetProfileId)
+      const alias = defaultTargetProfileId
+        ? nativePlatformProfileAlias(defaultTargetProfileId)
         : undefined;
       const companionBindings =
         alias && overrides.readAppMap
           ? await bindCompanionCombineCells({
               map,
               cells: enumerated,
-              requestedProfileId: overrides.defaultTargetProfileId!,
-              ...(overrides.target ? { requestedTarget: overrides.target } : {}),
+              requestedProfileId: defaultTargetProfileId!,
+              ...(target ? { requestedTarget: target } : {}),
               readAppMap: overrides.readAppMap,
             })
           : undefined;
@@ -303,8 +320,8 @@ export async function preflightAppMapCombine(
               cells: enumerated,
               bindings: effectiveCombine.cellRuntimeProfiles ?? [],
               map,
-              target: overrides.target,
-              explicitProfileId: overrides.defaultTargetProfileId,
+              target,
+              explicitProfileId: defaultTargetProfileId,
             }),
         knownTests: new Set(effectiveCombine.testIds),
         knownValues: Object.fromEntries(
@@ -315,16 +332,20 @@ export async function preflightAppMapCombine(
         ),
       });
       cells = assessed.states;
+      const selection = selectedCombinePreflightCells(cells, overrides.selectedCellIds);
+      blockers.push(...selection.issues);
       blockers.push(...assessed.issues);
       const accountVariable = variables.find((variable) => variable.kind === "account");
       const sharingIssues = assessMutatingRoutineSharing(
         map,
-        assessed.states.map((cell) => ({
-          testId: cell.testId,
-          ...(accountVariable && cell.values[accountVariable.id]
-            ? { accountId: cell.values[accountVariable.id] }
-            : {}),
-        })),
+        assessed.states
+          .filter((cell) => selection.ids.has(cell.cellId))
+          .map((cell) => ({
+            testId: cell.testId,
+            ...(accountVariable && cell.values[accountVariable.id]
+              ? { accountId: cell.values[accountVariable.id] }
+              : {}),
+          })),
       );
       for (const starting of sharingIssues) {
         blockers.push({
@@ -333,17 +354,28 @@ export async function preflightAppMapCombine(
           testId: starting.testId,
         });
       }
-      if (overrides.target) {
-        const target = {
-          targetId: overrides.target.targetId,
-          platform: overrides.target.platform,
-        };
+      if (target) {
         const named = unresolvedTargetProfileMessage(
           target,
           savedAppMapTargetProfileIdsForTarget(map, target),
         );
         const generic = blockers.findIndex((item) => item.code === "zero-bindings");
         if (generic >= 0) blockers[generic] = issue("zero-bindings", named);
+      }
+      if (!selection.issues.length) {
+        const readiness = await assessAppMapCombineCellReadiness({
+          map,
+          combine: effectiveCombine,
+          cells,
+          selectedCellIds: overrides.selectedCellIds,
+          target,
+          profileTargets: overrides.profileTargets,
+          compileOptions,
+          readAppMap: overrides.readAppMap,
+        });
+        cells = readiness.cells;
+        blockers.push(...readiness.blockers);
+        warnings.push(...readiness.warnings);
       }
     } catch (error) {
       blockers.push(

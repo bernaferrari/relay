@@ -1,3 +1,9 @@
+import {
+  matchesEntranceStep,
+  requestedNativeTap,
+  recordedStepDigest,
+  unavailableRecordedEntrance,
+} from "./recorded-entrance-proof.js";
 import type {
   ActionSpec,
   AppMap,
@@ -78,7 +84,37 @@ export function actionSteps(
     switch (action.kind) {
       case "recorded":
       case "steps":
-        return action.steps.map((step, index) => stableStep(step, action.id, index));
+        return action.steps.map((step, index) => {
+          const entrance =
+            step.recordedEntrance ??
+            (action.kind === "recorded" &&
+            action.entranceCaptureVersion === 1 &&
+            requestedNativeTap(step)
+              ? {
+                  schemaVersion: 1 as const,
+                  takeId: action.takeId,
+                  takeRevision: action.takeRevision,
+                  actionId: action.id,
+                  stepDigest: recordedStepDigest(step),
+                  status: "unavailable" as const,
+                }
+              : undefined);
+          const valid =
+            entrance &&
+            action.kind === "recorded" &&
+            entrance.takeId === action.takeId &&
+            entrance.takeRevision === action.takeRevision &&
+            matchesEntranceStep(step, entrance);
+          return stableStep(
+            entrance && !valid
+              ? { ...step, recordedEntrance: unavailableRecordedEntrance(entrance) }
+              : entrance
+                ? { ...step, recordedEntrance: entrance }
+                : step,
+            action.id,
+            index,
+          );
+        });
       case "tap":
         return [
           {

@@ -307,7 +307,9 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             values: { ...item.values },
             targetProfileId: item.targetProfileId,
           })),
-          selectedCellIds: projected.execution.selectedCellIds,
+          // Reconcile every already-frozen case; queue selection stays in resumePlan.
+          selectedCellIds: projected.cases.map((item) => item.cellId),
+          frozenCellIds: projected.cases.map((item) => item.cellId),
           cellTargetBindings: targetBindingsForCampaign(projected),
           compileOptions: { reviewedDocumentOrigins },
           ...(projected.execution.laneId ? { laneId: projected.execution.laneId } : {}),

@@ -1,3 +1,5 @@
+import { nativeReplayEntranceRequest } from "./authoring-replay-entrance.js";
+import { recordedStepDigest } from "./recorded-entrance-proof.js";
 import type {
   AuthoringCommitDestination,
   AuthoringObservation,
@@ -56,7 +58,7 @@ export async function commitAuthoringSessionMap(input: {
   fault?.("after-verify");
   fault?.("before-rename");
   const committedAt = Math.max(now(), appMap.updatedAt + 1);
-  const targetProfile = await frozenAuthoringTargetProfile(session, committedAt);
+  const targetProfile = await frozenAuthoringTargetProfile(session, committedAt, recording);
   const originApplication = authoringOriginApplication(session);
   let connectionId = "";
   let testId: string | undefined;
@@ -81,6 +83,7 @@ export async function commitAuthoringSessionMap(input: {
             : session.target,
         takeId: session.take!.id,
         takeRevision: revision.revision,
+        ...(revision.entranceCaptureVersion === 1 ? { entranceCaptureVersion: 1 as const } : {}),
         actions: recording.actions,
         observations: recording.observations,
         before: recording.before,
@@ -102,11 +105,11 @@ export async function commitAuthoringSessionMap(input: {
             ),
           ),
         },
+        ...(originApplication ? { originApplication } : {}),
         ...(session.commitTestId
           ? {
               testId: session.commitTestId,
               testName: session.testName!,
-              ...(originApplication ? { originApplication } : {}),
             }
           : {}),
       },
@@ -156,6 +159,19 @@ function replayRecording(session: AuthoringSession, revision: AuthoringTakeRevis
       const proof = replay.actionProofs![action.id]!;
       return {
         ...action,
+        ...(nativeReplayEntranceRequest(revision, action)
+          ? {
+              entranceCaptureVersion: 1 as const,
+              entranceStepDigest: recordedStepDigest(action.steps[0]!),
+              entranceCaptureRevision: revision.revision,
+              startedAt:
+                observations.find((item) => item.id === proof.entranceObservationId)?.proof?.pixels
+                  .capturedAt ?? action.startedAt,
+              finishedAt:
+                observations.find((item) => item.id === proof.exitObservationId)?.capturedAt ??
+                action.finishedAt,
+            }
+          : {}),
         entranceObservationId: proof.entranceObservationId,
         exitObservationId: proof.exitObservationId,
         proofStatus: proof.proofStatus,
@@ -168,8 +184,33 @@ function replayRecording(session: AuthoringSession, revision: AuthoringTakeRevis
 async function frozenAuthoringTargetProfile(
   session: AuthoringSession,
   observedAt: number,
+  revision: AuthoringTakeRevision,
 ): Promise<TargetProfile | undefined> {
   if (session.target.kind !== "browser") {
+    if (session.target.platform === "ios" && revision.entranceCaptureVersion === 1) {
+      const entranceIds = new Set(
+        revision.actions.map((action) => action.entranceObservationId).filter(Boolean),
+      );
+      const profile = revision.observations?.find(
+        (item) => entranceIds.has(item.id) && item.capture?.selectorEntrance,
+      )?.capture?.selectorEntrance?.profile;
+      const bounds = revision.after?.bounds;
+      if (
+        profile &&
+        profile.targetId === session.target.targetId &&
+        bounds &&
+        profile.viewport.width === bounds.width &&
+        profile.viewport.height === bounds.height
+      ) {
+        return nativeCaptureTargetProfile({
+          ...session.target,
+          observedAt,
+          viewport: profile.viewport,
+          model: profile.model,
+          osVersion: profile.osVersion,
+        });
+      }
+    }
     const device = (await listDevices().catch(() => [])).find(
       (item) =>
         item.serial === session.target.targetId && item.platform === session.target.platform,

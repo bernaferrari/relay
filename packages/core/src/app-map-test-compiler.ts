@@ -515,7 +515,7 @@ export function compileAppMapScenarioTest(
           let recoveryRecipeId: string | undefined;
           let coldRecoveryRecipeId: string | undefined;
           const recoveryTransition = transitionDependencies.at(-1);
-          if (campaignSetupSteps.length > 0 && recoveryTransition) {
+          if (recoveryTransition) {
             const connectionPlan = compileAppMapConnection(
               compileMap,
               recoveryTransition.connectionId,
@@ -537,18 +537,20 @@ export function compileAppMapScenarioTest(
               createdAt: map.createdAt,
               updatedAt: map.updatedAt,
             };
-            coldRecoveryRecipeId = `${id}:proposed-cold-recovery:${recoveryTransition.connectionId}`;
-            instructionGraph[coldRecoveryRecipeId] = {
-              id: coldRecoveryRecipeId,
-              title: `${connectionRoot.title} · proposed cold recovery`,
-              source: "custom",
-              steps: [
-                ...structuredClone(campaignSetupSteps),
-                ...structuredClone(connectionRoot.steps),
-              ],
-              createdAt: map.createdAt,
-              updatedAt: map.updatedAt,
-            };
+            if (campaignSetupSteps.length > 0) {
+              coldRecoveryRecipeId = `${id}:proposed-cold-recovery:${recoveryTransition.connectionId}`;
+              instructionGraph[coldRecoveryRecipeId] = {
+                id: coldRecoveryRecipeId,
+                title: `${connectionRoot.title} · proposed cold recovery`,
+                source: "custom",
+                steps: [
+                  ...structuredClone(campaignSetupSteps),
+                  ...structuredClone(connectionRoot.steps),
+                ],
+                createdAt: map.createdAt,
+                updatedAt: map.updatedAt,
+              };
+            }
           }
           if (connections.some((connection) => connection.destination.kind === "end")) {
             destEndRecipeIds.add(plan.rootRecipeId);
@@ -612,7 +614,7 @@ export function compileAppMapScenarioTest(
                       recipeId: recoveryRecipeId,
                       transitionId: recoveryTransition!.connectionId,
                       mode: "warm-transition",
-                      coldRecipeId: coldRecoveryRecipeId!,
+                      ...(coldRecoveryRecipeId ? { coldRecipeId: coldRecoveryRecipeId } : {}),
                     },
                   }
                 : {}),

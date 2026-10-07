@@ -619,6 +619,12 @@ export const operationInputSchemas = {
       appMapId: identifier("App Map identifier"),
       testName: z.string().trim().min(1).optional(),
       target: authoringTarget,
+      originApplication: z
+        .string()
+        .trim()
+        .min(1)
+        .describe("Explicit native application package or bundle identifier")
+        .optional(),
       leaseId: identifier("Actor-owned target lease identifier"),
       expectedAppMapRevision: natural("Current App Map revision"),
       sourceScreenId: identifier("Source screen identifier").optional(),

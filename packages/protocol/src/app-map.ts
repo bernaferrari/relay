@@ -267,6 +267,7 @@ export type ActionSpec = ActionMetadata &
   (
     | {
         kind: "recorded";
+        entranceCaptureVersion?: 1;
         takeId: string;
         takeRevision: number;
         steps: RecipeStep[];

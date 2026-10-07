@@ -1,3 +1,4 @@
+import { recordedStepDigest } from "./recorded-entrance-proof.js";
 import { randomUUID } from "node:crypto";
 import { AUTHORING_RAW_CAPTURE_VERSION } from "@relay/protocol";
 import type {
@@ -23,6 +24,7 @@ import {
 } from "./authoring-raw-recording.js";
 import { authoringTransitionProofStatus } from "./authoring-transition-proof.js";
 import { semanticTargetForRecording } from "./authoring-tap-target.js";
+import type { AuthoringObservationRequest } from "./authoring-observation-capture.js";
 import {
   hasAuthoringBusyControl,
   inferredAuthoringCompletionWait,
@@ -35,7 +37,7 @@ export type AuthoringRecordingRuntime<Captured> = {
     label: string;
     fullPage?: import("@relay/protocol").AuthoringFullPageCapture;
   }>;
-  observe(session: AuthoringSession): Promise<Captured>;
+  observe(session: AuthoringSession, request?: AuthoringObservationRequest): Promise<Captured>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
   settle?(ms: number): Promise<void>;
   stopVideo?(
@@ -183,13 +185,26 @@ export async function recordAuthoringInteraction<Captured>(
   // Name what was clicked (devices and browsers alike) so the step reads
   // "Tap “Business”" and replays by that control, not by a pixel.
   if (
-    (interaction.kind === "tap" && interaction.target.point && !interaction.applied) ||
+    (interaction.kind === "tap" &&
+      !interaction.applied &&
+      (interaction.target.point ||
+        (session.target.platform === "ios" &&
+          (interaction.target.identifier || interaction.target.label)))) ||
     ((interaction.kind === "screenshot" || interaction.kind === "observe") &&
       hasAuthoringBusyControl(revisionAtEntrance.after))
   ) {
     // The last endpoint can predate a transition or a user's external input.
     // Never derive a semantic selector from that potentially stale tree.
-    const fresh = await persistObservation(await runtime.observe(session));
+    const request =
+      interaction.kind === "tap" && session.target.platform === "ios"
+        ? {
+            ...(interaction.target.identifier
+              ? { includeIdentifiers: [interaction.target.identifier] }
+              : {}),
+            ...(interaction.target.label ? { includeLabels: [interaction.target.label] } : {}),
+          }
+        : undefined;
+    const fresh = await persistObservation(await runtime.observe(session, request));
     entrance = fresh.observation;
     entranceEvidence = fresh.evidence;
     const completion = revisionAtEntrance.actions.length
@@ -292,13 +307,22 @@ export async function recordAuthoringInteraction<Captured>(
   // measures human idle time, not device execution or evidence I/O.
   const finishedAt = now();
   const actionId = `action-${randomUUID()}`;
+  const steps = stepsForInteraction(executable, actionId, session.group);
   const action: AuthoringAction = {
     id: actionId,
     source: actionSource(interaction),
     recordedAt: startedAt,
     startedAt,
     finishedAt,
-    steps: stepsForInteraction(executable, actionId, session.group),
+    steps,
+    ...(session.target.platform === "ios" &&
+    (interaction.kind === "tap" || interaction.kind === "steps")
+      ? {
+          entranceCaptureVersion: 1 as const,
+          entranceCaptureRevision: revisionAtEntrance.revision + 1,
+          ...(steps.length === 1 ? { entranceStepDigest: recordedStepDigest(steps[0]!) } : {}),
+        }
+      : {}),
     evidenceIds: [...(fullPage?.evidence ?? []), ...captured.evidence].map((item) => item.id),
     ...(entrance
       ? {
@@ -328,6 +352,7 @@ export async function recordAuthoringInteraction<Captured>(
     // and editable without replaying human thinking time.
     return {
       ...revision,
+      ...(action.entranceCaptureVersion === 1 ? { entranceCaptureVersion: 1 as const } : {}),
       actions: [...revision.actions, action],
       evidence: [
         ...revision.evidence,

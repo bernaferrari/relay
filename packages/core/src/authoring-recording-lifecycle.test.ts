@@ -159,7 +159,14 @@ test("interaction lifecycle writes the raw intent before dispatch and links its 
     lifecycle,
   );
 
-  assert.deepEqual(order, ["write-session", "execute", "observe", "persist-observation"]);
+  assert.deepEqual(order, [
+    "observe",
+    "persist-observation",
+    "write-session",
+    "execute",
+    "observe",
+    "persist-observation",
+  ]);
   assert.deepEqual(writes, [["take-start", "interaction-intent"]]);
   assert.deepEqual(
     session.take?.rawEvents?.map((event) => event.kind),
@@ -417,11 +424,17 @@ for (const stop of [false, true]) {
   test(`completion is durably recorded before ${stop ? "Stop" : "the next capture"}`, async () => {
     let tick = 100;
     let frame = 0;
+    let captures = 0;
     const executed: AuthoringInteraction[] = [];
     const writes: AuthoringSession[] = [];
     const lifecycle = dependencies({
       now: () => ++tick,
       async persistObservation() {
+        if (captures++ === 0)
+          return {
+            observation: generationObservation("fresh-entrance", 199, false),
+            evidence: [evidence("evidence-fresh-entrance", 199)],
+          };
         const capturedAt = 200 + frame++;
         const captured = generationObservation(`frame-${frame}`, capturedAt, frame === 1);
         return {

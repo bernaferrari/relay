@@ -1,3 +1,7 @@
+import {
+  captureReplaySelectorEntrance,
+  nativeReplayEntranceRequest,
+} from "./authoring-replay-entrance.js";
 import { randomUUID } from "node:crypto";
 import type {
   AuthoringCommitDestination,
@@ -61,7 +65,10 @@ import {
   startAuthoringRecording,
   type AuthoringRecordingStartResult,
 } from "./authoring-recording-start.js";
-export type { CapturedAuthoringObservation } from "./authoring-observation-capture.js";
+export type {
+  CapturedAuthoringObservation,
+  AuthoringObservationRequest,
+} from "./authoring-observation-capture.js";
 import type {
   AuthoringCommitFault,
   AuthoringRecovery,
@@ -460,7 +467,11 @@ export class AuthoringSessionStore {
         if (
           replayAction &&
           observeReplayActionEndpoint &&
-          revision.actions.length + 1 > MAX_AUTHORING_RETAINED_OBSERVATIONS
+          revision.actions.length +
+            1 +
+            revision.actions.filter((action) => nativeReplayEntranceRequest(revision, action))
+              .length >
+            MAX_AUTHORING_RETAINED_OBSERVATIONS
         ) {
           // Do not execute a path whose per-action endpoints could not all be
           // retained. A partial index would leave action ids resolving to
@@ -506,6 +517,18 @@ export class AuthoringSessionStore {
             for (let index = 0; index < revision.actions.length; index += 1) {
               const action = revision.actions[index]!;
               try {
+                const fresh = await captureReplaySelectorEntrance(
+                  session,
+                  revision,
+                  action,
+                  runtime,
+                  replayObservations,
+                );
+                if (fresh) {
+                  replayObservations = fresh.observations;
+                  evidence.push(...fresh.evidence);
+                  entrance = fresh.observation;
+                }
                 await replayAction(session, action);
                 // The adapter captures fresh Android/browser semantics or
                 // immediate iOS pixels. The final destination check keeps its

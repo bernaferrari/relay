@@ -1354,6 +1354,12 @@ test("instruction branches compile as isolated campaign checks", () => {
   assert.deepEqual(moduleStep?.check, {
     id: instruction.id,
     title: instruction.intent,
+    recovery: {
+      groupId: "transition:open-cart",
+      recipeId: "app-map:checkout:test:checkout-smoke:root:r7:confirm:open-cart",
+      transitionId: "open-cart",
+      mode: "warm-transition",
+    },
     transitionDependencies: [
       {
         connectionId: "open-cart",

@@ -1,4 +1,5 @@
 /** Canonical recipe contract shared by persistence, execution, HTTP, and UI. */
+import type { RecordedEntrance } from "./recorded-entrance.js";
 import type { DestinationEvidenceSurface, ScreenIdentityObservation } from "./app-map.js";
 import type {
   ScrollSurfaceDocumentOriginProof,
@@ -259,6 +260,7 @@ export type RecipeStepMetadata = {
   group?: string;
   /** Immutable screen/UI-tree context captured when this step was recorded. */
   evidence?: RecordedStepEvidence;
+  recordedEntrance?: RecordedEntrance;
   note?: string;
   /** Review-owned declaration for real-world effects that cannot be inferred
    * safely from UI copy. It informs policy only and never changes execution. */

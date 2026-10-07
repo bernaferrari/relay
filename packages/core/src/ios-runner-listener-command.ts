@@ -4,6 +4,24 @@
  * `relay-ios-<serial>` and does not own the daemon’s live runner; recipes
  * still need named controls. A healthy listener is not a recover-kill.
  */
+import {
+  IOS_BOUNDED_CHROME_LABELS,
+  IOS_BOUNDED_HOME_CHROME_LABELS,
+  IOS_CHROME_QUERY_TIMEOUT_MS,
+  chromeValuesToQuery,
+  chromeNodeHasIdentifier,
+  queryIosChromeIdentifiersViaListener,
+  queryIosChromeLabelsViaListener,
+  queryIosChromeSelectorsViaListener,
+} from "./ios-snapshot-chrome.js";
+export {
+  IOS_BOUNDED_HOME_CHROME_IDENTIFIERS,
+  IOS_BOUNDED_ATTACH_MENU_IDENTIFIERS,
+  IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS,
+  IOS_BOUNDED_CHROME_IDENTIFIERS,
+  IOS_BOUNDED_HOME_CHROME_LABELS,
+  IOS_BOUNDED_CHROME_LABELS,
+} from "./ios-snapshot-chrome.js";
 import type { Socket } from "node:net";
 import { openUsbmuxRunnerSocket, readUntilClose, writeAll } from "./ios-usbmux.js";
 export { readUsbmuxDeviceId } from "./ios-usbmux.js";
@@ -96,52 +114,9 @@ export function isIosRunnerHostProbeTree(nodes: readonly SnapshotNode[]): boolea
   });
 }
 
-/** Unique home chrome — never walk Grok conversation lists. */
-export const IOS_BOUNDED_HOME_CHROME_IDENTIFIERS = [
-  "ask.toolbar.textfield",
-  "sidebar.open.button",
-  "toolbar.model.selector.button",
-  "voice.speak.button",
-  "ask.toolbar.add.button",
-] as const;
-
-/** Unique attach-sheet ids. Query only when `+` is present — XCTest id-miss on an open library walks the list. */
-export const IOS_BOUNDED_ATTACH_MENU_IDENTIFIERS = [
-  "ask.toolbar.add.menu.camera",
-  "ask.toolbar.add.menu.photos",
-  "ask.toolbar.add.menu.files",
-  "ask.toolbar.add.menu.connectors",
-  "ask.toolbar.add.menu.skills",
-] as const;
-
-/** Unique sidebar chrome omitted from home n=7. */
-export const IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS = [
-  "sidebar.settings.button",
-  "sidebar.search.field",
-] as const;
-
-/** Home chrome + unique attach-sheet / sidebar ids — never walk Grok conversation lists. */
-export const IOS_BOUNDED_CHROME_IDENTIFIERS = [
-  ...IOS_BOUNDED_HOME_CHROME_IDENTIFIERS,
-  ...IOS_BOUNDED_ATTACH_MENU_IDENTIFIERS,
-  ...IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS,
-] as const;
-
-/** Unique closed-home chrome labels — queried while the hamburger is present. */
-export const IOS_BOUNDED_HOME_CHROME_LABELS = ["New temporary conversation"] as const;
-
-/** Unique SuperGrok sidebar chrome labels omitted from chrome-bounded snapshot. */
-export const IOS_BOUNDED_CHROME_LABELS = [
-  "grok-compose",
-  "grok-arrows-right",
-  "grok-gear",
-  "grok-3-dots",
-] as const;
-
 const IOS_APPLICATION_ROOT_DEPTH = 0;
 const IOS_BOUNDED_SNAPSHOT_DEPTH = 4;
 const IOS_DISAMBIGUATION_SNAPSHOT_DEPTH = 16;
-const IOS_CHROME_QUERY_TIMEOUT_MS = 8_000;
 
 function iosRunnerCommandIsAmbiguous(result: LiveIosRunnerCommandResult): boolean {
   const code = result.error && typeof result.error === "object" ? result.error.code : undefined;
@@ -162,7 +137,7 @@ export function liveIosRunnerCommandIsBusy(result: LiveIosRunnerCommandResult): 
 async function snapshotIosApplicationRootViaListener(
   listener: LiveIosRunnerListener,
   post: LiveIosRunnerCommandPost,
-  input: { appBundleId?: string },
+  input: { appBundleId?: string; separateRequestedSelectorEvidence?: boolean },
   timeoutMs: number,
 ): Promise<SnapshotNode | undefined> {
   const result = await post(
@@ -177,6 +152,7 @@ async function snapshotIosApplicationRootViaListener(
   );
   if (result.ok === false) return undefined;
   const nodes = result.data?.nodes ?? result.nodes ?? [];
+  if (input.separateRequestedSelectorEvidence && result.data?.systemSurface) return undefined;
   if (isIosRunnerHostProbeTree(nodes)) return undefined;
   return nodes.find(
     (node) =>
@@ -273,6 +249,7 @@ async function snapshotRequestedIosChromeViaListener(
     includeIdentifiers?: readonly string[];
     includeLabels?: readonly string[];
     controlBoundsOnlyForApp?: string;
+    separateRequestedSelectorEvidence?: boolean;
   },
   timeoutMs: number,
 ): Promise<SnapshotNode[]> {
@@ -358,6 +335,7 @@ export async function snapshotViaLiveIosRunnerListener(input: {
   /** Query only includeIdentifiers/includeLabels — never the home/library catalog. */
   requestedChromeOnly?: boolean;
   controlBoundsOnlyForApp?: string;
+  separateRequestedSelectorEvidence?: boolean;
 }): Promise<SnapshotNode[]> {
   const listener = await probeLiveIosRunnerListener(input.serial);
   if (!listener) {
@@ -377,12 +355,18 @@ export async function snapshotViaLiveIosRunnerListener(input: {
       post,
       {
         appBundleId: input.appBundleId,
+        separateRequestedSelectorEvidence: input.separateRequestedSelectorEvidence,
         includeLabels: hamburgerPresent
           ? [...IOS_BOUNDED_HOME_CHROME_LABELS, ...(input.includeLabels ?? [])]
           : input.includeLabels,
       },
       timeoutMs,
-      { includeDefaults: !hamburgerPresent },
+      {
+        includeDefaults: !hamburgerPresent,
+        catalogLabels: hamburgerPresent
+          ? IOS_BOUNDED_HOME_CHROME_LABELS
+          : IOS_BOUNDED_CHROME_LABELS,
+      },
     )),
   ];
   if (chrome.length > 0) {
@@ -398,6 +382,15 @@ export async function snapshotViaLiveIosRunnerListener(input: {
       timeoutMs,
     );
     return application ? [application, ...chrome] : chrome;
+  }
+  if (input.separateRequestedSelectorEvidence) {
+    const application = await snapshotIosApplicationRootViaListener(
+      listener,
+      post,
+      input,
+      timeoutMs,
+    );
+    return application ? [application] : [];
   }
   const command: LiveIosRunnerCommand = {
     command: "snapshot",
@@ -416,154 +409,6 @@ export async function snapshotViaLiveIosRunnerListener(input: {
     );
   }
   return nodes.map((node) => ({ ...node, logicalCoordinates: true }));
-}
-
-function chromeValuesToQuery(known: readonly string[], extra?: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const values: string[] = [];
-  for (const value of [...known, ...(extra ?? [])]) {
-    const trimmed = value.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    values.push(trimmed);
-  }
-  return values;
-}
-
-async function queryIosChromeSelectorsViaListener(
-  listener: LiveIosRunnerListener,
-  post: LiveIosRunnerCommandPost,
-  input: {
-    appBundleId?: string;
-    selectorKey: "id" | "label";
-    values: readonly string[];
-    preserveNonlogicalBounds?: boolean;
-  },
-  timeoutMs: number,
-): Promise<SnapshotNode[]> {
-  if (input.values.length === 0) return [];
-  const nodes: SnapshotNode[] = [];
-  const queryTimeout = Math.min(timeoutMs, IOS_CHROME_QUERY_TIMEOUT_MS);
-  for (const value of input.values) {
-    const result = await post(
-      listener,
-      {
-        command: "querySelector",
-        selectorKey: input.selectorKey,
-        selectorValue: value,
-        ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-      },
-      queryTimeout,
-    );
-    if (result.ok === false) continue;
-    const found = result.data?.nodes ?? result.nodes ?? [];
-    for (const node of found) {
-      nodes.push({
-        ...node,
-        ...(input.selectorKey === "id"
-          ? { identifier: node.identifier?.trim() || value }
-          : { label: node.label?.trim() || value }),
-        // This direct query uses the runner's XCUIElement.frame presentation,
-        // which this adapter already treats as logical. Recording preserves
-        // an explicit producer refusal before omitting Application geometry.
-        logicalCoordinates: !input.preserveNonlogicalBounds || node.logicalCoordinates !== false,
-      });
-    }
-  }
-  return nodes;
-}
-
-const IOS_ATTACH_MENU_IDENTIFIER_SET = new Set<string>(IOS_BOUNDED_ATTACH_MENU_IDENTIFIERS);
-const IOS_SIDEBAR_CHROME_IDENTIFIER_SET = new Set<string>(IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS);
-
-function chromeNodeHasIdentifier(nodes: readonly SnapshotNode[], identifier: string): boolean {
-  return nodes.some((node) => (node.identifier?.trim() || "") === identifier);
-}
-
-function isDeferredChromeIdentifier(value: string): boolean {
-  const trimmed = value.trim();
-  return (
-    IOS_ATTACH_MENU_IDENTIFIER_SET.has(trimmed) || IOS_SIDEBAR_CHROME_IDENTIFIER_SET.has(trimmed)
-  );
-}
-
-async function queryIosChromeIdentifiersViaListener(
-  listener: LiveIosRunnerListener,
-  post: LiveIosRunnerCommandPost,
-  input: { appBundleId?: string; includeIdentifiers?: readonly string[] },
-  timeoutMs: number,
-): Promise<SnapshotNode[]> {
-  const extra = input.includeIdentifiers ?? [];
-  const requestedAttach = extra.filter((value) => IOS_ATTACH_MENU_IDENTIFIER_SET.has(value.trim()));
-  const requestedSidebar = extra.filter((value) =>
-    IOS_SIDEBAR_CHROME_IDENTIFIER_SET.has(value.trim()),
-  );
-  const home = await queryIosChromeSelectorsViaListener(
-    listener,
-    post,
-    {
-      selectorKey: "id",
-      values: chromeValuesToQuery(
-        IOS_BOUNDED_HOME_CHROME_IDENTIFIERS,
-        extra.filter((value) => !isDeferredChromeIdentifier(value)),
-      ),
-      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-    },
-    timeoutMs,
-  );
-  const hamburgerPresent = chromeNodeHasIdentifier(home, "sidebar.open.button");
-  const sidebarValues = hamburgerPresent
-    ? chromeValuesToQuery([], requestedSidebar)
-    : chromeValuesToQuery(IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS, requestedSidebar);
-  const sidebar =
-    sidebarValues.length === 0
-      ? []
-      : await queryIosChromeSelectorsViaListener(
-          listener,
-          post,
-          {
-            selectorKey: "id",
-            values: sidebarValues,
-            ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-          },
-          timeoutMs,
-        );
-  const attach =
-    requestedAttach.length === 0
-      ? []
-      : await queryIosChromeSelectorsViaListener(
-          listener,
-          post,
-          {
-            selectorKey: "id",
-            values: chromeValuesToQuery([], requestedAttach),
-            ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-          },
-          timeoutMs,
-        );
-  return [...home, ...sidebar, ...attach];
-}
-
-async function queryIosChromeLabelsViaListener(
-  listener: LiveIosRunnerListener,
-  post: LiveIosRunnerCommandPost,
-  input: { appBundleId?: string; includeLabels?: readonly string[] },
-  timeoutMs: number,
-  options?: { includeDefaults?: boolean },
-): Promise<SnapshotNode[]> {
-  const defaults = options?.includeDefaults === false ? [] : IOS_BOUNDED_CHROME_LABELS;
-  const values = chromeValuesToQuery(defaults, input.includeLabels);
-  if (values.length === 0) return [];
-  return queryIosChromeSelectorsViaListener(
-    listener,
-    post,
-    {
-      selectorKey: "label",
-      values,
-      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-    },
-    timeoutMs,
-  );
 }
 
 /** `true`/`false` when the adopted listener answered. `undefined` if no listener. */
@@ -851,6 +696,7 @@ export async function snapshotFromLiveIosRunnerListenerIfReady(
     includeLabels?: readonly string[];
     requestedChromeOnly?: boolean;
     controlBoundsOnlyForApp?: string;
+    separateRequestedSelectorEvidence?: boolean;
   },
 ): Promise<SnapshotNode[] | undefined> {
   if (context.kind !== "device" || context.platform !== "ios") return undefined;
@@ -864,6 +710,7 @@ export async function snapshotFromLiveIosRunnerListenerIfReady(
     ...(opts?.includeIdentifiers?.length ? { includeIdentifiers: opts.includeIdentifiers } : {}),
     ...(opts?.includeLabels?.length ? { includeLabels: opts.includeLabels } : {}),
     ...(opts?.requestedChromeOnly ? { requestedChromeOnly: true } : {}),
+    ...(opts?.separateRequestedSelectorEvidence ? { separateRequestedSelectorEvidence: true } : {}),
     ...(opts?.controlBoundsOnlyForApp
       ? { controlBoundsOnlyForApp: opts.controlBoundsOnlyForApp }
       : {}),

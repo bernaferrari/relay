@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Device } from "./device.js";
 import { runCampaignCheck } from "./recipe-runner-campaign-checks.js";
+import { RecipeNavigationPrerequisiteError } from "./recipe-runner-campaign-support.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "./session.js";
@@ -91,7 +92,7 @@ async function run(
   execute: (recipeId?: string) => Promise<void>,
 ): Promise<void> {
   await runWithTargetContext(
-    { kind: "device", platform: "android", serial: "proof-graph-model" },
+    { kind: "browser", platform: "browser", targetId: "proof-graph-model" },
     () => runCampaignCheck(device(), { kind: "sleep", ms: 1, check: value }, ctx, execute),
   );
 }
@@ -127,9 +128,12 @@ test("a broken shared edge blocks unrelated work until its own origin is proven"
   await run(ctx, check("help"), async () => {
     executions.push("help:must-not-run");
   });
-  await run(ctx, check("profile", [profile], { recovery: undefined }), async () => {
-    executions.push("profile:warm");
-  });
+  await assert.rejects(
+    run(ctx, check("profile", [profile], { recovery: undefined }), async () => {
+      executions.push("profile:warm");
+    }),
+    RecipeNavigationPrerequisiteError,
+  );
 
   assert.deepEqual(executions, ["missing-reset:warm", "privacy:confirm-open-settings"]);
   assert.deepEqual(resultStatuses(ctx), [
@@ -267,9 +271,12 @@ test("r173 Birth Year drift blocks every stale warm mutation behind one evidence
       recovery: undefined,
     }),
   ]) {
-    await run(ctx, value, async (recipeId) => {
-      mutations.push(recipeId ?? `${value.id}:stale-warm`);
-    });
+    await assert.rejects(
+      run(ctx, value, async (recipeId) => {
+        mutations.push(recipeId ?? `${value.id}:stale-warm`);
+      }),
+      RecipeNavigationPrerequisiteError,
+    );
   }
 
   assert.deepEqual(mutations, [], "no Back, tap, reveal, cleanup, or warm recipe may run");
@@ -356,10 +363,15 @@ test("the same perturbation seed produces the same campaign outcome", async () =
     const ctx = context(`model-seed-${seed}`);
     const executed: string[] = [];
     for (const [index, id] of ordered.entries()) {
-      await run(ctx, check(id, [profile], { recovery: undefined }), async () => {
-        executed.push(id);
-        if ((seed + index) % 3 === 0) throw new Error(`seeded drift at ${id}`);
-      });
+      try {
+        await run(ctx, check(id, [profile], { recovery: undefined }), async () => {
+          executed.push(id);
+          if ((seed + index) % 3 === 0) throw new Error(`seeded drift at ${id}`);
+        });
+      } catch (error) {
+        if (!(error instanceof RecipeNavigationPrerequisiteError)) throw error;
+        break;
+      }
     }
     return { executed, results: resultStatuses(ctx) };
   }

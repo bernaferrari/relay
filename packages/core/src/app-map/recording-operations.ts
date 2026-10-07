@@ -1,3 +1,4 @@
+import { recordedActions } from "./recording-actions.js";
 import { capturedScreenTitle } from "./captured-screen-title.js";
 import { equivalentScreenCapture } from "./equivalent-screen-capture.js";
 import { createHash } from "node:crypto";
@@ -43,6 +44,7 @@ export type AppMapRecordingInput = {
   target: AuthoringTarget;
   takeId: string;
   takeRevision: number;
+  entranceCaptureVersion?: 1;
   actions: AuthoringAction[];
   observations?: AuthoringObservation[];
   before?: AuthoringObservation;
@@ -621,25 +623,6 @@ function attachToFlow(map: AppMap, sourceScreenId: string, connectionId: string,
     createdAt: at,
     updatedAt: at,
   };
-}
-
-function recordedActions(input: AppMapRecordingInput): ActionSpec[] {
-  const steps = input.actions
-    .flatMap((action) => action.steps)
-    .map((step) => structuredClone(step));
-  if (steps.length === 0) {
-    return [{ id: `passive-${input.takeId}`, kind: "passive", reason: "observe-only" }];
-  }
-  return [
-    {
-      id: `recording-${input.takeId}`,
-      kind: "recorded",
-      takeId: input.takeId,
-      takeRevision: input.takeRevision,
-      steps,
-      evidenceIds: [...new Set(input.evidenceIds)],
-    },
-  ];
 }
 
 function humanizeIdentifier(identifier: string): string {

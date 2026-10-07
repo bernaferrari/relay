@@ -8,6 +8,7 @@ import type {
   ScrollSurfaceViewport,
   StepTarget,
 } from "@relay/protocol";
+import { recordedEntranceSchema } from "@relay/protocol";
 import { parseCampaignCheck } from "./recipe-validation-campaign.js";
 import { parseRecordedEvidence } from "./recipe-validation-evidence.js";
 import { parseReviewedDocumentOriginExecutionReference } from "./recipe-validation-reviewed-origin.js";
@@ -624,6 +625,7 @@ function parseStepMetadata(
   coverage?: RecipeStep["coverage"];
   group?: string;
   evidence?: RecordedStepEvidence;
+  recordedEntrance?: RecipeStep["recordedEntrance"];
   note?: string;
   reviewedExternalEffects?: RecipeStep["reviewedExternalEffects"];
   optional?: boolean;
@@ -636,6 +638,7 @@ function parseStepMetadata(
     coverage?: RecipeStep["coverage"];
     group?: string;
     evidence?: RecordedStepEvidence;
+    recordedEntrance?: RecipeStep["recordedEntrance"];
     note?: string;
     reviewedExternalEffects?: RecipeStep["reviewedExternalEffects"];
     optional?: boolean;
@@ -643,6 +646,12 @@ function parseStepMetadata(
     when?: RecipeStep["when"];
     leftoverSkip?: "dest";
   } = {};
+  if (raw.recordedEntrance !== undefined) {
+    const parsed = recordedEntranceSchema.safeParse(raw.recordedEntrance);
+    if (!parsed.success)
+      throw stepErr(index, "recordedEntrance must be valid immutable entrance metadata");
+    metadata.recordedEntrance = parsed.data;
+  }
   if (raw.id !== undefined) {
     if (!isString(raw.id) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(raw.id)) {
       throw stepErr(index, "id must use letters, numbers, hyphens, and underscores only");
