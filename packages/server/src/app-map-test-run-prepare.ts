@@ -6,6 +6,8 @@ import {
   companionExecutionTarget,
   compileAppMapTest,
   frozenRawAccessibilityTargetProfiles,
+  loadFrozenRawAccessibilityEvidence,
+  preflightCompiledAppMapTestOffline,
   readAppMap,
   resolveAppMapTestForTargetProfile,
   type AppMapTestCompileOptions,
@@ -17,10 +19,12 @@ import type {
   AppMapCompiledRuntimeTargetProfile,
   AppMapScenarioTest,
   AuthoringTarget,
+  OfflineTestPreflightReport,
 } from "@relay/protocol";
 import { frozenEvidenceTargetProfileForTarget } from "./app-map-run-target-admission.js";
 import { frozenTestRunTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError } from "./http.js";
+import { freshNativeRunProfileFacts } from "./app-map-test-native-profile-admission.js";
 
 function savedIdentityFromProfile(profile: {
   platform?: string;
@@ -99,6 +103,13 @@ export async function prepareAppMapCompanionTestRun(input: {
   targetProfileId?: string;
   projectId: string;
   observedDevice?: NativeDeviceFacts;
+  nativeProfileObservation?: {
+    observeViewport: Parameters<typeof freshNativeRunProfileFacts>[0]["observeViewport"];
+    validateInputs: (
+      compiled: CompiledAppMapTestForProfile,
+      preflight: OfflineTestPreflightReport,
+    ) => Promise<void>;
+  };
   compileOptions: Omit<
     AppMapTestCompileOptions,
     "runtimeTargetProfile" | "reviewedDocumentOrigins"
@@ -108,6 +119,7 @@ export async function prepareAppMapCompanionTestRun(input: {
   executionMap: AppMap;
   executionTarget: AuthoringTarget;
   runtimeTargetProfile?: AppMapCompiledRuntimeTargetProfile;
+  observedDevice?: NativeDeviceFacts;
 }> {
   try {
     const resolved = await resolveAppMapTestForTargetProfile({
@@ -134,23 +146,60 @@ export async function prepareAppMapCompanionTestRun(input: {
             target: executionTarget,
           })
         : undefined;
-    const inferredRuntimeTargetProfile = explicitlySelectedRuntimeTargetProfile
-      ? undefined
-      : frozenEvidenceTargetProfileForTarget({
-          target: executionTarget,
-          profiles: frozenRawAccessibilityTargetProfiles(resolved.map),
-          observedDevice: input.observedDevice,
-        });
-    const runtimeTargetProfile =
-      explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
-    const sameMap = resolved.map.id === input.map.id;
-    const compiled = compileAppMapTest(resolved.map, resolved.test, {
-      ...(sameMap
+    const compileOptions = {
+      ...(resolved.map.id === input.map.id
         ? input.compileOptions
         : input.compileOptions.startupMode
           ? { startupMode: input.compileOptions.startupMode }
           : {}),
       reviewedDocumentOrigins: await activeReviewedDocumentOriginsForAppMap(resolved.map),
+    };
+    const profiles = frozenRawAccessibilityTargetProfiles(resolved.map);
+    const observedDevice =
+      !input.targetProfileId && input.nativeProfileObservation
+        ? await freshNativeRunProfileFacts({
+            target: executionTarget,
+            profiles,
+            observedDevice: input.observedDevice,
+            originApplication: resolved.test.originApplication,
+            observeViewport: input.nativeProfileObservation.observeViewport,
+            validateOffline: async () => {
+              const preliminary = compileAppMapTest(resolved.map, resolved.test, compileOptions);
+              const preflight = preflightCompiledAppMapTestOffline(
+                preliminary.plan,
+                await loadFrozenRawAccessibilityEvidence(preliminary.plan),
+              );
+              if (
+                preflight.findings.some(
+                  (finding) =>
+                    finding.severity === "blocker" &&
+                    finding.code !== "raw-evidence-variant-selection-required",
+                )
+              )
+                throw new HttpError(
+                  409,
+                  "Offline Test preflight is blocked; Relay did not inspect the target",
+                  {
+                    code: "TEST_OFFLINE_PREFLIGHT_BLOCKED",
+                    preflight,
+                    recovery: "Open the Test editor and resolve its blocking evidence findings.",
+                  },
+                );
+              await input.nativeProfileObservation!.validateInputs(preliminary, preflight);
+            },
+          })
+        : input.observedDevice;
+    const inferredRuntimeTargetProfile = explicitlySelectedRuntimeTargetProfile
+      ? undefined
+      : frozenEvidenceTargetProfileForTarget({
+          target: executionTarget,
+          profiles,
+          observedDevice,
+        });
+    const runtimeTargetProfile =
+      explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
+    const compiled = compileAppMapTest(resolved.map, resolved.test, {
+      ...compileOptions,
       ...(runtimeTargetProfile ? { runtimeTargetProfile } : {}),
     });
     return {
@@ -159,6 +208,7 @@ export async function prepareAppMapCompanionTestRun(input: {
         : compiled,
       executionMap: resolved.map,
       executionTarget,
+      ...(observedDevice ? { observedDevice } : {}),
       ...(runtimeTargetProfile ? { runtimeTargetProfile } : {}),
     };
   } catch (error) {

@@ -1,5 +1,6 @@
 import {
   CasePlanError,
+  assertRecipeInputAvailability,
   freezeRecipeInputs,
   readProjectVariables,
   type EnqueueJobInput,
@@ -7,6 +8,29 @@ import {
 } from "@relay/core";
 import type { FrozenRecipeInputReceipt } from "@relay/protocol";
 import { HttpError } from "./http.js";
+
+export async function assertTestRunInputAvailability(input: {
+  projectId: string;
+  recipeGraph: Record<string, Recipe>;
+  variables?: Record<string, string>;
+  readProjectVariables: typeof readProjectVariables;
+}): Promise<void> {
+  try {
+    const definitions = await input.readProjectVariables(input.projectId);
+    assertRecipeInputAvailability({
+      recipeGraph: input.recipeGraph,
+      definitions: definitions.value,
+      runtimeValues: input.variables,
+    });
+  } catch (error) {
+    if (!(error instanceof CasePlanError)) throw error;
+    throw new HttpError(409, error.message, {
+      code: error.code,
+      recovery:
+        "Supply the missing input in Run settings or its project Data set, then start a new Run.",
+    });
+  }
+}
 
 /** Prompt generation and missing/private input checks finish before lease or enqueue. */
 export async function prepareTestRunInputs(input: {

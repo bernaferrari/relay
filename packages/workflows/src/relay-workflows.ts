@@ -43,6 +43,7 @@ import {
 import { executionRiskPreflightProblem } from "./execution-risk-preflight.js";
 import { invalidRefSnapshot } from "./invalid-workflow-snapshot.js";
 import { readRunJob } from "./run-workflow-job-inspection.js";
+import { queuedRunIdentityFromJob } from "./run-workflow-execution-identity.js";
 import {
   mutationUnknownWorkflowProblem as mutationUnknownProblem,
   unavailableWorkflowProblem as unavailableProblem,
@@ -57,11 +58,9 @@ import {
   readCompile,
   resolveRunTestLane,
   selectBrowserTargetProfile,
-  resolveDeviceTargetProfile,
   type ValidCompile,
   validRevision,
   BrowserTargetProfileSelectionError,
-  DeviceTargetProfileSelectionError,
 } from "./run-workflow-support.js";
 
 function initialProblem(input: {
@@ -142,7 +141,8 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     const recent = summaries.filter((job) => job.queuedAt >= intent.startedAfter - 1_000);
     const matches: Array<{
       job: NonNullable<ReturnType<typeof parseCanonicalJob>>;
-      rootRecipeId: string;
+      frozen: FrozenRunTestIdentity;
+      compiled?: ValidCompile;
     }> = [];
     for (const summary of recent) {
       try {
@@ -150,51 +150,13 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
         const raw = output.job as unknown as Record<string, unknown>;
         const job = parseCanonicalJob(raw);
         if (!job) continue;
-        const artifacts = Array.isArray(raw.artifacts) ? raw.artifacts : [];
-        const artifact = artifacts.find((candidate) => {
-          if (!candidate || typeof candidate !== "object") return false;
-          return (candidate as Record<string, unknown>).kind === "app-map-test-execution-intent";
-        }) as Record<string, unknown> | undefined;
-        const data = artifact?.data;
-        if (!data || typeof data !== "object") continue;
-        const execution = data as Record<string, unknown>;
-        const requestArtifact = artifacts.find((candidate) => {
-          if (!candidate || typeof candidate !== "object") return false;
-          return (candidate as Record<string, unknown>).kind === "app-map-test-workflow-request";
-        }) as Record<string, unknown> | undefined;
-        const requestData =
-          requestArtifact?.data && typeof requestArtifact.data === "object"
-            ? (requestArtifact.data as Record<string, unknown>)
-            : undefined;
-        const source = execution.sourcePlan;
-        if (!source || typeof source !== "object") continue;
-        const sourcePlan = source as Record<string, unknown>;
-        const selectedProfile = execution.selectedRuntimeTargetProfile;
-        const profileId =
-          selectedProfile && typeof selectedProfile === "object"
-            ? (selectedProfile as Record<string, unknown>).id
-            : undefined;
-        const targetMatches =
-          intent.frozen.target.kind === "device"
-            ? raw.serial === intent.frozen.target.targetId &&
-              raw.platform === intent.frozen.target.platform
-            : raw.browserTargetId === intent.frozen.target.targetId;
-        if (
-          sourcePlan.appMapId !== intent.frozen.appMapId ||
-          sourcePlan.appMapRevision !== intent.frozen.appMapRevision ||
-          sourcePlan.testId !== intent.frozen.testId ||
-          (intent.frozen.workflowRequestId
-            ? requestData?.requestId !== intent.frozen.workflowRequestId
-            : sourcePlan.digest !== intent.frozen.planDigest) ||
-          typeof sourcePlan.rootRecipeId !== "string" ||
-          !sourcePlan.rootRecipeId ||
-          !targetMatches ||
-          (intent.frozen.targetProfileId !== undefined &&
-            profileId !== intent.frozen.targetProfileId)
-        ) {
-          continue;
-        }
-        matches.push({ job, rootRecipeId: sourcePlan.rootRecipeId });
+        const identity = queuedRunIdentityFromJob({
+          frozen: intent.frozen,
+          job: raw,
+          matchPlanDigest: !intent.frozen.workflowRequestId,
+        });
+        if (identity.status !== "verified") continue;
+        matches.push({ job, frozen: identity.frozen, compiled: identity.compiled });
       } catch {
         // One unreadable candidate cannot justify retrying a possibly completed mutation.
       }
@@ -216,14 +178,19 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       });
     }
     const match = matches[0]!;
-    const frozen = { ...intent.frozen, rootRecipeId: match.rootRecipeId };
+    const frozen = match.frozen;
     const ref = encodeRunWorkflowRef({
       schemaVersion: 1,
       kind: "run-test",
       jobId: match.job.id,
       frozen,
     });
-    return snapshotFromJob({ ref, frozen, job: match.job });
+    return {
+      ...snapshotFromJob({ ref, frozen, job: match.job }),
+      ...(match.compiled
+        ? { compiled: { plan: match.compiled.plan, preflight: match.compiled.preflight } }
+        : {}),
+    };
   }
 
   private async startRunTest(rawIntent: RunTestIntent): Promise<RunTestSnapshot> {
@@ -328,6 +295,15 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       });
     }
 
+    const deferNativeProfile = target.kind === "device" && !intent.targetProfileId;
+    const requireNativeProfile =
+      deferNativeProfile &&
+      (checkedCompile.plan.rawAccessibilityTargetProfiles ?? []).some(
+        (profile) => profile.targetId === target.targetId && profile.platform === target.platform,
+      );
+    if (requireNativeProfile && !intent.workflowRequestId) {
+      intent = { ...intent, workflowRequestId: crypto.randomUUID() };
+    }
     let targetProfileId = intent.targetProfileId;
     if (!targetProfileId && intent.account?.kind === "signed-out") {
       targetProfileId = undefined;
@@ -363,27 +339,6 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
                   sourceCode: error.sourceCode,
                 }
               : unavailableProblem("resolve the current browser evidence profile", error),
-        });
-      }
-    } else if (!targetProfileId && target.kind === "device") {
-      try {
-        targetProfileId = await resolveDeviceTargetProfile(this.operations, checkedCompile, target);
-      } catch (error) {
-        return initialProblem({
-          intent,
-          compiled: checkedCompile,
-          problem:
-            error instanceof DeviceTargetProfileSelectionError
-              ? {
-                  code: "compile-blocked",
-                  title: "This Test wasn’t recorded on this device",
-                  detail: error.message,
-                  recovery:
-                    "Run it on the device it was recorded on, or record it once on this device.",
-                  retryable: false,
-                  sourceCode: error.sourceCode,
-                }
-              : unavailableProblem("resolve the reviewed device evidence profile", error),
         });
       }
     }
@@ -440,15 +395,22 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       revision,
       checkedCompile.preflight.planDigest,
     );
-    if (checkedCompile.blockers.length) {
-      const primary = checkedCompile.blockers[0]!;
+    // The canonical Run selects the current native setup and repeats preflight
+    // for that exact profile. Every other preliminary blocker stays a gate.
+    const blockers = deferNativeProfile
+      ? checkedCompile.blockers.filter(
+          (finding) => finding.code !== "raw-evidence-variant-selection-required",
+        )
+      : checkedCompile.blockers;
+    if (blockers.length) {
+      const primary = blockers[0]!;
       return initialProblem({
         intent: effectiveIntent,
         frozen: provisionalFrozen,
         compiled: checkedCompile,
         problem: {
           code: "compile-blocked",
-          title: `The Test has ${checkedCompile.blockers.length} compile blocker${checkedCompile.blockers.length === 1 ? "" : "s"}`,
+          title: `The Test has ${blockers.length} compile blocker${blockers.length === 1 ? "" : "s"}`,
           detail: primary.message,
           recovery: "Repair the reviewed Test evidence or selector, then start a new workflow.",
           retryable: false,
@@ -539,9 +501,28 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
           const existing = await this.operations.invoke("workflow.get", {
             workflowId: durable.workflow.record.workflowId,
           });
+          const snapshot = durableRunSnapshot(existing);
+          const queuedIdentity = snapshot.frozen
+            ? queuedRunIdentityFromJob({ frozen: snapshot.frozen, job: existing.job })
+            : undefined;
+          if (queuedIdentity?.status === "invalid") {
+            return unavailableDurableRun({
+              workflow: snapshot.workflow!,
+              frozen: snapshot.frozen,
+              ...(snapshot.execution ? { jobId: snapshot.execution.jobId } : {}),
+              problem: mutationUnknownProblem(
+                "the existing Run was reconciled",
+                "The queued Run report failed identity validation.",
+              ),
+            });
+          }
+          const completedCompile =
+            queuedIdentity?.status === "verified" && queuedIdentity.compiled
+              ? queuedIdentity.compiled
+              : checkedCompile;
           return {
-            ...durableRunSnapshot(existing),
-            compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+            ...snapshot,
+            compiled: { plan: completedCompile.plan, preflight: completedCompile.preflight },
           };
         } catch (error) {
           return {
@@ -596,6 +577,9 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             });
             return {
               ...durableRunSnapshot(abandoned),
+              ...(problem.sourceCode === "TARGET_VIEWPORT_UNAVAILABLE"
+                ? { problems: [problem], progress: { label: problem.title } }
+                : {}),
               compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
             };
           } catch (transitionError) {
@@ -640,13 +624,35 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
 
     const job = parseCanonicalJob(run.job);
     const identity = run.planIdentity;
+    const queuedIdentity = queuedRunIdentityFromJob({
+      frozen,
+      job: run.job,
+      requireNativeProfile,
+    });
+    const finalFrozen =
+      queuedIdentity.status === "verified"
+        ? queuedIdentity.frozen
+        : queuedIdentity.status === "missing" && !requireNativeProfile
+          ? { ...frozen, rootRecipeId: identity.rootRecipeId }
+          : undefined;
+    const responseProfile = run.plan.runtimeTargetProfile;
+    const responseProfileMatches =
+      !responseProfile ||
+      (responseProfile.targetId === target.targetId &&
+        responseProfile.platform === target.platform &&
+        (!targetProfileId || responseProfile.id === targetProfileId) &&
+        (queuedIdentity.status !== "verified" ||
+          responseProfile.id === queuedIdentity.frozen.targetProfileId));
     if (
       !job ||
+      !finalFrozen ||
+      !responseProfileMatches ||
       identity.appMapId !== intent.appMapId ||
       identity.appMapRevision !== revision ||
       identity.testId !== intent.testId ||
       typeof identity.rootRecipeId !== "string" ||
-      !identity.rootRecipeId
+      !identity.rootRecipeId ||
+      finalFrozen.rootRecipeId !== identity.rootRecipeId
     ) {
       if (durable) {
         return {
@@ -676,12 +682,10 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       });
     }
 
-    const finalFrozen = frozenIdentity(
-      effectiveIntent,
-      revision,
-      checkedCompile.preflight.planDigest,
-      identity.rootRecipeId,
-    );
+    const completedCompile =
+      queuedIdentity.status === "verified" && queuedIdentity.compiled
+        ? queuedIdentity.compiled
+        : checkedCompile;
     if (durable) {
       try {
         const attached = await this.operations.invoke("workflow.transition", {
@@ -692,7 +696,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
         });
         return {
           ...durableRunSnapshot(attached),
-          compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+          compiled: { plan: completedCompile.plan, preflight: completedCompile.preflight },
         };
       } catch (error) {
         return {
@@ -705,7 +709,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             jobId: job.id,
             problem: mutationUnknownProblem("the queued Run was attached", error),
           }),
-          compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+          compiled: { plan: completedCompile.plan, preflight: completedCompile.preflight },
         };
       }
     }
@@ -717,7 +721,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     });
     return {
       ...snapshotFromJob({ ref, frozen: finalFrozen, job }),
-      compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+      compiled: { plan: completedCompile.plan, preflight: completedCompile.preflight },
     };
   }
 

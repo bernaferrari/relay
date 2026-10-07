@@ -29,6 +29,13 @@
 			);
 			target = 20EA2EC52F2CFC7B001CF0EF /* AgentDeviceRunner */;
 		};
+		20EA2EF12F2CFC7C001CF0EF /* Exceptions for "AgentDeviceRunnerUITests" folder in "AgentDeviceRunnerUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 20EA2EDC2F2CFC7C001CF0EF /* AgentDeviceRunnerUITests */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -42,6 +49,9 @@
 		};
 		20EA2EE02F2CFC7C001CF0EF /* AgentDeviceRunnerUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				20EA2EF12F2CFC7C001CF0EF /* Exceptions for "AgentDeviceRunnerUITests" folder in "AgentDeviceRunnerUITests" target */,
+			);
 			path = AgentDeviceRunnerUITests;
 			sourceTree = "<group>";
 		};
@@ -441,6 +451,7 @@
 					MACOSX_DEPLOYMENT_TARGET = 13.0;
 					MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(AGENT_DEVICE_IOS_RUNNER_TEST_BUNDLE_ID)";
+				INFOPLIST_FILE = AgentDeviceRunnerUITests/Info.plist;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -467,6 +478,7 @@
 					MACOSX_DEPLOYMENT_TARGET = 13.0;
 					MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(AGENT_DEVICE_IOS_RUNNER_TEST_BUNDLE_ID)";
+				INFOPLIST_FILE = AgentDeviceRunnerUITests/Info.plist;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

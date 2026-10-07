@@ -1,4 +1,5 @@
 [
+  {"name": "ios-device.application-window-bounds.current-window", "producer": "packages/platform-apple/src/runner/__tests__/runner-requests.test.ts", "request": {"command": "appWindowBounds", "appBundleId": "com.example.app"}},
   {"name": "ios-device.interactor-clipboard-copy.verified", "producer": "packages/platform-apple/src/__tests__/runner-requests.test.ts", "request": {"command": "clipboardCopy", "selectorKey": "label", "selectorValue": "Message", "text": "hello", "appBundleId": "com.example.app", "commandId": "<commandId>"}},
   {"name": "ios-device.interactor-clipboard-paste.replace", "producer": "packages/platform-apple/src/__tests__/runner-requests.test.ts", "request": {"command": "clipboardPaste", "text": "hello", "selectorKey": "id", "selectorValue": "composer", "appBundleId": "com.example.app", "commandId": "<commandId>"}},
   {"name": "ios-device.physical-device-control.activate", "producer": "packages/platform-apple/src/__tests__/runner-requests.test.ts", "request": {"command": "activate", "appBundleId": "com.example.app", "commandId": "<commandId>"}},

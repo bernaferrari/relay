@@ -1,4 +1,5 @@
 import { InputNotDispatchedError } from "@relay/core";
+import { parseAppMapRuntimeTargetProfile } from "@relay/core/app-map-runtime-target-profile";
 import type http from "node:http";
 import {
   cancelJob,
@@ -172,10 +173,35 @@ function runIdentityFromJob(
         ? job.browserTargetId === target.targetId
         : false;
   if (!targetMatches) return undefined;
+  const selected = execution?.selectedRuntimeTargetProfile;
+  const profile = selected === undefined ? undefined : parseAppMapRuntimeTargetProfile(selected);
+  const plan = execution?.plan;
+  const planProfiles =
+    plan && typeof plan === "object" && !Array.isArray(plan)
+      ? (plan as Record<string, unknown>).rawAccessibilityTargetProfiles
+      : undefined;
+  const nativeProfileRequired =
+    target.kind === "device" &&
+    Array.isArray(planProfiles) &&
+    planProfiles.some(
+      (candidate: unknown) =>
+        candidate &&
+        typeof candidate === "object" &&
+        (candidate as Record<string, unknown>).targetId === target.targetId &&
+        (candidate as Record<string, unknown>).platform === target.platform,
+    );
+  if (
+    (selected !== undefined && !profile) ||
+    (nativeProfileRequired && !profile) ||
+    (profile && (profile.targetId !== target.targetId || profile.platform !== target.platform)) ||
+    (frozen.targetProfileId !== undefined && profile?.id !== frozen.targetProfileId)
+  )
+    return undefined;
   return {
     ...frozen,
     rootRecipeId: sourcePlan.rootRecipeId,
     planDigest: sourcePlan.digest,
+    ...(profile ? { targetProfileId: profile.id } : {}),
   };
 }
 

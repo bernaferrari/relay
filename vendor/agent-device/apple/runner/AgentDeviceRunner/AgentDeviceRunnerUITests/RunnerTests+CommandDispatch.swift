@@ -178,6 +178,15 @@ extension RunnerTests {
     if let unavailable = runnerUnavailableResponse(command: command) {
       return unavailable
     }
+    if command.command == .appWindowBounds {
+      return try runMainThreadWork(
+        "application_window_bounds",
+        timeout: RunnerApplicationWindowBounds.timeoutSeconds(command.timeoutMs),
+        timeoutError: Self.mainThreadExecutionTimeoutError
+      ) {
+        try self.executeOnMainSafely(command: command, routeToSpringboard: false)
+      }
+    }
     let alertDeadline = command.command == .alert
       ? Date().addingTimeInterval(Self.alertCommandTimeout(timeoutMs: command.timeoutMs))
       : nil
@@ -370,6 +379,9 @@ extension RunnerTests {
     alertDeadline: Date?,
     routeToSpringboard: Bool
   ) throws -> Response {
+    if command.command == .appWindowBounds {
+      return executeApplicationWindowBounds(command: command)
+    }
     let preparation = prepareActiveCommandContext(
       command: command,
       routeToSpringboard: routeToSpringboard

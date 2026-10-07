@@ -218,42 +218,92 @@ function deviceCompileStep(selectedProfileId?: string): ScriptedRelayStep {
   };
 }
 
-test("automatically binds exact native runtime facts on a cold discovery before recompiling and running", async () => {
-  const scripted = createScriptedRelayClient([
-    deviceCompileStep(),
+function queuedCompileArtifacts(
+  planDigest: string,
+  runtimeTargetProfile: import("@relay/protocol").AppMapCompiledRuntimeTargetProfile,
+) {
+  return [
     {
-      id: "target.devices.list",
-      output: {
-        devices: [
-          {
-            id: target.targetId,
-            serial: target.targetId,
-            name: "Pixel 9",
-            platform: "android",
-            osVersion: "16",
-            viewport: { width: 1080, height: 2400 },
-          },
-        ],
+      kind: "app-map-test-plan",
+      data: {
+        appMapId: "settings",
+        appMapRevision: 7,
+        test: { id: "data-controls" },
+        rootRecipeId: "open-settings",
+        runtimeTargetProfile,
       },
     },
-    deviceCompileStep("device:pixel-9-current"),
-    runStep(7),
-  ]);
+    {
+      kind: "app-map-test-preflight",
+      data: {
+        schemaVersion: 1,
+        runtimeTargetProfile,
+        report: { ...preflight(7), planDigest },
+      },
+    },
+  ];
+}
+
+test("automatic native setup selection belongs to the canonical Run and its queued receipt", async () => {
+  const runtimeTargetProfile = {
+    id: "device:pixel-9-current",
+    targetId: target.targetId,
+    platform: target.platform,
+    viewport: { width: 1080, height: 2400 },
+    osVersion: "16",
+    capabilities: [],
+  };
+  const request = {
+    kind: "app-map-test-workflow-request",
+    data: { schemaVersion: 1, requestId: "" },
+  };
+  const canonicalRun = runStep(7);
+  canonicalRun.output = {
+    ...(canonicalRun.output as Record<string, unknown>),
+    job: job("queued", {
+      serial: target.targetId,
+      platform: target.platform,
+      artifacts: [
+        request,
+        {
+          kind: "app-map-test-execution-intent",
+          data: {
+            sourcePlan: {
+              appMapId: "settings",
+              appMapRevision: 7,
+              testId: "data-controls",
+              rootRecipeId: "open-settings",
+              digest: "canonical-native-plan",
+            },
+            selectedRuntimeTargetProfile: runtimeTargetProfile,
+          },
+        },
+        ...queuedCompileArtifacts("canonical-native-plan", runtimeTargetProfile),
+      ],
+    }),
+  };
+  canonicalRun.checkInput = (input) => {
+    const runInput = input as { targetProfileId?: string; workflowRequestId?: string };
+    assert.equal(runInput.targetProfileId, undefined);
+    assert.ok(runInput.workflowRequestId);
+    request.data.requestId = runInput.workflowRequestId;
+  };
+  const scripted = createScriptedRelayClient([deviceCompileStep(), canonicalRun]);
   const workflows = createRelayWorkflows(scripted.client);
 
   const snapshot = await workflows.start(intent({ revision: { exact: 7 } }));
 
   assert.equal(snapshot.phase, "queued");
   assert.equal(snapshot.frozen?.targetProfileId, "device:pixel-9-current");
+  assert.equal(snapshot.frozen?.planDigest, "canonical-native-plan");
+  assert.equal(snapshot.compiled?.preflight.planDigest, "canonical-native-plan");
+  assert.equal(snapshot.frozen?.workflowRequestId, request.data.requestId);
   const runInvocation = scripted.invocations.find(({ id }) => id === "app-map.test.run");
   assert.ok(runInvocation);
-  assert.equal(
-    (runInvocation.input as { targetProfileId?: string }).targetProfileId,
-    "device:pixel-9-current",
-  );
+  assert.equal((runInvocation.input as { targetProfileId?: string }).targetProfileId, undefined);
   assert.deepEqual(
     scripted.invocations.map(({ id }) => id),
-    ["app-map.test.compile", "target.devices.list", "app-map.test.compile", "app-map.test.run"],
+    ["app-map.test.compile", "app-map.test.run"],
   );
 });
 
@@ -1377,9 +1427,40 @@ test("screen refresh with a new observed profile preserves the saved Test runtim
     output.plan.rawAccessibilityVariantsByScreenId["screen-current"]?.map((v) => v.id),
     [original.id],
   );
-  const scripted = createScriptedRelayClient([compile, structuredClone(compile), runStep(7)]);
+  const canonicalRun = runStep(7);
+  canonicalRun.output = {
+    ...(canonicalRun.output as Record<string, unknown>),
+    job: job("queued", {
+      serial: target.targetId,
+      platform: target.platform,
+      artifacts: [
+        {
+          kind: "app-map-test-workflow-request",
+          data: { schemaVersion: 1, requestId: "screen-refresh-run" },
+        },
+        {
+          kind: "app-map-test-execution-intent",
+          data: {
+            sourcePlan: {
+              appMapId: "settings",
+              appMapRevision: 7,
+              testId: "data-controls",
+              rootRecipeId: "open-settings",
+              digest: "canonical-refresh-plan",
+            },
+            selectedRuntimeTargetProfile: output.plan.rawAccessibilityTargetProfiles[0],
+          },
+        },
+        ...queuedCompileArtifacts(
+          "canonical-refresh-plan",
+          output.plan.rawAccessibilityTargetProfiles[0]!,
+        ),
+      ],
+    }),
+  };
+  const scripted = createScriptedRelayClient([compile, canonicalRun]);
   const snapshot = await createRelayWorkflows(scripted.client).start(
-    intent({ revision: { exact: 7 } }),
+    intent({ revision: { exact: 7 }, workflowRequestId: "screen-refresh-run" }),
   );
   assert.equal(snapshot.phase, "queued");
   assert.equal(snapshot.frozen?.targetProfileId, original.targetProfile.id);
