@@ -6,13 +6,15 @@ import path from 'node:path';
 import { test } from 'vitest';
 import { createAgentDeviceClient } from '../../../src/agent-device-client.ts';
 import { prepareRemoteRequestArtifacts } from '../../../src/remote/daemon-artifacts.ts';
-import { createDaemonProxyServer } from '../../../src/remote/daemon-proxy.ts';
+import { createDaemonProxyServer } from '@agent-device/proxy/node';
 import { normalizeAgentDeviceError } from '@agent-device/kernel/errors';
 import {
   closeLoopbackServer,
   listenOnLoopback,
   skipWhenLoopbackUnavailable,
 } from '../../../src/__tests__/test-utils/loopback.ts';
+
+const NO_CANCELLATION = new AbortController().signal;
 
 type RemoteRpcRequest = {
   id: unknown;
@@ -678,6 +680,7 @@ test('remote web recording defaults client and daemon artifact paths to WebM', a
       meta: { cwd: '/tmp/project' },
     },
     { baseUrl: 'http://127.0.0.1:1', token: 'remote-token' },
+    NO_CANCELLATION,
   );
 
   assert.equal(prepared.positionals[0], 'start');
@@ -698,6 +701,7 @@ test('remote web recording appends WebM extension to extensionless client paths'
       meta: { cwd: '/tmp/project' },
     },
     { baseUrl: 'http://127.0.0.1:1', token: 'remote-token' },
+    NO_CANCELLATION,
   );
 
   assert.equal(prepared.positionals[0], 'start');
@@ -715,6 +719,7 @@ test('remote recording without platform or requested path lets daemon choose ses
       meta: { cwd: '/tmp/project' },
     },
     { baseUrl: 'http://127.0.0.1:1', token: 'remote-token' },
+    NO_CANCELLATION,
   );
 
   assert.deepEqual(prepared.positionals, ['start']);

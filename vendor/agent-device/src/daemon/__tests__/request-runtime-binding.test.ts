@@ -14,9 +14,14 @@ import {
   managedLocalRuntimeOwner,
   providerRuntimeOwner,
 } from '@agent-device/contracts/platform-runtime';
-import type { PlatformRuntimeOperations } from '@agent-device/contracts/platform-runtime-operations';
+import {
+  clipboardCopyUse,
+  clipboardPasteUse,
+  type PlatformRuntimeOperations,
+} from '@agent-device/contracts/platform-runtime-operations';
 import { screenRecordingRecoveryUse } from '@agent-device/contracts/screen-recording-runtime-plan';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
 import { unavailableDeploymentSnapshotAndShutdownOperationFacts } from '../../__tests__/test-utils/runtime-operation-facts.ts';
 import { createDurableResourceEnvelope } from '@agent-device/capture-kit';
 import { acquireDurableCaptureRecoveryAuthorityBeforeDeadline } from '@agent-device/capture-kit/durable-capture';
@@ -24,6 +29,8 @@ import {
   createRequestRuntimeBindings,
   ensureBoundDeviceReady,
 } from '../request-runtime-binding.ts';
+import { createRequestDispatchLedger } from '../request-dispatch-ledger.ts';
+import { discloseRequestDispatch } from '../request-dispatch-disclosure.ts';
 import { ensureDeviceReady } from '../device/device-ready.ts';
 import { admitRuntimeUse } from '../runtime-admission.ts';
 
@@ -88,6 +95,7 @@ test('runtime readiness follows allocator claim admission', async () => {
     events.push('claim');
   });
   const bindings = createRequestRuntimeBindings({
+    dispatchLedger: createRequestDispatchLedger(),
     gateway: runtime.gateway,
     scope,
     admitDeviceClaim: admit,
@@ -116,6 +124,7 @@ test('request runtime binding caches one broad owner and projects each declared 
     async (_device: DeviceInfo, _owner: RuntimeOwnerRef, _intent: DeviceBindingIntent) => {},
   );
   const bindings = createRequestRuntimeBindings({
+    dispatchLedger: createRequestDispatchLedger(),
     gateway: runtime.gateway,
     scope,
     admitDeviceClaim: admit,
@@ -143,6 +152,7 @@ test('request runtime binding caches one broad owner and projects each declared 
 test('facts inspection answers admission without creating a request binding', async () => {
   const runtime = makeGateway();
   const bindings = createRequestRuntimeBindings({
+    dispatchLedger: createRequestDispatchLedger(),
     gateway: runtime.gateway,
     scope,
     admitDeviceClaim,
@@ -158,9 +168,58 @@ test('facts inspection answers admission without creating a request binding', as
   expect(runtime.disposals).toEqual([]);
 });
 
+test.each(['copy', 'paste'] as const)(
+  'a bound clipboard %s prevents a later failure from claiming nothing was sent',
+  async (action) => {
+    const runtime = makeGateway();
+    const ledger = createRequestDispatchLedger();
+    const bindings = createRequestRuntimeBindings({
+      dispatchLedger: ledger,
+      gateway: runtime.gateway,
+      scope,
+      admitDeviceClaim,
+    });
+    const selector = { key: 'label', value: 'Message' } as const;
+    try {
+      if (action === 'copy') {
+        const bound = await bindings.bindDevice(device('clipboard-copy'), clipboardCopyUse);
+        await bound.operations.copyClipboard({ selector });
+        expect(runtime.operations.copyClipboard).toHaveBeenCalledOnce();
+      } else {
+        const bound = await bindings.bindDevice(device('clipboard-paste'), clipboardPasteUse);
+        await bound.operations.pasteClipboard({ text: 'hello', selector });
+        expect(runtime.operations.pasteClipboard).toHaveBeenCalledOnce();
+      }
+      expect(ledger.dispatchedSteps).toBe(1);
+      await expect(
+        discloseRequestDispatch(
+          {
+            token: 't',
+            session: 'clipboard',
+            command: 'clipboard',
+            positionals:
+              action === 'copy'
+                ? ['copy', 'label', 'Message']
+                : ['paste', 'hello', 'label', 'Message'],
+          },
+          ledger,
+          async () => {
+            throw new AppError('COMMAND_FAILED', 'post-operation read refused', {
+              dispatched: 'no',
+            });
+          },
+        ),
+      ).rejects.toMatchObject({ details: { dispatched: 'unknown', dispatchedSteps: 1 } });
+    } finally {
+      await bindings[Symbol.asyncDispose]();
+    }
+  },
+);
+
 test('request binding disposes multiple owners in reverse adoption order', async () => {
   const runtime = makeGateway();
   const bindings = createRequestRuntimeBindings({
+    dispatchLedger: createRequestDispatchLedger(),
     gateway: runtime.gateway,
     scope,
     admitDeviceClaim,
@@ -174,6 +233,7 @@ test('request binding disposes multiple owners in reverse adoption order', async
 test('concurrent uses share one in-flight broad binding for the device', async () => {
   const runtime = makeGateway();
   const bindings = createRequestRuntimeBindings({
+    dispatchLedger: createRequestDispatchLedger(),
     gateway: runtime.gateway,
     scope,
     admitDeviceClaim,
@@ -194,6 +254,7 @@ test('concurrent uses share one in-flight broad binding for the device', async (
 test('preferred absence is visible without failing while required absence fails typed', async () => {
   const runtime = makeGateway({ inspectAvailable: false });
   const bindings = createRequestRuntimeBindings({
+    dispatchLedger: createRequestDispatchLedger(),
     gateway: runtime.gateway,
     scope,
     admitDeviceClaim,
@@ -213,6 +274,7 @@ test('exact-owner recovery binds the persisted owner and fence without ordinary 
     async (_device: DeviceInfo, _owner: RuntimeOwnerRef, _intent: DeviceBindingIntent) => {},
   );
   const bindings = createRequestRuntimeBindings({
+    dispatchLedger: createRequestDispatchLedger(),
     gateway: runtime.gateway,
     scope,
     admitDeviceClaim: admit,
@@ -273,7 +335,12 @@ test('late exact-owner binding is rolled back when request cleanup already began
     ),
     shutdown: async () => {},
   };
-  const bindings = createRequestRuntimeBindings({ gateway, scope, admitDeviceClaim });
+  const bindings = createRequestRuntimeBindings({
+    gateway,
+    scope,
+    admitDeviceClaim,
+    dispatchLedger: createRequestDispatchLedger(),
+  });
   const binding = bindings.bindExactDevice(
     selected,
     owner,
@@ -321,7 +388,12 @@ test('late exact-owner rollback failure is secondary diagnostic evidence', async
     diagnostics: { emit },
     progress: { report: () => {} },
   };
-  const bindings = createRequestRuntimeBindings({ gateway, scope, admitDeviceClaim });
+  const bindings = createRequestRuntimeBindings({
+    gateway,
+    scope,
+    admitDeviceClaim,
+    dispatchLedger: createRequestDispatchLedger(),
+  });
   const binding = bindings.bindExactDevice(
     selected,
     owner,
@@ -384,7 +456,12 @@ test('request cancellation aborts deferred exact recovery and late publication i
     diagnostics: { emit: vi.fn() },
     progress: { report: () => {} },
   };
-  const bindings = createRequestRuntimeBindings({ gateway, scope: requestScope, admitDeviceClaim });
+  const bindings = createRequestRuntimeBindings({
+    gateway,
+    scope: requestScope,
+    admitDeviceClaim,
+    dispatchLedger: createRequestDispatchLedger(),
+  });
   const acquisition = acquireDurableCaptureRecoveryAuthorityBeforeDeadline({
     displayName: 'screen recording',
     envelope,
@@ -420,6 +497,8 @@ test('request cancellation aborts deferred exact recovery and late publication i
 function makeGateway(options: { inspectAvailable?: boolean } = {}) {
   const disposals: string[] = [];
   const operations: DeviceBinding<PlatformRuntimeOperations>['operations'] = {
+    copyClipboard: vi.fn(async () => 'hello'),
+    pasteClipboard: vi.fn(async () => 'hello'),
     appLogInspect: vi.fn(async () => ({ backend: 'android' as const })),
     appLogDoctor: vi.fn(async () => ({ backend: 'android' as const, checks: {}, notes: [] })),
     appLogStart: vi.fn(async () => {
@@ -480,6 +559,8 @@ function makeGateway(options: { inspectAvailable?: boolean } = {}) {
       bootTargetHeadless: { available: true } as const,
       listApps: { available: true } as const,
       ...unavailableDeploymentSnapshotAndShutdownOperationFacts,
+      copyClipboard: { available: true } as const,
+      pasteClipboard: { available: true } as const,
       ...applicationLifecycleOperationFacts({
         resolveOpenTarget: unavailableLifecycle,
         prepareApplicationOpen: unavailableLifecycle,

@@ -14,7 +14,6 @@ import { installProviderDeviceAdmission } from '../../provider-device-admission.
 // installs it from root composition, and these tests compose it the same way.
 installProviderDeviceAdmission({ isActive: isActiveProviderDevice });
 import { AppError } from '@agent-device/kernel/errors';
-import { buildInteractionSurfaceSignature } from '../../interaction-outcome-policy.ts';
 import { buildSnapshotPresentationKey } from '@agent-device/kernel/snapshot';
 import { snapshotCliOutput } from '../../../commands/capture/output.ts';
 import type { CaptureSnapshotResult } from '@agent-device/contracts/client';
@@ -94,7 +93,7 @@ function makeAndroidTimeoutEvidenceSession(sessionName: string): SessionStore {
     createdAt: Date.now(),
     backend: 'android',
   };
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
   return sessionStore;
 }
 
@@ -139,7 +138,7 @@ function assertAndroidTimeoutEvidencePayload(evidence: unknown) {
   expect(record.overlayRefs).toEqual([expect.objectContaining({ ref: 'e1', label: 'Continue' })]);
 }
 
-test('snapshot annotations survive pending interaction capture into CLI JSON', async () => {
+test('snapshot annotations survive a deferred post-gesture capture into CLI JSON', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'android-interaction-annotation-bundle';
   const session = makeSession(sessionName, androidDevice);
@@ -164,16 +163,9 @@ test('snapshot annotations survive pending interaction capture into CLI JSON', a
     },
   ];
   const snapshotQuality = { state: 'healthy', backend: 'tree' };
-  session.pendingInteractionOutcome = {
-    action: 'click',
-    command: 'press',
-    positionals: ['100', '144'],
-    flags: { platform: 'android' },
-    markedAt: Date.now(),
-    attemptsRemaining: 2,
-    preSignature: buildInteractionSurfaceSignature(baselineNodes),
-  };
-  sessionStore.set(sessionName, session);
+  session.snapshot = { nodes: baselineNodes, createdAt: Date.now(), backend: 'android' };
+  session.postGestureStabilization = { action: 'swipe', positionals: [], markedAt: Date.now() };
+  sessionStore.publish(sessionName, session);
 
   legacyDispatchCapture.mockResolvedValue({
     nodes: changedNodes,
@@ -234,7 +226,7 @@ test('snapshot warns when recent snapshot node count collapses sharply', async (
     createdAt: Date.now(),
     backend: 'android',
   };
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
 
   legacyDispatchCapture.mockResolvedValue(
     androidCapture(
@@ -275,7 +267,7 @@ test('snapshot does not warn on expected node drop across presentation modes', a
     backend: 'xctest',
     presentationKey: buildSnapshotPresentationKey({ interactiveOnly: false }),
   };
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
 
   legacyDispatchCapture.mockResolvedValue({
     nodes: Array.from({ length: 8 }, (_, index) => ({
@@ -310,7 +302,7 @@ test('snapshot automatically retries stale Android trees after recent navigation
   const sessionStore = makeSessionStore();
   const sessionName = 'android-stale-retries-to-fresh';
   const session = makeAndroidFreshnessSession(sessionName, 'press', inboxBaselineNodes(24));
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
 
   legacyDispatchCapture
     .mockResolvedValueOnce(
@@ -348,7 +340,7 @@ test('snapshot warns when Android freshness retries still return the previous ro
   const sessionStore = makeSessionStore();
   const sessionName = 'android-stale-after-press';
   const session = makeAndroidFreshnessSession(sessionName, 'press', inboxBaselineNodes(24));
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
 
   legacyDispatchCapture.mockResolvedValue(
     androidCapture(androidTextRows(24, inboxRow), { rawNodeCount: 24, maxDepth: 2 }),
@@ -375,7 +367,7 @@ test('snapshot warns when Android freshness retries still return the previous ro
 test('snapshot response includes normalized visibility metadata', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'android-visibility';
-  sessionStore.set(sessionName, makeSession(sessionName, androidDevice));
+  sessionStore.publish(sessionName, makeSession(sessionName, androidDevice));
 
   legacyDispatchCapture.mockResolvedValue({
     nodes: [
@@ -424,7 +416,7 @@ test('diff snapshot carries stale-tree warnings for recent Android presses', asy
   const sessionStore = makeSessionStore();
   const sessionName = 'android-diff-stale-after-press';
   const session = makeAndroidFreshnessSession(sessionName, 'press', inboxBaselineNodes(24));
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
 
   legacyDispatchCapture.mockResolvedValue(
     androidCapture(androidTextRows(24, inboxRow), { rawNodeCount: 24, maxDepth: 2 }),
@@ -459,7 +451,7 @@ test('Android ref refresh mode does not retry narrow snapshots as sharp drops', 
     'press',
     buildNodes(androidTextRows(50, (row) => `Previous row ${row}`)),
   );
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
 
   legacyDispatchCapture.mockResolvedValue(
     androidCapture(

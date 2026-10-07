@@ -10,12 +10,20 @@ import type { RunnerSession } from '../runner-session.ts';
 import { appleRunnerTestHost } from '../test-host.ts';
 import { withAppleRunnerProvider } from '../runner-provider.ts';
 import { classifyRunnerReportedError, type RunnerCommand } from '../runner-contract.ts';
+import { RUNNER_REPLY_LOST_REASON } from '../runner-error-classification.ts';
 import {
   createRunnerPhaseBudget,
   requireRunnerPhaseRemainingMs,
   resolveExpectedRunnerCacheMetadata,
 } from '../runner-cache-metadata.ts';
-import { startFakeRunnerServer, type FakeRunnerServer } from './fake-runner-server.ts';
+import { captureDiagnostics } from './runner-session-fixtures.ts';
+import {
+  startFakeRunnerServer,
+  type FakeRunnerResponse,
+  type FakeRunnerServer,
+} from './fake-runner-server.ts';
+import { resolveRunnerDetachDecision, RunnerCommandAccounting } from '../runner-session-types.ts';
+import { requireLifecycleSettlementRows } from './runner-swift-settlement-fixtures.ts';
 
 /**
  * The wiring regression the recovery suite cannot provide (#1644 review P1):
@@ -37,6 +45,7 @@ import { startFakeRunnerServer, type FakeRunnerServer } from './fake-runner-serv
  */
 
 let server: FakeRunnerServer | undefined;
+let restartedServer: FakeRunnerServer | undefined;
 
 const { ensureRunnerSessionMock, invalidateRunnerSessionMock } = vi.hoisted(() => ({
   ensureRunnerSessionMock: vi.fn(),
@@ -89,6 +98,8 @@ const LOST_RESPONSE_MUTATION_ROWS = {
 afterEach(async () => {
   await server?.close();
   server = undefined;
+  await restartedServer?.close();
+  restartedServer = undefined;
   ensureRunnerSessionMock.mockReset();
   invalidateRunnerSessionMock.mockReset();
 });
@@ -104,8 +115,7 @@ function makeRunnerSession(port: number, sessionId = `wiring:${port}`): RunnerSe
     testPromise: new Promise<ExecResult>(() => {}),
     child: { pid: process.pid, exitCode: null },
     state: 'ready',
-    inFlightCommands: 0,
-    hasAbandonedCommands: false,
+    commandCharges: new RunnerCommandAccounting(),
   };
   return session;
 }
@@ -157,6 +167,300 @@ test.each(Object.values(LOST_RESPONSE_MUTATION_ROWS))(
     );
   },
 );
+
+// #3074: `status` answers `notAccepted`, as a runner whose journal did not survive a restart between
+// the send and the probe would. That is no proof the first send did not run.
+test.each(Object.values(LOST_RESPONSE_MUTATION_ROWS))(
+  'a $acceptanceCommand whose status answers notAccepted fails as runner_reply_lost, sent once',
+  async ({ runnerCommand, request }) => {
+    server = await startFakeRunnerServer({
+      [runnerCommand]: [{ kind: 'hangUp' }],
+      status: [{ kind: 'ok', data: { lifecycleState: 'notAccepted' } }],
+      snapshot: [{ kind: 'ok', data: { nodes: [] } }],
+    });
+    const session = seedSession(server.port);
+
+    await assert.rejects(runAppleRunnerCommand(IOS_SIMULATOR, { ...request }), (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.details?.dispatched, 'unknown');
+      assert.equal(error.details?.reason, RUNNER_REPLY_LOST_REASON);
+      return true;
+    });
+    assert.equal(
+      server.requests.filter((entry) => entry.command === runnerCommand).length,
+      1,
+      `${runnerCommand} is dispatched once`,
+    );
+    assert.deepEqual(invalidateRunnerSessionMock.mock.calls, [
+      [session, 'transport_error_after_command_send'],
+    ]);
+
+    assert.deepEqual(await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'snapshot' }), {
+      nodes: [],
+    });
+    assert.equal(ensureRunnerSessionMock.mock.calls.length, 2, 'the next command gets a runner');
+  },
+);
+
+test('a read whose reply is lost is resent and succeeds', async () => {
+  server = await startFakeRunnerServer({
+    snapshot: [{ kind: 'hangUp' }, { kind: 'ok', data: { nodes: [] } }],
+    status: [{ kind: 'ok', data: { lifecycleState: 'notAccepted' } }],
+  });
+  seedSession(server.port);
+  // The simctl curl route of a ready simulator could not connect, so it sent nothing.
+  appleRunnerTestHost.update({
+    runXcrun: vi.fn(async () => ({ exitCode: 7, stdout: '', stderr: 'curl exited 7' })),
+  });
+
+  assert.deepEqual(await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'snapshot' }), {
+    nodes: [],
+  });
+  assert.equal(server.requests.filter((entry) => entry.command === 'snapshot').length, 2);
+});
+
+// #3074: the runner process dies mid-command (the fake hangs up and stops listening), and the next
+// session the daemon gets is a new runner on a second server.
+async function runnerDiesOnCommand(
+  runnerCommand: string,
+  restartedScript: Record<string, FakeRunnerResponse[]>,
+): Promise<FakeRunnerServer> {
+  server = await startFakeRunnerServer({ [runnerCommand]: [{ kind: 'exit' }] });
+  restartedServer = await startFakeRunnerServer(restartedScript);
+  ensureRunnerSessionMock
+    .mockResolvedValueOnce(makeRunnerSession(server.port))
+    .mockResolvedValueOnce(makeRunnerSession(restartedServer.port));
+  // The simctl curl fallback of the connect loop timed out after its POST.
+  appleRunnerTestHost.update({
+    runXcrun: vi.fn(async () => ({ exitCode: 28, stdout: '', stderr: 'curl exited 28' })),
+  });
+  return restartedServer;
+}
+
+function sendsOf(target: FakeRunnerServer, runnerCommand: string): number {
+  return target.requests.filter((entry) => entry.command === runnerCommand).length;
+}
+
+test.each(Object.values(LOST_RESPONSE_MUTATION_ROWS))(
+  'a $acceptanceCommand whose runner dies mid-command fails as runner_reply_lost, not resent',
+  async ({ runnerCommand, request }) => {
+    const restarted = await runnerDiesOnCommand(runnerCommand, {
+      readText: [{ kind: 'ok', data: { text: 'after' } }],
+    });
+
+    await assert.rejects(runAppleRunnerCommand(IOS_SIMULATOR, { ...request }), (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.details?.dispatched, 'unknown');
+      assert.equal(error.details?.reason, RUNNER_REPLY_LOST_REASON);
+      return true;
+    });
+    assert.equal(invalidateRunnerSessionMock.mock.calls.length, 1, 'the dead runner is dropped');
+    assert.deepEqual(
+      await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'readText', x: 5, y: 5 }),
+      { text: 'after' },
+    );
+    assert.equal(sendsOf(server!, runnerCommand), 1, `${runnerCommand} is dispatched once`);
+    assert.equal(sendsOf(restarted, runnerCommand), 0, `${runnerCommand} is not resent`);
+  },
+);
+
+test('a get whose runner dies mid-read is resent once on the restarted runner', async () => {
+  const restarted = await runnerDiesOnCommand('readText', {
+    readText: [{ kind: 'ok', data: { text: 'hello' } }],
+  });
+
+  assert.deepEqual(
+    await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'readText', x: 5, y: 5 }),
+    { text: 'hello' },
+  );
+  expect(invalidateRunnerSessionMock).toHaveBeenCalledTimes(1);
+  expect(invalidateRunnerSessionMock).toHaveBeenCalledWith(
+    expect.anything(),
+    'runner_connect_failed_before_command_send',
+  );
+  assert.equal(sendsOf(server!, 'readText'), 1);
+  assert.equal(sendsOf(restarted, 'readText'), 1, 'the read is resent once');
+});
+
+// #2965: an inline `status` probe answers while the command it probes may still be executing, so its
+// own reply must not clear the mutation's outstanding charge. The handoff verdict is asserted through
+// `resolveRunnerDetachDecision` — the exact gate `detachRunnerSessionForShutdown` consults. Rows come
+// from the runner journal's own state list, so a state the runner gains is a missing row rather than an
+// unruled verdict.
+const LOST_RESPONSE_HANDOFF_ROWS = requireLifecycleSettlementRows({
+  completed: true,
+  failed: true,
+  accepted: false,
+  started: false,
+  notAccepted: false,
+});
+
+test.each(LOST_RESPONSE_HANDOFF_ROWS)(
+  'a lost mutation and status $lifecycleState leaves handoff $settlesCharge',
+  async ({ lifecycleState, settlesCharge }) => {
+    server = await startFakeRunnerServer({
+      tap: [{ kind: 'hangUp' }],
+      status: [{ kind: 'ok', data: { lifecycleState } }],
+    });
+    const session = seedSession(server.port);
+
+    // The mutation is refused, never replayed, whatever the terminal verdict — recovery keeps the
+    // session and reports the command's state to the caller.
+    await expect(
+      runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 5, y: 5 }),
+    ).rejects.toThrow(AppError);
+    assert.equal(
+      server.requests.filter((request) => request.command === 'tap').length,
+      1,
+      'the mutation is sent once',
+    );
+    // `notAccepted` is the journal's "never seen this id", which this daemon cannot read as a safe
+    // terminal state: it keeps the invalidation path and its charge, while every state the journal
+    // actually reports for the command keeps the session.
+    assert.equal(
+      invalidateRunnerSessionMock.mock.calls.length,
+      lifecycleState === 'notAccepted' ? 1 : 0,
+      `${lifecycleState} must ${lifecycleState === 'notAccepted' ? '' : 'not '}invalidate the session`,
+    );
+    assert.equal(resolveRunnerDetachDecision(session).detach, settlesCharge);
+  },
+);
+
+test('a lost mutation answered by an inline status probe keeps handoff refused', async () => {
+  // `started` with the runner reporting itself not busy is the legitimate state this issue is about:
+  // the probe is served off the XCTest channel while the abandoned mutation keeps running.
+  server = await startFakeRunnerServer({
+    tap: [{ kind: 'hangUp' }],
+    status: [{ kind: 'ok', data: { lifecycleState: 'started', runnerMainThreadBusy: false } }],
+  });
+  const session = seedSession(server.port);
+
+  await expect(
+    runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 5, y: 5 }),
+  ).rejects.toThrow(AppError);
+  assert.equal(session.runnerMainThreadBusy, false);
+  assert.deepEqual(resolveRunnerDetachDecision(session), {
+    detach: false,
+    reason: 'command_in_flight',
+  });
+});
+
+test('an answered uptime health probe keeps handoff refused over an abandoned mutation', async () => {
+  // The other inline probe, and the realistic #2965 producer: `prepareIosRunner` and prewarm send
+  // `uptime` as background health traffic while a mutation is still owed. `status` only ever comes
+  // from recovery, so pinning it alone would leave `uptime` free to start carrying a charge again —
+  // whose answer would then forgive the mutation's residue on the serial-queue premise and hand a
+  // runner off mid-mutation.
+  server = await startFakeRunnerServer({
+    tap: [{ kind: 'hangUp' }],
+    status: [{ kind: 'ok', data: { lifecycleState: 'started' } }],
+    uptime: [
+      { kind: 'ok', data: { uptime: 12 } },
+      { kind: 'ok', data: { uptime: 13 } },
+    ],
+  });
+  const session = seedSession(server.port);
+
+  await expect(
+    runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 5, y: 5 }),
+  ).rejects.toThrow(AppError);
+  // One charge: the mutation. The readiness preflight's probe is inline and carries no charge, so it
+  // cannot arrive here as a second debt that some later answer could pay off (#2965).
+  assert.equal(session.commandCharges.outstandingChargeCount, 1);
+
+  await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'uptime' });
+  assert.equal(
+    server.requests.filter((request) => request.command === 'uptime').length > 1,
+    true,
+    'this command is a second probe, answered by the same session',
+  );
+  // The probe answered and owed nothing, so the mutation is still the only thing owed and the runner
+  // stays on the kill path rather than being handed off mid-mutation.
+  assert.equal(session.commandCharges.outstandingChargeCount, 1);
+  assert.equal(session.commandCharges.hasAbandonedCharges, true);
+  assert.deepEqual(resolveRunnerDetachDecision(session), {
+    detach: false,
+    reason: 'command_in_flight',
+  });
+});
+
+test('terminal status for a lost mutation charges the next lost mutation afresh', async () => {
+  server = await startFakeRunnerServer({
+    tap: [{ kind: 'hangUp' }, { kind: 'hangUp' }],
+    status: [
+      { kind: 'ok', data: { lifecycleState: 'completed' } },
+      { kind: 'ok', data: { lifecycleState: 'started' } },
+    ],
+  });
+  const session = seedSession(server.port);
+
+  const first = await captureDiagnostics(async () => {
+    await expect(
+      runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 5, y: 5 }),
+    ).rejects.toThrow(AppError);
+  });
+  // The daemon log has to say whether terminal evidence actually paid the debt, because a refused
+  // settlement and a settled one both leave the runner answering (#2965).
+  assert.match(first, /"abandonedChargeSettled":true/);
+  assert.equal(resolveRunnerDetachDecision(session).detach, true);
+
+  // The settlement is this command's, not a latch: a second mutation that loses its response is
+  // charged again and only its own terminal verdict frees the runner.
+  await expect(
+    runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 5, y: 5 }),
+  ).rejects.toThrow(AppError);
+  assert.equal(resolveRunnerDetachDecision(session).detach, false);
+});
+
+test('terminal status with the runner reporting busy still refuses handoff', async () => {
+  server = await startFakeRunnerServer({
+    tap: [{ kind: 'hangUp' }],
+    status: [{ kind: 'ok', data: { lifecycleState: 'completed', runnerMainThreadBusy: true } }],
+  });
+  const session = seedSession(server.port);
+
+  await expect(
+    runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 5, y: 5 }),
+  ).rejects.toThrow(AppError);
+
+  // The journal verdict discharged the charge, yet the runner's own occupancy report keeps it on the
+  // kill path: a terminal state never bypasses the busy gate (#2552).
+  assert.equal(session.runnerMainThreadBusy, true);
+  assert.deepEqual(resolveRunnerDetachDecision(session), {
+    detach: false,
+    reason: 'main_thread_occupied',
+  });
+});
+
+test('a lost mutation whose status probe fails keeps the runner on the kill path', async () => {
+  server = await startFakeRunnerServer({
+    tap: [{ kind: 'hangUp' }],
+    status: [{ kind: 'hangUp' }],
+  });
+  const session = seedSession(server.port);
+
+  await expect(
+    runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 5, y: 5 }),
+  ).rejects.toThrow(AppError);
+  assert.equal(resolveRunnerDetachDecision(session).detach, false);
+});
+
+test('a healthy command after a settled abandoned charge returns the runner to handoff-eligible', async () => {
+  server = await startFakeRunnerServer({
+    tap: [{ kind: 'hangUp' }],
+    status: [{ kind: 'ok', data: { lifecycleState: 'completed' } }],
+    snapshot: [{ kind: 'ok', data: { nodes: [] } }],
+  });
+  const session = seedSession(server.port);
+
+  await expect(
+    runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 5, y: 5 }),
+  ).rejects.toThrow(AppError);
+  assert.equal(resolveRunnerDetachDecision(session).detach, true);
+
+  await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'snapshot' });
+  assert.equal(resolveRunnerDetachDecision(session).detach, true);
+});
 
 test('a runner that reports the command failed surfaces that failure, not the transport error', async () => {
   server = await startFakeRunnerServer({

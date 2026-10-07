@@ -2,14 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, vi } from 'vitest';
 import { localRuntimeOwner } from '@agent-device/contracts/platform-runtime';
+import type { ResourceDiagnostic } from '@agent-device/host-kit/diagnostics';
 import { createDurableResourceEnvelope } from '@agent-device/capture-kit';
 import { createTestAppLogLiveHandle } from '../../__tests__/test-utils/app-log-live-handle.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
-import {
-  recoverAppLogResourcesAfterDaemonLock,
-  type AppLogRecoveryDiagnostic,
-} from '../app-log-resource-recovery.ts';
+import { recoverAppLogResourcesAfterDaemonLock } from '../app-log-resource-recovery.ts';
 import { appLogResourceStore } from '../app-log-resource-store.ts';
 import {
   flushDaemonStartupDiagnostics,
@@ -20,7 +18,7 @@ import { unavailableDeviceRuntimeGateway } from './test-device-runtime-gateway.t
 
 test('daemon startup awaits app-log recovery after acquiring the lock and before opening servers', () => {
   const source = fs.readFileSync(new URL('../server/daemon-runtime.ts', import.meta.url), 'utf8');
-  const acquiredLock = source.indexOf('if (!acquireDaemonLock(');
+  const acquiredLock = source.indexOf("if (acquisition.status !== 'acquired')");
   const legacyRecovery = source.indexOf(
     'await platformDaemonLifecycleOwners.recoverLegacyAppLogMarkers(',
   );
@@ -38,11 +36,11 @@ test('daemon startup configures the Apple runner owner after acquiring the lock,
   // publish only once this process actually holds the daemon lock, so a losing process never
   // configures a global platform owner it does not own.
   const source = fs.readFileSync(new URL('../server/daemon-runtime.ts', import.meta.url), 'utf8');
-  const acquiredLock = source.indexOf('if (!acquireDaemonLock(');
+  const acquiredLock = source.indexOf("if (acquisition.status !== 'acquired')");
   const runnerOwnerConfigured = source.indexOf(
     'await platformDaemonLifecycleOwners.configureForDaemonLock(',
   );
-  const lockFailureExit = source.indexOf("stderr.write('Daemon lock is held by another process");
+  const lockFailureExit = source.indexOf('exit(', acquiredLock);
 
   expect(acquiredLock).toBeGreaterThanOrEqual(0);
   expect(lockFailureExit).toBeGreaterThan(acquiredLock);
@@ -58,7 +56,7 @@ test('retained startup recovery evidence is flushed after daemon.log publication
   const resourcePath = path.join(sessionsDir, 'session', 'app-log.resource.json');
   fs.mkdirSync(path.dirname(resourcePath), { recursive: true });
   fs.writeFileSync(resourcePath, '{');
-  const diagnostics: AppLogRecoveryDiagnostic[] = [];
+  const diagnostics: ResourceDiagnostic[] = [];
 
   await recoverAppLogResourcesAfterDaemonLock({
     sessionsDir,
@@ -125,29 +123,25 @@ test('daemon shutdown settles fenced app-log cleanup before finalization can rel
     forceCleanup,
   });
   session.appLog = { handle, envelope };
-  sessionStore.set(session.name, session);
+  sessionStore.publish(session.name, session);
   const resourcePath = appLogResourceStore.resolvePath(
     sessionStore.resolveSessionDir(session.name),
   );
   fs.mkdirSync(sessionStore.resolveSessionDir(session.name), { recursive: true });
   fs.writeFileSync(resourcePath, `${JSON.stringify(envelope)}\n`);
-  const beforeDelete = vi.fn(async () => {});
 
   const teardown = teardownDaemonSessionForShutdown({
-    session,
+    ref: sessionStore.lookup(session.name)!,
     sessionStore,
     stderr: { write: () => {} },
-    beforeDelete,
   });
   await cleanupStarted;
 
-  expect(beforeDelete).not.toHaveBeenCalled();
   expect(sessionStore.get(session.name)).toBeDefined();
   releaseCleanup();
   await teardown;
 
   expect(forceCleanup).toHaveBeenCalledOnce();
-  expect(beforeDelete).toHaveBeenCalledOnce();
   expect(sessionStore.get(session.name)).toBeUndefined();
   expect(appLogResourceStore.read(resourcePath)).toMatchObject({
     status: 'decoded',

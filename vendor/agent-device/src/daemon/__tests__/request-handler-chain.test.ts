@@ -14,6 +14,7 @@ import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { handleInteractionCommands } from '../interaction/index.ts';
 import { createPlatformRuntimeGateway } from '../../platform-runtime.ts';
 import { createRequestRuntimeBindings } from '../request-runtime-binding.ts';
+import { createRequestDispatchLedger } from '../request-dispatch-ledger.ts';
 import { createLocalLinuxToolProvider, withLinuxToolProvider } from '@agent-device/platform-linux';
 import {
   unavailableBindDevice,
@@ -39,7 +40,7 @@ function makeRequest(command: string, positionals: string[] = []): DaemonRequest
 
 function makeChainParams(req: DaemonRequest) {
   const sessionStore = makeSessionStore('agent-device-request-chain-');
-  sessionStore.set('chain-test', makeIosSession('chain-test'));
+  sessionStore.publish('chain-test', makeIosSession('chain-test'));
   return {
     req,
     sessionName: 'chain-test',
@@ -243,7 +244,7 @@ test('swipe rejects repetition inputs that can monopolize the request', async ()
 
 test('duration-less public coordinate swipe retains Linux drag behavior', async () => {
   const sessionStore = makeSessionStore('agent-device-linux-swipe-');
-  sessionStore.set('linux-swipe', makeSession('linux-swipe', { device: LINUX_DEVICE }));
+  sessionStore.publish('linux-swipe', makeSession('linux-swipe', { device: LINUX_DEVICE }));
   const drags: number[][] = [];
   let captureCount = 0;
   const provider = await createLocalLinuxToolProvider({
@@ -290,6 +291,7 @@ test('duration-less public coordinate swipe retains Linux drag behavior', async 
   });
   let bindCount = 0;
   const bindings = createRequestRuntimeBindings({
+    dispatchLedger: createRequestDispatchLedger(),
     gateway: {
       ...gateway,
       bind: async (request) => {

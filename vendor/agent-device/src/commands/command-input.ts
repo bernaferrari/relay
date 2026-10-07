@@ -106,8 +106,17 @@ export function enumSchema(values: readonly string[], description?: string): Jso
   return { type: 'string', enum: values, ...(description ? { description } : {}) };
 }
 
+/** A single-valued string schema, for a discriminant field an output shape always fixes. */
+export function constSchema(value: string): JsonSchema {
+  return { type: 'string', const: value };
+}
+
 export function stringSchema(description?: string): JsonSchema {
   return { type: 'string', ...(description ? { description } : {}) };
+}
+
+export function nullableStringSchema(description?: string): JsonSchema {
+  return { type: ['string', 'null'], ...(description ? { description } : {}) };
 }
 
 export function numberSchema(
@@ -403,6 +412,7 @@ export function readFieldInput<TFields extends CommandFieldMap>(
   );
   const commonInput = readCommonInput(record, {
     readTargetAlias: !Object.hasOwn(fields, 'target'),
+    readinessBudgetDeclared: Object.hasOwn(fields, 'readinessTimeoutMs'),
   });
   return compactRecord({
     ...commonInput,

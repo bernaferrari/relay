@@ -86,6 +86,33 @@ test('MCP refuses every explicit operator-owned argument with guidance', async (
   assert.deepEqual(calls, [], 'a refused operator input must never reach the command route');
 });
 
+test('MCP neither advertises nor admits the operator-only readiness budget', async () => {
+  for (const tool of listCommandTools()) {
+    const properties = tool.inputSchema.properties ?? {};
+    assert.equal('readinessTimeoutMs' in properties, false, `${tool.name} advertises it`);
+  }
+  const calls: unknown[] = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      calls.push({ name, input });
+      return {};
+    },
+  });
+
+  const result = await executor.execute('press', {
+    target: { kind: 'selector', selector: 'label=Continue' },
+    readinessTimeoutMs: 2_000,
+  });
+
+  assert.equal(result.isError, true);
+  assert.match(
+    result.content[0]?.text ?? '',
+    /readinessTimeoutMs is not accepted as a tool argument/,
+  );
+  assert.deepEqual(calls, [], 'a refused operator input must never reach the command route');
+});
+
 test('MCP refuses an explicit daemonAuthToken argument with env guidance', async () => {
   const calls: unknown[] = [];
   const executor = createCommandToolExecutor({
@@ -193,26 +220,22 @@ test('MCP refuses any argument the advertised schema does not list', async () =>
 test('MCP still resolves operator env values outside the model-writable surface', async () => {
   vi.stubEnv('AGENT_DEVICE_DAEMON_AUTH_TOKEN', 'operator-env-token');
   vi.stubEnv('AGENT_DEVICE_STATE_DIR', '/operator/state-dir');
-  try {
-    const createdConfigs: Array<Record<string, unknown>> = [];
-    const calls: Array<{ name: string; input: Record<string, unknown> }> = [];
-    const executor = createCommandToolExecutor({
-      createClient: (config) => {
-        createdConfigs.push(config as Record<string, unknown>);
-        return {} as AgentDeviceClient;
-      },
-      runCommand: async (_client, name, input) => {
-        calls.push({ name, input: input as Record<string, unknown> });
-        return {};
-      },
-    });
+  const createdConfigs: Array<Record<string, unknown>> = [];
+  const calls: Array<{ name: string; input: Record<string, unknown> }> = [];
+  const executor = createCommandToolExecutor({
+    createClient: (config) => {
+      createdConfigs.push(config as Record<string, unknown>);
+      return {} as AgentDeviceClient;
+    },
+    runCommand: async (_client, name, input) => {
+      calls.push({ name, input: input as Record<string, unknown> });
+      return {};
+    },
+  });
 
-    const result = await executor.execute('wait', {});
+  const result = await executor.execute('wait', {});
 
-    assert.equal(result.isError, false);
-    assert.equal(calls[0]?.input.daemonAuthToken, 'operator-env-token');
-    assert.equal(createdConfigs[0]?.stateDir, '/operator/state-dir');
-  } finally {
-    vi.unstubAllEnvs();
-  }
+  assert.equal(result.isError, false);
+  assert.equal(calls[0]?.input.daemonAuthToken, 'operator-env-token');
+  assert.equal(createdConfigs[0]?.stateDir, '/operator/state-dir');
 });

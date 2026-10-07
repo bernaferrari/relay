@@ -39,7 +39,7 @@ export type PublicPlatform = (typeof PUBLIC_PLATFORMS)[number];
 // aliases `ios`/`macos`, which still resolve to `apple` devices (read-path back-compat).
 export const PLATFORM_SELECTORS = [...PLATFORMS, 'ios', 'macos'] as const;
 export type PlatformSelector = (typeof PLATFORM_SELECTORS)[number];
-const DEVICE_KINDS = ['simulator', 'emulator', 'device'] as const;
+export const DEVICE_KINDS = ['simulator', 'emulator', 'device'] as const;
 export type DeviceKind = (typeof DEVICE_KINDS)[number];
 export const DEVICE_TARGETS = ['mobile', 'tv', 'desktop'] as const;
 export type DeviceTarget = (typeof DEVICE_TARGETS)[number];
@@ -53,6 +53,10 @@ export type DeviceInfo = {
   // Explicit Apple OS discriminant populated at discovery for Apple devices.
   // Optional so legacy records (and non-Apple platforms) remain valid.
   appleOs?: AppleOS;
+  // Presentation-only hardware model and OS version reported by discovery when the
+  // platform tooling exposes them; never part of device identity or selection.
+  model?: string;
+  osVersion?: string;
   booted?: boolean;
   simulatorSetPath?: string;
   // Internal physical-iOS execution backend selected during discovery.
@@ -249,6 +253,31 @@ export function matchesPlatformSelector(
   return device.platform === selector;
 }
 
+/**
+ * Whether two `--platform` selections can name the SAME device.
+ *
+ * Selectors name a platform on one of two axes: the collapsed `apple` family, or an Apple leaf
+ * (`ios`/`macos`) — plus the non-Apple platforms, which have one axis each. Equality of the two
+ * strings is therefore not the question: `apple` and `ios` name overlapping devices while `ios` and
+ * `macos` do not. The `apple` selector is only equivalent to a leaf, never to a non-Apple platform.
+ *
+ * Comparing selectors by string instead was the shape behind #2962, where a remote connection bound
+ * to the public `ios` was compared with an `apple`-axis value and every iOS install was refused.
+ * Any caller that decides "this request targets a different platform than the one already bound"
+ * has to answer it on both axes, which is why this lives beside the selectors rather than in one
+ * caller.
+ */
+export function platformSelectorsConflict(
+  requested: PlatformSelector | undefined,
+  bound: PlatformSelector | undefined,
+): boolean {
+  if (!requested || !bound) return false;
+  if (requested === bound) return false;
+  if (requested === 'apple') return !isApplePlatform(bound);
+  if (bound === 'apple') return !isApplePlatform(requested);
+  return true;
+}
+
 export function resolveApplePlatformName(
   platformOrTarget: ApplePlatform | DeviceTarget | undefined,
   appleOs?: AppleOS,
@@ -380,8 +409,7 @@ function resolveDeviceByName(
   deviceName: string | undefined,
 ): DeviceInfo | undefined {
   if (!deviceName) return undefined;
-  const normalizedName = normalizeDeviceName(deviceName);
-  const match = candidates.find((device) => normalizeDeviceName(device.name) === normalizedName);
+  const match = candidates.find((device) => matchesDeviceNameSelector(device, deviceName));
   if (!match) {
     const hint = deviceIdentityMistakenForNameHint(candidates, deviceName);
     throw new AppError(
@@ -415,14 +443,27 @@ function deviceIdentityMistakenForNameHint(
   if (!flag) return undefined;
   return (
     `${deviceName} is the id of ${JSON.stringify(identityMatch.name)}, not its name. ` +
-    `Did you mean ${flag} ${deviceName}?`
+    `Did you mean --${flag} ${deviceName}?`
   );
 }
 
-/** The identity flag that can actually resolve a device on this platform, if one exists. */
-function deviceIdentityFlag(platform: Platform): '--udid' | '--serial' | undefined {
-  if (isApplePlatform(platform)) return '--udid';
-  if (isSerialAddressablePlatform(platform)) return '--serial';
+export type DeviceIdentityFlag = 'udid' | 'serial';
+
+/**
+ * Which flag carries a device identity on a platform: `udid` addresses Apple devices, `serial`
+ * addresses the serial-addressable ones. Resolution rejects the wrong pairing
+ * (`assertSelectorFlagMatchesPlatform`), and a caller that resolved a device and has to re-issue it
+ * as flags — a remote lease request that must bind the device it just picked — has to name the same
+ * flag, or the two drift and the request binds a selector that resolves a DIFFERENT device.
+ *
+ * Two sites still spell the pairing out inline; each differs from this rule in a way that is its own
+ * decision, so they are tracked as follow-ups rather than folded in here.
+ */
+export function deviceIdentityFlag(
+  platform: Platform | PublicPlatform,
+): DeviceIdentityFlag | undefined {
+  if (isApplePlatform(platform)) return 'udid';
+  if (isSerialAddressablePlatform(platform)) return 'serial';
   return undefined;
 }
 
@@ -472,10 +513,9 @@ function throwAmbiguousDeviceSelection(candidates: DeviceInfo[]): never {
 
 function buildAmbiguousDeviceHint(candidates: DeviceInfo[]): string {
   const first = candidates[0];
-  const identitySelector =
-    first && isSerialAddressablePlatform(first.platform)
-      ? `--serial ${first.id}`
-      : `--udid ${first?.id ?? '<id>'}`;
+  const identitySelector = first
+    ? `--${deviceIdentityFlag(first.platform) ?? 'udid'} ${first.id}`
+    : `--udid <id>`;
   return (
     `Select the intended device explicitly, for example ${identitySelector} ` +
     `or --device ${JSON.stringify(first?.name ?? '<name>')}. ` +
@@ -529,10 +569,7 @@ function matchesExplicitDeviceSelector(device: DeviceInfo, selector: DeviceSelec
   ) {
     return false;
   }
-  if (
-    selector.deviceName &&
-    normalizeDeviceName(device.name) !== normalizeDeviceName(selector.deviceName)
-  ) {
+  if (selector.deviceName && !matchesDeviceNameSelector(device, selector.deviceName)) {
     return false;
   }
   return true;
@@ -567,6 +604,18 @@ function throwNoDevicesFound(selector: DeviceSelector, context: DeviceSelectionC
     });
   }
   throw new AppError('DEVICE_NOT_FOUND', 'No devices found', { selector });
+}
+
+/**
+ * Whether a `--device` name selects `device`. Selection and session-binding checks share this
+ * matcher so a name that picked a device keeps matching it, e.g. AVD `Pixel_9_API_37` for the
+ * displayed `Pixel 9 API 37`.
+ */
+export function matchesDeviceNameSelector(
+  device: Pick<DeviceInfo, 'name'>,
+  deviceName: string,
+): boolean {
+  return normalizeDeviceName(device.name) === normalizeDeviceName(deviceName);
 }
 
 function normalizeDeviceName(value: string): string {

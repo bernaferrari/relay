@@ -5,6 +5,12 @@ import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { afterEach, test, vi } from 'vitest';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+import {
+  spawnRegisteredDaemonFixture,
+  finishRegisteredDaemonFixture,
+  finishRegisteredDaemonFixtures,
+} from '../../__tests__/test-utils/registered-daemon-fixture.ts';
 
 vi.mock('@agent-device/host-kit/command', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@agent-device/host-kit/command')>()),
@@ -17,41 +23,74 @@ vi.mock('@agent-device/host-kit/retry', async (importOriginal) => ({
   sleep: vi.fn(async () => {}),
 }));
 
-import { resolveDaemonPaths } from '../../daemon-resolution.ts';
-import { sendToDaemon, type DaemonRequest, type DaemonResponse } from '../daemon-client.ts';
-import { attachActiveSessionAddressHint } from '../daemon-client-lifecycle.ts';
-import { sendRequest } from '../daemon-client-transport.ts';
+import { resolveDaemonPaths, type DaemonPaths } from '../../daemon-resolution.ts';
+import { sendToDaemon } from '../daemon-client.ts';
 import {
   closeLoopbackServer,
   listenOnLoopback,
   supportsLoopbackBind,
 } from '../../__tests__/test-utils/loopback.ts';
 import {
+  captureStderr,
   startHttpDaemonFixture,
   type HttpDaemonFixture,
+  currentDaemonCodeSignature,
 } from '../../__tests__/test-utils/daemon-http-fixture.ts';
-import {
-  installSpawnedHttpDaemon,
-  makeTempStateDir,
-  writeDaemonInfo,
-  writeDaemonLock,
-} from './daemon-client-startup.fixtures.ts';
 import { AppError } from '@agent-device/kernel/errors';
+import { tryAcquireProcessLock, inspectProcessLock } from '@agent-device/host-kit/file';
 import { runCmdDetachedMonitored, runCmdSync } from '@agent-device/host-kit/command';
-import { shellQuoteIfNeeded } from '@agent-device/kernel/device-shell';
 import { readProcessStartTime } from '@agent-device/host-kit/process';
 import { sleep } from '@agent-device/host-kit/retry';
+import { readVersion } from '@agent-device/host-kit/version';
 
+type DaemonInfoFixture = {
+  port?: number;
+  httpPort?: number;
+  transport: 'socket' | 'http' | 'dual';
+  token?: string;
+  pid?: number;
+  version?: string;
+  codeSignature?: string;
+  processStartTime?: string;
+};
+
+const actualRetry = await vi.importActual<typeof import('@agent-device/host-kit/retry')>(
+  '@agent-device/host-kit/retry',
+);
 const mockRunCmdDetached = vi.mocked(runCmdDetachedMonitored);
 const mockRunCmdSync = vi.mocked(runCmdSync);
 const mockSleep = vi.mocked(sleep);
 
-afterEach(() => {
+afterEach(async () => {
+  await finishRegisteredDaemonFixtures();
   mockRunCmdDetached.mockReset();
   mockRunCmdSync.mockClear();
-  mockSleep.mockClear();
+  mockSleep.mockReset();
+  mockSleep.mockImplementation(async () => {});
   vi.unstubAllEnvs();
 });
+
+function makeTempStateDir(prefix: string): string {
+  return mkdtempForTestSync(prefix);
+}
+
+function writeDaemonInfo(paths: DaemonPaths, info: DaemonInfoFixture): void {
+  fs.mkdirSync(paths.baseDir, { recursive: true });
+  fs.writeFileSync(
+    paths.infoPath,
+    `${JSON.stringify({
+      token: info.token ?? 'local-secret',
+      pid: info.pid ?? process.pid,
+      version: info.version ?? readVersion(),
+      codeSignature: info.codeSignature ?? currentDaemonCodeSignature(),
+      processStartTime: info.processStartTime ?? readProcessStartTime(process.pid) ?? undefined,
+      port: info.port,
+      httpPort: info.httpPort,
+      transport: info.transport,
+    })}\n`,
+    'utf8',
+  );
+}
 
 /** Like `startHttpDaemonFixture`, but every RPC call returns `errorResult` as an `{ok:false}` result. */
 async function startHttpDaemonErrorFixture(
@@ -104,48 +143,41 @@ function installSpawnedHttpDaemonAtOwnedStateDir(
   httpPort: number,
   onStateDir: (stateDir: string) => void,
 ): void {
+  mockSleep.mockImplementation(actualRetry.sleep);
   mockRunCmdDetached.mockImplementation((_command, _args, options) => {
     const ownedStateDir = String(options?.env?.AGENT_DEVICE_STATE_DIR);
     onStateDir(ownedStateDir);
     const ownedPaths = resolveDaemonPaths(ownedStateDir);
-    writeDaemonInfo(ownedPaths, { httpPort, transport: 'http' });
-    writeDaemonLock(ownedPaths, {
-      pid: process.pid,
-      processStartTime: readProcessStartTime(process.pid) ?? undefined,
-    });
-    return { pid: process.pid, exited: new Promise(() => {}) };
+    return spawnRegisteredDaemonFixture(
+      ownedPaths,
+      {
+        httpPort,
+        token: 'local-secret',
+        version: readVersion(),
+        codeOrigin: 'checkout',
+        codeSignature: currentDaemonCodeSignature(),
+      },
+      options,
+    );
   });
 }
 
-async function startHangingHttpDaemonFixture(): Promise<HttpDaemonFixture> {
-  const seenPaths: string[] = [];
-  const rpcRequests: Record<string, any>[] = [];
-  const server = http.createServer((req, res) => {
-    const url = new URL(req.url || '/', 'http://127.0.0.1');
-    seenPaths.push(`${req.method ?? 'GET'} ${url.pathname}`);
-
-    if (req.method === 'GET' && url.pathname === '/health') {
-      res.writeHead(200);
-      res.end('ok');
-      return;
-    }
-
-    if (req.method === 'POST' && url.pathname === '/rpc') {
-      const chunks: Buffer[] = [];
-      req.on('data', (chunk) => {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      });
-      req.on('end', () => {
-        rpcRequests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, any>);
-      });
-      return;
-    }
-
-    res.writeHead(404);
-    res.end('not found');
+function installSpawnedHttpDaemon(paths: DaemonPaths, httpPort: number): void {
+  mockSleep.mockImplementation(actualRetry.sleep);
+  mockRunCmdDetached.mockImplementation((_command, _args, options) => {
+    assert.equal(options?.env?.AGENT_DEVICE_STATE_DIR, paths.baseDir);
+    return spawnRegisteredDaemonFixture(
+      paths,
+      {
+        httpPort,
+        token: 'local-secret',
+        version: readVersion(),
+        codeOrigin: 'checkout',
+        codeSignature: currentDaemonCodeSignature(),
+      },
+      options,
+    );
   });
-  const port = await listenOnLoopback(server);
-  return { server, port, seenPaths, rpcRequests };
 }
 
 function mockSocketConnectionFailures(failingPort: number): {
@@ -243,69 +275,286 @@ function mockSocketErrorAfterWrite(failingPort: number): {
   };
 }
 
-test('sendRequest timeout cleanup uses resolved daemon paths instead of request flags', async (t) => {
-  if (!(await supportsLoopbackBind())) {
-    t.skip('loopback listeners are not permitted in this environment');
-    return;
-  }
+test('sendToDaemon retains unknown metadata after a spawn failure', async () => {
+  const stateDir = makeTempStateDir('agent-device-daemon-spawn-retry-');
+  const paths = resolveDaemonPaths(stateDir);
+  vi.stubEnv('AGENT_DEVICE_STATE_DIR', stateDir);
+  let attempts = 0;
 
-  const daemonStateDir = makeTempStateDir('agent-device-daemon-timeout-active-');
-  const requestFlagStateDir = makeTempStateDir('agent-device-daemon-timeout-request-');
-  const daemonPaths = resolveDaemonPaths(daemonStateDir);
-  const requestFlagPaths = resolveDaemonPaths(requestFlagStateDir);
-  const daemon = await startHangingHttpDaemonFixture();
-  writeDaemonInfo(daemonPaths, {
-    httpPort: daemon.port,
-    transport: 'http',
-    pid: 999_999,
+  mockRunCmdDetached.mockImplementation((_command, _args, options) => {
+    attempts += 1;
+    assert.equal(options?.env?.AGENT_DEVICE_STATE_DIR, stateDir);
+    fs.mkdirSync(paths.baseDir, { recursive: true });
+    fs.writeFileSync(paths.infoPath, '{"partial":true}\n', 'utf8');
+    fs.writeFileSync(paths.lockPath, 'not-json\n', 'utf8');
+    throw new Error(`spawn failed ${attempts}`);
   });
-  writeDaemonLock(daemonPaths, { pid: 999_999 });
-  writeDaemonInfo(requestFlagPaths, {
-    httpPort: daemon.port,
-    transport: 'http',
-    pid: 999_998,
-  });
-  writeDaemonLock(requestFlagPaths, { pid: 999_998 });
-
-  const request: DaemonRequest = {
-    session: 'default',
-    command: 'replay',
-    positionals: [],
-    flags: { stateDir: requestFlagStateDir, daemonTransport: 'http' },
-    token: 'local-secret',
-    meta: { requestId: 'req-timeout-paths' },
-  };
 
   try {
     let thrown: unknown;
     try {
-      await sendRequest(
-        {
-          token: 'local-secret',
-          pid: 999_999,
-          httpPort: daemon.port,
-          transport: 'http',
-        },
-        request,
-        'http',
-        daemonPaths,
-        50,
-      );
+      await sendToDaemon({
+        session: 'default',
+        command: 'spawn-retry-smoke',
+        positionals: [],
+        flags: { stateDir },
+        meta: { requestId: 'req-spawn-retry' },
+      });
     } catch (error) {
       thrown = error;
     }
 
     assert.ok(thrown instanceof AppError);
-    assert.equal(thrown.message, 'Daemon request timed out');
-    assert.deepEqual(daemon.seenPaths, ['POST /rpc']);
-    assert.equal(fs.existsSync(daemonPaths.infoPath), false);
-    assert.equal(fs.existsSync(daemonPaths.lockPath), false);
-    assert.equal(fs.existsSync(requestFlagPaths.infoPath), true);
-    assert.equal(fs.existsSync(requestFlagPaths.lockPath), true);
+    assert.equal(thrown.message, 'Failed to start daemon');
+    assert.equal(fs.readFileSync(paths.infoPath, 'utf8'), '{"partial":true}\n');
+    assert.equal(fs.readFileSync(paths.lockPath, 'utf8'), 'not-json\n');
+    assert.equal(thrown.details?.startError, 'spawn failed 1');
+    assert.equal(thrown.details?.startupAttempts, 1);
+    const results = thrown.details?.cleanupResults as Array<{
+      status: string;
+      removedInfo: boolean;
+    }>;
+    assert.equal(results[0]?.status, 'retained');
+    assert.equal(results[0]?.removedInfo, false);
+    assert.equal(attempts, 1);
   } finally {
+    await finishRegisteredDaemonFixture(stateDir);
+  }
+});
+
+test('sendToDaemon reports early daemon exit with log tail and startup paths', async () => {
+  const stateDir = makeTempStateDir('agent-device-daemon-early-exit-');
+  const paths = resolveDaemonPaths(stateDir);
+  vi.stubEnv('AGENT_DEVICE_STATE_DIR', stateDir);
+  let attempts = 0;
+
+  mockRunCmdDetached.mockImplementation((_command, _args, options) => {
+    attempts += 1;
+    const stderrFd = options?.stdio?.[2];
+    if (typeof stderrFd === 'number') {
+      fs.writeSync(stderrFd, `early daemon failure ${attempts}\n`);
+    }
+    return {
+      pid: 43_200 + attempts,
+      exited: Promise.resolve({ pid: 43_200 + attempts, exitCode: 1 }),
+    };
+  });
+
+  try {
+    let thrown: unknown;
+    try {
+      await sendToDaemon({
+        session: 'default',
+        command: 'early-exit-smoke',
+        positionals: [],
+        flags: { stateDir },
+        meta: { requestId: 'req-early-exit' },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    assert.ok(thrown instanceof AppError);
+    assert.equal(thrown.message, 'Failed to start daemon');
+    assert.equal(thrown.details?.stateDir, paths.baseDir);
+    assert.equal(thrown.details?.logPath, paths.logPath);
+    assert.match(String(thrown.details?.startError), /daemon process 43202 exited/);
+    assert.deepEqual(thrown.details?.daemonProcess, { pid: 43_202, exitCode: 1 });
+    assert.match(String(thrown.details?.daemonLogTail), /early daemon failure 2/);
+    assert.equal(attempts, 2);
+  } finally {
+    await finishRegisteredDaemonFixture(stateDir);
+  }
+});
+
+test('daemon acquisition reclaims a proven reused owner before publication', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const stateDir = makeTempStateDir('agent-device-daemon-stale-lock-');
+  const paths = resolveDaemonPaths(stateDir);
+  const daemon = await startHttpDaemonFixture({ via: 'fresh-daemon' });
+  vi.stubEnv('AGENT_DEVICE_STATE_DIR', stateDir);
+  const stale = tryAcquireProcessLock({
+    lockDirPath: paths.lockPath,
+    owner: { pid: process.pid, startTime: 'stale-start-time', acquiredAtMs: Date.now() },
+  });
+  assert.equal(stale.status, 'acquired');
+  installSpawnedHttpDaemon(paths, daemon.port);
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'stale-lock-smoke',
+      positionals: [],
+      flags: { stateDir, daemonTransport: 'http' },
+      meta: { requestId: 'req-stale-lock' },
+    });
+
+    const freshLock = inspectProcessLock(paths.lockPath);
+    assert.deepEqual(response, { ok: true, data: { via: 'fresh-daemon' } });
+    assert.equal(mockRunCmdDetached.mock.calls.length, 1);
+    assert.equal(freshLock.state, 'held');
+    if (freshLock.state === 'held') assert.notEqual(freshLock.owner.startTime, 'stale-start-time');
+    assert.deepEqual(daemon.seenPaths, ['GET /health', 'POST /rpc']);
+  } finally {
+    if (stale.status === 'acquired') await stale.acquisition.release();
     await closeLoopbackServer(daemon.server);
-    fs.rmSync(daemonStateDir, { recursive: true, force: true });
-    fs.rmSync(requestFlagStateDir, { recursive: true, force: true });
+    await finishRegisteredDaemonFixture(stateDir);
+  }
+});
+
+test('sendToDaemon does not reuse reachable daemon metadata with mismatched version or signature', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const cases: Array<{
+    name: string;
+    version?: string;
+    codeSignature?: string;
+    expectedReason: (clientVersion: string) => string;
+  }> = [
+    {
+      name: 'version',
+      version: '0.0.0-mismatch',
+      expectedReason: (clientVersion) => `version mismatch (client v${clientVersion})`,
+    },
+    {
+      name: 'code-signature',
+      codeSignature: 'mismatched-signature',
+      expectedReason: () => 'code-signature mismatch',
+    },
+  ];
+
+  for (const fixture of cases) {
+    const stateDir = makeTempStateDir(`agent-device-daemon-${fixture.name}-mismatch-`);
+    const paths = resolveDaemonPaths(stateDir);
+    const staleDaemon = await startHttpDaemonFixture({ via: 'stale-daemon' });
+    const freshDaemon = await startHttpDaemonFixture({ via: 'fresh-daemon' });
+    vi.stubEnv('AGENT_DEVICE_STATE_DIR', stateDir);
+    mockRunCmdDetached.mockReset();
+    installSpawnedHttpDaemon(paths, freshDaemon.port);
+    writeDaemonInfo(paths, {
+      httpPort: staleDaemon.port,
+      transport: 'http',
+      pid: 999_999,
+      ...(fixture.version ? { version: fixture.version } : {}),
+      ...(fixture.codeSignature ? { codeSignature: fixture.codeSignature } : {}),
+    });
+    const stderrCapture = captureStderr();
+
+    try {
+      const response = await sendToDaemon({
+        session: 'default',
+        command: `mismatch-${fixture.name}-smoke`,
+        positionals: [],
+        flags: { stateDir, daemonTransport: 'http' },
+        meta: { requestId: `req-mismatch-${fixture.name}` },
+      });
+
+      assert.deepEqual(response, { ok: true, data: { via: 'fresh-daemon' } });
+      assert.equal(mockRunCmdDetached.mock.calls.length, 1);
+      assert.deepEqual(staleDaemon.seenPaths, []);
+      assert.deepEqual(freshDaemon.seenPaths, ['GET /health', 'POST /rpc']);
+      const staleVersion = fixture.version ?? readVersion();
+      assert.equal(
+        stderrCapture.read(),
+        `Replacing daemon (pid 999999, v${staleVersion}) in ${paths.baseDir}: ` +
+          `${fixture.expectedReason(readVersion())}\n`,
+      );
+    } finally {
+      stderrCapture.restore();
+      await closeLoopbackServer(staleDaemon.server);
+      await closeLoopbackServer(freshDaemon.server);
+      await finishRegisteredDaemonFixture(stateDir);
+      vi.unstubAllEnvs();
+    }
+  }
+});
+
+test('sendToDaemon prints a takeover notice before replacing an unreachable daemon', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const stateDir = makeTempStateDir('agent-device-daemon-unreachable-takeover-');
+  const paths = resolveDaemonPaths(stateDir);
+  const freshDaemon = await startHttpDaemonFixture({ via: 'fresh-daemon' });
+  const unreachable = await startHttpDaemonFixture({ via: 'unused' });
+  await closeLoopbackServer(unreachable.server);
+  vi.stubEnv('AGENT_DEVICE_STATE_DIR', stateDir);
+  installSpawnedHttpDaemon(paths, freshDaemon.port);
+  writeDaemonInfo(paths, {
+    httpPort: unreachable.port,
+    transport: 'http',
+    pid: 999_999,
+  });
+  const stderrCapture = captureStderr();
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'unreachable-takeover-smoke',
+      positionals: [],
+      flags: { stateDir, daemonTransport: 'http' },
+      meta: { requestId: 'req-unreachable-takeover' },
+    });
+
+    assert.deepEqual(response, { ok: true, data: { via: 'fresh-daemon' } });
+    assert.equal(
+      stderrCapture.read(),
+      `Replacing daemon (pid 999999, v${readVersion()}) in ${paths.baseDir}: unreachable\n`,
+    );
+  } finally {
+    stderrCapture.restore();
+    await closeLoopbackServer(freshDaemon.server);
+    await finishRegisteredDaemonFixture(stateDir);
+  }
+});
+
+test('sendToDaemon replaces socket-only daemon metadata when HTTP transport is requested', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const stateDir = makeTempStateDir('agent-device-daemon-http-takeover-');
+  const paths = resolveDaemonPaths(stateDir);
+  const freshDaemon = await startHttpDaemonFixture({ via: 'fresh-http-daemon' });
+  vi.stubEnv('AGENT_DEVICE_STATE_DIR', stateDir);
+  installSpawnedHttpDaemon(paths, freshDaemon.port);
+  writeDaemonInfo(paths, {
+    port: 65_532,
+    transport: 'socket',
+    pid: 999_999,
+  });
+  const stderrCapture = captureStderr();
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'http-takeover-smoke',
+      positionals: [],
+      flags: { stateDir, daemonTransport: 'http' },
+      meta: { requestId: 'req-http-takeover' },
+    });
+
+    assert.deepEqual(response, { ok: true, data: { via: 'fresh-http-daemon' } });
+    assert.equal(mockRunCmdDetached.mock.calls.length, 1);
+    assert.deepEqual(freshDaemon.seenPaths, ['GET /health', 'POST /rpc']);
+    assert.equal(
+      stderrCapture.read(),
+      `Replacing daemon (pid 999999, v${readVersion()}) in ${paths.baseDir}: unreachable\n`,
+    );
+  } finally {
+    stderrCapture.restore();
+    await closeLoopbackServer(freshDaemon.server);
+    await finishRegisteredDaemonFixture(stateDir);
   }
 });
 
@@ -342,7 +591,7 @@ test('sendToDaemon falls back from failed socket transport to HTTP using daemon 
   } finally {
     socketFailures.restore();
     await closeLoopbackServer(daemon.server);
-    fs.rmSync(stateDir, { recursive: true, force: true });
+    await finishRegisteredDaemonFixture(stateDir);
   }
 });
 
@@ -386,15 +635,9 @@ test('sendToDaemon does not replay over HTTP after the socket request is written
   } finally {
     socket.restore();
     await closeLoopbackServer(daemon.server);
-    fs.rmSync(stateDir, { recursive: true, force: true });
+    await finishRegisteredDaemonFixture(stateDir);
   }
 });
-
-// --- ADR 0012 decision 6, R7 (Fix 1, C1): a repair-armed `replay --save-script`
-// that comes back as a HELD divergence (the daemon's `resume.repairSessionHeld`
-// signal) must keep its owning (owned/ephemeral) daemon alive and addressable.
-// The keep-alive keys on that signal — the REPAIR-ARMED condition — NOT on
-// `resume.allowed`, which reports only plan-resumability. ---
 
 function heldDivergenceError(
   resume: Record<string, unknown> = { allowed: true, from: 3, planDigest: 'digest-abc' },
@@ -457,15 +700,13 @@ test('sendToDaemon keeps an owned ephemeral daemon alive and hints its --state-d
     assert.match(String(response.error.hint), /--state-dir/);
     assert.ok(String(response.error.hint).includes(ownedStateDir));
 
-    // The daemon was NOT torn down: metadata and the owned state dir itself
-    // are still on disk, addressable by a follow-up command's --state-dir.
     const ownedPaths = resolveDaemonPaths(ownedStateDir);
     assert.equal(fs.existsSync(ownedPaths.infoPath), true);
     assert.equal(fs.existsSync(ownedPaths.lockPath), true);
     assert.equal(fs.existsSync(ownedStateDir), true);
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });
 
@@ -475,8 +716,6 @@ test('C1: keep-alive keys on repairSessionHeld, NOT resume.allowed — a HELD di
     return;
   }
 
-  // resume.allowed:false (plan not resumable), but the daemon still HELD the
-  // repair session — the agent must be able to reach it to close/inspect.
   const daemon = await startHttpDaemonErrorFixture(
     heldDivergenceError({
       allowed: false,
@@ -506,7 +745,7 @@ test('C1: keep-alive keys on repairSessionHeld, NOT resume.allowed — a HELD di
     assert.equal(fs.existsSync(ownedStateDir), true);
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });
 
@@ -535,25 +774,12 @@ test('sendToDaemon tears down an owned ephemeral daemon on an UNHELD divergence 
     if (response.ok) return;
     assert.equal(response.error.hint, undefined);
     assert.ok(ownedStateDir.length > 0);
-    // No held signal (`resume.allowed:true` alone is not the keep-alive key) —
-    // ordinary one-shot teardown still applies.
     assert.equal(fs.existsSync(ownedStateDir), false);
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });
-
-// --- ADR 0012 decision 6 (BLOCKER 2, third follow-up): a one-shot
-// `replay --save-script` that completes with no divergence returns SUCCESS
-// immediately — the actual healed-script commit is deferred to daemon
-// teardown. If that deferred commit then fails, the daemon leaves a
-// REPAIR_COMMIT_FAILED tombstone in the owned state dir before exiting. The
-// client cleanup must discover it (after waiting for the daemon to actually
-// exit) BEFORE deleting the owned state dir, and must surface it in the
-// response the caller receives — never silently delete the only evidence of
-// the failure while reporting the success already computed for the replay
-// itself. ---
 
 test('BLOCKER 2 (third follow-up): a shutdown-time repair commit failure is surfaced and the owned state dir survives', async (t) => {
   if (!(await supportsLoopbackBind())) {
@@ -561,66 +787,63 @@ test('BLOCKER 2 (third follow-up): a shutdown-time repair commit failure is surf
     return;
   }
 
-  // The daemon's RPC response for the replay itself is a plain SUCCESS (the
-  // plan completed with no divergence) — exactly what a real daemon would
-  // return before its deferred, teardown-time commit has even attempted.
-  const daemon = await startHttpDaemonFixture({ session: 'default' });
-  let ownedStateDir = '';
-  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
-    ownedStateDir = dir;
-    // Simulate the daemon's OWN shutdown handler (`finalizeRepairTeardown`)
-    // having already run and left a commit-failure tombstone before this
-    // fake process "exits" — the real ordering `stopDaemonProcessForTakeover`
-    // depends on (it waits for the process to exit, and the real daemon only
-    // exits after teardown finishes writing this file).
-    const ownedPaths = resolveDaemonPaths(dir);
-    const sessionDir = path.join(ownedPaths.sessionsDir, 'default');
-    fs.mkdirSync(sessionDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(sessionDir, 'repair-tombstone.json'),
-      `${JSON.stringify({
-        owner: 'default',
-        reapedAt: Date.now(),
-        expiresAt: Date.now() + 60_000,
-        sourcePath: '/tmp/flow.ad',
-        commitFailure: {
-          code: 'COMMAND_FAILED',
-          message: 'a prior healed script already exists at /tmp/flow.healed.ad',
-        },
-      })}\n`,
-    );
-  });
-
-  try {
-    const response = await sendToDaemon({
-      session: 'default',
-      command: 'replay',
-      positionals: ['flow.ad'],
-      flags: { saveScript: true, daemonTransport: 'http' },
-      meta: { requestId: 'req-repair-commit-fail-teardown' },
+  for (const failRelease of [false, true]) {
+    const daemon = await startHttpDaemonFixture({ session: 'default' });
+    let ownedStateDir = '';
+    installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+      ownedStateDir = dir;
+      fs.writeFileSync(
+        path.join(dir, 'repair-on-shutdown.json'),
+        `${JSON.stringify({
+          owner: 'default',
+          reapedAt: Date.now(),
+          expiresAt: Date.now() + 60_000,
+          sourcePath: '/tmp/flow.ad',
+          commitFailure: {
+            code: 'COMMAND_FAILED',
+            message: 'a prior healed script already exists at /tmp/flow.healed.ad',
+          },
+        })}\n`,
+      );
     });
 
-    // The client-visible response must surface the deferred commit failure —
-    // never the raw success the daemon returned for the replay itself, and
-    // never silently swallowed by cleanup.
-    assert.equal(response.ok, false);
-    if (response.ok) return;
-    assert.equal(response.error.code, 'REPAIR_COMMIT_FAILED');
-    assert.match(response.error.message, /a prior healed script already exists/);
-    assert.ok(response.error.message.includes('replay /tmp/flow.ad --save-script'));
+    const originalRmdir = fs.rmdirSync;
+    const releaseSpy = vi.spyOn(fs, 'rmdirSync').mockImplementation((target, options) => {
+      if (failRelease && target === resolveDaemonPaths(ownedStateDir).lockPath)
+        throw Object.assign(new Error('release failed'), { code: 'EBUSY' });
+      return originalRmdir(target, options);
+    });
+    try {
+      const response = await sendToDaemon({
+        session: 'default',
+        command: 'replay',
+        positionals: ['flow.ad'],
+        flags: { saveScript: true, daemonTransport: 'http' },
+        meta: { requestId: 'req-repair-commit-fail-teardown' },
+      });
 
-    // The owned state dir — and the tombstone evidence inside it — must
-    // survive: never rmSync'd while an unrecovered commit failure is on record.
-    assert.ok(ownedStateDir.length > 0);
-    assert.equal(fs.existsSync(ownedStateDir), true);
-    const ownedPaths = resolveDaemonPaths(ownedStateDir);
-    assert.equal(
-      fs.existsSync(path.join(ownedPaths.sessionsDir, 'default', 'repair-tombstone.json')),
-      true,
-    );
-  } finally {
-    await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+      assert.ok(!response.ok);
+      assert.equal(response.error.code, 'REPAIR_COMMIT_FAILED');
+      const secondary = response.error.details?.cleanupFailure as
+        | { details?: { ownerReleaseUnverified?: boolean }; hint?: string }
+        | undefined;
+      assert.equal(Boolean(secondary?.details?.ownerReleaseUnverified), failRelease);
+      assert.equal(Boolean(secondary?.hint?.startsWith('Restore process inspection')), failRelease);
+      assert.match(response.error.message, /a prior healed script already exists/);
+      assert.ok(response.error.message.includes('replay /tmp/flow.ad --save-script'));
+
+      assert.ok(ownedStateDir.length > 0);
+      assert.equal(fs.existsSync(ownedStateDir), true);
+      const ownedPaths = resolveDaemonPaths(ownedStateDir);
+      assert.equal(
+        fs.existsSync(path.join(ownedPaths.sessionsDir, 'default', 'repair-tombstone.json')),
+        true,
+      );
+    } finally {
+      releaseSpy.mockRestore();
+      await closeLoopbackServer(daemon.server);
+      if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
+    }
   }
 });
 
@@ -655,7 +878,7 @@ test('continuation: sendToDaemon keeps the daemon alive on a held divergence eve
     assert.equal(fs.existsSync(ownedStateDir), true);
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });
 
@@ -682,45 +905,6 @@ function activeReplaySuccessData(overrides: Record<string, unknown> = {}): Recor
     ...overrides,
   };
 }
-
-test('attachActiveSessionAddressHint shell-quotes a --state-dir/--session value containing spaces or shell metacharacters', () => {
-  const unsafeStateDir = '/tmp/state dir with $(danger)';
-  const unsafeSession = 'cwd:abc123:my session; rm -rf /';
-  const response: Extract<DaemonResponse, { ok: true }> = {
-    ok: true,
-    data: activeReplaySuccessData({ session: unsafeSession }),
-  };
-
-  const hinted = attachActiveSessionAddressHint(response, unsafeStateDir);
-
-  assert.equal(
-    hinted.data?.hint,
-    "This session's daemon was kept alive because its script left the session active; " +
-      `pass --state-dir ${shellQuoteIfNeeded(unsafeStateDir)} ` +
-      `--session ${shellQuoteIfNeeded(unsafeSession)} on your next command to reach it.`,
-  );
-  // Both values actually needed quoting — this test would pass vacuously
-  // (raw interpolation indistinguishable from quoted) if they didn't.
-  assert.notEqual(shellQuoteIfNeeded(unsafeStateDir), unsafeStateDir);
-  assert.notEqual(shellQuoteIfNeeded(unsafeSession), unsafeSession);
-});
-
-test('attachActiveSessionAddressHint omits --state-dir but still quotes an unsafe --session-only value', () => {
-  const unsafeSession = "cwd:abc123:it's mine";
-  const response: Extract<DaemonResponse, { ok: true }> = {
-    ok: true,
-    data: activeReplaySuccessData({ session: unsafeSession }),
-  };
-
-  const hinted = attachActiveSessionAddressHint(response, undefined);
-
-  assert.equal(
-    hinted.data?.hint,
-    "This session's daemon was kept alive because its script left the session active; " +
-      `pass --session ${shellQuoteIfNeeded(unsafeSession)} on your next command to reach it.`,
-  );
-  assert.doesNotMatch(String(hinted.data?.hint), /--state-dir/);
-});
 
 /** Issues a close-less `replay` against an owned ephemeral daemon spawned at `daemonPort`. */
 async function replayLeavingSessionActive(
@@ -783,7 +967,7 @@ test('sendToDaemon keeps an owned ephemeral daemon alive and hints its --state-d
     assert.equal(fs.existsSync(ownedStateDir), true);
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });
 
@@ -822,7 +1006,7 @@ test('closes the loop: a follow-up sendToDaemon using the hinted --state-dir/--s
     assert.equal(daemon.rpcRequests[1]?.params?.command, 'press');
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });
 
@@ -854,7 +1038,7 @@ test('sendToDaemon tears down an owned ephemeral daemon when replay reports the 
     assert.equal(fs.existsSync(ownedStateDir), false);
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });
 
@@ -900,7 +1084,7 @@ test('ADR 0012 R7 x ADR 0016: a completed --save-script repair also keeps its ow
     assert.equal(fs.existsSync(ownedStateDir), true);
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });
 
@@ -946,7 +1130,7 @@ test('issue #1384: sendToDaemon does not stop a client-started daemon at an expl
     assert.equal(fs.existsSync(paths.lockPath), true);
   } finally {
     await closeLoopbackServer(daemon.server);
-    fs.rmSync(stateDir, { recursive: true, force: true });
+    await finishRegisteredDaemonFixture(stateDir);
   }
 });
 
@@ -980,6 +1164,6 @@ test('sendToDaemon still tears down a `test` command owned ephemeral daemon even
     assert.equal(fs.existsSync(ownedStateDir), false);
   } finally {
     await closeLoopbackServer(daemon.server);
-    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+    if (ownedStateDir) await finishRegisteredDaemonFixture(ownedStateDir);
   }
 });

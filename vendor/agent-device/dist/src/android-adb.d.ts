@@ -2,7 +2,19 @@ import { b as DeviceInfo } from "./sdk-contracts.js";
 import { s as AppsFilter } from "./gesture-plan-types.js";
 import { a as readAndroidClipboardWithAdb, c as AndroidAdbExecutor, d as AndroidAdbProvider, f as AndroidPortReverseEndpoint, i as getAndroidKeyboardStatusWithAdb, l as AndroidAdbExecutorOptions, m as AppStateRuntimeResult, n as AndroidKeyboardState, o as writeAndroidClipboardWithAdb, p as AndroidPortReverseProvider, r as dismissAndroidKeyboardWithAdb, t as AndroidKeyboardDismissResult, u as AndroidAdbExecutorResult } from "./device-input-state.js";
 //#region packages/platform-android/src/adb-port-reverse.d.ts
+type AndroidExecPortReverseOptions = Readonly<{
+  /**
+   * Refuses to replace any existing device mapping, including one this provider created
+   * (`adb reverse --no-rebind`), for a device that other adb clients also drive. When
+   * `adb reverse --list` shows the endpoint after a refusal, the provider throws `COMMAND_FAILED`
+   * with `details.reason: 'android_port_reverse_rebind_refused'`; otherwise it throws the adb
+   * failure.
+   */
+  noRebind?: boolean;
+}>;
 declare function createAndroidPortReverseManager(provider: AndroidAdbProvider | AndroidAdbExecutor): AndroidPortReverseProvider;
+/** Options reach only the exec-backed provider the manager builds over a bare executor. */
+declare function createAndroidPortReverseManager(adb: AndroidAdbExecutor, options: AndroidExecPortReverseOptions): AndroidPortReverseProvider;
 //#endregion
 //#region packages/kernel/src/device-shell.d.ts
 declare const shellFragmentBrand: unique symbol;

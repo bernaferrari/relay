@@ -14,7 +14,7 @@ extension RunnerTests {
     }
     switch command.command {
     case .status, .activate, .terminate, .targetReset, .shutdown, .recordStart, .recordStop, .uptime,
-      .appState, .snapshot:
+      .appState, .pasteboardWrite, .snapshot:
       return Response(
         ok: false,
         error: ErrorPayload(
@@ -22,57 +22,6 @@ extension RunnerTests {
           message: "\(command.command.rawValue) cannot be executed through the prepared command path"
         )
       )
-    case .clipboardRead:
-#if canImport(UIKit)
-      var text = ""
-      let read = { text = UIPasteboard.general.string ?? "" }
-      if Thread.isMainThread { read() } else { DispatchQueue.main.sync(execute: read) }
-      return Response(ok: true, data: DataPayload(text: text))
-#else
-      return Response(
-        ok: false,
-        error: ErrorPayload(
-          code: "UNSUPPORTED_OPERATION",
-          message: "clipboard is unavailable on this Apple platform"
-        )
-      )
-#endif
-    case .clipboardWrite:
-#if canImport(UIKit)
-      guard let text = command.text else {
-        return Response(ok: false, error: ErrorPayload(message: "clipboardWrite requires text"))
-      }
-      var observed = ""
-      let write = {
-        UIPasteboard.general.setItems(
-          [["public.utf8-plain-text": text]],
-          options: [
-            .localOnly: false,
-            .expirationDate: Date().addingTimeInterval(60 * 60),
-          ]
-        )
-        observed = UIPasteboard.general.string ?? ""
-      }
-      if Thread.isMainThread { write() } else { DispatchQueue.main.sync(execute: write) }
-      guard observed == text else {
-        return Response(
-          ok: false,
-          error: ErrorPayload(
-            code: "CLIPBOARD_WRITE_FAILED",
-            message: "clipboard write did not persist"
-          )
-        )
-      }
-      return Response(ok: true, data: DataPayload(message: "clipboard updated"))
-#else
-      return Response(
-        ok: false,
-        error: ErrorPayload(
-          code: "UNSUPPORTED_OPERATION",
-          message: "clipboard is unavailable on this Apple platform"
-        )
-      )
-#endif
     case .clipboardPaste:
 #if canImport(UIKit)
       // Verified replace-field workflow, not a rollback-capable transaction.

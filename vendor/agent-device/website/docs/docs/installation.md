@@ -69,7 +69,11 @@ One-off `npx` usage is fine for humans and scripts that intentionally fetch from
 - Node.js 24 or newer for web automation, which hard-fails below it. The rest of the CLI keeps the
   22.12 floor, so check `node --version` in the shell that runs `agent-device web setup` and
   `agent-device doctor` before trusting a web result.
-- Xcode for iOS simulator/device automation (`simctl` + `devicectl`)
+- Xcode for iOS simulator/device automation (`simctl` + `devicectl`). `xcrun` picks the Xcode from
+  `DEVELOPER_DIR`, otherwise `xcode-select -p`. A `DEVELOPER_DIR` exported in the shell running
+  `agent-device` applies to the Apple tools a local daemon runs for that command; without it, the
+  daemon uses the environment it was started in. Set `DEVELOPER_DIR=""` to use the daemon host's
+  `xcode-select` selection instead.
 - Android SDK / ADB for Android
 - HarmonyOS Command Line Tools for HarmonyOS (`hdc` available through `HDC_SDK_PATH`, `DEVECO_SDK_HOME`, or `HARMONYOS_COMMAND_LINE_TOOLS`)
 - Amazon Vega Developer Tools and an SDK-matched Vega Virtual Device for Vega OS TV
@@ -111,10 +115,23 @@ vega device list
 - A runner startup failure is typed, not prose: `error.details.reason` is one of `signing_no_development_team`, `signing_provisioning_profile_missing`, `bundle_identifier_already_registered`, `signing_unspecified`, `devtools_security_developer_mode_disabled` (the Mac's `DevToolsSecurity` setting, which says nothing about the device's Developer Mode toggle), `device_developer_mode_disabled`, `device_developer_disk_image_unavailable`, or `build_failed_unclassified` when nothing proved a cause. Branch on `details.reason` and follow `hint`; the code stays `COMMAND_FAILED` for every reason.
 - The two `device_*` reasons come from the iPhone itself, read over `xcrun devicectl device info details` before the runner builds: `developerModeStatus` for the Settings toggle and `ddiServicesAvailable` for the developer disk image. They are reported apart on purpose. A phone with Developer Mode off cannot serve its disk image either, so it gets the toggle reason; a phone with the toggle on and only the image down gets the disk-image reason, which is a device-support install that has not finished rather than a setting anyone turned off.
 - If device setup is slow, keep the device connected and inspect daemon diagnostics after retrying.
-- If daemon startup reports stale metadata, remove stale files and retry:
-  - `<state-dir>/daemon.json`
-  - `<state-dir>/daemon.lock`
-  - default state dir is `~/.agent-device` for packaged installs; source checkouts default to a worktree-scoped dir under `~/.agent-device/dev/` unless `AGENT_DEVICE_STATE_DIR` or `--state-dir` is set
-  - `agent-device session state-dir` prints the resolved state dir without starting the daemon
-  - after pulling the worktree-scoped daemon change in a source checkout, stop any legacy default daemon once with `AGENT_DEVICE_STATE_DIR=~/.agent-device pnpm clean:daemon`
-  - worktree-scoped state dirs outlive deleted worktrees; `pnpm clean:daemon --prune-dev` removes dirs under `~/.agent-device/dev/` with no live daemon and no activity for 14 days (one line printed per removed dir)
+
+## Daemon startup and upgrades
+
+If daemon startup fails, retry with `--debug` and inspect the retained state and diagnostics. `agent-device session state-dir` prints the resolved directory without starting a daemon.
+
+Before upgrading across the daemon lock change, stop every older client and daemon using that directory with their original CLI. Prevent older versions from returning while the upgraded version runs. Use a single deployed version or separate environments for concurrent installations.
+
+If you used a source checkout before worktree-specific state directories, stop its daemon in `~/.agent-device` from that older checkout:
+
+```sh
+AGENT_DEVICE_STATE_DIR="$HOME/.agent-device" pnpm clean:daemon
+```
+
+The upgraded checkout defaults to a different directory, so its plain `pnpm clean:daemon` does not target that legacy daemon.
+
+Startup refuses legacy lock files and unverified ownership. Confirm every user of the state directory stopped before manual recovery; removing `daemon.json` or `daemon.lock` alone is not a safe reset.
+
+Packaged installs default to `~/.agent-device`; source checkouts use a worktree directory under `~/.agent-device/dev/`. `AGENT_DEVICE_STATE_DIR` or `--state-dir` overrides either default.
+
+For source checkouts, `pnpm clean:daemon --prune-dev` first stops the invoking checkout's daemon, even when its state directory has recent activity. It then selects development directories with no activity for 14 days, using the newest mtime of the directory and its immediate children. It retires only registration it can confirm abandoned. Directories, session artifacts and logs remain.

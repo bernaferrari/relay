@@ -1,2 +1,2 @@
-import{c as e}from"./exec.js";import"./command.js";const t=3e3;async function n(n,i){try{let a=await e(n,i,{allowFailure:!0,timeoutMs:t});return a.exitCode===0?r(a.stdout):void 0}catch{return}}function r(e){return e.split(`
-`).map(e=>e.trim()).find(Boolean)}export{n,r,t};
+import{l as e}from"./exec.js";import"./command.js";const t=3e3;async function n(e,t){let n=await r(e,t);return n===void 0?void 0:i(n)}async function r(n,r){try{let i=await e(n,r,{allowFailure:!0,timeoutMs:t});return i.exitCode===0?i.stdout:void 0}catch{return}}function i(e){return e.split(`
+`).map(e=>e.trim()).find(Boolean)}export{i,n,r,t};

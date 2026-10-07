@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'vitest';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import { IOS_DEVICECTL_MIN_TIMEOUT_SECONDS } from '../config.ts';
 import {
+  launchCoreDeviceApp,
   parseIosDeviceDetailsPayload,
   readIosDeviceReadiness,
   resolveIosReadyHint,
@@ -15,6 +17,7 @@ import {
 } from '../devicectl.ts';
 import { resolveIosPhysicalDeviceControl } from '../physical-device-control.ts';
 import { createLocalAppleToolProvider, withAppleToolProvider } from '../tool-provider.ts';
+import { withFakeAppleTool } from '../../__tests__/fake-apple-tool.ts';
 
 /**
  * `xcrun devicectl device info details` is the one tool that answers what a device thinks of itself,
@@ -28,6 +31,59 @@ const DEVICE_INFO_DETAILS_CAPTURE = JSON.parse(
     'utf8',
   ),
 ) as unknown;
+
+test('launchCoreDeviceApp puts --payload-url before the bundle ID', async () => {
+  await withFakeAppleTool(
+    () => '',
+    async ({ calls }) => {
+      await launchCoreDeviceApp(IOS_DEVICE, 'com.example.app', {
+        payloadUrl: 'myapp://item/42',
+      });
+      assert.deepEqual(calls, [
+        [
+          'devicectl',
+          'device',
+          'process',
+          'launch',
+          '--device',
+          IOS_DEVICE.id,
+          '--payload-url',
+          'myapp://item/42',
+          'com.example.app',
+        ],
+      ]);
+    },
+    { device: IOS_DEVICE },
+  );
+});
+
+test('launchCoreDeviceApp keeps launch args after the bundle ID, separated by --', async () => {
+  await withFakeAppleTool(
+    () => '',
+    async ({ calls }) => {
+      await launchCoreDeviceApp(IOS_DEVICE, 'com.example.app', {
+        payloadUrl: 'myapp://item/42',
+        launchArgs: ['--debug'],
+      });
+      assert.deepEqual(calls, [
+        [
+          'devicectl',
+          'device',
+          'process',
+          'launch',
+          '--device',
+          IOS_DEVICE.id,
+          '--payload-url',
+          'myapp://item/42',
+          'com.example.app',
+          '--',
+          '--debug',
+        ],
+      ]);
+    },
+    { device: IOS_DEVICE },
+  );
+});
 
 test('parseIosDeviceDetailsPayload reads direct and nested tunnel state', () => {
   assert.equal(
@@ -430,6 +486,44 @@ test('the CoreDevice backend publishes the device report', async () => {
   assert.equal(readiness.developerMode, 'enabled');
   assert.equal(readiness.developerDiskImage, 'available');
 });
+
+test.each([
+  [250, '5'],
+  [4999, '5'],
+  [5000, '5'],
+  [5001, '6'],
+  [10000, '10'],
+])(
+  'CoreDevice tunnel lookup keeps a %i ms host budget with CLI timeout %s',
+  async (budget, cliTimeout) => {
+    let observedCliTimeout: string | undefined;
+    let observedHostTimeout: number | undefined;
+    const tunnel = await withAppleToolProvider(
+      createLocalAppleToolProvider({
+        runCommand: async (_cmd, args, options) => {
+          observedCliTimeout = args[args.indexOf('--timeout') + 1];
+          observedHostTimeout = options?.timeoutMs;
+          if (Number(observedCliTimeout) < IOS_DEVICECTL_MIN_TIMEOUT_SECONDS) {
+            return {
+              exitCode: 64,
+              stdout: '',
+              stderr: "Error: Please specify a 'timeout' value between 5 and 9223372036854775807",
+            };
+          }
+          const outputPath = jsonOutputPath(args);
+          if (outputPath) fs.writeFileSync(outputPath, DEVICE_INFO_DETAILS_TEXT);
+          return { exitCode: 0, stdout: '', stderr: '' };
+        },
+      }),
+      async () =>
+        await resolveIosPhysicalDeviceControl(IOS_DEVICE).resolveTunnel(IOS_DEVICE, budget),
+    );
+
+    assert.deepEqual(tunnel, { tunnelIp: 'fd00:0000:0000::1' });
+    assert.equal(observedCliTimeout, cliTimeout);
+    assert.equal(observedHostTimeout, budget);
+  },
+);
 
 /**
  * A `deviceProperties` payload together with the context it was read in. Both default to the state a

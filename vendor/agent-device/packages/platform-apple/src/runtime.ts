@@ -60,6 +60,7 @@ import {
   appleScreenRecordingFacts,
   createAppleScreenRecordingOperations,
 } from './recording/runtime.ts';
+import type { EnsureReadyInput } from '@agent-device/contracts/device-readiness-runtime';
 import { ensureAppleReady } from './readiness/runtime.ts';
 import { bindAppleApplicationLifecycle } from './lifecycle.ts';
 import {
@@ -70,6 +71,9 @@ import { appleNavigationFacts, createAppleNavigationOperations } from './navigat
 import { appleSystemFacts, createAppleSystemOperations } from './system/runtime.ts';
 import { appleFoldableFacts, createAppleFoldableOperations } from './foldable/runtime.ts';
 import { bindAppleFindTextRuntime, bindAppleSnapshotRuntime } from './runtime-snapshot.ts';
+import type { MacOsAppBackend } from '@agent-device/contracts/session';
+import { hostMacOsAppBackend } from './os/macos/app-backend.ts';
+import { macOsNativeBackendFacts } from './os/macos/native-backend-facts.ts';
 import { createAppleSnapshotRoute } from './snapshot-route.ts';
 
 const owner = localRuntimeOwner('apple');
@@ -275,6 +279,11 @@ function appleFocusFact(device: DeviceInfo): RuntimeOperationFact {
 export function createApplePlatformRuntime(host: PlatformRuntimeHost): PlatformRuntimeOwner {
   const appLogs = createAppleAppLogRuntime(host);
   const snapshotRoute = createAppleSnapshotRoute(host);
+  // A daemon setting, read on the first macOS device and kept for the owner's lifetime so facts and
+  // bindings agree on it. Other Apple devices never read it, so a bad value cannot fail them.
+  let resolvedMacOsAppBackend: MacOsAppBackend | undefined;
+  const macOsAppBackend = (device: DeviceInfo): MacOsAppBackend =>
+    isMacOs(device) ? (resolvedMacOsAppBackend ??= hostMacOsAppBackend()) : 'xctest';
   const inspectFacts = async (device: DeviceInfo) => {
     const logs = await appLogs.inspectFacts(device);
     const deployment = appleAppDeploymentFacts(device);
@@ -336,6 +345,7 @@ export function createApplePlatformRuntime(host: PlatformRuntimeHost): PlatformR
         listApps: apps,
         ...appleApplicationLifecycleFacts(device),
         shutdownTarget: shutdownFact(device),
+        ...macOsNativeBackendFacts(device, macOsAppBackend(device)),
       },
     });
   };
@@ -395,6 +405,7 @@ export function createApplePlatformRuntime(host: PlatformRuntimeHost): PlatformR
             {
               device: request.device,
               signal: request.scope.signal,
+              appBackend: macOsAppBackend(request.device),
             },
             snapshotRoute,
           ),
@@ -454,12 +465,14 @@ export function createApplePlatformRuntime(host: PlatformRuntimeHost): PlatformR
           bindAppleFindTextRuntime(host, {
             device: request.device,
             signal: request.scope.signal,
+            appBackend: macOsAppBackend(request.device),
           }),
         ),
         ...createAppleNavigationOperations({
           host,
           device: request.device,
           signal: request.scope.signal,
+          admitted: facts.operations,
         }),
         ...createAppleSystemOperations({
           host,
@@ -475,8 +488,10 @@ export function createApplePlatformRuntime(host: PlatformRuntimeHost): PlatformR
             await ensureAppleReady(host, request.device, request.scope.signal),
         })),
         ...whenAdmitted(facts.operations.bootTarget, () => ({
-          bootTarget: async () =>
-            await ensureAppleReady(host, request.device, request.scope.signal),
+          bootTarget: async (input: EnsureReadyInput) =>
+            await ensureAppleReady(host, request.device, request.scope.signal, {
+              deadlineAtMs: input.deadlineAtMs,
+            }),
         })),
         ...whenAdmitted(facts.operations.listApps, () => ({
           listApps: async (input: { device: DeviceInfo; filter: 'all' | 'user-installed' }) => {

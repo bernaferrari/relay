@@ -4,62 +4,49 @@ import {
   Deadline,
   emitRequestProgress,
   emitDiagnostic,
-  withDiagnosticTimer,
   buildSimctlArgsForDevice,
   runXcrun,
 } from './host.ts';
 import type { ExecResult } from '@agent-device/host-kit/command';
 import { isApplePlatform, type DeviceInfo } from '@agent-device/kernel/device';
-import {
-  resolveRunnerHandoffTarget,
-  type RunnerHandoffLane,
-  type RunnerHandoffRefusal,
-} from './apple-runner-platform.ts';
 import type { RunnerLogicalLeaseContext } from '@agent-device/contracts/runner-lease-context';
 import type { AppleRunnerLifecycleOptions } from './runner-provider.ts';
 import { flushRunnerLogAppends, getFreePort, resolveRunnerLaunchLogPath } from './runner-io.ts';
-import { waitForRunner, RUNNER_STARTUP_TIMEOUT_MS } from './runner-startup-transport.ts';
-import { sendRunnerCommandOnce } from './runner-transport.ts';
+import { RUNNER_STARTUP_TIMEOUT_MS } from './runner-startup-transport.ts';
 import {
+  assertRunnerStartAdmitsPreparation,
   createRunnerPhaseBudget,
   ensureXctestrunArtifact,
+  fenceRunnerStartAdmissionsForTeardown,
+  finishRunnerStartAdmission,
   IOS_RUNNER_CONTAINER_BUNDLE_IDS,
+  openRunnerStartAdmission,
   prepareXctestrunWithEnv,
+  readmitRunnerStartAdmission,
   requireRunnerPhaseRemainingMs,
   resolveExpectedRunnerCacheMetadata,
   resolveRunnerDerivedPath,
+  retireAllRunnerStartAdmissions,
+  runnerStartAdmitsPreparation,
+  runnerStartRetiredError,
   type RunnerPhaseBudget,
+  type RunnerStartAdmission,
 } from './runner-xctestrun.ts';
+import { resolveRunnerCacheKey } from './runner-cache-metadata.ts';
+import type { RunnerCommand } from './runner-contract.ts';
+import { enrichRunnerStartupFailureWithDeviceStates } from './runner-error-classification.ts';
+import { isRunnerReadinessProbeCommand } from './runner-command-traits.ts';
 import {
-  buildRunnerResponseError,
-  decodeRunnerResponseBody,
-  isRunnerResponseOk,
-  readRunnerResponseData,
-  resolveRunnerRequestSignal,
-  withRunnerCommandId,
-  type RunnerCommand,
-} from './runner-contract.ts';
-import {
-  resolveRunnerFatalErrorReason,
-  isRunnerMainThreadOccupiedError,
-  isStructuredRunnerFailure,
-  enrichRunnerStartupFailureWithDeviceStates,
-} from './runner-error-classification.ts';
-import {
-  canSkipRunnerReadinessPreflightAfterHealthyMutation,
-  isReadOnlyRunnerCommand,
-  isRunnerReadinessPreflightExempt,
-  isRunnerReadinessProbeCommand,
-} from './runner-command-traits.ts';
-import {
-  buildDetachedRunnerLease,
   buildRunnerLease,
   prepareRunnerLeaseForStartup,
   runnerOwnerToken,
   withRunnerLeaseLock,
   writeRunnerLease,
 } from './runner-lease.ts';
-import { isIosRunnerDetachEnabled, tryAdoptRunnerSessionFromLease } from './runner-adoption.ts';
+import {
+  detachRunnerSessionsForShutdown,
+  tryAdoptRunnerSessionFromLease,
+} from './runner-adoption.ts';
 import { buildRunnerSessionXctestrunSuffix } from './runner-artifact-env.ts';
 import {
   abortRunnerSessionsAndPrepProcesses,
@@ -72,25 +59,22 @@ import {
   type RunnerDisposalOptions,
 } from './runner-disposal.ts';
 import {
-  captureRunnerLogAttempt,
-  enrichRunnerFailureFromLog,
-  type RunnerLogAttempt,
-} from './runner-failure-diagnostics.ts';
-import {
-  advanceRunnerSessionState,
   buildRunnerSessionId,
   canWorkWithRunnerSession,
   isRunnerMainThreadOccupied,
   normalizeRunnerStartupTimeoutMs,
-  resolveRunnerDetachDecision,
   resolveRunnerSessionLiveness,
-  type RunnerDetachRefusal,
+  RunnerCommandAccounting,
   type RunnerSession,
   type RunnerSessionLiveness,
   type RunnerSessionRegistration,
 } from './runner-session-types.ts';
 import { launchRunnerProcess, type LaunchedRunnerProcess } from './runner-process-launch.ts';
 import { isSameRunnerSimulator } from './runner-device-set.ts';
+// The start-budget members are read through function-scoped imports: this module sits in the
+// façade closures the eager-closure budget holds at its merge-base size, and the budget module is
+// only ever needed at a start, never on an import path.
+import type { RunnerStartBudget } from './runner-start-budget.ts';
 
 export type { RunnerSession } from './runner-session-types.ts';
 
@@ -100,30 +84,7 @@ const runnerSessions = new Map<string, RunnerSession>();
 const runnerSessionLocks = new Map<string, Promise<unknown>>();
 const runnerIdleStopTimers = new Map<string, NodeJS.Timeout>();
 const RUNNER_RETAINED_IDLE_STOP_DEFAULT_MS = 5 * 60_000;
-const RUNNER_READY_PREFLIGHT_TIMEOUT_MS = 1_000;
 const RUNNER_STALE_BUNDLE_UNINSTALL_TIMEOUT_MS = 10_000;
-const RUNNER_PREFLIGHT_SKIP_FRESHNESS_MS = 5_000;
-
-type RunnerReadinessPreflightDecision =
-  | {
-      action: 'run';
-      reason:
-        | 'startup'
-        | 'conservative_command'
-        | 'no_recent_healthy_mutation'
-        | 'app_activation_uncertain'
-        | 'healthy_mutation_stale';
-      lastHealthyMutationAgeMs?: number;
-    }
-  | {
-      action: 'skip';
-      reason: 'read_only_startup_command' | 'readiness_probe_command' | 'preflight_exempt_command';
-    }
-  | {
-      action: 'skip';
-      reason: 'recent_healthy_mutation';
-      lastHealthyMutationAgeMs: number;
-    };
 
 function withRunnerSessionLock<T>(deviceId: string, task: () => Promise<T>): Promise<T> {
   return withKeyedLock(runnerSessionLocks, deviceId, task);
@@ -136,30 +97,58 @@ export async function ensureRunnerSession(
   // Any runner use means the device is active again: a pending idle stop
   // from a retained-after-close runner no longer applies.
   cancelIosRunnerIdleStop(device.id);
-  return await withRunnerSessionLock(device.id, async () => {
-    // One budget for the whole startup phase, opened here from the request-level
-    // `startupTimeoutMs`: the reuse check's toolchain probes, adoption and the startup
-    // itself all spend this one clock. The request's abort signal rides with it, so a
-    // client disconnect kills the blocking xctestrun build and runner launch
-    // (killProcessTree via exec) instead of orphaning them. Request-scoped: only this
-    // request's device startup reacts, and a signal-less internal caller (shutdown)
-    // simply gets undefined.
-    const startupBudget = createRunnerPhaseBudget(
-      options.startupTimeoutMs,
-      resolveRunnerRequestSignal(options),
-    );
-    const existing = runnerSessions.get(device.id);
-    if (existing) {
-      assertExpectedRunnerSession(existing, options.expectedRunnerSessionId);
-      const reusable = await resolveReusableRunnerSession(device, existing, startupBudget);
-      if (reusable) return reusable;
-    }
+  // This start's admission: the loop that owns the start across retries supplies one, and every
+  // other start takes a token for itself. Both are taken synchronously, before the first await and
+  // registered with the device, so a teardown beginning in this same turn closes it even while
+  // this start queues behind the work another start holds the session lock for (#3220).
+  const ownedAdmission = options.startAdmission;
+  const startAdmission = ownedAdmission ?? openRunnerStartAdmission(device.id);
+  const start = withRunnerSessionLock(device.id, async () => {
+    const { openRunnerStartBudget, reserveRunnerStartOwnerInterest } =
+      await import('./runner-start-budget.ts');
+    // A start woken after the close that closed its admission has settled did no work under the
+    // fence and runs on as the fresh start it always was; one woken WHILE that close still runs
+    // is refused here, before it adopts, boots, or builds (#3220).
+    readmitRunnerStartAdmission(startAdmission);
+    assertRunnerStartAdmitsPreparation(device.id, startAdmission);
+    // One budget for the whole start, opened once the lock is held so a start queued behind
+    // another does not spend its clock waiting: the reuse check's toolchain probes, adoption and
+    // the startup itself all read it. The request's cancellation rides with it, so a client
+    // disconnect kills the blocking xctestrun build and runner launch (killProcessTree via exec)
+    // instead of orphaning them; a caller's own deadline does not, so the start it interrupts is
+    // still there for the retry (#2894). A start that outlives its caller is still bounded: once
+    // the budget is spent the same signal ends it, the lock is released and the device is usable.
+    const budget = openRunnerStartBudget(options);
+    // The starting request counts as interested even on the surface that passes no `signal`, so
+    // a joiner's cancellation can never outvote the live owner and stop its build (#3220).
+    const releaseOwnerInterest = reserveRunnerStartOwnerInterest(startAdmission, options);
+    try {
+      const existing = runnerSessions.get(device.id);
+      if (existing) {
+        assertExpectedRunnerSession(existing, options.expectedRunnerSessionId);
+        const reusable = await resolveReusableRunnerSession(device, existing, budget.phase);
+        if (reusable) return reusable;
+      }
 
-    return await withRunnerLeaseLock(
-      device.id,
-      async () => await startRunnerSessionWithLease(device, options, startupBudget),
-    );
+      return await withRunnerLeaseLock(
+        device.id,
+        async () => await startRunnerSessionWithLease(device, options, budget, startAdmission),
+      );
+    } catch (error) {
+      throw budget.exhausted.aborted ? budget.exhausted.reason : error;
+    } finally {
+      budget.close();
+      releaseOwnerInterest();
+    }
   });
+  const { raceRunnerStartAgainstCaller } = await import('./runner-start-budget.ts');
+  return await raceRunnerStartAgainstCaller(
+    // A start that minted its own token releases it; a loop-supplied token belongs to the loop,
+    // which finishes it when the loop itself is done retrying (#3220).
+    ownedAdmission ? start : start.finally(() => finishRunnerStartAdmission(startAdmission)),
+    startAdmission,
+    options.signal,
+  );
 }
 
 /** How long the device-readiness probe may take, bounded by the startup budget it runs inside. */
@@ -168,9 +157,11 @@ const RUNNER_DEVICE_READINESS_BUDGET_MS = 10_000;
 async function startRunnerSessionWithLease(
   device: DeviceInfo,
   options: RunnerSessionOptions,
-  startupBudget: RunnerPhaseBudget,
+  budget: RunnerStartBudget,
+  startAdmission: RunnerStartAdmission,
 ): Promise<RunnerSession> {
   const startupTimings: Record<string, number> = {};
+  const startupBudget = budget.phase;
   const signal = startupBudget.signal;
   const logicalLeaseContext = normalizeRunnerLogicalLeaseContext(
     options.runnerLeaseContext,
@@ -196,6 +187,10 @@ async function startRunnerSessionWithLease(
   if (adopted) {
     adopted.startupTimings = startupTimings;
     adopted.logicalLeaseContext = logicalLeaseContext;
+    // An adoption publishes a runner exactly the way a build does, so it answers to the same
+    // gate: a start fenced by a teardown registers its runner into no device (#3220). The
+    // runner itself keeps its lease for the next open to adopt.
+    assertRunnerStartAdmitsPreparation(device.id, startAdmission);
     runnerSessions.set(device.id, adopted);
     return adopted;
   }
@@ -242,8 +237,6 @@ async function startRunnerSessionWithLease(
       phase: 'ios_runner_startup_cleanup_stale_bundles_skipped',
     });
   }
-  // Read before the build, which is a phase of its own with its own budget (#2422).
-  const startupTimeoutMs = requireRunnerPhaseRemainingMs(startupBudget, 'runner_session_startup');
   let xctestrunArtifact: Awaited<ReturnType<typeof ensureXctestrunArtifact>>;
   let port: number;
   let xctestrunPath: string;
@@ -261,7 +254,8 @@ async function startRunnerSessionWithLease(
       async () =>
         await ensureXctestrunArtifact(device, {
           ...options,
-          budget: createRunnerPhaseBudget(options.buildTimeoutMs, signal),
+          startAdmission,
+          budget: createRunnerPhaseBudget(resolveRunnerBuildTimeoutMs(options, budget), signal),
         }),
     );
     startupTimings.build_xctestrun = xctestrunArtifact.buildMs;
@@ -322,6 +316,7 @@ async function startRunnerSessionWithLease(
     runnerPid: runnerProcess.child.pid,
     port,
     xctestrunPath,
+    cacheKey: xctestrunArtifact.cacheKey,
     jsonPath,
     runnerLogPath,
   });
@@ -339,10 +334,9 @@ async function startRunnerSessionWithLease(
     endOutputObservation: runnerProcess.endOutputObservation,
     readLogTail: runnerProcess.readLogTail,
     state: 'starting',
-    inFlightCommands: 0,
-    hasAbandonedCommands: false,
+    commandCharges: new RunnerCommandAccounting(),
     startupRetryWake: runnerProcess.startupRetryWake,
-    startupTimeoutMs: normalizeRunnerStartupTimeoutMs(startupTimeoutMs),
+    launchDeadline: Deadline.fromTimeoutMs(resolveRunnerLaunchReadinessMs(budget)),
     startupTimings,
     startupDeviceStates: deviceStates,
     logicalLeaseContext,
@@ -357,6 +351,10 @@ async function startRunnerSessionWithLease(
     });
     throw createRequestCanceledError();
   }
+  // Publication is the second gate: a start whose preparation was admitted before a teardown
+  // must not register a runner into the device that teardown is settling, or into the fresh
+  // start a later open has already begun (#3220).
+  await refuseRetiredRunnerPublication(device, session, startAdmission);
   try {
     writeRunnerLease(lease);
   } catch (error) {
@@ -369,6 +367,26 @@ async function startRunnerSessionWithLease(
   }
   runnerSessions.set(device.id, session);
   return session;
+}
+
+/**
+ * Refuses a launched runner whose start lost admission while it was building: the publication
+ * a fenced start would make lands on a device teardown is settling or a fresh start already
+ * owns, so the launch this start already paid for is its own to stop, and it stops it under
+ * the lease lock the start still holds (#3220).
+ */
+async function refuseRetiredRunnerPublication(
+  device: DeviceInfo,
+  session: RunnerSession,
+  startAdmission: RunnerStartAdmission,
+): Promise<void> {
+  if (runnerStartAdmitsPreparation(device.id, startAdmission)) return;
+  await disposeRunnerSession(session, {
+    graceful: false,
+    waitTimeoutMs: RUNNER_INVALIDATE_WAIT_TIMEOUT_MS,
+    leaseLockHeld: true,
+  });
+  throw runnerStartRetiredError(startAdmission.retired ?? 'device_teardown');
 }
 
 export function assertExpectedRunnerSession(
@@ -410,6 +428,24 @@ async function isRunnerSessionServing(
   // A registered session already being taken down or already handed off is not usable, even when
   // its runner process is still there for a moment while disposal works.
   if (liveness !== 'starting' && liveness !== 'ready') return false;
+  if (liveness === 'starting' && existing.launchDeadline?.isExpired()) {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'ios_runner_session_invalidated',
+      data: {
+        deviceId: device.id,
+        sessionId: existing.sessionId,
+        reason: 'runner_launch_budget_exhausted',
+      },
+    });
+    await measureRunnerStartupStep({}, 'stop_expired_starting_session', async () => {
+      await stopRunnerSessionInternal(device.id, existing, {
+        graceful: false,
+        waitTimeoutMs: RUNNER_INVALIDATE_WAIT_TIMEOUT_MS,
+      });
+    });
+    return false;
+  }
   if (isSameRunnerSimulator(existing.device, device)) return true;
   await measureRunnerStartupStep({}, 'stop_other_simulator_set_session', async () => {
     await stopRunnerSessionInternal(device.id, existing);
@@ -440,11 +476,13 @@ async function resolveReusableRunnerSession(
     return existing;
   }
 
-  const expectedDerived = resolveRunnerDerivedPath(
-    device,
-    resolveExpectedRunnerCacheMetadata(device, undefined, startupBudget),
-  );
-  if (existingArtifact?.derived !== expectedDerived) {
+  const expectedMetadata = resolveExpectedRunnerCacheMetadata(device, undefined, startupBudget);
+  const expectedDerived = resolveRunnerDerivedPath(device, expectedMetadata);
+  const expectedCacheKey = resolveRunnerCacheKey(expectedMetadata);
+  if (
+    existingArtifact?.derived !== expectedDerived ||
+    existingArtifact.cacheKey !== expectedCacheKey
+  ) {
     emitDiagnostic({
       level: 'debug',
       phase: 'ios_runner_session_artifact_stale',
@@ -453,6 +491,8 @@ async function resolveReusableRunnerSession(
         sessionId: existing.sessionId,
         currentDerived: existingArtifact?.derived,
         expectedDerived,
+        currentCacheKey: existingArtifact?.cacheKey,
+        expectedCacheKey,
       },
     });
     await measureRunnerStartupStep({}, 'stop_stale_artifact_session', async () => {
@@ -677,13 +717,30 @@ export async function releaseSpeculativeIosRunnerSession(deviceId: string): Prom
 }
 
 export async function stopIosRunnerSession(deviceId: string): Promise<void> {
+  await stopIosRunnerSessionDevice(deviceId);
+}
+
+/**
+ * Stops the device's runner under the session lock. `fenceSettle`, when given, is called as the
+ * last step INSIDE that lock, so a start queued behind this stop wakes to a device whose teardown
+ * has fully settled and runs on rather than reading the still-pending fence as its own refusal.
+ */
+async function stopIosRunnerSessionDevice(
+  deviceId: string,
+  fenceSettle?: () => void,
+): Promise<void> {
   cancelIosRunnerIdleStop(deviceId);
-  await withRunnerSessionLock(deviceId, async () => {
-    await withRunnerLeaseLock(deviceId, async () => {
-      await stopRunnerSessionInternal(deviceId, undefined, { leaseLockHeld: true });
-      await cleanupOwnedIosRunnerLease(deviceId);
+  try {
+    await withRunnerSessionLock(deviceId, async () => {
+      await withRunnerLeaseLock(deviceId, async () => {
+        await stopRunnerSessionInternal(deviceId, undefined, { leaseLockHeld: true });
+        await cleanupOwnedIosRunnerLease(deviceId);
+      });
+      fenceSettle?.();
     });
-  });
+  } finally {
+    fenceSettle?.();
+  }
 }
 
 /**
@@ -693,6 +750,10 @@ export async function stopIosRunnerSession(deviceId: string): Promise<void> {
  * or wedges, so pooling it back hands the same stalled process to the next `open` (#2552). An idle
  * retained runner keeps warm reuse via the idle-stop timer. The decision is owned here because the
  * occupancy fact lives on the session, and awaited so `close` returns only once the lease is gone.
+ * Non-retained close first fences the device's start admission, then stops the device's current
+ * prep processes, before taking the session lock an in-flight cold start holds through its build:
+ * a start that answers the kill by retrying its build finds the spawn refused, which is what keeps
+ * close from waiting on the replacement build (#3220).
  */
 export async function releaseIosRunnerOnClose(
   deviceId: string,
@@ -710,124 +771,68 @@ export async function releaseIosRunnerOnClose(
       data: { deviceId },
     });
   }
-  await stopIosRunnerSession(deviceId);
+  // First the fence, then the kill: an in-flight start that answers the kill by retrying its
+  // build finds admission closed and stops, and the fence outlives the kill and the session stop
+  // until this close settles — while it stands, nothing prepares this device (#3220).
+  const settleFence = fenceRunnerStartAdmissionsForTeardown(deviceId);
+  try {
+    await stopRunnerPrepProcesses(deviceId);
+    await stopIosRunnerSessionDevice(deviceId, settleFence);
+  } finally {
+    // The error path settles too: a close that throws mid-teardown must not fence the device
+    // past its own failure.
+    settleFence();
+  }
 }
 
 export async function abortAllIosRunnerSessions(): Promise<void> {
+  // The same fence a close raises, for every device at once: the prep sweep the abort performs is
+  // one-shot, so an in-flight start that would answer it with another build is refused before the
+  // sweep runs, and stays refused until the sweep settles (#3220).
   const activeSessions = Array.from(runnerSessions.values());
-  await abortRunnerSessionsAndPrepProcesses(activeSessions);
-  for (const session of activeSessions) {
-    if (runnerSessions.get(session.deviceId) === session) {
-      runnerSessions.delete(session.deviceId);
-    }
-  }
-}
-
-type RunnerDetachSkippedReason =
-  | RunnerHandoffRefusal
-  | RunnerDetachRefusal
-  | 'lease_absent'
-  | 'runner_process_dead'
-  | 'lease_write_failed';
-
-// Graceful daemon shutdown hands a request-proven runner off to the next daemon instead of paying
-// the xcodebuild ramp again: the lease token is rewritten to a detached form (so this daemon's own
-// teardown paths no longer classify it as owned), this process gives up its sides of the runner's
-// log, and the session simply leaves the in-memory map. Once this process exits the lease is stale
-// and the adoption path picks it up. Explicit cleanup still works: clean:daemon kills by the lease's
-// runnerPid, and the runner's XCTWaiter self-expires after 24h.
-//
-// Every gate that keeps a session on the kill path is named and reported, because a handoff that
-// silently declines is indistinguishable from a rebuild: the handoff lanes
-// (`resolveRunnerHandoffTarget`), a session that never served a command, still owes a response, or
-// last reported main-thread work still draining (`resolveRunnerDetachDecision`), a missing or
-// unwritable lease, and a runner this process cannot prove alive. What stays in the map is torn down by `stopAllIosRunnerSessions`, which the daemon's
-// shutdown runs right after this — so a shutdown during a startup tears that runner down rather than
-// handing off one that never reached its listener (#2681).
-export async function detachIosRunnerSessionsForShutdown(): Promise<number> {
-  if (!isIosRunnerDetachEnabled()) return 0;
-  let detached = 0;
-  for (const [deviceId, session] of runnerSessions) {
-    const outcome = detachRunnerSessionForShutdown(deviceId, session);
-    if (!outcome.detached) {
-      emitDiagnostic({
-        level: 'debug',
-        phase: 'ios_runner_session_detach_skipped',
-        data: {
-          deviceId,
-          sessionId: session.sessionId,
-          lane: outcome.lane,
-          reason: outcome.reason,
-        },
-      });
-      continue;
-    }
-    detached += 1;
-    emitDiagnostic({
-      level: 'info',
-      phase: 'ios_runner_session_detached',
-      data: {
-        deviceId,
-        lane: outcome.lane,
-        sessionId: session.sessionId,
-        runnerPid: session.child.pid,
-        port: session.port,
-        runnerLogPath: session.runnerLogPath,
-      },
-    });
-  }
-  return detached;
-}
-
-type RunnerDetachOutcome =
-  | { detached: true; lane: RunnerHandoffLane }
-  | { detached: false; lane: RunnerHandoffLane | undefined; reason: RunnerDetachSkippedReason };
-
-function detachRunnerSessionForShutdown(
-  deviceId: string,
-  session: RunnerSession,
-): RunnerDetachOutcome {
-  const target = resolveRunnerHandoffTarget(session.device);
-  if (!target.handoff) {
-    return { detached: false, lane: undefined, reason: target.reason };
-  }
-  const lane = target.lane;
-  const decision = resolveRunnerDetachDecision(session);
-  if (!decision.detach) {
-    return { detached: false, lane, reason: decision.reason };
-  }
-  const lease = session.lease;
-  if (!lease) {
-    return { detached: false, lane, reason: 'lease_absent' };
-  }
-  if (!isRunnerProcessAlive(session.child.pid)) {
-    return { detached: false, lane, reason: 'runner_process_dead' };
-  }
+  const settleFences = retireAllRunnerStartAdmissions(
+    activeSessions.map((session) => session.deviceId),
+  );
   try {
-    writeRunnerLease(buildDetachedRunnerLease(lease));
-  } catch {
-    return { detached: false, lane, reason: 'lease_write_failed' };
+    await abortRunnerSessionsAndPrepProcesses(activeSessions);
+    for (const session of activeSessions) {
+      if (runnerSessions.get(session.deviceId) === session) {
+        runnerSessions.delete(session.deviceId);
+      }
+    }
+  } finally {
+    // The abort settles even on its error path, so no device stays fenced past this teardown.
+    settleFences();
   }
-  // Only once the lease says the runner is handed over does this process give up its own sides of
-  // the runner's log: until that write lands the session is still owned, and an owned session that
-  // stopped following its runner's output is worse off than one that never handed anything off.
-  // The runner holds its own descriptor, so this cannot disturb it either way (#2681).
-  session.endOutputObservation?.();
-  runnerSessions.delete(deviceId);
-  cancelIosRunnerIdleStop(deviceId);
-  advanceRunnerSessionState(session, 'stopped');
-  return { detached: true, lane };
+}
+
+// The detach decision itself lives in runner-adoption.ts beside the adoption it hands off to
+// (#2681); this is the map side: a detached session leaves the registry and drops its idle
+// timer (the detached module gives up the log observation and marks the session stopped).
+export async function detachIosRunnerSessionsForShutdown(): Promise<number> {
+  return await detachRunnerSessionsForShutdown(runnerSessions, (deviceId) => {
+    runnerSessions.delete(deviceId);
+    cancelIosRunnerIdleStop(deviceId);
+  });
 }
 
 export async function stopAllIosRunnerSessions(): Promise<void> {
-  await abortAllIosRunnerSessions();
-  const pending = Array.from(runnerSessions.keys());
-  await Promise.allSettled(
-    pending.map(async (deviceId) => {
-      await stopIosRunnerSession(deviceId);
-    }),
-  );
-  await stopRunnerPrepProcesses();
+  // This is the daemon's teardown: the fence spans the whole sweep, not just the abort, so a
+  // start that began while the per-session stops ran meets a closed admission at its next gate
+  // instead of answering the final prep sweep with another build (#3220).
+  const settleFences = retireAllRunnerStartAdmissions(runnerSessions.keys());
+  try {
+    await abortAllIosRunnerSessions();
+    const pending = Array.from(runnerSessions.keys());
+    await Promise.allSettled(
+      pending.map(async (deviceId) => {
+        await stopIosRunnerSession(deviceId);
+      }),
+    );
+    await stopRunnerPrepProcesses();
+  } finally {
+    settleFences();
+  }
 }
 
 function ensureBootedIfNeeded(device: DeviceInfo): Promise<void> {
@@ -866,12 +871,7 @@ export function validateRunnerDevice(device: DeviceInfo): void {
   }
 }
 
-/**
- * Runs one command through a session. The command send charges the session and only a decoded
- * response discharges it: an exchange this process abandoned to a cancellation or a dropped
- * transport keeps the runner occupied, which is what a graceful shutdown reads before handing it to
- * the next daemon (#2681). The readiness preflight's own `uptime` probe is not charged.
- */
+/** Run an exchange against the owned session and complete fatal invalidation before returning. */
 export async function executeRunnerCommandWithSession(
   device: DeviceInfo,
   session: RunnerSession,
@@ -881,416 +881,44 @@ export async function executeRunnerCommandWithSession(
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   emitRunnerStartupTimings(session, command.command);
-  // Drawn before anything is sent, including the preflight: whatever the runner writes from here on
-  // is this command's attempt, and whatever is already in the log belongs to an earlier one (#2683).
-  const logAttempt = await captureRunnerLogAttempt(logPath, { timeoutMs, signal });
-  const runnerCommand = withRunnerCommandId(command);
-  const readOnlyCommand = isReadOnlyRunnerCommand(runnerCommand);
-  const deadline = Deadline.fromTimeoutMs(timeoutMs);
-  const preflightDecision = resolveRunnerReadinessPreflightDecision(session, runnerCommand);
-  if (preflightDecision.action === 'run') {
-    await runRunnerReadinessPreflight({
-      device,
-      session,
-      runnerCommand,
-      logAttempt,
-      deadline,
-      signal,
-      decision: preflightDecision,
-    });
-  } else {
-    emitRunnerReadinessPreflightSkipped(runnerCommand, session, preflightDecision);
-  }
-
-  let response: Response;
-  try {
-    response = await sendRunnerCommandAfterPreflight({
-      device,
-      session,
-      runnerCommand,
-      logPath,
-      deadline,
-      timeoutMs,
-      signal,
-      readOnlyCommand,
-    });
-  } catch (error) {
-    // A transport failure right after a skipped preflight means the recency
-    // bet was wrong; clear it so a flaky transport cannot loop on stale skips,
-    // and mark the error with the skip context for status recovery. The marker
-    // key is disjoint from runnerReadinessPreflightFailed, so this never routes
-    // into the restart-and-replay path.
-    throw markSkippedPreflightTransportError(error, session, preflightDecision);
-  }
-  try {
-    const data = await parseRunnerResponse(response, session, logAttempt);
-    settleRunnerCommandAnswered(session);
-    // Mirror the runner's own main-thread occupancy stamped on this response: a runner that
-    // served a read off the XCTest channel (e.g. a private-AX capture) while a tree crawl it
-    // abandoned still grinds reports busy, so the healthy response must not be read as drained.
-    // Only a present stamp carries information; a recovered or journal-replayed response is
-    // written unstamped by design, and its absence must leave a prior busy report intact.
-    const stampedMainThreadBusy = readRunnerMainThreadBusy(data);
-    if (stampedMainThreadBusy !== undefined) {
-      session.runnerMainThreadBusy = stampedMainThreadBusy;
-    }
-    const runnerFatalReason = resolveRunnerFatalReason(data);
-    if (runnerFatalReason) {
-      session.lastHealthyMutation = undefined;
-      await invalidateRunnerSession(session, runnerFatalReason);
-    } else if (canSkipRunnerReadinessPreflightAfterHealthyMutation(runnerCommand)) {
-      session.lastHealthyMutation = {
-        atMs: Date.now(),
-        appBundleId: runnerCommand.appBundleId,
-      };
-    }
-    return data;
-  } catch (error) {
-    // A structured runner reply is an answer whatever it reports; a transport-shaped failure
-    // (aborted body read, malformed payload) answered nothing and keeps the runner charged (#2681).
-    settleRunnerCommandExchange(session, error);
-    // A main-thread occupancy report (`RUNNER_BUSY`, or the `MAIN_THREAD_TIMEOUT` the stalling
-    // command itself returns) marks the runner still draining. Any OTHER structured runner reply was
-    // served off that abandoned work, so it has drained; a transport-shaped error answered nothing
-    // and leaves the report intact (#2552).
-    if (isRunnerMainThreadOccupiedError(error)) {
-      session.runnerMainThreadBusy = true;
-    } else if (isStructuredRunnerFailure(error)) {
-      session.runnerMainThreadBusy = false;
-    }
-    const runnerFatalReason = resolveRunnerFatalErrorReason(error);
-    if (runnerFatalReason) {
-      session.lastHealthyMutation = undefined;
-      await invalidateRunnerSession(session, runnerFatalReason);
-      throw error;
-    }
-    // A body-read or malformed-payload failure is transport-shaped too (the
-    // runner died mid-response); structured runner failures carry a `runner`
-    // detail and keep their recency — the runner proved it is alive by
-    // answering at all.
-    if (isStructuredRunnerFailure(error)) throw error;
-    throw markSkippedPreflightTransportError(error, session, preflightDecision);
-  }
-}
-
-function readRunnerMainThreadBusy(data: Record<string, unknown>): boolean | undefined {
-  return typeof data.runnerMainThreadBusy === 'boolean' ? data.runnerMainThreadBusy : undefined;
-}
-
-function markSkippedPreflightTransportError(
-  error: unknown,
-  session: RunnerSession,
-  preflightDecision: RunnerReadinessPreflightDecision,
-): unknown {
-  if (
-    preflightDecision.action !== 'skip' ||
-    preflightDecision.reason !== 'recent_healthy_mutation'
-  ) {
-    return error;
-  }
-  session.lastHealthyMutation = undefined;
-  return markRunnerPreflightError(error, {
-    runnerReadinessPreflightSkipped: true,
-    runnerReadinessPreflightSkipReason: preflightDecision.reason,
-    runnerReadinessPreflightSkippedAgeMs: preflightDecision.lastHealthyMutationAgeMs,
-  });
-}
-
-async function sendRunnerCommandAfterPreflight(params: {
-  device: DeviceInfo;
-  session: RunnerSession;
-  runnerCommand: RunnerCommand;
-  logPath: string | undefined;
-  deadline: Deadline;
-  timeoutMs: number;
-  signal: AbortSignal | undefined;
-  readOnlyCommand: boolean;
-}): Promise<Response> {
-  const { device, session, runnerCommand, logPath, deadline, timeoutMs, signal, readOnlyCommand } =
-    params;
-  const remainingMs = deadline.remainingMs();
-  if (remainingMs <= 0) {
-    throw new AppError('COMMAND_FAILED', 'Runner command deadline exceeded', { timeoutMs });
-  }
-  const diagnosticData = readOnlyCommand
-    ? {
-        command: runnerCommand.command,
-        commandId: runnerCommand.commandId,
-        readOnly: true,
-        sessionReady: session.state === 'ready',
-        timeoutMs: remainingMs,
-      }
-    : { command: runnerCommand.command, commandId: runnerCommand.commandId };
-
-  // From here the runner holds our request, and a shutdown that hands it off would orphan a command
-  // nobody is waiting for any more. The charge is released only where a response is decoded, so a
-  // cancellation or transport drop leaves the occupancy it really created (#2681).
-  session.inFlightCommands += 1;
-  try {
-    return await withDiagnosticTimer(
-      'ios_runner_command_send',
-      async () => {
-        if (readOnlyCommand) {
-          return await waitForRunner(
-            device,
-            session.port,
-            runnerCommand,
-            logPath,
-            remainingMs,
-            session,
-            signal,
-          );
-        }
-        return await sendRunnerCommandOnce(
-          device,
-          session.port,
-          runnerCommand,
-          remainingMs,
-          signal,
-        );
-      },
-      diagnosticData,
-    );
-  } catch (error) {
-    markRunnerCommandAbandoned(session);
-    throw error;
-  }
-}
-
-/**
- * The runner answered this exchange, so it is serving again: this command is answered, and so is the
- * abandoned charge an earlier cancellation left behind — work still draining is stamped on this very
- * reply (#2552, #2681). A run of abandoned exchanges leaves one residue charge per extra exchange,
- * which keeps such a runner on the kill path rather than guessing it drained.
- */
-function settleRunnerCommandAnswered(session: RunnerSession): void {
-  const abandonedCharge = session.hasAbandonedCommands ? 1 : 0;
-  session.inFlightCommands = Math.max(0, session.inFlightCommands - 1 - abandonedCharge);
-  session.hasAbandonedCommands = false;
-}
-
-/**
- * This process stopped waiting without ever seeing an answer. The command may still be executing on
- * the runner, so its occupancy stays charged: only an answered exchange clears it (#2681).
- */
-function markRunnerCommandAbandoned(session: RunnerSession): void {
-  session.hasAbandonedCommands = true;
-}
-
-/**
- * Settles the charge for an exchange that ended outside the success path. A structured runner reply
- * answers even when it reports a failure; a transport-shaped one answers nothing (#2681).
- */
-function settleRunnerCommandExchange(session: RunnerSession, error: unknown): void {
-  if (isStructuredRunnerFailure(error)) settleRunnerCommandAnswered(session);
-  else markRunnerCommandAbandoned(session);
-}
-
-async function runRunnerReadinessPreflight(params: {
-  device: DeviceInfo;
-  session: RunnerSession;
-  runnerCommand: RunnerCommand;
-  logAttempt: RunnerLogAttempt | undefined;
-  deadline: Deadline;
-  signal: AbortSignal | undefined;
-  decision: Extract<RunnerReadinessPreflightDecision, { action: 'run' }>;
-}): Promise<void> {
-  const { device, session, runnerCommand, logAttempt, deadline, signal, decision } = params;
-  const logPath = logAttempt?.logPath;
-  const readinessTimeoutMs =
-    session.state === 'ready'
-      ? Math.min(RUNNER_READY_PREFLIGHT_TIMEOUT_MS, deadline.remainingMs())
-      : Math.min(readRunnerStartupTimeoutMs(session), deadline.remainingMs());
-  try {
-    const readinessResponse = await withDiagnosticTimer(
-      'ios_runner_readiness_preflight',
-      async () =>
-        await waitForRunner(
-          device,
-          session.port,
-          withRunnerCommandId({ command: 'uptime' }),
-          logPath,
-          readinessTimeoutMs,
-          session,
-          signal,
-        ),
-      {
-        command: runnerCommand.command,
-        commandId: runnerCommand.commandId,
-        reason: decision.reason,
-        lastHealthyMutationAgeMs: decision.lastHealthyMutationAgeMs,
-        sessionReady: session.state === 'ready',
-        timeoutMs: readinessTimeoutMs,
-      },
-    );
-    await parseRunnerResponse(readinessResponse, session, logAttempt);
-  } catch (error) {
-    throw markRunnerReadinessPreflightError(error);
-  }
-}
-
-function emitRunnerReadinessPreflightSkipped(
-  runnerCommand: RunnerCommand,
-  session: RunnerSession,
-  decision: Extract<RunnerReadinessPreflightDecision, { action: 'skip' }>,
-): void {
-  emitDiagnostic({
-    level: 'debug',
-    phase: 'ios_runner_readiness_preflight_skipped',
-    data: {
-      command: runnerCommand.command,
-      commandId: runnerCommand.commandId,
-      reason: decision.reason,
-      lastHealthyMutationAgeMs:
-        decision.reason === 'recent_healthy_mutation'
-          ? decision.lastHealthyMutationAgeMs
-          : undefined,
-      sessionReady: session.state === 'ready',
-    },
-  });
-}
-
-/**
- * Reads one runner response body and records what it proved about the session (#2662). Only a
- * session waiting for its first answer changes: the runner replied, so it is `ready`. A session
- * already going away keeps its state — an answer arriving after disposal started comes from a
- * runner on its way out, not from a session that can take work.
- */
-export async function parseRunnerResponse(
-  response: Response,
-  session: Pick<RunnerSession, 'state'>,
-  /** The command's own log boundary. Absent means no log was configured, so nothing is read. */
-  logAttempt?: RunnerLogAttempt,
-): Promise<Record<string, unknown>> {
-  const payload = decodeRunnerResponseBody(await response.text());
-  if (!isRunnerResponseOk(payload)) {
-    throw await enrichRunnerFailureFromLog({
-      error: buildRunnerResponseError(payload, logAttempt?.logPath),
-      logSince: logAttempt,
-    });
-  }
-  advanceRunnerSessionState(session, 'ready');
-  const data = readRunnerResponseData(payload);
-  emitRunnerResponseDiagnostics(data);
-  return data;
-}
-
-function emitRunnerResponseDiagnostics(data: Record<string, unknown>): void {
-  const fallback = data.gestureFallback;
-  if (typeof fallback !== 'string' || fallback.length === 0) return;
-  emitDiagnostic({
-    level: 'debug',
-    phase: 'ios_runner_gesture_fallback',
-    data: {
-      fallback,
-      message:
-        typeof data.gestureFallbackMessage === 'string' ? data.gestureFallbackMessage : undefined,
-      hint: typeof data.gestureFallbackHint === 'string' ? data.gestureFallbackHint : undefined,
-    },
-  });
-}
-
-function resolveRunnerFatalReason(data: Record<string, unknown>): string | undefined {
-  if (data.runnerFatal !== true) return undefined;
-  return typeof data.runnerFatalReason === 'string' && data.runnerFatalReason.trim().length > 0
-    ? data.runnerFatalReason
-    : 'runner_reported_fatal_response';
-}
-
-function resolveRunnerReadinessPreflightDecision(
-  session: RunnerSession,
-  command: RunnerCommand,
-): RunnerReadinessPreflightDecision {
-  const readOnlyCommand = isReadOnlyRunnerCommand(command);
-  if (isRunnerReadinessPreflightExempt(command)) {
-    return { action: 'skip', reason: 'preflight_exempt_command' };
-  }
-  if (session.state !== 'ready') {
-    if (readOnlyCommand) {
-      return {
-        action: 'skip',
-        reason: 'read_only_startup_command',
-      };
-    }
-    return {
-      action: 'run',
-      reason: 'startup',
-    };
-  }
-  if (isRunnerReadinessProbeCommand(command)) {
-    return {
-      action: 'skip',
-      reason: 'readiness_probe_command',
-    };
-  }
-  if (!canSkipRunnerReadinessPreflightAfterHealthyMutation(command)) {
-    // CONSERVATIVE: Commands outside the healthy-mutation allowlist still preflight because their
-    // terminal runner state is not proven by recency. Revisit when lifecycle status coverage can
-    // distinguish every mutating command's safe terminal state.
-    return {
-      action: 'run',
-      reason: 'conservative_command',
-    };
-  }
-  const record = session.lastHealthyMutation;
-  if (!record) {
-    return {
-      action: 'run',
-      reason: 'no_recent_healthy_mutation',
-    };
-  }
-  if (command.appBundleId !== record.appBundleId) {
-    return {
-      action: 'run',
-      reason: 'app_activation_uncertain',
-    };
-  }
-  const lastHealthyMutationAgeMs = Date.now() - record.atMs;
-  if (lastHealthyMutationAgeMs > RUNNER_PREFLIGHT_SKIP_FRESHNESS_MS) {
-    return {
-      action: 'run',
-      reason: 'healthy_mutation_stale',
-      lastHealthyMutationAgeMs,
-    };
-  }
-  return {
-    action: 'skip',
-    reason: 'recent_healthy_mutation',
-    lastHealthyMutationAgeMs,
-  };
-}
-
-function markRunnerReadinessPreflightError(error: unknown): AppError {
-  return markRunnerPreflightError(error, {
-    runnerReadinessPreflightFailed: true,
-  });
-}
-
-function markRunnerPreflightError(error: unknown, details: Record<string, unknown>): AppError {
-  const appErr =
-    error instanceof AppError
-      ? error
-      : new AppError(
-          'COMMAND_FAILED',
-          error instanceof Error ? error.message : String(error),
-          undefined,
-          error,
-        );
-  return new AppError(
-    appErr.code,
-    appErr.message,
-    {
-      ...(appErr.details ?? {}),
-      ...details,
-    },
-    appErr.cause ?? error,
+  const { executeRunnerExchange } = await import('./runner-exchange.ts');
+  return executeRunnerExchange(
+    device,
+    session,
+    command,
+    logPath,
+    timeoutMs,
+    (reason) => invalidateRunnerSession(session, reason),
+    signal,
   );
 }
 
-export function readRunnerStartupTimeoutMs(
-  session: Pick<RunnerSession, 'startupTimeoutMs'>,
+/**
+ * What the xctestrun build may spend: the rest of the start budget, which an explicit
+ * `buildTimeoutMs` can only shorten. The build is the one step with no ceiling of its own, so a
+ * start with no caller left is still ended by the clock it opened (#2894). Throws when the start
+ * has nothing left, so a spent budget fails before xcodebuild is spawned.
+ */
+function resolveRunnerBuildTimeoutMs(
+  options: RunnerSessionOptions,
+  budget: RunnerStartBudget,
 ): number {
-  return session.startupTimeoutMs ?? RUNNER_STARTUP_TIMEOUT_MS;
+  const remainingMs =
+    requireRunnerPhaseRemainingMs(budget.phase, 'runner_xctestrun_build') ?? budget.timeoutMs;
+  const explicitMs = normalizeRunnerStartupTimeoutMs(options.buildTimeoutMs);
+  return explicitMs === undefined ? remainingMs : Math.min(explicitMs, remainingMs);
+}
+
+/**
+ * What the launched runner has to answer its first command, measured from launch. An explicit
+ * `startupTimeoutMs` bounds the whole start, readiness included, so readiness gets what is left of
+ * it. A defaulted start keeps the runner's own readiness window ({@link RUNNER_STARTUP_TIMEOUT_MS}):
+ * the default budget is sized for a cold build, and a runner that never answers must not be joined
+ * for the rest of it. Neither exceeds what the start budget has left.
+ */
+function resolveRunnerLaunchReadinessMs(budget: RunnerStartBudget): number {
+  const remainingMs = Math.floor(budget.phase.deadline?.remainingMs() ?? budget.timeoutMs);
+  return budget.explicit ? remainingMs : Math.min(RUNNER_STARTUP_TIMEOUT_MS, remainingMs);
 }
 
 async function measureRunnerStartupStep<T>(

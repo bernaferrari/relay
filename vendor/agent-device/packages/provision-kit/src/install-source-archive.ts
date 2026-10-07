@@ -15,32 +15,52 @@ type InstallableMatcher = (
   stat: { isFile(): boolean; isDirectory(): boolean },
 ) => boolean;
 
+type ResolvedInstallableCandidate = {
+  /** The outermost archive the source arrived as. */
+  archivePath?: string;
+  /** The innermost archive, the one the installable was extracted from directly. */
+  containingArchivePath?: string;
+  installablePath: string;
+};
+
+function resolvedCandidate(
+  installablePath: string,
+  params: { archivePath: string | undefined; containingArchivePath?: string },
+): ResolvedInstallableCandidate {
+  return {
+    archivePath: params.archivePath,
+    ...(params.containingArchivePath
+      ? { containingArchivePath: params.containingArchivePath }
+      : {}),
+    installablePath,
+  };
+}
+
 export async function resolveInstallableCandidate(
   candidatePath: string,
   params: {
     archivePath: string | undefined;
+    containingArchivePath?: string;
     isInstallablePath: InstallableMatcher;
     installableLabel: string;
-    allowArchiveExtraction: boolean;
     registerCleanup: (cleanup: () => Promise<void>) => void;
     budget: ArchiveBudget;
     archiveDepth: number;
     onArchiveAccepted?: (depth: number) => void;
   },
-): Promise<{ archivePath?: string; installablePath: string }> {
+): Promise<ResolvedInstallableCandidate> {
   const stat = await fs.stat(candidatePath).catch(() => null);
   if (!stat) throw new AppError('INVALID_ARGS', `App source not found: ${candidatePath}`);
   if (params.isInstallablePath(candidatePath, stat)) {
-    return { archivePath: params.archivePath, installablePath: candidatePath };
+    return resolvedCandidate(candidatePath, params);
   }
   if (stat.isFile() && isArchivePath(candidatePath)) {
-    assertArchiveExtractionAllowed(candidatePath, params, false);
     return await resolveExtractedArchive(candidatePath, params);
   }
   if (stat.isDirectory()) {
     const installables = await collectMatchingPaths(candidatePath, params.isInstallablePath);
     if (installables.length === 1) {
-      return { archivePath: params.archivePath, installablePath: installables[0]! };
+      return resolvedCandidate(installables[0]!, params);
     }
     if (installables.length > 1) {
       throw new AppError(
@@ -53,7 +73,6 @@ export async function resolveInstallableCandidate(
       Boolean(entryStat.isFile() && isArchivePath(entryPath)),
     );
     if (archives.length === 1) {
-      assertArchiveExtractionAllowed(archives[0]!, params, true);
       return await resolveExtractedArchive(archives[0]!, params);
     }
     if (archives.length > 1) {
@@ -80,6 +99,7 @@ async function resolveExtractedArchive(
   return await resolveInstallableCandidate(extracted.outputPath, {
     ...params,
     archivePath: params.archivePath ?? archivePath,
+    containingArchivePath: archivePath,
     archiveDepth: params.archiveDepth + 1,
   });
 }
@@ -126,18 +146,6 @@ async function collectMatchingPaths(
     }
   }
   return [...new Set(matches)];
-}
-
-function assertArchiveExtractionAllowed(
-  archivePath: string,
-  params: Parameters<typeof resolveInstallableCandidate>[1],
-  nested: boolean,
-): void {
-  if (params.allowArchiveExtraction) return;
-  const message = nested
-    ? `URL sources must point directly to a ${params.installableLabel}; nested archives are not allowed`
-    : `URL sources must point directly to a ${params.installableLabel}; archive extraction is not allowed`;
-  throw new AppError('INVALID_ARGS', message, { path: archivePath });
 }
 
 function isArchivePath(candidatePath: string): boolean {

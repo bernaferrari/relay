@@ -154,6 +154,18 @@ const INTERACTOR_SITES: Record<string, InteractorDrive> = {
   'tvos.interactor-tv-remote.hold': [TVOS_SIMULATOR, (i) => i.tvRemote!('select', 500)],
   'ios-simulator.interactor-keyboard-dismiss.dismiss': [IOS_SIMULATOR, (i) => i.keyboardDismiss!()],
   'ios-simulator.interactor-keyboard-enter.return': [IOS_SIMULATOR, (i) => i.keyboardEnter!()],
+  'ios-device.interactor-clipboard-copy.verified': [
+    IOS_DEVICE,
+    (i) => i.copyClipboard!({ key: 'label', value: 'Message' }, 'hello'),
+  ],
+  'ios-device.interactor-clipboard-paste.replace': [
+    IOS_DEVICE,
+    (i) => i.pasteClipboard!('hello', { key: 'id', value: 'composer' }),
+  ],
+  'ios-simulator.interactor-write-clipboard.text': [
+    IOS_SIMULATOR,
+    (i) => i.writeClipboard!('one-time code 246810'),
+  ],
   'ios-simulator.interactor-snapshot.every-option': [
     IOS_SIMULATOR,
     (i) =>

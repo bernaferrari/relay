@@ -5,6 +5,7 @@ import { beforeEach, test, vi } from 'vitest';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { IOS_DEVICE, IOS_SIMULATOR, MACOS_DEVICE } from './device-fixtures.ts';
 import { appleRunnerTestHost } from '../test-host.ts';
+import { resolveRunnerCacheKey } from '../runner-cache-metadata.ts';
 import { resolveRunnerLaunchLogPath } from '../runner-io.ts';
 import type { RunnerSession } from '../runner-session-types.ts';
 import {
@@ -12,7 +13,10 @@ import {
   makeClassifyOwnerLivenessViaMocks,
   assertRunnerCommand,
   makeBackgroundRunner,
+  makeRunnerArtifact,
   runnerResponse,
+  RUNNER_CACHE_METADATA_FIXTURE,
+  RUNNER_CACHE_KEY_FIXTURE,
 } from './runner-session-fixtures.ts';
 import { mkdtempForTestSync } from './tmp-dir.ts';
 
@@ -175,6 +179,7 @@ beforeEach(async () => {
   mockEnsureXctestrunArtifact.mockResolvedValue({
     xctestrunPath: '/tmp/base-runner.xctestrun',
     derived: '/tmp/derived',
+    cacheKey: RUNNER_CACHE_KEY_FIXTURE,
     cache: 'miss',
     artifact: 'rebuilt',
     buildMs: 12,
@@ -185,7 +190,7 @@ beforeEach(async () => {
     xctestrunPath: '/tmp/session-runner.xctestrun',
     jsonPath: '/tmp/session-runner.json',
   });
-  mockResolveExpectedRunnerCacheMetadata.mockReturnValue({ schemaVersion: 1 });
+  mockResolveExpectedRunnerCacheMetadata.mockReturnValue(RUNNER_CACHE_METADATA_FIXTURE);
   mockResolveRunnerDerivedPath.mockReturnValue('/tmp/derived');
   mockRunCmdBackground.mockReturnValue(makeBackgroundRunner(4242));
   mockRunAppleToolCommand.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
@@ -480,16 +485,20 @@ test('a session that still owes a response is not handed off', async () => {
   // The charge lands behind the preflight and deadline awaits, so wait for it instead of betting on a
   // single macrotask: a loaded runner can sit anywhere on that path, and a session that had not been
   // charged yet would look identical to one whose charge was wrongly dropped (#2681).
-  for (let tick = 0; tick < 500 && session.inFlightCommands === 0; tick += 1) {
+  for (let tick = 0; tick < 500 && session.commandCharges.outstandingChargeCount === 0; tick += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
-  assert.equal(session.inFlightCommands, 1);
+  assert.equal(session.commandCharges.outstandingChargeCount, 1);
 
   const diagnostics = await captureDiagnostics(async () => {
     assert.equal(await detachIosRunnerSessionsForShutdown(), 0);
   });
 
   assert.match(diagnostics, /"reason":"command_in_flight"/);
+  // The awaited exchange is charged but not abandoned: what waits here is its own answer, not terminal
+  // evidence for a residue (#2965).
+  assert.match(diagnostics, /"outstandingCharges":1/);
+  assert.match(diagnostics, /"hasAbandonedCharges":false/);
   assert.ok(readRunnerSessionLiveness(device.id));
 });
 
@@ -516,18 +525,23 @@ test('a command abandoned by a cancelled transport keeps the runner occupied', a
       controller.signal,
     ),
   );
-  assert.equal(session.hasAbandonedCommands, true);
+  assert.equal(session.commandCharges.hasAbandonedCharges, true);
 
   const refused = await captureDiagnostics(async () => {
     assert.equal(await detachIosRunnerSessionsForShutdown(), 0);
   });
   assert.match(refused, /"reason":"command_in_flight"/);
+  // The refusal this issue is about: nothing is awaited any more, and only terminal evidence for that
+  // command's `commandId` — never a later reply — may discharge it (#2965).
+  assert.match(refused, /"outstandingCharges":1/);
+  assert.match(refused, /"hasAbandonedCharges":true/);
 
-  // Any answered exchange forgives the abandoned charge: the runner is serving again, and stamps
-  // whatever is still draining onto that very reply.
+  // An answered queued exchange forgives the abandoned charge: the serial queue makes it evidence that
+  // the abandoned handling ahead of it finished, and whatever is still draining is stamped onto that
+  // very reply. An answer the runner serves inline forgives nothing (#2965); that case is pinned in
+  // `runner-recovery-wiring.test.ts`, where the probe reaches a real session.
   await serveOneCommand(device, session);
-  assert.equal(session.inFlightCommands, 0);
-  assert.equal(session.hasAbandonedCommands, false);
+  assert.equal(session.commandCharges.hasOutstandingCharges, false);
   assert.equal(await detachIosRunnerSessionsForShutdown(), 1);
 });
 
@@ -672,4 +686,58 @@ test('a draining session is never reused while its next command starts a fresh r
   await disposal;
   assert.equal(first.state, 'stopped');
   assert.equal(second.state, 'starting');
+});
+
+test('retained runner restarts on a toolchain change even when its derived directory is fixed', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-lifecycle-toolchain-switch' };
+  const underA = { ...RUNNER_CACHE_METADATA_FIXTURE, xcodeBuildVersion: 'Xcode-A' };
+  const underB = { ...RUNNER_CACHE_METADATA_FIXTURE, xcodeBuildVersion: 'Xcode-B' };
+  mockResolveExpectedRunnerCacheMetadata.mockReturnValue(underA);
+  const artifact = await mockEnsureXctestrunArtifact();
+  mockEnsureXctestrunArtifact.mockResolvedValue({
+    ...artifact,
+    cacheKey: resolveRunnerCacheKey(mockResolveExpectedRunnerCacheMetadata()),
+  });
+  const first = await ensureRunnerSession(device, {});
+  assert.equal(await ensureRunnerSession(device, {}), first);
+
+  mockResolveExpectedRunnerCacheMetadata.mockReturnValue(underB);
+  mockEnsureXctestrunArtifact.mockResolvedValue({
+    ...artifact,
+    cacheKey: resolveRunnerCacheKey(mockResolveExpectedRunnerCacheMetadata()),
+  });
+  const second = await ensureRunnerSession(device, {});
+  assert.notEqual(second, first);
+  assert.equal(first.state, 'stopped');
+  assert.equal(second.xctestrunArtifact?.derived, first.xctestrunArtifact?.derived);
+  assert.equal(await ensureRunnerSession(device, {}), second);
+  assert.equal(mockRunCmdBackground.mock.calls.length, 2);
+});
+
+test('runner session restarts alive runner when expected xctestrun artifact changes', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-stale-artifact-sim' };
+
+  mockEnsureXctestrunArtifact
+    .mockResolvedValueOnce(
+      makeRunnerArtifact({
+        xctestrunPath: '/tmp/base-runner.xctestrun',
+        derived: '/tmp/derived',
+        buildMs: 12,
+      }),
+    )
+    .mockResolvedValueOnce(
+      makeRunnerArtifact({
+        xctestrunPath: '/tmp/base-runner-next.xctestrun',
+        derived: '/tmp/derived-next',
+        buildMs: 13,
+      }),
+    );
+
+  const session = await ensureRunnerSession(device, {});
+  mockResolveRunnerDerivedPath.mockReturnValue('/tmp/derived-next');
+  const restarted = await ensureRunnerSession(device, {});
+
+  assert.notEqual(restarted, session);
+  assert.equal(restarted.xctestrunArtifact?.derived, '/tmp/derived-next');
+  assert.equal(mockRunCmdBackground.mock.calls.length, 2);
 });

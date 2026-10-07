@@ -52,13 +52,16 @@ function makeSession(device: DeviceInfo): SessionState {
   return { name: 'default', createdAt: Date.now(), actions: [], device };
 }
 
-function makeRequest(source: NonNullable<DaemonRequest['meta']>['installSource']): DaemonRequest {
+function makeRequest(
+  source: NonNullable<DaemonRequest['meta']>['installSource'],
+  flags?: DaemonRequest['flags'],
+): DaemonRequest {
   return {
     token: 't',
     session: 'default',
     command: 'install_source',
     positionals: [],
-    flags: {},
+    flags: flags ?? {},
     meta: { installSource: source },
   };
 }
@@ -72,7 +75,7 @@ test('install_source materializes and deploys through one admitted runtime bindi
     kind: 'emulator',
     booted: true,
   });
-  store.set(session.name, session);
+  store.publish(session.name, session);
   const materialize = vi.fn(async (): Promise<MaterializedAppSource> => ({
     installablePath: '/tmp/materialized/app.apk',
     cleanup: async () => {},
@@ -120,7 +123,7 @@ test('install_source rejects unavailable facts before binding or materializing',
     kind: 'emulator',
     booted: true,
   });
-  store.set(session.name, session);
+  store.publish(session.name, session);
   const materialize = vi.fn(async (): Promise<MaterializedAppSource> => ({
     installablePath: '/tmp/materialized/app.apk',
     cleanup: async () => {},
@@ -156,7 +159,7 @@ test('install_source fails closed when a provider owner does not expose readines
     kind: 'emulator',
     booted: true,
   });
-  store.set(session.name, session);
+  store.publish(session.name, session);
   const localMaterialization = vi.fn(async (): Promise<MaterializedAppSource> => ({
     installablePath: '/tmp/local-fallback.apk',
     cleanup: async () => {},
@@ -212,7 +215,7 @@ test('install_source cleans materialized paths when deployment fails after admis
     kind: 'emulator',
     booted: true,
   });
-  store.set(session.name, session);
+  store.publish(session.name, session);
   const cleanup = vi.fn(async () => {});
   const runtime = createSourceRuntime(
     session.device,
@@ -246,7 +249,7 @@ test('install_source preserves the Android identity failure when its runtime can
     kind: 'emulator',
     booted: true,
   });
-  store.set(session.name, session);
+  store.publish(session.name, session);
   const runtime = createSourceRuntime(
     session.device,
     async () => ({ installablePath: '/tmp/materialized/app.apk', cleanup: async () => {} }),
@@ -276,7 +279,7 @@ test('install_source returns the typed iOS artifact identity supplied by its run
     kind: 'simulator',
     booted: true,
   });
-  store.set(session.name, session);
+  store.publish(session.name, session);
   const runtime = createSourceRuntime(
     session.device,
     async () => ({
@@ -305,6 +308,75 @@ test('install_source returns the typed iOS artifact identity supplied by its run
       message: 'Installed: Agent Device Tester',
     },
   });
+});
+
+// The session's device carries the INTERNAL `apple` platform while `--platform` names the PUBLIC
+// leaf, and a remote command's device resolution writes that leaf into the flags of every install
+// it dispatches (#2962). Comparing the two axes by string equality refused the install of the very
+// session it targeted, and printed the internal `apple` token the public axis is not allowed to
+// emit (ADR 0009).
+test('install_source accepts the public leaf selector of an Apple session it is bound to', async () => {
+  const store = makeStore();
+  const session = makeSession({
+    platform: 'apple',
+    appleOs: 'ios',
+    id: 'sim-1',
+    name: 'iPhone',
+    kind: 'simulator',
+    booted: true,
+  });
+  store.publish(session.name, session);
+  const runtime = createSourceRuntime(
+    session.device,
+    async () => ({
+      installablePath: '/tmp/App.app',
+      bundleId: 'com.example.app',
+      appName: 'App',
+      cleanup: async () => {},
+    }),
+    async () => ({}) as never,
+  );
+
+  const response = await handleInstallFromSourceDeploymentCommand({
+    req: makeRequest({ kind: 'path', path: '/tmp/App.app' }, { platform: 'ios' }),
+    sessionName: session.name,
+    sessionStore: store,
+    inspectFacts: runtime.inspectFacts,
+    bindDevice: runtime.bindDevice,
+  });
+
+  expect(response.ok).toBe(true);
+});
+
+test('install_source still refuses a leaf selector that names a different platform than the session', async () => {
+  const store = makeStore();
+  const session = makeSession({
+    platform: 'apple',
+    appleOs: 'ios',
+    id: 'sim-1',
+    name: 'iPhone',
+    kind: 'simulator',
+    booted: true,
+  });
+  store.publish(session.name, session);
+  const runtime = createSourceRuntime(
+    session.device,
+    async () => ({ installablePath: '/tmp/App.app', cleanup: async () => {} }),
+    async () => ({}) as never,
+  );
+
+  const response = await handleInstallFromSourceDeploymentCommand({
+    req: makeRequest({ kind: 'path', path: '/tmp/App.app' }, { platform: 'android' }),
+    sessionName: session.name,
+    sessionStore: store,
+    inspectFacts: runtime.inspectFacts,
+    bindDevice: runtime.bindDevice,
+  });
+
+  expect(response).toMatchObject({ ok: false, error: { code: 'INVALID_ARGS' } });
+  if (response.ok) return;
+  expect(response.error.message).toContain('bound to ios');
+  expect(response.error.message).not.toContain('apple');
 });
 
 function createSourceRuntime(

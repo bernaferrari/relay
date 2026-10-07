@@ -21,6 +21,17 @@ type DiagnosticsRecordRef = {
   session: string;
   requestId: string;
 };
+/**
+ * Whether the operation a failed request asked for reached the device. `no`: it provably never
+ * did, so resending it is safe. `unknown`: it may have landed, so observe the device before
+ * resending. A failure without the field was classified by no producer. The producer rows live in
+ * `contracts/fixtures/dispatch-disclosure.json`.
+ */
+type DispatchDisclosure = 'no' | 'unknown';
+/** The error details bag as it crosses the wire: free-form, with the typed keys a reader may rely on. */
+type ErrorWireDetails = Record<string, unknown> & {
+  dispatched?: DispatchDisclosure;
+};
 type ErrorCause = {
   message: string;
   code?: string;
@@ -37,6 +48,8 @@ type ErrorCause = {
  *   rather than by hand.
  * - `retriable` — typed retry signal hoisted to the wire error shape.
  * - `reason` — machine-dispatchable sub-classification within a code.
+ * - `dispatched` — {@link DispatchDisclosure} set by the producer that proved it; kept in details on
+ *   the wire and never defaulted.
  */
 type AppErrorDetails = Record<string, unknown> & {
   hint?: string;
@@ -51,6 +64,7 @@ type AppErrorDetails = Record<string, unknown> & {
   stderr?: string;
   exitCode?: number | null;
   reason?: string;
+  dispatched?: DispatchDisclosure;
 };
 type NormalizedError = {
   code: string;
@@ -81,7 +95,7 @@ type NormalizedError = {
    */
   retriable?: boolean;
   supportedOn?: string;
-  details?: Record<string, unknown>;
+  details?: ErrorWireDetails;
 };
 /**
  * Error payload returned by the daemon transport. It is kept beside the local
@@ -104,7 +118,7 @@ type DaemonError = {
    * being handed a path on a filesystem it cannot read.
    */
   diagnosticsRecord?: DiagnosticsRecordRef;
-  details?: Record<string, unknown>;
+  details?: ErrorWireDetails;
   /** Additive retry and platform-support signals; absent when not derivable. */
   retriable?: boolean;
   supportedOn?: string;
@@ -325,7 +339,8 @@ type RawSnapshotNode = {
  * A keyboard is its own system surface, so it never reaches the tree as a covering sibling of app
  * content, and a consumer that wants to refuse a tap behind it has to learn where it is from
  * somewhere (#2589). A producer that can measure the band directly — the Apple runner, from its
- * `app.keyboards` query — publishes one fact per capture and says nothing else about it. A consumer therefore gets three
+ * `app.keyboards` query, and the Android helper, from the input method window in the window list it
+ * captures — publishes one fact per capture and says nothing else about it. A consumer therefore gets three
  * answers and no fourth: a band in the same space as every node rect, a proven absence, or a
  * producer that could not look.
  *
@@ -354,8 +369,49 @@ type SnapshotKeyboardBandFact =
   kind: 'unmeasurable';
   reason: string;
 };
+/**
+ * The box a capture's node rects are measured in, published beside them so a reader never has to
+ * infer it from the tree (#3182). Two dimensions and no origin: the field answers "how big is the
+ * surface these numbers describe", which is the only question a consumer that places points on the
+ * tree cannot answer from the tree itself when the tree is empty or sparse.
+ *
+ * It is the box of the surface the producer read, which is not always the physical panel. iOS
+ * reports the app window in the app's orientation space (ADR 0004), which is smaller than the panel
+ * under iPad Split View and is never the foldable panel `fold` reports (ADR 0025); Android and the
+ * Apple TV runner report the screen the bounds were measured on. A producer that has no box of its
+ * own to answer with leaves the field off: the macOS desktop, whose rects are absolute in window
+ * space and answer to no single frame, and the web and Linux backends, which read a tree without
+ * reading a screen. A consumer that needs a *gesture* band inside those bounds still reads `keyboard`
+ * and the app window, which is #1821's remaining scope.
+ *
+ * Absent means the producer measured no box. Absence is never `0`: `snapshotViewportSizeFrom` from
+ * `@agent-device/kernel/rect` is the sole construction path and refuses a box
+ * `isPositiveFiniteRect` refuses. The brand makes that invariant part of the type: a plain
+ * `{ width, height }` literal — including one with a zero in it — is not assignable here, so only
+ * modules that import the brand token from `kernel/rect` can build one, and they build it through
+ * the guard.
+ */
+type SnapshotViewportSize = {
+  width: number;
+  height: number;
+} & SnapshotViewportSizeBrand;
+/** @internal Exported only so `kernel/rect` can mint values of {@link SnapshotViewportSize}. */
+declare const SNAPSHOT_VIEWPORT_SIZE_BRAND: unique symbol;
+type SnapshotViewportSizeBrand = {
+  readonly [SNAPSHOT_VIEWPORT_SIZE_BRAND]: 'validated';
+};
 type SnapshotNode = RawSnapshotNode & {
   ref: string;
+  /**
+   * Normalized role, from the same table the text presenter reads (`formatRole` below). `type`
+   * stays the raw platform class; `kind` is the presenter's own answer, published so a `--json`
+   * consumer gets the presented role without re-deriving it from `type` (#2656). `attachRefs` is
+   * the one production construction path and always sets it; optional here (rather than required
+   * like `ref`) only so the many hand-built `SnapshotNode` fixtures across the daemon/selector test
+   * suites that predate #2656 and never route through `attachRefs` do not all need updating for a
+   * field their assertions never read.
+   */
+  kind?: string;
   /**
    * Output-only marker set by client-serialization dedup (see
    * ../snapshot/snapshot-label-dedup.ts) when `label`/`identifier` was omitted
@@ -474,12 +530,19 @@ type SnapshotState = {
    */
   iosSystemSurfaceBundleId?: string;
   /**
-   * iOS: the keyboard band this capture's producer measured, when it measured one. The tap-path
-   * keyboard guard prefers this over the band it would otherwise derive from `nodes`, because a
-   * producer that can query the keyboard directly answers in the app's own orientation space and
+   * iOS and Android: the keyboard band this capture's producer measured, when it measured one. The
+   * tap-path keyboard guard prefers this over the band it would otherwise derive from `nodes`,
+   * because a producer that can query the keyboard directly answers in the tree's own space and
    * needs no geometry to be plausible (#2660). Absent means the guard measures the tree as before.
    */
   keyboard?: SnapshotKeyboardBandFact;
+  /**
+   * The box these rects are measured in, as the producer measured it (#3182). The state is the carrier
+   * the response reads, so the stored tree and the published `viewport` are one fact rather than two:
+   * a consumer of a stored capture — a later diff, a re-read of the session's tree — gets the box the
+   * producer measured instead of inferring one from the largest rect still on screen.
+   */
+  viewport?: SnapshotViewportSize;
   /**
    * iOS: this capture's own command found the session app out of foreground and the runner
    * activated it before answering, so an earlier observation in the session described whatever held
@@ -544,6 +607,8 @@ type DeviceInfo = {
   kind: DeviceKind;
   target?: DeviceTarget;
   appleOs?: AppleOS;
+  model?: string;
+  osVersion?: string;
   booted?: boolean;
   simulatorSetPath?: string;
   iosPhysicalDeviceBackend?: 'coredevice' | 'xctest';
@@ -584,7 +649,7 @@ type LocalInstallSource = Extract<DaemonInstallSource, {
 }>;
 declare const DAEMON_LOCK_POLICIES: readonly ['reject', 'strip'];
 type DaemonLockPolicy = (typeof DAEMON_LOCK_POLICIES)[number];
-declare const LEASE_BACKENDS: readonly ['ios-simulator', 'ios-instance', 'android-instance', 'harmonyos-instance'];
+declare const LEASE_BACKENDS: readonly ['ios-simulator', 'ios-instance', 'android-instance', 'harmonyos-instance', 'macos-app'];
 type LeaseBackend = (typeof LEASE_BACKENDS)[number];
 declare const DAEMON_SERVER_MODES: readonly ['socket', 'http', 'dual'];
 type DaemonServerMode = (typeof DAEMON_SERVER_MODES)[number];
@@ -602,15 +667,20 @@ type DaemonRequestMeta = {
   includeCost?: boolean;
   responseLevel?: ResponseLevel;
   cwd?: string;
+  /** The client's `DEVELOPER_DIR`, applied to the commands a local daemon spawns for this request. */
+  developerDir?: string;
   sessionExplicit?: boolean;
   tenantId?: string;
   runId?: string;
   leaseId?: string;
   leaseTtlMs?: number;
+  leaseRetainOnClose?: boolean;
   leaseBackend?: LeaseBackend;
   leaseProvider?: string;
   deviceKey?: string;
   clientId?: string;
+  /** A local caller's digest of its lease-provider credential variables, compared on allocation. */
+  providerCredentialFingerprint?: string;
   sessionIsolation?: SessionIsolationMode;
   uploadedArtifactId?: string;
   clientArtifactPaths?: Record<string, string>;
@@ -666,4 +736,4 @@ type JsonRpcRequestEnvelope<TParams = unknown> = {
   params?: TParams;
 };
 //#endregion
-export { Rect as A, SnapshotVisibility as B, Platform as C, IosTargetActivation as D, AppleApplicationState as E, SnapshotOptions as F, DaemonError as G, AppError as H, SnapshotProvenance as I, NormalizedError as J, ErrorCause as K, SnapshotQualityVerdict as L, SnapshotCommandOptionFields as M, SnapshotKeyboardBandFact as N, Point as O, SnapshotNode as P, normalizeError as Q, SnapshotState as R, DeviceTarget as S, PublicPlatform as T, AppErrorCode as U, centerOfRect as V, AppErrorDetails as W, isAgentDeviceError as X, defaultHintForCode as Y, normalizeAgentDeviceError as Z, SessionIsolationMode as _, DaemonRequest as a, DeviceInfo as b, DaemonServerMode as c, JsonRpcRequestEnvelope as d, LeaseBackend as f, ResponseLevel as g, ResponseCost as h, DaemonLockPolicy as i, ScreenshotOverlayRef as j, RawSnapshotNode as k, DaemonTransportPreference as l, NetworkIncludeMode as m, DaemonArtifactType as n, DaemonResponse as o, LocalInstallSource as p, KnownAppErrorCode as q, DaemonInstallSource as r, DaemonResponseData as s, DaemonArtifact as t, JsonRpcId as u, SessionRuntimeHints as v, PlatformSelector as w, DeviceKind as x, AppleOS as y, SnapshotUnchanged as z };
+export { normalizeError as $, Rect as A, SnapshotViewportSize as B, Platform as C, IosTargetActivation as D, AppleApplicationState as E, SnapshotOptions as F, AppErrorDetails as G, centerOfRect as H, SnapshotProvenance as I, KnownAppErrorCode as J, DaemonError as K, SnapshotQualityVerdict as L, SnapshotCommandOptionFields as M, SnapshotKeyboardBandFact as N, Point as O, SnapshotNode as P, normalizeAgentDeviceError as Q, SnapshotState as R, DeviceTarget as S, PublicPlatform as T, AppError as U, SnapshotVisibility as V, AppErrorCode as W, defaultHintForCode as X, NormalizedError as Y, isAgentDeviceError as Z, SessionIsolationMode as _, DaemonRequest as a, DeviceInfo as b, DaemonServerMode as c, JsonRpcRequestEnvelope as d, LeaseBackend as f, ResponseLevel as g, ResponseCost as h, DaemonLockPolicy as i, ScreenshotOverlayRef as j, RawSnapshotNode as k, DaemonTransportPreference as l, NetworkIncludeMode as m, DaemonArtifactType as n, DaemonResponse as o, LocalInstallSource as p, ErrorCause as q, DaemonInstallSource as r, DaemonResponseData as s, DaemonArtifact as t, JsonRpcId as u, SessionRuntimeHints as v, PlatformSelector as w, DeviceKind as x, AppleOS as y, SnapshotUnchanged as z };

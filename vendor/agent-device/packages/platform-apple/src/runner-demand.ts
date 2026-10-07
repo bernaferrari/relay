@@ -47,8 +47,9 @@ const APPLE_SIMULATOR_OPERATION_HOSTS: Readonly<
   audioProbeReattach: 'simulator',
   audioProbeCleanup: 'simulator',
   readClipboard: 'simulator',
-  writeClipboard: 'simulator',
-  // Relay fork: the atomic field transactions are single verified runner commands.
+  // The runner writes the pasteboard: `simctl pbcopy` leaves it empty under Xcode 27.
+  writeClipboard: 'runner',
+  // The atomic field transactions are single verified runner commands.
   pasteClipboard: 'runner',
   copyClipboard: 'runner',
   setSetting: 'simulator',

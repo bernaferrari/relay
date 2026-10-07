@@ -2,7 +2,18 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { ReplayCommandResult, ReplaySuiteResult } from '@agent-device/contracts/replay';
 import { ownerFilesForCommand } from '@agent-device/command-registry/owner-files';
+import { commandSupportsSettleObservation } from '@agent-device/command-registry/registry';
+import { DIFF_COMMAND_OUTPUT_SCHEMAS } from '../../commands/capture/diff.ts';
+import { WAIT_COMMAND_OUTPUT_SCHEMAS } from '../../commands/capture/wait.ts';
+import { PREPARE_COMMAND_OUTPUT_SCHEMAS } from '../../commands/management/prepare.ts';
+import { DOCTOR_COMMAND_OUTPUT_SCHEMAS } from '../../commands/management/doctor.ts';
+import { DEVICE_MANAGEMENT_COMMAND_OUTPUT_SCHEMAS } from '../../commands/management/device.ts';
+import { PUSH_MANAGEMENT_COMMAND_OUTPUT_SCHEMAS } from '../../commands/management/push.ts';
+import { VIEWPORT_COMMAND_OUTPUT_SCHEMAS } from '../../commands/management/viewport.ts';
+import { INTERACTION_COMMAND_OUTPUT_SCHEMAS } from '../../commands/interaction/index.ts';
+import { RECORDING_COMMAND_OUTPUT_SCHEMAS } from '../../commands/recording/output-schemas.ts';
 import { REPLAY_COMMAND_OUTPUT_SCHEMAS } from '../../commands/replay/index.ts';
+import { SYSTEM_COMMAND_OUTPUT_SCHEMAS } from '../../commands/system/index.ts';
 import { COMMAND_OUTPUT_SCHEMAS } from '../command-output-schemas.ts';
 import { validateAgainstSchema } from './output-schema-validator.ts';
 
@@ -66,7 +77,19 @@ test('the projected family map declares exactly the commands its module owns', (
  * stays the compiler's; this owns the shadowing half. Every family the seam spreads is listed here,
  * so registering a new family is the migration step.
  */
-const PROJECTED_FAMILIES = [{ name: 'replay', schemas: REPLAY_COMMAND_OUTPUT_SCHEMAS }] as const;
+const PROJECTED_FAMILIES = [
+  { name: 'replay', schemas: REPLAY_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'system', schemas: SYSTEM_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'interaction', schemas: INTERACTION_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'capture-diff', schemas: DIFF_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'capture-wait', schemas: WAIT_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'management-prepare', schemas: PREPARE_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'management-doctor', schemas: DOCTOR_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'management-device', schemas: DEVICE_MANAGEMENT_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'management-push', schemas: PUSH_MANAGEMENT_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'management-viewport', schemas: VIEWPORT_COMMAND_OUTPUT_SCHEMAS },
+  { name: 'recording', schemas: RECORDING_COMMAND_OUTPUT_SCHEMAS },
+] as const;
 
 test('projected output-schema families claim disjoint commands and survive the composition intact', () => {
   const claimedBy = new Map<string, string>();
@@ -83,11 +106,23 @@ test('projected output-schema families claim disjoint commands and survive the c
   }
   for (const family of PROJECTED_FAMILIES) {
     for (const [command, schema] of Object.entries(family.schemas)) {
-      assert.equal(
-        COMMAND_OUTPUT_SCHEMAS[command as keyof typeof COMMAND_OUTPUT_SCHEMAS],
-        schema,
-        `${family.name}.${command} is not the schema the map publishes`,
-      );
+      const published = COMMAND_OUTPUT_SCHEMAS[command as keyof typeof COMMAND_OUTPUT_SCHEMAS];
+      // A command with the post-action observation trait (#1652) is grafted onto a COPY by
+      // deriveSettleObservationSchemas, so it is deliberately not reference-equal here; a
+      // trait-free command must survive the spread untouched.
+      if (commandSupportsSettleObservation(command)) {
+        assert.notEqual(
+          published,
+          schema,
+          `${family.name}.${command} carries the settle trait but was not copied by the derivation pass`,
+        );
+      } else {
+        assert.equal(
+          published,
+          schema,
+          `${family.name}.${command} is not the schema the map publishes`,
+        );
+      }
     }
   }
 });

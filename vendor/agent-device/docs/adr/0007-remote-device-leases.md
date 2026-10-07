@@ -42,6 +42,17 @@ paths.
 The proxy process is expected to be long-lived and self-serve. Recovery from a
 stale or expired device lease should not require restarting the proxy.
 
+A caller that owns a lease's lifetime, allocating it and releasing it itself,
+can allocate with `retainOnClose`. Session `close` then leaves that lease and
+its provider device in place, and only `leases.release`, expiry, or daemon
+shutdown ends it. The default is unchanged so the CLI's proxy sharing still
+frees devices on `close`. The allocated lease reports `retainOnClose: true`
+only when the daemon honored it, and only the lease's own client can turn it
+on for a lease the run already holds. An unexpired `retainOnClose` lease keeps
+an idle daemon alive; other leases, including human-control holds, do not. A
+retained lease the caller stops heartbeating expires after its `ttlMs`, and idle
+reap then shuts the daemon down within one more idle window.
+
 ## Consequences
 
 Device contention can fail before platform execution with an explicit
@@ -66,6 +77,66 @@ Which leases this reaches depends on the inactivity TTL the client asked for: th
 one minute, while a cloud WebDriver connection profile asks for ten. A single command that runs
 longer than its own lease is therefore ordinary on the default and only reachable through a profile
 on the longer one.
+
+## Provider allocation
+
+Allocation is admitted work too. The registry records a lease before a hosted provider creates the
+session behind it, and creating that session can take longer than the lease's inactivity TTL, so a
+lease timed from its record was already expired, or nearly so, when its client first received it, and
+the paid session it pointed at was orphaned. The allocation therefore holds a work pass while the
+provider allocates: the lease cannot expire underneath it, and a successful allocation still wanted by
+its requester starts the inactivity TTL from the moment allocation completed. A requester that hung up
+preserves nothing, and its allocation is released as before.
+
+## Client-side work that precedes admission
+
+Protecting admitted work covers nothing that happens before a request is admitted. Installing an
+artifact uploads it from the caller while the request that will consume it has not been admitted yet,
+so an upload slower than the lease's inactivity window expired the lease paying for the device the
+bytes were going to (#2946). The caller therefore beats the lease over the ordinary transport for as
+long as that phase runs, naming the lease scope exactly as the command named it and no payload of its
+own. An install names no window, so its beats renew for the window the lease already carries; a
+caller that did name one keeps renewing on it. Resolving an absent window to the registry default
+instead — which is what a heartbeat used to do — quietly shortened every lease allocated above that
+default, which is the other half of why the upload could not survive. Request admission had its own
+copy of that mistake: it named a proxy-specific default for every admitted request, so a lease
+allocated longer than the default lost its window on the next command. Admission renews on the lease's
+window too; the window a lease carries is the one its client named when it allocated.
+
+The first beat is fired when the phase starts, not one cadence in, because a beat is what proves the
+lease the upload is spending time on is still alive — a lease shorter than any fixed cadence would
+otherwise lapse before anything renewed it. A lease already gone is caught early, but not before the
+phase begins: hashing, the preflight, and the start of the stream can all run while the first beat is
+still outstanding, so what the first beat buys is that the loss is learned during the upload rather
+than after it. Each beat answers with the window it just renewed, and the loop arms its successor when
+the beat starts rather than when it settles, so a beat that never answers is abandoned on schedule
+instead of taking the schedule with it. A phase that settles does not wait on a beat still in flight.
+
+Cadence and budget are deliberately two numbers. A beat is armed every third of the window, but it is
+allowed the whole window to answer in. Budgeting a beat at its cadence instead would give a heartbeat
+that needs more than a third of a window for its round trip — a tunneled proxy, an uplink the upload
+itself is saturating — no way to answer at all, and every beat would re-time-out on exactly the slow
+links the beat exists to protect. The window, not the cadence, is the interval in which being alive
+still matters, so it is also the longest a beat's answer is worth waiting for.
+
+That ceiling is the shorter of the window and the heartbeat's own request policy, currently ninety
+seconds. A ten-minute lease therefore gives a beat ninety seconds rather than the full window, which
+costs nothing the beat exists to buy: the daemon renews the lease when it handles the request, before
+it answers, so a round trip abandoned at the cap has still extended the lease if the request ever
+landed — and if it never landed, a transport that has stopped carrying traffic is not served by holding
+the socket open for the rest of a window measured in minutes. What the cap refuses is exactly that
+idle hold. It binds only on windows longer than the policy, and on those the beat already has the
+longest answer deadline any lease gets; shorter windows are bounded by their own window, as above.
+
+A beat is a fresh request each time, never the protected request rewritten: a request identity is
+what a timed-out beat is canceled under, and beats must not inherit each other's cancellation. A beat
+that finds the lease gone, or finds that this request can never renew it — its scope is missing or
+belongs to another lease, or the daemon rejects the scope and window the beat itself was built with,
+which no successor will ask differently — ends the phase with that error and cancels the upload rather
+than finishing bytes against a device nobody owns or a lease that will stop renewing. A beat that fails
+for any other reason is reported and survived, because a later beat covers one lost request — including
+one that was abandoned at its budget rather than answered, which is what makes that promise hold for a
+stalled round trip and not only for one that fails fast.
 
 ## Human control
 
@@ -93,6 +164,35 @@ Holds and ordinary proxy leases are in-memory and do not survive daemon restart.
 reconnect and re-establish them; no persisted hold store is used. Local takeover is deferred: a
 future host-global human-control fence must coexist with the local session's device claim, not
 acquire it exclusively.
+
+## macOS app leases
+
+A lease on the macOS host would rent the whole desktop, so the macOS platform rents one app instead.
+A `macos-app` lease's device key is a bundle id, optionally pinned to one process
+(`<bundleId>` or `<bundleId>@<pid>`). The scope would be self-chosen if a tenant could name it, so
+only a host administrator allocates one, over the loopback `/admin/leases` route that uses the daemon
+token like host holds; tenant `lease_allocate` refuses the backend. The host picks the lease id, a
+repeated PUT renews it, and a PUT naming another scope for an existing id is refused rather than
+rewritten. Heartbeat, expiry, release, and the loss on daemon restart are those of any lease, except
+that a tenant heartbeat or request cannot renew it for longer than the window of the host's last PUT.
+
+Request admission confines every request admitted under the lease, so `batch` steps and `replay`
+actions are confined when they re-enter it: an allow list of commands, the ones whose command
+registry descriptor declares `appLease: 'allowed'` (later commands are refused, and of the commands
+lease admission otherwise exempts only `lease_heartbeat` and `lease_release` declare it),
+`open` and `close` of the leased bundle only, the `app` surface only, window-only screenshots, no
+input that names a host path or launches beside the app, and an existing session that is the leased
+app for every request but `open`, the `batch` envelope, and the lease's heartbeat and release, so a
+request naming no session cannot fall back to the host Mac. `open` requires the native app backend (ADR 0031), because XCTest
+posts screen events that can land outside the app's window. A pid-pinned lease is checked against the
+running process before each admitted request. A session opened under the lease holds its app, not
+the Mac: it takes no host device claim, and other app-leased sessions on the same Mac do not conflict
+with it, so one daemon serves several leased apps beside the host's own sessions.
+
+These rules bind a request that names the lease or runs in its session. A daemon policy
+`leases.require` (ADR 0029) refuses requests that name no lease. The proxy token is one credential
+for every client, so a host serving several clients through one proxy authenticates each client and
+sets its tenant, session isolation, and lease on every request it forwards.
 
 ## Host managed-device durability amendment
 

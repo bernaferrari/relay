@@ -2,7 +2,7 @@ import type { DaemonError } from './errors.ts';
 
 export type { AppErrorCode } from './errors.ts';
 export { defaultHintForCode, normalizeError } from './errors.ts';
-import type { PlatformSelector } from './device.ts';
+import type { PlatformSelector, PublicPlatform } from './device.ts';
 
 const SESSION_RUNTIME_PLATFORMS = ['ios', 'android', 'harmonyos'] as const;
 export type SessionRuntimePlatform = (typeof SESSION_RUNTIME_PLATFORMS)[number];
@@ -51,13 +51,65 @@ export type LocalInstallSource = Extract<DaemonInstallSource, { kind: 'url' | 'p
 
 const DAEMON_LOCK_POLICIES = ['reject', 'strip'] as const;
 export type DaemonLockPolicy = (typeof DAEMON_LOCK_POLICIES)[number];
-const LEASE_BACKENDS = [
+export const LEASE_BACKENDS = [
   'ios-simulator',
   'ios-instance',
   'android-instance',
   'harmonyos-instance',
+  'macos-app',
 ] as const;
 export type LeaseBackend = (typeof LEASE_BACKENDS)[number];
+
+// Which lease backend rents a device on each platform the remote lease layer can hold. `ios-simulator`
+// is a backend-specific runner guard rather than something a platform selector names, and the
+// platforms with no remote lease backend (`vega`, `linux`, `web`) — and the macOS desktop host — map
+// to no backend at all, so a request for one fails on the missing backend instead of renting a
+// device no provider owns. Keyed on the `--platform` selector axis: callers holding a `DeviceInfo`
+// project it with `publicPlatformString` first, which is the axis #2962 mixed up.
+const LEASE_BACKEND_BY_PLATFORM: Partial<Record<PlatformSelector, LeaseBackend>> = {
+  ios: 'ios-instance',
+  android: 'android-instance',
+  harmonyos: 'harmonyos-instance',
+};
+
+/**
+ * Maps a platform to the lease backend that rents it. The CLI reads it for `--platform`/
+ * `--lease-backend` resolution and the remote connection reads it for the device it just resolved.
+ * Both previously keyed their own copy off a platform axis, which is where #2962 started; a further
+ * copy in `connect limrun` validation is tracked for follow-up.
+ */
+export function leaseBackendForPlatform(
+  platform: PlatformSelector | undefined,
+): LeaseBackend | undefined {
+  return platform === undefined ? undefined : LEASE_BACKEND_BY_PLATFORM[platform];
+}
+
+/**
+ * The public leaf platform a lease backend rents devices on — the inverse of
+ * {@link leaseBackendForPlatform} for the backends that name a platform rather than a runner guard.
+ *
+ * A connection binds a platform at the same moment it binds a lease, and the lease is the stronger
+ * evidence: it names the backend that is actually holding the device. `ios-simulator` maps to no
+ * leaf because it is a runner/process guard below device leases, not a platform a selector names.
+ *
+ * Derived from the forward table rather than written beside it, so the two axes cannot drift, and held
+ * in a `Map` because a `leaseBackend` reaching here can be any string an older binary left on disk: a
+ * plain object would answer `constructor` and friends with an inherited function, which is a platform
+ * nobody rents.
+ */
+const PLATFORM_BY_LEASE_BACKEND = new Map<string, PublicPlatform>([
+  ...Object.entries(LEASE_BACKEND_BY_PLATFORM).flatMap(([platform, backend]) =>
+    backend === undefined ? [] : [[backend, platform as PublicPlatform] as const],
+  ),
+  // A `macos-app` lease rents one app on the macOS host, never the host itself, so no platform
+  // selector resolves to it: only a host administrator allocates one, and its client names it.
+  ['macos-app', 'macos'],
+]);
+
+export function platformForLeaseBackend(backend: string): PublicPlatform | undefined {
+  return PLATFORM_BY_LEASE_BACKEND.get(backend);
+}
+
 const DAEMON_SERVER_MODES = ['socket', 'http', 'dual'] as const;
 export type DaemonServerMode = (typeof DAEMON_SERVER_MODES)[number];
 const DAEMON_TRANSPORT_PREFERENCES = ['auto', 'socket', 'http'] as const;
@@ -88,15 +140,20 @@ export type DaemonRequestMeta = {
   includeCost?: boolean;
   responseLevel?: ResponseLevel;
   cwd?: string;
+  /** The client's `DEVELOPER_DIR`, applied to the commands a local daemon spawns for this request. */
+  developerDir?: string;
   sessionExplicit?: boolean;
   tenantId?: string;
   runId?: string;
   leaseId?: string;
   leaseTtlMs?: number;
+  leaseRetainOnClose?: boolean;
   leaseBackend?: LeaseBackend;
   leaseProvider?: string;
   deviceKey?: string;
   clientId?: string;
+  /** A local caller's digest of its lease-provider credential variables, compared on allocation. */
+  providerCredentialFingerprint?: string;
   sessionIsolation?: SessionIsolationMode;
   uploadedArtifactId?: string;
   clientArtifactPaths?: Record<string, string>;
