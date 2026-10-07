@@ -23,7 +23,10 @@ export function CaptureReviewDecisions({
   status,
   reviewStatus,
   bulkCount,
+  prominent = false,
 }: {
+  /** Stack full-width actions with Looks correct as the primary button. */
+  prominent?: boolean;
   busy?: boolean;
   unavailable?: boolean;
   status?: string;
@@ -92,12 +95,12 @@ export function CaptureReviewDecisions({
             )}
           </p>
         ) : null}
-        <div className="flex items-center gap-1">
+        <div className={prominent ? "flex w-full items-center gap-1" : "flex items-center gap-1"}>
           {reviewStatus !== "accepted" ? (
             <Button
-              size="sm"
-              className="min-h-10"
-              variant="secondary"
+              size={prominent ? "lg" : "sm"}
+              className={prominent ? "min-h-10 flex-1" : "min-h-10"}
+              variant={prominent ? "default" : "secondary"}
               disabled={disabled}
               onClick={() => void submit("accept")}
             >
@@ -106,9 +109,9 @@ export function CaptureReviewDecisions({
             </Button>
           ) : null}
           <Button
-            size="sm"
-            className="min-h-10"
-            variant="ghost"
+            size={prominent ? "lg" : "sm"}
+            className={prominent && reviewStatus === "accepted" ? "min-h-10 flex-1" : "min-h-10"}
+            variant={prominent ? "outline" : "ghost"}
             disabled={disabled}
             aria-expanded={reportOpen}
             aria-controls={reportOpen ? noteId : undefined}

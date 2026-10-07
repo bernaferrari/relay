@@ -4,7 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/compon
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { ChevronRight, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
@@ -25,12 +25,7 @@ import {
 } from "./batch-triage";
 import { BatchTriageControls } from "./batch-triage-controls";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
-import {
-  BatchFindingsLead,
-  BatchFindingsPanel,
-  BatchResultSummary,
-  BatchStabilityPanel,
-} from "./batch-plan-review";
+import { BatchFindingsLead, BatchFindingsPanel, BatchStabilityPanel } from "./batch-plan-review";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { PlanRunChecklist } from "./plan-run-checklist";
 import { resolvePlanFindings } from "./batch-finding-review";
@@ -87,6 +82,9 @@ function BatchDocument({ batchId }: { batchId: string }) {
         item.status === "failed" || item.status === "blocked" || item.status === "cancelled",
     ),
   );
+  const problemCount =
+    report?.cases.filter((item) => item.status === "failed" || item.status === "blocked").length ??
+    0;
   const hasFailedCases = Boolean(report?.cases.some((item) => item.status === "failed"));
   const clusters = useQuery({
     queryKey: ["run-across", "batch", batchId, "failure-clusters"],
@@ -346,101 +344,102 @@ function BatchDocument({ batchId }: { batchId: string }) {
             </section>
           ) : null}
 
-          <details className="group/details mt-8" open={!active}>
-            <summary className="flex cursor-pointer list-none items-center gap-2 text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-              <ChevronRight
-                className="size-4 text-muted-foreground transition-transform duration-150 group-open/details:rotate-90"
-                aria-hidden="true"
+          <Tabs value={resultView} onValueChange={setResultView} className="mt-10">
+            <TabsList variant="line" aria-label="Plan result view">
+              {runAcrossService.getCaptureReview ? (
+                <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
+              ) : null}
+              <TabsTrigger value="cases">
+                {problemCount ? (
+                  <>
+                    Problems
+                    <span className="rounded-full bg-destructive/15 px-1.5 text-xs tabular-nums text-destructive">
+                      {problemCount}
+                    </span>
+                  </>
+                ) : (
+                  "Cases"
+                )}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="screenshots" keepMounted>
+              <PlanCaptureReviewSection
+                key={batchId}
+                batchId={batchId}
+                runAcrossService={runAcrossService}
+                platform={platform}
+                streaming={active}
+                onInspectProblems={(caseId) => {
+                  setFocusedCaseId(caseId);
+                  setCaseFocusRequest((request) => request + 1);
+                  setResultView("cases");
+                }}
               />
-              Screenshots and details
-            </summary>
-            <BatchResultSummary report={report} />
-            <Tabs value={resultView} onValueChange={setResultView} className="mt-6">
-              <TabsList variant="line" aria-label="Plan result view">
-                {runAcrossService.getCaptureReview ? (
-                  <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
-                ) : null}
-                <TabsTrigger value="cases">Runs and problems</TabsTrigger>
-              </TabsList>
-              <TabsContent value="screenshots" keepMounted>
-                <PlanCaptureReviewSection
-                  key={batchId}
-                  batchId={batchId}
-                  runAcrossService={runAcrossService}
-                  platform={platform}
-                  streaming={active}
-                  onInspectProblems={(caseId) => {
-                    setFocusedCaseId(caseId);
-                    setCaseFocusRequest((request) => request + 1);
-                    setResultView("cases");
-                  }}
-                />
-              </TabsContent>
-              <TabsContent value="cases">
-                {findingsReport ? (
-                  <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
-                ) : null}
-                <BatchReviewWorkspace
-                  key={batchId}
-                  report={report}
-                  focusedCaseId={focusedCaseId}
-                  focusRequest={caseFocusRequest}
-                  selected={selectedCases}
-                  onToggle={(id, checked) => toggleCase(id, checked)}
-                  onResolve={(id) =>
-                    triage.mutateAsync({ caseIds: [id], triageStatus: "resolved" })
-                  }
-                  onRerun={(id) => rerun.mutate([id])}
-                  pending={triage.isPending}
-                  rerunning={rerun.isPending}
-                  groups={(inspect) => (
-                    <>
-                      {hasProblems && clusters.isPending && !clusterValues.length ? (
-                        <p className="mt-8 text-sm text-muted-foreground" role="status">
-                          Grouping…
-                        </p>
-                      ) : null}
+            </TabsContent>
+            <TabsContent value="cases">
+              {findingsReport ? (
+                <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
+              ) : null}
+              <BatchReviewWorkspace
+                key={batchId}
+                report={report}
+                focusedCaseId={focusedCaseId}
+                focusRequest={caseFocusRequest}
+                selected={selectedCases}
+                onToggle={(id, checked) => toggleCase(id, checked)}
+                onResolve={(id) => triage.mutateAsync({ caseIds: [id], triageStatus: "resolved" })}
+                onRerun={(id) => rerun.mutate([id])}
+                pending={triage.isPending}
+                rerunning={rerun.isPending}
+                groups={(inspect) => (
+                  <>
+                    {hasProblems && clusters.isPending && !clusterValues.length ? (
+                      <p className="mt-8 text-sm text-muted-foreground" role="status">
+                        Grouping…
+                      </p>
+                    ) : null}
 
-                      {hasProblems ? (
-                        <BatchFailureClusters
-                          clusters={clusterValues}
-                          cases={report.cases}
-                          testNames={testNames}
-                          selected={selectedClusters}
-                          onToggle={(cluster, checked) => toggleCluster(cluster.id, checked)}
-                          onInspect={(runId) => {
-                            const item = report.cases.find((item) => item.runId === runId);
-                            if (item) inspect(item.id);
-                          }}
-                        />
-                      ) : null}
+                    {hasProblems ? (
+                      <BatchFailureClusters
+                        clusters={clusterValues}
+                        cases={report.cases}
+                        testNames={testNames}
+                        selected={selectedClusters}
+                        onToggle={(cluster, checked) => toggleCluster(cluster.id, checked)}
+                        onInspect={(runId) => {
+                          const item = report.cases.find((item) => item.runId === runId);
+                          if (item) inspect(item.id);
+                        }}
+                      />
+                    ) : null}
 
-                      {clusters.isError ? (
-                        <p className="my-4 text-sm text-muted-foreground" role="status">
-                          Failure grouping is unavailable. Cases are still listed below.
-                        </p>
-                      ) : null}
-                    </>
-                  )}
-                  matrix={(inspect) => (
-                    <>
-                      {report.cases.length ? (
-                        <BatchResultMatrix
-                          report={report}
-                          selected={selectedCases}
-                          testNames={testNames}
-                          onToggleCase={(item, checked) => toggleCase(item.id, checked)}
-                          onRerun={(item) => rerun.mutate([item.id])}
-                          rerunning={rerun.isPending}
-                          onInspect={(item) => inspect(item.id)}
-                        />
-                      ) : null}
-                    </>
-                  )}
-                />
+                    {clusters.isError ? (
+                      <p className="my-4 text-sm text-muted-foreground" role="status">
+                        Failure grouping is unavailable. Cases are still listed below.
+                      </p>
+                    ) : null}
+                  </>
+                )}
+                matrix={(inspect) => (
+                  <>
+                    {report.cases.length ? (
+                      <BatchResultMatrix
+                        report={report}
+                        selected={selectedCases}
+                        testNames={testNames}
+                        onToggleCase={(item, checked) => toggleCase(item.id, checked)}
+                        onRerun={(item) => rerun.mutate([item.id])}
+                        rerunning={rerun.isPending}
+                        onInspect={(item) => inspect(item.id)}
+                      />
+                    ) : null}
+                  </>
+                )}
+              />
 
+              {totalSelected ? (
                 <div
-                  className={`mt-4 grid gap-3 rounded-xl border border-border bg-background p-4 ${totalSelected ? "sticky bottom-0 z-10 shadow-md" : ""}`}
+                  className="sticky bottom-4 z-10 mt-4 flex flex-wrap items-start justify-between gap-3 rounded-xl bg-popover p-3 shadow-lg ring-1 ring-foreground/10"
                   role="region"
                   aria-label="Selected cases"
                 >
@@ -489,11 +488,13 @@ function BatchDocument({ batchId }: { batchId: string }) {
                       disabled={rerun.isPending}
                     >
                       <RotateCcw aria-hidden="true" />
-                      {rerun.isPending ? "Starting rerun…" : `Rerun ${totalSelected}`}
+                      {rerun.isPending ? "Starting…" : `Run ${totalSelected} again`}
                     </Button>
                   ) : null}
                 </div>
+              ) : null}
 
+              {findingsReport?.analysis.findings.length ? (
                 <details className="mt-6 rounded-xl border border-border p-4">
                   <summary className="cursor-pointer text-sm font-medium">
                     Findings and review notes
@@ -514,11 +515,11 @@ function BatchDocument({ batchId }: { batchId: string }) {
                     />
                   ) : null}
                 </details>
+              ) : null}
 
-                <BatchStabilityPanel report={report} stability={stability} />
-              </TabsContent>
-            </Tabs>
-          </details>
+              <BatchStabilityPanel report={report} stability={stability} />
+            </TabsContent>
+          </Tabs>
 
           {report.export ? (
             <div

@@ -277,7 +277,7 @@ describe("Batch review controls", () => {
       rerun,
     } as unknown as RunAcrossProductService);
     const button = [...document.querySelectorAll("button")].find(
-      (item) => item.textContent === "Rerun this case",
+      (item) => item.textContent === "Run again",
     );
     expect(button).toBeDefined();
     await act(async () => button?.click());
@@ -312,11 +312,13 @@ describe("Batch review controls", () => {
       }),
     } as unknown as RunAcrossProductService);
     const open = [...document.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Review affected cases"),
+      button.textContent?.includes("See what went wrong"),
     );
     expect(open).toBeDefined();
     await act(async () => open?.click());
-    expect(document.querySelector("h3")?.textContent).toContain("Case 2");
+    expect(
+      document.querySelector('[aria-label="Case review workspace"] h3')?.textContent,
+    ).toContain("Case 2");
   });
 
   it("still shows morning Findings copy when analysis is missing", async () => {
@@ -330,13 +332,11 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("QA bug, not a pass");
     expect(document.body.textContent).toContain("must appear here as a finding");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
-    expect(document.body.textContent).toContain("2 product issues to review");
-    expect(document.body.textContent).toContain("product issues");
     expect(document.body.textContent).not.toContain("Execution");
     expect(document.body.textContent).not.toContain("31 of 33 planned cases");
     // Checklist rows open the Run; the findings report opens its screenshots.
     const workbench = [...document.querySelectorAll("a")].find(
-      (link) => link.textContent === "Open full report",
+      (link) => link.textContent === "Open report",
     );
     expect(workbench?.getAttribute("href")).toBe("/runs/run-1?reportView=captures");
   });
@@ -366,9 +366,6 @@ describe("Batch review controls", () => {
       triage,
     } as unknown as RunAcrossProductService);
 
-    const reviewStatus = document.querySelector('[aria-label="Review status"]');
-    expect(reviewStatus).not.toBeNull();
-    expect(reviewStatus).not.toBeInstanceOf(HTMLSelectElement);
     expect(document.body.textContent).toContain("QA bug, not a pass");
     expect(document.body.textContent).toContain("must appear here as a finding");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
@@ -377,14 +374,18 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain(
       "Review screenshots opens the Report and does not accept a baseline",
     );
-    expect(document.body.textContent).toContain("Assign to me");
-    expect(document.body.textContent).toContain("Add note");
+    // Review ownership controls appear once a case is selected.
+    expect(document.body.textContent).not.toContain("Assign to me");
     const checkbox = document.querySelector<HTMLButtonElement>(
       '[role="checkbox"][aria-label="Select case 1"]',
     );
     if (!checkbox) throw new Error("Case checkbox not found");
     await act(async () => checkbox.click());
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+    const reviewStatus = document.querySelector('[aria-label="Review status"]');
+    expect(reviewStatus).not.toBeNull();
+    expect(reviewStatus).not.toBeInstanceOf(HTMLSelectElement);
+    expect(document.body.textContent).toContain("Add note");
     const assign = [...document.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "Assign to me",
     );
@@ -506,7 +507,7 @@ describe("Batch review controls", () => {
       },
     } as unknown as RunAcrossProductService);
     const groups = [...document.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "Failure groups",
+      (button) => button.textContent?.trim() === "Groups",
     );
     if (!groups) throw new Error("Failure groups not found");
     await act(async () => groups.click());
@@ -624,17 +625,12 @@ describe("Batch review controls", () => {
       }),
       reviewCaptures,
     } as unknown as RunAcrossProductService);
-    expect(document.body.textContent).toContain("Screenshot review");
-    expect(document.body.textContent).toContain("2 planned · 1 captured · 1 blocked");
-    expect(document.body.textContent).toContain("0 missing");
-    expect(document.body.textContent).toContain("blocked");
-    expect(document.body.textContent).toContain(
-      "Looks correct reviews this capture. Accept as reference also governs later Runs.",
-    );
-    const inspect = [...document.querySelectorAll('[role="tab"]')].find(
-      (tab) => tab.textContent === "Inspect",
+    expect(document.body.textContent).toContain("0 of 1 reviewed");
+    expect(document.body.textContent).toContain("1 screenshot wasn’t captured");
+    const start = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Start reviewing",
     ) as HTMLButtonElement;
-    await act(async () => inspect.click());
+    await act(async () => start.click());
     const accept = [...document.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "Looks correct",
     );
@@ -694,10 +690,7 @@ describe("Batch review controls", () => {
     expect(
       [...document.querySelectorAll("button")].some((item) => item.textContent === "Stop"),
     ).toBe(true);
-    expect(document.body.textContent).toContain("Screenshot review");
-    expect(document.body.textContent).toContain(
-      "New captures appear here as they finish. Selection does not include later arrivals.",
-    );
-    expect(document.body.textContent).toContain("1 planned · 1 captured · 0 blocked · 0 missing");
+    expect(document.body.textContent).toContain("New screenshots appear as each case finishes.");
+    expect(document.body.textContent).toContain("0 of 1 reviewed");
   });
 });
