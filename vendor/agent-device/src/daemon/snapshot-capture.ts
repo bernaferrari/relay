@@ -15,6 +15,7 @@ import {
   type SnapshotCaptureProvenance,
   type SnapshotKeyboardBandFact,
   type SnapshotState,
+  type SnapshotViewportSize,
 } from '@agent-device/kernel/snapshot';
 import { resolveRefLabel } from '@agent-device/capture-kit/snapshot-node-lookup';
 import { STALE_REF_HINT } from '@agent-device/selectors';
@@ -25,9 +26,7 @@ import { clearAndroidSnapshotFreshness } from './session-snapshot-freshness.ts';
 import type { SnapshotFreshnessMode } from '@agent-device/capture-kit/snapshot-freshness';
 import { contextFromFlags } from './context.ts';
 import { resolveDeferredInteractionOutcome } from './deferred-interaction-outcome.ts';
-import { createInteractionRetryTap } from './interaction-retry-tap.ts';
 import type { SessionState } from './session-state.ts';
-import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from './request-runtime-binding.ts';
 import { type DaemonFailureResponse, errorResponse } from '@agent-device/kernel/contracts';
 
 type CaptureSnapshotParams = {
@@ -46,13 +45,6 @@ type CaptureSnapshotParams = {
    * until their own command descriptor cuts over.
    */
   captureData?: () => Promise<SnapshotData>;
-  /**
-   * The pending-outcome retry re-fires a bound `tapPoint` (R48), so a capture that can settle a
-   * deferred interaction outcome carries the request's own runtime bindings and builds the retry
-   * seam from them. A caller that has none simply never retries.
-   */
-  inspectFacts?: InspectDeviceRuntimeFacts;
-  bindDevice?: BindDeviceRuntime;
 };
 
 type SnapshotData = {
@@ -61,6 +53,8 @@ type SnapshotData = {
   quality?: unknown;
   /** The keyboard band the capture's producer measured (#2660), carried to the state guards read. */
   keyboard?: SnapshotKeyboardBandFact;
+  /** The box the capture's rects are measured in (#3182), carried to the state the response reads. */
+  viewport?: SnapshotViewportSize;
 } & Omit<SnapshotCaptureAnnotations, 'quality'> &
   SnapshotCaptureProvenance;
 
@@ -80,11 +74,9 @@ export async function captureSnapshot(
   const deferred = await resolveDeferredInteractionOutcome({
     session: params.session,
     device: params.device,
-    logPath: params.logPath,
     interactiveOnly: params.flags?.snapshotInteractiveOnly === true,
     androidFreshnessMode: params.androidFreshnessMode,
     capture: () => captureSnapshotAttempt(params),
-    retryTap: createInteractionRetryTap(params),
   });
   if (deferred) return deferred;
 

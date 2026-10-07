@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
   findMissingProxyLeaseFields,
+  isInactiveLeaseError,
   leaseScopeFromOptions,
   leaseScopeFromRequest,
+  leaseScopeToAllocateRequest,
   leaseScopeToCommandFlags,
   leaseScopeToConnectionMetadata,
   leaseScopeToLeaseRpcParams,
@@ -52,6 +54,27 @@ test('leaseScopeFromOptions normalizes public aliases and projects request meta'
     deviceKey: 'ios:SIM-001',
     clientId: 'client-a',
   });
+});
+
+test('retainOnClose travels from options to request meta, allocate request and rpc params', () => {
+  const scope = leaseScopeFromOptions({ tenant: 'tenant-a', runId: 'run-1', retainOnClose: true });
+
+  assert.equal(scope.leaseRetainOnClose, true);
+  assert.equal(leaseScopeToRequestMeta(scope)?.leaseRetainOnClose, true);
+  assert.equal(leaseScopeToAllocateRequest(scope).retainOnClose, true);
+  assert.equal(
+    leaseScopeToLeaseRpcParams(scope, 'lease_allocate', { includeTokenParam: false }).retainOnClose,
+    true,
+  );
+  assert.equal(
+    'retainOnClose' in
+      leaseScopeToLeaseRpcParams(scope, 'lease_release', { includeTokenParam: false }),
+    false,
+  );
+  assert.equal(
+    'leaseRetainOnClose' in leaseScopeFromOptions({ tenant: 'tenant-a', runId: 'run-1' }),
+    false,
+  );
 });
 
 test('leaseScopeFromRequest prefers metadata and falls back to legacy flags', () => {
@@ -214,4 +237,30 @@ test('readLeaseAllocateProviderFlags carries the provider-allocation flags and d
     { providerApp: 'bs://abc' },
   );
   assert.deepEqual(readLeaseAllocateProviderFlags(undefined), {});
+});
+
+test('isInactiveLeaseError recognizes the lease being gone, and refuses a request mismatch', () => {
+  for (const reason of ['LEASE_NOT_FOUND', 'LEASE_EXPIRED', 'LEASE_REVOKED']) {
+    assert.equal(
+      isInactiveLeaseError({ code: 'UNAUTHORIZED', details: { reason } }),
+      true,
+      `${reason} says the lease is no longer usable`,
+    );
+  }
+  // A mismatch is about the request that asked, not the lease: the lease may be perfectly alive and
+  // held by this same client under another request, so a beat must keep renewing on this answer.
+  assert.equal(
+    isInactiveLeaseError({ code: 'UNAUTHORIZED', details: { reason: 'LEASE_SCOPE_MISMATCH' } }),
+    false,
+    'a scope mismatch is not the lease being gone',
+  );
+  // Both halves are required: the code alone is any unauthorized call, and the reason alone could
+  // ride on an error the client has no business acting on.
+  assert.equal(isInactiveLeaseError({ code: 'UNAUTHORIZED', details: {} }), false);
+  assert.equal(
+    isInactiveLeaseError({ code: 'COMMAND_FAILED', details: { reason: 'LEASE_NOT_FOUND' } }),
+    false,
+  );
+  assert.equal(isInactiveLeaseError(new Error('LEASE_NOT_FOUND')), false);
+  assert.equal(isInactiveLeaseError(undefined), false);
 });

@@ -1,11 +1,15 @@
 import { execFile } from "node:child_process";
-import { readdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import type { SnapshotNode } from "./device.js";
 import { recordTargetSemanticSnapshot } from "./target-runtime-readiness.js";
+import {
+  ANDROID_SNAPSHOT_HELPER_PACKAGE,
+  ANDROID_SNAPSHOT_HELPER_COMPONENT,
+  androidSnapshotHelperInstalled,
+  bundledAndroidSnapshotHelper,
+  ensureAndroidSnapshotHelperInstalled,
+} from "./android-snapshot-helper.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -225,9 +229,6 @@ export type AndroidUiSnapshot = {
   treeBackend?: AndroidSnapshotBackend;
 };
 
-const ANDROID_SNAPSHOT_HELPER_PACKAGE = "com.callstack.agentdevice.snapshothelper";
-const ANDROID_SNAPSHOT_HELPER_COMPONENT = `${ANDROID_SNAPSHOT_HELPER_PACKAGE}/.SnapshotInstrumentation`;
-
 /**
  * Decode chunked `am instrument` output from the already-installed snapshot
  * helper. Stock `uiautomator dump` uses getRootInActiveWindow() and returns a
@@ -422,18 +423,6 @@ async function dumpViaUiAutomator(serial: string): Promise<DumpAttempt> {
   return dumpViaUiAutomatorExecOut(serial);
 }
 
-async function androidSnapshotHelperInstalled(serial: string): Promise<boolean> {
-  try {
-    const { stdout } = await execAndroidAdb(
-      ["-s", serial, "shell", "pm", "path", ANDROID_SNAPSHOT_HELPER_PACKAGE],
-      { timeout: 2_000, maxBuffer: 16 * 1024 },
-    );
-    return stdout.includes("package:");
-  } catch {
-    return false;
-  }
-}
-
 async function androidSnapshotHelperProcessRunning(serial: string): Promise<boolean> {
   try {
     const { stdout } = await execAndroidAdb(
@@ -449,8 +438,8 @@ async function androidSnapshotHelperProcessRunning(serial: string): Promise<bool
 async function androidSnapshotOwnership(serial: string): Promise<AndroidSnapshotOwnership> {
   const [helperProcessRunning, installed, apk] = await Promise.all([
     androidSnapshotHelperProcessRunning(serial),
-    androidSnapshotHelperInstalled(serial),
-    bundledHelperApkPath(),
+    androidSnapshotHelperInstalled(serial, execAndroidAdb),
+    bundledAndroidSnapshotHelper(),
   ]);
   return {
     helperProcessRunning,
@@ -459,33 +448,15 @@ async function androidSnapshotOwnership(serial: string): Promise<AndroidSnapshot
   };
 }
 
-async function bundledHelperApkPath(): Promise<string | undefined> {
-  const dir = join(dirname(fileURLToPath(import.meta.url)), "..", "android-helpers");
-  try {
-    const apk = (await readdir(dir)).find((name) => name.endsWith(".apk"));
-    return apk ? join(dir, apk) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-async function ensureAndroidSnapshotHelperInstalled(serial: string): Promise<boolean> {
-  if (await androidSnapshotHelperInstalled(serial)) return true;
-  const apk = await bundledHelperApkPath();
-  if (!apk) return false;
-  try {
-    await execAndroidAdb(["-s", serial, "install", "-r", "-t", apk], {
-      timeout: 30_000,
-      maxBuffer: 64 * 1024,
-    });
-    return await androidSnapshotHelperInstalled(serial);
-  } catch {
-    return false;
-  }
-}
-
 async function dumpViaInstalledHelper(serial: string): Promise<SnapshotNode[]> {
-  if (!(await ensureAndroidSnapshotHelperInstalled(serial))) return [];
+  if (
+    !(await ensureAndroidSnapshotHelperInstalled(
+      serial,
+      execAndroidAdb,
+      await bundledAndroidSnapshotHelper(),
+    ))
+  )
+    return [];
   const args = [
     "-s",
     serial,

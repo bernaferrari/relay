@@ -1,4 +1,9 @@
-import { AppError, createRequestCanceledError, toAppErrorCode } from '@agent-device/kernel/errors';
+import {
+  AppError,
+  createRequestCanceledError,
+  toAppErrorCode,
+  type DispatchDisclosure,
+} from '@agent-device/kernel/errors';
 import crypto from 'node:crypto';
 import { ALERT_NOT_FOUND_RUNNER_CODE } from '@agent-device/contracts/alert-contract';
 import type { DeviceRotation } from '@agent-device/contracts/device';
@@ -28,6 +33,12 @@ export const RUNNER_BUSY_RUNNER_CODE = 'RUNNER_BUSY';
 export const MAIN_THREAD_TIMEOUT_RUNNER_CODE = 'MAIN_THREAD_TIMEOUT';
 
 /**
+ * The runner's own code for a command it refused because abandoned main-thread work has occupied it
+ * past the wedge threshold (#1105). Like `RUNNER_BUSY`, the refused command never ran.
+ */
+export const RUNNER_WEDGED_RUNNER_CODE = 'RUNNER_WEDGED';
+
+/**
  * The runner's own code for a read whose session app is not running. No runner read launches the
  * app — a bare launch would drop the payload of a launch still pending, such as a deep link held
  * behind SpringBoard's confirmation — so the runner refuses any command carrying its read-only
@@ -37,7 +48,7 @@ export const MAIN_THREAD_TIMEOUT_RUNNER_CODE = 'MAIN_THREAD_TIMEOUT';
  * starting when the next read arrives, so it is retriable for a `wait`, while the transport reads
  * it as a definite answer and never resends it.
  */
-export const APP_NOT_RUNNING_RUNNER_CODE = 'APP_NOT_RUNNING';
+const APP_NOT_RUNNING_RUNNER_CODE = 'APP_NOT_RUNNING';
 
 export type RunnerCommand = {
   command:
@@ -82,6 +93,9 @@ export type RunnerCommand = {
     // The session app's XCUIApplication.state by name. A lifecycle read: it skips the activation
     // preflight, so it reports the state the app is in rather than the one a repair leaves.
     | 'appState'
+    // Sets the device's general pasteboard from the runner's own process: a simulator's
+    // `simctl pbcopy` only promises its data from a process that exits before anything reads it.
+    | 'pasteboardWrite'
     | 'activate'
     | 'terminate'
     | 'targetReset'
@@ -160,6 +174,60 @@ export function resolveRunnerRequestSignal(options: {
   return AbortSignal.any([registeredSignal, options.signal]);
 }
 
+type RunnerRequestSignalOptions = {
+  requestId?: string;
+  signal?: AbortSignal;
+};
+
+/**
+ * Whether an abort reason is a caller's own deadline rather than a cancelled request. A `wait`
+ * bounds each poll with an abort signal whose reason is a `TimeoutError` (`runWithinWaitDeadline`);
+ * a cancelled request aborts through the registered request signal or the cancellation registry.
+ * The typed reason decides, never the error text the transport threw on abort.
+ */
+export function isCallerDeadlineAbortReason(reason: unknown): boolean {
+  return reason instanceof DOMException && reason.name === 'TimeoutError';
+}
+
+/**
+ * Whether the caller's own deadline ended this command, as opposed to the request being cancelled.
+ * A deadline that lands mid-fetch (surfacing as whatever the transport threw on abort) is read the
+ * same way as one that wakes a delay.
+ */
+export function callerDeadlineExpired(options: RunnerRequestSignalOptions): boolean {
+  if (isRequestCanceled(options.requestId) || getRequestSignal(options.requestId)?.aborted) {
+    return false;
+  }
+  return options.signal?.aborted === true && isCallerDeadlineAbortReason(options.signal.reason);
+}
+
+/**
+ * The signal a runner start reacts to. A cancelled request (client disconnect) must kill the
+ * blocking xctestrun build and the runner launch instead of orphaning them, so the registered request
+ * signal passes through untouched. A caller's own deadline must not: the runner start it interrupts
+ * is the one the retry needs, and a start that pays itself again on every short-timeout poll never
+ * finishes on a slow host (#2894). The start keeps going on its own startup budget, and the caller's
+ * command is still cut off by its unfiltered signal once the runner answers.
+ */
+export function resolveRunnerStartupSignal(
+  options: RunnerRequestSignalOptions,
+): AbortSignal | undefined {
+  const registeredSignal = getRequestSignal(options.requestId);
+  const callerSignal = options.signal;
+  if (!callerSignal || callerSignal === registeredSignal) return registeredSignal;
+  // The caller signal is filtered through its own controller, so a deadline never reaches the
+  // start; the registered signal is composed with `AbortSignal.any`, which detaches its own
+  // listener once the composed signal settles, so a request that polls many times does not
+  // accumulate listeners on its long-lived cancellation signal.
+  const filtered = new AbortController();
+  const forward = () => {
+    if (!isCallerDeadlineAbortReason(callerSignal.reason)) filtered.abort(callerSignal.reason);
+  };
+  if (callerSignal.aborted) forward();
+  else callerSignal.addEventListener('abort', forward, { once: true });
+  return registeredSignal ? AbortSignal.any([registeredSignal, filtered.signal]) : filtered.signal;
+}
+
 /**
  * The code the XCTest runner answers with when it declines to place a scroll gesture under the
  * on-screen keyboard (#2500). It is the runner's own vocabulary, so it is declared here beside the
@@ -197,19 +265,53 @@ export const RUNNER_SCREEN_CAPTURE_REFUSAL_RUNNER_CODES: ReadonlySet<string> = n
  * the scroll keyboard refusal for a surface the runner declined to swipe under the keys, and the
  * retriable `APP_NOT_RUNNING` for a read the runner refused rather than launch the session app.
  */
-const DIAGNOSTIC_ONLY_RUNNER_ERROR_CODES: ReadonlyMap<string, { retriable?: true }> = new Map([
-  [RUNNER_BUSY_RUNNER_CODE, { retriable: true }],
-  [MAIN_THREAD_TIMEOUT_RUNNER_CODE, {}],
+const DIAGNOSTIC_ONLY_RUNNER_ERROR_CODES: ReadonlyMap<
+  string,
+  { retriable?: true; reason?: RunnerReportedErrorReason }
+> = new Map([
+  [RUNNER_BUSY_RUNNER_CODE, { retriable: true, reason: 'runner_busy' }],
+  [MAIN_THREAD_TIMEOUT_RUNNER_CODE, { reason: 'runner_main_thread_timeout' }],
   [APP_NOT_RUNNING_RUNNER_CODE, { retriable: true }],
   [ALERT_NOT_FOUND_RUNNER_CODE, {}],
   [SCROLL_KEYBOARD_OCCLUDES_SURFACE_RUNNER_CODE, {}],
   ...[...RUNNER_SCREEN_CAPTURE_REFUSAL_RUNNER_CODES].map((code) => [code, {}] as const),
 ]);
 
+/**
+ * Runner codes whose reply proves the command never reached the device. The refusals answer before
+ * the command runs, the selector refusals included: the runner resolves the element and refuses
+ * before any gesture. `INVALID_ARGS` comes only from request decoding and argument validation,
+ * each ahead of any gesture. Every other code, and a reply without one, is `unknown`:
+ * `UNSUPPORTED_OPERATION` is also what a synthesized gesture or element tap reports after it ran.
+ */
+const RUNNER_ERROR_CODE_DISPATCH: ReadonlyMap<string, DispatchDisclosure> = new Map([
+  ['INVALID_ARGS', 'no'],
+  ['ELEMENT_NOT_FOUND', 'no'],
+  ['ELEMENT_OFFSCREEN', 'no'],
+  ['AMBIGUOUS_MATCH', 'no'],
+  [RUNNER_BUSY_RUNNER_CODE, 'no'],
+  [RUNNER_WEDGED_RUNNER_CODE, 'no'],
+  [APP_NOT_RUNNING_RUNNER_CODE, 'no'],
+  [SCROLL_KEYBOARD_OCCLUDES_SURFACE_RUNNER_CODE, 'no'],
+  [ALERT_NOT_FOUND_RUNNER_CODE, 'no'],
+  ...[...RUNNER_SCREEN_CAPTURE_REFUSAL_RUNNER_CODES].map((code) => [code, 'no'] as const),
+]);
+
+/**
+ * `details.reason` for the runner codes a consumer acts on, so it reads one field instead of
+ * `details.runnerErrorCode`, which stays for the runner's own vocabulary.
+ */
+type RunnerReportedErrorReason = 'runner_busy' | 'runner_main_thread_timeout';
+
 /** Wire code plus the details every path must publish for one runner-reported error code. */
 export type RunnerReportedErrorClass = Readonly<{
   code: AppError['code'];
-  details: Readonly<{ runnerErrorCode?: string; retriable?: true }>;
+  details: Readonly<{
+    runnerErrorCode?: string;
+    retriable?: true;
+    reason?: RunnerReportedErrorReason;
+    dispatched: DispatchDisclosure;
+  }>;
 }>;
 
 /**
@@ -227,7 +329,14 @@ export function classifyRunnerReportedError(
       : DIAGNOSTIC_ONLY_RUNNER_ERROR_CODES.get(runnerErrorCode);
   return Object.freeze({
     code: diagnosticOnly ? 'COMMAND_FAILED' : toAppErrorCode(runnerErrorCode),
-    details: Object.freeze({ runnerErrorCode, ...diagnosticOnly }),
+    details: Object.freeze({
+      runnerErrorCode,
+      ...diagnosticOnly,
+      dispatched:
+        (runnerErrorCode === undefined
+          ? undefined
+          : RUNNER_ERROR_CODE_DISPATCH.get(runnerErrorCode)) ?? 'unknown',
+    }),
   });
 }
 
@@ -241,9 +350,12 @@ export type RunnerResponsePayload = {
  * The one decoding of a runner response body (#2662). The envelope arrives at three readers — a
  * command's own response, the lifecycle journal a status probe reads back after the transport
  * response was lost, and the adoption `uptime` probe — and all three must agree on what is
- * readable, or a body one of them refuses becomes an answer for another. A body that is not JSON
- * at all is transport-shaped failure: a runner that died mid-write must not be read as having
- * answered.
+ * readable, or a body one of them refuses becomes an answer for another.
+ *
+ * Only a JSON object can be an envelope. A body that is not JSON at all, and a JSON scalar or array
+ * that carries no `ok`, are both transport-shaped: neither is something the runner's encoder emits,
+ * and reading either as an empty reply would let a proxy page or a half-written body answer for a
+ * command the runner may still be executing.
  */
 export function decodeRunnerResponseBody(text: string): RunnerResponsePayload {
   let parsed: unknown;
@@ -252,7 +364,14 @@ export function decodeRunnerResponseBody(text: string): RunnerResponsePayload {
   } catch {
     throw new AppError('COMMAND_FAILED', 'Invalid runner response', { text });
   }
-  return parsed && typeof parsed === 'object' ? (parsed as RunnerResponsePayload) : {};
+  if (!isRunnerEnvelopeObject(parsed)) {
+    throw new AppError('COMMAND_FAILED', 'Invalid runner response', { text });
+  }
+  return parsed;
+}
+
+function isRunnerEnvelopeObject(parsed: unknown): parsed is RunnerResponsePayload {
+  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
 }
 
 /** The runner's `ok` is a Swift `Bool`, so only the literal `true` is an answer. */

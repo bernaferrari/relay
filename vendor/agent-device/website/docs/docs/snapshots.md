@@ -87,6 +87,35 @@ agent-device snapshot -i
 # [off-screen below] 2 interactive items: "All Contacts", "New List"
 ```
 
+## Structured node fields (`--json`)
+
+Every node in `snapshot --json` output carries `kind`, next to `type` when the platform reports one:
+
+- `type` is the raw platform class, verbatim: `Button` / `StaticText` from XCUI, `android.widget.Button`
+  from the Android hierarchy. It differs by platform for the same UI role.
+- `kind` is the platform-neutral classification shown in brackets on the text line above
+  (`button`, `text-field`, `text`, `switch`, `link`, …), computed by the same function on every
+  platform, backend, and projection (`snapshot` and `snapshot -i` alike) — so text and JSON never
+  disagree about a node's role.
+
+```json
+{ "ref": "e4", "type": "android.widget.Button", "kind": "button", "label": "Send code" }
+{ "ref": "e40", "type": "Button", "role": "UIButton", "kind": "button", "label": "Continue to catalog" }
+```
+
+On iOS, `role` (when present) is the native AX class (`UIButton`) — a different fact carried only
+on iOS nodes; `kind` is the cross-platform one, present on every node on every platform.
+
+`role=` selectors (and `find role=...`) match `kind`'s vocabulary: a node whose `kind` is `text`
+or `text-field` always matches `role=text` / `role=text-field` — the bracketed word a snapshot
+shows for that node
+([#3021](https://github.com/callstack/agent-device/issues/3021)). Spellings from before that
+reconciliation — the raw leaf classes `role=statictext`, `role=edittext`, `role=textview`,
+`role=searchfield`, and the rest of the leaf vocabulary — stay accepted during a deprecation window,
+each on the very nodes that carried that class (so `role=linearlayout` still never matches a
+`FrameLayout` row the way a shared `group` alias would). Prefer the `kind` spelling in new
+selectors; the leaf aliases are deprecated and will be removed in a future breaking release.
+
 ## iOS capture behavior
 
 Capture tiers are internal. There is no flag that selects a backend; `--raw` chooses a strategy, and
@@ -122,6 +151,18 @@ is the display's physical pixels per density-independent pixel, as the helper's 
 report it (a 420 dpi phone reports `2.625`, a `wm density` override included); a consumer that works
 in dp divides rects by it and multiplies its points. An older helper omits it. iOS reports points
 already, so it carries no such factor.
+
+`androidSnapshot.missingRootWindowTypes` lists the `AccessibilityWindowInfo` types of windows the
+helper listed but could not serialize, for example because the window's root was null or reading its
+tree failed (`2` is an input method window); `windowCount` counts only the windows it did serialize. It is empty
+when every listed window was read. When it names an input method window, the capture reports the
+keyboard band as unmeasurable rather than absent. An older helper omits it.
+
+The Android keyboard band is the input method window's bounds, the box around the area it takes
+touches in. On Android 13 (API 33) and later the helper also checks that this area is one rectangle.
+A floating keyboard's is not (the panel plus the gesture strip, with app content between them), so the
+band is reported as unmeasurable and taps fall back to the tree's own keyboard check. Earlier releases
+cannot report the area, so their bounds are used as they are.
 
 Android snapshot nodes and `get attrs` (including the digest response) carry the native
 `selected`, `checked`, `heading`, `roleDescription`, `editable`, `password`, `hintShowing`,

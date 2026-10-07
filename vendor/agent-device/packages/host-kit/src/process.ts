@@ -13,6 +13,8 @@ export {
   isProcessGroupAlive,
   isProcessZombie,
   listHostProcesses,
+  readHostCpuArch,
+  readHostCpuArchSync,
   readHostEnvironmentVariable,
   readHostProcessIdentityObservations,
   readProcessCommand,
@@ -34,6 +36,7 @@ export {
 export {
   classifyOwnerLiveness,
   classifyOwnerLivenessFromObservation,
+  isProcessPid,
   type OwnerIdentity,
   ownerIdentityDiffers,
   ownerIdentityMatches,

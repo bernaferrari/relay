@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto';
-import { createDaemonProxyServer } from '../../remote/daemon-proxy.ts';
+import { createDaemonProxyServer } from '@agent-device/proxy/node';
 import { buildDaemonHttpBaseUrl } from '@agent-device/contracts/daemon-http';
-import { resolveClientSettings } from '../../daemon-client/daemon-client-lifecycle.ts';
-import { ensureDaemon } from '../../daemon-client/daemon-client-startup.ts';
+import {
+  ensureDaemon,
+  resolveClientSettings,
+} from '../../daemon-client/daemon-client-lifecycle.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import { colorize, supportsColor } from '../../commands/output/color.ts';
 import type { CliFlags } from '@agent-device/contracts/command';

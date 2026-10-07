@@ -21,6 +21,7 @@ import {
   SWIPE_REPETITION_MAX,
 } from '@agent-device/contracts/scroll-gesture';
 import { FIND_LOCATORS } from '@agent-device/selectors';
+import { commandAcceptsReadinessBudget } from '@agent-device/command-registry/registry';
 import {
   booleanField,
   elementTargetField,
@@ -28,6 +29,7 @@ import {
   integerField,
   interactionTargetField,
   numberField,
+  operatorField,
   pointField,
   repeatedFields,
   requiredField,
@@ -71,12 +73,36 @@ const interactionCommandDescriptions = {
     'Scroll in a direction, or toward the top/bottom edge of scrollable content. Set until to a selector to reach an off-screen target in one command rather than a scroll-and-check loop. The optional amount is the finger-path fraction of the viewport axis, honored up to 0.8 of it; directional scrolls reduce release momentum, while app scroll physics determine the final content offset. A visible keyboard shortens the swiped band instead of being dismissed; when too little is left, the command refuses with scroll_keyboard_occludes_surface. A directional scroll also reports the movement it observed as movement: moved, at-edge, unchanged, or unobserved when the two reads could not back a claim either way; an unchanged surface inside a container that still hides content in that direction refuses with scroll_no_progress rather than repeating the requested distance. The movement field is absent where a tier verifies per pass (top/bottom, until), where the runtime cannot read a screen, or where a settle observation or a replay already owns that observation.',
   get: 'Read text or accessibility attributes from a snapshot ref or selector without changing the app. Use format text for visible content or attrs for the element attribute map.',
   is: 'Check whether a selector satisfies a UI predicate such as visible, hidden, exists, absent, editable, selected, focused, or text. `absent` passes only when one readable, complete, settled, unscoped, full-depth accessibility capture has zero matches. Use wait when the condition may appear asynchronously.',
-  find: 'Find by text/label/value/role/id and run action',
+  find: 'Find by text/label/value/role/id and run action. The role locator matches snapshot kind vocabulary (button, text, text-field, switch, ...); pre-reconciliation leaf spellings (statictext, edittext, textview) stay accepted on the nodes that carried them during a deprecation window.',
   gesture:
     'Perform a structured pan, fling, swipe, pinch, rotate, transform, or drag gesture. Select the gesture kind, then provide only the inputs that apply to that kind.',
 } as const;
 
 type InteractionCommandName = keyof typeof interactionCommandDescriptions;
+
+/**
+ * The input field a command's `targetReadiness: 'budgeted'` descriptor trait entitles it to. Only
+ * those commands declare `readinessTimeoutMs`; the common input reader refuses the key for every
+ * command whose fields do not (`common-input-fields.ts`). Fails closed at module load for a command
+ * without the trait, so a field map cannot advertise a budget its runtime never polls under.
+ */
+function targetReadinessFields(command: InteractionCommandName) {
+  if (!commandAcceptsReadinessBudget(command)) {
+    throw new Error(`${command} does not declare targetReadiness: 'budgeted'`);
+  }
+  return {
+    readinessTimeoutMs: operatorField(
+      integerField(
+        "Operator-only: how long the command may poll for a target that does not exist yet, in milliseconds. Capped at the promotedTarget row's maxTimeoutMs; omitted takes the one-attempt resolution path.",
+        { min: 1 },
+      ),
+      {
+        operatorPath:
+          'Pass readinessTimeoutMs directly as CLI/Node.js command input; it is not exposed to model-facing tools.',
+      },
+    ),
+  };
+}
 
 const clickFields = {
   target: requiredField(interactionTargetField()),
@@ -84,6 +110,7 @@ const clickFields = {
   ...selectorSnapshotFields(),
   ...repeatedFields(),
   ...postActionObservationFields('click'),
+  ...targetReadinessFields('click'),
 };
 
 const pressFields = {
@@ -91,6 +118,7 @@ const pressFields = {
   ...selectorSnapshotFields(),
   ...repeatedFields(),
   ...postActionObservationFields('press'),
+  ...targetReadinessFields('press'),
 };
 
 const fillFields = {
@@ -113,6 +141,7 @@ const longPressFields = {
   durationMs: integerField('Long press duration in milliseconds.', { min: 0 }),
   ...selectorSnapshotFields(),
   ...postActionObservationFields('longpress'),
+  ...targetReadinessFields('longpress'),
 };
 
 const hoverFields = {

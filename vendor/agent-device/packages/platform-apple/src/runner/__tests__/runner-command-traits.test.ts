@@ -55,6 +55,7 @@ test('runner command trait table pins lifecycle-sensitive command groups', () =>
       'keyboardDismiss',
       'keyboardReturn',
       'mouseClick',
+      'pasteboardWrite',
       'recordStart',
       'recordStop',
       'remotePress',

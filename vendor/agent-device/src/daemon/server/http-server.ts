@@ -1,5 +1,6 @@
 import type { RequestProgressEvent } from '@agent-device/contracts/progress';
 import http, { type IncomingHttpHeaders } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import {
   AppError,
   normalizeError,
@@ -15,7 +16,7 @@ import type {
   JsonRpcRequestEnvelope,
   LeaseBackend,
 } from '@agent-device/kernel/contracts';
-import { commandRpcParamsSchema } from '@agent-device/kernel/contracts';
+import { commandRpcParamsSchema, LEASE_BACKENDS } from '@agent-device/kernel/contracts';
 import type { DaemonInvokeFn, DaemonRequest } from '../daemon-request.ts';
 import { normalizeTenantId } from '../config.ts';
 import {
@@ -40,15 +41,18 @@ import {
   DAEMON_HTTP_TENANT_HEADER,
 } from '@agent-device/contracts/daemon-http';
 import { readVersion } from '@agent-device/host-kit/version';
+import { readHostCpuArch } from '@agent-device/host-kit/process';
 import { readLeaseAllocateProviderFlags } from '@agent-device/contracts/lease-scope';
 import { sendRestJsonError, statusCodeForNormalizedError } from '../http-errors.ts';
 import { tryHandleUploadHttpRoute } from '../upload-http.ts';
 import { tryHandleDownloadableArtifactHttpRoute } from '../downloadable-artifact-http.ts';
 import { tryHandleRequestDiagnosticsHttpRoute } from '../request-diagnostics-http.ts';
 import { resolveTrustedTenant, tenantTrustRejectionError } from './tenant-trust.ts';
+import { refuseStaleDaemonInstance } from './http-instance-precondition.ts';
 import type { TenantSessionNamespace } from '../session-tenant-scope.ts';
-import { tryHandleHumanControlHttpRoute } from '../human-control-http.ts';
+import { tryHandleHostAdminHttpRoute } from '../host-lease-http.ts';
 import type { LeaseRegistry } from '../lease-registry.ts';
+import { assertMacOsAppLeaseTenantMayReadDiagnostics } from '../macos-app-lease.ts';
 
 type JsonRpcRequest = JsonRpcRequestEnvelope;
 
@@ -135,8 +139,17 @@ function restrictRemoteHttpRequest(
       'Invalid params: path install sources are disabled on the remote HTTP surface',
     );
   }
+  // A developer dir is a host path whose tools the daemon would run, and a credential fingerprint
+  // would let a remote caller probe the daemon's credentials. A daemon with an auth hook serves
+  // remote callers and runs on its operator's credentials, so it treats every caller as remote.
+  const {
+    developerDir: _developerDir,
+    providerCredentialFingerprint: _providerCredentialFingerprint,
+    ...meta
+  } = request.meta ?? {};
   return {
     ...request,
+    ...(request.meta ? { meta } : {}),
     internal: { ...request.internal, publicNetworkOnly: true },
   };
 }
@@ -174,7 +187,7 @@ function writeProgressEnvelope(
   res: http.ServerResponse<http.IncomingMessage>,
   event: RequestProgressEvent,
 ): void {
-  if (res.destroyed) return;
+  if (res.destroyed || res.writableEnded) return;
   res.write(serializeDaemonProgressEnvelope(event));
 }
 
@@ -323,11 +336,16 @@ function toLeaseDaemonRequest(
       runId: readStringParam(params, 'runId'),
       leaseId: readStringParam(params, 'leaseId'),
       leaseTtlMs: readIntParam(params, 'ttlMs'),
+      leaseRetainOnClose: readBooleanParam(params, 'retainOnClose'),
       leaseBackend: readStringParam(params, 'backend') as LeaseBackend | undefined,
       leaseProvider:
         readStringParam(params, 'leaseProvider') ?? readStringParam(params, 'provider'),
       deviceKey: readStringParam(params, 'deviceKey'),
       clientId: readStringParam(params, 'clientId'),
+      providerCredentialFingerprint:
+        command === 'lease_allocate'
+          ? readStringParam(params, 'providerCredentialFingerprint')
+          : undefined,
     },
   };
 }
@@ -571,6 +589,11 @@ export async function createDaemonHttpServer(options: {
    */
   resolveRequestDiagnosticsPath?: (ref: DiagnosticsRecordRef) => string;
 }): Promise<http.Server> {
+  const instanceId = randomUUID();
+  const hostArch = await readHostCpuArch();
+  const leaseBackends = LEASE_BACKENDS.filter(
+    (backend) => backend !== 'macos-app' || process.platform === 'darwin',
+  );
   const environment = options.env ?? process.env;
   const authHook = await loadHttpAuthHook(environment);
   const { handleRequest, token, retainArtifacts = false, resolveRequestDiagnosticsPath } = options;
@@ -578,14 +601,22 @@ export async function createDaemonHttpServer(options: {
     if (req.method === 'GET' && req.url === '/health') {
       res.statusCode = 200;
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify(buildDaemonHealthPayload('agent-device-daemon', readVersion())));
+      res.end(
+        JSON.stringify(
+          buildDaemonHealthPayload('agent-device-daemon', readVersion(), {
+            instanceId,
+            hostArch,
+            leaseBackends,
+          }),
+        ),
+      );
       return;
     }
 
     if (
       token &&
       options.leaseRegistry &&
-      tryHandleHumanControlHttpRoute({
+      tryHandleHostAdminHttpRoute({
         req,
         res,
         expectedToken: token,
@@ -638,12 +669,11 @@ export async function createDaemonHttpServer(options: {
         res,
         resolveRecordPath: resolveRequestDiagnosticsPath,
         authorize: async (request) =>
-          await authorizeAuxiliaryHttpRequest({
-            req: request.req,
-            res: request.res,
+          await authorizeDiagnosticsHttpRequest({
+            ...request,
             authHook,
             expectedToken: token,
-            daemonRequest: request.daemonRequest,
+            leaseRegistry: options.leaseRegistry,
           }),
       })
     ) {
@@ -749,6 +779,16 @@ export async function createDaemonHttpServer(options: {
           );
           return;
         }
+        const tokenError = enforceDaemonToken(daemonRequest.token, token);
+        if (tokenError) {
+          sendJson(
+            res,
+            createRpcError(rpcRequest.id ?? null, -32000, tokenError.message, tokenError),
+            401,
+          );
+          return;
+        }
+        if (refuseStaleDaemonInstance(req, res, rpcRequest.id ?? null, instanceId)) return;
         daemonRequest.meta = {
           ...daemonRequest.meta,
           tenantId: tenantTrust.tenantId,
@@ -940,6 +980,21 @@ async function authorizeAuxiliaryHttpRequest(params: {
       ? { sessionNamespace: { tenant: trustedTenant, partitioned: tenantTrust.attested } }
       : {}),
   };
+}
+
+async function authorizeDiagnosticsHttpRequest(
+  params: Parameters<typeof authorizeAuxiliaryHttpRequest>[0] & { leaseRegistry?: LeaseRegistry },
+): ReturnType<typeof authorizeAuxiliaryHttpRequest> {
+  const { leaseRegistry, ...gate } = params;
+  const auth = await authorizeAuxiliaryHttpRequest(gate);
+  if (!auth || !leaseRegistry) return auth;
+  try {
+    assertMacOsAppLeaseTenantMayReadDiagnostics(leaseRegistry, auth.tenantId);
+  } catch (error) {
+    sendRestJsonError(gate.res, normalizeError(error));
+    return null;
+  }
+  return auth;
 }
 
 /**

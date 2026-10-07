@@ -1,1 +1,0 @@
-const e=`native-panel`;function t(e){return Object.freeze({setFoldPose:e.fold})}export{t as n,e as t};

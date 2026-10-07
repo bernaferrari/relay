@@ -1,9 +1,11 @@
+import { bindInteractionSession } from './interaction-session.ts';
 import type { CommandFlags } from '@agent-device/contracts/command';
 import type { FillCommandResult, InteractionTarget } from '@agent-device/contracts/interaction';
 import { issueSettleRefs, resolveRefStalenessWarning } from '../../session-snapshot.ts';
 import { readRefMutationFrame } from '../../ref-frame.ts';
 import type { DaemonResponse } from '../../daemon-request.ts';
-import type { SessionState } from '../../session-state.ts';
+import type { SessionRef, SessionState } from '../../session-state.ts';
+import type { SessionStore } from '../../session-store.ts';
 import { isSessionRecording } from '../../session-script-publication-capability.ts';
 import { assertRecordedFillParameterization } from './interaction-recorded-input.ts';
 import { readSettleRequest, settleFlagGuardResponse } from './interaction-flags.ts';
@@ -25,6 +27,8 @@ import {
 import { dispatchRuntimeInteraction } from './interaction-touch-runtime.ts';
 import { parseFillTarget } from './interaction-touch-targets.ts';
 import { prepareTouchDispatch } from './interaction-touch-prepare.ts';
+import { refusedBeforeDispatch, thrownBeforeDispatch } from '../../request-dispatch-disclosure.ts';
+import type { BoundTouchExecutor } from '../../touch-runtime.ts';
 import { noActiveSessionError } from '@agent-device/kernel/contracts';
 
 /**
@@ -33,45 +37,24 @@ import { noActiveSessionError } from '@agent-device/kernel/contracts';
  * shares in shape with press, and its response payloads.
  */
 
-export async function dispatchFillViaRuntime(
-  params: InteractionRouteInput & {
-    captureSnapshotForSession: CaptureSnapshotForSession;
-    refSnapshotFlagGuardResponse: RefSnapshotFlagGuardResponse;
-  },
-): Promise<DaemonResponse> {
-  const { req, sessionName, sessionStore } = params;
-  const session = sessionStore.get(sessionName);
-  if (session) {
-    const unsupportedSurfaceResponse = unsupportedMacOsDesktopSurfaceInteraction(session, 'fill');
-    if (unsupportedSurfaceResponse) return unsupportedSurfaceResponse;
-  }
-  if (!session) return noActiveSessionError();
-  const parsedTarget = parseFillTarget(req.positionals ?? []);
-  if (!parsedTarget.ok) return parsedTarget.response;
-  const prepared = await prepareTouchDispatch(
-    params,
-    session,
-    'fill',
-    parsedTarget.target.kind !== 'point',
-  );
-  if (!prepared.ok) return prepared.response;
-  const { touchExecutor } = prepared;
-  assertRecordedFillParameterization({
-    flags: req.flags,
-    replayPlanStep: req.internal?.replayPlanStep === true,
-    isSessionRecording: isSessionRecording(session),
-  });
-  const invalidSettleFlags = settleFlagGuardResponse('fill', req.flags);
-  if (invalidSettleFlags) return invalidSettleFlags;
+type FillParams = InteractionRouteInput & {
+  captureSnapshotForSession: CaptureSnapshotForSession;
+  refSnapshotFlagGuardResponse: RefSnapshotFlagGuardResponse;
+};
 
-  const refPreamble = await prepareFillRefTarget(
-    params,
-    session,
-    parsedTarget.target,
-    parsedTarget.refGeneration,
-  );
-  if (refPreamble.response) return refPreamble.response;
-  const { staleRefsWarning } = refPreamble;
+type AdmittedFill = {
+  session: SessionState;
+  parsedTarget: Extract<ReturnType<typeof parseFillTarget>, { ok: true }>;
+  touchExecutor: BoundTouchExecutor;
+  staleRefsWarning: string | undefined;
+};
+
+export async function dispatchFillViaRuntime(params: FillParams): Promise<DaemonResponse> {
+  params = bindInteractionSession(params);
+  const admission = await admitFill(params);
+  if ('response' in admission) return admission.response;
+  const { parsedTarget, touchExecutor, staleRefsWarning } = admission.admitted;
+  const { req, sessionName } = params;
   const replayTargetGuard = req.internal?.replayTargetGuard;
 
   return await dispatchRuntimeInteraction(params, {
@@ -97,13 +80,82 @@ export async function dispatchFillViaRuntime(
       }),
     buildPayloads: (result) =>
       buildFillResponsePayloads({
-        session,
+        ref: params.sessionRef!,
+        sessionStore: params.sessionStore,
         result,
         text: parsedTarget.text,
         flags: req.flags,
         staleRefsWarning,
       }),
   });
+}
+
+/**
+ * Everything `fill` checks before it touches the device: surface policy, target parsing, the one
+ * bind, recorded-parameter and settle-flag validation, and the `@ref` preamble. A refusal from any
+ * of them, returned or thrown, is `dispatched: no`.
+ */
+async function admitFill(
+  params: FillParams,
+): Promise<{ response: DaemonResponse } | { admitted: AdmittedFill }> {
+  try {
+    const admission = await readFillAdmission(params);
+    return 'response' in admission
+      ? { response: refusedBeforeDispatch(admission.response) }
+      : admission;
+  } catch (error) {
+    throw thrownBeforeDispatch(error);
+  }
+}
+
+async function readFillAdmission(
+  params: FillParams,
+): Promise<{ response: DaemonResponse } | { admitted: AdmittedFill }> {
+  const { req } = params;
+  const target = readFillTarget(params);
+  if ('response' in target) return target;
+  const { session, parsedTarget } = target;
+  const prepared = await prepareTouchDispatch(
+    params,
+    session,
+    'fill',
+    parsedTarget.target.kind !== 'point',
+  );
+  if (!prepared.ok) return { response: prepared.response };
+  assertRecordedFillParameterization({
+    flags: req.flags,
+    replayPlanStep: req.internal?.replayPlanStep === true,
+    isSessionRecording: isSessionRecording(session),
+  });
+  const invalidSettleFlags = settleFlagGuardResponse('fill', req.flags);
+  if (invalidSettleFlags) return { response: invalidSettleFlags };
+  const refPreamble = await prepareFillRefTarget(
+    params,
+    session,
+    parsedTarget.target,
+    parsedTarget.refGeneration,
+  );
+  if (refPreamble.response) return { response: refPreamble.response };
+  return {
+    admitted: {
+      session,
+      parsedTarget,
+      touchExecutor: prepared.touchExecutor,
+      staleRefsWarning: refPreamble.staleRefsWarning,
+    },
+  };
+}
+
+function readFillTarget(
+  params: FillParams,
+): { response: DaemonResponse } | Pick<AdmittedFill, 'session' | 'parsedTarget'> {
+  const session = params.sessionStore.get(params.sessionName);
+  if (!session) return { response: noActiveSessionError() };
+  const unsupportedSurfaceResponse = unsupportedMacOsDesktopSurfaceInteraction(session, 'fill');
+  if (unsupportedSurfaceResponse) return { response: unsupportedSurfaceResponse };
+  const parsedTarget = parseFillTarget(params.req.positionals ?? []);
+  if (!parsedTarget.ok) return { response: parsedTarget.response };
+  return { session, parsedTarget };
 }
 
 // The fill @ref preamble shared with the press path's shape: read staleness
@@ -150,13 +202,15 @@ async function prepareFillRefTarget(
 }
 
 function buildFillResponsePayloads(params: {
-  session: SessionState;
+  ref: SessionRef;
+  sessionStore: SessionStore;
   result: FillCommandResult;
   text: string;
   flags: CommandFlags | undefined;
   staleRefsWarning: string | undefined;
 }): InteractionResponsePayloads {
-  const { session, result } = params;
+  const { result, ref, sessionStore } = params;
+  const session = sessionStore.requireCurrent(ref);
   const maestroFallback = maestroFallbackDisclosure(
     params.flags?.maestro?.allowNonHittableCoordinateFallback === true,
     result.backendResult,
@@ -179,6 +233,6 @@ function buildFillResponsePayloads(params: {
     referenceFrame,
     extra: { text: params.text, ...maestroFallback.extra },
     staleRefsWarning: params.staleRefsWarning,
-    settleRefsGeneration: issueSettleRefs(session, result.settle),
+    settleRefsGeneration: issueSettleRefs(ref, sessionStore, result.settle),
   });
 }

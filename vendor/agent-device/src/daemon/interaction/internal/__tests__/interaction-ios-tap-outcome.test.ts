@@ -7,14 +7,13 @@ import path from 'node:path';
 import { AppError } from '@agent-device/kernel/errors';
 import { buildSnapshotPresentationKey } from '@agent-device/kernel/snapshot';
 import { handleInteractionCommands } from '../../index.ts';
-import { handleSnapshotCommands } from '../../../handlers/snapshot.ts';
 import {
   makeIosSession,
   authoringPublication,
 } from '../../../../__tests__/test-utils/session-factories.ts';
 import { makeSessionStore } from '../../../../__tests__/test-utils/store-factory.ts';
 import { SessionScriptWriter } from '../../../session-script-writer.ts';
-import { runReplayForTest } from '../../../replay/__tests__/replay-command-fixture.ts';
+import { runReplayForTest } from '../../../__tests__/replay-runtime/replay-command-fixture.ts';
 import { replayScriptSourceBundleFor } from '../../../../__tests__/test-utils/replay-script-source.ts';
 import {
   imageViewerNodes,
@@ -22,7 +21,6 @@ import {
   snapshot,
   snapshotPayload,
 } from './interaction-ios-tap-outcome-fixtures.ts';
-import { snapshotRuntimeFixture } from '../../../__tests__/snapshot-runtime-fixture.ts';
 import {
   appCaptureComparisonKey,
   systemSurfaceCaptureComparisonKey,
@@ -111,7 +109,7 @@ test('a changed post-action capture corroborates an iOS tap reported as failed',
     appBundleId: 'com.example.app',
     snapshot: snapshot(profileNodes),
   });
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
   legacyDispatchCapture.mockImplementation(async (_device, command) => {
     if (command === 'press') {
       throw new AppError(
@@ -141,7 +139,7 @@ test('an unchanged post-action capture keeps a failed iOS tap failed', async () 
     appBundleId: 'com.example.app',
     snapshot: snapshot(profileNodes),
   });
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
   legacyDispatchCapture.mockImplementation(async (_device, command) => {
     if (command === 'press') {
       throw new AppError(
@@ -167,7 +165,7 @@ test('a private-ax baseline pins the corroboration probe to private-ax', async (
   // correctly refuses to compare, and a landed tap surfaces as a failure.
   const sessionName = 'ios-private-ax-pinned-corroboration';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -208,7 +206,7 @@ test('a canonical selector capture replaces a raw baseline before corroboration'
   // capture at all) and the recorded failure surfaces unchanged.
   const sessionName = 'ios-raw-baseline-no-corroboration';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -235,7 +233,7 @@ test('a canonical selector capture replaces a raw baseline before corroboration'
 test('a tree baseline does not pin the corroboration probe backend', async () => {
   const sessionName = 'ios-tree-baseline-unpinned-corroboration';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -269,7 +267,7 @@ test('a tree baseline does not pin the corroboration probe backend', async () =>
 test('a changed capture from a different iOS backend keeps the tap failure', async () => {
   const sessionName = 'ios-cross-backend-tap-corroboration';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -303,7 +301,7 @@ test('a producer or generation switch cannot corroborate a failed tap', async ()
     appBundleId: 'com.example.app',
     snapshot: baseline,
   });
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
   const after = snapshot(imageViewerNodes);
   after.comparisonKey = 'apple-runner:launch-a';
 
@@ -313,7 +311,7 @@ test('a producer or generation switch cannot corroborate a failed tap', async ()
       command: 'click',
       requestId: undefined,
       flags: {},
-      session,
+      ref: sessionStore.lookup(sessionName)!,
       sessionStore,
       contextFromFlags,
       captureSnapshotForSession: async () => after,
@@ -334,7 +332,7 @@ test('a capture of a system surface cannot corroborate a tap taken against the a
     appBundleId: 'com.example.app',
     snapshot: baseline,
   });
-  sessionStore.set(sessionName, session);
+  sessionStore.publish(sessionName, session);
   const after = snapshot(imageViewerNodes);
   after.comparisonKey = systemSurfaceCaptureComparisonKey(IOS_SIMULATOR.id);
   after.iosSystemSurfaceBundleId = 'com.apple.SafariViewService';
@@ -345,7 +343,7 @@ test('a capture of a system surface cannot corroborate a tap taken against the a
       command: 'click',
       requestId: undefined,
       flags: {},
-      session,
+      ref: sessionStore.lookup(sessionName)!,
       sessionStore,
       contextFromFlags,
       captureSnapshotForSession: async () => after,
@@ -356,7 +354,7 @@ test('a capture of a system surface cannot corroborate a tap taken against the a
 test('a sparse changed capture keeps the tap failure', async () => {
   const sessionName = 'ios-sparse-tap-corroboration';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -389,7 +387,7 @@ test('a sparse changed capture keeps the tap failure', async () => {
 test('a corroboration capture failure keeps the tap failure', async () => {
   const sessionName = 'ios-capture-failed-tap-corroboration';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -419,7 +417,7 @@ test('the canonical selector capture aligns presentation before corroboration', 
   const sessionStore = makeSessionStore();
   const baseline = snapshot(profileNodes);
   baseline.presentationKey = 'unreadable-presentation';
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -448,7 +446,7 @@ test('corroborates a tap when the request carries no flags and the baseline used
   const sessionStore = makeSessionStore();
   const baseline = snapshot(profileNodes);
   baseline.presentationKey = buildSnapshotPresentationKey({ depth: 2, raw: false });
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -499,7 +497,7 @@ test('a changed capture after ordinary agent turn latency still corroborates the
   const sessionStore = makeSessionStore();
   const baseline = snapshot(profileNodes);
   baseline.createdAt = Date.now() - 6_000;
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -532,7 +530,7 @@ test('the canonical selector capture replaces a stale baseline before corroborat
   const sessionStore = makeSessionStore();
   const baseline = snapshot(profileNodes);
   baseline.createdAt = Date.now() - 15_001;
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -562,7 +560,7 @@ test('the canonical selector capture replaces a keyless baseline before corrobor
   const sessionStore = makeSessionStore();
   const baseline = snapshot(profileNodes);
   baseline.presentationKey = undefined;
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -590,7 +588,7 @@ test('the canonical selector capture replaces a keyless baseline before corrobor
 test('runtime-resolved taps use the same corroboration boundary', async () => {
   const sessionName = 'ios-runtime-tap-corroboration';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -621,27 +619,22 @@ test('runtime-resolved taps use the same corroboration boundary', async () => {
   expect(sessionStore.get(sessionName)?.actions).toHaveLength(1);
 });
 
-test('a corroborated runtime coordinate tap does not schedule a no-change retry', async () => {
+test('runtime coordinate taps use the same corroboration boundary', async () => {
   const sessionName = 'ios-runtime-coordinate-corroboration';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
       snapshot: snapshot(profileNodes),
     }),
   );
-  let pressCount = 0;
   legacyDispatchCapture.mockImplementation(async (_device, command) => {
     if (command === 'press') {
-      pressCount += 1;
-      if (pressCount === 1) {
-        throw new AppError(
-          'XCTEST_RECORDED_FAILURE',
-          'XCTest recorded a failure while executing tap; the action may not have been performed.',
-        );
-      }
-      return {};
+      throw new AppError(
+        'XCTEST_RECORDED_FAILURE',
+        'XCTest recorded a failure while executing tap; the action may not have been performed.',
+      );
     }
     if (command === 'snapshot') return snapshotPayload(imageViewerNodes);
     return {};
@@ -649,37 +642,19 @@ test('a corroborated runtime coordinate tap does not schedule a no-change retry'
 
   const clickResponse = await runClick(sessionStore, sessionName, {
     positionals: ['104', '222'],
-    flags: { interactionOutcome: { retryOnNoChange: true } },
   });
   expect(clickResponse?.ok).toBe(true);
   if (clickResponse?.ok) {
     expect(clickResponse.data?.warning).toMatch(/post-action accessibility capture changed/);
   }
-
-  const snapshotResponse = await handleSnapshotCommands({
-    req: {
-      token: 'test',
-      session: sessionName,
-      command: 'snapshot',
-      positionals: [],
-      flags: {},
-    },
-    sessionName,
-    logPath: '/tmp/daemon.log',
-    sessionStore,
-    ...snapshotRuntimeFixture(),
-  });
-
-  expect(snapshotResponse?.ok).toBe(true);
-  expect(pressCount).toBe(1);
-  expect(sessionStore.get(sessionName)?.pendingInteractionOutcome).toBeUndefined();
+  expect(sessionStore.get(sessionName)?.actions).toHaveLength(1);
 });
 
 test('corroborated runtime taps retain target evidence through save and replay', async () => {
   const root = mkdtempForTestSync('agent-device-ios-tap-replay-');
   const sessionName = 'ios-recorded-tap';
   const sessionStore = makeSessionStore();
-  sessionStore.set(
+  sessionStore.publish(
     sessionName,
     makeIosSession(sessionName, {
       appBundleId: 'com.example.app',
@@ -732,7 +707,7 @@ test('corroborated runtime taps retain target evidence through save and replay',
   recording = false;
   const replaySessionName = 'ios-replayed-tap';
   const replayStore = makeSessionStore();
-  replayStore.set(
+  replayStore.publish(
     replaySessionName,
     makeIosSession(replaySessionName, {
       appBundleId: 'com.example.app',
@@ -769,4 +744,33 @@ test('corroborated runtime taps retain target evidence through save and replay',
   expect(replayResponse.ok).toBe(true);
   expect(pressCount).toBe(2);
   expect(snapshotCount).toBeGreaterThanOrEqual(4);
+});
+
+test('a tap corroborates against its admitted snapshot after a same-lifetime record rebuild', async () => {
+  const store = makeSessionStore();
+  const name = 'ios-admitted-tap-baseline';
+  const ref = store.publish(
+    name,
+    makeIosSession(name, {
+      appBundleId: 'com.example.app',
+      snapshot: snapshot(imageViewerNodes),
+    }),
+  );
+  store.update(ref, { snapshot: snapshot(profileNodes) });
+  legacyDispatchCapture.mockImplementation(async (_device, command) => {
+    if (command === 'press') throw new AppError('XCTEST_RECORDED_FAILURE', 'tap failed');
+    if (command === 'snapshot') return snapshotPayload(imageViewerNodes);
+    return {};
+  });
+  const response = await handleInteractionCommands({
+    req: { token: 'test', session: name, command: 'click', positionals: ['104', '222'], flags: {} },
+    sessionName: name,
+    sessionRef: ref,
+    sessionStore: store,
+    contextFromFlags,
+    ...getRuntimeBindings(),
+  });
+  expect(response?.ok).toBe(true);
+  if (!response?.ok) throw new Error('landed tap should be corroborated');
+  expect(response.data?.warning).toMatch(/same-scope post-action accessibility capture changed/);
 });

@@ -20,7 +20,7 @@ export type DaemonArtifactEndpoint = {
   token: string;
 };
 
-type PreparedRemoteRequest = {
+export type PreparedRemoteRequest = {
   positionals: string[];
   flags?: DaemonRequest['flags'];
   installSource?: NonNullable<DaemonRequest['meta']>['installSource'];
@@ -31,6 +31,7 @@ type PreparedRemoteRequest = {
 export async function prepareRemoteRequestArtifacts(
   req: Omit<DaemonRequest, 'token'>,
   info: DaemonArtifactEndpoint,
+  signal: AbortSignal,
 ): Promise<PreparedRemoteRequest> {
   const positionals = [...(req.positionals ?? [])];
   let flags = req.flags ? { ...req.flags } : undefined;
@@ -51,7 +52,7 @@ export async function prepareRemoteRequestArtifacts(
 
   assertRemoteDaemonSupportsSaveScript(req);
   flags = applyRemoteArtifactCommand(req, positionals, flags, clientArtifactPaths);
-  const remoteInstallSource = await prepareRemoteInstallSource(req, info, uploadProgress);
+  const remoteInstallSource = await prepareRemoteInstallSource(req, info, uploadProgress, signal);
   if (remoteInstallSource) {
     installSource = remoteInstallSource.installSource;
     uploadedArtifactId = remoteInstallSource.uploadedArtifactId ?? uploadedArtifactId;
@@ -72,6 +73,7 @@ export async function prepareRemoteRequestArtifacts(
     info,
     positionals,
     uploadProgress,
+    signal,
   );
   uploadedArtifactId = installPackageResult ?? uploadedArtifactId;
   return baseResult();
@@ -103,6 +105,7 @@ async function prepareRemoteInstallPackage(
   info: DaemonArtifactEndpoint,
   positionals: string[],
   onProgress: UploadProgressSink | undefined,
+  signal: AbortSignal,
 ): Promise<string | undefined> {
   const pathIndex = positionals.length === 1 ? 0 : 1;
   const rawPath = positionals[pathIndex];
@@ -121,6 +124,7 @@ async function prepareRemoteInstallPackage(
     token: info.token,
     platform: req.flags?.platform,
     onProgress,
+    signal,
   });
 }
 
@@ -178,6 +182,7 @@ async function prepareRemoteInstallSource(
   req: Omit<DaemonRequest, 'token'>,
   info: DaemonArtifactEndpoint,
   onProgress: UploadProgressSink | undefined,
+  signal: AbortSignal,
 ): Promise<{
   installSource: NonNullable<DaemonRequest['meta']>['installSource'];
   uploadedArtifactId?: string;
@@ -218,6 +223,7 @@ async function prepareRemoteInstallSource(
     token: info.token,
     platform: req.flags?.platform,
     onProgress,
+    signal,
   });
   return {
     installSource: {
@@ -335,20 +341,35 @@ function hasNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+const REMOTE_TEMP_DIR = '/tmp';
+
+/** The daemon-host temp path a remote client names for an artifact it downloads afterwards. */
 function buildRemoteTempArtifactPath(prefix: string, extension: string): string {
   const safeExtension = extension.startsWith('.') ? extension : `.${extension}`;
-  return path.posix.join(
-    '/tmp',
-    `agent-device-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${safeExtension}`,
-  );
+  return path.posix.join(REMOTE_TEMP_DIR, `${remoteTempArtifactStem(prefix)}${safeExtension}`);
 }
 
 /** A directory temp path — unlike `buildRemoteTempArtifactPath`, no extension is ever appended. */
 function buildRemoteTempArtifactDirPath(prefix: string): string {
-  return path.posix.join(
-    '/tmp',
-    `agent-device-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  return path.posix.join(REMOTE_TEMP_DIR, remoteTempArtifactStem(prefix));
+}
+
+/** Whether `value` has the shape `buildRemoteTempArtifactPath(prefix, extension)` returns. */
+export function isRemoteTempArtifactPath(
+  value: string,
+  prefix: string,
+  extension: string,
+): boolean {
+  const stem = path.posix.basename(value, extension);
+  return (
+    value === path.posix.join(REMOTE_TEMP_DIR, `${stem}${extension}`) &&
+    stem.startsWith(`agent-device-${prefix}-`) &&
+    /^\d+-[a-z0-9]+$/.test(stem.slice(`agent-device-${prefix}-`.length))
   );
+}
+
+function remoteTempArtifactStem(prefix: string): string {
+  return `agent-device-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export async function materializeRemoteArtifacts(

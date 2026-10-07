@@ -1,5 +1,5 @@
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import { AppError } from '@agent-device/kernel/errors';
+import { AppError, discloseDispatch } from '@agent-device/kernel/errors';
 import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
 import { containsPoint } from '@agent-device/kernel/rect';
 import {
@@ -141,11 +141,25 @@ export function completeAndroidFillVerification(
     ? buildAndroidFillUnconfirmedVerification(expected, beforeTarget, verification)
     : null;
   if (unconfirmed) return unconfirmed;
-  throw new AppError(
-    'COMMAND_FAILED',
-    androidFillFailureMessage(verification),
-    androidFillFailureDetails(expected, verification),
+  throw discloseDispatch(
+    new AppError(
+      'COMMAND_FAILED',
+      androidFillFailureMessage(verification),
+      androidFillFailureDetails(expected, verification),
+    ),
+    'unknown',
   );
+}
+
+/** Whether a failed fill left an observed field empty, showing its hint, or holding its old value. */
+export function isAndroidFillCommitDropped(
+  verification: AndroidFillVerification,
+  beforeTarget: AndroidFillVerification['targetInput'],
+): boolean {
+  if (verification.ok) return false;
+  const input = verification.actualInput;
+  if (input && (input.hintShowing === true || input.text === null)) return true;
+  return beforeTarget?.text != null && verification.actual === beforeTarget.text;
 }
 
 export function buildAndroidFillUnconfirmedVerification(
@@ -161,6 +175,7 @@ export function buildAndroidFillUnconfirmedVerification(
     // and the soft-success would also skip the second, bigger delete burst.
     requested.length === 0 ||
     verification.reason === 'ime_capture' ||
+    isAndroidFillCommitDropped(verification, beforeTarget) ||
     !beforeTarget ||
     !afterTarget ||
     !actualInput ||
@@ -168,8 +183,7 @@ export function buildAndroidFillUnconfirmedVerification(
     isSensitiveFillDiagnosticNode(afterTarget) ||
     isSensitiveFillDiagnosticNode(actualInput) ||
     !sameAndroidFillTarget(beforeTarget, afterTarget) ||
-    !sameAndroidFillTarget(beforeTarget, actualInput) ||
-    beforeTarget.text === verification.actual
+    !sameAndroidFillTarget(beforeTarget, actualInput)
   ) {
     return null;
   }

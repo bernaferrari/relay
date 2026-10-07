@@ -19,6 +19,7 @@ import {
   rootExternalDependencyRanges,
   rootWorkspaceDependencyNames,
   specifierSites,
+  workspacePackagesFromManifests,
   type WorkspacePackage,
 } from './package-boundaries.ts';
 import { listTrackedTypeScriptFiles } from './tracked-sources.ts';
@@ -33,6 +34,7 @@ const kernel: WorkspacePackage = {
     ['@agent-device/kernel/device', 'packages/kernel/src/device.ts'],
   ]),
   workspaceDependencies: new Set(),
+  workspaceDependencyField: 'dependencies',
   externalDependencies: new Map(),
 };
 
@@ -43,6 +45,7 @@ const contracts: WorkspacePackage = {
     ['@agent-device/contracts/interaction', 'packages/contracts/src/interaction.ts'],
   ]),
   workspaceDependencies: new Set(['@agent-device/kernel']),
+  workspaceDependencyField: 'dependencies',
   externalDependencies: new Map(),
 };
 
@@ -368,6 +371,34 @@ test('root workspace specifiers need a root workspace:* entry and an exported su
   assert.equal(checkRootSites(unknown, ALL, new Set([kernel.name])).length, 1);
 });
 
+test('a published package declares its bundled workspace siblings as devDependencies', () => {
+  const manifest = (name: string, isPrivate: boolean) =>
+    JSON.stringify({
+      name,
+      private: isPrivate,
+      exports: { '.': './src/index.ts' },
+      devDependencies: { '@agent-device/kernel': 'workspace:*' },
+    });
+  const packages = workspacePackagesFromManifests(
+    new Map([
+      ['packages/published/package.json', manifest('@agent-device/published', false)],
+      ['packages/internal/package.json', manifest('@agent-device/internal', true)],
+    ]),
+  );
+  const published = packages.find((pkg) => pkg.name === '@agent-device/published');
+  const internal = packages.find((pkg) => pkg.name === '@agent-device/internal');
+  assert.ok(published && internal);
+  assert.deepEqual([...published.workspaceDependencies], ['@agent-device/kernel']);
+  assert.deepEqual([...internal.workspaceDependencies], []);
+
+  const undeclared = specifierSites(
+    'packages/published/src/index.ts',
+    "import { g } from '@agent-device/contracts/interaction';",
+  );
+  const [violation] = checkPackageInternalSites(published, undeclared, [...ALL, published]);
+  assert.match(violation?.message ?? '', /packages\/published\/package\.json devDependencies\.$/);
+});
+
 test('the real tree parses, declares, and passes R11', () => {
   const packages = readWorkspacePackages(repoRoot);
   assert.ok(packages.length >= 1, 'expected at least the kernel package');
@@ -401,6 +432,7 @@ test('the real tree parses, declares, and passes R11', () => {
     '@agent-device/capture-kit/durable-capture-admission-ledger',
     '@agent-device/capture-kit/durable-capture-resource',
     '@agent-device/capture-kit/durable-capture-runtime-recovery',
+    '@agent-device/capture-kit/durable-capture/session-binding',
     '@agent-device/capture-kit/durable-json',
     '@agent-device/capture-kit/ios-snapshot-acquisition',
     '@agent-device/capture-kit/ios-snapshot-engine',
@@ -408,6 +440,7 @@ test('the real tree parses, declares, and passes R11', () => {
     '@agent-device/capture-kit/ios-snapshot-runtime',
     '@agent-device/capture-kit/ios-snapshot-tree',
     '@agent-device/capture-kit/mobile-snapshot-semantics',
+    '@agent-device/capture-kit/observe-until',
     '@agent-device/capture-kit/perf-capture-admission-ledger',
     '@agent-device/capture-kit/perf-capture-recovery',
     '@agent-device/capture-kit/perf-capture-resource-store',
@@ -546,6 +579,7 @@ test('the real tree parses, declares, and passes R11', () => {
     '@agent-device/platform-apple/runner/test-host',
     '@agent-device/platform-apple/session-observation',
     '@agent-device/platform-apple/simctl',
+    '@agent-device/platform-apple/simctl-settings',
     '@agent-device/platform-apple/simulator',
     '@agent-device/platform-apple/simulator-boot',
     '@agent-device/platform-apple/snapshot-source',
@@ -652,6 +686,7 @@ test('the real tree parses, declares, and passes R11', () => {
       'AdReplayStepRuntime',
       'AdReplayTargetBindingEvidence',
       'AdReplayTargetClassification',
+      'AdReplayTargetObservation',
       'AdReplayVarSources',
       'AdReplayVerificationEntry',
       'inspectAdReplay',
@@ -758,6 +793,7 @@ test('the real tree parses, declares, and passes R11', () => {
   assert.deepEqual([...providerWebDriverPackage.workspaceDependencies].sort(), [
     '@agent-device/capture-kit',
     '@agent-device/contracts',
+    '@agent-device/host-kit',
     '@agent-device/kernel',
     '@agent-device/xml',
   ]);

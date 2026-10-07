@@ -1,3 +1,4 @@
+import { bindInteractionSession } from './interaction-session.ts';
 import type {
   FillCommandResult,
   InteractionTarget,
@@ -28,7 +29,6 @@ import { readSnapshotNodesReferenceFrame } from '@agent-device/capture-kit/touch
 import {
   buildCorroboratedTapResponseData,
   buildInteractionResponseData,
-  pointPositionals,
   type InteractionResponsePayloads,
 } from './interaction-touch-response.ts';
 import type { BoundTouchExecutor } from '../../touch-runtime.ts';
@@ -68,8 +68,9 @@ export async function dispatchRuntimeInteraction<
     ): InteractionResponsePayloads | Promise<InteractionResponsePayloads>;
   },
 ): Promise<DaemonResponse> {
-  const session = params.sessionStore.get(params.sessionName);
-  if (!session) return noActiveSessionError();
+  params = bindInteractionSession(params);
+  if (!params.sessionRef) return noActiveSessionError();
+  const session = params.sessionStore.requireCurrent(params.sessionRef);
   const runtime = createInteractionRuntimeForRoute({
     ...params,
     touchExecutor: options.touchExecutor,
@@ -107,11 +108,10 @@ export async function dispatchRuntimeInteraction<
       responseData.warning = warning;
     }
     return finalizeTouchInteraction({
-      session,
+      ref: params.sessionRef,
       sessionStore: params.sessionStore,
       command: params.req.command,
       positionals: params.req.positionals ?? [],
-      retryPositionals: retryPositionalsForRuntimeResult(params.req.command, runtimeResult),
       flags: params.req.flags,
       result,
       responseData,
@@ -161,7 +161,7 @@ async function buildRuntimeIosCorroboratedResponse(params: {
     command: params.handlerParams.req.command,
     requestId: params.handlerParams.req.meta?.requestId,
     flags: params.handlerParams.req.flags,
-    session: params.session,
+    ref: params.handlerParams.sessionRef!,
     sessionStore: params.handlerParams.sessionStore,
     contextFromFlags: params.handlerParams.contextFromFlags,
     captureSnapshotForSession: params.handlerParams.captureSnapshotForSession,
@@ -176,7 +176,7 @@ async function buildRuntimeIosCorroboratedResponse(params: {
     extra: params.extra,
   });
   return finalizeTouchInteraction({
-    session: params.session,
+    ref: params.handlerParams.sessionRef!,
     sessionStore: params.handlerParams.sessionStore,
     command: params.handlerParams.req.command,
     positionals: params.handlerParams.req.positionals ?? [],
@@ -184,7 +184,6 @@ async function buildRuntimeIosCorroboratedResponse(params: {
     result: payloads.result,
     responseData: payloads.responseData,
     recordedTarget: payloads.recordedTarget,
-    scheduleInteractionOutcomeRetry: false,
     actionStartedAt: params.actionStartedAt,
     actionFinishedAt: Date.now(),
     androidFreshnessBaseline: params.androidFreshnessBaseline,
@@ -228,16 +227,4 @@ function pointFromInteractionTarget(
 
 function appErrorResponse(error: unknown): DaemonResponse {
   return { ok: false, error: normalizeError(error) };
-}
-
-function retryPositionalsForRuntimeResult(
-  command: string,
-  result: PressCommandResult | FillCommandResult | LongPressCommandResult,
-): string[] | undefined {
-  if (result.kind === 'ref' && !result.node) return undefined;
-  if (command === 'click' || command === 'press') {
-    if (!result.point) return undefined;
-    return pointPositionals(result.point);
-  }
-  return undefined;
 }

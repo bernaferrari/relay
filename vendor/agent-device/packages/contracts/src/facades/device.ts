@@ -31,15 +31,18 @@ export type {
 export {
   DEVICE_ROTATIONS,
   DEVICE_ROTATION_SURFACE_INDEX,
+  FOLD_SCREEN_COORDINATE_SPACE,
   MAX_FOLD_DURATION_MS,
   MAX_FOLD_KEYFRAMES,
   parseFoldInput,
   parseFoldKeyframesJson,
   FOLD_POSES,
   FOLD_POSE_USAGE,
+  deviceRotationFromSurfaceIndex,
   deviceRotationOrientation,
   deviceRotationSurfaceDegrees,
   foldPoseForHingeAngle,
+  isDeviceRotation,
   parseDeviceRotation,
   parseFoldPose,
 } from '../device-rotation.ts';
@@ -47,6 +50,7 @@ export type {
   DeviceRotation,
   FoldPose,
   FoldKeyframe,
+  FoldScreenCoordinateSpace,
   SetFoldPoseInput,
 } from '../device-rotation.ts';
 export type { BootCommandResult, ShutdownCommandResult } from '../device.ts';

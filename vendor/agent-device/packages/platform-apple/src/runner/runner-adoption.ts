@@ -16,6 +16,7 @@ import {
   withRunnerCommandId,
 } from './runner-contract.ts';
 import {
+  buildDetachedRunnerLease,
   buildRunnerLease,
   isLeaseRunnerProcessIntact,
   readRunnerLeaseForAdoption,
@@ -24,15 +25,19 @@ import {
   type RunnerLease,
   type RunnerLeaseAdoptionRefusal,
 } from './runner-lease.ts';
+import { isRunnerProcessAlive } from './runner-disposal.ts';
 import {
-  requireRunnerPhaseRemainingMs,
   resolveExpectedRunnerCacheMetadata,
   resolveRunnerDerivedPath,
   type RunnerPhaseBudget,
   type RunnerXctestrunArtifact,
 } from './runner-xctestrun.ts';
+import { resolveRunnerCacheKey } from './runner-cache-metadata.ts';
 import {
-  normalizeRunnerStartupTimeoutMs,
+  advanceRunnerSessionState,
+  resolveRunnerDetachDecision,
+  RunnerCommandAccounting,
+  type RunnerDetachRefusal,
   type RunnerProcessHandle,
   type RunnerSession,
 } from './runner-session-types.ts';
@@ -56,6 +61,107 @@ const RUNNER_ADOPTION_EXIT_POLL_INTERVAL_MS = 1_000;
 // startup, in every handoff lane (#2681).
 export function isIosRunnerDetachEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return parseBooleanLiteral(env.AGENT_DEVICE_IOS_RUNNER_DETACH ?? '') !== false;
+}
+
+// Graceful daemon shutdown hands a request-proven runner off to the next daemon instead of paying
+// the xcodebuild ramp again: the lease token is rewritten to a detached form (so this daemon's own
+// teardown paths no longer classify it as owned), this process gives up its sides of the runner's
+// log, and `onDetached` takes the session out of the caller's registry. Once this process exits the
+// lease is stale and the adoption path picks it up. Explicit cleanup still works: clean:daemon kills
+// by the lease's runnerPid, and the runner's XCTWaiter self-expires after 24h.
+//
+// Every gate that keeps a session on the kill path is named and reported, because a handoff that
+// silently declines is indistinguishable from a rebuild: the handoff lanes
+// (`resolveRunnerHandoffTarget`), a session that never served a command, still owes a response, or
+// last reported main-thread work still draining (`resolveRunnerDetachDecision`), a missing or
+// unwritable lease, and a runner this process cannot prove alive. What stays in the registry is
+// torn down by `stopAllIosRunnerSessions`, which the daemon's shutdown runs right after this — so a
+// shutdown during a startup tears that runner down rather than handing off one that never reached
+// its listener (#2681).
+export async function detachRunnerSessionsForShutdown(
+  sessions: ReadonlyMap<string, RunnerSession>,
+  onDetached: (deviceId: string, session: RunnerSession) => void,
+): Promise<number> {
+  if (!isIosRunnerDetachEnabled()) return 0;
+  let detached = 0;
+  for (const [deviceId, session] of sessions) {
+    const outcome = detachRunnerSessionForShutdown(session);
+    if (!outcome.detached) {
+      emitDiagnostic({
+        level: 'debug',
+        phase: 'ios_runner_session_detach_skipped',
+        data: {
+          deviceId,
+          sessionId: session.sessionId,
+          lane: outcome.lane,
+          reason: outcome.reason,
+          // A refused handoff is read from the daemon log, and the two refusals that name a charge look
+          // identical without this: an exchange still awaited is recovered by its own answer, while an
+          // abandoned residue waits for terminal evidence for its `commandId` (#2965).
+          outstandingCharges: session.commandCharges.outstandingChargeCount,
+          hasAbandonedCharges: session.commandCharges.hasAbandonedCharges,
+        },
+      });
+      continue;
+    }
+    detached += 1;
+    onDetached(deviceId, session);
+    emitDiagnostic({
+      level: 'info',
+      phase: 'ios_runner_session_detached',
+      data: {
+        deviceId,
+        lane: outcome.lane,
+        sessionId: session.sessionId,
+        runnerPid: session.child.pid,
+        port: session.port,
+        runnerLogPath: session.runnerLogPath,
+      },
+    });
+  }
+  return detached;
+}
+
+type RunnerDetachSkippedReason =
+  | RunnerHandoffRefusal
+  | RunnerDetachRefusal
+  | 'lease_absent'
+  | 'runner_process_dead'
+  | 'lease_write_failed';
+
+type RunnerDetachOutcome =
+  | { detached: true; lane: RunnerHandoffLane }
+  | { detached: false; lane: RunnerHandoffLane | undefined; reason: RunnerDetachSkippedReason };
+
+function detachRunnerSessionForShutdown(session: RunnerSession): RunnerDetachOutcome {
+  const target = resolveRunnerHandoffTarget(session.device);
+  if (!target.handoff) {
+    return { detached: false, lane: undefined, reason: target.reason };
+  }
+  const lane = target.lane;
+  const decision = resolveRunnerDetachDecision(session);
+  if (!decision.detach) {
+    return { detached: false, lane, reason: decision.reason };
+  }
+  const lease = session.lease;
+  if (!lease) {
+    return { detached: false, lane, reason: 'lease_absent' };
+  }
+  if (!isRunnerProcessAlive(session.child.pid)) {
+    return { detached: false, lane, reason: 'runner_process_dead' };
+  }
+  try {
+    writeRunnerLease(buildDetachedRunnerLease(lease));
+  } catch {
+    return { detached: false, lane, reason: 'lease_write_failed' };
+  }
+  // Only once the lease says the runner is handed over does this process give up its own sides of
+  // the runner's log: until that write lands the session is still owned, and an owned session that
+  // stopped following its runner's output is worse off than one that never handed anything off.
+  // The runner holds its own descriptor, so this cannot disturb it either way (#2681).
+  session.endOutputObservation?.();
+  advanceRunnerSessionState(session, 'stopped');
+  return { detached: true, lane };
 }
 
 type RunnerAdoptionRefusal =
@@ -122,7 +228,7 @@ export async function tryAdoptRunnerSessionFromLease(
   const fingerprint = verifyLeaseArtifactFingerprint(device, lease, options.budget);
   if ('refusal' in fingerprint) return skip(fingerprint.refusal, lease);
   const runnerPid = leased.value;
-  const expectedDerived = fingerprint.value;
+  const expectedArtifact = fingerprint.value;
   const probe = await probeRunnerAnswersUptime(device, lease.port, target.lane, options.budget);
   if (probe !== 'answered') return skip(probe, lease);
   // The probe awaited network I/O — the xcodebuild can have exited and its pid
@@ -132,7 +238,7 @@ export async function tryAdoptRunnerSessionFromLease(
     return skip('runner_pid_recycled', lease);
   }
 
-  const session = buildAdoptedRunnerSession(device, lease, runnerPid, expectedDerived, options);
+  const session = buildAdoptedRunnerSession(device, lease, runnerPid, expectedArtifact);
   try {
     writeRunnerLease(session.lease);
   } catch {
@@ -185,13 +291,16 @@ function verifyLeaseArtifactFingerprint(
   device: DeviceInfo,
   lease: RunnerLease,
   budget: RunnerPhaseBudget | undefined,
-): RunnerAdoptionCheck<string> {
-  const expectedDerived = resolveExpectedDerivedPath(device, budget);
-  if (!expectedDerived) return { refusal: 'expected_derived_unresolved' };
-  if (!lease.xctestrunPath.startsWith(`${expectedDerived}${path.sep}`)) {
+): RunnerAdoptionCheck<ExpectedRunnerArtifact> {
+  const expectedArtifact = resolveExpectedArtifact(device, budget);
+  if (!expectedArtifact) return { refusal: 'expected_derived_unresolved' };
+  if (
+    lease.cacheKey !== expectedArtifact.cacheKey ||
+    !lease.xctestrunPath.startsWith(`${expectedArtifact.derived}${path.sep}`)
+  ) {
     return { refusal: 'artifact_fingerprint_mismatch' };
   }
-  return { value: expectedDerived };
+  return { value: expectedArtifact };
 }
 
 /**
@@ -255,15 +364,18 @@ function runnerProbeTimeoutMs(budget: RunnerPhaseBudget | undefined, capMs: numb
   return Math.min(capMs, Math.floor(budget.deadline.remainingMs()));
 }
 
-function resolveExpectedDerivedPath(
+type ExpectedRunnerArtifact = { derived: string; cacheKey: string };
+
+function resolveExpectedArtifact(
   device: DeviceInfo,
   budget: RunnerPhaseBudget | undefined,
-): string | null {
+): ExpectedRunnerArtifact | null {
   try {
-    return resolveRunnerDerivedPath(
-      device,
-      resolveExpectedRunnerCacheMetadata(device, undefined, budget),
-    );
+    const metadata = resolveExpectedRunnerCacheMetadata(device, undefined, budget);
+    return {
+      derived: resolveRunnerDerivedPath(device, metadata),
+      cacheKey: resolveRunnerCacheKey(metadata),
+    };
   } catch (error) {
     // An unresolvable fingerprint is a miss the caller starts fresh from; a cancel is not.
     if (isRequestCanceledError(error)) throw error;
@@ -275,13 +387,12 @@ function buildAdoptedRunnerSession(
   device: DeviceInfo,
   lease: RunnerLease,
   runnerPid: number,
-  expectedDerived: string,
-  options: { budget?: RunnerPhaseBudget },
+  expectedArtifact: ExpectedRunnerArtifact,
 ): RunnerSession & { lease: RunnerLease } {
   const sessionId = lease.sessionId;
   const artifact: RunnerXctestrunArtifact = {
     xctestrunPath: lease.xctestrunPath,
-    derived: expectedDerived,
+    ...expectedArtifact,
     cache: 'exact',
     artifact: 'valid',
     buildMs: 0,
@@ -304,17 +415,14 @@ function buildAdoptedRunnerSession(
     runnerLogPath: lease.runnerLogPath,
     // The probe already proved the runner answers commands.
     state: 'ready',
-    inFlightCommands: 0,
-    hasAbandonedCommands: false,
-    startupTimeoutMs: normalizeRunnerStartupTimeoutMs(
-      requireRunnerPhaseRemainingMs(options.budget, 'runner_session_adoption'),
-    ),
+    commandCharges: new RunnerCommandAccounting(),
     lease: buildRunnerLease({
       device,
       sessionId,
       runnerPid,
       port: lease.port,
       xctestrunPath: lease.xctestrunPath,
+      cacheKey: expectedArtifact.cacheKey,
       jsonPath: lease.jsonPath,
       runnerLogPath: lease.runnerLogPath,
     }),

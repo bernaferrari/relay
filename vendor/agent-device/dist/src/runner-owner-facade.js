@@ -1,1 +1,1 @@
-import{i as e,r as t}from"./runner-owner-state.js";export{t as setRunnerDeviceClaimAuthorityProbe,e as setRunnerLeaseOwnerStateDir};
+import{i as e,r as t}from"./runner-owner-state.js";async function n(...e){let{restoreLegacyXctestDeviceSetRedirect:t}=await import(`./legacy-xctest-device-set.js`);t(...e)}export{n as restoreLegacyXctestDeviceSetRedirect,t as setRunnerDeviceClaimAuthorityProbe,e as setRunnerLeaseOwnerStateDir};

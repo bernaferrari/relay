@@ -23,7 +23,6 @@ import { runnerSimulatorSetPath } from './runner-device-set.ts';
 const RUNNER_LEASE_SCHEMA_VERSION = 1;
 const RUNNER_LEASE_LOCK_TIMEOUT_MS = 30_000;
 const RUNNER_LEASE_LOCK_POLL_MS = 100;
-const RUNNER_LEASE_OWNER_GRACE_MS = 5_000;
 
 const RUNNER_OWNER_PID = process.pid;
 
@@ -51,6 +50,7 @@ export type RunnerLease = {
   runnerStartTime?: string | null;
   port: number;
   xctestrunPath: string;
+  cacheKey?: string;
   jsonPath: string;
   /**
    * Where the leased runner's own output goes. The runner appends to this file for its whole life,
@@ -118,6 +118,7 @@ export function buildRunnerLease(params: {
   runnerPid: number | undefined;
   port: number;
   xctestrunPath: string;
+  cacheKey?: string;
   jsonPath: string;
   runnerLogPath?: string;
 }): RunnerLease {
@@ -134,6 +135,7 @@ export function buildRunnerLease(params: {
     runnerStartTime: params.runnerPid ? readProcessStartTime(params.runnerPid) : null,
     port: params.port,
     xctestrunPath: params.xctestrunPath,
+    cacheKey: params.cacheKey,
     jsonPath: params.jsonPath,
     ...(runnerLogPath ? { runnerLogPath } : {}),
     ...optionalSimulatorSetPath(runnerSimulatorSetPath(params.device)),
@@ -154,7 +156,6 @@ export async function withRunnerLeaseLock<T>(deviceId: string, task: () => Promi
         },
         timeoutMs: RUNNER_LEASE_LOCK_TIMEOUT_MS,
         pollMs: RUNNER_LEASE_LOCK_POLL_MS,
-        ownerGraceMs: RUNNER_LEASE_OWNER_GRACE_MS,
         description: `iOS runner lease for ${deviceId}`,
       }),
     task,
@@ -488,6 +489,7 @@ function normalizeRunnerLease(value: unknown, deviceId: string): RunnerLease | n
     runnerPid: readPositiveInteger(raw.runnerPid),
     runnerStartTime: readOptionalString(raw.runnerStartTime),
     runnerLogPath: readOptionalNonEmptyString(raw.runnerLogPath),
+    cacheKey: readOptionalNonEmptyString(raw.cacheKey),
     ...optionalSimulatorSetPath(raw.simulatorSetPath),
     ...(raw.deviceClaimProtocol === 1 ? { deviceClaimProtocol: 1 as const } : {}),
   };

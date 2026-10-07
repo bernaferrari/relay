@@ -16,7 +16,6 @@ import {
   buildCorroboratedTapResponseData,
   buildInteractionResponseData,
   maestroFallbackDisclosure,
-  pointPositionals,
   readInteractionResponseDataTransformCommand,
   transformTouchResponseData,
 } from './interaction-touch-response.ts';
@@ -73,11 +72,10 @@ export async function dispatchDirectIosSelectorTap(
       },
     });
     return finalizeTouchInteraction({
-      session,
+      ref: handlerParams.sessionRef!,
       sessionStore: handlerParams.sessionStore,
       command: handlerParams.req.command,
       positionals: handlerParams.req.positionals ?? [],
-      retryPositionals: pointPositionals(point),
       flags: handlerParams.req.flags,
       result,
       responseData,
@@ -88,15 +86,14 @@ export async function dispatchDirectIosSelectorTap(
     const corroboratedResponse = await buildDirectIosCorroboratedResponse({
       error,
       handlerParams,
-      session,
       extra,
       positionals: [],
       actionStartedAt,
     });
     if (corroboratedResponse) return corroboratedResponse;
-    // ADR 0011 delegation-on-error: semantic runner failures fall back to the
-    // tree-based runtime path — except for Maestro replay dispatches, whose
-    // runner-native error shapes must be preserved.
+    // ADR 0011 delegation-on-error: only a failure disclosed `dispatched: no`
+    // falls back to the tree path, which taps again; Maestro replay keeps the
+    // runner's selector refusal shapes.
     const fallback = isDirectIosSelectorFallbackError(error, {
       delegateSemanticFailures: selector.allowNonHittableCoordinateFallback !== true,
     });
@@ -120,18 +117,17 @@ async function buildDirectIosCorroboratedResponse(params: {
   handlerParams: InteractionRouteInput & {
     captureSnapshotForSession: CaptureSnapshotForSession;
   };
-  session: SessionState;
   extra: Record<string, unknown>;
   positionals: string[];
   actionStartedAt: number;
 }): Promise<DaemonResponse | undefined> {
-  const { error, handlerParams, session, extra, positionals, actionStartedAt } = params;
+  const { error, handlerParams, extra, positionals, actionStartedAt } = params;
   const corroboration = await corroborateIosTapFailure({
     error,
     command: handlerParams.req.command,
     requestId: handlerParams.req.meta?.requestId,
     flags: handlerParams.req.flags,
-    session,
+    ref: handlerParams.sessionRef!,
     sessionStore: handlerParams.sessionStore,
     contextFromFlags: handlerParams.contextFromFlags,
     captureSnapshotForSession: handlerParams.captureSnapshotForSession,
@@ -145,14 +141,13 @@ async function buildDirectIosCorroboratedResponse(params: {
     extra,
   });
   return finalizeTouchInteraction({
-    session,
+    ref: handlerParams.sessionRef!,
     sessionStore: handlerParams.sessionStore,
     command: handlerParams.req.command,
     positionals: handlerParams.req.positionals ?? positionals,
     flags: handlerParams.req.flags,
     result,
     responseData,
-    scheduleInteractionOutcomeRetry: false,
     actionStartedAt,
     actionFinishedAt: Date.now(),
   });

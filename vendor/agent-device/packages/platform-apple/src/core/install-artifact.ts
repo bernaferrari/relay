@@ -2,7 +2,11 @@ import path from 'node:path';
 import type { LocalInstallSource } from '@agent-device/kernel/contracts';
 import { readIosBundleInfo } from './bundle-info.ts';
 import { AppError } from '@agent-device/kernel/errors';
-import { extractArchiveSafely, ArchiveBudget } from '@agent-device/host-kit/archive';
+import {
+  archiveTypeFromPath,
+  extractArchiveSafely,
+  ArchiveBudget,
+} from '@agent-device/host-kit/archive';
 
 import {
   installArtifactArchiveBudget,
@@ -10,10 +14,7 @@ import {
   noteInstallArtifactArchiveDepth,
   withInstallArtifactArchiveScope,
 } from '@agent-device/provision-kit/install-artifact-archive-context';
-import {
-  isTrustedInstallSourceUrl,
-  materializeInstallablePath,
-} from '@agent-device/provision-kit/install-source';
+import { materializeInstallablePath } from '@agent-device/provision-kit/install-source';
 import {
   makeHostTemporaryDirectory,
   readHostDirectory,
@@ -35,6 +36,7 @@ type IosPayloadAppBundle = {
 export type PreparedIosInstallArtifact = {
   archivePath?: string;
   installablePath: string;
+  uploadPath?: string;
   bundleId?: string;
   appName?: string;
   cleanup: () => Promise<void>;
@@ -53,19 +55,12 @@ async function prepareIosInstallArtifactInScope(
   source: LocalInstallSource,
   options?: InstallIosArtifactOptions,
 ): Promise<PreparedIosInstallArtifact> {
-  if (source.kind === 'url' && !isTrustedInstallSourceUrl(source.url)) {
-    throw new AppError(
-      'INVALID_ARGS',
-      'iOS install_from_source URL sources are only supported for trusted artifact services such as GitHub Actions and EAS. Use a path source for other hosts.',
-    );
-  }
   const materialized = await materializeInstallablePath({
     source,
     isInstallablePath: (candidatePath, stat) =>
       (stat.isDirectory() && candidatePath.toLowerCase().endsWith('.app')) ||
       (stat.isFile() && candidatePath.toLowerCase().endsWith('.ipa')),
     installableLabel: 'iOS installable (.app or .ipa)',
-    allowArchiveExtraction: source.kind !== 'url' || isTrustedInstallSourceUrl(source.url),
     signal: options?.signal,
   });
 
@@ -80,9 +75,11 @@ async function prepareIosInstallArtifactInScope(
         ? materialized.installablePath
         : undefined);
 
+    const uploadPath = iosUploadPath(materialized);
     return {
       archivePath,
       installablePath: resolvedInstallable.installPath,
+      ...(uploadPath ? { uploadPath } : {}),
       bundleId: bundleInfo.bundleId,
       appName: bundleInfo.appName,
       cleanup: async () => {
@@ -101,6 +98,24 @@ async function prepareIosInstallArtifactInScope(
 }
 
 export { readIosBundleInfo } from './bundle-info.ts';
+
+/**
+ * The installable is an extracted `.app` directory, which no hosted upload API accepts. The file
+ * that carries it is the `.ipa` it was unpacked from, or the zip the `.app` was extracted from
+ * directly; an outer archive that merely wrapped either is never it.
+ */
+function iosUploadPath(materialized: {
+  containingArchivePath?: string;
+  installablePath: string;
+}): string | undefined {
+  if (materialized.installablePath.toLowerCase().endsWith('.ipa')) {
+    return materialized.installablePath;
+  }
+  const { containingArchivePath } = materialized;
+  return containingArchivePath && archiveTypeFromPath(containingArchivePath) === 'zip'
+    ? containingArchivePath
+    : undefined;
+}
 
 async function resolveIosInstallablePath(
   appPath: string,

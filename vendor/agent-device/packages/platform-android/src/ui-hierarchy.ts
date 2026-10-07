@@ -61,6 +61,7 @@ export type AndroidUiNodeMetadata = {
   windowActive?: boolean;
   windowFocused?: boolean;
   windowRect?: Rect;
+  windowRegionRect?: boolean;
 } & AndroidSystemChromeProvenance;
 
 /**
@@ -188,6 +189,7 @@ function readNodeAttributes(node: string): Omit<AndroidUiNodeMetadata, 'rect'> {
     ...optionalBoolAttr('windowActive', 'window-active'),
     ...optionalBoolAttr('windowFocused', 'window-focused'),
     ...optionalRectAttr('windowRect', 'window-bounds'),
+    ...optionalBoolAttr('windowRegionRect', 'window-region-rect'),
   };
 }
 
@@ -280,6 +282,7 @@ export function parseUiHierarchyTree(xml: string): AndroidUiHierarchy {
     type: null,
     label: null,
     value: null,
+    passiveFacts: {},
     identifier: null,
     packageName: null,
     clickable: false,
@@ -325,22 +328,24 @@ function normalizeAndroidUiHierarchyNode(
       type: attrs.className,
       label,
       value: attrs.text,
-      ...(attrs.desc && attrs.desc !== label ? { contentDescription: attrs.desc } : {}),
+      passiveFacts: {
+        contentDescription: attrs.desc && attrs.desc !== label ? attrs.desc : undefined,
+        enabled: attrs.enabled,
+        selected: attrs.selected,
+        heading: attrs.heading,
+        roleDescription: attrs.roleDescription,
+        checked: attrs.checked,
+        editable: attrs.editable,
+        password: attrs.password,
+        hintShowing: attrs.hintShowing,
+        placeholder: attrs.hint,
+        selectionStart: attrs.selectionStart,
+        selectionEnd: attrs.selectionEnd,
+      },
       identifier: attrs.resourceId,
       packageName: attrs.packageName,
       rect: attrs.rect,
-      enabled: attrs.enabled,
       focused: attrs.focused,
-      selected: attrs.selected,
-      heading: attrs.heading,
-      roleDescription: attrs.roleDescription,
-      checked: attrs.checked,
-      editable: attrs.editable,
-      password: attrs.password,
-      hintShowing: attrs.hintShowing,
-      placeholder: attrs.hint,
-      selectionStart: attrs.selectionStart,
-      selectionEnd: attrs.selectionEnd,
       visibleToUser: attrs.visibleToUser,
       clickable: attrs.clickable === true,
       focusable: attrs.focusable === true,
@@ -353,6 +358,7 @@ function normalizeAndroidUiHierarchyNode(
       windowActive: attrs.windowActive,
       windowFocused: attrs.windowFocused,
       windowRect: attrs.windowRect,
+      windowRegionRect: attrs.windowRegionRect,
       depth,
       parentIndex: undefined,
       children: [],

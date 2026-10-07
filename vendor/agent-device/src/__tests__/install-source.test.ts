@@ -24,6 +24,7 @@ import {
   withAppleToolProvider,
 } from '@agent-device/platform-apple/tool-provider';
 import { prepareIosInstallArtifact } from '@agent-device/platform-apple/install-artifact';
+import { AppError } from '@agent-device/kernel/errors';
 import { ANDROID_INSTALL_SOURCE_CONTRACT_EVIDENCE } from './install-source.coverage.ts';
 import { mkdtempForTest } from './test-utils/tmp-dir.ts';
 import * as networkTransport from '@agent-device/provision-kit/install-source-network-transport';
@@ -104,26 +105,13 @@ test('isTrustedInstallSourceUrl recognizes supported artifact services', () => {
     false,
   );
   assert.equal(isTrustedInstallSourceUrl('https://expo.dev/pricing'), false);
-});
-
-test('materializeInstallablePath rejects archive extraction when disabled', async () => {
-  const tempRoot = await mkdtempForTest('agent-device-install-source-archive-');
-  const archivePath = path.join(tempRoot, 'bundle.zip');
-  await fs.writeFile(archivePath, 'placeholder');
-  try {
-    await assert.rejects(
-      async () =>
-        await materializeInstallablePath({
-          source: { kind: 'path', path: archivePath },
-          isInstallablePath: () => false,
-          installableLabel: 'Android installable (.apk or .aab)',
-          allowArchiveExtraction: false,
-        }),
-      /archive extraction is not allowed/i,
-    );
-  } finally {
-    await fs.rm(tempRoot, { recursive: true, force: true });
-  }
+  assert.throws(
+    () => isTrustedInstallSourceUrl('/abs/path/app.zip'),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'INVALID_ARGS' &&
+      error.message === 'Invalid source URL',
+  );
 });
 
 test.sequential('materializeInstallablePath extracts zip archives without ditto', async () => {
@@ -149,7 +137,6 @@ test.sequential('materializeInstallablePath extracts zip archives without ditto'
       source: { kind: 'path', path: archivePath },
       isInstallablePath: (candidatePath, stat) => stat.isFile() && candidatePath.endsWith('.apk'),
       installableLabel: 'Android installable (.apk or .aab)',
-      allowArchiveExtraction: true,
     });
 
     try {
@@ -179,7 +166,6 @@ test('materializeInstallablePath extracts tar.gz archives', async () => {
       source: { kind: 'path', path: archivePath },
       isInstallablePath: (candidatePath, stat) => stat.isFile() && candidatePath.endsWith('.apk'),
       installableLabel: 'Android installable (.apk or .aab)',
-      allowArchiveExtraction: true,
     });
 
     try {
@@ -193,14 +179,35 @@ test('materializeInstallablePath extracts tar.gz archives', async () => {
   }
 });
 
-test('prepareIosInstallArtifact rejects untrusted URL sources', async () => {
-  await assert.rejects(
-    async () =>
-      await prepareIosInstallArtifact({
-        kind: 'url',
-        url: 'https://example.com/app.ipa',
-      }),
-    /only supported for trusted artifact services/i,
+test('prepareIosInstallArtifact extracts a URL archive from any public host', async () => {
+  await withArchiveFixture(
+    {
+      extractions: [
+        {
+          command: 'unzip',
+          populate: async (outputPath) => {
+            await fs.mkdir(path.join(outputPath, 'Demo.app'));
+          },
+        },
+      ],
+    },
+    async () => {
+      await withIosBundleInfo('com.example.signedurl', 'Signed URL', async () => {
+        await withMockedInstallSourceFetch(Buffer.from('artifact fixture'), async () => {
+          const result = await prepareIosInstallArtifact({
+            kind: 'url',
+            url: 'https://artifacts.example.com/signed/build.zip?sig=abc',
+          });
+
+          try {
+            assert.equal(path.basename(result.installablePath), 'Demo.app');
+            assert.equal(result.bundleId, 'com.example.signedurl');
+          } finally {
+            await result.cleanup();
+          }
+        });
+      });
+    },
   );
 });
 
@@ -285,7 +292,7 @@ test('prepareAndroidInstallArtifact accepts direct AAB URL sources', async () =>
   }
 });
 
-test('prepareAndroidInstallArtifact extracts trusted GitHub artifact ZIP containing one APK', async () => {
+test('prepareAndroidInstallArtifact extracts GitHub artifact ZIP containing one APK', async () => {
   await withArchiveFixture(
     {
       extractions: [
@@ -319,7 +326,7 @@ test('prepareAndroidInstallArtifact extracts trusted GitHub artifact ZIP contain
   );
 });
 
-test('prepareAndroidInstallArtifact extracts trusted GitHub artifact ZIP containing one AAB', async () => {
+test('prepareAndroidInstallArtifact extracts GitHub artifact ZIP containing one AAB', async () => {
   await withArchiveFixture(
     {
       extractions: [
@@ -353,7 +360,7 @@ test('prepareAndroidInstallArtifact extracts trusted GitHub artifact ZIP contain
   );
 });
 
-test('prepareIosInstallArtifact extracts trusted GitHub artifact ZIP containing nested app tar', async () => {
+test('prepareIosInstallArtifact extracts GitHub artifact ZIP containing nested app tar', async () => {
   await withArchiveFixture(
     {
       extractions: [
@@ -381,6 +388,8 @@ test('prepareIosInstallArtifact extracts trusted GitHub artifact ZIP containing 
 
           try {
             assert.equal(path.basename(result.installablePath), 'Demo.app');
+            // A tar has no hosted upload API, so nothing is named uploadable.
+            assert.equal(result.uploadPath, undefined);
             assert.equal(result.bundleId, 'com.example.githubtar');
             assert.equal(result.appName, 'GitHub Tar');
           } finally {
@@ -392,7 +401,7 @@ test('prepareIosInstallArtifact extracts trusted GitHub artifact ZIP containing 
   );
 });
 
-test('prepareIosInstallArtifact extracts trusted GitHub artifact ZIP containing one IPA', async () => {
+test('prepareIosInstallArtifact extracts GitHub artifact ZIP containing one IPA', async () => {
   await withArchiveFixture(
     {
       extractions: [
@@ -420,8 +429,44 @@ test('prepareIosInstallArtifact extracts trusted GitHub artifact ZIP containing 
 
           try {
             assert.equal(path.basename(result.installablePath), 'Demo.app');
+            // The .ipa, not the artifact zip that wrapped it, is what a hosted provider uploads.
+            assert.equal(path.basename(result.uploadPath ?? ''), 'Demo.ipa');
+            assert.equal((await fs.stat(result.uploadPath ?? '')).isFile(), true);
             assert.equal(result.bundleId, 'com.example.githubipa');
             assert.equal(result.appName, 'GitHub IPA');
+          } finally {
+            await result.cleanup();
+          }
+        });
+      });
+    },
+  );
+});
+
+test('prepareIosInstallArtifact names the zip a simulator app arrived in as its upload', async () => {
+  await withArchiveFixture(
+    {
+      extractions: [
+        {
+          command: 'unzip',
+          populate: async (outputPath) => {
+            await fs.mkdir(path.join(outputPath, 'Demo.app'));
+          },
+        },
+      ],
+    },
+    async () => {
+      await withIosBundleInfo('com.example.githubapp', 'GitHub App', async () => {
+        await withMockedInstallSourceFetch(Buffer.from('artifact fixture'), async () => {
+          const result = await prepareIosInstallArtifact({
+            kind: 'url',
+            url: 'https://api.github.com/repos/acme/app/actions/artifacts/989/zip',
+          });
+
+          try {
+            assert.equal(path.basename(result.installablePath), 'Demo.app');
+            assert.equal(result.uploadPath, result.archivePath);
+            assert.equal((await fs.stat(result.uploadPath ?? '')).isFile(), true);
           } finally {
             await result.cleanup();
           }
@@ -468,7 +513,7 @@ test('prepareIosInstallArtifact cleans URL materialization when IPA payload reso
   );
 });
 
-test('prepareAndroidInstallArtifact rejects trusted artifact archives with multiple installables', async () => {
+test('prepareAndroidInstallArtifact rejects URL archives with multiple installables', async () => {
   const tempRoot = await mkdtempForTest('agent-device-github-multiple-');
   const archivePath = path.join(tempRoot, 'artifact.zip');
   await fs.writeFile(path.join(tempRoot, 'one.apk'), 'one', 'utf8');
@@ -488,31 +533,38 @@ test('prepareAndroidInstallArtifact rejects trusted artifact archives with multi
   await fs.rm(tempRoot, { recursive: true, force: true });
 });
 
-test('prepareAndroidInstallArtifact rejects untrusted URL archives instead of extracting them', async () => {
-  const tempRoot = await mkdtempForTest('agent-device-untrusted-archive-');
-  const archivePath = path.join(tempRoot, 'artifact.zip');
-  await fs.writeFile(path.join(tempRoot, 'app.apk'), 'apk', 'utf8');
-  runCmdSync('zip', ['-q', archivePath, 'app.apk'], { cwd: tempRoot });
-  const archiveBytes = await fs.readFile(archivePath);
-
-  try {
-    await withMockedInstallSourceFetch(
-      archiveBytes,
-      async () => {
-        await assert.rejects(
-          async () =>
-            await prepareAndroidInstallArtifact({
-              kind: 'url',
-              url: 'https://example.com/artifact.zip',
-            }),
-          /archive extraction is not allowed/i,
-        );
+test('prepareAndroidInstallArtifact extracts a URL archive from any public host', async () => {
+  await withArchiveFixture(
+    {
+      extractions: [
+        {
+          command: 'unzip',
+          populate: async (outputPath) => {
+            await fs.writeFile(path.join(outputPath, 'app.apk'), 'apk fixture');
+          },
+        },
+      ],
+      zipEntries: {
+        'AndroidManifest.xml':
+          '<manifest package="io.example.signedurl" xmlns:android="http://schemas.android.com/apk/res/android" />',
       },
-      { filename: 'artifact.zip', contentType: 'application/zip' },
-    );
-  } finally {
-    await fs.rm(tempRoot, { recursive: true, force: true });
-  }
+    },
+    async () => {
+      await withMockedInstallSourceFetch(Buffer.from('artifact fixture'), async () => {
+        const result = await prepareAndroidInstallArtifact({
+          kind: 'url',
+          url: 'https://artifacts.example.com/signed/build.zip?sig=abc',
+        });
+
+        try {
+          assert.equal(path.basename(result.installablePath), 'app.apk');
+          assert.equal(result.packageName, 'io.example.signedurl');
+        } finally {
+          await result.cleanup();
+        }
+      });
+    },
+  );
 });
 
 function findExecutableInPath(command: string): string | undefined {

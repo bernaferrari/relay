@@ -4,7 +4,11 @@ import type {
 } from '@agent-device/contracts/app-deployment-runtime';
 import type { CommandFlags } from '@agent-device/contracts/command';
 import { readyMaterializeAndDeployAppUse } from '@agent-device/contracts/app-deployment-runtime-plan';
-import { isIosFamily } from '@agent-device/kernel/device';
+import {
+  isIosFamily,
+  matchesPlatformSelector,
+  publicPlatformString,
+} from '@agent-device/kernel/device';
 import { AppError, normalizeError } from '@agent-device/kernel/errors';
 import {
   cleanupRetainedMaterializedPaths,
@@ -47,7 +51,8 @@ export async function handleInstallFromSourceDeploymentCommand(params: {
   bindDevice?: BindDeviceRuntime;
 }): Promise<DaemonResponse> {
   const { req, sessionName, sessionStore } = params;
-  const session = sessionStore.get(sessionName);
+  const ref = sessionStore.lookup(sessionName);
+  const session = ref?.session;
   let resolvedSource: ReturnType<typeof resolveInstallSource> | undefined;
   let materialized: MaterializedAppSource | undefined;
   let retained: RetainedMaterializedPaths | undefined;
@@ -84,14 +89,14 @@ export async function handleInstallFromSourceDeploymentCommand(params: {
     // ADR 0014 side-effect seam: materialization is request-local, but deployment can
     // replace the visible app surface. Expire immediately before its sole bound dispatch,
     // so admission or materialization failures preserve refs while a dispatch rejection does not.
-    if (session) expireRefFrame(session);
+    if (ref) expireRefFrame(sessionStore.requireCurrent(ref));
     const deployment = await runtime.operations.deployMaterializedApp({ artifact: materialized });
     const result = buildInstallFromSourceResult(device, materialized, deployment, retained);
     const data = withSuccessText(
       result,
       `Installed: ${resolveInstallFromSourceResultTarget(result)}`,
     );
-    recordSessionAction(sessionStore, session, req, 'install_source', data, { positionals: [] });
+    recordSessionAction(sessionStore, ref, req, 'install_source', data, { positionals: [] });
     return { ok: true, data };
   } catch (error) {
     if (retained) {
@@ -127,10 +132,10 @@ async function resolveInstallDevice(
   flags: DaemonRequest['flags'] | undefined,
 ): Promise<SessionState['device']> {
   const requestedPlatform = normalizePlatform(flags?.platform);
-  if (session && requestedPlatform && session.device.platform !== requestedPlatform) {
+  if (session && requestedPlatform && !matchesPlatformSelector(session.device, requestedPlatform)) {
     throw new AppError(
       'INVALID_ARGS',
-      `install_from_source requested platform ${requestedPlatform}, but session is bound to ${session.device.platform}`,
+      `install_from_source requested platform ${requestedPlatform}, but session is bound to ${publicPlatformString(session.device)}`,
     );
   }
   if (!session && !requestedPlatform) {

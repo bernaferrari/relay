@@ -1,14 +1,11 @@
 import { A as Rect, C as Platform, P as SnapshotNode, R as SnapshotState, T as PublicPlatform, h as ResponseCost } from "./sdk-contracts.js";
-//#region packages/contracts/src/click-button.d.ts
-declare const CLICK_BUTTONS: readonly ['primary', 'secondary', 'middle'];
-type ClickButton = (typeof CLICK_BUTTONS)[number];
-//#endregion
 //#region packages/contracts/src/fill-evidence.d.ts
 /**
  * The evidence a `fill` carries when it changed a field but could not confirm the text it sent.
  * Both the fill response and `Interactor.fill`'s return need these shapes, so they sit below both
- * of those modules rather than in either. This is the cross-language shape, not Android's probing:
- * `packages/platform-android/src/fill-verification.ts` builds Android's copy of it.
+ * of those modules rather than in either. This is the cross-language shape, not a platform's probing:
+ * `packages/platform-android/src/fill-verification.ts` builds Android's copy of it, and the Apple
+ * runner's `RunnerTests+TextEntryConfirmation.swift` builds the iOS one.
  */
 /** The field a fill aimed at, as the platform that performed it names it. */
 type FillVerificationTarget = {
@@ -19,7 +16,8 @@ type FillVerificationTarget = {
 };
 /**
  * Target-bound evidence that a fill moved a field's content from `before` to `after` without raw
- * equality with `requested` being reachable, because app-owned formatting prevents it. Bound to the
+ * equality with `requested` being reachable, because app-owned formatting prevents it or the field's
+ * accessibility value does not echo the typed text. Bound to the
  * {@link FillVerificationTarget} it was collected against so another field, or the same field after
  * it re-laid out, cannot borrow this evidence.
  */
@@ -30,6 +28,10 @@ type FillUnconfirmedVerification = {
   after: string | null;
   target: FillVerificationTarget;
 };
+//#endregion
+//#region packages/contracts/src/click-button.d.ts
+declare const CLICK_BUTTONS: readonly ['primary', 'secondary', 'middle'];
+type ClickButton = (typeof CLICK_BUTTONS)[number];
 //#endregion
 //#region packages/contracts/src/interaction.d.ts
 /** The decisive criterion separating a resolveSelectorChain winner from its strongest runner-up (ADR 0012). */
@@ -76,6 +78,14 @@ type ResolutionDisclosure = {
 } | {
   source: 'direct-ios';
   kind: 'not-observed';
+};
+/**
+ * The wait a successful press/click/longpress spent before its target appeared. Reported only when
+ * more than one capture was needed, so its presence means the step would have failed without the wait.
+ */
+type ReadinessWaitEvidence = {
+  polls: number;
+  waitedMs: number;
 };
 /**
  * A post-action capture that describes a DIFFERENT surface than the pre-action baseline (#2438): an
@@ -215,6 +225,7 @@ type TouchResponseDataBase = {
   evidence?: InteractionEvidence;
   settle?: SettleObservation;
   resolution?: ResolutionDisclosure;
+  readiness?: ReadinessWaitEvidence;
   cost?: ResponseCost;
   /** Direct iOS Maestro coordinate-fallback signals. */
   maestroNonHittableCoordinateFallbackAllowed?: boolean;
@@ -367,6 +378,33 @@ type AstSelectorResolution = {
   disambiguation?: SelectorDisambiguationDisclosure;
 };
 declare function resolveSelectorChain(nodes: SnapshotState['nodes'], chain: SelectorChain, options: SelectorResolutionOptions): AstSelectorResolution | null;
+/** The parser-side twin of the façade's `SelectorChainMatchList`. */
+type AstSelectorChainMatchList = {
+  selector: Selector;
+  selectorIndex: number;
+  matchedNodes: SnapshotNode[];
+};
+/**
+ * Every node the winning chain alternative matches, in snapshot order, plus
+ * that alternative and its index; `null` when no alternative matches.
+ *
+ * "Winning" is the SAME alternative `findSelectorChainMatch` picks — the first
+ * with at least one match — decoupled from uniqueness and disambiguation:
+ * several matches are reported, never refused or narrowed to one. That is NOT
+ * always what `resolveSelectorChain` names: under its default
+ * `requireUnique: true` it skips an ambiguous alternative and resolves from a
+ * later one, so the indices agree when it passes `requireUnique: false`, when
+ * the first matching alternative is unique, or when `disambiguateAmbiguous:
+ * true` resolves that alternative in place (see `firstMatch` vs `matchedNodes`
+ * above). Published through `agent-device/selectors` (#3180) so a consumer
+ * applies its OWN strictness to the same matched-node domain the daemon
+ * resolves against, instead of reimplementing term matching.
+ *
+ * ADR 0012 migration step 4 kept this mirroring `analyzeSelectorMatches`'s
+ * alternate-selection exactly, so a replay-time verifier computes `matchCount`
+ * and the recorded-identity set over the SAME domain resolution itself used.
+ */
+declare function listSelectorChainMatches(nodes: SnapshotState['nodes'], chain: SelectorChain, options: SelectorMatchOptions): AstSelectorChainMatchList | null;
 /**
  * A first-match lookup used by existence checks. No façade twin: the root
  * façade resolves through the policy interface only, so this shape reaches
@@ -395,4 +433,4 @@ declare function formatSelectorFailure(chain: SelectorChain | string, diagnostic
   unique?: boolean;
 }): string;
 //#endregion
-export { SettleObservation as _, resolveSelectorChain as a, isSelectorToken as c, ClickCommandResponseData as d, FillCommandResponseData as f, PressCommandResponseData as g, LongPressCommandResponseData as h, findSelectorChainMatch as i, parseSelectorChain as l, HoverCommandResponseData as m, isNodeEditable as n, SelectorDiagnostics as o, FindCommandResponseData as p, isNodeVisible as r, SelectorChain as s, formatSelectorFailure as t, tryParseSelectorChain as u, ClickButton as v };
+export { PressCommandResponseData as _, listSelectorChainMatches as a, SelectorChain as c, tryParseSelectorChain as d, ClickCommandResponseData as f, LongPressCommandResponseData as g, HoverCommandResponseData as h, findSelectorChainMatch as i, isSelectorToken as l, FindCommandResponseData as m, isNodeEditable as n, resolveSelectorChain as o, FillCommandResponseData as p, isNodeVisible as r, SelectorDiagnostics as s, formatSelectorFailure as t, parseSelectorChain as u, SettleObservation as v, ClickButton as y };

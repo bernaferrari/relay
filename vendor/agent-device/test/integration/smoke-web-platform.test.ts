@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { createServer, type Server } from 'node:http';
 import path from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { type CliJsonResult, formatResultDebug, runBuiltCliJson } from './cli-json.ts';
 import { assertPngDimensions, assertPngFile } from './provider-scenarios/assertions.ts';
 import { runCleanupWithCoverageReport } from './web-e2e/coverage-report.ts';
@@ -16,7 +17,7 @@ import {
   type AgentBrowserToolStatus,
 } from '@agent-device/platform-web';
 import {
-  stopProcessForTakeover,
+  stopDaemonProcess,
   waitForDaemonExit,
   type DaemonProcessIdentity,
 } from '../../src/daemon-process.ts';
@@ -78,6 +79,7 @@ test('web shutdown cleanup reaps the exact daemon that survived graceful shutdow
   child.on('message', (message) => {
     if (message === 'sigterm-ignored') ignoredSigterm = true;
   });
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
 
   const daemonStartTime = readProcessStartTime(daemonPid);
   assert.ok(daemonStartTime, 'expected the fake daemon to report a start time');
@@ -101,6 +103,13 @@ test('web shutdown cleanup reaps the exact daemon that survived graceful shutdow
     true,
     'expected cleanup to escalate after the child ignored SIGTERM',
   );
+  // The killed child stays a zombie, alive to kill(pid, 0), until this process reaps it on exit.
+  const bound = new AbortController();
+  await Promise.race([
+    exited,
+    delay(5_000, undefined, { signal: bound.signal }).catch(() => undefined),
+  ]);
+  bound.abort();
   assert.equal(isProcessAlive(daemonPid), false);
 });
 
@@ -218,7 +227,7 @@ async function runWebShutdownSmoke(context: WebSmokeContext): Promise<void> {
 }
 
 // Best-effort and independent of how far the `try` block got: a daemon that survived SIGTERM
-// (stopProcessForTakeover escalates to SIGKILL) and a Chrome fleet that outlived it (a forceful
+// (stopDaemonProcess escalates to SIGKILL) and a Chrome fleet that outlived it (a forceful
 // reap, not cleanupManagedAgentBrowserOrphans — see forceKillManagedBrowserProcesses) are reaped
 // here regardless of which assertion above failed, or whether none did. Mirrors cleanupWebSmoke's
 // AggregateError shape so a cleanup failure never silently swallows the assertion failure it ran
@@ -235,11 +244,7 @@ async function cleanupWebShutdownSmoke(
   const errors: unknown[] = [];
   if (daemonIdentity !== undefined) {
     try {
-      await stopProcessForTakeover(daemonIdentity.pid, {
-        termTimeoutMs: timeouts.termTimeoutMs,
-        killTimeoutMs: timeouts.killTimeoutMs,
-        expectedStartTime: daemonIdentity.startTime,
-      });
+      await stopWebSmokeDaemon(daemonIdentity, timeouts);
     } catch (error) {
       errors.push(error);
     }
@@ -258,6 +263,16 @@ async function cleanupWebShutdownSmoke(
   }
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1) throw new AggregateError(errors, 'web shutdown smoke cleanup failed');
+}
+
+async function stopWebSmokeDaemon(
+  identity: DaemonProcessIdentity,
+  timeouts: { termTimeoutMs: number; killTimeoutMs: number },
+): Promise<void> {
+  const termination = await stopDaemonProcess(identity, { mode: 'graceful', ...timeouts });
+  if (termination.status === 'retained') {
+    throw new Error(`Daemon cleanup retained the process: ${termination.reason}`);
+  }
 }
 
 // Deliberately NOT cleanupManagedAgentBrowserOrphans: that function exists to leave an actively

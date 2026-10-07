@@ -2,7 +2,10 @@ import {
   AppError,
   asAppError,
   createRequestCanceledError,
+  discloseDispatch,
+  discloseUnclassifiedDispatch,
   isRequestCanceledError,
+  type DispatchDisclosure,
 } from '@agent-device/kernel/errors';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { ReadinessPhase } from '@agent-device/contracts/wait';
@@ -15,19 +18,21 @@ import {
   ensureRunnerSession,
   invalidateRunnerSession,
   executeRunnerCommandWithSession,
-  readRunnerStartupTimeoutMs,
   markRunnerSessionServed,
   readRunnerSessionLiveness,
 } from './runner-session.ts';
 import {
   assertRunnerRequestActive,
+  callerDeadlineExpired,
   resolveRunnerRequestSignal,
   withRunnerCommandId,
   type RunnerCommand,
 } from './runner-contract.ts';
 import {
   isRetryableRunnerError,
+  isRunnerPreSendRefusal,
   isStructuredRunnerFailure,
+  resolveFirstAttemptDispatch,
   shouldRebuildCachedRunnerArtifact,
   shouldRestartRunnerAfterReadinessPreflight,
   shouldRestartRunnerBeforeCommandSend,
@@ -38,7 +43,11 @@ import type {
   AppleRunnerPrepareOptions,
   AppleRunnerPrepareResult,
 } from './runner-provider.ts';
-import { markRunnerXctestrunArtifactBadForRun } from './runner-xctestrun.ts';
+import {
+  finishRunnerStartAdmission,
+  markRunnerXctestrunArtifactBadForRun,
+  openRunnerStartLoopAdmission,
+} from './runner-xctestrun.ts';
 import { handleRunnerTransportErrorAfterCommandSend } from './runner-command-recovery.ts';
 import {
   buildRunnerRecycleBudgetExhaustedError,
@@ -65,18 +74,26 @@ export async function prepareLocalIosRunner(
   assertRunnerRequestActive(options.requestId);
   const signal = resolveRunnerRequestSignal(options);
   const command = withRunnerCommandId({ command: 'uptime' });
+  // One admission for the whole attempt loop, supplied to every start it makes: a teardown that
+  // lands mid-loop closes it, and the health retry that would re-enter the start and rebuild the
+  // runner the loop's killed child was building meets a closed gate instead (#3220).
+  const startAdmission = openRunnerStartLoopAdmission(device.id);
   let recoveryReason: string | undefined;
-  for (let attempt = 1; attempt <= PREPARE_RUNNER_HEALTH_MAX_SESSION_ATTEMPTS; attempt += 1) {
-    const result = await runPrepareAttempt({
-      device,
-      command,
-      options,
-      signal,
-      attempt,
-      recoveryReason,
-    });
-    if (result.kind === 'prepared') return result.result;
-    recoveryReason = result.recoveryReason;
+  try {
+    for (let attempt = 1; attempt <= PREPARE_RUNNER_HEALTH_MAX_SESSION_ATTEMPTS; attempt += 1) {
+      const result = await runPrepareAttempt({
+        device,
+        command,
+        options: { ...options, startAdmission },
+        signal,
+        attempt,
+        recoveryReason,
+      });
+      if (result.kind === 'prepared') return result.result;
+      recoveryReason = result.recoveryReason;
+    }
+  } finally {
+    finishRunnerStartAdmission(startAdmission);
   }
 
   // Unreachable while PREPARE_RUNNER_HEALTH_MAX_SESSION_ATTEMPTS is positive.
@@ -260,11 +277,32 @@ function shouldRetryPrepareRunnerHealthFailure(error: AppError): boolean {
   return isRetryableRunnerError(error) || shouldRetryRunnerConnectError(error);
 }
 
-// fallow-ignore-next-line complexity
+/**
+ * Runs one runner command and discloses `dispatched: no` on a failure raised before the command
+ * reached the exchange, or classified as a pre-send refusal by the recovery table.
+ */
 export async function executeRunnerCommand(
   device: DeviceInfo,
   command: RunnerCommand,
   options: AppleRunnerCommandOptions,
+): Promise<Record<string, unknown>> {
+  const exchange = { entered: false };
+  try {
+    return await executeRunnerCommandAttempt(device, command, options, exchange);
+  } catch (error) {
+    const failure = asAppError(error);
+    if (!exchange.entered) throw discloseDispatch(failure, 'no');
+    if (isRunnerPreSendRefusal(failure)) throw discloseUnclassifiedDispatch(failure, 'no');
+    throw failure;
+  }
+}
+
+// fallow-ignore-next-line complexity
+async function executeRunnerCommandAttempt(
+  device: DeviceInfo,
+  command: RunnerCommand,
+  options: AppleRunnerCommandOptions,
+  exchange: { entered: boolean },
 ): Promise<Record<string, unknown>> {
   assertRunnerRequestActive(options.requestId);
   const signal = resolveRunnerRequestSignal(options);
@@ -294,8 +332,12 @@ export async function executeRunnerCommand(
       commitRunnerRecycle(recycleKey);
     }
     markRunnerRequestTouchedSession(recycleKey);
-    const timeoutMs =
-      session.state === 'ready' ? RUNNER_COMMAND_TIMEOUT_MS : readRunnerStartupTimeoutMs(session);
+    let timeoutMs = RUNNER_COMMAND_TIMEOUT_MS;
+    if (session.state !== 'ready') {
+      const { readRunnerStartupTimeoutMs } = await import('./runner-exchange.ts');
+      timeoutMs = readRunnerStartupTimeoutMs(session);
+    }
+    exchange.entered = true;
     return await executeRunnerCommandWithSession(
       device,
       session,
@@ -311,7 +353,11 @@ export async function executeRunnerCommand(
       ? session.state === 'starting'
       : livenessAtEntry !== 'ready';
     if (runnerNeverAnswered && isRequestCanceledError(appErr)) {
-      if (session) {
+      // A cancelled request leaves no half-started runner behind. A caller whose own deadline ran
+      // out mid-start leaves it running: the session's launch budget bounds it, the next request
+      // joins it instead of paying it again, and the reuse check retires it once that budget is
+      // spent (#2894).
+      if (session && !callerDeadlineExpired(options)) {
         await invalidateRunnerSessionBestEffort(session, 'runner_startup_request_canceled');
       }
       throw createRequestCanceledError(
@@ -319,7 +365,7 @@ export async function executeRunnerCommand(
         appErr,
       );
     }
-    if (shouldRestartRunnerBeforeCommandSend(appErr) && session) {
+    if (shouldRestartRunnerBeforeCommandSend(appErr, command) && session) {
       assertRunnerRequestActive(options.requestId);
       return await restartSessionAndRunCommand({
         device,
@@ -328,6 +374,7 @@ export async function executeRunnerCommand(
         options,
         signal,
         restartReason: 'runner_connect_failed_before_command_send',
+        firstAttemptDispatched: resolveFirstAttemptDispatch(appErr),
       });
     }
     if (session && shouldRestartRunnerAfterReadinessPreflight(appErr)) {
@@ -340,6 +387,7 @@ export async function executeRunnerCommand(
         signal,
         restartReason: 'runner_readiness_preflight_failed_before_command_send',
         recoveredDiagnosticPhase: 'ios_runner_readiness_preflight_recovered',
+        firstAttemptDispatched: 'no',
       });
     }
     // Status recovery answers "did the command I lost the response to run?". A structured reply
@@ -371,6 +419,11 @@ async function restartSessionAndRunCommand(params: {
     | 'runner_connect_failed_before_command_send'
     | 'runner_readiness_preflight_failed_before_command_send';
   recoveredDiagnosticPhase?: string;
+  /**
+   * What the failed first attempt disclosed about writing the command. After `unknown`, the replay
+   * can double-send, and no failure of this restart may claim `no`.
+   */
+  firstAttemptDispatched: DispatchDisclosure;
 }): Promise<Record<string, unknown>> {
   const { device, command, options, signal, restartReason } = params;
   // At most one recycle per request: when the budget is spent, fail fast and KEEP the current
@@ -378,7 +431,10 @@ async function restartSessionAndRunCommand(params: {
   // cheaply, and a dead process is detected and cleaned by the next ensureRunnerSession (#1105).
   const recycleKey = runnerRecycleLedgerKey(options, command);
   if (!tryBeginRunnerRecycle(recycleKey)) {
-    throw buildRunnerRecycleBudgetExhaustedError(command, options);
+    throw discloseDispatch(
+      buildRunnerRecycleBudgetExhaustedError(command, options),
+      params.firstAttemptDispatched,
+    );
   }
   await invalidateRunnerSession(params.session, restartReason);
   const restartedSession = await ensureRunnerSession(device, {
@@ -436,12 +492,12 @@ function markRunnerRestartError(
   error: unknown,
   params: Pick<
     Parameters<typeof restartSessionAndRunCommand>[0],
-    'session' | 'command' | 'options' | 'restartReason'
+    'session' | 'command' | 'options' | 'restartReason' | 'firstAttemptDispatched'
   >,
   restartedSession?: RunnerSession,
 ): unknown {
   if (!(error instanceof AppError)) return error;
-  return new AppError(
+  const marked = new AppError(
     error.code,
     error.message,
     {
@@ -458,6 +514,23 @@ function markRunnerRestartError(
     },
     error.cause ?? error,
   );
+  return discloseRestartDispatch(marked, params.firstAttemptDispatched, restartedSession);
+}
+
+/**
+ * A restart that never replayed says what the first attempt did; a replay after a first attempt
+ * that may have written the command cannot claim `no` for the two sends together. After an unwritten
+ * first attempt the replay's own verdict stands; without one, only a pre-send refusal is `no`.
+ */
+function discloseRestartDispatch(
+  error: AppError,
+  firstAttemptDispatched: DispatchDisclosure,
+  restartedSession: RunnerSession | undefined,
+): AppError {
+  if (!restartedSession || firstAttemptDispatched === 'unknown') {
+    return discloseDispatch(error, firstAttemptDispatched);
+  }
+  return discloseUnclassifiedDispatch(error, isRunnerPreSendRefusal(error) ? 'no' : 'unknown');
 }
 
 async function runPrepareHealthCheck(

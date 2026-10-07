@@ -32,6 +32,7 @@ function rawFixtureToTreeNode(raw: RawSnapshotNode): AndroidUiHierarchy {
     type: raw.type ?? null,
     label: raw.label ?? null,
     value: raw.value ?? null,
+    passiveFacts: {},
     identifier: raw.identifier ?? null,
     packageName: raw.bundleId ?? null,
     rect: raw.rect,
@@ -49,6 +50,7 @@ function rawFixtureToAndroidTree(rawNodes: RawSnapshotNode[]): AndroidUiHierarch
     type: null,
     label: null,
     value: null,
+    passiveFacts: {},
     identifier: null,
     packageName: null,
     clickable: false,
@@ -121,7 +123,7 @@ export function parseUiHierarchy(
  * node (`status_bar_container`, `status_bar_contents`, ...), unlike a default
  * capture. Shared across the chrome-classification tests
  * (`core/__tests__/snapshot-chrome-android-statusbar.test.ts`) and the replay
- * divergence route test (`daemon/replay/internal/__tests__/session-replay-divergence-chrome-filter.test.ts`)
+ * divergence route test (`daemon/__tests__/replay-divergence/session-replay-divergence-chrome-filter.test.ts`)
  * so both exercise the exact same real screen through `walkNonRawAndroidFixture`.
  */
 export const ANDROID_IME_CAPTURE_RAW_NODES: RawSnapshotNode[] = imeCapture;

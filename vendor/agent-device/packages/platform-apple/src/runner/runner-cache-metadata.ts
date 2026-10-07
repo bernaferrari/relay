@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
@@ -8,6 +9,7 @@ import {
   isRequestCanceledError,
 } from '@agent-device/kernel/errors';
 import {
+  commandDeveloperDir,
   createTtlMemo,
   Deadline,
   isCommandTimeoutError,
@@ -29,7 +31,7 @@ import { computeRunnerSourceFingerprint } from './runner-source.ts';
 const DEFAULT_IOS_RUNNER_APP_BUNDLE_ID = 'com.callstack.agentdevice.runner';
 const RUNNER_DERIVED_ROOT = path.join(os.homedir(), '.agent-device', 'apple-runner');
 export const RUNNER_CACHE_METADATA_FILE = '.agent-device-runner-cache.json';
-const RUNNER_CACHE_SCHEMA_VERSION = 2;
+const RUNNER_CACHE_SCHEMA_VERSION = 3;
 const RUNNER_CACHE_METADATA_VALUE_MAX_LENGTH = 300;
 
 /**
@@ -38,8 +40,6 @@ const RUNNER_CACHE_METADATA_VALUE_MAX_LENGTH = 300;
  * probe, its warm retry, and the two probes still to run (#2422).
  */
 const TOOLCHAIN_FINGERPRINT_BUDGET_MS = 45_000;
-/** What naming the Xcode in a failure report may spend when the fingerprint is not memoized yet. */
-const XCODE_VERSION_REPORT_BUDGET_MS = 5_000;
 const TOOLCHAIN_PROBE_MAX_BUFFER = 128 * 1024;
 const TOOLCHAIN_PROBE_DETAIL_MAX_LENGTH = 200;
 const TOOLCHAIN_PROBE_HINT =
@@ -49,9 +49,14 @@ const RUNNER_SANDBOX_BUILD_ARGS = [
   '-IDEPackageSupportDisablePluginExecutionSandbox=1',
   'ENABLE_USER_SCRIPT_SANDBOXING=NO',
 ] as const;
-const RUNNER_RUNTIME_SWIFT_FLAGS = '$(inherited) -disable-sandbox';
-const RUNNER_UNIT_TEST_SWIFT_FLAGS =
-  '$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_UNIT_TESTS';
+/**
+ * The isolation-scan canary compiles in every runner build, whether a build came from
+ * `scripts/build-xcuitest-apple.sh` or from `ensureXctestrunArtifact`, so the metadata's
+ * recorded Swift flags describe what the compiler actually received on both paths.
+ */
+const RUNNER_RUNTIME_SWIFT_FLAGS =
+  '$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_ISOLATION_CANARY';
+const RUNNER_UNIT_TEST_SWIFT_FLAGS = `${RUNNER_RUNTIME_SWIFT_FLAGS} -D AGENT_DEVICE_RUNNER_UNIT_TESTS`;
 
 /** Toolchain half of the runner cache key. Every field is a probed value. */
 export type RunnerToolchainFingerprint = {
@@ -169,22 +174,40 @@ export type RunnerXctestrunCacheMetadata = RunnerToolchainFingerprint & {
   runnerBundleBuildSettings: string[];
   runnerSigningBuildSettings: string[];
   runnerPerformanceBuildSettings: string[];
+  runnerArchBuildSettings: string[];
   runnerSandboxBuildArgs: string[];
   artifacts?: RunnerXctestrunCacheArtifacts;
 };
 
 export type RunnerXctestrunCacheArtifacts = {
   xctestrunPath: string;
-  xctestrunMtimeMs: number;
   xctestrunSize: number;
-  productPaths: RunnerXctestrunCacheProductArtifact[];
+  xctestrunDigest: string;
+  productPaths: string[];
+  /** Paths are relative to the cache root the manifest was written under. */
+  entries: RunnerCacheArtifactEntry[];
 };
 
-export type RunnerXctestrunCacheProductArtifact = {
+/**
+ * One file inside a cached product bundle: its bytes hashed, its permission bits, and the
+ * size that makes an equal-size rewrite with a stale mtime visible as a digest mismatch.
+ */
+export type RunnerCacheArtifactFileEntry = {
   path: string;
-  mtimeMs: number;
   size: number;
+  mode: number;
+  digest: string;
 };
+
+/** One symlink inside a cached product bundle, recorded as its raw target string. */
+export type RunnerCacheArtifactSymlinkEntry = {
+  path: string;
+  symlink: string;
+};
+
+export type RunnerCacheArtifactEntry =
+  | RunnerCacheArtifactFileEntry
+  | RunnerCacheArtifactSymlinkEntry;
 
 function normalizeBundleId(value: string | undefined): string {
   return value?.trim() ?? '';
@@ -245,6 +268,7 @@ export function resolveExpectedRunnerCacheMetadata(
       device,
     ),
     runnerPerformanceBuildSettings: resolveRunnerPerformanceBuildSettings(),
+    runnerArchBuildSettings: resolveRunnerArchBuildSettings(process.env),
     runnerSandboxBuildArgs: resolveRunnerSandboxBuildArgs(),
   };
 }
@@ -252,10 +276,18 @@ export function resolveExpectedRunnerCacheMetadata(
 // Lazy: createTtlMemo is a host capability, and module evaluation happens
 // before the composition root binds the host. Only a complete, parsed
 // fingerprint is ever memoized, so nothing unavailable can outlive the probe
-// that could not answer.
+// that could not answer. The key carries a client-chosen DEVELOPER_DIR, so an
+// entry expires once no request has used it for TOOLCHAIN_FINGERPRINT_TTL_MS:
+// a dir no client uses any more must not stay for the daemon's lifetime. A hit
+// renews the entry, so a failure report can name the Xcode a decision read for
+// at least TOOLCHAIN_FINGERPRINT_TTL_MS after that read (the default start budget).
+const TOOLCHAIN_FINGERPRINT_TTL_MS = 10 * 60_000;
 let lazyToolchainFingerprintCache: TtlMemo<string, RunnerToolchainFingerprint> | undefined;
 function toolchainFingerprintCache(): TtlMemo<string, RunnerToolchainFingerprint> {
-  lazyToolchainFingerprintCache ??= createTtlMemo<string, RunnerToolchainFingerprint>();
+  lazyToolchainFingerprintCache ??= createTtlMemo<string, RunnerToolchainFingerprint>({
+    ttlMs: TOOLCHAIN_FINGERPRINT_TTL_MS,
+    scheduleExpiry: true,
+  });
   return lazyToolchainFingerprintCache;
 }
 
@@ -270,28 +302,38 @@ function requireRunnerToolchainFingerprint(
   // Before the cache, not just before the probes: a hit must not hide a cancellation.
   const clock = createToolchainProbeClock(budget);
   clock.throwIfCanceled();
-  const cached = toolchainFingerprintCache().get(sdkName);
-  if (cached) return cached;
+  const cacheKey = toolchainFingerprintCacheKey(sdkName);
+  const cached = toolchainFingerprintCache().get(cacheKey);
+  if (cached) {
+    toolchainFingerprintCache().set(cacheKey, cached);
+    return cached;
+  }
   const fingerprint = readRunnerToolchainFingerprint(sdkName, clock);
   if (!fingerprint.ok) throw unavailableToolchainError(fingerprint.failures);
-  toolchainFingerprintCache().set(sdkName, fingerprint.value);
+  toolchainFingerprintCache().set(cacheKey, fingerprint.value);
   return fingerprint.value;
 }
 
 /**
- * The selected Xcode's version, for a failure report that names it. Reads the fingerprint the cache
- * decision already memoized; a cold or unreadable toolchain answers undefined within
- * {@link XCODE_VERSION_REPORT_BUDGET_MS} instead of delaying the failure it describes.
+ * A daemon serves clients that select different Xcodes through `DEVELOPER_DIR`, so a fingerprint
+ * read under one developer dir answers only for that dir. An empty dir means xcode-select's.
  */
-export function readRunnerXcodeVersion(device: DeviceInfo): string | undefined {
-  try {
-    return requireRunnerToolchainFingerprint(
+function toolchainFingerprintCacheKey(sdkName: string): string {
+  return `${commandDeveloperDir() ?? ''}\0${sdkName}`;
+}
+
+/**
+ * The selected Xcode's version as this process's runner cache decision memoized it, for a failure
+ * report that names it; undefined when no decision has read the toolchain in the last
+ * `TOOLCHAIN_FINGERPRINT_TTL_MS`. Never probes: a report must not wait on the toolchain it
+ * describes.
+ */
+export function memoizedRunnerXcodeVersion(device: DeviceInfo): string | undefined {
+  return toolchainFingerprintCache().get(
+    toolchainFingerprintCacheKey(
       resolveRunnerSdkName(resolveRunnerPlatformName(device), device.kind),
-      createRunnerPhaseBudget(XCODE_VERSION_REPORT_BUDGET_MS, undefined),
-    ).xcodeVersion;
-  } catch {
-    return undefined;
-  }
+    ),
+  )?.xcodeVersion;
 }
 
 function readRunnerToolchainFingerprint(
@@ -444,7 +486,7 @@ export function resolveRunnerDerivedPath(
   if (override) {
     return path.resolve(override);
   }
-  const cacheKey = resolveRunnerDerivedCacheKey(metadata);
+  const cacheKey = resolveRunnerCacheKey(metadata);
   const base = resolveRunnerDerivedBasePath(device);
   return path.join(base, cacheKey);
 }
@@ -453,7 +495,7 @@ function resolveRunnerDerivedBasePath(device: DeviceInfo): string {
   return path.join(RUNNER_DERIVED_ROOT, 'derived', resolveRunnerDerivedBaseName(device));
 }
 
-function resolveRunnerDerivedCacheKey(metadata: RunnerXctestrunCacheMetadata): string {
+export function resolveRunnerCacheKey(metadata: RunnerXctestrunCacheMetadata): string {
   const hash = crypto
     .createHash('sha256')
     .update(stableJsonStringify(comparableRunnerCacheMetadata(metadata)))
@@ -587,6 +629,31 @@ export function resolveRunnerPerformanceBuildSettings(): string[] {
   ];
 }
 
+/**
+ * The architecture an explicit `AGENT_DEVICE_XCUITEST_ARCHS` pins. A generic simulator
+ * destination leaves the active arch undefined and Xcode picks one per version, so the
+ * override changes the bytes on disk and must reach both the `xcodebuild` arguments and the
+ * cache identity from this one resolver.
+ */
+export function resolveRunnerArchBuildSettings(env: NodeJS.ProcessEnv = process.env): string[] {
+  const archs = env.AGENT_DEVICE_XCUITEST_ARCHS?.trim();
+  return archs ? [`ARCHS=${archs}`] : [];
+}
+
+/**
+ * Pins the build roots to the default layout under `derived`. `-derivedDataPath` alone does not:
+ * a custom or legacy build location in the user's Xcode settings still redirects products and
+ * intermediates, so the `.xctestrun` would land outside the cache directory.
+ */
+export function resolveRunnerBuildLocationSettings(derived: string): string[] {
+  const intermediates = path.join(derived, 'Build', 'Intermediates.noindex');
+  return [
+    `SYMROOT=${path.join(derived, 'Build', 'Products')}`,
+    `OBJROOT=${intermediates}`,
+    `SHARED_PRECOMPS_DIR=${path.join(intermediates, 'PrecompiledHeaders')}`,
+  ];
+}
+
 export function resolveRunnerSandboxBuildArgs(): string[] {
   return [
     ...RUNNER_SANDBOX_BUILD_ARGS,
@@ -598,4 +665,155 @@ function resolveRunnerSwiftFlags(env: NodeJS.ProcessEnv): string {
   return isEnvTruthy(env.AGENT_DEVICE_XCUITEST_INCLUDE_UNIT_TESTS)
     ? RUNNER_UNIT_TEST_SWIFT_FLAGS
     : RUNNER_RUNTIME_SWIFT_FLAGS;
+}
+
+const BUILD_SETTINGS_HEADER = /^\s*Build settings from command line:\s*$/;
+const BUILD_SETTING_LINE = /^\s+([A-Z][A-Z0-9_]*)\s*=\s*(.*)$/;
+const RECORDED_BUILD_SETTING = /^([A-Z][A-Z0-9_]*)=(.*)$/;
+const COMMAND_LINE_INVOCATION_HEADER = /^\s*Command line invocation:\s*$/;
+
+export type RunnerBuildSettingEvidence = {
+  key: string;
+  expected: string;
+  actual: string;
+};
+
+/**
+ * What one build log says it was handed: the settings block `xcodebuild` echoed, and the
+ * invocation line that carries every argument, including the ones that are not build settings.
+ * Null when the log holds no settings block at all.
+ */
+type RunnerBuildLogRecipe = {
+  settings: Map<string, string>;
+  invocationLine: string;
+};
+
+function readRunnerBuildLogRecipe(logPath: string): RunnerBuildLogRecipe | null {
+  let contents: string;
+  try {
+    contents = fs.readFileSync(logPath, 'utf8');
+  } catch {
+    return null;
+  }
+  const lines = contents.split('\n');
+  const settings = new Map<string, string>();
+  let inBlock = false;
+  let invocationLine = '';
+  for (const [index, line] of lines.entries()) {
+    if (COMMAND_LINE_INVOCATION_HEADER.test(line)) {
+      invocationLine = lines[index + 1] ?? '';
+      continue;
+    }
+    if (BUILD_SETTINGS_HEADER.test(line)) {
+      inBlock = true;
+      continue;
+    }
+    if (!inBlock) continue;
+    const setting = BUILD_SETTING_LINE.exec(line);
+    if (!setting) break;
+    settings.set(setting[1]!, setting[2]!.trimEnd());
+  }
+  return inBlock ? { settings, invocationLine } : null;
+}
+
+/** Every argument the cache identity records as a recipe, in the `xcodebuild` spelling. */
+function recordedRunnerBuildArguments(metadata: RunnerXctestrunCacheMetadata): string[] {
+  return [
+    ...metadata.runnerBundleBuildSettings,
+    ...metadata.runnerSigningBuildSettings,
+    ...metadata.runnerPerformanceBuildSettings,
+    ...metadata.runnerArchBuildSettings,
+    ...metadata.runnerSandboxBuildArgs,
+  ];
+}
+
+function recordedRunnerBuildSettings(
+  metadata: RunnerXctestrunCacheMetadata,
+): Record<string, string> {
+  const recorded: Record<string, string> = {};
+  for (const arg of recordedRunnerBuildArguments(metadata)) {
+    const setting = RECORDED_BUILD_SETTING.exec(arg);
+    if (setting) {
+      recorded[setting[1]!] = setting[2]!;
+    }
+  }
+  return recorded;
+}
+
+/**
+ * Recorded arguments `xcodebuild` echoes on the invocation line rather than in its settings block,
+ * which is where its whole recipe shows: `-I` user-default flags such as the package-sandbox
+ * disables. Without this the settings diff would call a recipe complete while ignoring them.
+ */
+function diffRunnerInvocationFlagsAgainstBuildLog(
+  metadata: RunnerXctestrunCacheMetadata,
+  invocationLine: string,
+): RunnerBuildSettingEvidence[] {
+  return recordedRunnerBuildArguments(metadata)
+    .filter((arg) => !RECORDED_BUILD_SETTING.test(arg))
+    .filter((arg) => !invocationLine.includes(arg))
+    .map((arg) => ({
+      key: '(invocation flag)',
+      expected: arg,
+      actual: 'absent from the "Command line invocation:" line',
+    }));
+}
+
+/**
+ * The recorded settings a build log shows `xcodebuild` did not receive exactly as recorded. An
+ * empty recorded value matches an absent report, which is how `CODE_SIGN_IDENTITY=` arrives.
+ */
+function diffRunnerBuildSettingsAgainstBuildLog(
+  metadata: RunnerXctestrunCacheMetadata,
+  logPath: string,
+): RunnerBuildSettingEvidence[] {
+  const reported = readRunnerBuildLogRecipe(logPath);
+  if (!reported) {
+    return [
+      {
+        key: '(build log)',
+        expected: 'a "Build settings from command line:" block',
+        actual: 'missing or unreadable log',
+      },
+    ];
+  }
+  const settingDifferences = Object.entries(recordedRunnerBuildSettings(metadata))
+    .filter(([key, expected]) => {
+      const actual = reported.settings.get(key);
+      return actual === undefined ? expected !== '' : actual !== expected;
+    })
+    .map(([key, expected]) => ({
+      key,
+      expected,
+      actual: reported.settings.get(key) ?? '(absent)',
+    }));
+  return [
+    ...settingDifferences,
+    ...diffRunnerInvocationFlagsAgainstBuildLog(metadata, reported.invocationLine),
+  ];
+}
+
+/**
+ * Fails when a build log shows a recipe other than the one `metadata` records — a setting whose
+ * value differs or went missing, or a recorded flag absent from the invocation — so a caller that
+ * drifted from this identity cannot have its products certified under it.
+ */
+export function requireRunnerBuildSettingsMatchBuildLog(
+  metadata: RunnerXctestrunCacheMetadata,
+  logPath: string,
+): void {
+  const differences = diffRunnerBuildSettingsAgainstBuildLog(metadata, logPath);
+  if (differences.length === 0) {
+    return;
+  }
+  throw new AppError(
+    'COMMAND_FAILED',
+    'The Apple runner build did not use the settings its cache identity records',
+    {
+      reason: 'runner_build_settings_mismatch',
+      buildLogPath: logPath,
+      differences,
+      hint: 'Align the build invocation with the runner cache identity resolvers, or rebuild without the cache.',
+    },
+  );
 }

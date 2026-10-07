@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { ExecBackgroundResult } from '@agent-device/host-kit/command';
 import { appleRunnerTestHost } from '../test-host.ts';
 import { AppError } from '@agent-device/kernel/errors';
-import type { RunnerSession } from '../runner-session-types.ts';
+import { RunnerCommandAccounting, type RunnerSession } from '../runner-session-types.ts';
 import {
   iosDevice,
   iosSimulator,
@@ -57,7 +57,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
 });
 
 test('waitForRunner propagates request cancellation without fallback', async () => {
@@ -158,6 +157,43 @@ test('waitForRunner types a failed simulator fallback as a refused connection', 
   assert.equal(mockRunCmd.mock.calls.length, 1);
 });
 
+test('waitForRunner discloses no when the runner exited before any attempt could write', async () => {
+  const session: RunnerSession = {
+    ...makeReadyRunnerSession(),
+    device: iosDevice,
+    deviceId: iosDevice.id,
+    child: { pid: 1234, exitCode: 65 } as ExecBackgroundResult['child'],
+  };
+  await assert.rejects(
+    () => waitForRunner(iosDevice, 8100, { command: 'tap', x: 1, y: 1 }, undefined, 100, session),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.message, 'Runner did not accept connection (xcodebuild exited early)');
+      assert.equal(error.details?.dispatched, 'no');
+      return true;
+    },
+  );
+  assert.equal(mockUsbmuxPostCommand.mock.calls.length, 0);
+});
+
+test('waitForRunner discloses unknown when an attempt may have written before a refused fallback', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockRejectedValue(new AppError('COMMAND_FAILED', 'Runner command deadline exceeded')),
+  );
+  mockRunCmd.mockResolvedValue({ exitCode: 7, stdout: '', stderr: 'curl: (7) Failed to connect' });
+
+  await assert.rejects(
+    () => waitForRunner(iosSimulator, 8100, { command: 'tap', x: 1, y: 1 }, undefined, 100),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.details?.dispatched, 'unknown');
+      return true;
+    },
+  );
+  assert.equal(mockRunCmd.mock.calls.length, 1);
+});
+
 test('waitForRunner wakes a simulator startup retry when the listener reports ready', async () => {
   vi.useFakeTimers();
   const readiness = new AbortController();
@@ -251,8 +287,7 @@ test('waitForRunner preserves xcodebuild diagnostics when the runner exits durin
     testPromise: Promise.resolve({ exitCode: 65, stdout: '', stderr: '' }),
     child: { pid: 1234, exitCode: null } as ExecBackgroundResult['child'],
     state: 'starting',
-    inFlightCommands: 0,
-    hasAbandonedCommands: false,
+    commandCharges: new RunnerCommandAccounting(),
   };
   mockUsbmuxPostCommand.mockImplementation(async () => {
     (session.child as { exitCode: number | null }).exitCode = 65;
@@ -294,8 +329,7 @@ test('waitForRunner carries the disk-image state when the runner is still alive 
     testPromise: new Promise(() => {}),
     child: { pid: 1234, exitCode: null } as ExecBackgroundResult['child'],
     state: 'starting',
-    inFlightCommands: 0,
-    hasAbandonedCommands: false,
+    commandCharges: new RunnerCommandAccounting(),
     startupDeviceStates: {
       developerMode: 'enabled',
       developerDiskImage: 'unavailable',
@@ -379,8 +413,7 @@ function makeReadyRunnerSession(): RunnerSession {
     testPromise: Promise.resolve({ exitCode: 0, stdout: '', stderr: '' }),
     child: { pid: 1234, exitCode: null } as ExecBackgroundResult['child'],
     state: 'ready',
-    inFlightCommands: 0,
-    hasAbandonedCommands: false,
+    commandCharges: new RunnerCommandAccounting(),
   };
 }
 

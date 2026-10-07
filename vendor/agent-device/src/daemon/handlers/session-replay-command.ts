@@ -6,15 +6,17 @@ import { bindInternalObservationAuthority } from '../internal-observation.ts';
 import type { LeaseRegistry } from '../lease-registry.ts';
 import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from '../request-runtime-binding.ts';
 import type { PlatformResourceCleanup } from '../platform-resource-cleanup.ts';
+import { runReplayCommand } from '@agent-device/replay-port/native-command';
+import { runReplayTestCommand } from '@agent-device/replay-port/test-command';
+import { bindReplaySession } from '@agent-device/replay-port/replay-session-binding';
 import {
-  bindReplaySession,
   replayInvokeOverDispatch,
-  runReplayCommand,
-  runReplayTestCommand,
   splitReplayCommandRequest,
-  type ReplayDaemonDependencies,
-  type ReplaySession,
-} from '../replay/index.ts';
+} from '@agent-device/replay-port/replay-dispatch-envelope';
+import type {
+  ReplayDaemonDependencies,
+  ReplaySession,
+} from '@agent-device/replay-port/command-types';
 import { createReplayCoordinator } from '../session-replay-coordinator.ts';
 import { assertSessionSelectorMatches } from '../session-selector.ts';
 import { resolveSessionScope } from '../session-routing.ts';
@@ -110,7 +112,6 @@ export function createReplaySession(
     const session = store.get(name);
     if (!session) return false;
     mutate(session);
-    store.set(name, session);
     return true;
   };
   // One read set for both views: the narrowed one the port binds over, and the full-record one the
@@ -145,23 +146,24 @@ export function createReplaySession(
         device,
         platform,
       }),
-    bindAuthority: (signal) =>
-      bindInternalObservationAuthority({
-        sessionStore: { get: () => store.get(name), update: updateSession },
-        sessionName: name,
-        ...(signal ? { signal } : {}),
-      }),
-    capture: async ({ flags, logPath: captureLogPath }) => {
-      const session = store.get(name);
-      if (!session) {
-        throw new AppError('NO_ACTIVE_SESSION', `Session "${name}" is no longer active.`);
-      }
-      return await captureSnapshot({
-        device: session.device,
-        session,
-        flags,
-        logPath: captureLogPath,
-      });
+    bindAuthority: (signal) => {
+      const ref = store.lookup(name);
+      return {
+        ...bindInternalObservationAuthority({ sessionStore: store, ref, signal }),
+        capture: async ({ flags, logPath: captureLogPath }) => {
+          const session = ref ? store.requireCurrent(ref) : undefined;
+          if (!session) {
+            throw new AppError('NO_ACTIVE_SESSION', `Session "${name}" is no longer active.`);
+          }
+          return await captureSnapshot({
+            device: session.device,
+            session,
+            flags,
+            logPath: captureLogPath,
+            signal,
+          });
+        },
+      };
     },
   });
 }

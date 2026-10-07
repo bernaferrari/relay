@@ -1,6 +1,7 @@
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { execFailureDetails, type ExecResult } from '@agent-device/host-kit/command';
+import { IOS_DEVICECTL_MIN_TIMEOUT_SECONDS } from './config.ts';
 import {
   IOS_DEVICE_DEVELOPER_DISK_IMAGE_HINT,
   IOS_DEVICE_DEVELOPER_MODE_OFF_HINT,
@@ -21,10 +22,13 @@ export async function launchCoreDeviceApp(
   bundleId: string,
   options: { payloadUrl?: string; launchArgs?: string[] } = {},
 ): Promise<void> {
-  const args = ['device', 'process', 'launch', '--device', device.id, bundleId];
+  const args = ['device', 'process', 'launch', '--device', device.id];
   if (options.payloadUrl) {
+    // `devicectl` treats everything after the bundle ID as app argv, so
+    // `--payload-url` must precede it to be honored as a launch option.
     args.push('--payload-url', options.payloadUrl);
   }
+  args.push(bundleId);
   if (options.launchArgs && options.launchArgs.length > 0) {
     // `devicectl` uses Swift ArgumentParser; preserve app-owned leading dashes.
     args.push('--', ...options.launchArgs);
@@ -174,7 +178,8 @@ async function runCoreDeviceDetails(
   commandTimeoutBufferMs = 0,
   signal?: AbortSignal,
 ): Promise<CoreDeviceDetailsProbe> {
-  const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+  // devicectl rejects sub-minimum values; shorter budgets use the host deadline alone.
+  const timeoutSeconds = Math.max(IOS_DEVICECTL_MIN_TIMEOUT_SECONDS, Math.ceil(timeoutMs / 1000));
   const outcome = await runIosDevicectlJsonRequest({
     jsonPrefix: 'agent-device-coredevice-info',
     args: [

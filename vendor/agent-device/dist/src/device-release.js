@@ -1,1 +1,1 @@
-import{w as e}from"./perf-runtime-plan.js";import{r as t,t as n}from"./platform-request-scope.js";async function r(r,i){return await e({selectors:r,reconcile:t(n(),i)})}export{r as runStaleDeviceClaimRelease};
+import{g as e}from"./perf-runtime-plan.js";import{r as t,t as n}from"./platform-request-scope.js";async function r(r,i){return await e({selectors:r,reconcile:t(n(),i)})}export{r as runStaleDeviceClaimRelease};

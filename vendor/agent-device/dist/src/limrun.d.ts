@@ -1,7 +1,7 @@
 import { A as Rect, D as IosTargetActivation, F as SnapshotOptions$1, I as SnapshotProvenance, N as SnapshotKeyboardBandFact, O as Point, S as DeviceTarget, b as DeviceInfo, f as LeaseBackend, k as RawSnapshotNode, w as PlatformSelector, x as DeviceKind } from "./sdk-contracts.js";
 import { s as AppsFilter, t as GesturePlan } from "./gesture-plan-types.js";
-import { T as BackendSnapshotResult, _ as CloudArtifactProvider, f as ReadSettingResult, i as DeviceRotation, k as SessionSurface, m as SettingOptions, n as ScrollExecutionOptions, p as ReadableSetting, r as TvRemoteButton, s as BackMode, y as ScrollDirection } from "./scroll-command.js";
 import { d as AndroidAdbProvider, m as AppStateRuntimeResult, n as AndroidKeyboardState, s as AndroidInputOwner, t as AndroidKeyboardDismissResult } from "./device-input-state.js";
+import { A as BackMode, E as DeviceRotation, a as BackendSnapshotResult, b as ScrollExecutionOptions, g as SettingOptions, h as ReadableSetting, l as SessionSurface, m as ReadSettingResult, n as CloudArtifactProvider, v as TvRemoteButton, x as ScrollDirection } from "./cloud-artifacts.js";
 //#region packages/contracts/src/device-inventory.d.ts
 type DeviceInventoryRequest = {
   platform?: PlatformSelector;
@@ -22,46 +22,6 @@ type DeviceInventoryRequest = {
   androidAvdSelection?: 'running-only' | 'include-stopped';
 };
 type ProviderDeviceInventoryRequest = Omit<DeviceInventoryRequest, 'booted' | 'kind'>;
-//#endregion
-//#region packages/contracts/src/device-provider.d.ts
-type DeviceLease = {
-  leaseId: string;
-  tenantId: string;
-  runId: string;
-  backend: LeaseBackend;
-  leaseProvider?: string;
-  deviceKey?: string;
-  clientId?: string;
-  createdAt: number;
-  heartbeatAt: number;
-  expiresAt: number;
-};
-type LeaseLifecycleContext = {
-  flags?: Readonly<Record<string, unknown>>;
-  initialApp?: string;
-  cwd?: string;
-  publicNetworkOnly?: boolean;
-  /** Request-bound cancellation (explicit cancel or client disconnect). */
-  signal?: AbortSignal;
-  /**
-   * Epoch-ms deadline by which `allocate` must have settled; derived from the
-   * same budget as the client's `lease_allocate` envelope, so a provider that
-   * fits its remote phases within it is never abandoned by a client first.
-   */
-  deadline?: number;
-};
-type LeaseLifecycleProvider = {
-  allocate?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
-  heartbeat?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
-  release?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
-};
-type DeviceInventoryProvider = (request: ProviderDeviceInventoryRequest, signal?: AbortSignal) => Promise<DeviceInfo[] | null | undefined>;
-type ProviderAppCatalogQuery = Readonly<{
-  provider: string;
-  platform: 'android' | 'ios';
-  publicNetworkOnly?: boolean;
-}>;
-type ProviderAppCatalogHandler = (query: ProviderAppCatalogQuery, signal?: AbortSignal) => Promise<readonly string[]>;
 //#endregion
 //#region packages/contracts/src/ios-system-surface.d.ts
 /**
@@ -200,6 +160,14 @@ type ScreenshotOptions = {
   skipIosSimulatorBootCheck?: boolean;
   captureBackend?: 'runner';
 };
+/**
+ * What the capture owner observed while writing the image. `displayRotation` is the rotation the display
+ * rendered the pixels in, so a landscape value pairs with a landscape image; it is absent when the
+ * owner has no rotation reading it can stand behind for this capture.
+ */
+type ScreenshotCaptureFacts = Readonly<{
+  displayRotation?: DeviceRotation;
+}>;
 type ElementSelectorKey = 'id' | 'label' | 'text' | 'value';
 type ElementSelectorTapOptions = {
   key: ElementSelectorKey;
@@ -397,7 +365,7 @@ type Interactor = {
   }): Promise<Record<string, unknown> | void>;
   fillRef?(ref: string, text: string, delayMs?: number): Promise<Record<string, unknown> | void>;
   scroll(direction: ScrollDirection, options?: ScrollExecutionOptions): Promise<Record<string, unknown> | void>;
-  screenshot(outPath: string, options?: ScreenshotOptions): Promise<void>;
+  screenshot(outPath: string, options?: ScreenshotOptions): Promise<ScreenshotCaptureFacts | void>;
   setViewport?(width: number, height: number): Promise<Record<string, unknown> | void>;
   snapshot(options?: SnapshotOptions): Promise<SnapshotRuntimeResult>;
   /**
@@ -510,6 +478,47 @@ type AlertInteractorOptions = {
   surface?: SessionSurface;
 };
 //#endregion
+//#region packages/contracts/src/device-provider.d.ts
+type DeviceLease = {
+  leaseId: string;
+  tenantId: string;
+  runId: string;
+  backend: LeaseBackend;
+  leaseProvider?: string;
+  deviceKey?: string;
+  clientId?: string;
+  retainOnClose?: true;
+  createdAt: number;
+  heartbeatAt: number;
+  expiresAt: number;
+};
+type LeaseLifecycleContext = {
+  flags?: Readonly<Record<string, unknown>>;
+  initialApp?: string;
+  cwd?: string;
+  publicNetworkOnly?: boolean;
+  /** Request-bound cancellation (explicit cancel or client disconnect). */
+  signal?: AbortSignal;
+  /**
+   * Epoch-ms deadline by which `allocate` must have settled; derived from the
+   * same budget as the client's `lease_allocate` envelope, so a provider that
+   * fits its remote phases within it is never abandoned by a client first.
+   */
+  deadline?: number;
+};
+type LeaseLifecycleProvider = {
+  allocate?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
+  heartbeat?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
+  release?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
+};
+type DeviceInventoryProvider = (request: ProviderDeviceInventoryRequest, signal?: AbortSignal) => Promise<DeviceInfo[] | null | undefined>;
+type ProviderAppCatalogQuery = Readonly<{
+  provider: string;
+  platform: 'android' | 'ios';
+  publicNetworkOnly?: boolean;
+}>;
+type ProviderAppCatalogHandler = (query: ProviderAppCatalogQuery, signal?: AbortSignal) => Promise<readonly string[]>;
+//#endregion
 //#region packages/contracts/src/provider-device-runtime.d.ts
 type ProviderDeviceInstallResult = {
   bundleId?: string;
@@ -605,6 +614,27 @@ type LimrunAndroidKeyboardDismissResult = LimrunAndroidKeyboardState & {
   dismissed: boolean;
 };
 //#endregion
+//#region packages/provider-limrun/src/instance-access.d.ts
+/** An existing iOS instance's own API URL and token (`status.apiUrl`, `status.token`). */
+type LimrunIosInstanceAccess = Readonly<{
+  apiUrl: string;
+  token: string;
+}>;
+/** An existing Android instance's own API URL, ADB WebSocket URL, and token. */
+type LimrunAndroidInstanceAccess = Readonly<{
+  apiUrl: string;
+  token: string;
+  adbUrl: string;
+}>;
+/**
+ * Existing instances to drive with their own credentials instead of an organization API key. A
+ * platform listed here never creates or deletes instances: whoever created the instance owns it.
+ */
+type LimrunInstanceAccess = Readonly<{
+  ios?: LimrunIosInstanceAccess;
+  android?: LimrunAndroidInstanceAccess;
+}>;
+//#endregion
 //#region packages/provider-limrun/src/ios.d.ts
 type LimrunIosRemoteInstallOptions = {
   md5?: string;
@@ -682,9 +712,13 @@ type LimrunIosDeviceSession = LimrunDeviceSessionBase & {
 //#endregion
 //#region packages/provider-limrun/src/runtime.d.ts
 type LimrunRuntimeOptions = {
-  apiKey: string;
+  /** Organization API key. It creates and deletes instances for platforms without `instances`. */
+  apiKey?: string;
   region?: string;
+  /** Pings each leased instance every 30 s so Limrun's inactivity timeout does not end idle sessions. */
+  keepAlive?: boolean;
   runtimeInstance?: string;
+  instances?: LimrunInstanceAccess;
 };
 //#endregion
 //#region src/sdk/limrun-runtime-types.d.ts
@@ -712,4 +746,4 @@ declare class LimrunRuntime implements ProviderDeviceRuntime {
   shutdown(): Promise<void>;
 }
 //#endregion
-export { type LimrunAndroidDeviceSession, type LimrunDeviceSession, type LimrunIosCommandExecution, type LimrunIosDeviceSession, LimrunRuntime, type LimrunRuntimeOptions };
+export { type LimrunAndroidDeviceSession, type LimrunDeviceSession, type LimrunInstanceAccess, type LimrunIosCommandExecution, type LimrunIosDeviceSession, LimrunRuntime, type LimrunRuntimeOptions };

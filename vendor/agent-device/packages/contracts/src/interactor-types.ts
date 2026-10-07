@@ -66,6 +66,13 @@ export type ScreenshotOptions = {
   captureBackend?: 'runner';
 };
 
+/**
+ * What the capture owner observed while writing the image. `displayRotation` is the rotation the display
+ * rendered the pixels in, so a landscape value pairs with a landscape image; it is absent when the
+ * owner has no rotation reading it can stand behind for this capture.
+ */
+export type ScreenshotCaptureFacts = Readonly<{ displayRotation?: DeviceRotation }>;
+
 export type ElementSelectorKey = 'id' | 'label' | 'text' | 'value';
 
 export type ElementSelectorTapOptions = {
@@ -156,9 +163,10 @@ export type CloudTextEntryReadiness = (typeof CLOUD_TEXT_ENTRY_READINESS)[number
 /**
  * What `Interactor.fill` reports back about the entry it performed. The cloud
  * interactors (WebDriver and the Limrun iOS session) populate
- * `textEntryReadiness`; Android may return target-bound
- * `verification: 'unconfirmed'` evidence when an app-owned field changed but
- * formatting prevented raw equality. The Apple runner carries its own readiness
+ * `textEntryReadiness`; Android and the Apple runner may return target-bound
+ * `verification: 'unconfirmed'` evidence when the field changed but its value
+ * cannot confirm the text (app-owned formatting, or an accessibility value that
+ * does not echo the entry). The Apple runner carries its own readiness
  * equivalent in Swift.
  */
 export type FillBackendResult =
@@ -342,7 +350,7 @@ export type Interactor = {
     direction: ScrollDirection,
     options?: ScrollExecutionOptions,
   ): Promise<Record<string, unknown> | void>;
-  screenshot(outPath: string, options?: ScreenshotOptions): Promise<void>;
+  screenshot(outPath: string, options?: ScreenshotOptions): Promise<ScreenshotCaptureFacts | void>;
   setViewport?(width: number, height: number): Promise<Record<string, unknown> | void>;
   snapshot(options?: SnapshotOptions): Promise<SnapshotRuntimeResult>;
   /**

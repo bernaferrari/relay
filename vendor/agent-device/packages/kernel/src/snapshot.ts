@@ -316,7 +316,8 @@ export type HiddenContentHint = {
  * A keyboard is its own system surface, so it never reaches the tree as a covering sibling of app
  * content, and a consumer that wants to refuse a tap behind it has to learn where it is from
  * somewhere (#2589). A producer that can measure the band directly — the Apple runner, from its
- * `app.keyboards` query — publishes one fact per capture and says nothing else about it. A consumer therefore gets three
+ * `app.keyboards` query, and the Android helper, from the input method window in the window list it
+ * captures — publishes one fact per capture and says nothing else about it. A consumer therefore gets three
  * answers and no fourth: a band in the same space as every node rect, a proven absence, or a
  * producer that could not look.
  *
@@ -338,8 +339,51 @@ export type SnapshotKeyboardBandFact =
    */
   | { kind: 'unmeasurable'; reason: string };
 
+/**
+ * The box a capture's node rects are measured in, published beside them so a reader never has to
+ * infer it from the tree (#3182). Two dimensions and no origin: the field answers "how big is the
+ * surface these numbers describe", which is the only question a consumer that places points on the
+ * tree cannot answer from the tree itself when the tree is empty or sparse.
+ *
+ * It is the box of the surface the producer read, which is not always the physical panel. iOS
+ * reports the app window in the app's orientation space (ADR 0004), which is smaller than the panel
+ * under iPad Split View and is never the foldable panel `fold` reports (ADR 0025); Android and the
+ * Apple TV runner report the screen the bounds were measured on. A producer that has no box of its
+ * own to answer with leaves the field off: the macOS desktop, whose rects are absolute in window
+ * space and answer to no single frame, and the web and Linux backends, which read a tree without
+ * reading a screen. A consumer that needs a *gesture* band inside those bounds still reads `keyboard`
+ * and the app window, which is #1821's remaining scope.
+ *
+ * Absent means the producer measured no box. Absence is never `0`: `snapshotViewportSizeFrom` from
+ * `@agent-device/kernel/rect` is the sole construction path and refuses a box
+ * `isPositiveFiniteRect` refuses. The brand makes that invariant part of the type: a plain
+ * `{ width, height }` literal — including one with a zero in it — is not assignable here, so only
+ * modules that import the brand token from `kernel/rect` can build one, and they build it through
+ * the guard.
+ */
+export type SnapshotViewportSize = {
+  width: number;
+  height: number;
+} & SnapshotViewportSizeBrand;
+
+/** @internal Exported only so `kernel/rect` can mint values of {@link SnapshotViewportSize}. */
+export declare const SNAPSHOT_VIEWPORT_SIZE_BRAND: unique symbol;
+export type SnapshotViewportSizeBrand = {
+  readonly [SNAPSHOT_VIEWPORT_SIZE_BRAND]: 'validated';
+};
+
 export type SnapshotNode = RawSnapshotNode & {
   ref: string;
+  /**
+   * Normalized role, from the same table the text presenter reads (`formatRole` below). `type`
+   * stays the raw platform class; `kind` is the presenter's own answer, published so a `--json`
+   * consumer gets the presented role without re-deriving it from `type` (#2656). `attachRefs` is
+   * the one production construction path and always sets it; optional here (rather than required
+   * like `ref`) only so the many hand-built `SnapshotNode` fixtures across the daemon/selector test
+   * suites that predate #2656 and never route through `attachRefs` do not all need updating for a
+   * field their assertions never read.
+   */
+  kind?: string;
   /**
    * Output-only marker set by client-serialization dedup (see
    * ../snapshot/snapshot-label-dedup.ts) when `label`/`identifier` was omitted
@@ -349,6 +393,87 @@ export type SnapshotNode = RawSnapshotNode & {
   inheritsLabel?: true;
   inheritsIdentifier?: true;
 };
+
+/**
+ * Platform role vocabulary → the text presenter's normalized label. Owned here (rather than
+ * capture-kit) so `attachRefs` can publish the same `kind` on every node without capture-kit
+ * depending on kernel in the wrong direction; capture-kit's snapshot-lines module re-exports
+ * `formatRole` for its existing callers.
+ */
+const ROLE_LABELS: Record<string, string> = {
+  application: 'application',
+  navigationbar: 'navigation-bar',
+  tabbar: 'tab-bar',
+  button: 'button',
+  imagebutton: 'button',
+  link: 'link',
+  cell: 'cell',
+  statictext: 'text',
+  checkedtextview: 'text',
+  textbox: 'text-field',
+  textfield: 'text-field',
+  edittext: 'text-field',
+  textarea: 'text-view',
+  switch: 'switch',
+  slider: 'slider',
+  image: 'image',
+  imageview: 'image',
+  webview: 'webview',
+  framelayout: 'group',
+  linearlayout: 'group',
+  relativelayout: 'group',
+  constraintlayout: 'group',
+  viewgroup: 'group',
+  view: 'group',
+  listview: 'list',
+  recyclerview: 'list',
+  collectionview: 'collection',
+  searchfield: 'search',
+  heading: 'heading',
+  activityindicator: 'activity-indicator',
+  progressindicator: 'progress-indicator',
+  segmentedcontrol: 'segmented-control',
+  group: 'group',
+  window: 'window',
+  checkbox: 'checkbox',
+  radio: 'radio',
+  menuitem: 'menu-item',
+  toolbar: 'toolbar',
+  scrollarea: 'scroll-area',
+  scrollview: 'scroll-area',
+  nestedscrollview: 'scroll-area',
+  table: 'table',
+};
+
+function lookupRoleLabel(normalized: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(ROLE_LABELS, normalized)
+    ? ROLE_LABELS[normalized]
+    : undefined;
+}
+
+export function formatRole(type: string): string {
+  const raw = type;
+  let normalized = type.replaceAll(/XCUIElementType/gi, '').toLowerCase();
+  const isAndroidClass =
+    raw.includes('.') &&
+    (raw.startsWith('android.') || raw.startsWith('androidx.') || raw.startsWith('com.'));
+  if (normalized.includes('.')) {
+    normalized = normalized
+      .replace(/^android\.widget\./, '')
+      .replace(/^android\.view\./, '')
+      .replace(/^android\.webkit\./, '')
+      .replace(/^androidx\./, '')
+      .replace(/^com\.google\.android\./, '')
+      .replace(/^com\.android\./, '');
+    if (isAndroidClass && normalized.includes('.')) {
+      normalized = normalized.slice(normalized.lastIndexOf('.') + 1);
+    }
+  }
+  if (normalized === 'textview') {
+    return isAndroidClass ? 'text' : 'text-view';
+  }
+  return lookupRoleLabel(normalized) || normalized || 'element';
+}
 
 /**
  * The channel↔producer pairs that can actually occur. One channel is fed by several producers
@@ -545,12 +670,19 @@ export type SnapshotState = {
    */
   iosSystemSurfaceBundleId?: string;
   /**
-   * iOS: the keyboard band this capture's producer measured, when it measured one. The tap-path
-   * keyboard guard prefers this over the band it would otherwise derive from `nodes`, because a
-   * producer that can query the keyboard directly answers in the app's own orientation space and
+   * iOS and Android: the keyboard band this capture's producer measured, when it measured one. The
+   * tap-path keyboard guard prefers this over the band it would otherwise derive from `nodes`,
+   * because a producer that can query the keyboard directly answers in the tree's own space and
    * needs no geometry to be plausible (#2660). Absent means the guard measures the tree as before.
    */
   keyboard?: SnapshotKeyboardBandFact;
+  /**
+   * The box these rects are measured in, as the producer measured it (#3182). The state is the carrier
+   * the response reads, so the stored tree and the published `viewport` are one fact rather than two:
+   * a consumer of a stored capture — a later diff, a re-read of the session's tree — gets the box the
+   * producer measured instead of inferring one from the largest rect still on screen.
+   */
+  viewport?: SnapshotViewportSize;
   /**
    * iOS: this capture's own command found the session app out of foreground and the runner
    * activated it before answering, so an earlier observation in the session described whatever held
@@ -620,7 +752,11 @@ export type ScreenshotOverlayRef = {
  * not mint refs get dense `e${index}` numbering, matching the historical behavior.
  */
 export function attachRefs(nodes: RawSnapshotNode[]): SnapshotNode[] {
-  return nodes.map((node, idx) => ({ ...node, ref: node.ref ?? `e${idx + 1}` }));
+  return nodes.map((node, idx) => ({
+    ...node,
+    ref: node.ref ?? `e${idx + 1}`,
+    kind: formatRole(node.type ?? 'Element'),
+  }));
 }
 
 /**

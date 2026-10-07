@@ -1,9 +1,11 @@
+import { expandSessionPath } from '@agent-device/host-kit/session-paths';
 import type { CommandFlags } from '@agent-device/contracts/command';
 import {
   retiredScreenshotMaxSizeFlagError,
   screenshotFlagsFromOptions,
   screenshotOptionsFromFlags,
 } from '@agent-device/contracts/capture';
+import type { DeviceRotation } from '@agent-device/contracts/device';
 import type { ScreenshotRuntimeExecution } from '@agent-device/contracts/screenshot-runtime';
 import { isIosFamily, publicPlatformString } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
@@ -27,7 +29,7 @@ import type {
   RecordedGenericRequest,
   ResolvedGenericExecution,
 } from './request-generic-dispatch.ts';
-import { createDaemonRuntimeSessionStore } from './runtime-session.ts';
+import { createReadonlyRuntimeSessionStore } from './runtime-session.ts';
 import { assertScreenshotCropPolicy } from './screenshot-crop-target.ts';
 import { buildScreenshotCropWarnings, cropScreenshotToSelector } from './screenshot-crop.ts';
 import { annotateScreenshotWithRefs } from '@agent-device/capture-kit/screenshot-overlay';
@@ -37,7 +39,6 @@ import {
   type ScreenshotRuntimeBindings,
 } from './screenshot-runtime-binding.ts';
 import { setSessionSnapshot } from './session-snapshot.ts';
-import { SessionStore } from './session-store.ts';
 import type { DaemonRequest } from './daemon-request.ts';
 import type { SessionState } from './session-state.ts';
 
@@ -120,12 +121,7 @@ export async function captureScreenshotArtifact(
   const runtime = createCommandSurfaceAgentDevice({
     backend: createBoundScreenshotBackend(params),
     artifacts: createDaemonScreenshotArtifactAdapter(),
-    sessions: createDaemonRuntimeSessionStore({
-      sessionName,
-      getSession: () => session,
-      recordOptions: { includeSnapshot: false },
-      setRecord: () => {},
-    }),
+    sessions: createReadonlyRuntimeSessionStore(sessionName, session),
     policy: localCommandPolicy(),
   });
 
@@ -142,9 +138,15 @@ export async function captureScreenshotArtifact(
 /**
  * What the shared capture command hands back. Restated here rather than imported from
  * `commands/`: the daemon sits below the command surface (R2), and this adapter's artifact
- * publisher emits no descriptors, so the destination and its message are the whole result.
+ * publisher emits no descriptors, so the destination, the capture's display rotation, and the
+ * message are the whole result.
  */
-type CapturedScreenshot = Readonly<{ path: string; message?: string; warnings?: string[] }>;
+type CapturedScreenshot = Readonly<{
+  path: string;
+  displayRotation?: DeviceRotation;
+  message?: string;
+  warnings?: string[];
+}>;
 
 /** One request's crop state: the backend closure appends, the result record reads. */
 type ScreenshotCropRun = { warnings: string[] };
@@ -314,7 +316,7 @@ function readScreenshotRequest(
   const positionals = req.positionals ?? [];
   const flags = req.flags ?? {};
   const expand = (value: string | undefined) =>
-    value === undefined ? undefined : SessionStore.expandHome(value, req.meta?.cwd);
+    value === undefined ? undefined : expandSessionPath(value, req.meta?.cwd);
   const positionalPath = expand(positionals[0]);
   const outFlag = expand(flags.out);
   return {
@@ -342,7 +344,7 @@ function createBoundScreenshotBackend(
         ...dispatchContext,
         ...screenshotFlagsFromOptions(options),
       });
-      await captureScreenshot({
+      const facts = await captureScreenshot({
         outPath,
         options: {
           appBundleId: dispatchContext.appBundleId,
@@ -373,6 +375,7 @@ function createBoundScreenshotBackend(
         });
         crop.run.warnings.push(...buildScreenshotCropWarnings(outcome));
       }
+      return facts.displayRotation ? { displayRotation: facts.displayRotation } : undefined;
     },
   };
 }

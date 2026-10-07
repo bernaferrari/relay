@@ -32,7 +32,7 @@ import { screenshotIos } from '../screenshot.ts';
 import { withMockedMacOsHelper } from './macos-helper-test-utils.ts';
 import { quitMacOsApp, resolveMacOsHelperPackageRootFrom } from '../../os/macos/helper.ts';
 import { ensureBootedSimulator } from '../simulator.ts';
-import { IOS_SIMULATOR_TERMINATE_TIMEOUT_MS } from '../config.ts';
+import { IOS_SIMULATOR_OPENURL_TIMEOUT_MS, IOS_SIMULATOR_TERMINATE_TIMEOUT_MS } from '../config.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { runCmd } from '@agent-device/host-kit/command';
 import { retryWithPolicy } from '@agent-device/host-kit/retry';
@@ -260,9 +260,9 @@ test('openIosApp web URL on iOS device without app falls back to Safari', async 
           'launch',
           '--device',
           'ios-device-1',
-          'com.apple.mobilesafari',
           '--payload-url',
           'https://example.com/path',
+          'com.apple.mobilesafari',
         ],
       ]);
     },
@@ -290,9 +290,9 @@ test('openIosApp custom scheme on iOS device uses active app context', async () 
           'launch',
           '--device',
           'ios-device-1',
-          'com.example.app',
           '--payload-url',
           'myapp://item/42',
+          'com.example.app',
         ],
       ]);
     },
@@ -382,9 +382,9 @@ test('openIosApp appends launchArgs alongside --payload-url for iOS device deep 
           'launch',
           '--device',
           'ios-device-1',
-          'com.example.app',
           '--payload-url',
           'myapp://item/42',
+          'com.example.app',
           '--',
           '-Tracking',
           'NO',
@@ -407,7 +407,7 @@ test('openIosApp opens custom-scheme iOS simulator URLs directly when launch arg
   assert.deepEqual(mockRunCmd.mock.calls[0], [
     'xcrun',
     ['simctl', 'openurl', 'sim-1', 'myapp://item/42'],
-    undefined,
+    { timeoutMs: IOS_SIMULATOR_OPENURL_TIMEOUT_MS },
   ]);
 });
 
@@ -432,7 +432,7 @@ test('openIosApp launches iOS simulator app before opening custom-scheme URL wit
   assert.deepEqual(mockRunCmd.mock.calls[1], [
     'xcrun',
     ['simctl', 'openurl', 'sim-1', 'myapp://item/42'],
-    undefined,
+    { timeoutMs: IOS_SIMULATOR_OPENURL_TIMEOUT_MS },
   ]);
 });
 
@@ -457,7 +457,7 @@ test('openIosApp launches iOS simulator app before opening https URL with launch
   assert.deepEqual(mockRunCmd.mock.calls[1], [
     'xcrun',
     ['simctl', 'openurl', 'sim-1', 'https://example.com/item/42'],
-    undefined,
+    { timeoutMs: IOS_SIMULATOR_OPENURL_TIMEOUT_MS },
   ]);
 });
 
@@ -562,9 +562,9 @@ test('openIosApp with app and URL on iOS device launches app bundle with payload
           'launch',
           '--device',
           'ios-device-1',
-          'com.example.app',
           '--payload-url',
           'myapp://screen/to',
+          'com.example.app',
         ],
       ]);
     },

@@ -1,3 +1,4 @@
+import { isDeviceRotation } from '@agent-device/contracts/device';
 import type { ResponseLevel } from '@agent-device/kernel/contracts';
 import type { ScreenshotOverlayRef, SnapshotNode } from '@agent-device/kernel/snapshot';
 import type { DaemonResponseData } from './daemon-request.ts';
@@ -33,6 +34,7 @@ function snapshotView(data: DaemonResponseData, level: ResponseLevel): DaemonRes
   // activation, and the occlusion/quality/visibility warnings a digest still has to surface).
   const carriedFields = [
     'visibility',
+    'viewport',
     'snapshotQuality',
     'targetActivation',
     'warnings',
@@ -92,6 +94,7 @@ function screenshotView(data: DaemonResponseData, level: ResponseLevel): DaemonR
 function pickScreenshotDigestMetadata(data: DaemonResponseData): DaemonResponseData {
   const metadata: DaemonResponseData = {};
   if (typeof data.path === 'string') metadata.path = data.path;
+  if (isDeviceRotation(data.displayRotation)) metadata.displayRotation = data.displayRotation;
   for (const field of SCREENSHOT_DIGEST_NUMBER_FIELDS) {
     if (typeof data[field] === 'number') metadata[field] = data[field];
   }
