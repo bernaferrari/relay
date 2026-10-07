@@ -33,6 +33,7 @@ import { usePairedConfigurationWorkspace } from "../data/use-paired-configuratio
 import { PlanDailySchedule } from "./plan-daily-schedule";
 import type { ProductPlanScheduleTiming } from "../data/suite-profile-product-service";
 import { PlanChecklist } from "./plan-checklist";
+import { PlanInputUsageWarnings } from "./plan-input-usage-warnings";
 import { PlanEditDialog, PlanRemoveSection } from "./plan-edit-dialog";
 import { PageLoading } from "./recording-shared";
 import { friendlySuiteIssue, summarizeSuiteSetup } from "../data/suite-preflight-copy";
@@ -140,7 +141,7 @@ export function SuitePage() {
             }
           : {}),
       }),
-    enabled: Boolean(suite.data && selectedProfileIds.length && !configuration.targetUnavailable),
+    enabled: Boolean(suite.data && !configuration.targetUnavailable),
     retry: false,
   });
   const start = useMutation({
@@ -216,6 +217,9 @@ export function SuitePage() {
   const value = suite.data;
   const needsReview = value?.tests.some((test) => test.status === "needs-review") ?? false;
   const previewBlockers = [...missingAccountBlockers, ...(preview.data?.blockers ?? [])];
+  const unusedInputs = (preview.data?.warnings ?? []).filter(
+    (issue) => issue.code === "unused-input-data-set",
+  );
   const plannedCases = preview.data?.caseCount ?? 0;
   const previewWaiting = Boolean(selectedProfileIds.length) && !preview.data && !preview.error;
   const previewChecking = previewWaiting && preview.isFetching;
@@ -290,6 +294,8 @@ export function SuitePage() {
             }
           />
 
+          <PlanInputUsageWarnings issues={unusedInputs} tests={value.tests} appId={appId} />
+
           <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_22rem]">
             <PlanChecklist appId={appId} suiteId={suiteId} tests={value.tests} />
 
@@ -332,6 +338,7 @@ export function SuitePage() {
                   validated: Boolean(
                     preview.data &&
                     !previewBlockers.length &&
+                    !unusedInputs.length &&
                     preview.data.execution?.capacity !== "unavailable",
                   ),
                 }}
@@ -391,7 +398,9 @@ export function SuitePage() {
                     {plannedCases} data combinations
                   </p>
                   <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">
-                    Try one first, or run every combination.
+                    {unusedInputs.length
+                      ? "Connect your prompts before running these combinations."
+                      : "Try one first, or run every combination."}
                   </p>
                   <Tabs
                     value={executionMode}
@@ -407,7 +416,7 @@ export function SuitePage() {
                   </Tabs>
                 </>
               ) : null}
-              {preview.data || missingAccountBlockers.length ? (
+              {(selectedProfileIds.length && preview.data) || missingAccountBlockers.length ? (
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
                     previewBlockers.length
@@ -531,6 +540,7 @@ export function SuitePage() {
                       !selectedProfileIds.length ||
                       !preview.data ||
                       Boolean(previewBlockers.length) ||
+                      Boolean(unusedInputs.length) ||
                       preview.data.execution?.capacity === "unavailable" ||
                       start.isPending
                     }
@@ -604,6 +614,7 @@ export function SuitePage() {
                 !selectedProfileIds.length ||
                 !preview.data ||
                 Boolean(previewBlockers.length) ||
+                Boolean(unusedInputs.length) ||
                 preview.data.execution?.capacity === "unavailable" ||
                 configuration.targetUnavailable ||
                 planSchedules.isLoading

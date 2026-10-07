@@ -20,6 +20,10 @@ import {
 import { bindCompanionCombineCells } from "./app-map-native-companion-combine.js";
 import { nativePlatformProfileAlias } from "./app-map-native-companion-compile.js";
 import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
+import { unusedInputDataSetWarnings } from "./app-map-combine-input-usage.js";
+import { readProjectVariables } from "./collaboration.js";
+import { externalRecipeInputNames } from "./recipe-input-dependencies.js";
+import { reachableRecipeGraph } from "./app-map-combine-cell-intent.js";
 import {
   assertOptionSandwichReady,
   composeOptionRunRecipes,
@@ -118,8 +122,14 @@ export async function preflightAppMapCombine(
     };
   });
 
+  const externalInputNames = new Set<string>();
+  let completeInputUsage =
+    tests.length > 0 &&
+    tests.length === combine.testIds.length &&
+    !tests.some((test) => test.nativeRouteCompanions?.length);
   const testPreflights = tests.map((test) => {
     if (requiresCellCompilation && test.family) {
+      completeInputUsage = false;
       return { id: test.id, name: test.name, kind: test.kind };
     }
     try {
@@ -131,6 +141,9 @@ export async function preflightAppMapCombine(
         },
         compileOptions,
       );
+      const reachable = reachableRecipeGraph(compiled.graph, compiled.root.id);
+      if (!reachable) completeInputUsage = false;
+      else for (const name of externalRecipeInputNames(reachable)) externalInputNames.add(name);
       const expectedScreenshots = expectedRecipeScreenshotCount(compiled.root, compiled.graph);
       return {
         id: test.id,
@@ -139,6 +152,7 @@ export async function preflightAppMapCombine(
         ...(expectedScreenshots !== undefined ? { expectedScreenshots } : {}),
       };
     } catch (error) {
+      completeInputUsage = false;
       blockers.push(
         issue(
           "invalid-test",
@@ -148,6 +162,17 @@ export async function preflightAppMapCombine(
       return { id: test.id, name: test.name, kind: test.kind };
     }
   });
+  if (completeInputUsage && variables.some((variable) => variable.apply.kind === "input")) {
+    const definitions = await readProjectVariables(map.projectId);
+    warnings.push(
+      ...unusedInputDataSetWarnings({
+        variables,
+        selected: effectiveCombine.selected,
+        definitions: definitions.value,
+        externalInputNames,
+      }),
+    );
+  }
 
   let worlds = 0;
   let expectedScreenshots: number | undefined;
