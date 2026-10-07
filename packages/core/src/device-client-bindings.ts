@@ -25,6 +25,24 @@ export function buildDeviceTransport(
   return createDeviceObservationFacade({
     ...native,
     ...bindNativeDeviceMutations(native, targetIdentity(context), selectedPlatform(context)),
+    capture:
+      context.kind === "device" && context.platform === "ios"
+        ? {
+            ...native.capture,
+            snapshot: async (...args: Parameters<typeof native.capture.snapshot>) => {
+              const result = await native.capture.snapshot(...args);
+              // The current Apple runner normalizes both regular and raw frames
+              // before presentation. Mark only this SDK boundary, not generic
+              // Device adapters that may still report legacy native coordinates.
+              return Array.isArray(result.nodes)
+                ? {
+                    ...result,
+                    nodes: result.nodes.map((node) => ({ ...node, logicalCoordinates: true })),
+                  }
+                : result;
+            },
+          }
+        : native.capture,
     observability: {
       ...native.observability,
       crashes: ({ action, since }: { action: "start" | "collect"; since?: number }) =>

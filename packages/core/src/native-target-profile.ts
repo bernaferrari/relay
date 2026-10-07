@@ -1,5 +1,9 @@
 import type { AppMapCompiledRuntimeTargetProfile, TargetProfile } from "@relay/protocol";
-import { appMapRuntimeTargetProfileKey } from "./app-map-runtime-target-profile.js";
+import {
+  appMapRuntimeTargetProfileFromSaved,
+  appMapRuntimeTargetProfileKey,
+} from "./app-map-runtime-target-profile.js";
+import { canonicalSha256 } from "./canonical-json.js";
 
 type NativeTarget = { targetId: string; platform: "android" | "ios" };
 type Viewport = { width: number; height: number };
@@ -60,7 +64,7 @@ export function nativeCaptureTargetProfile(
   },
 ): TargetProfile {
   const viewport = validViewport(input.viewport) ? { ...input.viewport } : undefined;
-  return {
+  const profile: TargetProfile = {
     id: `device:${input.targetId}${viewport ? `-${viewport.width}x${viewport.height}` : ""}`,
     targetId: input.targetId,
     source: "device",
@@ -73,6 +77,34 @@ export function nativeCaptureTargetProfile(
     capabilities: ["snapshot", "screenshot"],
     observedAt: input.observedAt,
   };
+  profile.id = nativeCaptureTargetProfileId(profile);
+  return profile;
+}
+
+function legacyNativeProfileId(profile: AppMapCompiledRuntimeTargetProfile): string {
+  const viewport = profile.viewport;
+  return `device:${profile.targetId}${viewport ? `-${viewport.width}x${viewport.height}` : ""}`;
+}
+
+function nativeRuntimeIdentity(profile: AppMapCompiledRuntimeTargetProfile) {
+  return appMapRuntimeTargetProfileFromSaved({ ...profile, id: legacyNativeProfileId(profile) });
+}
+
+/** The digest excludes labels/time but includes every frozen runtime fact. */
+export function nativeCaptureTargetProfileId(profile: AppMapCompiledRuntimeTargetProfile): string {
+  return `${legacyNativeProfileId(profile)}-${canonicalSha256(nativeRuntimeIdentity(profile)).slice(7, 23)}`;
+}
+
+/** Recognize only constructor-owned namespaces; explicit custom identities stay intact. */
+export function isNativeCaptureTargetProfile(profile: AppMapCompiledRuntimeTargetProfile): boolean {
+  return (
+    profile.platform !== "browser" &&
+    [
+      `device:${profile.targetId}`,
+      legacyNativeProfileId(profile),
+      nativeCaptureTargetProfileId(profile),
+    ].includes(profile.id)
+  );
 }
 
 export class NativeTargetProfileSelectionError extends Error {}
@@ -140,6 +172,19 @@ export function selectNativeTargetProfile(input: {
           profile.viewport.height === observed.viewport.height,
         )),
   );
+  // Prefer a cryptographically verified constructor identity over exact
+  // legacy aliases. Never coalesce custom/locale identities or differing facts.
+  const canonical = matches.find((profile) => profile.id === nativeCaptureTargetProfileId(profile));
+  if (
+    canonical &&
+    matches.every(
+      (profile) =>
+        isNativeCaptureTargetProfile(profile) &&
+        appMapRuntimeTargetProfileKey(nativeRuntimeIdentity(profile)) ===
+          appMapRuntimeTargetProfileKey(nativeRuntimeIdentity(canonical)),
+    )
+  )
+    return structuredClone(canonical);
   if (matches.length !== 1)
     throw new NativeTargetProfileSelectionError(
       matches.length

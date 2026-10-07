@@ -278,6 +278,34 @@ test("unknown browser input retains the exact fresh dispatch version and session
   assert.equal(journey.state().recovery?.recordingMutation?.target.targetId, "browser-1");
 });
 
+for (const platform of ["ios", "android"] as const) {
+  test(`${platform} lost recording response retains the exact receipt without resending`, async () => {
+    const native = { kind: "device", platform, targetId: "native-1" } as const;
+    const fresh = snapshot("recording", ["inspect", "record", "stop"], 17);
+    fresh.frozen = { ...fresh.frozen!, target: native };
+    const jobs = jobsFor({ recorded: fresh, inspected: fresh });
+    const decisions: DurableAuthorTestDecision[] = [];
+    jobs.advanceRecording = async (decision) => {
+      decisions.push(decision);
+      throw new Error("HTTP acknowledgement timed out while native capture completed");
+    };
+    const journey = createProductRecordingJourney({ jobs });
+    await journey.begin({ title: "Native navigation" });
+    const result = await journey.record({ kind: "tap", target: { identifier: "sidebar.open" } });
+    const dispatched = decisions[0];
+    assert.ok(dispatched?.action === "record");
+    assert.deepEqual(result.recovery?.recordingMutation, {
+      mutationId: dispatched.mutationId,
+      workflowId: "workflow-1",
+      sessionId: "session-1",
+      transitionVersion: 18,
+      target: native,
+    });
+    await journey.inspect();
+    assert.equal(decisions.length, 1, "inspection must never resend the native action");
+  });
+}
+
 test("concurrent identical inputs keep different identities after a lost rejection response", async () => {
   const fresh = snapshot("recording", ["inspect", "record", "stop"], 17);
   fresh.frozen = {

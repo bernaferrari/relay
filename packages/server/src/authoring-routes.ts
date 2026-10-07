@@ -546,23 +546,18 @@ export async function beginControlledAuthoringSession(
   await assertTargetLease(scope, value.target.targetId, value.leaseId);
   const created = await authoringSessions.create(value);
   try {
-    const observed = await authoringSessions.observe(created.id, runtime);
-    if (observed.state !== "ready") {
-      throw new HttpError(422, observed.error ?? "Relay could not read the source screen", {
-        code: "AUTHORING_SOURCE_UNAVAILABLE",
+    const started = await authoringSessions.begin(created.id, runtime);
+    if (started.session.state !== "recording") {
+      throw new HttpError(422, started.session.error ?? "Relay could not start the proposal", {
+        code:
+          started.failure === "source-unavailable"
+            ? "AUTHORING_SOURCE_UNAVAILABLE"
+            : "AUTHORING_START_FAILED",
         sessionId: created.id,
         recovery: "Recover the selected device, then start the proposal again.",
       });
     }
-    const started = await authoringSessions.start(created.id, runtime);
-    if (started.state !== "recording") {
-      throw new HttpError(422, started.error ?? "Relay could not start the proposal", {
-        code: "AUTHORING_START_FAILED",
-        sessionId: created.id,
-        recovery: "Recover the selected device, then start the proposal again.",
-      });
-    }
-    return started;
+    return started.session;
   } catch (error) {
     await authoringSessions.cancel(created.id, runtime).catch(() => undefined);
     throw error;

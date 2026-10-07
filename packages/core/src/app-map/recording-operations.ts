@@ -30,7 +30,10 @@ import { mutateAppMap } from "./mutation.js";
 import { attachRecordedTest } from "./recorded-test.js";
 import { recordingSourceForCommit } from "./recording-source.js";
 import { recordedSourceAnchor } from "./recording-source-anchor.js";
-import { nativeCaptureTargetProfile } from "../native-target-profile.js";
+import {
+  isNativeCaptureTargetProfile,
+  nativeCaptureTargetProfile,
+} from "../native-target-profile.js";
 
 export type AppMapRecordingInput = {
   sessionId: string;
@@ -223,11 +226,20 @@ function targetProfile(
   supplied?: TargetProfile,
   observation?: AuthoringObservation,
 ): TargetProfile {
-  if (target.kind === "device" && (!supplied || supplied.id === `device:${target.targetId}`)) {
+  if (
+    target.kind === "device" &&
+    (!supplied ||
+      (supplied.targetId === target.targetId &&
+        supplied.platform === target.platform &&
+        isNativeCaptureTargetProfile(supplied)))
+  ) {
     return nativeCaptureTargetProfile({
       ...target,
       observedAt: at,
-      viewport: observation?.bounds ?? supplied?.viewport,
+      viewport:
+        supplied?.id === `device:${target.targetId}`
+          ? (observation?.bounds ?? supplied.viewport)
+          : (supplied?.viewport ?? observation?.bounds),
       name: supplied?.name,
       model: supplied?.model,
       osVersion: supplied?.osVersion,

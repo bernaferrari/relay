@@ -625,12 +625,9 @@ export function summarizeLaunchedForeground(
   const foregroundApp =
     typeof snapshot.foregroundApp === "string" ? snapshot.foregroundApp.trim() : "";
   const app = chrome.app || treeApp || foregroundApp || undefined;
-  const candidates = [chrome.app, treeApp, foregroundApp].filter(
-    (value): value is string => typeof value === "string" && value.length > 0,
-  );
   return {
     ...(app ? { app } : {}),
-    matched: candidates.some((candidate) => launchedAppMatchesObserved(requested, candidate)),
+    matched: Boolean(app && launchedAppMatchesObserved(requested, app)),
   };
 }
 

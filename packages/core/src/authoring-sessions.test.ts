@@ -191,14 +191,10 @@ async function withWorkspace(
   }
 }
 
-async function createReadySession(
-  store: AuthoringSessionStore,
-  runtime: FakeRuntime,
-  appMapId: string,
-) {
+async function createPreparingSession(store: AuthoringSessionStore, appMapId: string) {
   const appMap = await readAppMap("project-a", appMapId);
   assert.ok(appMap);
-  let session = await store.create({
+  return store.create({
     appMapId,
     testName: "Settings localization",
     target: { kind: "device", platform: "android", targetId: "device-a" },
@@ -206,9 +202,208 @@ async function createReadySession(
     expectedAppMapRevision: appMap.revision,
     group: "Settings",
   });
-  session = await store.observe(session.id, runtime);
-  return session;
 }
+
+async function createReadySession(
+  store: AuthoringSessionStore,
+  runtime: FakeRuntime,
+  appMapId: string,
+) {
+  return store.observe((await createPreparingSession(store, appMapId)).id, runtime);
+}
+
+test("atomic begin retains one fresh coherent capture as the Take source and starts video once", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const observe = runtime.observe.bind(runtime);
+    runtime.observe = async () => {
+      const captured = await observe();
+      return {
+        ...captured,
+        screenshotCapturedAt: captured.capturedAt - 2,
+        proof: {
+          schemaVersion: 1,
+          captureOrder: "pixels-ax-pixels",
+          pixels: {
+            status: "captured",
+            capturedAt: captured.capturedAt - 2,
+            fingerprint: captured.fingerprint,
+            bracket: {
+              status: "coherent",
+              afterCapturedAt: captured.capturedAt,
+              afterFingerprint: captured.fingerprint,
+            },
+          },
+          semantics: {
+            status: "current",
+            capturedAt: captured.capturedAt - 1,
+            fingerprint: captured.fingerprint,
+          },
+        },
+      };
+    };
+    const prepared = await createPreparingSession(store, appMapId);
+    const result = await store.begin(prepared.id, runtime);
+    assert.equal(result.failure, undefined);
+    assert.equal(result.session.state, "recording");
+    assert.equal(runtime.observations, 1);
+    assert.deepEqual(runtime.lifecycle, ["observe", "start-video"]);
+    const revision = result.session.take!.revisions[0]!;
+    assert.equal(revision.observations?.length, 1);
+    assert.deepEqual(revision.before, revision.observations?.[0]);
+    assert.equal(revision.before?.proof?.captureOrder, "pixels-ax-pixels");
+    assert.equal(revision.before?.proof?.pixels.bracket?.status, "coherent");
+    assert.equal(revision.before?.screen.capturedAt, 999);
+    assert.equal(revision.before?.proof?.semantics.capturedAt, 1000);
+    assert.equal(revision.before?.capturedAt, 1001);
+    const rawStart = result.session.take!.rawEvents?.[0];
+    assert.equal(rawStart?.kind, "take-start");
+    assert.equal(
+      rawStart?.kind === "take-start" && rawStart.observation.observationId,
+      revision.before?.id,
+    );
+    assert.deepEqual((await store.get(prepared.id)).take, result.session.take);
+  });
+});
+
+test("atomic begin rejects a source mismatch before video or recording input", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const prepared = await mutateStoredAppMap("project-a", appMapId, (current) => {
+      const at = Date.now();
+      return commitAppMapChanges(
+        current,
+        [
+          {
+            kind: "screen.add",
+            input: {
+              screen: {
+                organizationId: current.organizationId,
+                projectId: current.projectId,
+                appMapId,
+                id: "expected-source",
+                title: "Expected source",
+                variantIds: [],
+                identity: {
+                  schemaVersion: 1,
+                  fingerprint: createHash("sha256").update("different-source").digest("hex"),
+                },
+                createdAt: at,
+                updatedAt: at,
+              },
+            },
+          },
+        ],
+        undefined,
+        {
+          expectedRevision: current.revision,
+          eventId: "begin-source-fixture",
+          actorId: "human:test",
+          actorKind: "human",
+          at,
+        },
+      );
+    });
+    const session = await store.create({
+      appMapId,
+      target: { kind: "device", platform: "android", targetId: "device-a" },
+      leaseId: "lease-a",
+      expectedAppMapRevision: prepared.revision,
+      sourceScreenId: "expected-source",
+    });
+    const result = await store.begin(session.id, runtime);
+    assert.equal(result.failure, "start-failed");
+    assert.equal(result.session.state, "failed");
+    assert.match(result.session.error!, /Navigate the device to “Expected source”/);
+    assert.equal(result.session.take, undefined);
+    assert.equal(runtime.observations, 1);
+    assert.deepEqual(runtime.lifecycle, ["observe"]);
+    assert.deepEqual(runtime.executed, []);
+  });
+});
+
+test("atomic begin preserves capture failure and can cancel without another capture", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.observe = async () => {
+      runtime.observations += 1;
+      throw new Error("xcrun capture timed out");
+    };
+    const prepared = await createPreparingSession(store, appMapId);
+    const result = await store.begin(prepared.id, runtime);
+    assert.equal(result.failure, "source-unavailable");
+    assert.equal(result.session.state, "failed");
+    assert.equal(result.session.error, "xcrun capture timed out");
+    assert.equal((await store.get(prepared.id)).error, result.session.error);
+    assert.equal(result.session.take, undefined);
+    assert.equal((await store.cancel(prepared.id, runtime)).state, "cancelled");
+    assert.equal(runtime.observations, 1);
+    assert.deepEqual(runtime.lifecycle, []);
+    assert.deepEqual(runtime.executed, []);
+  });
+});
+
+test("atomic begin preserves video failure after exactly one capture and one video start", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.startVideo = async () => {
+      runtime.lifecycle.push("start-video");
+      throw new Error("video unavailable");
+    };
+    const prepared = await createPreparingSession(store, appMapId);
+    const result = await store.begin(prepared.id, runtime);
+    assert.equal(result.failure, "start-failed");
+    assert.equal(result.session.state, "failed");
+    assert.equal((await store.get(prepared.id)).error, "video unavailable");
+    assert.equal(result.session.take, undefined);
+    assert.equal(runtime.observations, 1);
+    assert.deepEqual(runtime.lifecycle, ["observe", "start-video"]);
+    assert.deepEqual(runtime.executed, []);
+  });
+});
+
+test("atomic begin serializes concurrent requests without a second capture or video start", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const observe = runtime.observe.bind(runtime);
+    let notifyCaptureEntered!: () => void;
+    const captureEntered = new Promise<void>((resolve) => {
+      notifyCaptureEntered = resolve;
+    });
+    let allowCapture!: () => void;
+    const releaseCapture = new Promise<void>((resolve) => {
+      allowCapture = resolve;
+    });
+    runtime.observe = async () => {
+      notifyCaptureEntered();
+      await releaseCapture;
+      return observe();
+    };
+    const prepared = await createPreparingSession(store, appMapId);
+    const first = store.begin(prepared.id, runtime);
+    await captureEntered;
+    const second = store.begin(prepared.id, runtime);
+    const results = Promise.allSettled([first, second]);
+    assert.equal((await store.get(prepared.id)).state, "preparing");
+    allowCapture();
+    const [started, rejected] = await results;
+    assert.equal(started.status, "fulfilled");
+    assert.equal(rejected.status, "rejected");
+    if (rejected.status === "rejected") assert.ok(rejected.reason instanceof AuthoringStateError);
+    assert.equal(runtime.observations, 1);
+    assert.deepEqual(runtime.lifecycle, ["observe", "start-video"]);
+    assert.equal((await store.get(prepared.id)).state, "recording");
+  });
+});
+
+test("explicit Start captures fresh pixels after Observe instead of reusing ready evidence", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const prepared = await createReadySession(store, runtime, appMapId);
+    runtime.screen = "changed-after-observe";
+    const started = await store.start(prepared.id, runtime);
+    assert.equal(runtime.observations, 2);
+    assert.deepEqual(runtime.lifecycle, ["observe", "observe", "start-video"]);
+    assert.equal(
+      started.take!.revisions[0]!.before?.screen.fingerprint,
+      createHash("sha256").update("changed-after-observe").digest("hex"),
+    );
+  });
+});
 
 test("new recording retention does not hydrate historical Takes and prunes only old abandoned sessions", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {

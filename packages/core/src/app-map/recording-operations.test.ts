@@ -10,6 +10,9 @@ import type {
 import { observeScreenIdentity } from "../screen-identity.js";
 import { compileAppMapScenarioTest } from "../app-map-test-compiler.js";
 import { managedBrowserTargetProfile } from "../browser-case-profile-target.js";
+import { nativeCaptureTargetProfile, selectNativeTargetProfile } from "../native-target-profile.js";
+import { frozenRawAccessibilityTargetProfiles } from "../app-map-test-raw-accessibility.js";
+import { resolveSavedAppMapRuntimeTargetProfile } from "../app-map-combine-cell-prepare.js";
 import { freezeMissingBrowserCaseProfiles } from "./browser-profile-freeze.js";
 import { AppMapDomainError } from "./errors.js";
 import {
@@ -515,6 +518,132 @@ test("keeps portrait and landscape evidence as distinct screen variants", () => 
       { width: 834, height: 1112 },
       { width: 1112, height: 834 },
     ],
+  );
+});
+
+test("new recording profiles qualify enriched bounds and retain conflicting historical evidence", () => {
+  const target = { kind: "device", platform: "ios", targetId: "ipad" } as const;
+  const viewport = { width: 1112, height: 834 };
+  const old = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target,
+      observation: observation("legacy-home", beforeFingerprint, "legacy-evidence"),
+    },
+    context("legacy-capture"),
+  );
+  const oldVariant = old.appMap.screenVariants[old.variantId]!;
+  oldVariant.targetProfile = {
+    id: "device:ipad-1112x834",
+    targetId: "ipad",
+    source: "device",
+    platform: "ios",
+    name: "Old iPad",
+    capabilities: [],
+    viewport,
+    observedAt: 1,
+  };
+  const oldEvidence = structuredClone(oldVariant);
+  const supplied = nativeCaptureTargetProfile({
+    targetId: "ipad",
+    platform: "ios",
+    model: "Physical device",
+    osVersion: "17.7.11",
+    observedAt: 2,
+  });
+  const recorded = commitAppMapRecording(
+    old.appMap,
+    {
+      sessionId: "fresh-recording",
+      target,
+      targetProfile: supplied,
+      takeId: "fresh-take",
+      takeRevision: 1,
+      testId: "fresh-test",
+      testName: "Fresh recording",
+      before: observation("fresh-home", beforeFingerprint, "fresh-before"),
+      after: observation("fresh-settings", afterFingerprint, "fresh-after"),
+      actions: [
+        {
+          ...action("open-settings"),
+          id: "open-settings",
+          label: "Open Settings",
+          steps: [{ kind: "tap", target: { label: "Settings" } }],
+          recordedAt: 2,
+          evidenceIds: ["fresh-before", "fresh-after"],
+        },
+      ],
+      evidenceIds: ["fresh-before", "fresh-after"],
+    },
+    context("fresh-recording", old.appMap.revision),
+  );
+  const profile = nativeCaptureTargetProfile({
+    targetId: "ipad",
+    platform: "ios",
+    viewport,
+    model: "Physical device",
+    osVersion: "17.7.11",
+    observedAt: 3,
+  });
+  assert.deepEqual(recorded.appMap.screenVariants[old.variantId], oldEvidence);
+  const freshVariants = Object.values(recorded.appMap.screenVariants).filter(
+    (v) => v.id !== old.variantId,
+  );
+  assert.equal(freshVariants.length, 2);
+  assert.ok(freshVariants.every((v) => v.targetProfile.id === profile.id));
+  assert.notEqual(
+    profile.id,
+    supplied.id,
+    "ID is finalized after source bounds enrich the inventory profile",
+  );
+  const selected = selectNativeTargetProfile({
+    target,
+    profiles: frozenRawAccessibilityTargetProfiles(recorded.appMap),
+    observed: { serial: "ipad", platform: "ios", viewport, osVersion: "17.7.11" },
+  });
+  assert.equal(selected?.id, profile.id);
+  const resolved = resolveSavedAppMapRuntimeTargetProfile({
+    map: recorded.appMap,
+    target,
+    targetProfileId: profile.id,
+  });
+  assert.equal(resolved.id, profile.id);
+  const compiled = compileAppMapScenarioTest(
+    recorded.appMap,
+    recorded.appMap.tests["fresh-test"]!,
+    {
+      runtimeTargetProfile: resolved,
+    },
+  );
+  assert.equal(compiled.plan.runtimeTargetProfile?.id, profile.id);
+  assert.ok(
+    Object.values(compiled.plan.rawAccessibilityVariantsByScreenId ?? {})
+      .flat()
+      .some((variant) => variant.targetProfileId === profile.id),
+  );
+
+  // A historical conflicting ID remains an error; this fixture never repairs
+  // that old evidence or resolves it by arbitrarily choosing a capture.
+  const duplicate = structuredClone(oldEvidence);
+  duplicate.id = "historical-conflict";
+  duplicate.targetProfile = { ...profile, id: oldEvidence.targetProfile.id };
+  recorded.appMap.screenVariants[duplicate.id] = duplicate;
+  assert.throws(
+    () =>
+      resolveSavedAppMapRuntimeTargetProfile({
+        map: recorded.appMap,
+        target,
+        targetProfileId: oldEvidence.targetProfile.id,
+      }),
+    /conflicting saved identities/,
+  );
+  assert.equal(
+    selectNativeTargetProfile({
+      target,
+      profiles: frozenRawAccessibilityTargetProfiles(recorded.appMap),
+      observed: { serial: "ipad", platform: "ios", viewport, osVersion: "17.7.11" },
+    })?.id,
+    profile.id,
   );
 });
 
