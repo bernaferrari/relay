@@ -6,8 +6,14 @@ import { Link } from "@tanstack/react-router";
 import { CircleAlert, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import { RecoveryState } from "../components/product-patterns";
+import {
+  recordingReviewDiagnostics,
+  recordingReviewErrorCopy,
+  type RecordingReviewOperation,
+} from "./recording-review-error";
 type ProductRecovery = {
   code?: string;
+  action?: string;
   sourceCode?: string;
   sourceStepId?: string;
   title: string;
@@ -107,6 +113,7 @@ export function RecordingProblem({
   className,
   action,
   operation = "step",
+  reviewOperation,
   testContext,
 }: {
   recovery?: ProductRecovery;
@@ -118,9 +125,15 @@ export function RecordingProblem({
   className?: string;
   action?: ReactNode;
   operation?: "step" | "run" | "replay" | "recording";
+  reviewOperation?: RecordingReviewOperation;
   testContext?: { testId: string; appMapId?: string };
 }) {
   if (!recovery && !error) return null;
+  const statusOperation = reviewOperation
+    ? reviewOperation === "replay" || recovery?.action === "replay"
+      ? "replay"
+      : "recording"
+    : operation;
   if (recovery?.code === "mutation-outcome-unknown") {
     return (
       <div
@@ -130,14 +143,17 @@ export function RecordingProblem({
       >
         <span>
           {checking
-            ? `Checking ${operation} status…`
-            : operation === "replay"
+            ? `Checking ${statusOperation} status…`
+            : statusOperation === "replay"
               ? "Replay status needs checking. Your saved steps are safe."
-              : operation === "recording"
+              : statusOperation === "recording"
                 ? "Recording status needs checking."
-                : operation === "run"
+                : statusOperation === "run"
                   ? "Run status needs checking."
                   : "Step status needs checking."}
+          {error && reviewOperation === "inspect"
+            ? " Could not refresh the recording status."
+            : null}
         </span>
         {action ??
           (!checking && onRetry ? (
@@ -147,28 +163,45 @@ export function RecordingProblem({
               onClick={onRetry}
               disabled={retrying}
               title={
-                operation === "recording"
+                statusOperation === "recording"
                   ? "Check the recording status. This does not send device input."
-                  : operation === "run"
-                    ? "Check whether the run started. This does not start another run."
-                    : "Check whether the step was saved. This does not repeat the device action."
+                  : statusOperation === "replay"
+                    ? "Check the replay status. This does not repeat the recorded steps."
+                    : statusOperation === "run"
+                      ? "Check whether the run started. This does not start another run."
+                      : "Check whether the step was saved. This does not repeat the device action."
               }
             >
               Check status
             </Button>
           ) : null)}
+        {error && reviewOperation ? (
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer">Details</summary>
+            <div className="mt-1 whitespace-pre-wrap">
+              {recordingReviewDiagnostics(reviewOperation, error, recovery).join("\n")}
+            </div>
+          </details>
+        ) : null}
       </div>
     );
   }
   const projectedError = error ? projectError(error) : undefined;
   const capturedSetup = capturedSetupRecovery(recovery ?? projectedError ?? {});
-  const publicRecovery =
+  const baseRecovery =
     capturedSetup ??
     (recovery
       ? recoveryCopy(recovery)
       : projectedError?.title !== "Something went wrong"
         ? projectedError
         : undefined);
+  const publicRecovery =
+    reviewOperation && !capturedSetup
+      ? recordingReviewErrorCopy(reviewOperation, baseRecovery, error, recovery)
+      : baseRecovery;
+  const diagnostics = reviewOperation
+    ? recordingReviewDiagnostics(reviewOperation, error, recovery)
+    : undefined;
   if (layout === "compact" && recovery?.title === "Replay did not prove the reviewed recording") {
     return (
       <div
@@ -191,41 +224,50 @@ export function RecordingProblem({
       recovery={publicRecovery?.recovery}
       layout={layout}
       action={
-        capturedSetup ? (
-          testContext ? (
-            <Button
-              nativeButton={false}
-              size={layout === "centered" ? "default" : "sm"}
-              variant="outline"
-              render={
-                <Link
-                  to="/tests/$testId"
-                  params={{ testId: testContext.testId }}
-                  search={{
-                    ...(testContext.appMapId ? { app: testContext.appMapId } : {}),
-                    ...(capturedSetup.sourceStepId ? { step: capturedSetup.sourceStepId } : {}),
-                  }}
-                />
-              }
-            >
-              {capturedSetup.sourceStepId ? "Review affected step" : "Review Test"}
-            </Button>
-          ) : undefined
-        ) : (
-          (action ??
-          (onRetry &&
-          (recovery?.retryable ?? (publicRecovery ? projectedError?.retryable : true)) ? (
-            <Button
-              size={layout === "centered" ? "default" : "sm"}
-              variant="outline"
-              onClick={onRetry}
-              disabled={retrying}
-            >
-              <RotateCcw aria-hidden="true" />
-              {retrying ? "Trying again…" : "Try again"}
-            </Button>
-          ) : undefined))
-        )
+        <>
+          {capturedSetup ? (
+            testContext ? (
+              <Button
+                nativeButton={false}
+                size={layout === "centered" ? "default" : "sm"}
+                variant="outline"
+                render={
+                  <Link
+                    to="/tests/$testId"
+                    params={{ testId: testContext.testId }}
+                    search={{
+                      ...(testContext.appMapId ? { app: testContext.appMapId } : {}),
+                      ...(capturedSetup.sourceStepId ? { step: capturedSetup.sourceStepId } : {}),
+                    }}
+                  />
+                }
+              >
+                {capturedSetup.sourceStepId ? "Review affected step" : "Review Test"}
+              </Button>
+            ) : undefined
+          ) : (
+            (action ??
+            (onRetry &&
+            (reviewOperation ||
+              (recovery?.retryable ?? (publicRecovery ? projectedError?.retryable : true))) ? (
+              <Button
+                size={layout === "centered" ? "default" : "sm"}
+                variant="outline"
+                onClick={onRetry}
+                disabled={retrying}
+              >
+                <RotateCcw aria-hidden="true" />
+                {reviewOperation ? "Check status" : retrying ? "Trying again…" : "Try again"}
+              </Button>
+            ) : undefined))
+          )}
+          {diagnostics ? (
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Details</summary>
+              <div className="mt-1 whitespace-pre-wrap">{diagnostics.join("\n")}</div>
+            </details>
+          ) : null}
+        </>
       }
     />
   );

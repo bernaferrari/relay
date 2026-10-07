@@ -15,7 +15,6 @@ import { RecordingTrimPanel } from "./recording-trim-panel";
 import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage } from "../components/page-layout";
 import type { AuthoringRecordingEdit } from "@relay/protocol";
-import { isRelayTransportFailure } from "@relay/workflows/operation-port";
 import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -23,7 +22,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
+import { recordingQueryKeys } from "../data/recording-queries";
 import {
   foldRecordingIntoTest,
   forgetRecordingInto,
@@ -43,6 +42,12 @@ import { reviewPersistence } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingReviewInspector } from "./recording-review-inspector";
 import { RecordingReviewStage } from "./recording-review-stage";
+import {
+  reviewRequestProblem,
+  reviewStatusRetry,
+  reviewTransitionConfirmed,
+  refreshRecordingReview,
+} from "./recording-review-error";
 
 export function ReviewRecordingPage({
   recordingId: recordingIdProp,
@@ -124,16 +129,11 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
       }
     },
     onSuccess: async (_state, intent) => {
-      const canonical = await refreshRecording(queryClient, productService, workflowId);
-      if (blocksReview(canonical)) return;
-      if (
-        intent.action === "approve" &&
-        _state.recovery &&
-        canonical.snapshot?.stage !== "committed"
-      )
+      const canonical = await refreshRecordingReview(queryClient, productService, workflowId);
+      if (!canonical || blocksReview(canonical)) return;
+      if (intent.action === "approve" && !reviewTransitionConfirmed(_state, canonical, intent))
         return;
-      // The fresh durable snapshot supersedes a transient transport warning.
-      transition.reset();
+      if (reviewTransitionConfirmed(_state, canonical, intent)) transition.reset();
       if (intent.action === "edit") {
         const nextIds = canonical.snapshot?.review?.actions.map((action) => action.id) ?? [];
         setSelectedActionIds((current) => current.filter((id) => nextIds.includes(id)).slice(0, 1));
@@ -170,10 +170,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
         throw new Error("The saved steps are unavailable. Check the connection and try again.");
       return productService.recoverForReview(sessionId);
     },
-    onSuccess: async () => {
-      const canonical = await refreshRecording(queryClient, productService, workflowId);
-      if (!blocksReview(canonical)) transition.reset();
-    },
+    onSuccess: () => refreshRecordingReview(queryClient, productService, workflowId),
   });
 
   const restartEmpty = useMutation({
@@ -295,6 +292,13 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     enabled: false,
   });
   const failedReplay = reviewReady ? review?.latestReplay?.failedAction : undefined;
+  const requestProblem = reviewRequestProblem({
+    inspectionError: recording.error,
+    transition,
+    recoveryError: recoverReview.error,
+    draftError: leaveDraft.error,
+    recoveryAction: state?.recovery?.action,
+  });
   const evidenceView = useRecordingReviewEvidence({
     service: productService,
     sessionId,
@@ -561,28 +565,22 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
         failure={failedReplay}
         canEdit={canEdit}
         onEditFailure={inspectFailedStep}
-        error={recording.error ?? transition.error ?? recoverReview.error ?? leaveDraft.error}
+        {...requestProblem}
         recovery={
           transition.isPending || recoverReview.error
             ? undefined
             : (transition.data?.recovery ?? state?.recovery)
         }
-        onRetry={() => {
-          void recording.refetch().then((result) => {
-            if (result.error) return;
-            const recovered = inspectRecovered(result.data);
-            if (!recovered.healthy) return;
-            transition.reset();
-            if (isRelayTransportFailure(recoverReview.error)) recoverReview.reset();
-            if (recovered.draftSaved && isRelayTransportFailure(leaveDraft.error)) {
-              leaveDraft.reset();
-              clearDraftSave();
-            }
-          });
-        }}
+        onRetry={reviewStatusRetry(
+          recording.refetch,
+          inspectRecovered,
+          transition,
+          leaveDraft,
+          clearDraftSave,
+        )}
         retrying={recording.isFetching}
         recover={
-          canRecoverReview && !recoverReview.error
+          canRecoverReview && !recording.error && !recoverReview.error
             ? { pending: recoverReview.isPending, onRecover: () => recoverReview.mutate() }
             : undefined
         }
