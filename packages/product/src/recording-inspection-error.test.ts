@@ -14,6 +14,7 @@ test("the actual recording read retains HTTP response context without a mutation
       organizationId: "local",
       projectId: "default",
       actorId: "human:test",
+      actorKind: "human",
     },
     {
       fetch: async (input, init) => {
