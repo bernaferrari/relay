@@ -19,6 +19,7 @@ import {
   observeVisualScreenFingerprint,
   proposeAuthoringRawOptimizations,
   runRecipeStep,
+  resolveIosLaunchBundleId,
   readAppMap,
   runWithTargetContext,
   type AuthoringRuntime,
@@ -387,7 +388,11 @@ export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): Au
   let replayDevice: Device | undefined;
   const resolveDevice = (session: AuthoringSession) =>
     replayDevice ? Promise.resolve(replayDevice) : deviceFor(session, options);
-  const executeSteps = async (session: AuthoringSession, steps: RecipeStep[]) => {
+  const executeSteps = async (
+    session: AuthoringSession,
+    steps: RecipeStep[],
+    recordingIosAppBundleId?: string,
+  ) => {
     const device = await resolveDevice(session);
     const variables: Record<string, string> = {};
     const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
@@ -397,7 +402,12 @@ export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): Au
           throw new Error("Pause steps cannot execute inside a Take replay");
         }
         try {
-          await runRecipeStep(device, step, { log: () => undefined, variables, artifacts });
+          await runRecipeStep(device, step, {
+            log: () => undefined,
+            variables,
+            artifacts,
+            ...(recordingIosAppBundleId ? { recordingIosAppBundleId } : {}),
+          });
         } catch (error) {
           if (error instanceof IosMutationOutcomeUnknownError) throw error;
           if (index === 0 && error instanceof InputNotDispatchedError) throw error;
@@ -431,7 +441,20 @@ export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): Au
           throw new Error(`Capability unavailable for ${interaction.kind}`);
         }
       }
-      await executeSteps(session, steps);
+      let recordingIosAppBundleId: string | undefined;
+      if (
+        interaction.kind === "tap" &&
+        session.target.kind === "device" &&
+        session.target.platform === "ios" &&
+        session.originApplication
+      ) {
+        try {
+          recordingIosAppBundleId = resolveIosLaunchBundleId(session.originApplication);
+        } catch {
+          // Legacy unknown origins keep the established observation.
+        }
+      }
+      await executeSteps(session, steps, recordingIosAppBundleId);
     },
     async replay(session, steps) {
       await executeSteps(session, steps);

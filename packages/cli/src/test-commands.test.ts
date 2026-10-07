@@ -43,11 +43,24 @@ test("schedule help explains native Test prerequisites and the create payload", 
   assert.match(schedule, /Required with combineId/u);
   assert.match(schedule, /1\.\.43200/u);
   assert.match(schedule, /Run Across/u);
-  assert.match(schedule, /project Data set when each scheduled Run is prepared/u);
-  assert.match(schedule, /static, list, or generated sources/u);
+  assert.match(schedule, /Selected input Data set rows freeze approved Project values/u);
+  assert.match(schedule, /changing schedule seed does not rotate its prompts/u);
   assert.match(schedule, /not a testId or per-schedule runtime variables/u);
   assert.match(schedule, /"combineId":"grok-android-chat-prompts"/u);
   assert.match(schedule, /"intervalMinutes":30/u);
+  assert.match(schedule, /"enabled":false/u);
+});
+
+test("input Data set help keeps stable row IDs separate from approved prompt payloads", () => {
+  const variable = renderHelp("variable");
+  assert.match(variable, /"apply":\{"kind":"input","inputId":"chat-prompt-data"\}/u);
+  assert.match(
+    variable,
+    /"id":"value-1","label":"Tides","value":"Explain ocean tides in three sentences"/u,
+  );
+  assert.match(variable, /shared, non-sensitive list\/static values/u);
+  assert.match(variable, /retained during resume/u);
+  assert.match(renderHelp("combine"), /zip to pair equally sized prompt lists in order/u);
 });
 
 test("graph Test commands expose one canonical scenario-only workflow", () => {

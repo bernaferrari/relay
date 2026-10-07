@@ -14,6 +14,7 @@ import {
 import { defaultJobRouteRuntime } from "./job-routes.js";
 import { startScheduledCombine } from "./scheduler-combine.js";
 import { defaultSchedulerRuntime, runDueSchedules } from "./scheduler.js";
+import { nativeInputDataSetCombineFixture } from "./native-combine-inputs-test-fixture.js";
 
 test("a due native Plan carries its durable occurrence identity through real admission", async (t) => {
   const projectId = "scheduled-native-plan-context";
@@ -208,4 +209,146 @@ test("a due native Plan carries its durable occurrence identity through real adm
   assert.deepEqual(marked, []);
   assert.equal(listJobs().length, before, "failed admission queued no jobs");
   assert.equal(currentOperationContext(), undefined, "the occurrence context does not escape");
+});
+
+test("scheduled input-only native Plan approves both rows and freezes selected scope before control", async (t) => {
+  const projectId = "scheduled-native-input-rows";
+  const { appMapId, targetId, values } = await nativeInputDataSetCombineFixture(projectId);
+  await mutateStoredAppMap(projectId, appMapId, (current) => ({
+    ...current,
+    revision: current.revision + 1,
+    tests: {
+      prompt: {
+        ...current.tests.prompt!,
+        steps: [
+          {
+            id: "prompt",
+            kind: "script",
+            intent: "Use frozen inputs",
+            binding: {
+              status: "resolved",
+              kind: "script",
+              source: 'return "{{chat_prompt}} / {{receipt_guard}}";',
+            },
+          },
+        ],
+      },
+    },
+  }));
+  await writeProjectVariables(projectId, {
+    expectedRevision: 1,
+    value: [
+      { id: "prompt-data", name: "chat_prompt", scope: "shared", source: "list", values },
+      {
+        id: "receipt-data",
+        name: "receipt_guard",
+        scope: "shared",
+        source: "generated",
+        prompt: "Freeze before control",
+      },
+    ],
+  });
+  const seeds: number[] = [];
+  const removeProvider = registerGenerationProvider({
+    id: "deterministic",
+    async generate(input) {
+      seeds.push(input.seed!);
+      return {
+        provider: "deterministic",
+        model: "fixture",
+        values: ["Frozen receipt"],
+        generatedAt: 1,
+      };
+    },
+  });
+  t.after(() => {
+    removeProvider();
+    registerGenerationProvider(deterministicGenerationProvider);
+  });
+  let controls = 0;
+  let discoveries = 0;
+  t.mock.method(defaultJobRouteRuntime, "listDevices", async () => {
+    discoveries++;
+    return [];
+  });
+  t.mock.method(
+    defaultJobRouteRuntime,
+    "assertTargetControl",
+    async (
+      _scope: Parameters<typeof defaultJobRouteRuntime.assertTargetControl>[0],
+      id: string,
+    ) => {
+      assert.equal(id, targetId);
+      controls++;
+      assert.equal(seeds.length, 2, "both input cells are frozen before any target control");
+      assert.equal(currentOperationContext()?.requestId, "schedule:input-only-due:1000");
+      throw new Error("fixture control stop");
+    },
+  );
+  const schedule: LocalSchedule = {
+    id: "input-only-due",
+    recipeId: "",
+    combineId: "daily",
+    appMapId,
+    projectId,
+    targetKind: "device",
+    targetId,
+    platform: "android",
+    intervalMinutes: 30,
+    repetitions: 1,
+    enabled: true,
+    createdAt: 1,
+    updatedAt: 1,
+    nextRunAt: 1000,
+  };
+  const failures: string[] = [];
+  const poll = () =>
+    runDueSchedules(2000, {
+      ...defaultSchedulerRuntime,
+      listSchedules: async () => [schedule],
+      listDevices: async () => [],
+      listTargets: async () => [],
+      startCombine: startScheduledCombine,
+      markScheduleFailure: async (_id, detail) => {
+        failures.push(detail);
+      },
+      markScheduleRun: async () => {
+        assert.fail("failed target admission must not advance occurrence");
+      },
+      notify: async () => {},
+    });
+  const before = listJobs().length;
+  await poll();
+  assert.equal(controls, 1);
+  assert.equal(seeds.length, 2);
+  const discoveriesBeforeInvalid = discoveries;
+  await writeProjectVariables(projectId, {
+    expectedRevision: 2,
+    value: [
+      {
+        id: "prompt-data",
+        name: "chat_prompt",
+        scope: "shared",
+        source: "list",
+        values: [values[0]!],
+      },
+      {
+        id: "receipt-data",
+        name: "receipt_guard",
+        scope: "shared",
+        source: "generated",
+        prompt: "Freeze before control",
+      },
+    ],
+  });
+  await poll();
+  assert.equal(controls, 1);
+  assert.equal(
+    discoveries,
+    discoveriesBeforeInvalid,
+    "unapproved second row blocks before target discovery",
+  );
+  assert.equal(seeds.length, 2, "invalid selected scope does not generate any inputs");
+  assert.match(failures[1]!, /approved Project input values/);
+  assert.equal(listJobs().length, before, "no fixture target actions are dispatched");
 });

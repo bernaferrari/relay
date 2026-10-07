@@ -95,6 +95,8 @@ export * from "./android-app-build.js";
 import { captureNativeCrashEvidence } from "./crash-evidence.js";
 import { openPhysicalIosApp } from "./ios-app-open.js";
 import { namedControlObservationOptions } from "./named-control-observation.js";
+import { pressResolvedControl } from "./device-resolved-control.js";
+export { pressResolvedControl } from "./device-resolved-control.js";
 import {
   center,
   explicitPointResolution,
@@ -200,6 +202,7 @@ export async function snapshot(
     includeIdentifiers?: readonly string[];
     includeLabels?: readonly string[];
     requestedChromeOnly?: boolean;
+    controlBoundsOnlyForApp?: string;
   },
 ): Promise<SnapshotNode[]> {
   const run = () =>
@@ -855,63 +858,6 @@ export function nodesMatch(nodes: SnapshotNode[], substring: string): SnapshotNo
     const blob = `${n.label ?? ""} ${n.value ?? ""}`.toLowerCase();
     return blob.includes(q);
   });
-}
-
-export async function pressResolvedControl(
-  device: Device,
-  resolution: NamedControlResolution,
-  target: NamedControlTarget,
-  repeated?: RepeatedPress,
-): Promise<NamedControlResolution> {
-  // Only resolutions with current-tree evidence that their native selector is
-  // untrustworthy opt out. Stable identifiers and labels keep their stronger
-  // selector-first behavior.
-  if (resolution.method === "label" && target.label?.trim() && target.heading?.trim()) {
-    await pressLabel(device, target.label, repeated, target.heading);
-    return resolution;
-  }
-  if (resolution.activation === "snapshot-point") {
-    await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
-    return resolution;
-  }
-  if (resolution.method === "identifier" && target.identifier?.trim()) {
-    try {
-      await pressIdentifier(device, target.identifier, repeated);
-    } catch (error) {
-      if (!canUseSemanticPointFallback(error)) throw error;
-      await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
-    }
-    return resolution;
-  }
-  if (resolution.method === "label" && target.label?.trim()) {
-    try {
-      await pressLabel(device, target.label, repeated);
-    } catch (error) {
-      if (!canUseSemanticPointFallback(error)) throw error;
-      await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
-    }
-    return resolution;
-  }
-  if (resolution.method === "text" && target.text?.trim()) {
-    await pressMatchingText(device, target.text);
-    return resolution;
-  }
-  await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
-  return resolution;
-}
-
-function semanticSelectorDidNotMatch(error: unknown): boolean {
-  if (error instanceof Error && error.name === "JobCancelledError") return false;
-  const message = error instanceof Error ? error.message : String(error);
-  return /\bno match\b|did not match|element not found|selector.*not.*element|(?:native\s+)?(?:label|identifier)(?:\s+selector)?\s+unavailable/i.test(
-    message,
-  );
-}
-
-function canUseSemanticPointFallback(error: unknown): boolean {
-  return selectedPlatform() === "ios"
-    ? iosSelectorWasNotDispatched(error)
-    : semanticSelectorDidNotMatch(error);
 }
 
 /** agent-device reports every Android package transition after a coordinate

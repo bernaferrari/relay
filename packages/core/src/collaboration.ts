@@ -18,6 +18,7 @@ import { rescopeAppMap } from "./app-map-yaml.js";
 import { validateDevicePool } from "./device-pool.js";
 import { currentOperationContext } from "./operation-context.js";
 import { assertWebBuildProviderReceipt } from "./web-build-verification.js";
+import { assertAppMapInputDataSetChanges } from "./input-data-set.js";
 import {
   readControlStore,
   withControlStore,
@@ -712,6 +713,11 @@ export async function importAppMap(input: {
       projectId: input.projectId,
       appMapId,
     });
+    assertAppMapInputDataSetChanges(
+      appMap,
+      undefined,
+      store.variables(input.projectId)?.value ?? [],
+    );
     store.clearAppMapTestHistory(input.projectId, appMapId);
     store.upsertAppMap(key, appMap);
     // Import/replace/copy are all new local map incarnations even when the
@@ -798,6 +804,11 @@ export async function duplicateAppMap(input: {
       createdAt: at,
       updatedAt: at,
     });
+    assertAppMapInputDataSetChanges(
+      appMap,
+      undefined,
+      store.variables(input.projectId)?.value ?? [],
+    );
     store.clearAppMapTestHistory(input.projectId, input.appMapId);
     store.upsertAppMap(key, appMap);
     store.rotateReviewedDocumentOriginMapEpoch(key, randomUUID(), at);
@@ -838,6 +849,11 @@ export async function mutateStoredAppMap(
     if (next.revision !== validatedCurrent.revision + 1) {
       throw new Error("App Map mutation must advance exactly one revision");
     }
+    assertAppMapInputDataSetChanges(
+      next,
+      validatedCurrent,
+      store.variables(projectId)?.value ?? [],
+    );
     if (!options.preserveTestHistory) {
       for (const [testId, previous] of Object.entries(validatedCurrent.tests)) {
         if (JSON.stringify(previous) !== JSON.stringify(next.tests[testId])) {

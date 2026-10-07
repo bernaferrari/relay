@@ -20,6 +20,7 @@ import { Layers3 } from "lucide-react";
 import { SelectField } from "../components/filter-select";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
+import { PlanInputDataSetPicker } from "./plan-input-data-set-picker";
 
 const SUITES_QUERY_KEY = ["suites"] as const;
 
@@ -46,6 +47,8 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
   const [testQuery, setTestQuery] = useState("");
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
   const [variableIds, setVariableIds] = useState<Set<string>>(() => new Set());
+  const [addingDataSet, setAddingDataSet] = useState(false);
+  const [strategy, setStrategy] = useState<"cartesian" | "zip">("cartesian");
   const [referenceReviewMode, setReferenceReviewMode] = useState<"human" | "approved-reference">(
     "human",
   );
@@ -70,7 +73,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
         name,
         testIds: [...testIds],
         variableIds: [...variableIds],
-        strategy: "cartesian",
+        strategy,
         referenceReviewMode,
       });
     },
@@ -92,6 +95,8 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
     setTestQuery("");
     setTestIds(new Set());
     setVariableIds(new Set());
+    setAddingDataSet(false);
+    setStrategy("cartesian");
     setReferenceReviewMode("human");
     createSuite.reset();
   }
@@ -107,6 +112,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (addingDataSet || createSuite.isPending) return;
     createSuite.mutate();
   }
 
@@ -114,7 +120,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
     <Dialog
       open={dialogOpen}
       onOpenChange={(open) => {
-        if (!open && createSuite.isPending) return;
+        if (!open && (createSuite.isPending || addingDataSet)) return;
         setDialogOpen(open);
         if (open) resetCreate();
       }}
@@ -139,6 +145,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
               label="App"
               placeholder="Choose an App"
               value={appId}
+              disabled={addingDataSet || createSuite.isPending}
               options={(apps.data ?? []).map((app) => ({
                 value: app.id,
                 label: app.name,
@@ -147,6 +154,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                 setAppId(value);
                 setTestIds(new Set());
                 setVariableIds(new Set());
+                setStrategy("cartesian");
               }}
             />
           </Field>
@@ -241,31 +249,65 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                     ))}
                 </div>
               </fieldset>
-              {editor.data.dataSets.length ? (
+              {editor.data.dataSets.length || suiteProfileService.listInputDataSets ? (
                 <fieldset>
-                  <legend>Data sets</legend>
-                  {editor.data.dataSets.map((dataSet) => (
-                    <ChoiceLabel
-                      key={dataSet.id}
-                      className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                    >
-                      <span className="grid min-w-0 flex-1 gap-0.5">
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {dataSet.name}
+                  <legend className="mb-3 text-sm font-medium">Data sets</legend>
+                  <div className="grid gap-2">
+                    {editor.data.dataSets.map((dataSet) => (
+                      <ChoiceLabel
+                        key={dataSet.id}
+                        className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                      >
+                        <span className="grid min-w-0 flex-1 gap-0.5">
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {dataSet.name}
+                          </span>
+                          <span className="truncate text-xs leading-snug text-muted-foreground">
+                            {dataSet.optionCount} saved{" "}
+                            {dataSet.optionCount === 1 ? "value" : "values"}
+                          </span>
                         </span>
-                        <span className="truncate text-xs leading-snug text-muted-foreground">
-                          {dataSet.optionCount} saved{" "}
-                          {dataSet.optionCount === 1 ? "value" : "values"}
-                        </span>
-                      </span>
-                      <Checkbox
-                        checked={variableIds.has(dataSet.id)}
-                        onCheckedChange={(checked) =>
-                          toggle(setVariableIds, dataSet.id, checked === true)
+                        <Checkbox
+                          checked={variableIds.has(dataSet.id)}
+                          onCheckedChange={(checked) =>
+                            toggle(setVariableIds, dataSet.id, checked === true)
+                          }
+                        />
+                      </ChoiceLabel>
+                    ))}
+                    {suiteProfileService.listInputDataSets &&
+                    suiteProfileService.addInputDataSet ? (
+                      <PlanInputDataSetPicker
+                        key={appId}
+                        appMapId={appId}
+                        revision={editor.data.revision}
+                        service={{
+                          listInputDataSets: suiteProfileService.listInputDataSets,
+                          addInputDataSet: suiteProfileService.addInputDataSet,
+                        }}
+                        disabled={createSuite.isPending}
+                        onBusy={setAddingDataSet}
+                        onReload={() => editor.refetch()}
+                        onAdded={({ editor: saved, variableId }) => {
+                          queryClient.setQueryData(["suites", "editor", appId], saved);
+                          toggle(setVariableIds, variableId, true);
+                        }}
+                      />
+                    ) : null}
+                    {variableIds.size > 1 ? (
+                      <SelectField
+                        label="Combine values"
+                        value={strategy}
+                        options={[
+                          { value: "cartesian", label: "Every combination" },
+                          { value: "zip", label: "Pair values in order" },
+                        ]}
+                        onValueChange={(value) =>
+                          setStrategy(value === "zip" ? "zip" : "cartesian")
                         }
                       />
-                    </ChoiceLabel>
-                  ))}
+                    ) : null}
+                  </div>
                 </fieldset>
               ) : null}
             </div>
@@ -280,7 +322,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
           <div className="sticky bottom-0 border-t border-border bg-background pt-4 flex flex-wrap items-center justify-end gap-2.5">
             <DialogClose
               render={
-                <Button variant="ghost" disabled={createSuite.isPending}>
+                <Button variant="ghost" disabled={createSuite.isPending || addingDataSet}>
                   Cancel
                 </Button>
               }
@@ -288,7 +330,13 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
             <Button
               type="submit"
               variant="default"
-              disabled={!editor.data || !name.trim() || !testIds.size || createSuite.isPending}
+              disabled={
+                !editor.data ||
+                !name.trim() ||
+                !testIds.size ||
+                createSuite.isPending ||
+                addingDataSet
+              }
             >
               {createSuite.isPending ? "Saving…" : "Save Plan"}
             </Button>

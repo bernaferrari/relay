@@ -231,5 +231,6 @@ export { authoringReplaySourceSteps } from "./authoring-session-runtime.js";
 export { prepareAuthoringBrowserReplay } from "./authoring-browser-replay.js";
 
 export * from "./frozen-recipe-inputs.js";
+export { requirePublicInputDataSet } from "./input-data-set.js";
 
 export * from "./app-map-combine-cell-inputs.js";

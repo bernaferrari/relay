@@ -26,6 +26,10 @@ export {
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 import { formatObservedDuration } from "./observed-duration";
+import {
+  createPlanInputDataSetService,
+  type PlanInputDataSetService,
+} from "./plan-input-data-set-service";
 
 type BuildDto = OperationOutput<"build.list">["builds"][number];
 
@@ -166,7 +170,7 @@ export type ProductSuitePreview = {
   };
 };
 
-export type SuiteProfileProductService = {
+export type SuiteProfileProductService = Partial<PlanInputDataSetService> & {
   listSuites(appMapId?: string): Promise<readonly ProductSuite[]>;
   getSuite(appMapId: string, suiteId: string): Promise<ProductSuite | undefined>;
   getSuiteEditor(appMapId: string): Promise<ProductSuiteEditor>;
@@ -523,6 +527,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
   }
 
   return {
+    ...createPlanInputDataSetService(client, projectSuiteEditor),
     async listSuites(appMapId) {
       const maps = appMapId
         ? [await map(appMapId)]

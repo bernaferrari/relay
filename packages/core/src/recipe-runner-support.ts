@@ -245,6 +245,16 @@ async function tapTarget(
     selectedPlatform() !== "android" ||
     !hasSemanticTarget ||
     target.point?.fallbackPolicy === "reviewed";
+  const controlBoundsOnlyForApp =
+    selectedPlatform() === "ios" &&
+    Boolean(target.identifier) !== Boolean(target.label) &&
+    !target.point &&
+    !target.text &&
+    !target.ref &&
+    !target.role &&
+    !target.relation
+      ? context?.recordingIosAppBundleId
+      : undefined;
   let namedTarget = {
     ...(target.identifier ? { identifier: target.identifier } : {}),
     ...(target.label ? { label: target.label } : {}),
@@ -263,6 +273,7 @@ async function tapTarget(
         ...(selectedPlatform() === "ios" ? { requestedChromeOnly: true } : {}),
         ...(target.identifier ? { includeIdentifiers: [target.identifier] } : {}),
         ...(target.label ? { includeLabels: [target.label] } : {}),
+        ...(controlBoundsOnlyForApp ? { controlBoundsOnlyForApp } : {}),
       });
     } catch (error) {
       if (isCancel(error)) throw error;
@@ -319,7 +330,9 @@ async function tapTarget(
       if (verifiedNodes && selectedPlatform() === "android") {
         await pressPoint(device, named.point.x, named.point.y, repeated);
       } else {
-        await pressResolvedControl(device, named, namedTarget, repeated);
+        await pressResolvedControl(device, named, namedTarget, repeated, {
+          refreshBeforePointFallbackForApp: controlBoundsOnlyForApp,
+        });
       }
     } catch (error) {
       // A semantic control may intentionally open a system surface (for

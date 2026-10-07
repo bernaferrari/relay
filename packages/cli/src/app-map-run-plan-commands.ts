@@ -10,7 +10,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
   mapped(
     "app-map.variable.save",
     path("variable save", ["appMapId", "variableId"], undefined, {
-      summary: "Save a reusable Variable (language, account, theme, …)",
+      summary: "Save a reusable Variable for Test inputs or app settings",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
         { name: "variableId", type: "string", description: "Stable Variable identifier" },
@@ -20,10 +20,23 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         {
           name: "variable",
           type: "object",
-          description: "Name, kind, values, and reviewed actions that open the value list",
+          description:
+            "Name, kind, values, and an explicit Project input reference or reviewed app-setting actions",
         },
       ],
       examples: [
+        `relay variable save grok-android questions --input '${JSON.stringify({
+          expectedRevision: 4,
+          variable: {
+            name: "Chat prompts",
+            kind: "custom",
+            apply: { kind: "input", inputId: "chat-prompt-data" },
+            options: [
+              { id: "value-1", label: "Tides", value: "Explain ocean tides in three sentences" },
+              { id: "value-2", label: "Paper plane", value: "Suggest one paper airplane tip" },
+            ],
+          },
+        })}'`,
         `relay variable save settings language --input '${JSON.stringify({
           expectedRevision: 4,
           variable: {
@@ -52,7 +65,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
           },
         })}'`,
       ],
-      note: "A Variable changes one reusable dimension. A Combine multiplies one or more Variables by one or more Tests. appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved. apply.relaunch: true still relaunches.",
+      note: "An input Variable references a stable Project Data set ID. Its rows carry approved shared, non-sensitive list/static values in value, separately from bounded row IDs and display labels. Each Test consumes only its referenced inputs, without picker actions. Values are frozen when admitted and retained during resume. A Combine selects Variables and Tests; zip pairs rows in order. appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved. apply.relaunch: true still relaunches.",
     }),
   ),
   mapped("app-map.variable.remove", path("variable remove", ["appMapId", "variableId"])),
@@ -115,7 +128,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
           },
         })}'`,
       ],
-      note: "Each cell applies one value from every Variable, then runs every selected Test.",
+      note: "Each cell applies one value from every Variable, then runs every selected Test. Use strategy: zip to pair equally sized prompt lists in order; input dimensions that a Test does not reference remain in its case identity without changing its actions.",
     }),
   ),
   mapped("app-map.combine.remove", path("combine remove", ["appMapId", "combineId"])),

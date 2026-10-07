@@ -8,7 +8,7 @@ import type { Socket } from "node:net";
 import { openUsbmuxRunnerSocket, readUntilClose, writeAll } from "./ios-usbmux.js";
 export { readUsbmuxDeviceId } from "./ios-usbmux.js";
 import type { SnapshotNode } from "./device-capabilities.js";
-import { resolveNamedControl } from "./device-target-resolution.js";
+import { INTERACTIVE_SNAPSHOT_ROLES, resolveNamedControl } from "./device-target-resolution.js";
 import { probeLiveIosRunnerListener, type LiveIosRunnerListener } from "./ios-runner-listener.js";
 import type { TargetContext } from "./target-context.js";
 import { rememberedTargetApplication } from "./device.js";
@@ -18,7 +18,13 @@ export type LiveIosRunnerCommand = Record<string, unknown>;
 export type LiveIosRunnerCommandResult = {
   ok?: boolean;
   error?: string | { message?: string; code?: string };
-  data?: { nodes?: SnapshotNode[]; message?: string; found?: boolean };
+  data?: {
+    nodes?: SnapshotNode[];
+    message?: string;
+    found?: boolean;
+    truncated?: boolean;
+    systemSurface?: { bundleId?: string };
+  };
   nodes?: SnapshotNode[];
 };
 
@@ -171,20 +177,30 @@ async function snapshotIosApplicationRootViaListener(
 async function snapshotIosDisambiguationTreeViaListener(
   listener: LiveIosRunnerListener,
   post: LiveIosRunnerCommandPost,
-  input: { appBundleId?: string; timeoutMs?: number },
+  input: { appBundleId?: string; timeoutMs?: number; requireComplete?: boolean },
 ): Promise<SnapshotNode[]> {
   const result = await post(
     listener,
     {
       command: "snapshot",
       interactiveOnly: false,
-      depth: IOS_DISAMBIGUATION_SNAPSHOT_DEPTH,
+      ...(input.requireComplete ? {} : { depth: IOS_DISAMBIGUATION_SNAPSHOT_DEPTH }),
       ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
     },
     input.timeoutMs ?? 20_000,
   );
   if (result.ok === false) {
     throw new Error(liveIosRunnerFailureMessage(result, "Live XCTest listener snapshot failed"));
+  }
+  if (input.requireComplete && result.data?.truncated !== false) {
+    throw new Error("Live XCTest listener did not return a complete current accessibility tree");
+  }
+  if (
+    input.requireComplete &&
+    result.data?.systemSurface &&
+    result.data.systemSurface.bundleId !== input.appBundleId
+  ) {
+    throw new Error("Live XCTest listener accessibility tree belongs to another application");
   }
   const nodes = result.data?.nodes ?? result.nodes ?? [];
   if (isIosRunnerHostProbeTree(nodes)) {
@@ -197,6 +213,43 @@ async function snapshotIosDisambiguationTreeViaListener(
   return nodes.map((node) => ({ ...node, logicalCoordinates: true }));
 }
 
+/** Coordinate fallback needs a current whole-tree receipt, not the selector
+ * query's preferred match or a retained authoring capture. Older/sparse runner
+ * responses cannot prove uniqueness and therefore cannot authorize a point. */
+export async function snapshotCompleteIosTreeForTargetApplication(
+  context: TargetContext,
+  appBundleId: string,
+): Promise<SnapshotNode[]> {
+  if (
+    context.kind !== "device" ||
+    context.platform !== "ios" ||
+    (await rememberedTargetApplication(context)) !== appBundleId
+  ) {
+    throw new Error("Live XCTest listener is not bound to the recording application");
+  }
+  const listener = await probeLiveIosRunnerListener(context.serial);
+  if (!listener) throw new Error("iOS coordinate fallback needs an active XCTest session");
+  const nodes = await snapshotIosDisambiguationTreeViaListener(
+    listener,
+    injectedPost ?? postLiveIosRunnerCommand,
+    { appBundleId, requireComplete: true },
+  );
+  if (nodes.some((node) => node.bundleId && node.bundleId !== appBundleId)) {
+    throw new Error("Live XCTest listener accessibility tree belongs to another application");
+  }
+  const application = nodes.find((node) => node.depth === 0 && node.type === "Application");
+  const rect = application?.rect;
+  if (
+    !rect ||
+    ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) ||
+    rect.width < 100 ||
+    rect.height < 100
+  ) {
+    throw new Error("Live XCTest listener could not establish current application geometry");
+  }
+  return nodes;
+}
+
 async function snapshotRequestedIosChromeViaListener(
   listener: LiveIosRunnerListener,
   post: LiveIosRunnerCommandPost,
@@ -204,9 +257,13 @@ async function snapshotRequestedIosChromeViaListener(
     appBundleId?: string;
     includeIdentifiers?: readonly string[];
     includeLabels?: readonly string[];
+    controlBoundsOnlyForApp?: string;
   },
   timeoutMs: number,
 ): Promise<SnapshotNode[]> {
+  if (input.controlBoundsOnlyForApp && input.appBundleId !== input.controlBoundsOnlyForApp) {
+    throw new Error("Live XCTest listener is not bound to the recording application");
+  }
   const identifiers = await queryIosChromeSelectorsViaListener(
     listener,
     post,
@@ -214,6 +271,7 @@ async function snapshotRequestedIosChromeViaListener(
       selectorKey: "id",
       values: chromeValuesToQuery([], input.includeIdentifiers),
       ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      ...(input.controlBoundsOnlyForApp ? { preserveNonlogicalBounds: true } : {}),
     },
     timeoutMs,
   );
@@ -224,6 +282,7 @@ async function snapshotRequestedIosChromeViaListener(
       selectorKey: "label",
       values: chromeValuesToQuery([], input.includeLabels),
       ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      ...(input.controlBoundsOnlyForApp ? { preserveNonlogicalBounds: true } : {}),
     },
     timeoutMs,
   );
@@ -233,7 +292,44 @@ async function snapshotRequestedIosChromeViaListener(
       "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
     );
   }
+  if (
+    input.controlBoundsOnlyForApp &&
+    chrome.some((node) => node.bundleId && node.bundleId !== input.controlBoundsOnlyForApp)
+  ) {
+    throw new Error("Live XCTest listener control belongs to another application");
+  }
+  // Pure recording selectors use the freshly queried control's own logical
+  // frame. Their native dispatch still resolves current uniqueness. This is
+  // not a full-tree receipt and must never establish screen/capture geometry.
+  if (
+    input.controlBoundsOnlyForApp &&
+    chrome.length === 1 &&
+    chrome.every((node) => {
+      const role = (node.role ?? node.type ?? "").toLowerCase().split(".").at(-1) ?? "";
+      const rect = node.rect;
+      return (
+        node.logicalCoordinates === true &&
+        node.hittable === true &&
+        INTERACTIVE_SNAPSHOT_ROLES.has(role) &&
+        rect &&
+        [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    })
+  ) {
+    return chrome;
+  }
   const application = await snapshotIosApplicationRootViaListener(listener, post, input, timeoutMs);
+  if (input.controlBoundsOnlyForApp) {
+    if (application?.bundleId && application.bundleId !== input.controlBoundsOnlyForApp) {
+      throw new Error("Live XCTest listener Application belongs to another application");
+    }
+    const rect = application?.rect;
+    if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) {
+      throw new Error("Live XCTest listener could not establish current application geometry");
+    }
+  }
   return application ? [application, ...chrome] : chrome;
 }
 
@@ -246,6 +342,7 @@ export async function snapshotViaLiveIosRunnerListener(input: {
   includeLabels?: readonly string[];
   /** Query only includeIdentifiers/includeLabels — never the home/library catalog. */
   requestedChromeOnly?: boolean;
+  controlBoundsOnlyForApp?: string;
 }): Promise<SnapshotNode[]> {
   const listener = await probeLiveIosRunnerListener(input.serial);
   if (!listener) {
@@ -325,6 +422,7 @@ async function queryIosChromeSelectorsViaListener(
     appBundleId?: string;
     selectorKey: "id" | "label";
     values: readonly string[];
+    preserveNonlogicalBounds?: boolean;
   },
   timeoutMs: number,
 ): Promise<SnapshotNode[]> {
@@ -350,7 +448,10 @@ async function queryIosChromeSelectorsViaListener(
         ...(input.selectorKey === "id"
           ? { identifier: node.identifier?.trim() || value }
           : { label: node.label?.trim() || value }),
-        logicalCoordinates: true,
+        // This direct query uses the runner's XCUIElement.frame presentation,
+        // which this adapter already treats as logical. Recording preserves
+        // an explicit producer refusal before omitting Application geometry.
+        logicalCoordinates: !input.preserveNonlogicalBounds || node.logicalCoordinates !== false,
       });
     }
   }
@@ -755,6 +856,7 @@ export async function snapshotFromLiveIosRunnerListenerIfReady(
     includeIdentifiers?: readonly string[];
     includeLabels?: readonly string[];
     requestedChromeOnly?: boolean;
+    controlBoundsOnlyForApp?: string;
   },
 ): Promise<SnapshotNode[] | undefined> {
   if (context.kind !== "device" || context.platform !== "ios") return undefined;
@@ -768,5 +870,8 @@ export async function snapshotFromLiveIosRunnerListenerIfReady(
     ...(opts?.includeIdentifiers?.length ? { includeIdentifiers: opts.includeIdentifiers } : {}),
     ...(opts?.includeLabels?.length ? { includeLabels: opts.includeLabels } : {}),
     ...(opts?.requestedChromeOnly ? { requestedChromeOnly: true } : {}),
+    ...(opts?.controlBoundsOnlyForApp
+      ? { controlBoundsOnlyForApp: opts.controlBoundsOnlyForApp }
+      : {}),
   });
 }

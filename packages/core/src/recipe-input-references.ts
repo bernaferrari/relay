@@ -1,9 +1,16 @@
 import type { TestData } from "@relay/protocol";
 import { CasePlanError } from "./case-plan.js";
+import { requirePublicInputDataSet } from "./input-data-set.js";
 import { externalRecipeInputDependencies } from "./recipe-input-dependencies.js";
 import type { Recipe } from "./recipes.js";
 
-export type SelectedRecipeInputRow = { id: string; name?: string; valueId: string };
+export type SelectedRecipeInputRow = {
+  id: string;
+  name?: string;
+  inputId?: string;
+  value?: string;
+  valueId: string;
+};
 
 function aliases(definition: Pick<TestData, "id" | "name">): string[] {
   return [...new Set([definition.id, definition.name].map((name) => name.trim()))];
@@ -57,6 +64,25 @@ export function resolveRecipeInputReferences(input: {
     if (values.size) runtimeValues[definition.name] = [...values][0]!;
   }
   for (const row of input.selectedRows ?? []) {
+    if (row.inputId !== undefined) {
+      const definition = requirePublicInputDataSet({
+        inputId: row.inputId,
+        definitions: input.definitions,
+        values: [row.value ?? ""],
+      });
+      // A mixed Plan retains every world dimension, while each Test consumes
+      // only the inputs referenced by its own frozen graph.
+      if (!definitions.includes(definition)) continue;
+      const value = row.value!.trim();
+      const supplied = runtimeValues[definition.name];
+      if (supplied !== undefined && supplied !== value)
+        throw new CasePlanError(
+          "conflicting-variable",
+          `Selected row and supplied value disagree for input “${definition.name}”`,
+        );
+      runtimeValues[definition.name] = value;
+      continue;
+    }
     const rowAliases = [...new Set([row.id, row.name].filter(Boolean) as string[])];
     if (
       !rowAliases.some(

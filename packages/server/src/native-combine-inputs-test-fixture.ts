@@ -1,4 +1,4 @@
-import { createAppMap, mutateStoredAppMap, readAppMap } from "@relay/core";
+import { createAppMap, mutateStoredAppMap, readAppMap, writeProjectVariables } from "@relay/core";
 
 export async function nativePromptCombineFixture(projectId: string) {
   const appMapId = "chat";
@@ -95,4 +95,40 @@ export async function nativePromptCombineFixture(projectId: string) {
   const map = await readAppMap(projectId, appMapId);
   if (!map) throw new Error("Fixture map not found");
   return { map, appMapId, targetId };
+}
+
+export async function nativeInputDataSetCombineFixture(projectId: string) {
+  const fixture = await nativePromptCombineFixture(projectId);
+  const values = ["Describe ocean tides", "Suggest a paper airplane tip"];
+  await writeProjectVariables(projectId, {
+    expectedRevision: 0,
+    value: [{ id: "prompt-data", name: "chat_prompt", scope: "shared", source: "list", values }],
+  });
+  const map = await mutateStoredAppMap(projectId, fixture.appMapId, (current) => ({
+    ...current,
+    revision: current.revision + 1,
+    variables: {
+      questions: {
+        ...current.variables.language!,
+        id: "questions",
+        name: "Questions",
+        kind: "custom",
+        apply: { kind: "input", inputId: "prompt-data" },
+        options: values.map((value, index) => ({ id: `q${index + 1}`, value })),
+      },
+    },
+    combines: {
+      daily: {
+        ...current.combines.daily!,
+        variableIds: ["questions"],
+        selected: { questions: ["q1", "q2"] },
+        cellRuntimeProfiles: values.map((_, index) => ({
+          testId: "prompt",
+          values: { questions: `q${index + 1}` },
+          targetProfileId: "native-profile",
+        })),
+      },
+    },
+  }));
+  return { ...fixture, map, values };
 }

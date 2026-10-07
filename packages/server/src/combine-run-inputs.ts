@@ -3,13 +3,22 @@ import {
   CasePlanError,
   combineCellInputSeed,
   combineCellRuntimeInputValues,
+  enumerateAppMapCombineCells,
   freezeRecipeInputs,
+  optionSetsForAppMapCombine,
+  prepareOptionCasePlan,
   readProjectVariables,
+  requirePublicInputDataSet,
   requirePreparedCombineCellInputs,
   restorePreparedCombineCellInputs,
   type PreparedAppMapCombineCell,
 } from "@relay/core";
-import type { CombineCampaignCase } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapCombine,
+  CaseExpansionStrategy,
+  CombineCampaignCase,
+} from "@relay/protocol";
 import { HttpError } from "./http.js";
 
 function inputError(error: unknown): never {
@@ -19,6 +28,65 @@ function inputError(error: unknown): never {
     recovery:
       "Supply the Test inputs or repair its project Data set, then start a new Run Across. Frozen campaign inputs are never regenerated during resume.",
   });
+}
+
+/** Approval only: reject invalid public rows before live profile health reads.
+ * Generation and the authoritative per-child receipt remain in input freeze. */
+export async function assertCombineInputDataSets(
+  projectId: string,
+  map: AppMap,
+  combine: AppMapCombine,
+  request: {
+    selected?: Record<string, string[]>;
+    selectedCellIds?: string[];
+    strategy?: CaseExpansionStrategy;
+  } = {},
+): Promise<void> {
+  const sets = combine.variableIds.flatMap((id) => {
+    const set = map.variables[id];
+    return set?.apply.kind === "input" ? [set] : [];
+  });
+  if (!sets.length) return;
+  try {
+    const definitions = await readProjectVariables(projectId);
+    const selected = request.selected ?? combine.selected;
+    const requested = request.selectedCellIds?.map((id) => id.trim()).filter(Boolean);
+    const cells = requested?.length
+      ? enumerateAppMapCombineCells({
+          combine,
+          tests: combine.testIds.flatMap((id) => (map.tests[id] ? [map.tests[id]!] : [])),
+          variableIds: combine.variableIds,
+          matrix: await prepareOptionCasePlan({
+            sets: optionSetsForAppMapCombine(map, combine),
+            selected,
+            strategy: request.strategy ?? combine.strategy,
+          }),
+        })
+      : undefined;
+    if (requested?.some((id) => !cells?.some((cell) => cell.cellId === id)))
+      throw new CasePlanError("conflicting-variable", "Choose available cells from the saved Plan");
+    for (const set of sets) {
+      if (set.apply.kind !== "input") continue;
+      const ids = cells
+        ? [
+            ...new Set(
+              cells
+                .filter((cell) => requested!.includes(cell.cellId))
+                .map((cell) => cell.values[set.id]!),
+            ),
+          ]
+        : selected && Object.hasOwn(selected, set.id)
+          ? selected[set.id]!
+          : set.options.map((row) => row.id);
+      requirePublicInputDataSet({
+        inputId: set.apply.inputId,
+        definitions: definitions.value,
+        values: ids.map((id) => set.options.find((row) => row.id === id)?.value ?? ""),
+      });
+    }
+  } catch (error) {
+    inputError(error);
+  }
 }
 
 /** Complete the entire selected scope before binding any cell or admitting a target. */
