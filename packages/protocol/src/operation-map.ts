@@ -188,19 +188,20 @@ export type GenerationResultDto = {
   };
 };
 
-/** The exact-once diagnostic returned when a physical iOS command may already
- * have reached XCTest. It is a terminal review state, never retry metadata. */
+/** Exact-once native evidence distinguishes a proven refusal from an unknown
+ * outcome. Neither terminal state authorizes an implicit retry. */
 export type IosMutationAttemptDiagnosticDto = {
   sequence: number;
   operation: string;
   nativeAttempts: 1;
-  outcome: "completed" | "selector-miss" | "outcome-unknown";
+  outcome: "completed" | "selector-miss" | "selector-rejected" | "outcome-unknown";
   retry: {
     attempts: 0;
     decision: "not-needed" | "safe-selector-fallback" | "blocked";
     reason:
       | "native-command-completed"
       | "selector-was-not-dispatched"
+      | "native-selector-rejected"
       | "native-command-outcome-unknown";
   };
   intervention: {

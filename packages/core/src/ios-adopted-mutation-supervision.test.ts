@@ -9,6 +9,7 @@ import { pressResolvedControl } from "./device-resolved-control.js";
 import { resolveNamedControl } from "./device-target-resolution.js";
 import {
   IosMutationOutcomeUnknownError,
+  IosMutationRejectedError,
   IosSupervisionRequiredError,
   iosSelectorWasNotDispatched,
   runIosMutationOnce,
@@ -552,24 +553,74 @@ test("failed identifier refusal persistence cannot authorize ranking or a second
 });
 
 test("native label ambiguity remains terminal without point fallback or unknown dispatch receipt", async () => {
-  await fixture(async ({ serial, store, installPost, mutate }) => {
+  await fixture(async ({ serial, store, installPost }) => {
     let posts = 0;
-    installPost(async () => {
+    let sdkCallbacks = 0;
+    installPost(async (_listener, command) => {
       posts += 1;
+      assert.equal(command.command, "tap");
+      assert.equal(command.selectorKey, "label");
       return {
         ok: false,
         error: { code: "AMBIGUOUS_MATCH", message: "selector matched multiple elements" },
       };
     });
-    await assert.rejects(mutate("tap"), (error) => {
-      assert.ok(error instanceof IosMutationOutcomeUnknownError);
+    const device = deviceTestDouble({
+      interactions: {
+        press: async () => {
+          sdkCallbacks += 1;
+        },
+      },
+    });
+    const target = { label: "Fast" };
+    const resolution = resolveNamedControl(
+      [
+        {
+          type: "Button",
+          label: "Fast",
+          hittable: true,
+          rect: { x: 20, y: 40, width: 40, height: 40 },
+        },
+      ],
+      target,
+    );
+    assert.ok(resolution);
+    await assert.rejects(pressResolvedControl(device, resolution, target), (error) => {
+      assert.ok(error instanceof IosMutationRejectedError);
+      assert.equal(error.cause.code, "AMBIGUOUS_MATCH");
+      assert.equal(error.iosMutation.outcome, "selector-rejected");
+      assert.ok(!(error instanceof IosMutationOutcomeUnknownError));
       assert.equal(iosSelectorWasNotDispatched(error), false);
       return true;
     });
     assert.equal(posts, 1);
+    assert.equal(sdkCallbacks, 0);
     assert.equal(inputEvents(store, serial).at(-1), "INPUT_NOT_DISPATCHED");
     assert.equal(store.health({ id: serial, kind: "ios" }).input.state, "ready");
   });
+});
+
+test("failed terminal label refusal persistence preserves the unknown fence", async () => {
+  await fixture(
+    async ({ installPost, mutate, reopenedStartupIsBlocked }) => {
+      let posts = 0;
+      installPost(async () => {
+        posts += 1;
+        return {
+          ok: false,
+          error: { code: "AMBIGUOUS_MATCH", message: "selector matched multiple elements" },
+        };
+      });
+      await assert.rejects(mutate("tap"), IosMutationOutcomeUnknownError);
+      assert.equal(posts, 1);
+      await reopenedStartupIsBlocked();
+    },
+    {
+      beforePersistTransition(event) {
+        if (event.kind === "input.not-dispatched") throw new Error("refusal storage unavailable");
+      },
+    },
+  );
 });
 
 test("explicit native selector miss releases its receipt without sending another Type", async () => {

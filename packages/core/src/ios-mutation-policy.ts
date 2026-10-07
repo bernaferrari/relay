@@ -49,13 +49,14 @@ export type IosMutationAttemptDiagnostic = {
   operation: IosMutationOperation;
   /** Native XCTest commands issued for this user/agent intention. Always one. */
   nativeAttempts: 1;
-  outcome: "completed" | "selector-miss" | "outcome-unknown";
+  outcome: "completed" | "selector-miss" | "selector-rejected" | "outcome-unknown";
   retry: {
     attempts: 0;
     decision: "not-needed" | "safe-selector-fallback" | "blocked";
     reason:
       | "native-command-completed"
       | "selector-was-not-dispatched"
+      | "native-selector-rejected"
       | "native-command-outcome-unknown";
   };
   intervention: {
@@ -332,14 +333,35 @@ export class IosMutationOutcomeUnknownError extends Error {
   }
 }
 
+/** A structured native refusal proves no gesture occurred, but does not
+ * authorize a different selector, coordinate fallback or optional recovery. */
+export class IosMutationRejectedError extends Error {
+  constructor(
+    readonly iosMutation: IosMutationAttemptDiagnostic,
+    readonly cause: IosNativeMutationError,
+  ) {
+    super(
+      `The iOS ${iosMutation.operation} was rejected before input: ${cause.code}: ${cause.message}. Relay stopped without retrying.`,
+    );
+    this.name = "IosMutationRejectedError";
+  }
+}
+
+export function isTerminalIosMutationError(
+  error: unknown,
+): error is IosMutationOutcomeUnknownError | IosMutationRejectedError {
+  return (
+    error instanceof IosMutationOutcomeUnknownError || error instanceof IosMutationRejectedError
+  );
+}
+
 /**
  * Recovery code may handle selector misses and ordinary adapter failures, but
- * it must never reinterpret an ambiguous physical iOS mutation as either.
+ * it must never reinterpret a terminal native refusal or unknown input as either.
  * Keep this guard explicit at every catch-all recovery boundary.
  */
 export function rethrowIosMutationOutcomeUnknown(error: unknown): void {
-  if (error instanceof IosMutationOutcomeUnknownError || error instanceof InputOutcomeUnknownError)
-    throw error;
+  if (isTerminalIosMutationError(error) || error instanceof InputOutcomeUnknownError) throw error;
 }
 
 export function currentIosDeviceSerial(): string | undefined {
@@ -352,7 +374,7 @@ export function currentIosDeviceSerial(): string | undefined {
 }
 
 function mutationErrorMessage(error: unknown): string {
-  if (error instanceof IosMutationOutcomeUnknownError) return mutationErrorMessage(error.cause);
+  if (isTerminalIosMutationError(error)) return mutationErrorMessage(error.cause);
   return unknownErrorMessage(error);
 }
 
@@ -364,7 +386,7 @@ function mutationErrorMessage(error: unknown): string {
  * "No active session" is the adapter refusing before it has a session.
  */
 export function iosSelectorWasNotDispatched(error: unknown): boolean {
-  if (error instanceof IosMutationOutcomeUnknownError) return false;
+  if (isTerminalIosMutationError(error)) return false;
   if (error instanceof IosNativeMutationError) {
     return error.dispatched === "no" && error.code === "ELEMENT_NOT_FOUND";
   }
@@ -403,6 +425,7 @@ function mutationDiagnostic(
   cancelledAfterAttemptStarted = false,
 ): IosMutationAttemptDiagnostic {
   const selectorMiss = outcome === "selector-miss";
+  const selectorRejected = outcome === "selector-rejected";
   const unknown = outcome === "outcome-unknown";
   return {
     sequence: (iosMutationSequences.get(serial) ?? 0) + 1,
@@ -411,12 +434,18 @@ function mutationDiagnostic(
     outcome,
     retry: {
       attempts: 0,
-      decision: selectorMiss ? "safe-selector-fallback" : unknown ? "blocked" : "not-needed",
+      decision: selectorMiss
+        ? "safe-selector-fallback"
+        : unknown || selectorRejected
+          ? "blocked"
+          : "not-needed",
       reason: selectorMiss
         ? "selector-was-not-dispatched"
-        : unknown
-          ? "native-command-outcome-unknown"
-          : "native-command-completed",
+        : selectorRejected
+          ? "native-selector-rejected"
+          : unknown
+            ? "native-command-outcome-unknown"
+            : "native-command-completed",
     },
     intervention: {
       required: unknown,
@@ -460,10 +489,18 @@ export async function runIosMutationOnce<T>(
     ) {
       throw error;
     }
-    const diagnostic = mutationDiagnostic(
+    const selectorRejected =
+      error instanceof IosNativeMutationError &&
+      error.dispatched === "no" &&
+      (error.code === "AMBIGUOUS_MATCH" || error.code === "ELEMENT_OFFSCREEN");
+    let diagnostic = mutationDiagnostic(
       serial,
       operation,
-      iosSelectorWasNotDispatched(error) ? "selector-miss" : "outcome-unknown",
+      iosSelectorWasNotDispatched(error)
+        ? "selector-miss"
+        : selectorRejected
+          ? "selector-rejected"
+          : "outcome-unknown",
       isJobCancellation(error),
     );
     const supervisedFinish = finishSupervisedIosMutation(
@@ -474,10 +511,23 @@ export async function runIosMutationOnce<T>(
         : "outcome-unknown",
       mutationErrorMessage(error),
     );
+    // A refusal cannot release the durable intention unless its receipt was
+    // saved. Preserve the pending fence and terminal uncertainty on failure.
+    if (supervisedFinish.persistenceError) {
+      diagnostic = mutationDiagnostic(
+        serial,
+        operation,
+        "outcome-unknown",
+        isJobCancellation(error),
+      );
+    }
     iosMutationSequences.set(serial, diagnostic.sequence);
     iosMutationAttemptDiagnostics.set(serial, diagnostic);
     attachIosMutationDiagnostic(error, diagnostic);
     if (diagnostic.outcome === "selector-miss") throw error;
+    if (diagnostic.outcome === "selector-rejected" && error instanceof IosNativeMutationError) {
+      throw new IosMutationRejectedError(diagnostic, error);
+    }
     throw new IosMutationOutcomeUnknownError(
       diagnostic,
       supervisedFinish.persistenceError ?? error,

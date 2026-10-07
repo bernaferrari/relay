@@ -253,7 +253,7 @@ const iosMutation = z
       "video",
     ]),
     nativeAttempts: z.literal(1),
-    outcome: z.enum(["completed", "selector-miss", "outcome-unknown"]),
+    outcome: z.enum(["completed", "selector-miss", "selector-rejected", "outcome-unknown"]),
     retry: z
       .object({
         attempts: z.literal(0),
@@ -261,6 +261,7 @@ const iosMutation = z
         reason: z.enum([
           "native-command-completed",
           "selector-was-not-dispatched",
+          "native-selector-rejected",
           "native-command-outcome-unknown",
         ]),
       })

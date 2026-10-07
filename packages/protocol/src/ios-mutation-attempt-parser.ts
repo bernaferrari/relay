@@ -15,6 +15,7 @@ export function assertIosMutationAttemptDiagnostic(
   if (
     diagnostic.outcome !== "completed" &&
     diagnostic.outcome !== "selector-miss" &&
+    diagnostic.outcome !== "selector-rejected" &&
     diagnostic.outcome !== "outcome-unknown"
   ) {
     fail(`${label} outcome`, "is unsupported");
@@ -31,6 +32,7 @@ export function assertIosMutationAttemptDiagnostic(
   if (
     retry.reason !== "native-command-completed" &&
     retry.reason !== "selector-was-not-dispatched" &&
+    retry.reason !== "native-selector-rejected" &&
     retry.reason !== "native-command-outcome-unknown"
   ) {
     fail(`${label} retry reason`, "is unsupported");
