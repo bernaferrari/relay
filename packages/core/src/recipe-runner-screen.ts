@@ -19,11 +19,7 @@ import { pressKey, pressLabel, scrollUp, sleep, snapshot, type SnapshotNode } fr
 import { now } from "./events.js";
 import { recordFrameObservation } from "./frame-observation.js";
 import { OPTIONAL_TREE_BUDGET_MS, withOptionalTreeBudget } from "./optional-tree-budget.js";
-import type {
-  FreshDeviceObservation,
-  IdentityIgnoreObservation,
-  RecipeStepContext,
-} from "./recipe-runner-context.js";
+import type { IdentityIgnoreObservation, RecipeStepContext } from "./recipe-runner-context.js";
 import {
   currentVerifiedScreen,
   markNavigationUnknown,
@@ -68,7 +64,13 @@ import {
   type DestinationSurveyDependencies,
 } from "./destination-survey.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
-import { isTransientError } from "./retry.js";
+import {
+  observeDestinationAttempt,
+  retainedScreenInspectionError,
+  rethrowTerminalScreenRead,
+  safeScreenReadCause,
+  type ScreenInspectionIssue,
+} from "./recipe-screen-inspection.js";
 import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
 import {
   frozenScreenIdentityObservations,
@@ -386,62 +388,6 @@ function ownsAndroidDestinationEvidence(
   );
 }
 
-function isCancellation(error: unknown): boolean {
-  return error instanceof Error && error.name === "JobCancelledError";
-}
-
-async function observeDestinationAttempt(
-  device: Device,
-  reusable: FreshDeviceObservation | undefined,
-  captureRaster: (() => Promise<Awaited<ReturnType<typeof captureScreenshot>>>) | undefined,
-  observeSnapshot: (device: Device) => Promise<SnapshotNode[]> = (target) =>
-    snapshot(target, { retryAttempts: 1 }),
-): Promise<{
-  nodes: SnapshotNode[];
-  observedAt: number;
-  inspectionUnavailable?: boolean;
-  screenshot?: Awaited<ReturnType<typeof captureScreenshot>>;
-}> {
-  const raster = captureRaster?.().then(
-    (screenshot) => ({ screenshot }),
-    (error: unknown) => ({ error }),
-  );
-  const semantics = (async () => {
-    if (reusable?.nodes) return { nodes: reusable.nodes };
-    try {
-      return { nodes: await observeSnapshot(device) };
-    } catch (error) {
-      // A single transient AX timeout must not consume the normal three-read
-      // budget. Re-observe once through the same transport, then fail closed
-      // with an empty tree if the target remains unavailable.
-      if (!isTransientError(error)) return { error };
-      try {
-        return { nodes: await observeSnapshot(device) };
-      } catch (retryError) {
-        return { error: retryError };
-      }
-    }
-  })();
-  const [semanticResult, rasterResult] = await Promise.all([
-    semantics,
-    raster ?? Promise.resolve({ screenshot: undefined }),
-  ]);
-  if ("error" in semanticResult && isCancellation(semanticResult.error)) {
-    throw semanticResult.error;
-  }
-  if ("error" in rasterResult && isCancellation(rasterResult.error)) throw rasterResult.error;
-  const nodes =
-    "nodes" in semanticResult && Array.isArray(semanticResult.nodes) ? semanticResult.nodes : [];
-  return {
-    nodes,
-    observedAt: reusable?.observedAt ?? now(),
-    ...(nodes.length === 0 ? { inspectionUnavailable: true } : {}),
-    ...("screenshot" in rasterResult && rasterResult.screenshot
-      ? { screenshot: rasterResult.screenshot }
-      : {}),
-  };
-}
-
 export async function runExpectScreenStep(
   device: Device,
   step: Extract<RecipeStep, { kind: "expect-screen" }>,
@@ -536,7 +482,8 @@ export async function runExpectScreenStep(
   let mismatchObservedAt: number | undefined;
   let mismatchNodeCount = 0;
   let mismatchResolutionMethod = "a11y";
-  let inspectionUnavailable = false;
+  let inspection: ScreenInspectionIssue | undefined;
+  let rasterFailure: ScreenInspectionIssue["cause"];
   let lastMissVisualFingerprint: string | undefined;
   let stillScreenElapsedMs: number | undefined;
   do {
@@ -560,7 +507,8 @@ export async function runExpectScreenStep(
     );
     verifiedScreenshot = reusable?.screenshot ?? attempt.screenshot;
     const nodes = attempt.nodes;
-    inspectionUnavailable = attempt.inspectionUnavailable === true;
+    inspection = attempt.inspection;
+    rasterFailure = attempt.rasterFailure;
     const observedAt = attempt.observedAt;
     const chrome = describeSnapshotChrome(nodes);
     observedTitle = chrome.header ?? chrome.app ?? "unknown";
@@ -630,12 +578,13 @@ export async function runExpectScreenStep(
       }
     }
     if (
-      screenIdentityMatches(expected, observed.fingerprint) ||
-      exactUnmaskedMatch ||
-      (!hasLocalizedExpectation && semanticMatch) ||
-      localizedSemanticMatch ||
-      (!hasLocalizedExpectation && resilientMatch) ||
-      (!hasLocalizedExpectation && handoffShellMatch)
+      !inspection &&
+      (screenIdentityMatches(expected, observed.fingerprint) ||
+        exactUnmaskedMatch ||
+        (!hasLocalizedExpectation && semanticMatch) ||
+        localizedSemanticMatch ||
+        (!hasLocalizedExpectation && resilientMatch) ||
+        (!hasLocalizedExpectation && handoffShellMatch))
     ) {
       reached = true;
       verifiedNodes = nodes;
@@ -658,27 +607,49 @@ export async function runExpectScreenStep(
     }
 
     let visualFingerprint: string | undefined;
-    if (verifiedScreenshot) {
-      visualFingerprint =
-        verifiedScreenshot.screenMatch?.visualFingerprint ??
-        observeVisualScreenFingerprint(Buffer.from(verifiedScreenshot.base64, "base64"));
-    } else if (ctx.observeVisualFingerprint) {
-      visualFingerprint = await ctx.observeVisualFingerprint();
-    } else {
-      verifiedScreenshot = await captureScreenshot({
-        device,
-        caption: `Verify ${step.screenTitle}`,
-        ephemeral: true,
-        includeScreenMatch: false,
-      });
-      visualFingerprint = observeVisualScreenFingerprint(
-        Buffer.from(verifiedScreenshot.base64, "base64"),
+    try {
+      if (verifiedScreenshot) {
+        visualFingerprint =
+          verifiedScreenshot.screenMatch?.visualFingerprint ??
+          observeVisualScreenFingerprint(Buffer.from(verifiedScreenshot.base64, "base64"));
+      } else if (ctx.observeVisualFingerprint) {
+        visualFingerprint = await ctx.observeVisualFingerprint();
+      } else {
+        verifiedScreenshot = await captureScreenshot({
+          device,
+          caption: `Verify ${step.screenTitle}`,
+          ephemeral: true,
+          includeScreenMatch: false,
+        });
+        visualFingerprint = observeVisualScreenFingerprint(
+          Buffer.from(verifiedScreenshot.base64, "base64"),
+        );
+      }
+    } catch (error) {
+      rethrowTerminalScreenRead(error);
+      const cause = safeScreenReadCause(error);
+      retainScreenMismatch(
+        ctx,
+        step,
+        { nodes, observedAt, fingerprint: observed.fingerprint },
+        scopedIdentityOptions,
+      );
+      throw retainedScreenInspectionError(
+        ctx,
+        step,
+        inspection ?? {
+          state: "failed-read",
+          stage: "raster-read",
+          readAttempts: 1,
+          cause,
+        },
+        inspection ? cause : undefined,
       );
     }
     if (visualFingerprint) mismatchResolutionMethod = "a11y+visual";
     if (
       !exactNativeWorkspace &&
-      !inspectionUnavailable &&
+      !inspection &&
       screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)
     ) {
       reached = true;
@@ -751,11 +722,7 @@ export async function runExpectScreenStep(
       capturedAt: now(),
       data: { schemaVersion: 1, ...hint },
     });
-    if (inspectionUnavailable) {
-      throw new Error(
-        `screen-inspection-unavailable: accessibility inspection unavailable; screen identity unproven (expected “${step.screenTitle}”)`,
-      );
-    }
+    if (inspection) throw retainedScreenInspectionError(ctx, step, inspection, rasterFailure);
     if (step.returnRequirement) {
       throw new Error(
         `return-edge ${step.returnRequirement.connectionId}: reviewed inverse is required for ${step.returnRequirement.destinationScreenId} → ${step.returnRequirement.fromScreenId} (observed “${observedTitle}”; no Back was attempted)`,
@@ -798,6 +765,13 @@ export async function runExpectScreenStep(
             : undefined,
           dependencies.observeSnapshot,
         );
+        if (observation.inspection)
+          throw retainedScreenInspectionError(
+            ctx,
+            step,
+            observation.inspection,
+            observation.rasterFailure,
+          );
         return {
           nodes: observation.nodes,
           ...(observation.screenshot ? { screenshot: observation.screenshot } : {}),
