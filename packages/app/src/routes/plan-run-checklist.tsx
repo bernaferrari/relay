@@ -13,6 +13,7 @@ import {
 import { ResultsBar } from "../components/results-bar";
 import { RunThumb } from "../components/run-thumb";
 import { StatusPill, type RunState } from "../components/run-status";
+import { batchCaseInspectionReference } from "./batch-case-inspection";
 
 /** What a person wants from a plan run: how far along it is and how each test did. */
 export function PlanRunChecklist({
@@ -73,6 +74,7 @@ export function PlanRunChecklist({
       <ResultsBar states={states} />
       <ol className="m-0 grid list-none divide-y divide-border overflow-hidden rounded-xl border border-border bg-card p-0">
         {cases.map((item) => {
+          const inspection = batchCaseInspectionReference(item);
           const name =
             (item.identity?.testId && testNames[item.identity.testId]) || `Test ${item.index + 1}`;
           const detail = [
@@ -95,7 +97,7 @@ export function PlanRunChecklist({
                   {detail}
                 </span>
               </span>
-              {item.runId ? (
+              {inspection ? (
                 <ChevronRight
                   className="size-4 shrink-0 text-muted-foreground"
                   aria-hidden="true"
@@ -106,10 +108,11 @@ export function PlanRunChecklist({
           const row = "flex min-h-16 items-center gap-3.5 px-3.5 py-2.5";
           return (
             <li key={item.id}>
-              {item.runId ? (
+              {inspection ? (
                 <Link
                   to="/runs/$runId"
-                  params={{ runId: item.runId }}
+                  params={{ runId: inspection.id }}
+                  aria-label={`${name} · ${inspection.kind === "live" ? "Open live Run" : "Open Run report"}`}
                   className={`${row} transition-colors duration-150 outline-none hover:bg-accent focus-visible:bg-accent`}
                 >
                   {body}

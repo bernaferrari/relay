@@ -429,6 +429,61 @@ test("canonical cases expose Test × environment identity without inventing lega
   assert.equal(batch.cases[1]!.identity, undefined);
 });
 
+test("live Plan cases retain their exact job without claiming immutable Run evidence", async () => {
+  const invoke = async (id: string) => {
+    assert.equal(id, "job.combine.campaign.get");
+    return {
+      campaign: {
+        id: "live-plan",
+        status: "running",
+        createdAt: 1,
+        updatedAt: 2,
+        appMapId: "app-1",
+        cases: [
+          {
+            cellId: "prompt-one",
+            testId: "test-1",
+            targetProfileId: "saved-ipad-profile",
+            target: { targetId: "physical-ipad", platform: "ios" },
+            status: "running",
+            jobId: "live-prompt-job",
+            priorRunIds: ["earlier-prompt-run"],
+            values: { prompt: "one" },
+          },
+          { cellId: "prompt-two", status: "queued", jobId: "queued-prompt-job", values: {} },
+        ],
+      },
+    };
+  };
+  const service = createProductRunAcrossService({ invoke } as never, { invoke } as never);
+  const report = await service.getReport("live-plan");
+  assert.deepEqual(report.runIds, []);
+  assert.deepEqual(report.cases[0], {
+    id: "prompt-one",
+    index: 0,
+    phase: "pilot",
+    status: "running",
+    values: { prompt: "one" },
+    jobId: "live-prompt-job",
+    priorRunIds: ["earlier-prompt-run"],
+    identity: {
+      testId: "test-1",
+      environmentId: "saved-ipad-profile",
+      environmentLabel: "physical-ipad",
+      environmentPlatform: "ios",
+    },
+  });
+  assert.deepEqual(report.cases[1], {
+    id: "prompt-two",
+    index: 1,
+    phase: "coverage",
+    status: "queued",
+    values: {},
+    jobId: "queued-prompt-job",
+  });
+  assert.equal(report.completedCases, 0);
+});
+
 test("six accounts plus Android and iOS inspect as eight Result columns", async () => {
   const invoke = async (id: string) => {
     assert.equal(id, "job.combine.campaign.get");

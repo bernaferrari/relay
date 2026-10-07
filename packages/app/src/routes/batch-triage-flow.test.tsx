@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
+import type { RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -94,7 +95,7 @@ function platform(): Platform {
   };
 }
 
-async function render(service: RunAcrossProductService) {
+async function render(service: RunAcrossProductService, runService?: RunProductService) {
   const history = createMemoryHistory({ initialEntries: ["/batches/batch-1"] });
   const host = document.createElement("div");
   document.body.append(host);
@@ -107,6 +108,7 @@ async function render(service: RunAcrossProductService) {
         history={history}
         productService={{ listApps: async () => [] } as unknown as RecordingProductService}
         runAcrossService={service}
+        runService={runService}
       />,
     );
   });
@@ -125,6 +127,90 @@ afterEach(async () => {
 });
 
 describe("Batch review controls", () => {
+  it("opens and inspects the exact running Plan job before immutable evidence exists", async () => {
+    const inspectExecution = vi.fn<NonNullable<RunProductService["inspectExecution"]>>(
+      async (jobId) => ({
+        status: "running",
+        run: { jobId },
+        snapshot: {
+          schemaVersion: 1,
+          kind: "run-test",
+          title: "Live Plan case",
+          phase: "running",
+          version: "v1",
+          progress: { label: "Checking the first prompt", completed: 0, total: 2 },
+          allowedNextActions: ["inspect"],
+          problems: [],
+          evidenceRefs: [],
+        },
+      }),
+    );
+    await render(
+      {
+        getReport: async () => ({
+          ...report,
+          status: "running",
+          runIds: [],
+          completedCases: 0,
+          cases: [
+            {
+              id: "prompt-one",
+              index: 0,
+              phase: "pilot",
+              status: "running",
+              values: {},
+              jobId: "live-prompt-job",
+              priorRunIds: ["earlier-prompt-run"],
+            },
+            { id: "prompt-two", index: 1, phase: "coverage", status: "pending", values: {} },
+          ],
+        }),
+        getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+        getFindings: async () => undefined,
+      } as unknown as RunAcrossProductService,
+      { inspectExecution } as unknown as RunProductService,
+    );
+    const checklist = document.querySelector('[aria-label="Plan run"]')!;
+    expect([...checklist.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
+      "/runs/live-prompt-job",
+    ]);
+    expect(inspectExecution).toHaveBeenCalledExactlyOnceWith("live-prompt-job");
+    expect(document.body.textContent).toContain("Checking the first prompt");
+    expect(document.body.textContent).not.toContain("stopped before a Run captured evidence");
+    expect(document.querySelector('a[href*="earlier-prompt-run"]')).toBeNull();
+    expect(
+      [...document.querySelectorAll("a")].some(
+        (link) => link.textContent?.trim() === "Walk through",
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    { status: "pending", message: "Waiting to start." },
+    { status: "queued", message: "Waiting to start." },
+    { status: "running", message: "Run in progress. Evidence will appear here as it is saved." },
+    { status: "failed", message: "This case ended without saved Run evidence." },
+  ] as const)(
+    "shows truthful $status copy when a case has no inspection reference",
+    async ({ status, message }) => {
+      await render({
+        getReport: async () => ({
+          ...report,
+          status: status === "failed" ? "completed-with-problems" : "running",
+          runIds: [],
+          cases: [{ id: "no-evidence", index: 0, phase: "pilot", status, values: {} }],
+        }),
+        getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+        getFindings: async () => {
+          throw new Error("Findings unavailable in this fixture");
+        },
+      } as unknown as RunAcrossProductService);
+      expect(document.body.textContent).toContain(message);
+      expect(document.body.textContent).not.toContain("stopped before a Run captured evidence");
+      expect(document.querySelector('[aria-label="Plan run"] a')).toBeNull();
+    },
+  );
+
   it("does not attach an old Plan download to the next Plan", async () => {
     let finish!: (blob: Blob) => void;
     const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:old-plan");
