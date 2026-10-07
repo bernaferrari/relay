@@ -1,5 +1,5 @@
 import { captureReviewQueueForRun, type CaptureReviewRun } from "./capture-review-queue.js";
-import { runTestSource } from "./run-test-source.js";
+import { runSummaryLineage } from "./run-matrix-case.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
@@ -82,12 +82,53 @@ function database(root: string): DatabaseSync {
     db.exec("ALTER TABLE runs ADD COLUMN source_test_json TEXT");
   if (!columns.some((column) => column.name === "capture_summary_json"))
     db.exec("ALTER TABLE runs ADD COLUMN capture_summary_json TEXT");
-  db.exec("PRAGMA user_version=4");
+  if (!columns.some((column) => column.name === "matrix_case_json"))
+    db.exec("ALTER TABLE runs ADD COLUMN matrix_case_json TEXT");
+  db.exec("PRAGMA user_version=5");
   return db;
+}
+
+const summaryMigrations = new Map<string, Promise<void>>();
+
+/** Backfill retained committed manifests once, preserving pins and retention.
+ * Pages then read the indexed projection without rescanning run directories. */
+async function summaryDatabase(root: string): Promise<DatabaseSync> {
+  const db = database(root);
+  if (
+    db.prepare("SELECT value FROM metadata WHERE key='capture-summary-v1'").get() &&
+    db.prepare("SELECT value FROM metadata WHERE key='matrix-case-v2'").get()
+  )
+    return db;
+  db.close();
+  const key = resolve(root);
+  let migration = summaryMigrations.get(key);
+  if (!migration) {
+    migration = (async () => {
+      await rebuildRunCatalog(root, { preserveExisting: true, backfillSummariesOnly: true });
+      const migrated = database(root);
+      try {
+        const record = migrated.prepare(
+          "INSERT OR REPLACE INTO metadata(key,value) VALUES(?, '1')",
+        );
+        record.run("capture-summary-v1");
+        record.run("matrix-case-v2");
+      } finally {
+        migrated.close();
+      }
+    })();
+    summaryMigrations.set(key, migration);
+  }
+  try {
+    await migration;
+  } finally {
+    if (summaryMigrations.get(key) === migration) summaryMigrations.delete(key);
+  }
+  return database(root);
 }
 
 function rowToRecord(row: Record<string, unknown>): CatalogRecord {
   return {
+    ...(row.matrix_case_json ? { matrixCase: JSON.parse(String(row.matrix_case_json)) } : {}),
     ...(row.source_test_json ? { sourceTest: JSON.parse(String(row.source_test_json)) } : {}),
     ...(row.capture_summary_json
       ? { captureSummary: JSON.parse(String(row.capture_summary_json)) }
@@ -170,11 +211,39 @@ function indexedSurfaceComparisons(run: Record<string, unknown>): Array<{
   return indexed;
 }
 
-export async function indexRun(root: string, run: Record<string, unknown>): Promise<void> {
+export async function indexRun(
+  root: string,
+  run: Record<string, unknown>,
+  options: { backfillSummariesOnly?: boolean } = {},
+): Promise<void> {
   await mkdir(root, { recursive: true });
   const storageBytes = await committedDirectoryBytes(String(run.dir));
   const db = database(root);
+  let backfillTransaction = false;
   try {
+    const lineage = runSummaryLineage(run);
+    // Lock before checking existence so a concurrent normal index cannot turn
+    // this historical insert into an overwrite of current mutable Run state.
+    if (options.backfillSummariesOnly) {
+      db.exec("BEGIN IMMEDIATE");
+      backfillTransaction = true;
+      if (db.prepare("SELECT id FROM runs WHERE id=?").get(String(run.id))) {
+        db.prepare(`
+          UPDATE runs SET
+            capture_summary_json=COALESCE(capture_summary_json, ?),
+            source_test_json=?, matrix_case_json=?
+          WHERE id=?
+        `).run(
+          JSON.stringify(captureReviewQueueForRun(run as CaptureReviewRun).summary),
+          JSON.stringify(lineage.sourceTest) ?? null,
+          JSON.stringify(lineage.matrixCase) ?? null,
+          String(run.id),
+        );
+        db.exec("COMMIT");
+        backfillTransaction = false;
+        return;
+      }
+    }
     const artifacts = Array.isArray(run.artifacts) ? run.artifacts : [];
     const frames = Array.isArray(run.frames) ? run.frames : [];
     const frameBytes = frames.reduce(
@@ -214,8 +283,8 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       INSERT INTO runs (
         id, dir, action, title, status, outcome, review_json, platform, serial, batch_id,
         queued_at, started_at, finished_at, duration_ms, written_at, frame_count,
-        artifact_count, artifact_bytes, storage_bytes, evidence_complete, source_revision_json, source_test_json, capture_summary_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        artifact_count, artifact_bytes, storage_bytes, evidence_complete, source_revision_json, source_test_json, capture_summary_json, matrix_case_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         dir=excluded.dir, action=excluded.action, title=excluded.title, status=excluded.status,
         outcome=excluded.outcome, review_json=excluded.review_json, platform=excluded.platform, serial=excluded.serial,
@@ -224,7 +293,7 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
         written_at=excluded.written_at, frame_count=excluded.frame_count,
         artifact_count=excluded.artifact_count, artifact_bytes=excluded.artifact_bytes,
         storage_bytes=excluded.storage_bytes, evidence_complete=excluded.evidence_complete,
-        source_revision_json=excluded.source_revision_json, source_test_json=excluded.source_test_json, capture_summary_json=excluded.capture_summary_json
+        source_revision_json=excluded.source_revision_json, source_test_json=excluded.source_test_json, capture_summary_json=excluded.capture_summary_json, matrix_case_json=excluded.matrix_case_json
     `).run(
       String(run.id),
       String(run.dir),
@@ -247,8 +316,9 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       storageBytes,
       evidence?.finishedAt ? 1 : 0,
       run.sourceRevision == null ? null : JSON.stringify(run.sourceRevision),
-      JSON.stringify(runTestSource(run)) ?? null,
+      JSON.stringify(lineage.sourceTest) ?? null,
       JSON.stringify(captureReviewQueueForRun(run as CaptureReviewRun).summary),
+      JSON.stringify(lineage.matrixCase) ?? null,
     );
     db.prepare("DELETE FROM surface_comparisons WHERE run_id=?").run(String(run.id));
     const insertSurfaceComparison = db.prepare(`
@@ -263,6 +333,13 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
         Number(run.writtenAt),
       );
     }
+    if (backfillTransaction) {
+      db.exec("COMMIT");
+      backfillTransaction = false;
+    }
+  } catch (error) {
+    if (backfillTransaction) db.exec("ROLLBACK");
+    throw error;
   } finally {
     db.close();
   }
@@ -302,7 +379,7 @@ export async function catalogSummaries(
   actionPrefix?: string,
 ): Promise<RunSummary[]> {
   await mkdir(root, { recursive: true });
-  const db = database(root);
+  const db = await summaryDatabase(root);
   try {
     const rows = (
       actionPrefix
@@ -331,13 +408,7 @@ export async function catalogSummaryPage(
   appMapId?: string,
 ): Promise<CatalogSummaryPage> {
   await mkdir(root, { recursive: true });
-  let db = database(root);
-  if (!db.prepare("SELECT value FROM metadata WHERE key='capture-summary-v1'").get()) {
-    db.close();
-    await rebuildRunCatalog(root, { preserveExisting: true });
-    db = database(root);
-    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('capture-summary-v1','1')").run();
-  }
+  const db = await summaryDatabase(root);
   try {
     const filter = appMapId
       ? " WHERE (json_extract(source_test_json, '$.appMapId') = ? OR substr(action, 1, ?) = ?)"
@@ -393,7 +464,7 @@ export async function catalogLatestRunPerTest(
   appMapId?: string,
 ): Promise<Array<Omit<CatalogRecord, "dir">>> {
   await mkdir(root, { recursive: true });
-  const db = database(root);
+  const db = await summaryDatabase(root);
   try {
     const rows = db.prepare("SELECT * FROM runs ORDER BY written_at DESC, id DESC").all() as Array<
       Record<string, unknown>
@@ -470,7 +541,7 @@ export async function setRunPinned(root: string, id: string, pinned: boolean): P
 
 export async function rebuildRunCatalog(
   root: string,
-  options: { preserveExisting?: boolean } = {},
+  options: { preserveExisting?: boolean; backfillSummariesOnly?: boolean } = {},
 ): Promise<{ indexed: number; incomplete: number }> {
   await mkdir(root, { recursive: true });
   const db = database(root);
@@ -496,7 +567,7 @@ export async function rebuildRunCatalog(
         }
       }
       run.dir = dir;
-      await indexRun(root, run);
+      await indexRun(root, run, { backfillSummariesOnly: options.backfillSummariesOnly });
       indexed += 1;
     } catch {
       if (!entry.startsWith(".")) incomplete += 1;

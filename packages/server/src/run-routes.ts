@@ -34,6 +34,7 @@ import {
   reconcileCampaignCheckRepair,
   runArtifactFile,
   runsRoot,
+  runSummaryLineage,
   runStorageHealth,
   setRunPinned,
   summarizeCampaignRepairTarget,
@@ -860,7 +861,10 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   const persistedMatch = matchPath(pathname, "/runs/:id");
   if (method === "GET" && persistedMatch) {
     const run = await loadScopedRun(persistedMatch.id!, scope);
-    json(response, 200, { run });
+    const lineage = runSummaryLineage(run);
+    json(response, 200, {
+      run: { ...run, sourceTest: lineage.sourceTest, matrixCase: lineage.matrixCase },
+    });
     return true;
   }
 
