@@ -97,6 +97,12 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       });
       json(response, 201, { appMap, imported: true });
     } catch (error) {
+      if (error instanceof AppMapDomainError) {
+        throw new HttpError(409, error.message, {
+          code: error.code,
+          recovery: "Choose approved public Project input values before importing this App Map.",
+        });
+      }
       throw new HttpError(409, error instanceof Error ? error.message : String(error), {
         code: "duplicate-id",
         recovery: "Use conflict=replace or conflict=copy, then retry.",

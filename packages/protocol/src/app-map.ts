@@ -361,14 +361,24 @@ export type VariableNavStep =
   | { kind: "relaunch" }
   | { kind: "openApp"; app: string; relaunch?: boolean };
 
+export const MAX_INPUT_DATA_SET_VALUE_LENGTH = 20_000;
+
 export type VariableRow = {
   id: string;
+  /** Approved Project input payload for input-only rows; id stays opaque. */
+  value?: string;
   identifier?: string;
   label?: string;
   text?: string;
 };
 
 export type VariableApply =
+  | {
+      /** Bind an approved row value to this stable Project TestData ID without
+       * changing device or browser state. */
+      kind: "input";
+      inputId: string;
+    }
   | {
       kind: "list";
       /** Recorded map connection that opens the list (preferred over flattened nav). */
@@ -397,7 +407,7 @@ export type VariableApply =
       off: { identifier?: string; label?: string };
     };
 
-/** Named possibilities that change app state, then a map path runs in each world. */
+/** Named possibilities that supply Test inputs or change app state for each world. */
 export type AppMapVariable = AppMapEntity & {
   name: string;
   kind: AppMapVariableKind;

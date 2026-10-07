@@ -46,3 +46,22 @@ test("logged-out account worlds apply without a recorded picker", () => {
     false,
   );
 });
+
+test("input worlds require an explicit Project input ID and no recorded picker", () => {
+  assert.equal(
+    variableCanApply({
+      kind: "custom",
+      apply: { kind: "input", inputId: "prompt-data" },
+      options: [{ id: "q1", value: "Explain ocean tides" }],
+    }),
+    true,
+  );
+  assert.equal(
+    variableCanApply({
+      kind: "custom",
+      apply: { kind: "input", inputId: "" },
+      options: [{ id: "q1", value: "Explain ocean tides" }],
+    }),
+    false,
+  );
+});

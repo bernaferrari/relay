@@ -135,6 +135,7 @@ export function summarizeAppMapOperationResult(
     optionCount: set.options.length,
     options: set.options.map((option) => ({
       id: option.id,
+      ...(option.value !== undefined ? { value: option.value } : {}),
       ...(option.label ? { label: option.label } : {}),
       ...(option.text ? { text: option.text } : {}),
       ...(option.identifier ? { identifier: option.identifier } : {}),
@@ -146,7 +147,9 @@ export function summarizeAppMapOperationResult(
             list: set.options.length > 0,
             out: Boolean(set.apply.outConnectionId || set.apply.exitPath?.length),
           }
-        : { toggle: true },
+        : set.apply.kind === "input"
+          ? { inputId: set.apply.inputId }
+          : { toggle: true },
   }));
   const tests = byId(map.tests ?? {}).map((work) => ({
     id: work.id,

@@ -69,7 +69,7 @@ import {
 import type { RequestContext } from "./security.js";
 import { compensateCombineStartFailure } from "./combine-start-compensation.js";
 import { ephemeralCombineFromTest } from "./combine-start-ad-hoc.js";
-import { freezeCombineRunInputs } from "./combine-run-inputs.js";
+import { assertCombineInputDataSets, freezeCombineRunInputs } from "./combine-run-inputs.js";
 
 type CombineStartRequest = {
   appMapId?: string;
@@ -303,6 +303,7 @@ async function executeCombineStartUnlocked(
   let admission: LocalCombineCampaignAdmission | undefined;
   let persistedCampaignId: string | undefined;
   try {
+    await assertCombineInputDataSets(scope.projectId, map, scopedCombine, body);
     const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
     const prepareInput = {
       map,

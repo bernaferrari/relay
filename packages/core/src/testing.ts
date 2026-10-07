@@ -1,6 +1,15 @@
 import type { Device } from "./device-capabilities.js";
 import { createDeviceObservationFacade } from "./device-observation-membrane.js";
 
+// Cross-package recording regressions exercise the canonical lifecycle and
+// listener boundary without importing private source files or contacting iOS.
+export { recordAuthoringInteraction } from "./authoring-recording-lifecycle.js";
+export { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
+export {
+  setLiveIosRunnerCommandPostForTests,
+  type LiveIosRunnerCommand,
+} from "./ios-runner-listener-command.js";
+
 /**
  * Make an intentional structural device double for a test.
  *

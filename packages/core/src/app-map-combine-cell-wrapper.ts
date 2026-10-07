@@ -170,6 +170,7 @@ export function composeAppMapCombineCellWrapper(input: {
   const prefixes: Record<string, string> = {};
   const used = new Set<string>();
   for (const [index, set] of input.sets.entries()) {
+    if (set.apply.kind === "input") continue;
     const prefix = appMapCombineCellVariablePrefix(set.id, index);
     if (used.has(prefix)) {
       throw new Error(`Combine cell wrapper prefix collided for variable ${set.id}`);
@@ -193,6 +194,7 @@ export function composeAppMapCombineCellWrapper(input: {
   const app = appLocale?.apply.kind === "appLocale" ? appLocale.apply.app : undefined;
 
   for (const set of input.sets) {
+    if (set.apply.kind === "input") continue;
     const prefix = prefixes[set.id]!;
     const helpers = tapHelpers(prefix, at);
     for (const helperId of Object.keys(helpers)) {

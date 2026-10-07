@@ -214,6 +214,19 @@ Use Run Across for explicitly selected data values and Browser/Account pairs.
 An unavailable pair blocks the request; choosing a different device is a
 separate decision. Do not infer that cookies isolate shared backend data.
 
+For different prompts, save public list/static Project inputs and bind a Plan
+Data set with apply: {kind: "input", inputId: "<stable-project-input-id>"}.
+Each row has a bounded stable id and a separate approved value (up to 20,000
+characters); labels never supply Test text. The Test uses {{chat_prompt}} or
+another named input. Mixed Chat and Imagine Plans can pair their equally sized
+prompt lists with strategy: "zip". Each Test consumes only its own references,
+without extra picker actions. Admitted values remain frozen during resume,
+even if the Project input changes later.
+
+Qualify the saved Plan and its target, then prepare an intervalMinutes: 30
+schedule with enabled: false before enabling repetition. A list without
+selected rows uses its first value; a new schedule seed does not rotate prompts.
+
 Saved actions replay through Relay's existing runner. They do not silently
 change into an assisted repair when a control disappears. Inspect a failure,
 repair the Test deliberately, and rerun with fresh evidence.

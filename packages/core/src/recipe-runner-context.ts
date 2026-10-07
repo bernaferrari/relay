@@ -352,6 +352,9 @@ export type RecipeStepContext = {
    * TestJob merely to verify a proposal. */
   variables?: Record<string, string>;
   artifacts?: { kind: string; capturedAt: number; data: unknown }[];
+  /** Recording-only read scope. Pure iOS selectors still acquire current
+   * control bounds; this never supplies cached nodes or screen authority. */
+  recordingIosAppBundleId?: string;
   /** Session host traces each reusable child with its frozen recipe identity. */
   runChild?: (
     step: RecipeStep,

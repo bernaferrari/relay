@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import type { FrozenRecipeInputReceipt, TestData } from "@relay/protocol";
+import type {
+  FrozenRecipeInputReceipt,
+  TestData,
+  VariableApply,
+  VariableRow,
+} from "@relay/protocol";
 import { createAppMapCombineCellExecutionIntent } from "./app-map-combine-cell-intent.js";
 import type { PreparedAppMapCombineCell } from "./app-map-combine-cell-prepare.js";
 import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
@@ -16,10 +21,25 @@ import {
 } from "./recipe-input-references.js";
 
 export function selectedCombineDataRows(
-  sets: readonly { id: string; name: string }[],
+  sets: readonly {
+    id: string;
+    name: string;
+    apply: VariableApply;
+    options: readonly VariableRow[];
+  }[],
   values: Record<string, string>,
 ): SelectedRecipeInputRow[] {
-  return sets.map((set) => ({ id: set.id, name: set.name, valueId: values[set.id]! }));
+  return sets.map((set) => ({
+    id: set.id,
+    name: set.name,
+    ...(set.apply.kind === "input"
+      ? {
+          inputId: set.apply.inputId,
+          value: set.options.find((row) => row.id === values[set.id])?.value,
+        }
+      : {}),
+    valueId: values[set.id]!,
+  }));
 }
 
 /** Validate the full selected scope before any input generator can run. Only

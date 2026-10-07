@@ -150,6 +150,7 @@ function variableNavFromRecipeSteps(steps: readonly RecipeStep[]): VariableNavSt
 
 /** Compile In/Out from recorded connections (actions only) or flattened nav. Never invents Grok nav. */
 export function resolveVariableApply(set: OptionRunSet, map?: AppMap): ResolvedVariableApply {
+  if (set.apply.kind === "input") return { entry: [], exit: [] };
   if (set.apply.kind === "appLocale") return { entry: [], exit: [] };
   if (set.apply.kind === "toggle") throw new Error("toggles are not runnable yet");
   const apply = set.apply;
@@ -187,6 +188,7 @@ export function resolveVariableApply(set: OptionRunSet, map?: AppMap): ResolvedV
 /** Account values that are already this world (signed-out or a browser fixture)
  * do not open an in-app picker. Language/location/theme still require a recorded In. */
 export function optionSetNeedsRecordedPicker(set: Pick<OptionRunSet, "kind" | "apply">): boolean {
+  if (set.apply.kind === "input") return false;
   if (set.apply.kind === "appLocale" || set.apply.kind === "toggle") return false;
   if (set.kind !== "account" || set.apply.kind !== "list") return true;
   return Boolean(
@@ -414,6 +416,7 @@ export function composeOptionRunRecipes(input: {
   }
 
   for (const set of input.request.sets) {
+    if (set.apply.kind === "input") continue;
     if (set.apply.kind === "appLocale") {
       const relaunch = appLocaleShouldRelaunch(set.apply, graph, input.body.id);
       steps.push(
@@ -599,6 +602,8 @@ export async function startOptionRecipeRun(input: {
 
   const batchId = input.batchId?.trim() || randomUUID();
   const request = { ...input.request, ...(input.map ? { map: input.map } : {}) };
+  if (request.sets.some((set) => set.apply.kind === "input"))
+    throw new Error("Input Data sets require a saved Plan with frozen Test inputs");
   for (const set of request.sets) {
     assertOptionSandwichReady(set, request.map);
   }

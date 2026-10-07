@@ -1,4 +1,5 @@
 import { appMapFail } from "./errors.js";
+import { MAX_INPUT_DATA_SET_VALUE_LENGTH } from "@relay/protocol";
 import { assertEntity } from "./entity-validation.js";
 import type {
   AppMapScope,
@@ -68,6 +69,10 @@ function assertVariableNavStep(step: VariableNavStep, label: string): void {
 }
 
 function assertVariableApply(apply: VariableApply, label: string): void {
+  if (apply.kind === "input") {
+    requiredText(apply.inputId, `${label}.inputId`);
+    return;
+  }
   if (apply.kind === "list") {
     if (apply.inConnectionId !== undefined)
       identifier(apply.inConnectionId, `${label}.inConnectionId`);
@@ -114,6 +119,7 @@ function assertVariableApply(apply: VariableApply, label: string): void {
 
 function assertVariableRow(row: VariableRow, label: string): void {
   requiredText(row.id, `${label}.id`);
+  optionalText(row.value, `${label}.value`, MAX_INPUT_DATA_SET_VALUE_LENGTH);
   optionalText(row.identifier, `${label}.identifier`);
   optionalText(row.label, `${label}.label`);
   optionalText(row.text, `${label}.text`);
@@ -130,6 +136,10 @@ export function assertAppMapVariable(set: AppMapVariable, scope: AppMapScope, la
   const ids = new Set<string>();
   for (const [index, row] of set.options.entries()) {
     assertVariableRow(row, `${label}.options[${index}]`);
+    if (set.apply.kind === "input") {
+      identifier(row.id, `${label}.options[${index}].id`);
+      requiredText(row.value, `${label}.options[${index}].value`, MAX_INPUT_DATA_SET_VALUE_LENGTH);
+    }
     if (ids.has(row.id))
       appMapFail("duplicate-id", `${label}.options contains duplicate id ${row.id}`);
     ids.add(row.id);

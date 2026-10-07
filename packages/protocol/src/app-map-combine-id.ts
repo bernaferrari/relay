@@ -49,6 +49,7 @@ export function variableCanApply(
 ): boolean {
   if (variable.apply.kind === "toggle") return true;
   if (!variable.options.length) return false;
+  if (variable.apply.kind === "input") return Boolean(variable.apply.inputId.trim());
   if (variable.apply.kind === "appLocale") return true;
   if (variable.apply.kind !== "list") return false;
   const opens = Boolean(
