@@ -5,6 +5,7 @@ import type {
   OperationOutput,
   TargetDefinition,
   TargetPreflight,
+  TargetProfile,
 } from "@relay/protocol";
 import {
   PLAN_PLATFORMS,
@@ -133,6 +134,38 @@ function nativeReadiness(device: DeviceSummary | undefined): ProductNativeReadin
     : { state: "unproven", message: "Device readiness will be checked when you run." };
 }
 
+function capturedAt(profile: TargetProfile): number {
+  const at = profile.observedAt;
+  return at > 0 && Number.isFinite(new Date(at).getTime()) ? at : 0;
+}
+
+function savedSetupName(profile: TargetProfile, deviceName: string): string {
+  const viewport = profile.viewport;
+  const size =
+    viewport &&
+    Number.isInteger(viewport.width) &&
+    viewport.width > 0 &&
+    Number.isInteger(viewport.height) &&
+    viewport.height > 0
+      ? `${viewport.width} × ${viewport.height}`
+      : "Size not captured";
+  const savedName = profile.name?.trim();
+  const at = capturedAt(profile);
+  return [
+    deviceName,
+    savedName &&
+    savedName !== deviceName &&
+    savedName !== profile.targetId &&
+    savedName !== profile.id
+      ? savedName
+      : undefined,
+    size,
+    at ? `Captured ${new Date(at).toLocaleString()}` : "Capture time unavailable",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** Keep the exact saved setup id. Serial/name/viewport never construct an id
  * or establish compatibility; canonical Combine preflight/admission does that. */
 function savedNativeProfiles(map: AppMap, combineId?: string) {
@@ -162,7 +195,8 @@ function savedNativeProfiles(map: AppMap, combineId?: string) {
         throw new TypeError(
           "The saved device setup is ambiguous. Open the Plan’s Test and review its recorded setup.",
         );
-      profiles.set(profile.id, profile);
+      if (!existing || capturedAt(profile) > capturedAt(existing))
+        profiles.set(profile.id, profile);
     }
   }
   return [...profiles.values()];
@@ -213,7 +247,12 @@ export async function discoverPlanEnvironmentProfiles(
     return {
       id: profile.id,
       targetProfileId: profile.id,
-      name: label,
+      name:
+        saved.filter(
+          (other) => other.targetId === profile.targetId && other.platform === profile.platform,
+        ).length > 1
+          ? savedSetupName(profile, label)
+          : label,
       targetId: profile.targetId,
       source: { kind: "saved-native-profile", id: profile.id },
       target: { id: profile.targetId, name: label, kind: profile.platform },
@@ -223,10 +262,49 @@ export async function discoverPlanEnvironmentProfiles(
       buildOptions: builds.filter((build) => build.platform === profile.platform).map(projectBuild),
     };
   });
-  return [
+  const profiles = [
     ...projectProductEnvironmentProfiles({ targets: managed, builds, fixtures }),
     ...native,
-  ].sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+  ];
+  const groupKey = (profile: ProductEnvironmentProfile) =>
+    JSON.stringify([profile.platform, profile.targetId]);
+  const groupNames = new Map<string, string>();
+  for (const profile of profiles) {
+    const key = groupKey(profile);
+    const existing = groupNames.get(key);
+    if (!existing || profile.target.name.localeCompare(existing) < 0)
+      groupNames.set(key, profile.target.name);
+  }
+  const observations = new Map(saved.map((profile) => [profile.id, capturedAt(profile)]));
+  profiles.sort((left, right) => {
+    const leftKey = groupKey(left);
+    const rightKey = groupKey(right);
+    return (
+      groupNames.get(leftKey)!.localeCompare(groupNames.get(rightKey)!) ||
+      left.platform.localeCompare(right.platform) ||
+      left.targetId.localeCompare(right.targetId) ||
+      (observations.get(right.id) ?? 0) - (observations.get(left.id) ?? 0) ||
+      left.name.localeCompare(right.name) ||
+      left.id.localeCompare(right.id)
+    );
+  });
+  const coincidentNames = new Map<string, ProductEnvironmentProfile[]>();
+  for (const profile of native) {
+    const matching = coincidentNames.get(profile.name) ?? [];
+    matching.push(profile);
+    coincidentNames.set(profile.name, matching);
+  }
+  const distinctNames = new Map<string, string>();
+  for (const matching of coincidentNames.values())
+    if (matching.length > 1)
+      matching
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .forEach((profile, index) => {
+          distinctNames.set(profile.id, `${profile.name} · Saved setup ${index + 1}`);
+        });
+  return profiles.map((profile) =>
+    distinctNames.has(profile.id) ? { ...profile, name: distinctNames.get(profile.id)! } : profile,
+  );
 }
 
 /** Browser preflight operates on the managed registry. Native readiness here

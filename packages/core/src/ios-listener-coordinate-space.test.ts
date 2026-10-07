@@ -7,10 +7,14 @@ import type { SnapshotNode } from "./device-capabilities.js";
 import { normalizeIosSnapshotNodes } from "./ios-geometry.js";
 import {
   identifierNodesViaLiveIosRunnerListener,
-  setLiveIosRunnerCommandPostForTests,
+  setLiveIosRunnerCommandPostForTests as setNativePost,
   snapshotViaLiveIosRunnerListener,
 } from "./ios-runner-listener-command.js";
 import { inferSnapshotBounds } from "./workspace-capture.js";
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
+
+const setLiveIosRunnerCommandPostForTests: typeof setNativePost = (post) =>
+  setNativePost(post ? catalogAwarePost(post) : undefined);
 
 const landscapeSheet: SnapshotNode[] = [
   { depth: 0, type: "Application", rect: { x: 0, y: 0, width: 1112, height: 834 } },
@@ -51,7 +55,11 @@ for (const route of ["snapshot", "ambiguous-identifier"] as const) {
     try {
       const received =
         route === "snapshot"
-          ? await snapshotViaLiveIosRunnerListener({ serial, interactiveOnly: false })
+          ? await snapshotViaLiveIosRunnerListener({
+              serial,
+              appBundleId: "ai.x.GrokApp",
+              interactiveOnly: false,
+            })
           : await identifierNodesViaLiveIosRunnerListener({
               serial,
               identifier: "PopoverDismissRegion",

@@ -82,6 +82,14 @@ export type ReportPerformanceSeries = {
   points: readonly { at: number; value: number }[];
 };
 
+export type ReportAuthoredStep = ReportTimelineItem & {
+  children: readonly ReportTimelineItem[];
+};
+export type ReportAuthoredOutline = {
+  steps: readonly ReportAuthoredStep[];
+  supportingSteps: readonly ReportTimelineItem[];
+};
+
 export type ProductRunReportOverview = {
   performance?: readonly ReportPerformanceSeries[];
   runId: string;
@@ -98,6 +106,8 @@ export type ProductRunReportOverview = {
   category?: string;
   firstEvidence?: { label: string; detail?: string };
   timeline: readonly ReportTimelineItem[];
+  /** Exact frozen graph and unique trace occurrences; absent when the join is ambiguous. */
+  authoredOutline?: ReportAuthoredOutline;
   evidence: readonly ReportEvidenceSection[];
   video?: ReportVideoMedia;
   diagnostics?: readonly ReportDiagnosticEvent[];

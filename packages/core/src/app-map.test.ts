@@ -897,6 +897,45 @@ test("commits Test Source and its Repeat definition as one App Map revision", ()
   assert.equal(input.combines["matrix-language-to-settings-test"], undefined);
 });
 
+test("commits prompt data and its addressed text together in one revision", () => {
+  const input = mapFixture();
+  const before = structuredClone(input);
+  const variable: AppMapVariable = {
+    ...entity("prompt-data"),
+    name: "Prompts",
+    kind: "custom",
+    apply: { kind: "input", inputId: "prompt-input" },
+    options: [{ id: "first", value: "A prompt" }],
+  };
+  const variableChange = { kind: "variable.save" as const, variable };
+  const textChange = {
+    kind: "connection.update" as const,
+    connectionId: "open-home",
+    patch: {
+      actions: [{ id: "message", kind: "text" as const, text: "{{prompt-input}}" }],
+    },
+  };
+  const changes = [variableChange, textChange];
+  const result = commitAppMapChanges(input, changes, undefined, context(input, "prompt-binding"));
+  assert.equal(result.revision, input.revision + 1);
+  assert.deepEqual(result.variables[variable.id], variable);
+  assert.deepEqual(result.connections["open-home"]!.actions, textChange.patch.actions);
+  assert.deepEqual(input, before);
+  expectError("missing-reference", () =>
+    commitAppMapChanges(
+      input,
+      [variableChange, { ...textChange, connectionId: "missing-connection" }],
+      undefined,
+      context(input, "invalid-prompt-binding"),
+    ),
+  );
+  assert.deepEqual(input, before, "a rejected binding cannot leave an input data set behind");
+  expectError("revision-conflict", () =>
+    commitAppMapChanges(result, changes, undefined, context(input, "stale-prompt-binding")),
+  );
+  assert.equal(result.revision, input.revision + 1);
+});
+
 test("rejects path and tour objects as Tests", () => {
   for (const kind of ["path", "tour"] as const) {
     const input = mapFixture();

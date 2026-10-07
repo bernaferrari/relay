@@ -54,8 +54,9 @@ export function planRunCountLabel(input: {
 }): string {
   if (input.blockers > 0) return "Setup needed before running";
   if (input.plannedCases <= 1) return "Every test runs once";
-  if (input.executionMode === "all") return `Every test runs on ${input.plannedCases} setups`;
-  return `One setup first, then ${input.plannedCases - 1} more when you continue`;
+  if (input.executionMode === "all")
+    return `Every test runs with ${input.plannedCases} combinations`;
+  return `One combination first, then ${input.plannedCases - 1} more when you continue`;
 }
 
 export function SuitePage() {
@@ -442,7 +443,8 @@ export function SuitePage() {
                   </strong>
                   {preview.data && !previewBlockers.length ? (
                     <span className="text-muted-foreground">
-                      {preview.data.checkCount} {preview.data.checkCount === 1 ? "test" : "tests"}
+                      {preview.data.checkCount}{" "}
+                      {preview.data.checkCount === 1 ? "test run" : "test runs"}
                       {preview.data.expectedScreenshots === undefined
                         ? ""
                         : ` · about ${preview.data.expectedScreenshots} screenshots`}
@@ -568,7 +570,7 @@ export function SuitePage() {
                         : start.isPending
                           ? "Starting…"
                           : executionMode === "all" && plannedCases > 1
-                            ? `Run on all ${plannedCases} setups`
+                            ? `Run all ${plannedCases} combinations`
                             : `Run ${value.tests.length === 1 ? "test" : `all ${value.tests.length} tests`}`}
                   </Button>
                 )}

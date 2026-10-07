@@ -125,6 +125,89 @@ it("offers the actual bound saved iPad setup even when the managed registry cont
   expect(relay.invoke).not.toHaveBeenCalledWith("target.browser-auth.list", expect.anything());
 });
 
+it("distinguishes same-phone saved setups and puts the latest captured profile before its shorter legacy id", async () => {
+  const androidMap = structuredClone(map);
+  const phoneSerial = "RQCY104BG8X";
+  const currentId = `device:${phoneSerial}-1080x2340`;
+  const legacyId = `device:${phoneSerial}`;
+  const capturedProfile = {
+    ...profile,
+    id: currentId,
+    targetId: phoneSerial,
+    platform: "android" as const,
+    name: "SM S931B",
+    viewport: { width: 1080, height: 2340 },
+    observedAt: 1791330959973,
+  };
+  androidMap.screenVariants = {
+    current: { ...androidMap.screenVariants.current!, targetProfile: capturedProfile },
+    legacy: {
+      ...androidMap.screenVariants.legacy!,
+      targetProfile: {
+        ...capturedProfile,
+        id: legacyId,
+        name: phoneSerial,
+        observedAt: 1791326533434,
+      },
+      updatedAt: 1791331959973,
+    },
+    olderCurrent: {
+      ...androidMap.screenVariants.current!,
+      id: "older-current",
+      targetProfile: { ...capturedProfile, observedAt: 1789322768546 },
+    },
+  };
+  delete androidMap.combines.prompts!.cellRuntimeProfiles;
+  discovery({
+    appMap: androidMap,
+    devices: [{ ...device, serial: phoneSerial, name: "SM S931B", platform: "android" }],
+  });
+  const profiles = await createSuiteProfileProductService({} as never).listEnvironmentProfiles(
+    scope,
+  );
+  expect(profiles.map((item) => item.id)).toEqual([currentId, legacyId]);
+  expect(profiles.map((item) => item.targetProfileId)).toEqual([currentId, legacyId]);
+  expect(new Set(profiles.map((item) => item.name)).size).toBe(2);
+  for (const item of profiles) {
+    expect(item.name).toContain("1080 × 2340");
+    expect(item.name).toContain("Captured");
+    expect(item.name).not.toContain(phoneSerial);
+    expect(item.nativeReadiness?.state).toBe("unproven");
+  }
+  expect(profiles[0]!.name).toContain(new Date(capturedProfile.observedAt).toLocaleString());
+  expect(relay.invoke).not.toHaveBeenCalledWith("target.preflight", expect.anything());
+  expect(relay.invoke).not.toHaveBeenCalledWith("job.combine.start", expect.anything());
+
+  androidMap.combines.prompts!.cellRuntimeProfiles = [
+    { testId: "fast", values: { prompt: "value-1" }, targetProfileId: legacyId },
+  ];
+  const boundProfiles = await createSuiteProfileProductService({} as never).listEnvironmentProfiles(
+    scope,
+  );
+  expect(boundProfiles.map((item) => item.id)).toEqual([legacyId]);
+  expect(boundProfiles[0]!.name).toBe("SM S931B");
+});
+
+it("keeps coincident captured setups distinct with a brief descriptor rather than a raw id", async () => {
+  const coincidentMap = structuredClone(map);
+  delete coincidentMap.combines.prompts!.cellRuntimeProfiles;
+  discovery({ appMap: coincidentMap });
+  const profiles = await createSuiteProfileProductService({} as never).listEnvironmentProfiles(
+    scope,
+  );
+  expect(profiles).toHaveLength(2);
+  expect(new Set(profiles.map((item) => item.name)).size).toBe(2);
+  expect(profiles.map((item) => item.name)).toEqual([
+    expect.stringContaining("Saved setup 1"),
+    expect.stringContaining("Saved setup 2"),
+  ]);
+  expect(profiles.map((item) => item.id).sort()).toEqual([
+    "device:physical-ipad-1112x834",
+    profileId,
+  ]);
+  for (const item of profiles) expect(item.name).not.toContain(serial);
+});
+
 it("resolves the saved setup after selection and treats unproven readiness as a warning", async () => {
   discovery();
   const service = createSuiteProfileProductService({} as never);

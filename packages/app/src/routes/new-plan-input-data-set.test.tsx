@@ -44,6 +44,117 @@ async function fill(id: string, value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+it("passes the chosen prompt row identities from inline binding into the saved Plan", async () => {
+  const editor = {
+    appMapId: "grok",
+    appName: "Grok",
+    revision: 4,
+    tests: [{ id: "fast", name: "Fast chat", status: "ready" }],
+    dataSets: [],
+  };
+  const saveSuite = vi.fn(async () => ({ id: "plan", appMapId: "grok" }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const addInputDataSet = vi.fn(async () => ({
+    variableId: "prompts",
+    selectedOptionIds: ["value-2"],
+    editor: {
+      ...editor,
+      revision: 5,
+      dataSets: [{ id: "prompts", name: "Prompts", kind: "custom", optionCount: 2 }],
+    },
+  }));
+  context.value = {
+    queryClient: client,
+    productService: { listApps: async () => [{ id: "grok", name: "Grok" }] },
+    suiteProfileService: {
+      getSuiteEditor: async () => editor,
+      saveSuite,
+      addInputDataSet,
+      listInputDataSets: async () => ({
+        revision: 2,
+        inputs: [
+          {
+            id: "public-prompts",
+            name: "chat_prompt",
+            source: "list",
+            values: ["Same prompt", "Same prompt"],
+            linked: false,
+            addedToApp: false,
+          },
+        ],
+      }),
+      previewInputBindings: async () => ({
+        token: "{{public-prompts}}",
+        options: [
+          { id: "value-1", value: "Same prompt" },
+          { id: "value-2", value: "Same prompt" },
+        ],
+        tests: [
+          {
+            id: "fast",
+            name: "Fast chat",
+            actions: [
+              {
+                key: "leaf",
+                stepId: "type",
+                stepTitle: "Type prompt",
+                connectionId: "connection",
+                actionId: "type",
+                text: "Original prompt",
+                sharedTestNames: [],
+                sharedSteps: [],
+              },
+            ],
+          },
+        ],
+      }),
+    },
+  };
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <NewPlanDialog appId="grok" />
+      </QueryClientProvider>,
+    ),
+  );
+  await wait(() => expect(button("New plan").disabled).toBe(false));
+  await click("New plan");
+  await wait(() => expect(document.body.textContent).toContain("Fast chat"));
+  await fill("suite-name", "Two ordinary prompts");
+  await act(async () =>
+    document.querySelector<HTMLElement>('[role="checkbox"]')!.closest("label")!.click(),
+  );
+  await click("Use saved input values");
+  await wait(() => expect(document.querySelector('[aria-label="Saved input"]')).not.toBeNull());
+  await act(async () => document.querySelector<HTMLElement>('[aria-label="Saved input"]')!.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((item) => item.textContent?.trim() === "chat_prompt")!
+      .click(),
+  );
+  await wait(() => expect(document.body.textContent).toContain("Original prompt"));
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>('[aria-label="Values for this Plan"] [role="checkbox"]')!
+      .closest("label")!
+      .click(),
+  );
+  await click("Use values in Tests");
+  await wait(() => expect(addInputDataSet).toHaveBeenCalledOnce());
+  await click("Save Plan");
+  await wait(() => expect(saveSuite).toHaveBeenCalledOnce());
+  expect(saveSuite).toHaveBeenCalledWith(
+    expect.objectContaining({
+      expectedRevision: 5,
+      testIds: ["fast"],
+      variableIds: ["prompts"],
+      selected: { prompts: ["value-2"] },
+    }),
+  );
+});
 it("retains the unsaved Plan and Test selection while adding prompt values, then saves at the returned map revision", async () => {
   const editor = {
     appMapId: "grok",

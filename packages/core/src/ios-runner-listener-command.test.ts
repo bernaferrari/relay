@@ -11,13 +11,17 @@ import {
   isIosSessionMissingSnapshotError,
   labelNodesViaLiveIosRunnerListener,
   readUsbmuxDeviceId,
-  setLiveIosRunnerCommandPostForTests,
+  setLiveIosRunnerCommandPostForTests as setNativePost,
   snapshotViaLiveIosRunnerListener,
   tapViaLiveIosRunnerListener as adoptedTap,
   typeViaLiveIosRunnerListener as adoptedType,
   unknownErrorMessage,
 } from "./ios-runner-listener-command.js";
 import { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
+
+const setLiveIosRunnerCommandPostForTests: typeof setNativePost = (post) =>
+  setNativePost(post ? catalogAwarePost(post) : undefined);
 
 // These isolated transport fixtures intentionally have no durable supervisor.
 const tapViaLiveIosRunnerListener: typeof adoptedTap = (input) =>
@@ -144,7 +148,14 @@ test("a live listener snapshot adopts the testCommand port instead of requiring 
         identifier: "ai.x.GrokApp",
         rect: { x: 0, y: 0, width: 1112, height: 834 },
       },
-      { identifier: "ask.toolbar.textfield", label: "Ask Anything", logicalCoordinates: true },
+      {
+        identifier: "ask.toolbar.textfield",
+        label: "Ask Anything",
+        logicalCoordinates: true,
+        bundleId: "ai.x.GrokApp",
+        hittable: true,
+        rect: { x: 10, y: 10, width: 44, height: 44 },
+      },
     ]);
     assert.equal(isIosRunnerHostProbeTree(nodes), false);
     assert.ok(commands.filter((command) => command === "querySelector").length >= 2);
@@ -765,7 +776,7 @@ test("listener snapshot chrome includes unique SuperGrok labels omitted from the
     assert.ok(labelQueries.includes("grok-arrows-right"));
     assert.deepEqual(
       nodes.filter((node) => node.label === "grok-compose"),
-      [{ ...compose, logicalCoordinates: true }],
+      [{ ...compose, logicalCoordinates: true, bundleId: "ai.x.GrokApp" }],
     );
     assert.ok(nodes.some((node) => node.identifier === "ask.toolbar.textfield"));
   } finally {
@@ -854,8 +865,6 @@ test("listener snapshot chrome queries unique attach-sheet ids omitted from home
       "ask.toolbar.add.menu.files",
       "ask.toolbar.add.menu.connectors",
       "ask.toolbar.add.menu.skills",
-      "sidebar.settings.button",
-      "sidebar.search.field",
     ] as const) {
       assert.ok(IOS_BOUNDED_CHROME_IDENTIFIERS.includes(identifier));
       assert.equal(idQueries.includes(identifier), false);
@@ -863,7 +872,7 @@ test("listener snapshot chrome queries unique attach-sheet ids omitted from home
     assert.equal(idQueries.filter((value) => value === "ask.toolbar.add.menu.camera").length, 1);
     assert.deepEqual(
       nodes.filter((node) => node.identifier === "ask.toolbar.add.menu.camera"),
-      [{ ...camera, logicalCoordinates: true }],
+      [{ ...camera, logicalCoordinates: true, bundleId: "ai.x.GrokApp" }],
     );
   } finally {
     restore();
@@ -937,7 +946,7 @@ test("listener snapshot chrome queries only requested attach-sheet ids when + is
     }
     assert.deepEqual(
       nodes.filter((node) => node.identifier === "ask.toolbar.add.menu.camera"),
-      [{ ...camera, logicalCoordinates: true }],
+      [{ ...camera, logicalCoordinates: true, bundleId: "ai.x.GrokApp" }],
     );
   } finally {
     restore();
@@ -947,7 +956,7 @@ test("listener snapshot chrome queries only requested attach-sheet ids when + is
   }
 });
 
-test("listener snapshot chrome skips attach, sidebar, and compose labels on closed home", async () => {
+test("listener snapshot chrome projects Home from the shared census and omits unrequested attach selectors", async () => {
   const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-closed-home-skip-"));
   const serial = "live-closed-home-skip-ipad";
   const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
@@ -1037,10 +1046,15 @@ test("listener snapshot chrome skips attach, sidebar, and compose labels on clos
       "ask.toolbar.add.menu.files",
       "ask.toolbar.add.menu.connectors",
       "ask.toolbar.add.menu.skills",
-      "sidebar.settings.button",
-      "sidebar.search.field",
     ] as const) {
       assert.equal(idQueries.includes(identifier), false);
+    }
+    for (const identifier of ["sidebar.settings.button", "sidebar.search.field"] as const) {
+      assert.ok(idQueries.includes(identifier));
+      assert.equal(
+        nodes.some((node) => node.identifier === identifier),
+        false,
+      );
     }
     for (const label of [
       "grok-compose",
@@ -1048,7 +1062,11 @@ test("listener snapshot chrome skips attach, sidebar, and compose labels on clos
       "grok-gear",
       "grok-3-dots",
     ] as const) {
-      assert.equal(labelQueries.includes(label), false);
+      assert.ok(labelQueries.includes(label));
+      assert.equal(
+        nodes.some((node) => node.label === label),
+        false,
+      );
     }
   } finally {
     restore();
@@ -1190,7 +1208,7 @@ test("listener snapshot chrome queries unique sidebar ids omitted from home n=7"
     assert.equal(idQueries.filter((value) => value === "sidebar.settings.button").length, 1);
     assert.deepEqual(
       nodes.filter((node) => node.identifier === "sidebar.settings.button"),
-      [{ ...gear, logicalCoordinates: true }],
+      [{ ...gear, logicalCoordinates: true, bundleId: "ai.x.GrokApp" }],
     );
   } finally {
     restore();

@@ -1,6 +1,6 @@
 import {
   liveIosRunnerCommandIsBusy,
-  postLiveIosRunnerCommand,
+  postAdoptedIosRunnerCommand,
   type LiveIosRunnerCommandPost,
 } from "./ios-runner-listener-command.js";
 import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
@@ -31,7 +31,7 @@ export async function observeIosNativeViewport(
   runtime: {
     probeListener: typeof probeLiveIosRunnerListener;
     post: (...args: Parameters<LiveIosRunnerCommandPost>) => Promise<unknown>;
-  } = { probeListener: probeLiveIosRunnerListener, post: postLiveIosRunnerCommand },
+  } = { probeListener: probeLiveIosRunnerListener, post: postAdoptedIosRunnerCommand },
 ): Promise<{ width: number; height: number }> {
   let appBundleId: string;
   try {

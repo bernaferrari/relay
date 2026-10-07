@@ -79,6 +79,13 @@ function applyChange(draft: AppMap, change: AppMapBatchChange, at: number): void
       assertEntityScope(draft, change.test);
       draft.tests = { ...draft.tests, [change.test.id]: structuredClone(change.test) };
       return;
+    case "variable.save":
+      assertEntityScope(draft, change.variable);
+      draft.variables = {
+        ...draft.variables,
+        [change.variable.id]: structuredClone(change.variable),
+      };
+      return;
     case "combine.save":
       assertEntityScope(draft, change.combine);
       draft.combines = {
@@ -95,5 +102,7 @@ function applyChange(draft: AppMap, change: AppMapBatchChange, at: number): void
       draft.combines = combines;
       return;
     }
+    default:
+      appMapFail("invalid-map", "Unsupported App Map batch change");
   }
 }

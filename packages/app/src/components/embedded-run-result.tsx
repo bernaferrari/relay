@@ -11,6 +11,7 @@ import { initialRunStep } from "../data/run-timeline-selection";
 import { framePathsForTraceStep } from "../data/run-report-model";
 import { formatDuration } from "./run-report-formatters";
 import { EvidenceImageViewer } from "./evidence-image-viewer";
+import { RunStepDisclosure, runChildStatus } from "./run-step-disclosure";
 import { CheckCircle2, CircleAlert, ImageOff } from "lucide-react";
 import type { ProductRunReportOverview, ReportEvidenceItem } from "../data/run-report-model";
 
@@ -60,11 +61,26 @@ export function EmbeddedRunResult({
         ? undefined
         : "Open the full report to inspect where the run stopped.";
   const [inspectingSteps, setInspectingSteps] = useState(() => !passed);
-  const [stepIndex, setStepIndex] = useState(() => initialRunStep(report.timeline));
-  const step = report.timeline[stepIndex];
-  const authoredFrames = step
-    ? framePathsForTraceStep(report.stepEvidence, step.id, step.index)
-    : [];
+  const outline = report.authoredOutline;
+  const timeline = outline?.steps ?? report.timeline;
+  const [stepIndex, setStepIndex] = useState(() => initialRunStep(timeline));
+  const [showingRunDetails, setShowingRunDetails] = useState(() =>
+    Boolean(
+      outline?.supportingSteps.some(
+        (item) => item.state === "failed" || item.state === "blocked",
+      ) && !timeline.some((item) => item.state === "failed" || item.state === "blocked"),
+    ),
+  );
+  const [selectedTraceId, setSelectedTraceId] = useState<string>();
+  const children = showingRunDetails
+    ? outline?.supportingSteps
+    : outline?.steps[stepIndex]?.children;
+  const selectedChild =
+    children?.find((item) => item.id === selectedTraceId) ??
+    children?.find((item) => item.state === "failed" || item.state === "blocked");
+  const step = selectedChild ?? (showingRunDetails ? undefined : timeline[stepIndex]);
+  const authoredFrames =
+    step && !outline ? framePathsForTraceStep(report.stepEvidence, step.id, step.index) : [];
   const paths = authoredFrames.length ? authoredFrames : (step?.framePaths ?? []);
   const frames = report.evidence.find((section) => section.id === "screenshot")?.items ?? [];
   const reviewItems = destIdentityReviewItems(report.captureReview?.items ?? []);
@@ -146,24 +162,54 @@ export function EmbeddedRunResult({
                 {passed ? "Captured result" : "Last screenshot"}
               </TestStepButton>
             ) : null}
-            {report.timeline.length ? (
+            {timeline.length ? (
               <ol className="grid list-none gap-1 p-0" aria-label="Run steps">
-                {report.timeline.map((item, index) => (
+                {timeline.map((item, index) => (
                   <li key={item.id}>
                     <TestStepButton
                       number={String(index + 1)}
-                      selected={!showingCapturedResult && index === stepIndex}
+                      selected={!showingCapturedResult && !showingRunDetails && index === stepIndex}
                       onClick={() => {
                         setInspectingSteps(true);
                         setStepIndex(index);
+                        setShowingRunDetails(false);
+                        setSelectedTraceId(undefined);
                       }}
                     >
                       <span className="block font-medium">{item.title}</span>
-                      <span className="text-xs text-muted-foreground">{item.state}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {item.state}
+                        {outline && runChildStatus(outline.steps[index]?.children ?? [])
+                          ? ` · ${runChildStatus(outline.steps[index]?.children ?? [])}`
+                          : ""}
+                      </span>
                     </TestStepButton>
                   </li>
                 ))}
               </ol>
+            ) : null}
+            {outline?.supportingSteps.length ? (
+              <TestStepButton
+                number=""
+                selected={!showingCapturedResult && showingRunDetails}
+                onClick={() => {
+                  setInspectingSteps(true);
+                  setShowingRunDetails(true);
+                  setSelectedTraceId(undefined);
+                }}
+              >
+                <span className="block font-medium">Run details</span>
+                <span className="text-xs text-muted-foreground">
+                  {runChildStatus(outline.supportingSteps) ?? "Setup and other retained evidence"}
+                </span>
+              </TestStepButton>
+            ) : null}
+            {children && !showingCapturedResult ? (
+              <RunStepDisclosure
+                steps={children}
+                selectedId={selectedChild?.id}
+                onSelect={setSelectedTraceId}
+              />
             ) : null}
             {step && !showingCapturedResult ? (
               <div className="grid gap-2">

@@ -1,0 +1,1978 @@
+{
+  "id": "a1a09d67-8a10-41c2-9052-86b4eb2f58a7",
+  "title": "Grok iPad · Prompt checks · value-1 · Grok iPad · Fast chat",
+  "outcome": "passed",
+  "status": "ok",
+  "platform": "ios",
+  "durationMs": 264329,
+  "steps": [
+    {
+      "id": "9b964597-8456-4dd1-9f32-213499ffb300",
+      "index": 0,
+      "recipeId": "cell-c6124e3353dc639e4ee0e5f98e6bc4e37",
+      "recipeStepId": "cell-c6124e3353dc639e4ee0e5f98e6bc4e37:1",
+      "title": "Run saved Test",
+      "status": "ok",
+      "startedAt": 1791379827318,
+      "finishedAt": 1791380085814,
+      "durationMs": 258496,
+      "frames": [
+        {
+          "path": "frames/024.png",
+          "caption": "after · Run saved Test"
+        }
+      ]
+    },
+    {
+      "id": "99648cc4-ea6a-43f8-b2f7-5eb5decca676",
+      "index": 1,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-fast-new-conversation-1",
+      "title": "Run saved Test",
+      "status": "ok",
+      "startedAt": 1791379827320,
+      "finishedAt": 1791379898859,
+      "durationMs": 71539,
+      "frames": []
+    },
+    {
+      "id": "234f5dec-8a3d-4355-ae8b-50c2001c7d32",
+      "index": 2,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+      "recipeStepId": "relay-source-3cb0c271d9f1394351e9480a",
+      "title": "Reach Grok home",
+      "status": "ok",
+      "startedAt": 1791379827321,
+      "finishedAt": 1791379846991,
+      "durationMs": 19670,
+      "frames": []
+    },
+    {
+      "id": "962c78dc-1c77-4075-a066-e00aeaf29112",
+      "index": 3,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+      "recipeStepId": "action-6d8cf9bf-20b8-48b2-bb46-fb39bf02ddda-step-1",
+      "title": "Tap identifier sidebar.open.button",
+      "status": "ok",
+      "startedAt": 1791379846991,
+      "finishedAt": 1791379851525,
+      "durationMs": 4534,
+      "frames": [
+        {
+          "path": "frames/001.png",
+          "caption": "before · Tap identifier sidebar.open.button"
+        },
+        {
+          "path": "frames/002.png",
+          "caption": "after · Tap identifier sidebar.open.button"
+        }
+      ]
+    },
+    {
+      "id": "44015b05-a011-4212-ae7d-ac5a32925c9d",
+      "index": 4,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+      "recipeStepId": "relay-destination-connection-b2bef76515529f15",
+      "title": "Reach Sidebar",
+      "status": "ok",
+      "startedAt": 1791379851525,
+      "finishedAt": 1791379863357,
+      "durationMs": 11832,
+      "frames": [
+        {
+          "path": "frames/003.png",
+          "caption": "after · Reach Sidebar"
+        }
+      ]
+    },
+    {
+      "id": "bc19470c-8f27-43dd-bd08-4784867c7863",
+      "index": 5,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+      "recipeStepId": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+      "title": "Tap identifier sidebar.newConversation.button",
+      "status": "ok",
+      "startedAt": 1791379863357,
+      "finishedAt": 1791379866294,
+      "durationMs": 2937,
+      "frames": [
+        {
+          "path": "frames/003.png",
+          "caption": "after · Reach Sidebar"
+        },
+        {
+          "path": "frames/004.png",
+          "caption": "after · Tap identifier sidebar.newConversation.button"
+        }
+      ]
+    },
+    {
+      "id": "fdb9fe15-4479-4f2d-a026-83e891eec621",
+      "index": 6,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+      "recipeStepId": "relay-destination-connection-fa3e553a207b606b",
+      "title": "Reach Grok home",
+      "status": "ok",
+      "startedAt": 1791379866294,
+      "finishedAt": 1791379898859,
+      "durationMs": 32565,
+      "frames": [
+        {
+          "path": "frames/005.png",
+          "caption": "after · Reach Grok home"
+        }
+      ]
+    },
+    {
+      "id": "46a94bcf-d2e1-4792-8a3b-31067fa37415",
+      "index": 7,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-fast-new-conversation-2",
+      "title": "Capture for review · step:step-fast-new-conversation:Start a new conversation",
+      "status": "ok",
+      "startedAt": 1791379898860,
+      "finishedAt": 1791379899864,
+      "durationMs": 1004,
+      "frames": [
+        {
+          "path": "frames/006.png",
+          "caption": "step:step-fast-new-conversation:Start a new conversation"
+        }
+      ]
+    },
+    {
+      "id": "b1455a25-3232-4791-86f3-22e67f8d818d",
+      "index": 8,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-1c8389a7cd1c268c-1",
+      "title": "Run saved Test",
+      "status": "ok",
+      "startedAt": 1791379899865,
+      "finishedAt": 1791379940505,
+      "durationMs": 40640,
+      "frames": []
+    },
+    {
+      "id": "3d69d457-77fc-4353-8d07-7e74085666ed",
+      "index": 9,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+      "recipeStepId": "relay-source-59f8b68924fc291877b81ec0",
+      "title": "Reach Grok home",
+      "status": "ok",
+      "startedAt": 1791379899865,
+      "finishedAt": 1791379899867,
+      "durationMs": 2,
+      "frames": []
+    },
+    {
+      "id": "b7802489-0d5b-4bca-aedd-bbae1783cdf8",
+      "index": 10,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+      "recipeStepId": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+      "title": "Tap identifier toolbar.model.selector.button",
+      "status": "ok",
+      "startedAt": 1791379899867,
+      "finishedAt": 1791379905144,
+      "durationMs": 5277,
+      "frames": [
+        {
+          "path": "frames/007.png",
+          "caption": "before · Tap identifier toolbar.model.selector.button"
+        },
+        {
+          "path": "frames/008.png",
+          "caption": "after · Tap identifier toolbar.model.selector.button"
+        }
+      ]
+    },
+    {
+      "id": "072bc935-9dff-4ff1-990c-af563f265d6b",
+      "index": 11,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+      "recipeStepId": "relay-destination-connection-576dc8003c3511b1",
+      "title": "Reach Grok home",
+      "status": "ok",
+      "startedAt": 1791379905144,
+      "finishedAt": 1791379940505,
+      "durationMs": 35361,
+      "frames": [
+        {
+          "path": "frames/009.png",
+          "caption": "after · Reach Grok home"
+        }
+      ]
+    },
+    {
+      "id": "72d08e39-0fcf-43c4-a7cd-c67b053886dc",
+      "index": 12,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-1c8389a7cd1c268c-2",
+      "title": "Capture for review · step:step-1c8389a7cd1c268c:Open model menu",
+      "status": "ok",
+      "startedAt": 1791379940505,
+      "finishedAt": 1791379941566,
+      "durationMs": 1061,
+      "frames": [
+        {
+          "path": "frames/010.png",
+          "caption": "step:step-1c8389a7cd1c268c:Open model menu"
+        }
+      ]
+    },
+    {
+      "id": "aa25347d-b8e1-4d31-9091-44fa24d865d3",
+      "index": 13,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-5f0f538cc5f06197-1",
+      "title": "Run saved Test",
+      "status": "ok",
+      "startedAt": 1791379941566,
+      "finishedAt": 1791379979753,
+      "durationMs": 38187,
+      "frames": []
+    },
+    {
+      "id": "9e999882-03ed-45de-99ba-96202ea831c6",
+      "index": 14,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+      "recipeStepId": "relay-source-4ffda37c2b8b4ac9994c718f",
+      "title": "Reach Grok home",
+      "status": "ok",
+      "startedAt": 1791379941566,
+      "finishedAt": 1791379941567,
+      "durationMs": 1,
+      "frames": []
+    },
+    {
+      "id": "ddb60e29-b7c6-435d-9f6f-c3aef664ee64",
+      "index": 15,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+      "recipeStepId": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+      "title": "Tap label \"Quick responses · Grok 4.7\"",
+      "status": "ok",
+      "startedAt": 1791379941568,
+      "finishedAt": 1791379945810,
+      "durationMs": 4242,
+      "frames": [
+        {
+          "path": "frames/010.png",
+          "caption": "step:step-1c8389a7cd1c268c:Open model menu"
+        },
+        {
+          "path": "frames/011.png",
+          "caption": "after · Tap label \"Quick responses · Grok 4.7\""
+        }
+      ]
+    },
+    {
+      "id": "4fe0ecff-88ec-44c0-8fa7-fc0578ecfa85",
+      "index": 16,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+      "recipeStepId": "relay-destination-connection-fast-menu-authored-v1",
+      "title": "Reach Grok home",
+      "status": "ok",
+      "startedAt": 1791379945810,
+      "finishedAt": 1791379979753,
+      "durationMs": 33943,
+      "frames": [
+        {
+          "path": "frames/012.png",
+          "caption": "after · Reach Grok home"
+        }
+      ]
+    },
+    {
+      "id": "f18b6050-07d1-4147-adcf-06362a6fd4a9",
+      "index": 17,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-5f0f538cc5f06197-2",
+      "title": "Capture for review · step:step-5f0f538cc5f06197:Fast",
+      "status": "ok",
+      "startedAt": 1791379979754,
+      "finishedAt": 1791379980728,
+      "durationMs": 974,
+      "frames": [
+        {
+          "path": "frames/013.png",
+          "caption": "step:step-5f0f538cc5f06197:Fast"
+        }
+      ]
+    },
+    {
+      "id": "937d25ed-05b4-4ca7-950d-7a62a9c9541f",
+      "index": 18,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-fast-copy-gone-before-type-1",
+      "title": "check identifier ask.message.copy.button gone",
+      "status": "ok",
+      "startedAt": 1791379980728,
+      "finishedAt": 1791379980907,
+      "durationMs": 179,
+      "frames": []
+    },
+    {
+      "id": "87b34d3a-00c5-4c0f-9755-20288e0cfff6",
+      "index": 19,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-281627ea052f9458-1",
+      "title": "Run saved Test",
+      "status": "ok",
+      "startedAt": 1791379980907,
+      "finishedAt": 1791380032276,
+      "durationMs": 51369,
+      "frames": []
+    },
+    {
+      "id": "676cb4d8-7a78-4955-82fe-910b444e5e96",
+      "index": 20,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae",
+      "recipeStepId": "relay-source-connection-4c8a74652cab6aae",
+      "title": "Reach Grok home",
+      "status": "ok",
+      "startedAt": 1791379980908,
+      "finishedAt": 1791379996996,
+      "durationMs": 16088,
+      "frames": []
+    },
+    {
+      "id": "d04eb6f0-4e6a-4475-b7ef-7ca7ea01f8e4",
+      "index": 21,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae",
+      "recipeStepId": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1",
+      "title": "Type text",
+      "status": "ok",
+      "startedAt": 1791379996996,
+      "finishedAt": 1791380005185,
+      "durationMs": 8189,
+      "frames": [
+        {
+          "path": "frames/014.png",
+          "caption": "before · Type text"
+        },
+        {
+          "path": "frames/015.png",
+          "caption": "after · Type text"
+        }
+      ]
+    },
+    {
+      "id": "255be597-8907-467a-97ad-75b918d75f91",
+      "index": 22,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae",
+      "recipeStepId": "relay-destination-connection-4c8a74652cab6aae",
+      "title": "Reach Next screen",
+      "status": "ok",
+      "startedAt": 1791380005185,
+      "finishedAt": 1791380032276,
+      "durationMs": 27091,
+      "frames": [
+        {
+          "path": "frames/016.png",
+          "caption": "after · Reach Next screen"
+        }
+      ]
+    },
+    {
+      "id": "8bd27f5c-89f8-4223-8105-98ceae9d05b1",
+      "index": 23,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-281627ea052f9458-2",
+      "title": "Capture for review · step:step-281627ea052f9458:Type text",
+      "status": "ok",
+      "startedAt": 1791380032276,
+      "finishedAt": 1791380033200,
+      "durationMs": 924,
+      "frames": [
+        {
+          "path": "frames/017.png",
+          "caption": "step:step-281627ea052f9458:Type text"
+        }
+      ]
+    },
+    {
+      "id": "3ec7bd00-cb9f-4a35-ada0-b259c822715f",
+      "index": 24,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-f6ca5703d785f04b-1",
+      "title": "Run saved Test",
+      "status": "ok",
+      "startedAt": 1791380033201,
+      "finishedAt": 1791380075455,
+      "durationMs": 42254,
+      "frames": []
+    },
+    {
+      "id": "ea54bd55-929c-43f0-80d5-52aff3d9dd90",
+      "index": 25,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+      "recipeStepId": "relay-source-163a19f6715b4edf9a09d3f4",
+      "title": "Reach Next screen",
+      "status": "ok",
+      "startedAt": 1791380033201,
+      "finishedAt": 1791380033201,
+      "durationMs": 0,
+      "frames": []
+    },
+    {
+      "id": "4f71f510-32df-495b-b005-c80f9b053cba",
+      "index": 26,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+      "recipeStepId": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+      "title": "Tap point (869, 395)",
+      "status": "ok",
+      "startedAt": 1791380033201,
+      "finishedAt": 1791380050072,
+      "durationMs": 16871,
+      "frames": [
+        {
+          "path": "frames/018.png",
+          "caption": "before · Tap point (869, 395)"
+        },
+        {
+          "path": "frames/019.png",
+          "caption": "after · Tap point (869, 395)"
+        }
+      ]
+    },
+    {
+      "id": "ea7edcd6-2702-439d-91c9-52e637acfc80",
+      "index": 27,
+      "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+      "recipeStepId": "relay-destination-connection-8958bf6383a6123c",
+      "title": "Reach Next screen",
+      "status": "ok",
+      "startedAt": 1791380050072,
+      "finishedAt": 1791380075455,
+      "durationMs": 25383,
+      "frames": [
+        {
+          "path": "frames/020.png",
+          "caption": "after · Reach Next screen"
+        }
+      ]
+    },
+    {
+      "id": "2bbf3ccd-ae92-488d-a579-342605d0c546",
+      "index": 28,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-f6ca5703d785f04b-2",
+      "title": "Capture for review · step:step-f6ca5703d785f04b:Send prompt",
+      "status": "ok",
+      "startedAt": 1791380075455,
+      "finishedAt": 1791380076373,
+      "durationMs": 918,
+      "frames": [
+        {
+          "path": "frames/021.png",
+          "caption": "step:step-f6ca5703d785f04b:Send prompt"
+        }
+      ]
+    },
+    {
+      "id": "e977b62d-3101-498b-af9b-e1116c1cd64c",
+      "index": 29,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "relay-test-step-fd6c1053-d852-42d5-bcf0-aadd06bbd494-1",
+      "title": "Wait for identifier ask.message.copy.button to finish responding",
+      "status": "ok",
+      "startedAt": 1791380076373,
+      "finishedAt": 1791380084153,
+      "durationMs": 7780,
+      "frames": [
+        {
+          "path": "frames/022.png",
+          "caption": "after · Wait for identifier ask.message.copy.button to finish responding"
+        }
+      ]
+    },
+    {
+      "id": "6009747f-eb6a-43c6-b4b8-a6769ff9c3bb",
+      "index": 30,
+      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "recipeStepId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:13",
+      "title": "Screenshot · final:Grok iPad · Fast chat",
+      "status": "ok",
+      "startedAt": 1791380084153,
+      "finishedAt": 1791380085815,
+      "durationMs": 1662,
+      "frames": [
+        {
+          "path": "frames/023.png",
+          "caption": "final:Grok iPad · Fast chat"
+        }
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "path": "frames/001.png",
+      "caption": "before · Tap identifier sidebar.open.button",
+      "stepId": "962c78dc-1c77-4075-a066-e00aeaf29112"
+    },
+    {
+      "path": "frames/002.png",
+      "caption": "after · Tap identifier sidebar.open.button",
+      "stepId": "962c78dc-1c77-4075-a066-e00aeaf29112"
+    },
+    {
+      "path": "frames/003.png",
+      "caption": "after · Reach Sidebar",
+      "stepId": "44015b05-a011-4212-ae7d-ac5a32925c9d"
+    },
+    {
+      "path": "frames/004.png",
+      "caption": "after · Tap identifier sidebar.newConversation.button",
+      "stepId": "bc19470c-8f27-43dd-bd08-4784867c7863"
+    },
+    {
+      "path": "frames/005.png",
+      "caption": "after · Reach Grok home",
+      "stepId": "fdb9fe15-4479-4f2d-a026-83e891eec621"
+    },
+    {
+      "path": "frames/006.png",
+      "caption": "step:step-fast-new-conversation:Start a new conversation"
+    },
+    {
+      "path": "frames/007.png",
+      "caption": "before · Tap identifier toolbar.model.selector.button",
+      "stepId": "b7802489-0d5b-4bca-aedd-bbae1783cdf8"
+    },
+    {
+      "path": "frames/008.png",
+      "caption": "after · Tap identifier toolbar.model.selector.button",
+      "stepId": "b7802489-0d5b-4bca-aedd-bbae1783cdf8"
+    },
+    {
+      "path": "frames/009.png",
+      "caption": "after · Reach Grok home",
+      "stepId": "072bc935-9dff-4ff1-990c-af563f265d6b"
+    },
+    {
+      "path": "frames/010.png",
+      "caption": "step:step-1c8389a7cd1c268c:Open model menu"
+    },
+    {
+      "path": "frames/011.png",
+      "caption": "after · Tap label \"Quick responses · Grok 4.7\"",
+      "stepId": "ddb60e29-b7c6-435d-9f6f-c3aef664ee64"
+    },
+    {
+      "path": "frames/012.png",
+      "caption": "after · Reach Grok home",
+      "stepId": "4fe0ecff-88ec-44c0-8fa7-fc0578ecfa85"
+    },
+    {
+      "path": "frames/013.png",
+      "caption": "step:step-5f0f538cc5f06197:Fast"
+    },
+    {
+      "path": "frames/014.png",
+      "caption": "before · Type text",
+      "stepId": "d04eb6f0-4e6a-4475-b7ef-7ca7ea01f8e4"
+    },
+    {
+      "path": "frames/015.png",
+      "caption": "after · Type text",
+      "stepId": "d04eb6f0-4e6a-4475-b7ef-7ca7ea01f8e4"
+    },
+    {
+      "path": "frames/016.png",
+      "caption": "after · Reach Next screen",
+      "stepId": "255be597-8907-467a-97ad-75b918d75f91"
+    },
+    {
+      "path": "frames/017.png",
+      "caption": "step:step-281627ea052f9458:Type text"
+    },
+    {
+      "path": "frames/018.png",
+      "caption": "before · Tap point (869, 395)",
+      "stepId": "4f71f510-32df-495b-b005-c80f9b053cba"
+    },
+    {
+      "path": "frames/019.png",
+      "caption": "after · Tap point (869, 395)",
+      "stepId": "4f71f510-32df-495b-b005-c80f9b053cba"
+    },
+    {
+      "path": "frames/020.png",
+      "caption": "after · Reach Next screen",
+      "stepId": "ea7edcd6-2702-439d-91c9-52e637acfc80"
+    },
+    {
+      "path": "frames/021.png",
+      "caption": "step:step-f6ca5703d785f04b:Send prompt"
+    },
+    {
+      "path": "frames/022.png",
+      "caption": "after · Wait for identifier ask.message.copy.button to finish responding",
+      "stepId": "e977b62d-3101-498b-af9b-e1116c1cd64c"
+    },
+    {
+      "path": "frames/023.png",
+      "caption": "final:Grok iPad · Fast chat"
+    },
+    {
+      "path": "frames/024.png",
+      "caption": "after · Run saved Test",
+      "stepId": "9b964597-8456-4dd1-9f32-213499ffb300"
+    }
+  ],
+  "artifacts": [
+    {
+      "kind": "app-map-combine-cell-execution-intent",
+      "data": {
+        "schemaVersion": 1,
+        "kind": "app-map-combine-cell-execution-intent",
+        "child": {
+          "schemaVersion": 1,
+          "kind": "app-map-test-execution-intent",
+          "plan": {
+            "schemaVersion": 1,
+            "test": {
+              "id": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+              "name": "Grok iPad · Fast chat",
+              "kind": "scenario",
+              "intentSchemaVersion": 1
+            },
+            "rootRecipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+            "stepProvenance": [
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-3cb0c271d9f1394351e9480a",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-6d8cf9bf-20b8-48b2-bb46-fb39bf02ddda-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-b2bef76515529f15",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+                "stepIndex": 3,
+                "recipeStepId": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+                "stepIndex": 4,
+                "recipeStepId": "relay-destination-connection-fa3e553a207b606b",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-fa3e553a207b606b:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-fa3e553a207b606b",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-fa3e553a207b606b:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-fa3e553a207b606b:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-fa3e553a207b606b",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-fa3e553a207b606b",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b",
+                "stepIndex": 1,
+                "recipeStepId": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-fa3e553a207b606b",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-test-step-fast-new-conversation-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 1,
+                "recipeStepId": "relay-test-step-fast-new-conversation-2",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-new-conversation"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-59f8b68924fc291877b81ec0",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-576dc8003c3511b1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-576dc8003c3511b1:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-576dc8003c3511b1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-576dc8003c3511b1:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-576dc8003c3511b1:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-576dc8003c3511b1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-576dc8003c3511b1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1",
+                "stepIndex": 1,
+                "recipeStepId": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-576dc8003c3511b1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-test-step-1c8389a7cd1c268c-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 3,
+                "recipeStepId": "relay-test-step-1c8389a7cd1c268c-2",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-1c8389a7cd1c268c"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-4ffda37c2b8b4ac9994c718f",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-fast-menu-authored-v1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-fast-menu-authored-v1:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-fast-menu-authored-v1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-fast-menu-authored-v1:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-fast-menu-authored-v1:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-fast-menu-authored-v1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-fast-menu-authored-v1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1",
+                "stepIndex": 1,
+                "recipeStepId": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-fast-menu-authored-v1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 4,
+                "recipeStepId": "relay-test-step-5f0f538cc5f06197-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 5,
+                "recipeStepId": "relay-test-step-5f0f538cc5f06197-2",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-5f0f538cc5f06197"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 6,
+                "recipeStepId": "relay-test-step-fast-copy-gone-before-type-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fast-copy-gone-before-type"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-7d295186c2b3a9469355c851",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-4c8a74652cab6aae",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-4c8a74652cab6aae:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-4c8a74652cab6aae",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-4c8a74652cab6aae:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-4c8a74652cab6aae:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-4c8a74652cab6aae",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-4c8a74652cab6aae",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae",
+                "stepIndex": 1,
+                "recipeStepId": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-4c8a74652cab6aae",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 7,
+                "recipeStepId": "relay-test-step-281627ea052f9458-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 8,
+                "recipeStepId": "relay-test-step-281627ea052f9458-2",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-281627ea052f9458"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-163a19f6715b4edf9a09d3f4",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-8958bf6383a6123c",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-8958bf6383a6123c:r401",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-8958bf6383a6123c",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-8958bf6383a6123c:r401",
+                "stepIndex": 1,
+                "recipeStepId": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:connection:connection-8958bf6383a6123c:r401",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-8958bf6383a6123c",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c",
+                "stepIndex": 0,
+                "recipeStepId": "relay-source-connection-8958bf6383a6123c",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c",
+                "stepIndex": 1,
+                "recipeStepId": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c",
+                "stepIndex": 2,
+                "recipeStepId": "relay-destination-connection-8958bf6383a6123c",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 9,
+                "recipeStepId": "relay-test-step-f6ca5703d785f04b-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 10,
+                "recipeStepId": "relay-test-step-f6ca5703d785f04b-2",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-f6ca5703d785f04b"
+              },
+              {
+                "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+                "stepIndex": 11,
+                "recipeStepId": "relay-test-step-fd6c1053-d852-42d5-bcf0-aadd06bbd494-1",
+                "testId": "test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125",
+                "testStepId": "step-fd6c1053-d852-42d5-bcf0-aadd06bbd494"
+              }
+            ]
+          },
+          "recipeGraph": {
+            "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401": {
+              "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+              "title": "Grok iOS daily · Start a new conversation",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-3cb0c271d9f1394351e9480a"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-6d8cf9bf-20b8-48b2-bb46-fb39bf02ddda-step-1",
+                  "target": {
+                    "identifier": "sidebar.open.button"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-b2bef76515529f15"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+                  "target": {
+                    "identifier": "sidebar.newConversation.button"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-fa3e553a207b606b"
+                }
+              ]
+            },
+            "app-map:grok-ios:connection:connection-fa3e553a207b606b:r401": {
+              "id": "app-map:grok-ios:connection:connection-fa3e553a207b606b:r401",
+              "title": "Tap “grok-compose”",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-fa3e553a207b606b"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+                  "target": {
+                    "identifier": "sidebar.newConversation.button"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-fa3e553a207b606b"
+                }
+              ]
+            },
+            "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b": {
+              "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b",
+              "title": "Tap “grok-compose” · warm transition confirmation",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-fa3e553a207b606b"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+                  "target": {
+                    "identifier": "sidebar.newConversation.button"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-fa3e553a207b606b"
+                }
+              ]
+            },
+            "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401": {
+              "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+              "title": "Grok iOS daily · Open model menu",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-59f8b68924fc291877b81ec0"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+                  "target": {
+                    "identifier": "toolbar.model.selector.button"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-576dc8003c3511b1"
+                }
+              ]
+            },
+            "app-map:grok-ios:connection:connection-576dc8003c3511b1:r401": {
+              "id": "app-map:grok-ios:connection:connection-576dc8003c3511b1:r401",
+              "title": "Selector",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-576dc8003c3511b1"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+                  "target": {
+                    "identifier": "toolbar.model.selector.button"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-576dc8003c3511b1"
+                }
+              ]
+            },
+            "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1": {
+              "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1",
+              "title": "Selector · warm transition confirmation",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-576dc8003c3511b1"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+                  "target": {
+                    "identifier": "toolbar.model.selector.button"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-576dc8003c3511b1"
+                }
+              ]
+            },
+            "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401": {
+              "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+              "title": "Grok iOS daily · Fast",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-4ffda37c2b8b4ac9994c718f"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+                  "target": {
+                    "label": "Quick responses · Grok 4.7"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-fast-menu-authored-v1"
+                }
+              ]
+            },
+            "app-map:grok-ios:connection:connection-fast-menu-authored-v1:r401": {
+              "id": "app-map:grok-ios:connection:connection-fast-menu-authored-v1:r401",
+              "title": "Choose Fast",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-fast-menu-authored-v1"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+                  "target": {
+                    "label": "Quick responses · Grok 4.7"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-fast-menu-authored-v1"
+                }
+              ]
+            },
+            "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1": {
+              "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1",
+              "title": "Choose Fast · warm transition confirmation",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-fast-menu-authored-v1"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+                  "target": {
+                    "label": "Quick responses · Grok 4.7"
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-fast-menu-authored-v1"
+                }
+              ]
+            },
+            "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401": {
+              "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401",
+              "title": "Grok iOS daily · Type text",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-7d295186c2b3a9469355c851"
+                },
+                {
+                  "kind": "type",
+                  "id": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1"
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-4c8a74652cab6aae"
+                }
+              ]
+            },
+            "app-map:grok-ios:connection:connection-4c8a74652cab6aae:r401": {
+              "id": "app-map:grok-ios:connection:connection-4c8a74652cab6aae:r401",
+              "title": "Type text",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-4c8a74652cab6aae"
+                },
+                {
+                  "kind": "type",
+                  "id": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1"
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-4c8a74652cab6aae"
+                }
+              ]
+            },
+            "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae": {
+              "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae",
+              "title": "Type text · warm transition confirmation",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-4c8a74652cab6aae"
+                },
+                {
+                  "kind": "type",
+                  "id": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1"
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-4c8a74652cab6aae"
+                }
+              ]
+            },
+            "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401": {
+              "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+              "title": "Grok iOS daily · Send prompt",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-163a19f6715b4edf9a09d3f4"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+                  "target": {
+                    "point": {
+                      "anchor": {
+                        "horizontal": "left",
+                        "vertical": "top"
+                      },
+                      "x": 869,
+                      "y": 395
+                    }
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-8958bf6383a6123c"
+                }
+              ]
+            },
+            "app-map:grok-ios:connection:connection-8958bf6383a6123c:r401": {
+              "id": "app-map:grok-ios:connection:connection-8958bf6383a6123c:r401",
+              "title": "Continue",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-8958bf6383a6123c"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+                  "target": {
+                    "point": {
+                      "anchor": {
+                        "horizontal": "left",
+                        "vertical": "top"
+                      },
+                      "x": 869,
+                      "y": 395
+                    }
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-8958bf6383a6123c"
+                }
+              ]
+            },
+            "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c": {
+              "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c",
+              "title": "Continue · warm transition confirmation",
+              "steps": [
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-source-connection-8958bf6383a6123c"
+                },
+                {
+                  "kind": "tap",
+                  "id": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+                  "target": {
+                    "point": {
+                      "anchor": {
+                        "horizontal": "left",
+                        "vertical": "top"
+                      },
+                      "x": 869,
+                      "y": 395
+                    }
+                  }
+                },
+                {
+                  "kind": "expect-screen",
+                  "id": "relay-destination-connection-8958bf6383a6123c"
+                }
+              ]
+            },
+            "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401": {
+              "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+              "title": "Grok iPad · Fast chat",
+              "steps": [
+                {
+                  "kind": "module",
+                  "id": "relay-test-step-fast-new-conversation-1",
+                  "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+                  "check": {
+                    "id": "step-fast-new-conversation",
+                    "title": "Start a new conversation",
+                    "recovery": {
+                      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b"
+                    }
+                  }
+                },
+                {
+                  "kind": "screenshot",
+                  "id": "relay-test-step-fast-new-conversation-2"
+                },
+                {
+                  "kind": "module",
+                  "id": "relay-test-step-1c8389a7cd1c268c-1",
+                  "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+                  "check": {
+                    "id": "step-1c8389a7cd1c268c",
+                    "title": "Open model menu",
+                    "recovery": {
+                      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1"
+                    }
+                  }
+                },
+                {
+                  "kind": "screenshot",
+                  "id": "relay-test-step-1c8389a7cd1c268c-2"
+                },
+                {
+                  "kind": "module",
+                  "id": "relay-test-step-5f0f538cc5f06197-1",
+                  "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+                  "check": {
+                    "id": "step-5f0f538cc5f06197",
+                    "title": "Fast",
+                    "recovery": {
+                      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1"
+                    }
+                  }
+                },
+                {
+                  "kind": "screenshot",
+                  "id": "relay-test-step-5f0f538cc5f06197-2"
+                },
+                {
+                  "kind": "expect",
+                  "id": "relay-test-step-fast-copy-gone-before-type-1",
+                  "condition": "gone",
+                  "target": {
+                    "identifier": "ask.message.copy.button"
+                  }
+                },
+                {
+                  "kind": "module",
+                  "id": "relay-test-step-281627ea052f9458-1",
+                  "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401",
+                  "check": {
+                    "id": "step-281627ea052f9458",
+                    "title": "Type text",
+                    "recovery": {
+                      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae"
+                    }
+                  }
+                },
+                {
+                  "kind": "screenshot",
+                  "id": "relay-test-step-281627ea052f9458-2"
+                },
+                {
+                  "kind": "module",
+                  "id": "relay-test-step-f6ca5703d785f04b-1",
+                  "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+                  "check": {
+                    "id": "step-f6ca5703d785f04b",
+                    "title": "Send prompt",
+                    "recovery": {
+                      "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c"
+                    }
+                  }
+                },
+                {
+                  "kind": "screenshot",
+                  "id": "relay-test-step-f6ca5703d785f04b-2"
+                },
+                {
+                  "kind": "wait-response",
+                  "id": "relay-test-step-fd6c1053-d852-42d5-bcf0-aadd06bbd494-1",
+                  "target": {
+                    "identifier": "ask.message.copy.button"
+                  }
+                },
+                {
+                  "kind": "screenshot"
+                }
+              ]
+            }
+          }
+        },
+        "wrapper": {
+          "rootRecipeId": "cell-c6124e3353dc639e4ee0e5f98e6bc4e37",
+          "recipeGraphDigest": "8dea26b8d76f623ccfa55d40a75e7cbca833dbef62f5fcc2878ca8553471c879",
+          "rootRecipeDigest": "c8a7ea2361adc378e791967451d16334cb2d9e80fc5ef1069d1eb4bcf95b97a2",
+          "childRootRecipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+          "childRecipeGraphDigest": "d9e0fae8bd36ea1859ab8d26fac69715979a8ed7231a6b8236b581ec83e43666"
+        }
+      }
+    }
+  ],
+  "recipeGraph": {
+    "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401": {
+      "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+      "title": "Grok iOS daily · Start a new conversation",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-3cb0c271d9f1394351e9480a"
+        },
+        {
+          "kind": "tap",
+          "id": "action-6d8cf9bf-20b8-48b2-bb46-fb39bf02ddda-step-1",
+          "target": {
+            "identifier": "sidebar.open.button"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-b2bef76515529f15"
+        },
+        {
+          "kind": "tap",
+          "id": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+          "target": {
+            "identifier": "sidebar.newConversation.button"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-fa3e553a207b606b"
+        }
+      ]
+    },
+    "app-map:grok-ios:connection:connection-fa3e553a207b606b:r401": {
+      "id": "app-map:grok-ios:connection:connection-fa3e553a207b606b:r401",
+      "title": "Tap “grok-compose”",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-fa3e553a207b606b"
+        },
+        {
+          "kind": "tap",
+          "id": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+          "target": {
+            "identifier": "sidebar.newConversation.button"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-fa3e553a207b606b"
+        }
+      ]
+    },
+    "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b": {
+      "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b",
+      "title": "Tap “grok-compose” · warm transition confirmation",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-fa3e553a207b606b"
+        },
+        {
+          "kind": "tap",
+          "id": "action-84c501ea-fd8e-4b63-b3fd-e045aa2bba3f-step-1",
+          "target": {
+            "identifier": "sidebar.newConversation.button"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-fa3e553a207b606b"
+        }
+      ]
+    },
+    "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401": {
+      "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+      "title": "Grok iOS daily · Open model menu",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-59f8b68924fc291877b81ec0"
+        },
+        {
+          "kind": "tap",
+          "id": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+          "target": {
+            "identifier": "toolbar.model.selector.button"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-576dc8003c3511b1"
+        }
+      ]
+    },
+    "app-map:grok-ios:connection:connection-576dc8003c3511b1:r401": {
+      "id": "app-map:grok-ios:connection:connection-576dc8003c3511b1:r401",
+      "title": "Selector",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-576dc8003c3511b1"
+        },
+        {
+          "kind": "tap",
+          "id": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+          "target": {
+            "identifier": "toolbar.model.selector.button"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-576dc8003c3511b1"
+        }
+      ]
+    },
+    "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1": {
+      "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1",
+      "title": "Selector · warm transition confirmation",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-576dc8003c3511b1"
+        },
+        {
+          "kind": "tap",
+          "id": "action-ce85d1c2-ef60-462a-a8cf-c9f42f8081b9-step-1",
+          "target": {
+            "identifier": "toolbar.model.selector.button"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-576dc8003c3511b1"
+        }
+      ]
+    },
+    "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401": {
+      "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+      "title": "Grok iOS daily · Fast",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-4ffda37c2b8b4ac9994c718f"
+        },
+        {
+          "kind": "tap",
+          "id": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+          "target": {
+            "label": "Quick responses · Grok 4.7"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-fast-menu-authored-v1"
+        }
+      ]
+    },
+    "app-map:grok-ios:connection:connection-fast-menu-authored-v1:r401": {
+      "id": "app-map:grok-ios:connection:connection-fast-menu-authored-v1:r401",
+      "title": "Choose Fast",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-fast-menu-authored-v1"
+        },
+        {
+          "kind": "tap",
+          "id": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+          "target": {
+            "label": "Quick responses · Grok 4.7"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-fast-menu-authored-v1"
+        }
+      ]
+    },
+    "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1": {
+      "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1",
+      "title": "Choose Fast · warm transition confirmation",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-fast-menu-authored-v1"
+        },
+        {
+          "kind": "tap",
+          "id": "action-d9a50473-196d-46c4-ad03-604b28aaa5a6-step-1",
+          "target": {
+            "label": "Quick responses · Grok 4.7"
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-fast-menu-authored-v1"
+        }
+      ]
+    },
+    "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401": {
+      "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401",
+      "title": "Grok iOS daily · Type text",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-7d295186c2b3a9469355c851"
+        },
+        {
+          "kind": "type",
+          "id": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1"
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-4c8a74652cab6aae"
+        }
+      ]
+    },
+    "app-map:grok-ios:connection:connection-4c8a74652cab6aae:r401": {
+      "id": "app-map:grok-ios:connection:connection-4c8a74652cab6aae:r401",
+      "title": "Type text",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-4c8a74652cab6aae"
+        },
+        {
+          "kind": "type",
+          "id": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1"
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-4c8a74652cab6aae"
+        }
+      ]
+    },
+    "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae": {
+      "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae",
+      "title": "Type text · warm transition confirmation",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-4c8a74652cab6aae"
+        },
+        {
+          "kind": "type",
+          "id": "action-db7c9a7b-9692-4eb7-8e17-e1df88bbb7bd-step-1"
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-4c8a74652cab6aae"
+        }
+      ]
+    },
+    "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401": {
+      "id": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+      "title": "Grok iOS daily · Send prompt",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-163a19f6715b4edf9a09d3f4"
+        },
+        {
+          "kind": "tap",
+          "id": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+          "target": {
+            "point": {
+              "anchor": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "x": 869,
+              "y": 395
+            }
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-8958bf6383a6123c"
+        }
+      ]
+    },
+    "app-map:grok-ios:connection:connection-8958bf6383a6123c:r401": {
+      "id": "app-map:grok-ios:connection:connection-8958bf6383a6123c:r401",
+      "title": "Continue",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-8958bf6383a6123c"
+        },
+        {
+          "kind": "tap",
+          "id": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+          "target": {
+            "point": {
+              "anchor": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "x": 869,
+              "y": 395
+            }
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-8958bf6383a6123c"
+        }
+      ]
+    },
+    "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c": {
+      "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c",
+      "title": "Continue · warm transition confirmation",
+      "steps": [
+        {
+          "kind": "expect-screen",
+          "id": "relay-source-connection-8958bf6383a6123c"
+        },
+        {
+          "kind": "tap",
+          "id": "action-13e421a9-3a07-492c-8b5a-924a0d413d40-step-1",
+          "target": {
+            "point": {
+              "anchor": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "x": 869,
+              "y": 395
+            }
+          }
+        },
+        {
+          "kind": "expect-screen",
+          "id": "relay-destination-connection-8958bf6383a6123c"
+        }
+      ]
+    },
+    "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401": {
+      "id": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+      "title": "Grok iPad · Fast chat",
+      "steps": [
+        {
+          "kind": "module",
+          "id": "relay-test-step-fast-new-conversation-1",
+          "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-fast-new-conversation:r401",
+          "check": {
+            "id": "step-fast-new-conversation",
+            "title": "Start a new conversation",
+            "recovery": {
+              "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fa3e553a207b606b"
+            }
+          }
+        },
+        {
+          "kind": "screenshot",
+          "id": "relay-test-step-fast-new-conversation-2"
+        },
+        {
+          "kind": "module",
+          "id": "relay-test-step-1c8389a7cd1c268c-1",
+          "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-1c8389a7cd1c268c:r401",
+          "check": {
+            "id": "step-1c8389a7cd1c268c",
+            "title": "Open model menu",
+            "recovery": {
+              "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-576dc8003c3511b1"
+            }
+          }
+        },
+        {
+          "kind": "screenshot",
+          "id": "relay-test-step-1c8389a7cd1c268c-2"
+        },
+        {
+          "kind": "module",
+          "id": "relay-test-step-5f0f538cc5f06197-1",
+          "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-5f0f538cc5f06197:r401",
+          "check": {
+            "id": "step-5f0f538cc5f06197",
+            "title": "Fast",
+            "recovery": {
+              "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-fast-menu-authored-v1"
+            }
+          }
+        },
+        {
+          "kind": "screenshot",
+          "id": "relay-test-step-5f0f538cc5f06197-2"
+        },
+        {
+          "kind": "expect",
+          "id": "relay-test-step-fast-copy-gone-before-type-1",
+          "condition": "gone",
+          "target": {
+            "identifier": "ask.message.copy.button"
+          }
+        },
+        {
+          "kind": "module",
+          "id": "relay-test-step-281627ea052f9458-1",
+          "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-281627ea052f9458:r401",
+          "check": {
+            "id": "step-281627ea052f9458",
+            "title": "Type text",
+            "recovery": {
+              "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-4c8a74652cab6aae"
+            }
+          }
+        },
+        {
+          "kind": "screenshot",
+          "id": "relay-test-step-281627ea052f9458-2"
+        },
+        {
+          "kind": "module",
+          "id": "relay-test-step-f6ca5703d785f04b-1",
+          "recipeId": "app-map:grok-ios:flow:relay-test-test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125-step-f6ca5703d785f04b:r401",
+          "check": {
+            "id": "step-f6ca5703d785f04b",
+            "title": "Send prompt",
+            "recovery": {
+              "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401:confirm:connection-8958bf6383a6123c"
+            }
+          }
+        },
+        {
+          "kind": "screenshot",
+          "id": "relay-test-step-f6ca5703d785f04b-2"
+        },
+        {
+          "kind": "wait-response",
+          "id": "relay-test-step-fd6c1053-d852-42d5-bcf0-aadd06bbd494-1",
+          "target": {
+            "identifier": "ask.message.copy.button"
+          }
+        },
+        {
+          "kind": "screenshot"
+        }
+      ]
+    },
+    "cell-c6124e3353dc639e4ee0e5f98e6bc4e37": {
+      "id": "cell-c6124e3353dc639e4ee0e5f98e6bc4e37",
+      "steps": [
+        {
+          "kind": "module",
+          "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401"
+        }
+      ]
+    }
+  },
+  "recipeSnapshot": {
+    "id": "cell-c6124e3353dc639e4ee0e5f98e6bc4e37",
+    "title": "Combine cell c6124e3353dc639e4ee0e5f98e6bc4e37",
+    "description": "Scoped wrapper for app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401",
+    "source": "custom",
+    "steps": [
+      {
+        "kind": "module",
+        "recipeId": "app-map:grok-ios:test:test-authoring-37ba1757-fc70-4d6a-a6dc-c853567b1125:root:r401"
+      }
+    ],
+    "createdAt": 0,
+    "updatedAt": 0
+  }
+}

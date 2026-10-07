@@ -611,6 +611,8 @@ export type AppMapBatchChange =
   | { kind: "flow.remove"; flowId: string }
   /** A Flow and its exposed Test can be authored in one atomic revision. */
   | { kind: "test.save"; test: AppMapTest }
+  /** Save approved input rows alongside their explicit Test text bindings. */
+  | { kind: "variable.save"; variable: AppMapVariable }
   | { kind: "combine.save"; combine: AppMapCombine }
   | { kind: "combine.remove"; combineId: string };
 

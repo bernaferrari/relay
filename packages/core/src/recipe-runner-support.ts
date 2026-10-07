@@ -45,6 +45,8 @@ import { currentVerifiedScreen } from "./recipe-runner-context.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { iosSnapshotInputEpoch } from "./ios-snapshot-flight.js";
 import { currentTargetContext } from "./target-context.js";
+import { observeIosNativeViewport } from "./ios-native-viewport.js";
+import { resolveIosLaunchBundleId } from "./ios-app-launch.js";
 import { getRecipeAndroidLocalization } from "./recipe-localization.js";
 import { resolveLocalizedRecipeTarget } from "./recipe-localized-target.js";
 
@@ -67,20 +69,46 @@ type RuntimeBoundsCacheEntry = {
 };
 
 /**
- * Keyed by (Device, confirmed iOS input epoch). A rotation, tap, or any other
- * acknowledged mutation advances the fence in ios-snapshot-flight.ts, so the
- * next resolution re-reads bounds instead of replaying pre-mutation extents.
- * Manual rotations and device handoffs therefore cannot serve stale bounds.
+ * Legacy snapshot geometry for Android/browser callers. iOS reads the current
+ * window for each distinct point action, including manual changes without a
+ * confirmed Relay input. A tap reuses its resolved point within that action.
  */
 const runtimeBoundsCache = new WeakMap<Device, RuntimeBoundsCacheEntry>();
 
-function runtimeBounds(device: Device): Promise<{ width: number; height: number } | undefined> {
+async function runtimeBounds(
+  device: Device,
+  expectedIosAppBundleId?: string,
+): Promise<{ width: number; height: number } | undefined> {
   let serial = "";
+  let context: ReturnType<typeof currentTargetContext> | undefined;
   try {
-    const context = currentTargetContext();
+    context = currentTargetContext();
     if (context.kind === "device") serial = context.serial;
   } catch {
     serial = "";
+  }
+  const iosTarget = context?.kind === "device" && context.platform === "ios" ? context : undefined;
+  if (iosTarget) {
+    try {
+      const origin = await rememberedTargetApplication(iosTarget);
+      const appBundleId = resolveIosLaunchBundleId(origin ?? "");
+      if (
+        expectedIosAppBundleId &&
+        appBundleId !== resolveIosLaunchBundleId(expectedIosAppBundleId)
+      )
+        throw new Error("Relay is not bound to the recorded application");
+      const inputEpoch = iosSnapshotInputEpoch(serial);
+      const bounds = await observeIosNativeViewport(serial, appBundleId);
+      const currentApplication = await rememberedTargetApplication(iosTarget);
+      if (iosSnapshotInputEpoch(serial) !== inputEpoch || currentApplication !== origin)
+        throw new Error("The application or confirmed input changed during the bounds read");
+      return bounds;
+    } catch (error) {
+      throw new InputNotDispatchedError(
+        "Relay could not verify the current application bounds before using this point. Check the device before trying again.",
+        { cause: error },
+      );
+    }
   }
   const inputEpoch = iosSnapshotInputEpoch(serial);
   const cached = runtimeBoundsCache.get(device);
@@ -96,12 +124,13 @@ async function resolvePointForDevice(
   device: Device,
   point: StepPoint,
   mirrorX = false,
+  expectedIosAppBundleId?: string,
 ): Promise<{ x: number; y: number }> {
   if (point.relativeTo) {
     const resolved = resolveElementRelativePoint(await snapshot(device), point.relativeTo);
     return { x: resolved.x, y: resolved.y };
   }
-  const bounds = await runtimeBounds(device);
+  const bounds = await runtimeBounds(device, expectedIosAppBundleId);
   const logicalPoint =
     point.anchor && point.referenceBounds
       ? resolveStepPoint(point, bounds ?? point.referenceBounds)
@@ -235,13 +264,20 @@ async function tapTarget(
           ...(repetitions === 2 ? { doubleTap: true } : {}),
         }
       : undefined;
-  const literalPoint =
-    target.point && !target.point.relativeTo
-      ? await resolvePointForDevice(device, target.point, mirrorPoints)
-      : undefined;
   const hasSemanticTarget = Boolean(
     target.identifier || target.label || target.text || target.relation,
   );
+  const literalPoint =
+    target.point &&
+    !target.point.relativeTo &&
+    !(selectedPlatform() === "ios" && (hasSemanticTarget || Boolean(target.ref)))
+      ? await resolvePointForDevice(
+          device,
+          target.point,
+          mirrorPoints,
+          context?.recordingIosAppBundleId,
+        )
+      : undefined;
   const allowNamedPointFallback =
     selectedPlatform() !== "android" ||
     !hasSemanticTarget ||
@@ -415,7 +451,14 @@ async function tapTarget(
     attempts.push({
       strategy: target.point.relativeTo ? "element-relative-point" : "point",
       run: async () => {
-        const point = await resolvePointForDevice(device, target.point!, mirrorPoints);
+        const point =
+          literalPoint ??
+          (await resolvePointForDevice(
+            device,
+            target.point!,
+            mirrorPoints,
+            context?.recordingIosAppBundleId,
+          ));
         attemptedPoint = point;
         await pressPoint(device, point.x, point.y, repeated);
       },
@@ -431,6 +474,7 @@ async function tapTarget(
         ...(attemptedPoint ? { point: attemptedPoint } : {}),
       };
     } catch (err) {
+      if (err instanceof InputNotDispatchedError) throw err;
       if (isTerminalInputError(err)) {
         throw err;
       }
@@ -567,7 +611,7 @@ async function tapRecordedTarget(
       if (isTerminalInputError(error)) throw error;
       if (isCancel(error)) throw error;
       // A later candidate cannot erase an earlier attempt's uncertain outcome.
-      if (index === 0 && error instanceof InputNotDispatchedError) throw error;
+      if (error instanceof InputNotDispatchedError) throw error;
       const message = error instanceof Error ? error.message : String(error);
       failures.push({ target: structuredClone(candidate), error: message });
       const attempt = {
@@ -643,6 +687,7 @@ async function longPressRecordedTarget(
                 device,
                 target.point!,
                 isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
+                ctx.recordingIosAppBundleId,
               );
               await longPressTarget(device, { point }, input.durationMs);
             },
@@ -660,6 +705,7 @@ async function longPressRecordedTarget(
       if (index > 0) ctx.log(`locator: used recorded hold fallback ${index + 1}/${unique.length}`);
       return;
     } catch (error) {
+      if (error instanceof InputNotDispatchedError) throw error;
       rethrowIosMutationOutcomeUnknown(error);
       if (isCancel(error)) throw error;
       failures.push(error instanceof Error ? error.message : String(error));

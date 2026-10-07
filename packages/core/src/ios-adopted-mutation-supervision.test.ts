@@ -30,6 +30,7 @@ import { runWithTargetContext } from "./target-context.js";
 import { reserveTargetControl, TargetControlReservedError } from "./target-control.js";
 import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-supervisor-store.js";
 import { deviceTestDouble } from "./testing.js";
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 
 const appBundleId = "com.example.adopted";
 const rankedNodes = [
@@ -79,7 +80,7 @@ async function fixture(
           store,
           installPost(post) {
             restorePost();
-            restorePost = setLiveIosRunnerCommandPostForTests(post);
+            restorePost = setLiveIosRunnerCommandPostForTests(catalogAwarePost(post));
           },
           mutate: (kind) =>
             runIosMutationOnce(serial, kind === "tap" ? "press" : "type", () =>
@@ -290,7 +291,23 @@ test("adopted read-only snapshots and queries never enter the input ledger", asy
     installPost(async (_listener, command) => {
       assert.ok(command.command === "snapshot" || command.command === "querySelector");
       assert.deepEqual(inputEvents(store, serial), []);
-      return { ok: true, data: { nodes: [], found: false } };
+      return {
+        ok: true,
+        data: {
+          nodes:
+            command.command === "snapshot"
+              ? [
+                  {
+                    type: "Application",
+                    depth: 0,
+                    bundleId: appBundleId,
+                    rect: { x: 0, y: 0, width: 1112, height: 834 },
+                  },
+                ]
+              : [],
+          found: false,
+        },
+      };
     });
     await labelNodesViaLiveIosRunnerListener({ serial, label: "Copy", appBundleId });
     await snapshotViaLiveIosRunnerListener({ serial, appBundleId });

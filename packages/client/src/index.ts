@@ -179,6 +179,7 @@ export class RelayClient {
   private readonly timeoutMs: number;
   private readonly launchTimeoutMs: number;
   private readonly recoveryTimeoutMs: number;
+  private readonly planAdmissionTimeoutMs: number;
   private readonly explicitTimeoutMs: number | undefined;
 
   constructor(connection: ServerConnection, options: RelayClientOptions = {}) {
@@ -193,6 +194,9 @@ export class RelayClient {
     // Keep explicit caller budgets authoritative and other operations short.
     this.launchTimeoutMs = options.timeoutMs ?? 90_000;
     this.recoveryTimeoutMs = options.timeoutMs ?? 180_000;
+    // Plan admission compiles and verifies immutable evidence before queueing.
+    // This is a single ACK deadline, not a Run duration or permission to resend.
+    this.planAdmissionTimeoutMs = options.timeoutMs ?? 180_000;
   }
 
   /** Authenticated binary transport for product artifacts. */
@@ -510,9 +514,11 @@ export class RelayClient {
       },
       id === "target.recover"
         ? this.recoveryTimeoutMs
-        : id === "target.app.launch" || id === "target.snapshot.capture"
-          ? this.launchTimeoutMs
-          : (this.explicitTimeoutMs ?? authoringTimeout),
+        : id === "job.combine.start" || id === "job.combine.campaign.resume"
+          ? this.planAdmissionTimeoutMs
+          : id === "target.app.launch" || id === "target.snapshot.capture"
+            ? this.launchTimeoutMs
+            : (this.explicitTimeoutMs ?? authoringTimeout),
     );
     try {
       return parseRegisteredOperationOutput(definition.output, body);

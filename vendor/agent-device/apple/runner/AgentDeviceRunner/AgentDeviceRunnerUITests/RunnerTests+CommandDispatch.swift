@@ -178,6 +178,17 @@ extension RunnerTests {
     if let unavailable = runnerUnavailableResponse(command: command) {
       return unavailable
     }
+    if command.command == .querySelectorCatalog {
+      let timeout = RunnerApplicationWindowBounds.timeoutSeconds(command.timeoutMs)
+      let deadline = Date().addingTimeInterval(timeout)
+      return try runMainThreadWork(
+        "selector_catalog", timeout: timeout, timeoutError: Self.mainThreadExecutionTimeoutError
+      ) {
+        try self.executeOnMainSafely(
+          command: command, catalogDeadline: deadline, routeToSpringboard: false
+        )
+      }
+    }
     if command.command == .querySelectorTapCandidate {
       return try runMainThreadWork(
         "tap_candidate_receipt",
@@ -237,6 +248,7 @@ extension RunnerTests {
   private func executeOnMainSafely(
     command: Command,
     alertDeadline: Date? = nil,
+    catalogDeadline: Date? = nil,
     routeToSpringboard: Bool
   ) throws -> Response {
     var hasRetried = false
@@ -249,6 +261,7 @@ extension RunnerTests {
           response = try self.executeOnMain(
             command: command,
             alertDeadline: alertDeadline,
+            catalogDeadline: catalogDeadline,
             routeToSpringboard: routeToSpringboard
           )
         } catch {
@@ -386,8 +399,12 @@ extension RunnerTests {
   private func executeOnMain(
     command: Command,
     alertDeadline: Date?,
+    catalogDeadline: Date?,
     routeToSpringboard: Bool
   ) throws -> Response {
+    if command.command == .querySelectorCatalog {
+      return try executeSelectorCatalog(command: command, deadline: catalogDeadline ?? .distantPast)
+    }
     if command.command == .querySelectorTapCandidate {
       return executeSelectorCandidateReceipt(command: command)
     }

@@ -46,6 +46,7 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { JobRouteContext } from "./job-routes.js";
 import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
 import { restoreCombineRunInputs, requireCombineRunInputs } from "./combine-run-inputs.js";
+import { resolveFrozenCampaignCompilationMap } from "./combine-campaign-compilation.js";
 import {
   admitAndStageLocalCombineCampaign,
   localCampaignAdmissionRequestForActiveWorkItems,
@@ -296,8 +297,9 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
       let resumedCellIds = new Set<string>();
       try {
         const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
+        const compilationMap = await resolveFrozenCampaignCompilationMap(map, projected);
         const prepared = await prepareAppMapCombineCells({
-          map,
+          map: compilationMap,
           combine,
           selected: projected.execution.selected ?? combine.selected,
           strategy: projected.execution.strategy ?? combine.strategy,
@@ -314,6 +316,14 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           compileOptions: { reviewedDocumentOrigins },
           ...(projected.execution.laneId ? { laneId: projected.execution.laneId } : {}),
         });
+        if (
+          compilationMap !== map &&
+          prepared.cells.some((cell) => cell.childIntent.sourcePlan.appMapId !== map.id)
+        ) {
+          throw new HttpError(409, "Start a new Plan Run for the changed companion App Map.", {
+            code: "APP_MAP_COMBINE_CELL_CONTRACT",
+          });
+        }
         restoreCombineRunInputs(prepared.cells, projected.cases);
         const preparedById = new Map(
           prepared.cells.map((cell) => [

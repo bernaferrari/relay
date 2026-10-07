@@ -15,6 +15,7 @@ enum CommandType: String, Codable, CaseIterable {
   case findText
   case querySelector
   case querySelectorTapCandidate
+  case querySelectorCatalog
   case readText
   case snapshot
   case screenshot
@@ -160,6 +161,10 @@ fileprivate extension CommandTraits {
     retainsJournalResponseJson: true
   )
 
+  static let selectorCatalog = CommandTraits(
+    launchPolicy: .noApp, convertsRecordedFailure: true, retainsJournalResponseJson: true
+  )
+
   /// Reads the runner answers from its own capture and state, so preparation never brings an app
   /// forward; a capture aimed at an app still observes that app while it executes.
   static func runnerCaptureRead(retainsJournalResponseJson: Bool) -> CommandTraits {
@@ -220,6 +225,7 @@ struct Command: Codable {
   let text: String?
   let selectorKey: String?
   let selectorValue: String?
+  let selectorQueries: [SelectorCatalogQuery]?
   let allowNonHittableCoordinateFallback: Bool?
   let delayMs: Int?
   let textEntryMode: String?
@@ -297,6 +303,9 @@ extension Command {
 
     case .querySelector:
       return .selectorResolution
+
+    case .querySelectorCatalog:
+      return .selectorCatalog
 
     case .mouseClick, .home, .recordStart, .activate:
       return .appMutation
@@ -460,6 +469,7 @@ struct DataPayload: Codable {
   var geometrySource: String?
   var bounds: ApplicationWindowBounds?
   var selectorCandidateReceipt: SelectorCandidateReceipt?
+  var selectorCatalog: SelectorCatalogReceipt?
   var commandId: String?
   var lifecycleState: String?
   var lifecycleCommand: String?

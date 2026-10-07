@@ -10,6 +10,7 @@ import {
   parseAppMapTestExecutionIntent,
 } from "./app-map-test-execution-intent.js";
 import type { Recipe } from "./recipes.js";
+import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
 
 function fixture(): {
   plan: AppMapCompiledTest;
@@ -163,6 +164,57 @@ test("freezes one parser-validated Test execution intent", () => {
     intent,
   );
 });
+
+function androidViewportFixture(surfaceViewport = { width: 1080, height: 2340 }) {
+  const current = fixture();
+  current.plan.runtimeTargetProfile = {
+    id: "device:RQCY104BG8X-1080x2340",
+    targetId: "RQCY104BG8X",
+    platform: "android",
+    viewport: { height: 2340, width: 1080 },
+  };
+  current.plan.testFamily = {
+    schemaVersion: 1,
+    mode: "legacy-single-surface",
+    testRevision: 410,
+    logicalIntentRevision: 1,
+    bindingRevision: 1,
+    logicalStateBindings: [],
+    actionIntentBindings: [],
+    targetSurface: {
+      targetProfileId: current.plan.runtimeTargetProfile.id,
+      targetId: current.plan.runtimeTargetProfile.targetId,
+      platform: "android",
+      capabilities: [],
+      viewport: surfaceViewport,
+    },
+  };
+  current.preflight = preflightCompiledAppMapTestOffline(current.plan);
+  return current;
+}
+
+test("persists Android viewport proof with equal dimensions in opposite property order", () => {
+  const current = androidViewportFixture();
+  assert.equal(current.preflight.summary.blockers, 0);
+  assert.notEqual(
+    JSON.stringify(current.plan.testFamily!.targetSurface!.viewport),
+    JSON.stringify(current.plan.runtimeTargetProfile!.viewport),
+  );
+  const intent = createAppMapTestExecutionIntent(current);
+  assert.deepEqual(parseAppMapTestExecutionIntent(intent), intent);
+  assert.deepEqual(intent.plan.runtimeTargetProfile!.viewport, { height: 2340, width: 1080 });
+});
+
+for (const viewport of [
+  { width: 1081, height: 2340 },
+  { width: 1080, height: 2341 },
+]) {
+  test(`refuses genuinely mismatched Android viewport ${viewport.width}×${viewport.height}`, () => {
+    const current = androidViewportFixture(viewport);
+    assert.equal(parseCanonicalAppMapTestPlan(current.plan), undefined);
+    assert.throws(() => createAppMapTestExecutionIntent(current), /inconsistent/);
+  });
+}
 
 test("fixture Lane --lane grok-lab is stamped on the execution intent", () => {
   const intent = createAppMapTestExecutionIntent({ ...fixture(), laneId: "grok-lab" });

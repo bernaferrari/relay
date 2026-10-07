@@ -5,13 +5,8 @@
  * still need named controls. A healthy listener is not a recover-kill.
  */
 import {
-  IOS_BOUNDED_CHROME_LABELS,
-  IOS_BOUNDED_HOME_CHROME_LABELS,
   IOS_CHROME_QUERY_TIMEOUT_MS,
   chromeValuesToQuery,
-  chromeNodeHasIdentifier,
-  queryIosChromeIdentifiersViaListener,
-  queryIosChromeLabelsViaListener,
   queryIosChromeSelectorsViaListener,
 } from "./ios-snapshot-chrome.js";
 export {
@@ -36,6 +31,7 @@ import {
 } from "./ios-adopted-mutation.js";
 import { finishRejectedIosIdentifierDispatch } from "./ios-mutation-policy.js";
 import { IosRunnerReadError } from "./ios-runner-read-error.js";
+import { queryIosSnapshotCatalogViaListener } from "./ios-snapshot-catalog.js";
 
 export type LiveIosRunnerCommand = Record<string, unknown>;
 
@@ -51,6 +47,10 @@ export type LiveIosRunnerCommandResult = {
     systemSurface?: { bundleId?: string };
     selectorCandidateReceipt?: unknown;
     applicationState?: string;
+    appBundleId?: string;
+    selectorCatalog?: unknown;
+    coordinateSpace?: string;
+    targetActivation?: unknown;
   };
   nodes?: SnapshotNode[];
 };
@@ -127,6 +127,51 @@ function iosRunnerCommandIsAmbiguous(result: LiveIosRunnerCommandResult): boolea
   return /AMBIGUOUS_MATCH|selector matched multiple/i.test(unknownErrorMessage(result.error, ""));
 }
 
+function catalogApplicationFromSnapshot(
+  result: LiveIosRunnerCommandResult,
+  appBundleId: string | undefined,
+  bounds: { x: number; y: number; width: number; height: number },
+): SnapshotNode {
+  const nodes = result.data?.nodes ?? result.nodes ?? [];
+  if (isIosRunnerHostProbeTree(nodes)) {
+    throw new Error(
+      "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
+    );
+  }
+  if (
+    result.ok !== true ||
+    result.data?.targetActivation !== undefined ||
+    result.data?.systemSurface !== undefined ||
+    (result.data?.coordinateSpace !== undefined &&
+      result.data.coordinateSpace !== "application-logical") ||
+    (result.data?.appBundleId !== undefined && result.data.appBundleId !== appBundleId) ||
+    nodes.some(
+      (node) =>
+        node.logicalCoordinates === false ||
+        (node.bundleId !== undefined && node.bundleId !== appBundleId),
+    )
+  ) {
+    throw new Error(
+      "iOS selector catalog Application snapshot belongs to another application or coordinate space",
+    );
+  }
+  const application = nodes.find((node) => node.depth === 0 && node.type === "Application");
+  const frame = application?.rect;
+  if (
+    !application ||
+    !frame ||
+    frame.width < 100 ||
+    frame.height < 100 ||
+    frame.x !== bounds.x ||
+    frame.y !== bounds.y ||
+    frame.width !== bounds.width ||
+    frame.height !== bounds.height
+  ) {
+    throw new Error("iOS selector catalog could not associate current Application geometry");
+  }
+  return application;
+}
+
 /** Abandoned AX work: refuse fast. Do not fall through to another XCTest command. */
 export function liveIosRunnerCommandIsBusy(result: LiveIosRunnerCommandResult): boolean {
   const code = result.error && typeof result.error === "object" ? result.error.code : undefined;
@@ -140,7 +185,11 @@ export function liveIosRunnerCommandIsBusy(result: LiveIosRunnerCommandResult): 
 async function snapshotIosApplicationRootViaListener(
   listener: LiveIosRunnerListener,
   post: LiveIosRunnerCommandPost,
-  input: { appBundleId?: string; separateRequestedSelectorEvidence?: boolean },
+  input: {
+    appBundleId?: string;
+    separateRequestedSelectorEvidence?: boolean;
+    catalogWindowBounds?: { x: number; y: number; width: number; height: number };
+  },
   timeoutMs: number,
 ): Promise<SnapshotNode | undefined> {
   const result = await post(
@@ -154,10 +203,12 @@ async function snapshotIosApplicationRootViaListener(
     timeoutMs,
   );
   if (result.ok === false) return undefined;
+  if (input.catalogWindowBounds)
+    return catalogApplicationFromSnapshot(result, input.appBundleId, input.catalogWindowBounds);
   const nodes = result.data?.nodes ?? result.nodes ?? [];
   if (input.separateRequestedSelectorEvidence && result.data?.systemSurface) return undefined;
   if (isIosRunnerHostProbeTree(nodes)) return undefined;
-  return nodes.find(
+  const application = nodes.find(
     (node) =>
       node.depth === 0 &&
       node.type === "Application" &&
@@ -165,6 +216,7 @@ async function snapshotIosApplicationRootViaListener(
       node.rect.width >= 100 &&
       node.rect.height >= 100,
   );
+  return application;
 }
 
 /** Full tree for same-id ranking. Chrome-bounded snapshot omits Settings close. */
@@ -352,29 +404,8 @@ export async function snapshotViaLiveIosRunnerListener(input: {
   if (input.requestedChromeOnly) {
     return snapshotRequestedIosChromeViaListener(listener, post, input, timeoutMs);
   }
-  const identifiers = await queryIosChromeIdentifiersViaListener(listener, post, input, timeoutMs);
-  const hamburgerPresent = chromeNodeHasIdentifier(identifiers, "sidebar.open.button");
-  const chrome = [
-    ...identifiers,
-    ...(await queryIosChromeLabelsViaListener(
-      listener,
-      post,
-      {
-        appBundleId: input.appBundleId,
-        separateRequestedSelectorEvidence: input.separateRequestedSelectorEvidence,
-        includeLabels: hamburgerPresent
-          ? [...IOS_BOUNDED_HOME_CHROME_LABELS, ...(input.includeLabels ?? [])]
-          : input.includeLabels,
-      },
-      timeoutMs,
-      {
-        includeDefaults: !hamburgerPresent,
-        catalogLabels: hamburgerPresent
-          ? IOS_BOUNDED_HOME_CHROME_LABELS
-          : IOS_BOUNDED_CHROME_LABELS,
-      },
-    )),
-  ];
+  const catalog = await queryIosSnapshotCatalogViaListener(listener, post, input, timeoutMs);
+  const chrome = catalog.nodes;
   if (chrome.length > 0) {
     if (isIosRunnerHostProbeTree(chrome)) {
       throw new Error(
@@ -384,19 +415,21 @@ export async function snapshotViaLiveIosRunnerListener(input: {
     const application = await snapshotIosApplicationRootViaListener(
       listener,
       post,
-      input,
+      { ...input, catalogWindowBounds: catalog.bounds },
       timeoutMs,
     );
-    return application ? [application, ...chrome] : chrome;
+    if (!application) throw new Error("iOS selector catalog Application root unavailable");
+    return [application, ...chrome];
   }
   if (input.separateRequestedSelectorEvidence) {
     const application = await snapshotIosApplicationRootViaListener(
       listener,
       post,
-      input,
+      { ...input, catalogWindowBounds: catalog.bounds },
       timeoutMs,
     );
-    return application ? [application] : [];
+    if (!application) throw new Error("iOS selector catalog Application root unavailable");
+    return [application];
   }
   const command: LiveIosRunnerCommand = {
     command: "snapshot",
@@ -412,11 +445,7 @@ export async function snapshotViaLiveIosRunnerListener(input: {
     );
   }
   const nodes = result.data?.nodes ?? result.nodes ?? [];
-  if (isIosRunnerHostProbeTree(nodes)) {
-    throw new Error(
-      "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
-    );
-  }
+  catalogApplicationFromSnapshot(result, input.appBundleId, catalog.bounds);
   return nodes.map((node) => ({ ...node, logicalCoordinates: true }));
 }
 

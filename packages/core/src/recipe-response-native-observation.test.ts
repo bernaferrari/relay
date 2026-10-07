@@ -21,6 +21,7 @@ import {
   type LiveIosRunnerCommand,
 } from "./testing.js";
 import type { LiveIosRunnerCommandResult } from "./ios-runner-listener-command.js";
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 
 const appBundleId = "com.example.response-product";
 const root: SnapshotNode = {
@@ -106,29 +107,31 @@ async function withNativeResponse(
   );
   const commands: LiveIosRunnerCommand[] = [];
   let treeReads = 0;
-  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
-    commands.push(command);
-    if (command.command === "type") {
-      if (requireBaselineBeforeType) {
-        const preceding = commands.at(-2);
-        assert.equal(preceding?.command, "snapshot");
-        assert.equal(preceding?.depth, undefined, "input requires complete response baseline");
-        assert.equal(preceding?.interactiveOnly, false);
+  const restore = setLiveIosRunnerCommandPostForTests(
+    catalogAwarePost(async (_listener, command) => {
+      commands.push(command);
+      if (command.command === "type") {
+        if (requireBaselineBeforeType) {
+          const preceding = commands.at(-2);
+          assert.equal(preceding?.command, "snapshot");
+          assert.equal(preceding?.depth, undefined, "input requires complete response baseline");
+          assert.equal(preceding?.interactiveOnly, false);
+        }
+        return { ok: true };
       }
-      return { ok: true };
-    }
-    if (command.command === "querySelector") {
-      return {
-        ok: true,
-        data: { nodes: command.selectorValue === chrome.identifier ? [chrome] : [] },
-      };
-    }
-    assert.equal(command.command, "snapshot", "fixture never dispatches any other input");
-    if (command.depth === 0) return { ok: true, data: { nodes: [root] } };
-    const result = await read(treeReads++);
-    if (result instanceof Error) throw result;
-    return result;
-  });
+      if (command.command === "querySelector") {
+        return {
+          ok: true,
+          data: { nodes: command.selectorValue === chrome.identifier ? [chrome] : [] },
+        };
+      }
+      assert.equal(command.command, "snapshot", "fixture never dispatches any other input");
+      if (command.depth === 0) return { ok: true, data: { nodes: [root] } };
+      const result = await read(treeReads++);
+      if (result instanceof Error) throw result;
+      return result;
+    }),
+  );
   const device = deviceTestDouble({
     capture: { snapshot: async () => assert.fail("native response must not use SDK snapshots") },
     command: {
