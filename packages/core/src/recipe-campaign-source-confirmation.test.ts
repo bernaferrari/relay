@@ -164,7 +164,8 @@ function execution(compiled: ReturnType<typeof compile>) {
     status: "running",
     queuedAt: 1,
     attempts: 1,
-    platform: "browser",
+    // Match the job factory's legacy platform field; targetContext owns browser routing.
+    platform: "android",
     targetKind: "browser",
     logs: [],
     steps: [],

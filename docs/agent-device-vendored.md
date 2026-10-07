@@ -1,7 +1,7 @@
 # Vendored `agent-device`
 
-Relay uses a local fork of `agent-device` at `vendor/agent-device`, pulled from upstream main at
-commit `d87fd77654eb865400a2327b44f9981f0bc6cb05` (after `v0.21.22`).
+Relay uses a local fork of `agent-device` at `vendor/agent-device`, pulled from upstream release
+`v0.21.23`, commit `b8219f54ddfd2acf08a2f56a5dbcce917cc16d0c`.
 The package is linked directly from `@relay/core`, so device behavior is editable and reviewable in
 this repository rather than hidden inside pnpm's patch store.
 
