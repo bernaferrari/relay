@@ -82,6 +82,8 @@ export type ProductBatchCase = {
   readonly status: "pending" | "queued" | "running" | "passed" | "failed" | "blocked" | "cancelled";
   readonly values: Readonly<Record<string, string>>;
   readonly world?: string;
+  /** The exact dispatched job, independent of persisted Run evidence. */
+  readonly jobId?: string;
   readonly runId?: string;
   /** Present only when durable execution state identifies both the Test and
    * its bound environment. Legacy campaigns remain readable without an
@@ -247,6 +249,7 @@ type CampaignCase = {
   world?: string;
   phase?: "pilot" | "coverage";
   status?: string;
+  jobId?: string;
   runId?: string;
   priorRunIds?: string[];
   error?: string;
@@ -463,6 +466,7 @@ function batchFromCampaign(
         status: productCaseStatus(item.status),
         values: { ...item.values },
         ...(item.world ? { world: item.world } : {}),
+        ...(item.jobId ? { jobId: item.jobId } : {}),
         ...(item.runId ? { runId: item.runId } : {}),
         ...(item.priorRunIds?.length ? { priorRunIds: [...item.priorRunIds] } : {}),
         ...(item.testId && item.targetProfileId && platform

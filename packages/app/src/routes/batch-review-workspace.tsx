@@ -7,6 +7,7 @@ import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { RunInspection } from "./run-page";
 import { isBatchCaseProblem, isBatchCaseRerunnable, humanizeBatchIdentity } from "./batch-triage";
 import { formatBatchCaseError, formatBatchWorldLabel } from "./batch-result-view";
+import { batchCaseEvidenceMessage, batchCaseInspectionReference } from "./batch-case-inspection";
 
 export function BatchReviewWorkspace({
   report,
@@ -49,6 +50,7 @@ export function BatchReviewWorkspace({
   );
   const focused =
     report.cases.find((item) => item.id === focusedId) ?? unresolved[0] ?? report.cases[0];
+  const inspection = focused ? batchCaseInspectionReference(focused) : undefined;
   const queue = [...report.cases].sort(
     (a, b) => Number(isBatchCaseProblem(b)) - Number(isBatchCaseProblem(a)) || a.index - b.index,
   );
@@ -183,7 +185,7 @@ export function BatchReviewWorkspace({
                       </p>
                     ) : null}
                   </div>
-                  {focused.runId ? (
+                  {inspection ? (
                     <>
                       <Button
                         nativeButton={false}
@@ -192,27 +194,29 @@ export function BatchReviewWorkspace({
                         render={
                           <Link
                             to="/runs/$runId"
-                            params={{ runId: focused.runId }}
-                            search={{ reportView: "captures" }}
+                            params={{ runId: inspection.id }}
+                            search={inspection.kind === "saved" ? { reportView: "captures" } : {}}
                           />
                         }
                       >
-                        Open full report
+                        {inspection.kind === "live" ? "Open Run" : "Open full report"}
                       </Button>
-                      <Button
-                        nativeButton={false}
-                        variant="ghost"
-                        className="min-h-11"
-                        render={
-                          <Link
-                            to="/runs/$runId/walkthrough"
-                            params={{ runId: focused.runId }}
-                            search={{ state: undefined, variant: undefined, capture: undefined }}
-                          />
-                        }
-                      >
-                        Walk through
-                      </Button>
+                      {focused.runId ? (
+                        <Button
+                          nativeButton={false}
+                          variant="ghost"
+                          className="min-h-11"
+                          render={
+                            <Link
+                              to="/runs/$runId/walkthrough"
+                              params={{ runId: focused.runId }}
+                              search={{ state: undefined, variant: undefined, capture: undefined }}
+                            />
+                          }
+                        >
+                          Walk through
+                        </Button>
+                      ) : null}
                     </>
                   ) : focused.identity?.testId ? (
                     <Button
@@ -259,12 +263,11 @@ export function BatchReviewWorkspace({
                   </p>
                 </header>
                 <div className="min-h-96 overflow-auto">
-                  {focused.runId ? (
-                    <RunInspection key={focused.runId} runId={focused.runId} embedded />
+                  {inspection ? (
+                    <RunInspection key={inspection.id} runId={inspection.id} embedded />
                   ) : (
                     <p className="p-6 text-sm text-muted-foreground">
-                      This case stopped before a Run captured evidence. Check its setup, then start
-                      the Test again.
+                      {batchCaseEvidenceMessage(focused)}
                     </p>
                   )}
                 </div>
