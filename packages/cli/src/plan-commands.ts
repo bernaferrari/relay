@@ -1,5 +1,50 @@
 import { commandPath as path } from "./command-descriptors.js";
 
+export const planListCommandPath = path("plan list", ["appMapId"], undefined, {
+  summary: "List saved Plans for an App",
+  argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+  examples: ["relay plan list grok-ios --json"],
+});
+
+export const planGetCommandPath = path("plan get", ["appMapId", "combineId"], undefined, {
+  summary: "Inspect one saved Plan's Tests, Data sets, and setup bindings",
+  argumentHelp: [
+    { name: "appMapId", type: "string", description: "App Map identifier" },
+    { name: "planId", type: "string", description: "Saved Plan identifier" },
+  ],
+  examples: ["relay plan get grok-ios prompt-checks --json"],
+  note: "Reads the exact saved Combine definition without starting a Run or checking a device.",
+});
+
+export const planPreflightCommandPath = path(
+  "plan preflight",
+  ["appMapId", "combineId"],
+  undefined,
+  {
+    summary: "Check a saved Plan's cases and blockers without starting",
+    argumentHelp: [
+      { name: "appMapId", type: "string", description: "App Map identifier" },
+      { name: "planId", type: "string", description: "Saved Plan identifier" },
+    ],
+    inputHelp: [
+      { name: "serial", type: "string", description: "Optional connected device to verify" },
+      { name: "targetKind", type: "device | browser", description: "Execution target kind" },
+      { name: "browserTargetId", type: "string", description: "Managed browser target identifier" },
+      { name: "targetProfileId", type: "string", description: "Exact saved evidence profile" },
+      {
+        name: "profileTargets",
+        type: "array",
+        description: "Optional selected device or browser setups",
+      },
+    ],
+    examples: [
+      "relay plan preflight grok-ios prompt-checks --json",
+      'relay plan preflight grok-ios prompt-checks --input \'{"serial":"<device>","targetProfileId":"<saved-profile>"}\' --json',
+    ],
+    note: "Uses the existing Combine preflight. Saved selection is not proof that its device or browser is ready.",
+  },
+);
+
 export const planRunCommandPath = path(
   "plan run",
   ["appMapId", "combineId"],
@@ -8,7 +53,7 @@ export const planRunCommandPath = path(
     summary: "Run one case of a saved Plan",
     argumentHelp: [
       { name: "appMapId", type: "string", description: "App Map identifier" },
-      { name: "combineId", type: "string", description: "Saved Plan identifier" },
+      { name: "planId", type: "string", description: "Saved Plan identifier" },
     ],
     examples: [
       "relay plan run grok-web grok-web-daily --lane grok-daily --budget 10m --findings",

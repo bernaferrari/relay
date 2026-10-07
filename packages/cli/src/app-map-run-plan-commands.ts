@@ -4,6 +4,7 @@ import {
   type MappedOperationDescriptor,
 } from "./command-descriptors.js";
 import { graphTestCommandDescriptors } from "./test-commands.js";
+import { planPreflightCommandPath } from "./plan-commands.js";
 
 /** Variables, graph Tests, Combines, and direct flow execution. */
 export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor[] = [
@@ -100,6 +101,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         'relay combine preflight grok-web grok-web-daily --input \'{"browserTargetId":"grok-com","targetProfileId":"android"}\'',
       ],
     }),
+    planPreflightCommandPath,
   ),
   mapped(
     "app-map.combine.save",

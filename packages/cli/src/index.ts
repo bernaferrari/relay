@@ -7,7 +7,6 @@ import { targetExecutionReadiness, renderPlanFindingsMarkdown } from "@relay/cor
 import { type RelayOutcomeJobs, type WorkflowSnapshot } from "@relay/workflows";
 import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import {
-  summarizeAppMapOperationResult,
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
   summarizeTargetOperationResult,
@@ -25,6 +24,7 @@ import { classifyError, CliError, ExitCode, UsageError } from "./errors.js";
 import { planFindingsReportFromError } from "./plan-findings-cli.js";
 import { renderHelp } from "./help.js";
 import { summarizeTestDiscovery } from "./test-discovery.js";
+import { savedPlanOperationInput, summarizeSavedPlanCommandResult } from "./plan-discovery.js";
 import {
   createClient,
   invokeOperation,
@@ -182,7 +182,7 @@ function summarizeResult(
   if (operationId === "run.walkthrough-pack.get") return result;
   const inner = summarizeExecutionOperationResult(
     operationId,
-    summarizeAppMapOperationResult(
+    summarizeSavedPlanCommandResult(
       operationId,
       summarizeAuthoringOperationResult(operationId, result),
       { commandPath, input },
@@ -778,7 +778,12 @@ export async function runCli(
         const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
         const surveyDir = typeof input.dir === "string" ? input.dir : undefined;
         output.progress(operationId, "invoking");
-        const result = await invoke(client, operationId, input, abort.signal);
+        const result = await invoke(
+          client,
+          operationId,
+          savedPlanOperationInput(operationId, input, commandPath),
+          abort.signal,
+        );
         assertOperationSucceeded(operationId, result, input, commandPath);
         if (parsed.behavior === "screenshot") {
           await emitScreenshot(operationId, result, parsed.screenshotOutput, output);
