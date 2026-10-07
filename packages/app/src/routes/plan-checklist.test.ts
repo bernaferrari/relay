@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import { checkState, latestRunPerTest } from "./plan-checklist";
 
+const scope = { appMapId: "grok", combineId: "prompts" };
+
 const run = (patch: Partial<ProductRunSummary>): ProductRunSummary =>
   ({
     id: "run",
@@ -10,6 +12,7 @@ const run = (patch: Partial<ProductRunSummary>): ProductRunSummary =>
     status: "ok",
     phase: "completed",
     queuedAt: 1,
+    ...scope,
     identity: { runId: "run" },
     links: { self: "/runs/run" },
     ...patch,
@@ -44,9 +47,44 @@ describe("plan checklist", () => {
         run({ id: "other", testId: "not-in-plan", queuedAt: 9 }),
       ],
       ["login", "checkout"],
+      scope,
     );
     expect([...latest.entries()].map(([test, value]) => [test, value.id])).toEqual([
       ["login", "new"],
     ]);
+  });
+
+  it("excludes standalone, other Plan, other App and unattributed legacy results", () => {
+    const latest = latestRunPerTest(
+      [
+        run({ id: "own", testId: "speed", queuedAt: 1 }),
+        run({
+          id: "standalone",
+          testId: "speed",
+          combineId: undefined,
+          phase: "failed",
+          queuedAt: 9,
+        }),
+        run({
+          id: "other-plan",
+          testId: "speed",
+          combineId: "navigation",
+          phase: "failed",
+          queuedAt: 10,
+        }),
+        run({ id: "other-app", testId: "speed", appMapId: "other", phase: "failed", queuedAt: 11 }),
+        run({
+          id: "legacy",
+          testId: "fast",
+          combineId: undefined,
+          title: "prompts",
+          phase: "failed",
+          queuedAt: 12,
+        }),
+      ],
+      ["speed", "fast"],
+      scope,
+    );
+    expect([...latest.values()].map((item) => item.id)).toEqual(["own"]);
   });
 });

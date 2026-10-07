@@ -29,10 +29,12 @@ export function checkState(run: ProductRunSummary | undefined): CheckState {
 export function latestRunPerTest(
   runs: readonly ProductRunSummary[],
   testIds: readonly string[],
+  scope: { appMapId: string; combineId: string },
 ): Map<string, ProductRunSummary> {
   const wanted = new Set(testIds);
   const latest = new Map<string, ProductRunSummary>();
   for (const run of runs) {
+    if (run.appMapId !== scope.appMapId || run.combineId !== scope.combineId) continue;
     if (!run.testId || !wanted.has(run.testId)) continue;
     const current = latest.get(run.testId);
     if (!current || run.queuedAt > current.queuedAt) latest.set(run.testId, run);
@@ -58,7 +60,11 @@ const STATE_PRESENTATION: Record<
   review: { label: "To review", icon: Eye, className: "text-warning-foreground" },
   failed: { label: "Failed", icon: CircleAlert, className: "text-destructive" },
   running: { label: "Running", icon: LoaderCircle, className: "text-info-foreground" },
-  "not-run": { label: "Not run yet", icon: CircleDashed, className: "text-muted-foreground" },
+  "not-run": {
+    label: "No Plan run found",
+    icon: CircleDashed,
+    className: "text-muted-foreground",
+  },
 };
 
 function detail(run: ProductRunSummary | undefined, state: CheckState): string {
@@ -78,7 +84,7 @@ function detail(run: ProductRunSummary | undefined, state: CheckState): string {
   return parts.filter(Boolean).join(" · ");
 }
 
-/** The Plan as a daily checklist: every Test with its latest result. */
+/** Every Test with its latest Run attributed to this exact saved Plan. */
 export function PlanChecklist({
   appId,
   suiteId,
@@ -101,9 +107,9 @@ export function PlanChecklist({
   const latest = latestRunPerTest(
     runs.data ?? [],
     tests.map((test) => test.id),
+    { appMapId: appId, combineId: suiteId },
   );
   const states = tests.map((test) => checkState(latest.get(test.id)));
-  const count = (state: CheckState) => states.filter((item) => item === state).length;
   const toReview = [...latest.values()].reduce(
     (total, run) => total + (run.captureSummary?.pending ?? 0),
     0,
@@ -118,17 +124,21 @@ export function PlanChecklist({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
         <div className="grid gap-0.5">
           <h2 id="plan-checklist-title" className="text-sm font-semibold text-foreground">
-            Latest results
+            Latest Plan runs
           </h2>
-          <span className="w-64 max-w-full">
-            <ResultsBar states={states} />
-          </span>
+          {runs.isSuccess && latest.size ? (
+            <span className="w-64 max-w-full">
+              <ResultsBar states={[...latest.values()].map(checkState)} />
+            </span>
+          ) : null}
           <p className="text-xs text-muted-foreground tabular-nums">
             {runs.isPending
               ? "Loading results…"
-              : lastActivity
-                ? `Last activity ${ago(lastActivity)}`
-                : "Not run yet"}
+              : runs.error
+                ? "Results unavailable"
+                : lastActivity
+                  ? `Last activity ${ago(lastActivity)}`
+                  : "No Plan runs found"}
           </p>
         </div>
         {toReview ? (
@@ -148,6 +158,12 @@ export function PlanChecklist({
           const run = latest.get(test.id);
           const state = states[index]!;
           const presentation = STATE_PRESENTATION[state];
+          const label =
+            !run && runs.isPending
+              ? "Loading result…"
+              : !run && runs.error
+                ? "Result unavailable"
+                : presentation.label;
           const Icon = presentation.icon;
           return (
             <li
@@ -156,7 +172,7 @@ export function PlanChecklist({
             >
               <Icon
                 className={`size-4 shrink-0 ${presentation.className} ${state === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
-                aria-label={presentation.label}
+                aria-label={label}
               />
               <span className="grid min-w-0 gap-0.5">
                 <Link
@@ -170,7 +186,7 @@ export function PlanChecklist({
                 <span className="truncate text-xs text-muted-foreground">
                   {test.status === "needs-review"
                     ? "Steps need review before this can run"
-                    : [presentation.label, detail(run, state)].filter(Boolean).join(" · ")}
+                    : [label, detail(run, state)].filter(Boolean).join(" · ")}
                 </span>
               </span>
               {run ? (

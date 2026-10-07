@@ -21,8 +21,33 @@ import { SelectField } from "../components/filter-select";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
 import { PlanInputDataSetPicker } from "./plan-input-data-set-picker";
+import type { ProductSuiteTest } from "../data/suite-profile-product-service";
 
 const SUITES_QUERY_KEY = ["suites"] as const;
+
+function TestChoiceDetails({ test }: { test: ProductSuiteTest }) {
+  const updated = new Date(test.updatedAt ?? NaN);
+  const hasUpdated = Number.isFinite(updated.getTime()) && (test.updatedAt ?? 0) > 0;
+  const details = [
+    test.stepCount !== undefined
+      ? `${test.stepCount} ${test.stepCount === 1 ? "step" : "steps"}`
+      : "",
+    hasUpdated
+      ? `Updated ${updated.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}`
+      : "",
+    test.status === "needs-review" ? productTestStatusLabel(test.status, test.name) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <span
+      className="truncate text-xs leading-snug text-muted-foreground"
+      title={hasUpdated ? updated.toLocaleString() : undefined}
+    >
+      {details}
+    </span>
+  );
+}
 
 function suiteIdFor(name: string): string {
   const stem = name
@@ -235,9 +260,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                           <span className="truncate text-sm font-medium text-foreground">
                             {test.name}
                           </span>
-                          <span className="truncate text-xs leading-snug text-muted-foreground">
-                            {productTestStatusLabel(test.status, test.name)}
-                          </span>
+                          <TestChoiceDetails test={test} />
                         </span>
                         <Checkbox
                           checked={testIds.has(test.id)}
