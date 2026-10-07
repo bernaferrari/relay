@@ -27,6 +27,8 @@ export type ResponseBoundary = {
    * result controls. Refs and screen geometry are never turn identity. */
   readonly priorTargetNodes?: readonly SnapshotNode[];
   readonly capturedAt: number;
+  /** Only the complete current physical iOS observation seam sets this. */
+  readonly nativeApplication?: { readonly serial: string; readonly appBundleId: string };
 };
 
 export type CurrentActionAssistantTurn = {

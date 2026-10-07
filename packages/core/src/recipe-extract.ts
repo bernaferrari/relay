@@ -1,6 +1,7 @@
 import type { StepTarget } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { nodeMatchesTarget, nodeText } from "./recipe-target-match.js";
+import { INTERACTIVE_SNAPSHOT_ROLES } from "./device-target-resolution.js";
 import {
   type CurrentActionAssistantTurn,
   type ResponseBoundary,
@@ -15,9 +16,27 @@ export function extractCurrentActionAssistantTurn(
   nodes: readonly SnapshotNode[],
   target: StepTarget,
   boundary?: ResponseBoundary,
+  requireNativeContent = false,
 ): CurrentActionAssistantTurn {
   if (!targetMatched(nodes, target)) {
     throw new Error("extract: target did not match any node");
+  }
+  if (requireNativeContent) {
+    nodes = nodes.filter((node) => {
+      if (!nodeMatchesTarget(node, target)) return true;
+      const role = (node.role ?? node.type ?? "").toLowerCase().split(".").at(-1) ?? "";
+      return (
+        node.visibleToUser !== false &&
+        node.editable !== true &&
+        !INTERACTIVE_SNAPSHOT_ROLES.has(role) &&
+        !/^copy(?:\s+(?:message|response))?$/iu.test(node.label?.trim() ?? "")
+      );
+    });
+    if (!targetMatched(nodes, target)) {
+      throw new Error(
+        "extract: native readiness controls do not contain assistant response content",
+      );
+    }
   }
   if (boundary) {
     const next = turnsAfterBoundary(nodes, target, boundary).filter(

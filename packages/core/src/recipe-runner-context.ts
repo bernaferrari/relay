@@ -89,6 +89,8 @@ export type RecipeRuntimeState = {
   destEndRecipeIds?: string[];
   /** Turns present before the current type/send. Visual Y is not order. */
   responseBoundary?: ResponseBoundary;
+  /** A new Type whose pre-input census failed cannot inherit an older prompt. */
+  responseBoundaryUnavailable?: { initiatingActionId?: string };
   /** Leftover timeout-0 inspect peek skipped without a tree read. The
    * following leftover when:present tap must not find either — that find
    * recycles the one in-request XCTest snapshot and dest-wait then dies. */
