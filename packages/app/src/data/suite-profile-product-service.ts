@@ -31,6 +31,16 @@ import {
   createPlanInputDataSetService,
   type PlanInputDataSetService,
 } from "./plan-input-data-set-service";
+import {
+  discoverPlanEnvironmentProfiles,
+  preflightPlanEnvironment,
+  type ProductEnvironmentScope,
+  type ProductNativeReadiness,
+} from "./plan-environment-profiles";
+export {
+  projectProductEnvironmentProfiles,
+  type ProductEnvironmentScope,
+} from "./plan-environment-profiles";
 
 type BuildDto = OperationOutput<"build.list">["builds"][number];
 
@@ -120,9 +130,13 @@ export type ProductEnvironmentProfile = {
   readonly id: string;
   readonly name: string;
   readonly targetId: string;
-  /** Environment Profiles are backed by durable managed targets. The frozen
-   * execution profile is still created and checked when a Suite runs. */
-  readonly source: { readonly kind: "managed-target"; readonly id: string };
+  /** Managed targets and exact saved native setups remain canonical references. */
+  readonly source: {
+    readonly kind: "managed-target" | "saved-native-profile";
+    readonly id: string;
+  };
+  readonly targetProfileId?: string;
+  readonly nativeReadiness?: ProductNativeReadiness;
   readonly target: Pick<TargetDefinition, "id" | "name" | "kind" | "browser">;
   readonly platform: TargetDefinition["kind"];
   readonly browserEnvironment?: BrowserEnvironmentInput;
@@ -183,8 +197,13 @@ export type SuiteProfileProductService = Partial<PlanInputDataSetService> & {
     suiteId: string;
     expectedRevision: number;
   }): Promise<void>;
-  listEnvironmentProfiles(): Promise<readonly ProductEnvironmentProfile[]>;
-  getEnvironmentProfile(profileId: string): Promise<ProductEnvironmentProfile | undefined>;
+  listEnvironmentProfiles(
+    scope?: ProductEnvironmentScope,
+  ): Promise<readonly ProductEnvironmentProfile[]>;
+  getEnvironmentProfile(
+    profileId: string,
+    scope?: ProductEnvironmentScope,
+  ): Promise<ProductEnvironmentProfile | undefined>;
   previewSuite(input: {
     appMapId: string;
     suiteId: string;
@@ -194,6 +213,7 @@ export type SuiteProfileProductService = Partial<PlanInputDataSetService> & {
   }): Promise<ProductSuitePreview>;
   preflightEnvironment(input: {
     profileId: string;
+    scope?: ProductEnvironmentScope;
     buildId?: string;
     authenticationFixtureReference?: string;
   }): Promise<ProductEnvironmentPreflight>;
@@ -280,66 +300,6 @@ export function projectProductSuite(map: AppMap, combine: AppMapCombine): Produc
     referenceReviewMode: combine.referenceReviewMode ?? "human",
     source: { kind: "app-map-combine", id: combine.id },
   };
-}
-
-function projectBuild(build: BuildDto): ProductBuildOption {
-  return {
-    id: build.id,
-    name: build.name,
-    platform: build.platform,
-    status: build.status,
-    ...(build.applicationId ? { applicationId: build.applicationId } : {}),
-    ...(build.sourceSha ? { sourceSha: build.sourceSha } : {}),
-    updatedAt: build.updatedAt,
-  };
-}
-
-function projectFixture(fixture: BrowserAuthenticationFixture): ProductAuthenticationFixture {
-  return {
-    id: fixture.id,
-    reference: fixture.reference,
-    revision: fixture.revision,
-    targetId: fixture.targetId,
-    name: fixture.name,
-    origins: [...fixture.origins],
-    cookieCount: fixture.cookieCount,
-    createdAt: fixture.createdAt,
-    ...(fixture.expiresAt === undefined ? {} : { expiresAt: fixture.expiresAt }),
-    ...(fixture.revokedAt === undefined ? {} : { revokedAt: fixture.revokedAt }),
-  };
-}
-
-/** Pure target/resource projection. No TargetProfile or browser engine model is copied here. */
-export function projectProductEnvironmentProfiles(input: {
-  targets: readonly TargetDefinition[];
-  builds?: readonly BuildDto[];
-  fixtures?: readonly BrowserAuthenticationFixture[];
-}): readonly ProductEnvironmentProfile[] {
-  const builds = (input.builds ?? []).map(projectBuild);
-  return input.targets
-    .map((target) => ({
-      id: target.id,
-      name: text(target.name, target.id),
-      targetId: target.id,
-      source: { kind: "managed-target" as const, id: target.id },
-      target: {
-        id: target.id,
-        name: text(target.name, target.id),
-        kind: target.kind,
-        ...(target.browser ? { browser: structuredClone(target.browser) } : {}),
-      },
-      platform: target.kind,
-      ...(target.browser?.environment
-        ? { browserEnvironment: structuredClone(target.browser.environment) }
-        : {}),
-      authenticationOptions: (input.fixtures ?? [])
-        .filter((fixture) => fixture.targetId === target.id)
-        .map(projectFixture),
-      buildOptions: builds.filter((build) =>
-        target.kind === "browser" ? build.platform === "web" : build.platform === target.kind,
-      ),
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
 }
 
 /**
@@ -517,20 +477,11 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
     return (await (await client()).invoke("app-map.get", { appMapId })).appMap;
   }
 
-  async function environments(): Promise<readonly ProductEnvironmentProfile[]> {
-    const relay = await client();
-    const [{ targets }, { builds }] = await Promise.all([
-      relay.invoke("target.list", {}),
-      relay.invoke("build.list", {}),
-    ]);
-    const fixtures = (
-      await Promise.all(
-        targets
-          .filter((target) => target.kind === "browser")
-          .map((target) => relay.invoke("target.browser-auth.list", { targetId: target.id })),
-      )
-    ).flatMap(({ fixtures: values }) => values);
-    return projectProductEnvironmentProfiles({ targets, builds, fixtures });
+  async function environments(
+    scope?: ProductEnvironmentScope,
+    appMap?: AppMap,
+  ): Promise<readonly ProductEnvironmentProfile[]> {
+    return discoverPlanEnvironmentProfiles(await client(), scope, appMap);
   }
 
   return {
@@ -622,8 +573,8 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       });
     },
     listEnvironmentProfiles: environments,
-    async getEnvironmentProfile(profileId) {
-      return (await environments()).find((profile) => profile.id === profileId);
+    async getEnvironmentProfile(profileId, scope) {
+      return (await environments(scope)).find((profile) => profile.id === profileId);
     },
     async previewSuite(input) {
       const appMap = await map(input.appMapId);
@@ -640,7 +591,10 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       if (uniqueProfileIds.length > MAX_PLAN_PROFILE_TARGETS) {
         throw new TypeError(`Select no more than ${MAX_PLAN_PROFILE_TARGETS} browsers or devices.`);
       }
-      const availableEnvironments = await environments();
+      const availableEnvironments = await environments(
+        { appMapId: input.appMapId, combineId: input.suiteId },
+        appMap,
+      );
       const selectedEnvironments = uniqueProfileIds.map((profileId) => {
         const selected = availableEnvironments.find((profile) => profile.id === profileId);
         if (!selected) {
@@ -666,9 +620,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
           ...(profileTargets.length ? { profileTargets } : {}),
         }),
         ...preflightInputs.map((selected) =>
-          selected
-            ? relay.invoke("target.preflight", { targetId: selected.target.id })
-            : Promise.resolve(undefined),
+          selected ? preflightPlanEnvironment(relay, selected) : Promise.resolve(undefined),
         ),
       ]);
       const preview = previewFromPreflight(
@@ -736,9 +688,11 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
     },
     async preflightEnvironment(input) {
       const relay = await client();
-      const profile = (await environments()).find((candidate) => candidate.id === input.profileId);
+      const profile = (await environments(input.scope)).find(
+        (candidate) => candidate.id === input.profileId,
+      );
       if (!profile) throw new TypeError(`That browser or device is not available.`);
-      const target = await relay.invoke("target.preflight", { targetId: profile.target.id });
+      const target = await preflightPlanEnvironment(relay, profile);
       const authentication = input.authenticationFixtureReference
         ? assessProductAuthenticationFixture(profile, input.authenticationFixtureReference)
         : undefined;
@@ -767,7 +721,10 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         Boolean,
       );
       if (!uniqueProfileIds.length) throw new TypeError("Choose at least one browser or device.");
-      const availableEnvironments = await environments();
+      const availableEnvironments = await environments({
+        appMapId: input.appMapId,
+        combineId: input.suiteId,
+      });
       const selectedProfiles = uniqueProfileIds.map((profileId) => {
         const profile = availableEnvironments.find((candidate) => candidate.id === profileId);
         if (!profile) throw new TypeError("That browser or device is not available.");
@@ -840,7 +797,10 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       const uniqueProfileIds = [...new Set(selectedProfileIds.map((id) => id.trim()))].filter(
         Boolean,
       );
-      const availableEnvironments = await environments();
+      const availableEnvironments = await environments({
+        appMapId: input.appMapId,
+        combineId: input.combineId,
+      });
       const selectedProfiles = uniqueProfileIds.map((profileId) => {
         const profile = availableEnvironments.find((candidate) => candidate.id === profileId);
         if (!profile) throw new TypeError("That browser or device is not available.");

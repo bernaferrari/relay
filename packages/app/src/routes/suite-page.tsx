@@ -74,8 +74,9 @@ export function SuitePage() {
     staleTime: 10_000,
   });
   const environments = useQuery({
-    queryKey: ["environments"],
-    queryFn: () => suiteProfileService.listEnvironmentProfiles(),
+    queryKey: ["environments", appId, suiteId],
+    queryFn: () =>
+      suiteProfileService.listEnvironmentProfiles({ appMapId: appId, combineId: suiteId }),
     staleTime: 10_000,
   });
   const configuration = usePersistedRunConfiguration({
@@ -121,6 +122,10 @@ export function SuitePage() {
             ? [configuration.selection.targetProfileId]
             : [])),
       ];
+  const selectedEnvironment =
+    selectedProfileIds.length === 1
+      ? environments.data?.find((item) => item.id === selectedProfileIds[0])
+      : undefined;
   const preview = useQuery({
     queryKey: [
       "suites",
@@ -236,7 +241,10 @@ export function SuitePage() {
   const runHint: { tone: "muted" | "error"; message: string } | null = !selectedProfileIds.length
     ? null
     : configuration.targetUnavailable
-      ? { tone: "error", message: "The saved browser is unavailable. Choose another in Run setup." }
+      ? {
+          tone: "error",
+          message: "This device or browser is unavailable. Choose another in Run setup.",
+        }
       : preview.error
         ? {
             tone: "error",
@@ -323,8 +331,8 @@ export function SuitePage() {
                           ? [
                               {
                                 id: "target",
-                                label: "Saved browser is unavailable",
-                                detail: "Choose another browser to continue.",
+                                label: "Device or browser unavailable",
+                                detail: "Choose another device or browser to continue.",
                               },
                             ]
                           : []),
@@ -465,10 +473,17 @@ export function SuitePage() {
                           variant="outline"
                           size="sm"
                           render={
-                            <Link
-                              to="/environments/$profileId"
-                              params={{ profileId: selectedProfileIds[0]! }}
-                            />
+                            selectedEnvironment && selectedEnvironment.platform !== "browser" ? (
+                              <Link
+                                to="/devices/$deviceId"
+                                params={{ deviceId: selectedEnvironment.targetId }}
+                              />
+                            ) : (
+                              <Link
+                                to="/environments/$profileId"
+                                params={{ profileId: selectedProfileIds[0]! }}
+                              />
+                            )
                           }
                         >
                           Open selected setup

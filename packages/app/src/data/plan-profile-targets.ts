@@ -12,6 +12,7 @@ export type PlanStartAccountBinding = {
 
 export type PlanStartProfileTarget = {
   readonly profileId: string;
+  readonly targetProfileId?: string;
   readonly engine?: BrowserEngine;
   readonly account?: ProductRunAccountBinding;
   readonly target: {
@@ -47,6 +48,7 @@ export function compilePlanProfileTargets(
     claimed.add(profile.id);
     targets.push({
       profileId: profile.id,
+      ...(profile.targetProfileId ? { targetProfileId: profile.targetProfileId } : {}),
       engine,
       account: binding.account,
       target: planTargetFromProfile(profile),
@@ -56,6 +58,7 @@ export function compilePlanProfileTargets(
     if (claimed.has(profile.id)) continue;
     targets.push({
       profileId: profile.id,
+      ...(profile.targetProfileId ? { targetProfileId: profile.targetProfileId } : {}),
       target: planTargetFromProfile(profile),
     });
   }

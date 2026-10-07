@@ -465,24 +465,6 @@ describe("suite and environment product projections", () => {
         });
         return { preflight: { deviceRuns: 1, checks: 1, blockers: [], warnings: [] } };
       }
-      if (operation === "target.preflight") {
-        return {
-          preflight: {
-            targetId: "ios-1",
-            ok: true,
-            checkedAt: 4,
-            capabilities: ["tap"],
-            checks: [
-              {
-                id: "runner",
-                label: "Runner",
-                status: "warning",
-                message: "Warm-up required.",
-              },
-            ],
-          },
-        };
-      }
       throw new Error(`Unexpected operation ${operation}`);
     });
     const preview = await createSuiteProfileProductService({} as never).previewSuite({
@@ -491,7 +473,13 @@ describe("suite and environment product projections", () => {
       profileId: "ios-1",
     });
     expect(preview.blockers).toEqual([]);
-    expect(preview.warnings).toEqual([{ code: "target-runner", message: "Warm-up required." }]);
+    expect(preview.warnings).toEqual([
+      {
+        code: "target-native-readiness",
+        message: "Device readiness will be checked when you run.",
+      },
+    ]);
+    expect(relay.invoke).not.toHaveBeenCalledWith("target.preflight", expect.anything());
   });
 
   it("surfaces observed serial Plan duration and never a guessed recipe estimate", async () => {
@@ -800,6 +788,7 @@ describe("suite and environment product projections", () => {
   it("starts a browser Suite with an exact managed target and returns campaign identity", async () => {
     const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
+      if (operation === "app-map.get") return { appMap: browserMap };
       if (operation === "target.list") return { targets: [target("browser-1", "browser")] };
       if (operation === "build.list") return { builds: [] };
       if (operation === "target.browser-auth.list") return { fixtures: [] };
@@ -833,6 +822,8 @@ describe("suite and environment product projections", () => {
 
   it("starts a device Suite with serial/platform and falls back to the returned batch", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
+      if (operation === "app-map.get")
+        return { appMap: { ...map, combines: { [combine.id]: combine } } };
       if (operation === "target.list") return { targets: [target("ios-1", "ios")] };
       if (operation === "build.list") return { builds: [] };
       if (operation === "job.combine.start") {
@@ -865,6 +856,8 @@ describe("suite and environment product projections", () => {
 
   it("schedules a Plan daily against the selected browser", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
+      if (operation === "app-map.get")
+        return { appMap: { ...map, combines: { [combine.id]: combine } } };
       if (operation === "target.list") return { targets: [target("browser-1", "browser")] };
       if (operation === "build.list") return { builds: [] };
       if (operation === "target.browser-auth.list") return { fixtures: [] };
@@ -905,6 +898,8 @@ describe("suite and environment product projections", () => {
     async (intervalMinutes) => {
       let saved: Record<string, unknown> | undefined;
       relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
+        if (operation === "app-map.get")
+          return { appMap: { ...map, combines: { [combine.id]: combine } } };
         if (operation === "target.list") return { targets: [target("android-1", "android")] };
         if (operation === "build.list") return { builds: [] };
         if (operation === "schedule.create") {
@@ -1083,6 +1078,8 @@ describe("suite and environment product projections", () => {
 
   it("binds a paired account fixture and opens the Infra Result when start fails closed", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
+      if (operation === "app-map.get")
+        return { appMap: { ...map, combines: { [combine.id]: combine } } };
       if (operation === "target.list") return { targets: [target("browser-1", "browser")] };
       if (operation === "build.list") return { builds: [] };
       if (operation === "target.browser-auth.list") return { fixtures: [] };
@@ -1121,6 +1118,8 @@ describe("suite and environment product projections", () => {
 
   it("starts six accounts plus Android and iOS as eight Plan columns", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
+      if (operation === "app-map.get")
+        return { appMap: { ...map, combines: { [combine.id]: combine } } };
       if (operation === "target.list") {
         return {
           targets: [
