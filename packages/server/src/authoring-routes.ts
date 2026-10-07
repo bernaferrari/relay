@@ -384,10 +384,15 @@ export async function captureAuthoringReplayActionEndpoint(
   });
 }
 
-export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): AuthoringRuntime {
+export function createAuthoringRuntime(
+  options: AuthoringDeviceOptions = {},
+  dependencies: { resolveDevice?: typeof deviceFor } = {},
+): AuthoringRuntime {
   let replayDevice: Device | undefined;
   const resolveDevice = (session: AuthoringSession) =>
-    replayDevice ? Promise.resolve(replayDevice) : deviceFor(session, options);
+    replayDevice
+      ? Promise.resolve(replayDevice)
+      : (dependencies.resolveDevice ?? deviceFor)(session, options);
   const executeSteps = async (
     session: AuthoringSession,
     steps: RecipeStep[],
@@ -443,7 +448,9 @@ export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): Au
       }
       let recordingIosAppBundleId: string | undefined;
       if (
-        interaction.kind === "tap" &&
+        (interaction.kind === "tap" ||
+          (interaction.kind === "steps" &&
+            steps.every((step) => step.kind === "wait-for" || step.kind === "expect"))) &&
         session.target.kind === "device" &&
         session.target.platform === "ios" &&
         session.originApplication

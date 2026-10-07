@@ -7,7 +7,6 @@ import {
   conditionalTargetPresent,
   isCancel,
   isAccessibilityTreeUnreadable,
-  isNotFoundOrTimeout,
   readInput,
   resolvePointForDevice,
   runVariableScript,
@@ -82,6 +81,7 @@ import {
   captureStillScreenFingerprint,
   RECIPE_TRANSIENT_PRESENCE_DRAIN_MS,
   RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
+  TargetVisibleWaitTimeoutError,
   waitForTargetVisible,
 } from "./still-screen-wait.js";
 import { isIosRunnerPresenceDrainError } from "./ios-runtime-recovery.js";
@@ -201,7 +201,7 @@ async function runRequiredRecipeStep(
         throw new Error(`wait-for: target has no identifier/ref/label/text`);
       }
       await waitForTargetVisible({
-        present: () => targetPresent(device, target),
+        present: () => targetPresent(device, target, ctx.recordingIosAppBundleId),
         captureFingerprint: () => captureStillScreenFingerprint(device),
         sleep: (ms) => sleep(ms, device),
         timeoutMs: boundRecipeWaitMs(step.timeoutMs),
@@ -229,7 +229,7 @@ async function runRequiredRecipeStep(
             throw new Error(`expect: target has no identifier/ref/label/text`);
           }
           await waitForTargetVisible({
-            present: () => targetPresent(device, target),
+            present: () => targetPresent(device, target, ctx.recordingIosAppBundleId),
             captureFingerprint: () => captureStillScreenFingerprint(device),
             sleep: (ms) => sleep(ms, device),
             timeoutMs: timeout,
@@ -242,16 +242,21 @@ async function runRequiredRecipeStep(
           });
         } catch (err) {
           if (isCancel(err)) throw err;
-          // Infrastructure failures (no device / adb / session / connection)
-          // keep their original message — only a real not-found/timeout
-          // becomes the assertion failure.
-          if (!isNotFoundOrTimeout(err)) throw err;
+          // Transport/runner failures retain their original receipt. Only the
+          // wait loop exhausting the authored condition budget is an assertion.
+          if (!(err instanceof TargetVisibleWaitTimeoutError)) throw err;
           throw new Error(`expect: "${label}" not visible after ${timeoutSec}s`);
         }
       } else {
         // condition === "gone": poll until the target no longer resolves.
         const end = Date.now() + timeout;
-        if (!(await pollUntil(device, end, async () => !(await targetPresent(device, target))))) {
+        if (
+          !(await pollUntil(
+            device,
+            end,
+            async () => !(await targetPresent(device, target, ctx.recordingIosAppBundleId)),
+          ))
+        ) {
           throw new Error(`expect: "${label}" still visible after ${timeoutSec}s`);
         }
       }
@@ -762,7 +767,7 @@ export async function runRecipeStep(
     invalidateVerifiedScreen(ctx);
     let present: boolean;
     try {
-      present = await conditionalTargetPresent(device, step.when);
+      present = await conditionalTargetPresent(device, step.when, ctx.recordingIosAppBundleId);
     } catch (error) {
       rethrowIosMutationOutcomeUnknown(error);
       if (isCancel(error)) throw error;
