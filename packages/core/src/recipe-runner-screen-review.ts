@@ -200,13 +200,12 @@ export function persistCaptureReviewPlannedSlots(
     }
     const data = artifact.data as {
       plan?: { plannedSlots?: CaptureReviewPlannedSlot[] };
-      child?: { plan?: { plannedSlots?: CaptureReviewPlannedSlot[] } };
     };
     if (artifact.kind === "app-map-test-execution-intent" && data.plan) {
       data.plan.plannedSlots = slots;
     }
-    if (artifact.kind === "app-map-combine-cell-execution-intent" && data.child?.plan) {
-      data.child.plan.plannedSlots = slots;
-    }
+    // A Combine child's slots are frozen under its canonical intent digest.
+    // Setup/restore and recaptures keep their runtime slots in ctx, without
+    // replacing those campaign obligations or invalidating the frozen intent.
   }
 }

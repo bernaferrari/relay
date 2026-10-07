@@ -17,6 +17,7 @@ import {
   openStep,
 } from "./session-trace-steps.js";
 import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
+import { parseAppMapCombineCellExecutionIntentArtifact } from "./app-map-combine-cell-intent.js";
 import { attachDestinationRepairProposals } from "./session-repair-attachment.js";
 import { automaticEvidencePhases } from "./session-evidence-phases.js";
 
@@ -43,7 +44,10 @@ export async function runRecipeSteps(
   const executionIntent = parseAppMapTestExecutionIntentArtifact(
     job.artifacts.find((artifact) => artifact.kind === "app-map-test-execution-intent"),
   );
-  const destEndRecipeIds = executionIntent?.plan.destEndRecipeIds;
+  const combineIntent = parseAppMapCombineCellExecutionIntentArtifact(
+    job.artifacts.find((artifact) => artifact.kind === "app-map-combine-cell-execution-intent"),
+  );
+  const destEndRecipeIds = (combineIntent?.child.plan ?? executionIntent?.plan)?.destEndRecipeIds;
   const runtime: RecipeRuntimeState = destEndRecipeIds?.length ? { destEndRecipeIds } : {};
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
   const execute = async (
@@ -76,11 +80,34 @@ export async function runRecipeSteps(
       if (evidencePhases.includes("before"))
         await captureAutomaticState(job, device, ts, "before", pushLog, runtime);
       const artifactStart = job.artifacts.length;
+      // The Combine wrapper is setup/restore machinery. Frozen capture slots
+      // start at the child Test root; nested authored module invocations remain
+      // part of their identity. Share one cursor through every child root step.
+      const childCaptureScope =
+        combineIntent &&
+        owner.id === combineIntent.wrapper.rootRecipeId &&
+        resolvedStep.kind === "module" &&
+        resolvedStep.recipeId === combineIntent.wrapper.childRootRecipeId
+          ? {
+              captureReview: {
+                requirementId: combineIntent.child.plan.test.id,
+                moduleCalls: new Map<string, number>(),
+              },
+              plannedSlots: combineIntent.child.plan.plannedSlots
+                ? structuredClone([...combineIntent.child.plan.plannedSlots])
+                : undefined,
+            }
+          : undefined;
       await runRecipeStep(device, resolvedStep, {
         ...context,
         runChild: async (child, index, childRecipe, childContext) => {
           try {
-            await execute(child, index, childRecipe, childContext);
+            await execute(child, index, childRecipe, {
+              ...childContext,
+              ...(childCaptureScope && childRecipe.id === combineIntent?.wrapper.childRootRecipeId
+                ? childCaptureScope
+                : {}),
+            });
           } finally {
             setCurrentStep(ts);
           }
