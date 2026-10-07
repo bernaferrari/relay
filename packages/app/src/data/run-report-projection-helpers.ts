@@ -167,6 +167,33 @@ export function authoredCaptureStepId(title: string | undefined): string | undef
   );
 }
 
+/** A capture log describes evidence collection. Only one exact retained check
+ * can supply that authored step's failure; repeated IDs need occurrence proof. */
+export function failedCheckObservations(artifacts: readonly unknown[]): Map<string, string> {
+  const observations = new Map<string, string>();
+  const seen = new Set<string>();
+  for (const value of artifacts) {
+    const artifact = record(value);
+    if (artifact?.kind !== "campaign-check-result") continue;
+    const data = record(artifact.data);
+    const id = text(data?.id);
+    if (!id) continue;
+    if (seen.has(id)) {
+      observations.delete(id);
+      continue;
+    }
+    seen.add(id);
+    const cause =
+      data?.status === "failed"
+        ? (text(data.primaryError) ?? text(data.error))
+        : data?.status === "blocked"
+          ? (text(data.error) ?? text(data.dependencyReason))
+          : undefined;
+    if (cause) observations.set(id, cause);
+  }
+  return observations;
+}
+
 export function humanStepTitle(value: unknown): string | undefined {
   const rawTitle = text(value);
   if (!rawTitle) return undefined;

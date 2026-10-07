@@ -36,6 +36,7 @@ import {
   authoredCaptureStepId,
   destEndCaptureReviewTitle,
   destWaitForEvidenceLabel,
+  failedCheckObservations,
   formatEvidenceDuration,
   formatEvidenceTime,
   formatTransferredBytes,
@@ -344,6 +345,7 @@ function reportTimeline(
   const recipeSteps = array(recipe?.steps);
   const checkTimes = new Map<string, { start: number; end: number }>();
   const checkStatuses = new Map<string, string>();
+  const checkObservations = failedCheckObservations(array(record(rawRun)?.artifacts));
   for (const value of array(record(rawRun)?.artifacts)) {
     const artifact = record(value);
     if (artifact?.kind !== "campaign-check-result") continue;
@@ -446,6 +448,7 @@ function reportTimeline(
     // the preceding interaction passed. Use its retained check verdict.
     const checkId = authoredCaptureStepId(text(step.title));
     const checkStatus = checkId ? checkStatuses.get(checkId) : undefined;
+    const observed = (checkId ? checkObservations.get(checkId) : undefined) ?? text(step.log);
     const status = checkStatus ? (checkStatus === "passed" ? "ok" : "error") : text(step.status);
     const tone = text(step.tone);
     const recipeStep = text(step.recipeStepId)
@@ -556,7 +559,7 @@ function reportTimeline(
         framePaths: preferOwnedDestCapture
           ? ownedFramePaths
           : (authoredFramePaths ?? ownedFramePaths),
-        ...(text(step.log) ? { observed: text(step.log) } : {}),
+        ...(observed ? { observed } : {}),
         ...(text(step.log) ? { log: text(step.log) } : {}),
         ...(expected ? { expected } : {}),
       },
