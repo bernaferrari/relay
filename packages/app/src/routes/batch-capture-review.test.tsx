@@ -600,6 +600,44 @@ describe("Plan review acknowledgements", () => {
     expect(button(host, "Refresh screenshots")).toBeTruthy();
   });
 
+  it("refreshes the final capture queue when the Plan stops running", async () => {
+    const missing = {
+      items: [{ status: "missing", captureId: "missing::last", caption: "Last image" }],
+      summary: { captured: 0, missing: 1, pending: 0, planned: 1, blocked: 0 },
+    };
+    const complete = {
+      items: [item({ runId: "last-run", captureId: "last", caption: "Last image" })],
+      summary: { captured: 1, missing: 0, pending: 1, planned: 1, blocked: 0 },
+    };
+    const getCaptureReview = vi.fn().mockResolvedValueOnce(missing).mockResolvedValue(complete);
+    const service = { getCaptureReview } as unknown as RunAcrossProductService;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    const draw = (streaming: boolean) =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <PlanCaptureReviewSection
+            batchId="final-captures"
+            platform={platform()}
+            runAcrossService={service}
+            streaming={streaming}
+          />
+        </QueryClientProvider>,
+      );
+    await act(async () => draw(true));
+    await settleReview();
+    expect(getCaptureReview).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain("0 of 1 screenshots captured");
+    await act(async () => draw(false));
+    await settleReview();
+    expect(getCaptureReview).toHaveBeenCalledTimes(2);
+    expect(host.textContent).toContain("1 of 1 screenshots captured");
+    expect(host.textContent).not.toContain("screenshots were not captured");
+  });
+
   it("keeps the inspected screenshot when streaming results reorder", async () => {
     const client = new QueryClient();
     const host = await render(undefined, undefined, client);
