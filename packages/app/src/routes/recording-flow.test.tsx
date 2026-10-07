@@ -1369,6 +1369,94 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("New browser");
   });
 
+  it("keeps unavailable native setup visible and reconnects explicitly without replaying input", async () => {
+    const fake = fakeService();
+    const ipad = { kind: "device", platform: "ios", targetId: "ipad-fixture" } as const;
+    let ready = false;
+    let finishRecovery!: () => void;
+    const connect = vi.fn(async () =>
+      ready
+        ? {
+            status: "target-selection" as const,
+            targets: [ipad],
+            selectedTarget: ipad,
+          }
+        : {
+            status: "idle" as const,
+            targets: [],
+            recovery: {
+              code: "transport" as const,
+              sourceCode: "native-recording-target-not-ready",
+              title: "Device needs reconnecting",
+              detail: "Relay can show the screen, but recording control is unavailable.",
+              recovery: "Reconnect the iOS target and capture a fresh observation before retrying.",
+              retryable: false,
+            },
+          },
+    );
+    fake.service.connect = connect;
+    fake.service.listApps = async () => [{ id: "app-1", name: "Grok", platform: "ios" }];
+    const recover = vi.fn(
+      () =>
+        new Promise<Awaited<ReturnType<DeviceProductService["recover"]>>>((resolve) => {
+          finishRecovery = () => {
+            ready = true;
+            resolve({
+              serial: ipad.targetId,
+              recovered: true,
+              ready: true,
+              summary: "Ready",
+              actions: [],
+              session: { status: "ready", detail: "Ready" },
+            });
+          };
+        }),
+    );
+    const launchApp = vi.fn();
+    const deviceService = {
+      list: async () => [],
+      get: async () => undefined,
+      actions: async () => [],
+      recover,
+      launchApp,
+    } satisfies DeviceProductService;
+    const { history } = await renderJourney(
+      "/tests/new?app=app-1&target=ipad-fixture&targetKind=device&originApplication=Grok",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      deviceService,
+    );
+    expect(document.querySelector('form[aria-label="Record setup"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("Grok");
+    expect(document.body.textContent).toContain("Device needs reconnecting");
+    expect(document.body.textContent).not.toContain("Something went wrong");
+    expect(button("Start recording").disabled).toBe(true);
+    expect(recover).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    vi.useRealTimers();
+    expect(connect).toHaveBeenCalledOnce();
+    await click(button("Reconnect device"));
+    expect(button("Reconnecting…").disabled).toBe(true);
+    expect(button("Website").disabled).toBe(true);
+    expect(button("Start recording").disabled).toBe(true);
+    expect(recover).toHaveBeenCalledExactlyOnceWith("ipad-fixture", "connect");
+    await act(async () => finishRecovery());
+    await settle();
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe("Grok");
+    expect(history.location.search).toContain("originApplication=Grok");
+    expect(button("Start recording").disabled).toBe(true);
+    expect(launchApp).not.toHaveBeenCalled();
+    expect(fake.calls.some((call) => /^(?:begin:|input:|record$)/u.test(call))).toBe(false);
+  });
+
   it("creates an app inline without losing the chosen device or starting recording", async () => {
     const fake = fakeService();
     const createdNames: string[] = [];

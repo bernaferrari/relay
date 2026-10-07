@@ -3,9 +3,12 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { Device } from "./device-capabilities.js";
+import type { Device, SnapshotNode } from "./device-capabilities.js";
 import { OPTIONAL_TREE_BUDGET_MS } from "./optional-tree-budget.js";
 import type { RecipeRuntimeState } from "./recipe-runner-context.js";
+import { invalidateVerifiedScreen } from "./recipe-runner-context.js";
+import { runExpectScreenStep } from "./recipe-runner-screen.js";
+import { observeScreenIdentity } from "./screen-identity.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
 import type { TestJob } from "./session-contract.js";
 import { runWithTargetContext } from "./target-context.js";
@@ -382,6 +385,137 @@ test("iOS after UI-tree skips catalog snapshot so an open library cannot kill th
     await rm(root, { recursive: true, force: true });
   }
 });
+
+const CAPTURED_IPAD_SIDEBAR_ALIAS =
+  "c011a39a3f1e55590603e69c07bd9d76ff6caaa95a0d2e2cd755a2899a1010fe";
+const capturedIpadSidebarNodes: SnapshotNode[] = [
+  { type: "Application", label: "Grok", enabled: true },
+  {
+    type: "Button",
+    identifier: "sidebar.settings.button",
+    label: "grok-gear",
+    enabled: true,
+  },
+  { type: "TextField", identifier: "sidebar.search.field", value: "Search", enabled: true },
+  {
+    type: "Button",
+    identifier: "sidebar.newConversation.button",
+    label: "grok-compose",
+    enabled: true,
+  },
+  {
+    type: "Button",
+    identifier: "sidebar.settings.button",
+    label: "grok-gear",
+    enabled: true,
+  },
+];
+
+for (const semantics of ["current", "empty", "unavailable", "captured-empty"] as const) {
+  test(`a skipped iOS after tree acquires ${semantics} destination semantics without source reuse`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-after-destination-"));
+    const previousRuns = process.env.RELAY_RUNS_DIR;
+    process.env.RELAY_RUNS_DIR = root;
+    const serial = `after-destination-${semantics}`;
+    const job = iosJob(serial);
+    const beforeNodes: SnapshotNode[] = [{ type: "Button", identifier: "sidebar.open.button" }];
+    const before = {
+      screenId: "start",
+      screenTitle: "Start",
+      nodes: beforeNodes,
+      observedAt: 1,
+      verifiedAt: 1,
+    };
+    const runtime: RecipeRuntimeState = {
+      observation: before,
+      campaignCoverageStarted: true,
+      navigationCursor: {
+        status: "proven",
+        screenId: "start",
+        proofToken: "before-input",
+        source: "screen-observation",
+        updatedAt: 1,
+        checkpoint: before,
+      },
+    };
+    let snapshotCalls = 0;
+    const device = {
+      capture: {
+        snapshot: async () => {
+          throw new Error("post-input automatic evidence must not read the catalog");
+        },
+        screenshot: async () => ({ base64: fakePng("after-sidebar").toString("base64") }),
+      },
+    } as unknown as Device;
+    const ctx = {
+      job,
+      runtime,
+      log: () => {},
+      observeVisualFingerprint: async () => CAPTURED_IPAD_SIDEBAR_ALIAS,
+    };
+    try {
+      assert.equal(
+        observeScreenIdentity(capturedIpadSidebarNodes).fingerprint,
+        CAPTURED_IPAD_SIDEBAR_ALIAS,
+      );
+      invalidateVerifiedScreen(ctx);
+      await withFakeGoIos(
+        () => fakePng("after-sidebar"),
+        () =>
+          runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+            captureAutomaticState(job, device, step("Tap sidebar"), "after", () => {}, runtime),
+          ),
+      );
+      const afterScreenshot = runtime.observation!.screenshot;
+      assert.ok(afterScreenshot);
+      assert.equal(runtime.observation!.nodes, undefined);
+      assert.equal(runtime.navigationCursor!.status, "unknown");
+      const tree = job.artifacts.find((artifact) => artifact.kind === "ui-tree");
+      assert.equal((tree?.data as { status?: string }).status, "skipped");
+      if (semantics === "captured-empty") runtime.observation!.nodes = [];
+
+      const verify = () =>
+        runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+          runExpectScreenStep(
+            device,
+            {
+              kind: "expect-screen",
+              screenId: "screen-90fd4dc80d3c8606",
+              screenTitle: "Next screen",
+              fingerprint: "cfd99cb374d57ef4efce1be59dff48949a4eed319c588443bc283722c5b2d37e",
+              aliases: [CAPTURED_IPAD_SIDEBAR_ALIAS],
+              timeoutMs: 0,
+            },
+            ctx,
+            {
+              observeSnapshot: async () => {
+                snapshotCalls += 1;
+                if (semantics === "unavailable") throw new Error("permission denied");
+                return semantics === "current" ? capturedIpadSidebarNodes : [];
+              },
+            },
+          ),
+        );
+      if (semantics === "current") {
+        await verify();
+        assert.equal(runtime.navigationCursor!.status, "proven");
+        assert.deepEqual(runtime.observation!.nodes, capturedIpadSidebarNodes);
+        assert.equal(runtime.observation!.screenshot, afterScreenshot);
+      } else {
+        await assert.rejects(verify(), /screen-inspection-unavailable:/u);
+        assert.equal(runtime.navigationCursor!.status, "unknown");
+        assert.equal(runtime.observation, undefined);
+      }
+      assert.equal(snapshotCalls, semantics === "captured-empty" ? 0 : 1);
+      assert.equal(job.frames.length, 1, "verification must keep the original after raster");
+      assert.deepEqual(before.nodes, beforeNodes, "the old source tree remains historical");
+    } finally {
+      if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+      else process.env.RELAY_RUNS_DIR = previousRuns;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
 
 test("automatic tap evidence keeps the screenshot when follow-on tree throws", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-auto-tree-throw-"));

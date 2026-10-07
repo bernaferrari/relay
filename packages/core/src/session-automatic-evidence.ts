@@ -96,8 +96,21 @@ async function collectAutomaticEvidenceTree(input: {
     if (!snapshotNodes) {
       if (phase === "after" && job.platform === "ios") {
         // Catalog snapshot after a Grok library open queries absent home ids
-        // and XCTest walks the conversation list until the runner dies.
-        snapshotNodes = [];
+        // and XCTest walks the conversation list until the runner dies. This
+        // omitted read must stay absent from the runtime cache so destination
+        // verification acquires current AX instead of reusing a synthetic [].
+        job.artifacts.push({
+          kind: "ui-tree",
+          capturedAt: now(),
+          data: {
+            stepId: step.id,
+            phase,
+            status: "skipped",
+            nodes: [],
+            ...(framePath ? { framePath } : {}),
+          },
+        });
+        return;
       } else {
         snapshotNodes = await withOptionalTreeBudget(OPTIONAL_TREE_BUDGET_MS, () =>
           snapshot(device, {

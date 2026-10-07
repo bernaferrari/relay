@@ -7,6 +7,32 @@ import {
 import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
 import { recordedControlDisplayName } from "./recorded-control-label.js";
 
+const STRUCTURAL_SNAPSHOT_ROLES = new Set([
+  "application",
+  "window",
+  "navigationbar",
+  "toolbar",
+  "tabbar",
+  "scrollview",
+  "horizontalscrollview",
+  "table",
+  "collectionview",
+]);
+
+function isStructuralRegion(node: SnapshotNode): boolean {
+  const role = (node.role ?? node.type ?? "").toLowerCase().split(".").at(-1) ?? "";
+  return STRUCTURAL_SNAPSHOT_ROLES.has(role);
+}
+
+function sameBounds(left: SnapshotNode["rect"], right: NonNullable<SnapshotNode["rect"]>): boolean {
+  return (
+    left?.x === right.x &&
+    left.y === right.y &&
+    left.width === right.width &&
+    left.height === right.height
+  );
+}
+
 /** Promote a pixel click only when a fresh tree identifies a unique control at
  * that location. The raw recording retains the original click separately. */
 export function semanticTargetForRecording(
@@ -25,6 +51,7 @@ export function semanticTargetForRecording(
   const candidates = nodes
     .filter(
       (node) =>
+        !isStructuralRegion(node) &&
         node.visibleToUser !== false &&
         node.enabled !== false &&
         node.rect &&
@@ -77,10 +104,19 @@ export function semanticTargetForRecording(
       // Android often activates the clickable row containing its text label.
       // Its center need not lie inside the text, but it must own this click.
       const rect = result.resolution.bounds;
+      const ownsBounds =
+        rect &&
+        sameBounds(node.rect, rect) &&
+        (node.hittable === true || INTERACTIVE_SNAPSHOT_ROLES.has(role));
       if (
         !rect ||
         !contains(rect) ||
-        rect.width * rect.height > (observation.bounds.width * observation.bounds.height) / 3
+        rect.width * rect.height > (observation.bounds.width * observation.bounds.height) / 3 ||
+        // XCTest can mark a navigation bar hittable and expose "Close" as its
+        // label. Neither that region nor a child resolved through its center
+        // owns the person's exact tap on the close control.
+        (!ownsBounds &&
+          nodes.some((region) => isStructuralRegion(region) && sameBounds(region.rect, rect)))
       )
         continue;
       const label = node.label?.trim();

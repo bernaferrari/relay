@@ -181,3 +181,116 @@ test("a composer identifier does not steal a click on its model chooser", () => 
     identifier: "chat_text_input",
   });
 });
+
+test("the captured iPad Close navigation bar cannot replace its exact pixel tap", () => {
+  const capture = observation();
+  capture.bounds = { width: 1112, height: 834 };
+  capture.nodes = [
+    {
+      index: 5,
+      parentIndex: 4,
+      identifier: "Settings",
+      label: "Close",
+      type: "NavigationBar",
+      hittable: true,
+      enabled: true,
+      rect: { x: 204, y: 40, width: 704, height: 56 },
+    },
+  ];
+  const target = { point: { anchored: true, x: 239, y: 67 } };
+  assert.equal(semanticTargetForRecording(target, capture), undefined);
+  delete capture.nodes[0]!.identifier;
+  assert.equal(semanticTargetForRecording(target, capture), undefined);
+  assert.deepEqual(target, { point: { anchored: true, x: 239, y: 67 } });
+});
+
+test("a tiny label cannot promote its containing navigation bar to an activation target", () => {
+  const capture = observation();
+  capture.nodes = [
+    {
+      index: 1,
+      label: "Close",
+      type: "NavigationBar",
+      hittable: true,
+      rect: { x: 0, y: 40, width: 400, height: 56 },
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      label: "Close",
+      type: "StaticText",
+      hittable: false,
+      rect: { x: 20, y: 56, width: 35, height: 21 },
+    },
+  ];
+  assert.equal(semanticTargetForRecording({ point: { x: 35, y: 67 } }, capture), undefined);
+});
+
+test("real iOS buttons keep identifiers and unique labels around structural regions", () => {
+  const capture = observation();
+  capture.nodes = [
+    {
+      index: 1,
+      identifier: "Settings",
+      label: "Settings",
+      type: "NavigationBar",
+      hittable: true,
+      rect: { x: 0, y: 40, width: 400, height: 56 },
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      identifier: "settings.close.button",
+      label: "Close",
+      type: "Button",
+      hittable: true,
+      rect: { x: 10, y: 44, width: 60, height: 48 },
+    },
+  ];
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 35, y: 67 } }, capture), {
+    target: { identifier: "settings.close.button" },
+    name: "Close",
+  });
+  delete capture.nodes[1]!.identifier;
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 35, y: 67 } }, capture), {
+    target: { label: "Close" },
+    name: "Close",
+  });
+  capture.nodes[0]!.label = "Close";
+  capture.nodes[0]!.rect = { ...capture.nodes[1]!.rect! };
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 35, y: 67 } }, capture), {
+    target: { label: "Close" },
+    name: "Close",
+  });
+  capture.nodes.shift();
+  capture.nodes[0]!.identifier = "settings.close.button";
+  capture.nodes[0]!.hittable = false;
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 35, y: 67 } }, capture), {
+    target: { identifier: "settings.close.button" },
+    name: "Close",
+  });
+});
+
+test("an Android clickable View row still owns its nested text label", () => {
+  const capture = observation();
+  capture.nodes = [
+    {
+      index: 1,
+      role: "android.view.View",
+      hittable: true,
+      rect: { x: 10, y: 90, width: 300, height: 90 },
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      label: "Internet",
+      role: "android.widget.TextView",
+      hittable: false,
+      rect: { x: 20, y: 110, width: 100, height: 24 },
+    },
+  ];
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 70, y: 120 } }, capture), {
+    target: { label: "Internet" },
+    name: "Internet",
+  });
+});

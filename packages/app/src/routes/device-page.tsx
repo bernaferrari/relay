@@ -398,7 +398,7 @@ export function DevicePage() {
             {recover.data.summary}
           </p>
         ) : null}
-        {recover.data?.ready ? (
+        {recover.data?.ready && !device.isError ? (
           <p className="sr-only" aria-live="polite">
             Device is ready.
           </p>

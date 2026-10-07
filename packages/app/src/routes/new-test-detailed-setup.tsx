@@ -276,7 +276,7 @@ export function NewTestDetailedSetup({
             className="w-full"
           >
             <Play aria-hidden="true" />
-            {admission.busy ? "Starting…" : "Start recording"}
+            {admission.busy && !reconnecting ? "Starting…" : "Start recording"}
           </Button>
         </form>
       }

@@ -58,6 +58,7 @@ export function useNewTestTargets(input: {
     staleTime: 5_000,
     refetchInterval: (query) =>
       selectedTargetId &&
+      query.state.data?.recovery?.sourceCode !== "native-recording-target-not-ready" &&
       !query.state.data?.targetOptions.some((target) => target.targetId === selectedTargetId)
         ? 5_000
         : false,
