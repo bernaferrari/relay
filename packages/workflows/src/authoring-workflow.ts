@@ -6,7 +6,7 @@ import {
   type OperationOutput,
 } from "@relay/protocol";
 import { snapshotFromAuthoringSession } from "./authoring-projection.js";
-import type { RelayOperationPort } from "./operation-port.js";
+import { isRelayTransportFailure, type RelayOperationPort } from "./operation-port.js";
 import type {
   AuthorTestDecision,
   DurableAuthorTestDecision,
@@ -34,6 +34,25 @@ function unavailableProblem(stage: string, error: unknown): WorkflowProblem {
     recovery: "Resolve the reported Relay problem, then start this workflow again explicitly.",
     retryable: true,
   };
+}
+
+function inspectionProblem(error: unknown): WorkflowProblem {
+  return isRelayTransportFailure(error)
+    ? {
+        code: "operation-unavailable",
+        sourceCode: "local-service-transport",
+        title: "Relay is not connected",
+        detail:
+          "Relay could not refresh this recording because the local service could not be reached.",
+        recovery:
+          "Check the Relay connection, then check status. This check did not change your recording.",
+        retryable: true,
+      }
+    : {
+        ...unavailableProblem("inspect the durable recording workflow", error),
+        recovery:
+          "Inspect this recording again after resolving the reported problem. Do not start another recording.",
+      };
 }
 
 function mutationUnknownProblem(action: string, error: unknown): WorkflowProblem {
@@ -515,11 +534,7 @@ export class CanonicalAuthoringWorkflow {
       return unavailableDurableAuthor({
         workflow: { workflowId, expectedVersion: 1 },
         unavailable: true,
-        problem: {
-          ...unavailableProblem("inspect the durable recording workflow", error),
-          recovery:
-            "Restore Relay connectivity, then inspect this workflow ID again. Do not start another recording.",
-        },
+        problem: inspectionProblem(error),
       });
     }
   }

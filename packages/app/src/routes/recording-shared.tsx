@@ -234,6 +234,15 @@ export function RecordingProblem({
 function recoveryCopy(
   recovery: ProductRecovery,
 ): Pick<ProductRecovery, "title" | "detail" | "recovery"> {
+  if (recovery.sourceCode === "local-service-transport") {
+    return {
+      title: "Relay is not connected",
+      detail:
+        "Relay could not refresh this recording because the local service could not be reached.",
+      recovery:
+        "Check the Relay connection, then check status. This check did not change your recording.",
+    };
+  }
   if (
     /Return the device to the recorded source screen|Navigate the device to .+ before replaying/iu.test(
       recovery.detail,

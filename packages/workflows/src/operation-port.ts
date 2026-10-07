@@ -23,6 +23,25 @@ export type RelayOperationPort = {
   invoke<Id extends OperationId>(id: Id, input: OperationInput<Id>): Promise<OperationOutput<Id>>;
 };
 
+/** Recognize fetch rejections before workflow recovery flattens the exception.
+ * HTTP/domain failures and prose containing "offline" are not transport proof. */
+export function isRelayTransportFailure(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    !("status" in error) &&
+    !("body" in error) &&
+    ((error instanceof TypeError &&
+      [
+        "Failed to fetch",
+        "fetch failed",
+        "Load failed",
+        "Network request failed",
+        "NetworkError when attempting to fetch resource.",
+      ].includes(error.message)) ||
+      (error instanceof DOMException && error.name === "NetworkError"))
+  );
+}
+
 /**
  * The workflow transport seam accepts any Relay client with the canonical
  * invoke shape. Both sides of every call are checked by the one operation

@@ -85,6 +85,26 @@ it("offers connection retry and disables it while checking", async () => {
   expect(host.textContent).toContain("Start Relay");
 });
 
+it("preserves explicit inspection transport provenance without exposing private recovery text", async () => {
+  const retry = vi.fn();
+  const host = await render(
+    <RecordingProblem
+      recovery={{
+        code: "operation-unavailable",
+        sourceCode: "local-service-transport",
+        title: "Relay could not inspect the durable recording workflow",
+        detail: "Failed to fetch workflow private-recording",
+        recovery: "Inspect workflow private-recording again",
+        retryable: true,
+      }}
+      onRetry={retry}
+    />,
+  );
+  expect(host.textContent).toContain("Relay is not connected");
+  expect(host.textContent).not.toMatch(/private-recording|Relay needs your attention/u);
+  expect(retry).not.toHaveBeenCalled();
+});
+
 it("does not describe a Run preparation failure as restoring work", async () => {
   const host = await render(
     <RecordingProblem

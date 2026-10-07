@@ -145,7 +145,7 @@ test("an uncertain durable Authoring decision is inspected and never retried", a
     },
   };
   const scripted = createScriptedRelayClient([
-    { id: "workflow.transition", error: new Error("response lost") },
+    { id: "workflow.transition", error: new TypeError("Failed to fetch") },
     { id: "workflow.get", output: { workflow: uncertain, session } },
   ]);
 
@@ -156,6 +156,8 @@ test("an uncertain durable Authoring decision is inspected and never retried", a
   });
 
   assert.equal(snapshot.phase, "needs-attention");
+  assert.equal(snapshot.problems.at(-1)?.code, "mutation-outcome-unknown");
+  assert.equal(snapshot.problems.at(-1)?.sourceCode, undefined);
   assert.deepEqual(
     scripted.invocations.map(({ id }) => id),
     ["workflow.transition", "workflow.get"],
@@ -213,4 +215,29 @@ test("a failed inspection cannot impersonate a fresh workflow version", async ()
   assert.equal(snapshot.version, "unavailable");
   assert.equal(snapshot.stage, "unknown");
   assert.deepEqual(snapshot.allowedNextActions, ["inspect"]);
+});
+
+test("durable inspection preserves recognized fetch failure without classifying domain errors", async () => {
+  for (const error of [new TypeError("Failed to fetch"), new TypeError("Load failed")]) {
+    const scripted = createScriptedRelayClient([{ id: "workflow.get", error }]);
+    const snapshot = await createRelayWorkflows(scripted.client).inspectAuthoring(
+      "author-workflow",
+    );
+    assert.equal(snapshot.problems[0]?.sourceCode, "local-service-transport");
+    assert.equal(snapshot.problems[0]?.title, "Relay is not connected");
+    assert.equal(snapshot.version, "unavailable");
+    assert.deepEqual(snapshot.allowedNextActions, ["inspect"]);
+  }
+  for (const error of [
+    new Error("Workflow request identity is missing"),
+    new Error("The selected device is offline"),
+    Object.assign(new TypeError("Failed to fetch"), { status: 409, body: { error: "Conflict" } }),
+  ]) {
+    const scripted = createScriptedRelayClient([{ id: "workflow.get", error }]);
+    const snapshot = await createRelayWorkflows(scripted.client).inspectAuthoring(
+      "author-workflow",
+    );
+    assert.equal(snapshot.problems[0]?.sourceCode, undefined);
+    assert.equal(snapshot.problems[0]?.code, "operation-unavailable");
+  }
 });
