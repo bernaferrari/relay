@@ -8,6 +8,7 @@ import { describeTarget } from "./recipe-presentation.js";
 import { nodeMatchesTarget, sameTarget, textForTarget } from "./recipe-target-match.js";
 import {
   captureResponseBoundary,
+  isAssistantSlot,
   quotasAfterBoundary,
   turnsAfterBoundary,
   type ResponseBoundary,
@@ -17,6 +18,13 @@ import {
   observeRecipeResponse,
   requireCurrentActionResponseBoundary,
 } from "./recipe-response-observation.js";
+
+function isResponseContent(node: SnapshotNode): boolean {
+  if (node.editable === true) return false;
+  if (isAssistantSlot(node)) return true;
+  const role = (node.role ?? node.type ?? "").toLowerCase().split(".").at(-1);
+  return ["statictext", "text", "textview", "article", "paragraph"].includes(role ?? "");
+}
 
 export function recordInitiatingResponseBoundary(
   nodes: readonly SnapshotNode[],
@@ -45,9 +53,15 @@ function currentActionStarted(
       (turn) => turn.observation === "completed",
     );
     const quota = quotasAfterBoundary(nodes, boundary);
+    // A newly visible Copy control proves readiness, not an answer that can
+    // override a new quota/error. Prose targets retain their existing behavior
+    // because an actual reply can discuss a quota without being the failure.
+    const content = quota.length
+      ? turnsAfterBoundary(nodes.filter(isResponseContent), step.target, boundary)
+      : completed;
     return {
       started: completed.length > 0 || quota.length > 0,
-      quotaOnly: completed.length === 0 && quota.length > 0,
+      quotaOnly: content.length === 0 && quota.length > 0,
     };
   }
   return {

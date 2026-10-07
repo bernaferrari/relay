@@ -31,6 +31,7 @@ import {
 import { preflightTarget, readTarget } from "./targets.js";
 import { isPhysicalRunnerRoute, resolveAppleControlRoute } from "./apple-control-route.js";
 import { ensureSavedTestIosRunner } from "./session-ios-runner-readiness.js";
+import { awaitColdSavedIosAppForeground } from "./ios-app-launch-readiness.js";
 
 /** A registry snapshot is only an admission input. Once validation succeeds,
  * the immutable plan below owns the exact driver reference used at execution. */
@@ -71,6 +72,7 @@ export async function runColdAppMapStartup(
   }
   await launch(device, app);
   log(`startup: launched saved origin application ${app}`);
+  await awaitColdSavedIosAppForeground(job, app);
 }
 
 /** Target discovery is separated from acquiring a Device so the coordinator

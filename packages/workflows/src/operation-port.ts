@@ -23,6 +23,23 @@ export type RelayOperationPort = {
   invoke<Id extends OperationId>(id: Id, input: OperationInput<Id>): Promise<OperationOutput<Id>>;
 };
 
+/** Preserve only the HTTP status from the client's named error contract.
+ * Arbitrary domain exceptions and response bodies are not status provenance. */
+export function relayHttpErrorStatus(error: unknown): number | undefined {
+  if (
+    error instanceof Error &&
+    error.name === "ApiError" &&
+    "body" in error &&
+    "status" in error &&
+    typeof error.status === "number" &&
+    Number.isInteger(error.status) &&
+    error.status >= 100 &&
+    error.status <= 599
+  )
+    return error.status;
+  return undefined;
+}
+
 /** Recognize fetch rejections before workflow recovery flattens the exception.
  * HTTP/domain failures and prose containing "offline" are not transport proof. */
 export function isRelayTransportFailure(error: unknown): boolean {

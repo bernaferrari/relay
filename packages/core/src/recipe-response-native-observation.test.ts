@@ -59,6 +59,18 @@ const readiness = {
   timeoutMs: 1_000,
   stableForMs: 0,
 };
+const nativeCopy: SnapshotNode = {
+  type: "Button",
+  identifier: "ask.message.copy.button",
+  label: "Copy Text",
+  hittable: true,
+  enabled: true,
+};
+const nativeReadiness = {
+  ...readiness,
+  target: { identifier: nativeCopy.identifier! },
+  idleTarget: { identifier: nativeCopy.identifier! },
+};
 
 async function withNativeResponse(
   read: (
@@ -227,6 +239,76 @@ test("frozen saved Test keeps the native boundary from nested Type through new r
     true,
   );
 });
+
+test("the observed native Copy Text identifier qualifies new readiness without becoming answer content", async () => {
+  const response: SnapshotNode = {
+    type: "TextView",
+    label: "A useful answer about folding paper",
+    value: "A useful answer about folding paper",
+    hittable: true,
+  };
+  await withNativeResponse(
+    (index) => complete(index ? [response, nativeCopy] : []),
+    async ({ device, ctx, commands }) => {
+      await runRecipeStep(device, prompt, ctx);
+      await runRecipeStep(device, nativeReadiness, ctx);
+      assert.equal(ctx.runtime?.responseBoundary?.initiatingActionId, prompt.id);
+      await assert.rejects(
+        runRecipeStep(device, { ...extract, target: nativeReadiness.target }, ctx),
+        /readiness.*response content/,
+      );
+      assert.equal(commands.filter(({ command }) => command === "type").length, 1);
+      assert.ok(commands.every(({ command }) => command === "snapshot" || command === "type"));
+    },
+  );
+});
+
+test("a reminted old native Copy Text identifier cannot qualify the current prompt", async () => {
+  await withNativeResponse(
+    (index) => complete([{ ...nativeCopy, ref: index ? "@reminted" : "@old" }]),
+    async ({ device, ctx }) => {
+      await runRecipeStep(device, prompt, ctx);
+      await assert.rejects(
+        runRecipeStep(device, { ...nativeReadiness, timeoutMs: 40 }, ctx),
+        /response completion: timed out/,
+      );
+    },
+  );
+});
+
+for (const label of ["Try again in 10 minutes; no answer generated", "Model v3 failed"]) {
+  test(`new native Copy readiness cannot hide the new failure observation: ${label}`, async () => {
+    await withNativeResponse(
+      (index) => complete(index ? [nativeCopy, { type: "StaticText", label }] : []),
+      async ({ device, ctx, commands }) => {
+        await runRecipeStep(device, prompt, ctx);
+        await assert.rejects(runRecipeStep(device, nativeReadiness, ctx), /quota or error/);
+        assert.equal(commands.filter(({ command }) => command === "type").length, 1);
+      },
+    );
+  });
+}
+
+for (const identifier of ["assistant-message", "native.prose"]) {
+  test(`new native prose can mention a quota without being a failed reply: ${identifier}`, async () => {
+    const response: SnapshotNode = {
+      type: "TextView",
+      identifier,
+      value: "The limit reached last month was expected",
+    };
+    await withNativeResponse(
+      (index) => complete(index ? [response] : []),
+      async ({ device, ctx }) => {
+        await runRecipeStep(device, prompt, ctx);
+        await runRecipeStep(
+          device,
+          { ...readiness, target: { identifier }, idleTarget: { identifier } },
+          ctx,
+        );
+      },
+    );
+  });
+}
 
 const unavailableBaselines: Array<[string, LiveIosRunnerCommandResult | Error]> = [
   ["incomplete", { ok: true, data: { truncated: true, nodes: [root, turn("@old")] } }],

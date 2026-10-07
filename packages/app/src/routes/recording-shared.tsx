@@ -15,6 +15,7 @@ type ProductRecovery = {
   code?: string;
   action?: string;
   sourceCode?: string;
+  httpStatus?: number;
   sourceStepId?: string;
   title: string;
   detail: string;

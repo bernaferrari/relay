@@ -5,6 +5,7 @@ import type {
   AuthoringTarget,
 } from "@relay/protocol";
 import { createRelayRecordingOutcomeJobs } from "@relay/workflows/recording-outcomes";
+import { ApiError } from "@relay/client";
 import {
   type AuthorTestSnapshot,
   type ConnectTargetIntent,
@@ -13,7 +14,7 @@ import {
   type RelayOutcomeJobs,
   type WorkflowProblem,
 } from "@relay/workflows/types";
-import type { RelayInvokeClient } from "@relay/workflows/operation-port";
+import { relayHttpErrorStatus, type RelayInvokeClient } from "@relay/workflows/operation-port";
 import type { AuthoringInputReceiptRef } from "@relay/workflows";
 import { projectError, type HumanError } from "./errors.js";
 export { listProductRecordingDrafts, type ProductRecordingDraft } from "./recording-drafts.js";
@@ -35,6 +36,8 @@ export type ProductRecordingAction =
 
 export type ProductRecordingRecovery = HumanError & {
   code: WorkflowProblem["code"] | "transport";
+  /** Safe HTTP context; request bodies and provider messages stay private. */
+  httpStatus?: number;
   action?: ProductRecordingAction["action"];
   /** Exact reserved transition identity from the fresh pre-dispatch read. */
   recordingMutation?: AuthoringInputReceiptRef;
@@ -159,7 +162,19 @@ function recoveryFromProblem(
   problem: WorkflowProblem,
   action?: ProductRecordingAction["action"],
 ): ProductRecordingRecovery {
-  return { ...problem, ...(action ? { action } : {}) };
+  // Reuse the existing public HTTP guidance after a read adapter has removed
+  // the private exception. Typed domain recovery keeps its own authority.
+  const projected =
+    !action &&
+    problem.code === "operation-unavailable" &&
+    !problem.sourceCode &&
+    typeof problem.httpStatus === "number" &&
+    Number.isInteger(problem.httpStatus) &&
+    problem.httpStatus >= 100 &&
+    problem.httpStatus <= 599
+      ? projectError(new ApiError(problem.httpStatus, ""))
+      : problem;
+  return { ...problem, ...projected, ...(action ? { action } : {}) };
 }
 
 function recoveryFromError(
@@ -167,6 +182,11 @@ function recoveryFromError(
   action?: ProductRecordingAction["action"],
 ): ProductRecordingRecovery {
   return { ...projectError(error), code: "transport", ...(action ? { action } : {}) };
+}
+
+function recoveryFromInspectionError(error: unknown): ProductRecordingRecovery {
+  const httpStatus = relayHttpErrorStatus(error);
+  return { ...recoveryFromError(error), ...(httpStatus !== undefined ? { httpStatus } : {}) };
 }
 
 function recoveryFromSnapshot(
@@ -352,7 +372,7 @@ export function createProductRecordingJourney(input: {
     try {
       return publishSnapshot(asAuthorTest(await jobs.inspect({ workflowId })));
     } catch (error) {
-      return publish({ recovery: recoveryFromError(error) });
+      return publish({ recovery: recoveryFromInspectionError(error) });
     }
   }
 

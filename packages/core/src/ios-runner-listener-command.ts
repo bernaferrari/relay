@@ -35,11 +35,13 @@ import {
   postSupervisedAdoptedIosMutation,
 } from "./ios-adopted-mutation.js";
 import { finishRejectedIosIdentifierDispatch } from "./ios-mutation-policy.js";
+import { IosRunnerReadError } from "./ios-runner-read-error.js";
 
 export type LiveIosRunnerCommand = Record<string, unknown>;
 
 export type LiveIosRunnerCommandResult = {
   ok?: boolean;
+  runnerMainThreadBusy?: boolean;
   error?: string | { message?: string; code?: string };
   data?: {
     nodes?: SnapshotNode[];
@@ -48,6 +50,7 @@ export type LiveIosRunnerCommandResult = {
     truncated?: boolean;
     systemSurface?: { bundleId?: string };
     selectorCandidateReceipt?: unknown;
+    applicationState?: string;
   };
   nodes?: SnapshotNode[];
 };
@@ -181,7 +184,10 @@ async function snapshotIosDisambiguationTreeViaListener(
     input.timeoutMs ?? 20_000,
   );
   if (result.ok === false || (input.requireComplete && result.ok !== true)) {
-    throw new Error(liveIosRunnerFailureMessage(result, "Live XCTest listener snapshot failed"));
+    throw new IosRunnerReadError(
+      result,
+      liveIosRunnerFailureMessage(result, "Live XCTest listener snapshot failed"),
+    );
   }
   if (input.requireComplete && result.data?.truncated !== false) {
     throw new Error("Live XCTest listener did not return a complete current accessibility tree");
@@ -400,7 +406,10 @@ export async function snapshotViaLiveIosRunnerListener(input: {
   };
   const result = await post(listener, command, timeoutMs);
   if (result.ok === false) {
-    throw new Error(liveIosRunnerFailureMessage(result, "Live XCTest listener snapshot failed"));
+    throw new IosRunnerReadError(
+      result,
+      liveIosRunnerFailureMessage(result, "Live XCTest listener snapshot failed"),
+    );
   }
   const nodes = result.data?.nodes ?? result.nodes ?? [];
   if (isIosRunnerHostProbeTree(nodes)) {

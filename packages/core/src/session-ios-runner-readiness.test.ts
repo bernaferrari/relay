@@ -80,7 +80,13 @@ async function withSavedStartup(
   const counts = { preparations: 0, launches: 0, sdkReads: 0 };
   const logs: string[] = [];
   const commands: LiveIosRunnerCommand[] = [];
-  const job = { id: serial, targetContext: context, platform: "ios", serial } as TestJob;
+  const job = {
+    id: serial,
+    targetContext: context,
+    platform: "ios",
+    serial,
+    artifacts: [],
+  } as TestJob;
   const device = deviceTestDouble({
     capture: {
       async snapshot() {
@@ -115,6 +121,9 @@ async function withSavedStartup(
     assert.equal(listener.serial, serial);
     assert.equal(command.appBundleId, appBundleId);
     commands.push(command);
+    if (command.command === "appState") {
+      return { ok: true, data: { applicationState: "runningForeground" } };
+    }
     if (command.command === "snapshot") {
       return {
         ok: true,

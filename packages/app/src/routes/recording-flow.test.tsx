@@ -1,6 +1,14 @@
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
 /** @jsxImportSource react */
-import { reviewAndroidTalkBack, type AuthoringRecordingEdit } from "@relay/protocol";
+import {
+  reviewAndroidTalkBack,
+  type AuthoringRecordingEdit,
+  type AuthoringSession,
+} from "@relay/protocol";
+import { createProductRecordingJourney } from "@relay/product/recording-journey";
+import { createRelayRecordingOutcomeJobs } from "@relay/workflows/recording-outcomes";
+import { focusManager } from "@tanstack/react-query";
+import * as queryClients from "../data/query-client";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -13,7 +21,7 @@ import type {
 import type { LiveTargetSession } from "../data/live-target-session";
 import { rememberRecordingInto } from "../data/record-into-test";
 import { RecordingInputNotSentError } from "../data/recording-input-outcome";
-import { ApiError } from "@relay/client";
+import { ApiError, RelayClient } from "@relay/client";
 import type { DeviceProductService } from "../data/device-product-service";
 import type { MapProductService } from "../data/map-product-service";
 import type { Platform } from "../platform/types";
@@ -48,6 +56,8 @@ afterEach(async () => {
   });
   document.body.replaceChildren();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  focusManager.setFocused(undefined);
 });
 
 function state(
@@ -3331,6 +3341,169 @@ describe("record, review, replay, and save", () => {
 });
 
 describe("recording review request recovery", () => {
+  it("shows a temporary service response from the actual Review loader and preserves drafts on recovery", async () => {
+    const queryClient = queryClients.createRelayQueryClient();
+    queryClient.setDefaultOptions({ queries: { retry: false, refetchOnWindowFocus: true } });
+    vi.spyOn(queryClients, "createRelayQueryClient").mockReturnValue(queryClient);
+    const session: AuthoringSession = {
+      schemaVersion: 1,
+      id: "recording-1",
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+      appMapId: "app-1",
+      testName: "Change the app language",
+      state: "reviewing",
+      target,
+      leaseId: "lease-fixture",
+      expectedAppMapRevision: 2,
+      captureProvenance: { schemaVersion: 1, mode: "control-and-record", origin: "relay-control" },
+      createdAt: 1,
+      updatedAt: 2,
+      take: {
+        id: "take-fixture",
+        state: "reviewing",
+        createdAt: 1,
+        updatedAt: 2,
+        currentRevision: 1,
+        revisions: [
+          {
+            id: "revision-fixture",
+            takeId: "take-fixture",
+            revision: 1,
+            createdAt: 1,
+            createdBy: "human:test",
+            reason: "recording",
+            actions: [
+              {
+                id: "step-1",
+                source: "captured",
+                recordedAt: 1,
+                startedAt: 1,
+                finishedAt: 2,
+                label: "Open Settings",
+                steps: [{ kind: "tap", target: { label: "Settings" } }],
+                evidenceIds: [],
+                proofStatus: "verified",
+              },
+            ],
+            evidence: [],
+          },
+        ],
+        replayAttempts: [],
+      },
+    };
+    let unavailable = false;
+    let replyUnavailable!: (response: Response) => void;
+    const requests: Request[] = [];
+    const client = new RelayClient(
+      {
+        url: "https://relay.test",
+        auth: { type: "none" },
+        organizationId: "local",
+        projectId: "default",
+        actorId: "human:test",
+      },
+      {
+        fetch: async (input, init) => {
+          requests.push(new Request(input, init));
+          if (unavailable)
+            return new Promise<Response>((resolve) => {
+              replyUnavailable = resolve;
+            });
+          return Response.json({
+            workflow: {
+              record: {
+                schemaVersion: 1,
+                workflowId: "workflow-1",
+                organizationId: "local",
+                projectId: "default",
+                kind: "author-test",
+                version: 4,
+                status: "active",
+                lastTransition: "authoring-stop-completed",
+                frozenIdentity: {
+                  title: session.testName,
+                  actorId: session.actorId,
+                  appMapId: session.appMapId,
+                  appMapRevision: 2,
+                  target,
+                },
+                resource: { kind: "authoring-session", id: session.id },
+                createdBy: session.actorId,
+                lastActorId: session.actorId,
+                createdAt: 1,
+                updatedAt: 2,
+                expiresAt: 100_000,
+              },
+              audit: [],
+            },
+            session,
+          });
+        },
+      },
+    );
+    const journey = createProductRecordingJourney({
+      jobs: createRelayRecordingOutcomeJobs(client, { actorId: "human:test" }),
+    });
+    const fake = fakeService(state("reviewing", ["inspect", "edit", "replay"]));
+    fake.service.inspect = (workflowId) => journey.inspect(workflowId);
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(journey.state().recovery).toBeUndefined();
+    await fill(
+      document.querySelector<HTMLInputElement>("#review-test-name")!,
+      "My unsaved Test name",
+    );
+    await click(button("Edit steps"));
+    await fill(
+      document.querySelector<HTMLInputElement>("#review-action-intent")!,
+      "My unsaved instruction",
+    );
+    unavailable = true;
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await settle();
+    expect(document.body.textContent).not.toContain("Could not load the recording");
+    expect(document.body.textContent).not.toContain("Recording status is temporarily unavailable");
+    expect(document.querySelector<HTMLInputElement>("#review-action-intent")?.value).toBe(
+      "My unsaved instruction",
+    );
+    await act(async () =>
+      replyUnavailable(
+        Response.json({ error: "private device serial and token" }, { status: 503 }),
+      ),
+    );
+    await settle();
+    expect(document.body.textContent).toContain("Recording status is temporarily unavailable");
+    expect(document.body.textContent).toContain("Wait a moment, then check status.");
+    expect(document.body.textContent).toContain("HTTP status: 503");
+    expect(document.body.textContent).not.toContain("private device serial and token");
+    expect(document.querySelector<HTMLInputElement>("#review-action-intent")?.disabled).toBe(true);
+    unavailable = false;
+    await click(button("Check status"));
+    expect(document.body.textContent).not.toContain("Recording status is temporarily unavailable");
+    expect(document.querySelector<HTMLInputElement>("#review-test-name")?.value).toBe(
+      "My unsaved Test name",
+    );
+    expect(document.querySelector<HTMLInputElement>("#review-action-intent")?.value).toBe(
+      "My unsaved instruction",
+    );
+    expect(requests.length).toBe(3);
+    expect(
+      requests.every((request) => request.headers.get("x-relay-operation-id") === "workflow.get"),
+    ).toBe(true);
+    expect(fake.calls).not.toContain("replay");
+    expect(fake.edits).toEqual([]);
+    focusManager.setFocused(undefined);
+  });
+
   it("keeps a follow-up read failure separate from a successful recovery action", async () => {
     const interrupted = state("reviewing", ["inspect"]);
     interrupted.snapshot!.phase = "needs-attention";
