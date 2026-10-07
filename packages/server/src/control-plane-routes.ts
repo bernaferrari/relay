@@ -16,6 +16,7 @@ import {
   listTargets,
   now,
   parseMatrixYaml,
+  ProjectVariablesUpdateError,
   readCompatibilityMatrix,
   readProjectVariables,
   releaseDeviceLease,
@@ -33,8 +34,7 @@ import type {
   DevicePool,
   GenerationRequest,
   Project,
-  RevisionWrite,
-  TestData,
+  ProjectVariablesWrite,
 } from "@relay/protocol";
 import { localControlSessionOwner } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
@@ -458,12 +458,18 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
     return true;
   }
   if (method === "PUT" && pathname === "/project/variables") {
-    const body = (await parseJsonBody(request)) as RevisionWrite<TestData[]>;
+    const body = (await parseJsonBody(request)) as ProjectVariablesWrite;
     if (!Number.isInteger(body.expectedRevision) || !Array.isArray(body.value)) {
       throw new HttpError(400, "expectedRevision and value are required");
     }
     body.idempotencyKey ||= request.headers["idempotency-key"] as string | undefined;
-    json(response, 200, await writeProjectVariables(scope.projectId, body));
+    try {
+      json(response, 200, await writeProjectVariables(scope.projectId, body));
+    } catch (error) {
+      if (error instanceof ProjectVariablesUpdateError)
+        throw new HttpError(error.status, error.message);
+      throw error;
+    }
     return true;
   }
   if (method === "POST" && pathname === "/generate") {

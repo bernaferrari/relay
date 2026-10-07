@@ -30,12 +30,12 @@ export function requirePublicInputDataSet(input: {
       "conflicting-variable",
       "Input Data sets require a public, non-sensitive list or static Project input",
     );
-  const values = definition.values?.map((value) => value.trim()).filter(Boolean) ?? [];
+  const values = definition.values?.filter((value) => value.trim().length > 0) ?? [];
   const approved = definition.source === "static" ? values.slice(0, 1) : values;
   if (
     !input.values.length ||
     input.values.some(
-      (value) => value.length > MAX_INPUT_DATA_SET_VALUE_LENGTH || !approved.includes(value.trim()),
+      (value) => value.length > MAX_INPUT_DATA_SET_VALUE_LENGTH || !approved.includes(value),
     )
   )
     throw new CasePlanError(

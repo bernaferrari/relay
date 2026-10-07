@@ -97,9 +97,11 @@ export async function nativePromptCombineFixture(projectId: string) {
   return { map, appMapId, targetId };
 }
 
-export async function nativeInputDataSetCombineFixture(projectId: string) {
+export async function nativeInputDataSetCombineFixture(
+  projectId: string,
+  values = ["Describe ocean tides", "Suggest a paper airplane tip"],
+) {
   const fixture = await nativePromptCombineFixture(projectId);
-  const values = ["Describe ocean tides", "Suggest a paper airplane tip"];
   await writeProjectVariables(projectId, {
     expectedRevision: 0,
     value: [{ id: "prompt-data", name: "chat_prompt", scope: "shared", source: "list", values }],

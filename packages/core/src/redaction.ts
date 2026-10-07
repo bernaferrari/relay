@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RedactionPolicy } from "@relay/protocol";
+import { REDACTED, type RedactionPolicy } from "@relay/protocol";
 import {
   readWorkspaceSetting,
   workspaceSettingFile,
@@ -11,7 +11,7 @@ const SENSITIVE_KEY =
 const BEARER = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const COOKIE = /\b(cookie|set-cookie)\s*[:=]\s*[^\s,;]+/gi;
 
-export const REDACTED = "[REDACTED]";
+export { REDACTED } from "@relay/protocol";
 
 export class RedactionPolicyLockedError extends Error {
   constructor() {

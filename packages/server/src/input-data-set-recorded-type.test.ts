@@ -29,7 +29,10 @@ import { startServer } from "./index.js";
 
 test("recorded Type parameterization reaches frozen Plan rows and resumes their original text without extra taps", async () => {
   const projectId = "input-only-recorded-type";
-  const fixture = await nativeInputDataSetCombineFixture(projectId);
+  const fixture = await nativeInputDataSetCombineFixture(projectId, [
+    "  Explain how a paper airplane flies.\n\n    Use three short sentences.\n",
+    "Suggest a paper airplane tip",
+  ]);
   // A synthetic CoreSimulator UUID keeps canonical text dispatch on the device
   // double. Android's real text helper deliberately uses host ADB.
   const targetId = "12345678-1234-1234-1234-123456789ABC";

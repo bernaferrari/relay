@@ -57,6 +57,71 @@ test("an input-only selected row binds its Project Data set ID despite unrelated
   assert.notEqual(receipts[0]!.valuesDigest, receipts[1]!.valuesDigest);
 });
 
+test("public list/static rows freeze exact multiline text and reject changed whitespace approval", async () => {
+  const value = "  First line\nSecond line.\n ";
+  for (const source of ["list", "static"] as const) {
+    const exact = { ...definition, source, values: [value] };
+    const row = { id: "questions", inputId: exact.id, valueId: "value-1", value };
+    const resolved = resolveRecipeInputReferences({
+      recipeGraph: graph,
+      definitions: [exact],
+      selectedRows: [row],
+    });
+    assert.equal(resolved.runtimeValues.chat_prompt, value);
+    const frozen = await freezeRecipeInputs({
+      recipeGraph: graph,
+      definitions: { revision: 8, value: [exact] },
+      runtimeValues: resolved.runtimeValues,
+      seed: 42,
+    });
+    assert.ok(frozen);
+    assert.deepEqual(resolveRecipeStep(graph.prompt!.steps[0]!, frozen.variables), {
+      kind: "type",
+      text: value,
+    });
+    assert.equal(frozen.receipt.values.chat_prompt, value);
+    assert.throws(
+      () =>
+        resolveRecipeInputReferences({
+          recipeGraph: graph,
+          definitions: [{ ...exact, values: [value.trim()] }],
+          selectedRows: [row],
+        }),
+      /approved Project input values/,
+    );
+  }
+});
+
+test("legacy public literal rows preserve whitespace and distinguish equally trimmed prompts", async () => {
+  const value = "  First\nSecond  ";
+  for (const source of ["list", "static"] as const) {
+    const exact = { ...definition, source, values: [value, value.trim()] };
+    for (const selected of [value, value.trim()]) {
+      const resolved = resolveRecipeInputReferences({
+        recipeGraph: graph,
+        definitions: [exact],
+        selectedRows: [{ id: exact.id, name: exact.name, valueId: selected }],
+      });
+      const frozen = await freezeRecipeInputs({
+        recipeGraph: graph,
+        definitions: { revision: 8, value: [exact] },
+        runtimeValues: resolved.runtimeValues,
+        seed: 42,
+      });
+      assert.equal(frozen?.variables.chat_prompt, selected);
+    }
+    assert.throws(
+      () =>
+        resolveRecipeInputReferences({
+          recipeGraph: graph,
+          definitions: [{ ...exact, values: [value.trim()] }],
+          selectedRows: [{ id: exact.id, valueId: value }],
+        }),
+      /approved Test input value/,
+    );
+  }
+});
+
 test("explicit input rows validate approved public definitions and skip only inapplicable cells", () => {
   const row = {
     id: "questions",

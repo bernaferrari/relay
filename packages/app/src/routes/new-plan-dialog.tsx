@@ -307,7 +307,9 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                         service={{
                           listInputDataSets: suiteProfileService.listInputDataSets,
                           addInputDataSet: suiteProfileService.addInputDataSet,
+                          saveInputDefinition: suiteProfileService.saveInputDefinition,
                         }}
+                        selectedTests={editor.data.tests.filter((test) => testIds.has(test.id))}
                         disabled={createSuite.isPending}
                         onBusy={setAddingDataSet}
                         onReload={() => editor.refetch()}

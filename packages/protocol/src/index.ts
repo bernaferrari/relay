@@ -658,6 +658,17 @@ export type TestData = {
   sensitive?: boolean;
 };
 
+/** Shared text marker used by HTTP projections and public input editors. */
+export const REDACTED = "[REDACTED]";
+
+/** Preserve exact stored definitions when editing only part of the Project
+ * catalog. Preserved IDs must exist and cannot also appear in value. */
+export type ProjectVariablesWrite = RevisionWrite<TestData[]> & {
+  preserveInputIds?: string[];
+  /** Require exact existing IDs to remain unused by all current Project Apps. */
+  requireUnlinkedInputIds?: string[];
+};
+
 export type GenerationPurpose = "variable" | "test-plan";
 export type GenerationRequest = {
   purpose: GenerationPurpose;
