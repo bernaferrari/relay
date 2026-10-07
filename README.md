@@ -102,6 +102,17 @@ sized prompt lists in order. Each Test consumes only the inputs it references;
 input rows add no taps or picker steps. Admitted values remain frozen on resume
 even if the Project Data set changes later.
 
+Discover and inspect the saved Plan using its App and Plan IDs:
+
+```bash
+./bin/relay plan list <app-id> --json
+./bin/relay plan get <app-id> <plan-id> --json
+./bin/relay plan preflight <app-id> <plan-id> --json
+```
+
+List and get read saved selections. Preflight checks the selected cases and bindings without
+starting a Run; a live Run on the intended device is still needed to qualify the Plan.
+
 Qualify the Plan manually on its intended device, then prepare its 30-minute
 schedule with `combineId`, `appMapId`, the exact `targetId`, `platform`,
 `targetKind:"device"`, `intervalMinutes:30`, and `enabled:false`. Enable it
@@ -117,6 +128,9 @@ The plugin bundles MCP configuration and skills for setup, recording, run review
 ./bin/relay run <test-id> --map <app-id> --device <serial> --json
 ./bin/relay export <run-id> --out ./review --json
 ```
+
+For a saved Plan, use both IDs: `./bin/relay plan run <app-id> <plan-id> --lane <lane-id>`.
+This runs one case by default; add `--all` to run every selected case.
 
 Use the saved Test and App IDs, a serial from the device list, and the Run ID
 returned by the run command. For a saved browser/account configuration, replace

@@ -10,7 +10,10 @@ import { UsageError } from "./errors.js";
 
 const familyGroups = [
   ["Topology", ["map", "screen", "connect", "flow"]],
-  ["Authoring", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
+  [
+    "Authoring",
+    ["variable", "test", "plan", "combine", "proposal", "session", "routine", "case-stack"],
+  ],
   ["Explore", ["discovery"]],
   ["Proof", ["proof", "prove"]],
   ["Operate", ["device", "run", "report", "activity"]],
@@ -120,6 +123,9 @@ function renderRootHelp(): string {
     "test run",
     "variable save",
     "combine run",
+    "plan list",
+    "plan get",
+    "plan preflight",
     "plan run",
     "plan findings",
     "plan capture review",
@@ -148,7 +154,10 @@ Everyday tasks:
   Edit the recording      relay edit-recording <workflowId> <expectedVersion> <verb> ...
   Run a saved Test        relay run <testId> --lane <lane>   (account + browser + profile)
   Run across accounts     relay repeat <testId> --each <dimension>=<values|all>
-  Run a saved Plan        relay plan run <planId> [--lane <lane>] [--all]
+  Find saved Plans        relay plan list <appMapId>
+  Inspect a saved Plan    relay plan get <appMapId> <planId>
+  Check a saved Plan      relay plan preflight <appMapId> <planId>
+  Run a saved Plan        relay plan run <appMapId> <planId> [--lane <lane>] [--all]
   Ask Relay to explore    relay explore --url <url> --goal <goal> --confirm
   Ask Relay to exercise   relay goal run --url http://127.0.0.1:3000 --goal "Open settings" --confirm
   Inspect a Run           relay inspect <runOrWorkflowId>

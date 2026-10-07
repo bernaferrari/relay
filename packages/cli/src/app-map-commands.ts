@@ -4,6 +4,7 @@ import {
   type MappedOperationDescriptor,
 } from "./command-descriptors.js";
 import { graphTestListPath } from "./test-commands.js";
+import { planGetCommandPath, planListCommandPath } from "./plan-commands.js";
 
 /** App Map metadata, screens, connections, flows, and reusable graph assets. */
 export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescriptor[] = [
@@ -46,6 +47,8 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
       summary: "List saved Variable × Test plans",
       examples: ["relay combine list grok-android"],
     }),
+    planListCommandPath,
+    planGetCommandPath,
   ),
   mapped(
     "app-map.create",
