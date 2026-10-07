@@ -29,6 +29,8 @@ import {
   type TargetDriverRegistry,
 } from "./target-driver-registry.js";
 import { preflightTarget, readTarget } from "./targets.js";
+import { isPhysicalRunnerRoute, resolveAppleControlRoute } from "./apple-control-route.js";
+import { ensureSavedTestIosRunner } from "./session-ios-runner-readiness.js";
 
 /** A registry snapshot is only an admission input. Once validation succeeds,
  * the immutable plan below owns the exact driver reference used at execution. */
@@ -216,6 +218,7 @@ export async function acquirePreparedSessionDevice(
   job: TestJob,
   target: PreparedSessionTarget,
   pushLog: (line: string) => void,
+  options?: { requirePhysicalIosSemantics?: boolean },
 ): Promise<Device> {
   if (target.providerDevice) return target.providerDevice;
   if (job.targetKind === "browser" && target.browserTarget) {
@@ -253,11 +256,20 @@ export async function acquirePreparedSessionDevice(
   // any standalone job) still releases stale Android helper bindings. Later
   // cells in the same batch keep the helper — recover-between-cells was the
   // grok-android-daily tax on every Test.
-  if (shouldHardStopPreparedSession(target.physicalIos, job.caseIndex)) {
+  const savedPhysicalIos =
+    options?.requirePhysicalIosSemantics === true &&
+    isPhysicalRunnerRoute(resolveAppleControlRoute(job.targetContext));
+  if (shouldHardStopPreparedSession(savedPhysicalIos || target.physicalIos, job.caseIndex)) {
     await hardStopDeviceSession(job.targetContext);
     resetDeviceClient(job.targetContext);
   }
   const device = createDeviceForTarget(job.targetContext);
+  if (savedPhysicalIos) {
+    await ensureSavedTestIosRunner(device, job.targetContext, pushLog);
+    // Physical openApp is a sidecar activation, not an SDK attach. The saved
+    // cold startup owns its one launch; warm/later cells keep the current app.
+    return device;
+  }
   if (job.platform === "ios" && job.serial) {
     const app = await rememberedTargetApplication(job.targetContext);
     if (app) {

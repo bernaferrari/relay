@@ -688,7 +688,9 @@ async function executeJobOnTarget(
       );
     }
 
-    device = await acquirePreparedSessionDevice(job, target, pushLog);
+    device = await acquirePreparedSessionDevice(job, target, pushLog, {
+      requirePhysicalIosSemantics: startupMode !== undefined,
+    });
     evidence = await startRunEvidence(job, device, pushLog, evidence, {
       physicalIos: target.physicalIos,
     });

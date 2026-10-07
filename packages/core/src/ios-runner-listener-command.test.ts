@@ -13,10 +13,17 @@ import {
   readUsbmuxDeviceId,
   setLiveIosRunnerCommandPostForTests,
   snapshotViaLiveIosRunnerListener,
-  tapViaLiveIosRunnerListener,
-  typeViaLiveIosRunnerListener,
+  tapViaLiveIosRunnerListener as adoptedTap,
+  typeViaLiveIosRunnerListener as adoptedType,
   unknownErrorMessage,
 } from "./ios-runner-listener-command.js";
+import { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
+
+// These isolated transport fixtures intentionally have no durable supervisor.
+const tapViaLiveIosRunnerListener: typeof adoptedTap = (input) =>
+  runWithIosSupervisionMode("test-optional", () => adoptedTap(input));
+const typeViaLiveIosRunnerListener: typeof adoptedType = (input) =>
+  runWithIosSupervisionMode("test-optional", () => adoptedType(input));
 
 test("unknownErrorMessage reads runner {message,code} instead of [object Object]", () => {
   assert.equal(
@@ -247,7 +254,7 @@ test("a live listener type with an explicit selector does not invent a Grok comp
   }
 });
 
-test("a failed live listener type with an explicit selector is not-applied when the value is unchanged", async () => {
+test("a generic failed live listener type preserves its failure without an unchanged-field inference", async () => {
   const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-type-unchanged-"));
   const serial = "live-type-unchanged-ipad";
   const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
@@ -281,7 +288,9 @@ test("a failed live listener type with an explicit selector is not-applied when 
         selectorKey: "id",
         selectorValue: "settings.search",
       }),
-      (error: unknown) => error instanceof Error && error.message === "element not found",
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message === "find could not read the current accessibility tree",
     );
   } finally {
     restore();

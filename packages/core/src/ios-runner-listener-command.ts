@@ -12,6 +12,11 @@ import { INTERACTIVE_SNAPSHOT_ROLES, resolveNamedControl } from "./device-target
 import { probeLiveIosRunnerListener, type LiveIosRunnerListener } from "./ios-runner-listener.js";
 import type { TargetContext } from "./target-context.js";
 import { rememberedTargetApplication } from "./device.js";
+import {
+  adoptedIosMutationFailure,
+  postSupervisedAdoptedIosMutation,
+} from "./ios-adopted-mutation.js";
+import { finishRejectedIosIdentifierDispatch } from "./ios-mutation-policy.js";
 
 export type LiveIosRunnerCommand = Record<string, unknown>;
 
@@ -717,9 +722,18 @@ export async function tapViaLiveIosRunnerListener(input: {
       };
   const timeoutMs = input.timeoutMs ?? 20_000;
   const post = injectedPost ?? postLiveIosRunnerCommand;
-  const result = await post(listener, command, timeoutMs);
-  if (result.ok !== false) return;
-  if (input.selectorKey === "id" && iosRunnerCommandIsAmbiguous(result)) {
+  const result = await postSupervisedAdoptedIosMutation(listener, post, command, timeoutMs);
+  if (result.ok === true) return;
+  const failure = adoptedIosMutationFailure(
+    result,
+    liveIosRunnerFailureMessage(result, "Live XCTest listener tap failed"),
+  );
+  if (
+    input.selectorKey === "id" &&
+    failure.code === "AMBIGUOUS_MATCH" &&
+    failure.dispatched === "no"
+  ) {
+    await finishRejectedIosIdentifierDispatch(input.serial, failure);
     const tree = await snapshotIosDisambiguationTreeViaListener(listener, post, {
       appBundleId: input.appBundleId,
       timeoutMs,
@@ -730,8 +744,9 @@ export async function tapViaLiveIosRunnerListener(input: {
         "No unique control matched identifier after ranking same-id nodes. Snapshot the screen and retry with a unique identifier or label.",
       );
     }
-    const ranked = await post(
+    const ranked = await postSupervisedAdoptedIosMutation(
       listener,
+      post,
       {
         command: "tap",
         synthesized: true,
@@ -742,11 +757,14 @@ export async function tapViaLiveIosRunnerListener(input: {
       timeoutMs,
     );
     if (ranked.ok === false) {
-      throw new Error(liveIosRunnerFailureMessage(ranked, "Live XCTest listener tap failed"));
+      throw adoptedIosMutationFailure(
+        ranked,
+        liveIosRunnerFailureMessage(ranked, "Live XCTest listener tap failed"),
+      );
     }
     return;
   }
-  throw new Error(liveIosRunnerFailureMessage(result, "Live XCTest listener tap failed"));
+  throw failure;
 }
 
 function uniqueIdentifierNodes(nodes: readonly SnapshotNode[], identifier: string): SnapshotNode[] {
@@ -755,38 +773,6 @@ function uniqueIdentifierNodes(nodes: readonly SnapshotNode[], identifier: strin
 
 function uniqueLabelNodes(nodes: readonly SnapshotNode[], label: string): SnapshotNode[] {
   return nodes.filter((node) => (node.label?.trim() || label) === label);
-}
-
-function nodeHoldsTypedText(node: SnapshotNode | undefined, text: string): boolean {
-  if (!node || !text) return false;
-  return [node.value, node.label, node.content].some(
-    (candidate) => typeof candidate === "string" && candidate.includes(text),
-  );
-}
-
-async function queryLiveIosIdentifierNodes(
-  listener: LiveIosRunnerListener,
-  input: { appBundleId?: string; identifier: string; timeoutMs?: number },
-): Promise<SnapshotNode[]> {
-  const post = injectedPost ?? postLiveIosRunnerCommand;
-  const result = await post(
-    listener,
-    {
-      command: "querySelector",
-      selectorKey: "id",
-      selectorValue: input.identifier,
-      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-    },
-    input.timeoutMs ?? IOS_CHROME_QUERY_TIMEOUT_MS,
-  );
-  if (result.ok === false) return [];
-  const nodes = result.data?.nodes ?? result.nodes ?? [];
-  if (isIosRunnerHostProbeTree(nodes)) {
-    throw new Error(
-      "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
-    );
-  }
-  return uniqueIdentifierNodes(nodes, input.identifier);
 }
 
 export async function typeViaLiveIosRunnerListener(input: {
@@ -811,19 +797,17 @@ export async function typeViaLiveIosRunnerListener(input: {
     ...(selectorKey && selectorValue ? { selectorKey, selectorValue } : {}),
     ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
   };
-  const result = await (injectedPost ?? postLiveIosRunnerCommand)(listener, command, timeoutMs);
+  const result = await postSupervisedAdoptedIosMutation(
+    listener,
+    injectedPost ?? postLiveIosRunnerCommand,
+    command,
+    timeoutMs,
+  );
   if (result.ok === false) {
-    if (selectorKey === "id" && selectorValue) {
-      const after = await queryLiveIosIdentifierNodes(listener, {
-        identifier: selectorValue,
-        ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-        timeoutMs: Math.min(timeoutMs, IOS_CHROME_QUERY_TIMEOUT_MS),
-      }).catch(() => undefined);
-      if (after && after.length === 1 && !nodeHoldsTypedText(after[0], input.text)) {
-        throw new Error("element not found");
-      }
-    }
-    throw new Error(liveIosRunnerFailureMessage(result, "Live XCTest listener type failed"));
+    throw adoptedIosMutationFailure(
+      result,
+      liveIosRunnerFailureMessage(result, "Live XCTest listener type failed"),
+    );
   }
 }
 
