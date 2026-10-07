@@ -51,6 +51,7 @@ export * from "./doctor.js";
 export * from "./control.js";
 export * from "./retry.js";
 export * from "./collaboration.js";
+export { ProjectVariablesUpdateError } from "./project-variable-update.js";
 export * from "./combine-campaign.js";
 export * from "./combine-campaign-case-identity.js";
 export * from "./combine-causal-rerun.js";

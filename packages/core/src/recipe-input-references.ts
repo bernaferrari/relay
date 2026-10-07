@@ -53,8 +53,13 @@ export function resolveRecipeInputReferences(input: {
           "conflicting-variable",
           `Data set alias “${alias}” matches multiple Data sets`,
         );
-      const value = input.runtimeValues?.[alias]?.trim();
-      if (value) values.add(value);
+      const supplied = input.runtimeValues?.[alias];
+      const preserveText =
+        definition.scope === "shared" &&
+        !definition.sensitive &&
+        (definition.source === "static" || definition.source === "list");
+      const value = preserveText ? supplied : supplied?.trim();
+      if (value?.trim()) values.add(value);
     }
     if (values.size > 1)
       throw new CasePlanError(
@@ -73,7 +78,7 @@ export function resolveRecipeInputReferences(input: {
       // A mixed Plan retains every world dimension, while each Test consumes
       // only the inputs referenced by its own frozen graph.
       if (!definitions.includes(definition)) continue;
-      const value = row.value!.trim();
+      const value = row.value!;
       const supplied = runtimeValues[definition.name];
       if (supplied !== undefined && supplied !== value)
         throw new CasePlanError(
@@ -100,8 +105,13 @@ export function resolveRecipeInputReferences(input: {
     const definition = candidates[0]!;
     // Public row selection cannot supply a local secret or suppress generation.
     if (definition.scope === "private" || definition.source === "generated") continue;
-    const value = row.valueId.trim();
-    if (!value || !definition.values?.some((approved) => approved.trim() === value))
+    const preserveText =
+      !definition.sensitive && (definition.source === "static" || definition.source === "list");
+    const value = preserveText ? row.valueId : row.valueId.trim();
+    if (
+      !value.trim() ||
+      !definition.values?.some((approved) => (preserveText ? approved : approved.trim()) === value)
+    )
       throw new CasePlanError(
         "conflicting-variable",
         `Selected row for “${definition.name}” is not an approved Test input value`,

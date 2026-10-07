@@ -6,7 +6,7 @@ import {
   type GenerationRequest,
   type GenerationResult,
   type Project,
-  type RevisionWrite,
+  type ProjectVariablesWrite,
   type Revisioned,
   type ServerConnection,
   type TestData,
@@ -624,7 +624,7 @@ export class RelayClient {
   variables(): Promise<Revisioned<TestData[]>> {
     return this.invoke("workspace.variables.get", {}) as Promise<Revisioned<TestData[]>>;
   }
-  updateVariables(write: RevisionWrite<TestData[]>): Promise<Revisioned<TestData[]>> {
+  updateVariables(write: ProjectVariablesWrite): Promise<Revisioned<TestData[]>> {
     return this.invoke("workspace.variables.update", write) as Promise<Revisioned<TestData[]>>;
   }
   authoringSessions(input: OperationInput<"authoring.session.list"> = {}) {

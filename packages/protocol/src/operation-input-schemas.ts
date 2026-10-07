@@ -173,6 +173,10 @@ export const operationInputSchemas = {
     .object({
       expectedRevision: natural("Current variables revision"),
       value: z.array(unknownRecord),
+      preserveInputIds: z.array(identifier("Exact stored Project input to preserve")).optional(),
+      requireUnlinkedInputIds: z
+        .array(identifier("Exact existing input that must remain unused by Project Apps"))
+        .optional(),
       actorId: z.string().optional(),
       idempotencyKey: z.string().optional(),
     })

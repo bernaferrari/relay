@@ -481,7 +481,10 @@ export type SpecificOperationMap = {
     output: RevisionedDto<TestDataDto[]>;
   };
   "workspace.variables.update": {
-    input: RevisionWriteDto<TestDataDto[]>;
+    input: RevisionWriteDto<TestDataDto[]> & {
+      preserveInputIds?: string[];
+      requireUnlinkedInputIds?: string[];
+    };
     output: RevisionedDto<TestDataDto[]>;
   };
   "authoring.session.list": {

@@ -56,10 +56,10 @@ function bounded(value: number | undefined, fallback: number, maximum: number): 
   return Math.max(1, Math.min(Math.floor(value ?? fallback), maximum));
 }
 
-function compactValues(value: string | string[] | undefined): string[] {
+function compactValues(value: string | string[] | undefined, preserveText = false): string[] {
   return (Array.isArray(value) ? value : value === undefined ? [] : [value])
-    .map((item) => item.trim())
-    .filter(Boolean);
+    .map((item) => (preserveText ? item : item.trim()))
+    .filter((item) => item.trim().length > 0);
 }
 
 async function resolveVariable(
@@ -69,7 +69,14 @@ async function resolveVariable(
   seed: number,
 ): Promise<ResolvedVariable> {
   const name = variable.name.trim();
-  const runtime = compactValues(input.runtimeValues?.[name] ?? input.runtimeValues?.[variable.id]);
+  const preserveText =
+    variable.scope === "shared" &&
+    !variable.sensitive &&
+    (variable.source === "static" || variable.source === "list");
+  const runtime = compactValues(
+    input.runtimeValues?.[name] ?? input.runtimeValues?.[variable.id],
+    preserveText,
+  );
   if (variable.scope === "private" && runtime.length === 0) {
     throw new CasePlanError(
       "missing-private-value",
@@ -85,7 +92,7 @@ async function resolveVariable(
     };
   }
 
-  const approved = compactValues(variable.values);
+  const approved = compactValues(variable.values, preserveText);
   if (variable.source === "generated" && variable.prompt?.trim()) {
     const fallback = compactValues(variable.fallback);
     try {
