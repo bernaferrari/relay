@@ -381,7 +381,8 @@ function familyTargetMatchesRuntime(plan: AppMapCompiledTest): boolean {
     surface.targetId === runtime.targetId &&
     surface.platform === runtime.platform &&
     (runtime.viewport === undefined ||
-      JSON.stringify(surface.viewport) === JSON.stringify(runtime.viewport))
+      (surface.viewport?.width === runtime.viewport.width &&
+        surface.viewport.height === runtime.viewport.height))
   );
 }
 

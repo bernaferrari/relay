@@ -6,6 +6,12 @@ import {
 } from "@relay/protocol";
 import type { ProductClientContext } from "./product-client";
 import type { ProductSuiteEditor } from "./suite-profile-product-service";
+import {
+  createPlanInputBindingService,
+  type PlanInputBindingService,
+  type ProductPlanInputBindingChoice,
+  type ProductPlanInputBindingResult,
+} from "./plan-input-binding-service";
 
 export type ProductInputDataSetCatalog = {
   revision: number;
@@ -25,9 +31,12 @@ export type ProductInputDataSetInput = {
   catalogRevision: number;
   inputId: string;
   name: string;
+  testIds?: readonly string[];
+  bindings?: readonly ProductPlanInputBindingChoice[];
+  selectedOptionIds?: readonly string[];
 };
 
-export type PlanInputDataSetService = {
+export type PlanInputDataSetService = PlanInputBindingService & {
   listInputDataSets(appMapId: string): Promise<ProductInputDataSetCatalog>;
   saveInputDefinition(input: {
     appMapId: string;
@@ -37,10 +46,7 @@ export type PlanInputDataSetService = {
     source: "static" | "list";
     values: string[];
   }): Promise<{ catalog: ProductInputDataSetCatalog; inputId: string }>;
-  addInputDataSet(input: ProductInputDataSetInput): Promise<{
-    editor: ProductSuiteEditor;
-    variableId: string;
-  }>;
+  addInputDataSet(input: ProductInputDataSetInput): Promise<ProductPlanInputBindingResult>;
 };
 
 /** Product projection only. Canonical persistence and Run admission independently
@@ -74,7 +80,8 @@ export function createPlanInputDataSetService(
           (item.source === "static" || item.source === "list"),
       )
       .map((item) => {
-        const values = [...new Set(item.values?.filter((value) => value.trim().length > 0))];
+        // Equal text still represents separate selected execution rows.
+        const values = item.values?.filter((value) => value.trim().length > 0) ?? [];
         return {
           id: item.id,
           name: item.name,
@@ -113,7 +120,9 @@ export function createPlanInputDataSetService(
       relay,
     };
   }
+  const binding = createPlanInputBindingService(catalog, projectEditor);
   return {
+    previewInputBindings: binding.previewInputBindings,
     async listInputDataSets(appMapId) {
       const { revision, inputs } = await catalog(appMapId);
       return { revision, inputs };
@@ -190,6 +199,13 @@ export function createPlanInputDataSetService(
       return { catalog: projectCatalog(saved.revision, saved.value, current.projectMaps), inputId };
     },
     async addInputDataSet(input) {
+      if (input.bindings !== undefined)
+        return binding.bindInputDataSet({
+          ...input,
+          testIds: input.testIds ?? [],
+          bindings: input.bindings,
+          selectedOptionIds: input.selectedOptionIds ?? [],
+        });
       const current = await catalog(input.appMapId);
       if (current.appMap.revision !== input.expectedRevision)
         throw new TypeError("This App changed. Reload its Data sets and try again.");

@@ -72,6 +72,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
   const [testQuery, setTestQuery] = useState("");
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
   const [variableIds, setVariableIds] = useState<Set<string>>(() => new Set());
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, readonly string[]>>({});
   const [addingDataSet, setAddingDataSet] = useState(false);
   const [strategy, setStrategy] = useState<"cartesian" | "zip">("cartesian");
   const [referenceReviewMode, setReferenceReviewMode] = useState<"human" | "approved-reference">(
@@ -98,6 +99,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
         name,
         testIds: [...testIds],
         variableIds: [...variableIds],
+        ...(Object.keys(selectedOptions).length ? { selected: selectedOptions } : {}),
         strategy,
         referenceReviewMode,
       });
@@ -120,6 +122,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
     setTestQuery("");
     setTestIds(new Set());
     setVariableIds(new Set());
+    setSelectedOptions({});
     setAddingDataSet(false);
     setStrategy("cartesian");
     setReferenceReviewMode("human");
@@ -156,12 +159,12 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
 
       <DialogContent
         showCloseButton={false}
-        className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
+        className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto sm:max-w-180"
       >
         <DialogTitle>New test plan</DialogTitle>
         <DialogDescription>
-          Choose existing tests for this plan. Their steps stay in the original tests; you choose
-          devices and accounts when you run the plan.
+          Group Tests and choose prompts to repeat. Choose devices and accounts when you run the
+          Plan.
         </DialogDescription>
         <form onSubmit={submit}>
           <Field>
@@ -179,6 +182,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                 setAppId(value);
                 setTestIds(new Set());
                 setVariableIds(new Set());
+                setSelectedOptions({});
                 setStrategy("cartesian");
               }}
             />
@@ -263,6 +267,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                           <TestChoiceDetails test={test} />
                         </span>
                         <Checkbox
+                          disabled={addingDataSet || createSuite.isPending}
                           checked={testIds.has(test.id)}
                           onCheckedChange={(checked) =>
                             toggle(setTestIds, test.id, checked === true)
@@ -286,11 +291,13 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                             {dataSet.name}
                           </span>
                           <span className="truncate text-xs leading-snug text-muted-foreground">
-                            {dataSet.optionCount} saved{" "}
-                            {dataSet.optionCount === 1 ? "value" : "values"}
+                            {variableIds.has(dataSet.id) && selectedOptions[dataSet.id]
+                              ? `${selectedOptions[dataSet.id]!.length} of ${dataSet.optionCount} values selected`
+                              : `${dataSet.optionCount} saved ${dataSet.optionCount === 1 ? "value" : "values"}`}
                           </span>
                         </span>
                         <Checkbox
+                          disabled={addingDataSet || createSuite.isPending}
                           checked={variableIds.has(dataSet.id)}
                           onCheckedChange={(checked) =>
                             toggle(setVariableIds, dataSet.id, checked === true)
@@ -308,14 +315,20 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                           listInputDataSets: suiteProfileService.listInputDataSets,
                           addInputDataSet: suiteProfileService.addInputDataSet,
                           saveInputDefinition: suiteProfileService.saveInputDefinition,
+                          previewInputBindings: suiteProfileService.previewInputBindings,
                         }}
                         selectedTests={editor.data.tests.filter((test) => testIds.has(test.id))}
                         disabled={createSuite.isPending}
                         onBusy={setAddingDataSet}
                         onReload={() => editor.refetch()}
-                        onAdded={({ editor: saved, variableId }) => {
+                        onAdded={({ editor: saved, variableId, selectedOptionIds }) => {
                           queryClient.setQueryData(["suites", "editor", appId], saved);
                           toggle(setVariableIds, variableId, true);
+                          if (selectedOptionIds)
+                            setSelectedOptions((current) => ({
+                              ...current,
+                              [variableId]: selectedOptionIds,
+                            }));
                         }}
                       />
                     ) : null}

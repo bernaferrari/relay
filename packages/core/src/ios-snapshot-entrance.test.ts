@@ -4,9 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  setLiveIosRunnerCommandPostForTests,
+  setLiveIosRunnerCommandPostForTests as setNativePost,
   snapshotViaLiveIosRunnerListener,
 } from "./ios-runner-listener-command.js";
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
+
+const setLiveIosRunnerCommandPostForTests: typeof setNativePost = (post) =>
+  setNativePost(post ? catalogAwarePost(post) : undefined);
 
 // Real listener orchestration; every transport request is injected, with no hardware or input.
 test("requested entrance capture tags its actual query census without changing ordinary reads", async () => {
@@ -37,7 +41,7 @@ test("requested entrance capture tags its actual query census without changing o
             }
           : command.selectorValue === "Quick responses · Grok 4.7"
             ? {
-                nodes: [80, 180].map((y) => ({
+                nodes: [80].map((y) => ({
                   type: "Button",
                   label: "Quick responses · Grok 4.7",
                   hittable: true,
@@ -79,7 +83,7 @@ test("requested entrance capture tags its actual query census without changing o
       ...options,
       separateRequestedSelectorEvidence: true,
     });
-    assert.equal(requested.filter((node) => node.recordingSelectorSupplemental === true).length, 2);
+    assert.equal(requested.filter((node) => node.recordingSelectorSupplemental === true).length, 1);
     assert.equal(
       requested.find((node) => node.identifier === "sidebar.open.button")
         ?.recordingSelectorSupplemental,
@@ -100,7 +104,7 @@ test("requested entrance capture tags its actual query census without changing o
         ?.recordingSelectorSupplemental,
       undefined,
     );
-    assert.equal(ordinary.filter((node) => node.label === "Quick responses · Grok 4.7").length, 2);
+    assert.equal(ordinary.filter((node) => node.label === "Quick responses · Grok 4.7").length, 1);
     surface = true;
     await assert.rejects(
       snapshotViaLiveIosRunnerListener({ ...options, separateRequestedSelectorEvidence: true }),

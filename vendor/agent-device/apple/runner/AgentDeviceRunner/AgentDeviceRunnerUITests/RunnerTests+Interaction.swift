@@ -156,21 +156,7 @@ extension RunnerTests {
     expectedPoint: CGPoint? = nil,
     rawMatchPolicy: DirectSelectorRawMatchPolicy = .rejectDistinctMatches
   ) -> SelectorElementMatch {
-    let value = selectorValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !value.isEmpty else {
-      return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
-    }
-    let predicate: NSPredicate
-    switch selectorKey {
-    case "id":
-      predicate = NSPredicate(format: "identifier ==[c] %@", value)
-    case "label":
-      predicate = NSPredicate(format: "label ==[c] %@", value)
-    case "value":
-      predicate = NSPredicate(format: "value ==[c] %@", value)
-    case "text":
-      predicate = NSPredicate(format: "label ==[c] %@ OR identifier ==[c] %@ OR value ==[c] %@", value, value, value)
-    default:
+    guard let predicate = RunnerSelectorPredicate.make(key: selectorKey, value: selectorValue) else {
       return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
     }
 

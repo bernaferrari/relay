@@ -60,6 +60,23 @@ const input = {
   name: "Chat prompts",
 };
 describe("Plan input Data sets", () => {
+  it("keeps equal prompts as distinct execution rows", async () => {
+    const values = ["Same prompt", "Same prompt"];
+    const { service, invoke } = fixture([{ ...definition, values }]);
+    expect((await service.listInputDataSets("grok")).inputs[0]!.values).toEqual(values);
+    await service.addInputDataSet(input);
+    const write = invoke.mock.calls.find(
+      ([operation]) => operation === "app-map.variable.save",
+    )![1];
+    expect(write).toMatchObject({
+      variable: {
+        options: [
+          { id: "value-1", value: "Same prompt" },
+          { id: "value-2", value: "Same prompt" },
+        ],
+      },
+    });
+  });
   it("offers public inputs with separate Project usage and current App linkage", async () => {
     const { service } = fixture(
       [

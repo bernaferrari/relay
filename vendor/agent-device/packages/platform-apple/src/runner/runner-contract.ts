@@ -70,6 +70,8 @@ export type RunnerCommand = {
     | 'querySelector'
     /** No-activation observation using the native tap selector policy. */
     | 'querySelectorTapCandidate'
+    /** Bounded named-app catalog read with one shared native candidate acquisition. */
+    | 'querySelectorCatalog'
     | 'readText'
     | 'snapshot'
     | 'screenshot'
@@ -110,6 +112,7 @@ export type RunnerCommand = {
   text?: string;
   selectorKey?: ElementSelectorKey;
   selectorValue?: string;
+  selectorQueries?: Array<{ selectorKey: ElementSelectorKey; selectorValue: string }>;
   allowNonHittableCoordinateFallback?: boolean;
   delayMs?: number;
   textEntryMode?: 'append' | 'replace';

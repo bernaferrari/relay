@@ -7,8 +7,10 @@ import { Input } from "@relay/ui-react/components/input";
 import { Plus } from "lucide-react";
 import { SelectField } from "../components/filter-select";
 import type { PlanInputDataSetService } from "../data/plan-input-data-set-service";
-import type { ProductSuiteEditor, ProductSuiteTest } from "../data/suite-profile-product-service";
+import type { ProductSuiteTest } from "../data/suite-profile-product-service";
 import { PlanPromptValuesEditor, type PromptValuesDraft } from "./plan-prompt-values-editor";
+import { PlanInputBindingChoices, type PlanInputBindingDraft } from "./plan-input-binding-choices";
+import type { ProductPlanInputBindingResult } from "../data/plan-input-binding-service";
 
 /** Inline so adding saved values never abandons the unsaved Plan. */
 export function PlanInputDataSetPicker({
@@ -24,11 +26,11 @@ export function PlanInputDataSetPicker({
   appMapId: string;
   revision: number;
   service: Pick<PlanInputDataSetService, "listInputDataSets" | "addInputDataSet"> &
-    Partial<Pick<PlanInputDataSetService, "saveInputDefinition">>;
+    Partial<Pick<PlanInputDataSetService, "saveInputDefinition" | "previewInputBindings">>;
   selectedTests?: readonly Pick<ProductSuiteTest, "id" | "name">[];
   disabled: boolean;
   onBusy(pending: boolean): void;
-  onAdded(result: { editor: ProductSuiteEditor; variableId: string }): void;
+  onAdded(result: ProductPlanInputBindingResult): void;
   onReload(): Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
@@ -38,6 +40,7 @@ export function PlanInputDataSetPicker({
   const [editRevision, setEditRevision] = useState(0);
   const [savingValues, setSavingValues] = useState(false);
   const [reloadIssue, setReloadIssue] = useState<string>();
+  const [bindingDraft, setBindingDraft] = useState<PlanInputBindingDraft>();
   const inFlight = useRef(false);
   const queryClient = useQueryClient();
   const catalogKey = ["suites", "input-data-sets", appMapId] as const;
@@ -48,16 +51,35 @@ export function PlanInputDataSetPicker({
     staleTime: 0,
   });
   const selected = catalog.data?.inputs.find((input) => input.id === inputId);
+  const bindingRequest = {
+    appMapId,
+    expectedRevision: revision,
+    catalogRevision: catalog.data?.revision ?? -1,
+    inputId,
+    testIds: selectedTests.map((test) => test.id),
+  };
+  const bindingKey = JSON.stringify(bindingRequest);
+  const bindHere = Boolean(service.previewInputBindings);
+  const bindingReady = bindingDraft?.requestKey === bindingKey && bindingDraft.ready;
   const add = useMutation({
     mutationFn: () => {
-      if (!catalog.data || !selected || selected.addedToApp)
+      if (!catalog.data || !selected || (!bindHere && selected.addedToApp))
         throw new TypeError("Choose saved values that have not been added yet.");
+      if (bindHere && !bindingReady)
+        throw new TypeError("Choose current Test actions and saved values first.");
       return service.addInputDataSet({
         appMapId,
         expectedRevision: revision,
         catalogRevision: catalog.data.revision,
         inputId: selected.id,
         name,
+        ...(bindHere && bindingDraft
+          ? {
+              testIds: bindingRequest.testIds,
+              bindings: bindingDraft.bindings,
+              selectedOptionIds: bindingDraft.selectedOptionIds,
+            }
+          : {}),
       });
     },
     retry: false,
@@ -80,8 +102,10 @@ export function PlanInputDataSetPicker({
       inFlight.current ||
       catalog.isFetching ||
       !selected ||
-      selected.addedToApp ||
-      !name.trim()
+      (!bindHere && selected.addedToApp) ||
+      (!selected.addedToApp && !name.trim()) ||
+      (bindHere && !bindingReady) ||
+      add.isError
     )
       return;
     inFlight.current = true;
@@ -95,6 +119,7 @@ export function PlanInputDataSetPicker({
     if (latest.error || !latest.data)
       throw latest.error ?? new Error("Could not load saved inputs.");
     setEditRevision(latest.data.revision);
+    await queryClient.invalidateQueries({ queryKey: ["suites", "input-bindings"] });
     add.reset();
   }
   async function saveDefinition(draft: PromptValuesDraft) {
@@ -188,19 +213,26 @@ export function PlanInputDataSetPicker({
                   />
                 </Field>
               ) : null}
-              <ul aria-label="Saved values" className="grid max-h-48 gap-2 overflow-y-auto text-sm">
-                {selected.values.map((value, index) => (
-                  <li
-                    key={index}
-                    className="whitespace-pre-wrap break-words rounded-md bg-background px-3 py-2"
-                  >
-                    {value}
-                  </li>
-                ))}
-              </ul>
+              {!bindHere ? (
+                <ul
+                  aria-label="Saved values"
+                  className="grid max-h-48 gap-2 overflow-y-auto text-sm"
+                >
+                  {selected.values.map((value, index) => (
+                    <li
+                      key={index}
+                      className="whitespace-pre-wrap break-words rounded-md bg-background px-3 py-2"
+                    >
+                      {value}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {selected.linked ? (
                 <p className="text-xs leading-5 text-muted-foreground">
-                  Used by a saved Data set. Create a new input to keep existing Plans unchanged.
+                  {bindHere
+                    ? "These values are already shared by a saved Data set. Review the shared text changes below before applying."
+                    : "Used by a saved Data set. Create a new input to keep existing Plans unchanged."}
                 </p>
               ) : service.saveInputDefinition && !editing ? (
                 <Button
@@ -258,7 +290,17 @@ export function PlanInputDataSetPicker({
           onReload={reload}
         />
       ) : null}
-      {selected ? (
+      {selected && bindHere && service.previewInputBindings && !editing ? (
+        <PlanInputBindingChoices
+          key={selected.id}
+          service={{ previewInputBindings: service.previewInputBindings }}
+          request={bindingRequest}
+          requestKey={bindingKey}
+          disabled={busy}
+          onChange={setBindingDraft}
+        />
+      ) : null}
+      {selected && !bindHere ? (
         <div className="grid gap-1 text-xs leading-5 text-muted-foreground">
           <p>
             To use these values, change the Test’s recorded text to Run input named{" "}
@@ -332,12 +374,20 @@ export function PlanInputDataSetPicker({
             Boolean(editing) ||
             catalog.isFetching ||
             !selected ||
-            selected.addedToApp ||
-            !name.trim()
+            (!bindHere && selected.addedToApp) ||
+            (!selected.addedToApp && !name.trim()) ||
+            (bindHere && !bindingReady) ||
+            add.isError
           }
           onClick={addSelected}
         >
-          {add.isPending ? "Adding…" : selected?.addedToApp ? "Already added" : "Add Data set"}
+          {add.isPending
+            ? "Adding…"
+            : bindHere
+              ? "Use values in Tests"
+              : selected?.addedToApp
+                ? "Already added"
+                : "Add Data set"}
         </Button>
       </div>
     </div>

@@ -7,6 +7,13 @@ These are cross-route behavior requirements; their rationale and owning decision
 - Relay named iOS previews use the no-activation `querySelectorTapCandidate` census
   from ADR 0011. A bounded chrome match or ordinary query read cannot prove a preview
   location; a preview receipt is observation-time evidence, never future tap permission.
+- Relay catalog observations use `querySelectorCatalog`: one OR candidate enumeration, cached native
+  attributes and actual XCTest hittability, and the read selector policy independently per query.
+  Its named foreground-app receipt covers only the requested predicates; it cannot establish a
+  complete response tree or authorize input. Unsupported runners require rebuild and recovery.
+  Empty or unsupported selectors retain `querySelector`'s successful miss semantics; Relay sends
+  only nonempty `id` and `label` selectors. Candidate frames use the same logical `XCUIElement.frame`
+  as single reads, because isolated snapshot frames lack full-tree orientation ancestry.
 - Direct iOS selectors are a narrow fast path for simple one-term selectors and are disabled while
   post-gesture stabilization is pending. A structured selector miss may return to snapshot
   resolution; ambiguity and other runner failures remain failures.

@@ -1,5 +1,6 @@
 import type { ProductRunReport } from "@relay/product/run-journey";
 import { reportTraceSteps } from "./run-story";
+import { authoredRunOutline } from "./run-authored-outline";
 import type {
   CaptureReviewDecision,
   CaptureReviewPlannedSlot,
@@ -48,7 +49,6 @@ import {
   preludeLaneCheckStepTitle,
   projectRunFailure,
   publicNetworkUrl,
-  resolvedTestTitle,
   sentenceCase,
   sourceTestId,
 } from "./run-report-projection-helpers";
@@ -886,6 +886,7 @@ export function projectRunReport(
         ? { firstEvidence: { label: cause } }
         : {}),
     timeline: reportTimeline(rawRun, stepEvidence),
+    authoredOutline: authoredRunOutline(rawRun),
     traceSteps: reportTraceSteps(rawRun),
     evidence: sections,
     ...(video ? { video } : {}),

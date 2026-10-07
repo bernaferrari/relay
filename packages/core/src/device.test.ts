@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 import {
   parseAndroidAppBuild,
   rememberedTargetApplication,
@@ -995,41 +996,45 @@ test("prefers a LISTENER_READY runner over the bounded SDK Copy probe", async ()
   const dir = await mkdtemp(join(tmpdir(), "relay-ios-prefer-listener-"));
   const serial = "ipad-prefer-live-listener";
   const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  process.env.RELAY_WORKSPACE_ROOT = dir;
   await writeFile(
     join(dir, `${serial}.json`),
     JSON.stringify({ runnerPid: process.pid, port: 57051 }),
   );
   let sdkSnapshots = 0;
-  const restore = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
-    assert.equal(listener.port, 57051);
-    if (command.command === "querySelector") {
-      if (command.selectorValue === "ask.toolbar.textfield") {
+  const restore = setLiveIosRunnerCommandPostForTests(
+    catalogAwarePost(async (listener, command) => {
+      assert.equal(listener.port, 57051);
+      if (command.command === "querySelector") {
+        if (command.selectorValue === "ask.toolbar.textfield") {
+          return {
+            ok: true,
+            data: { nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything" }] },
+          };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      if (command.command === "snapshot") {
+        assert.equal(command.depth, 0);
         return {
           ok: true,
-          data: { nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything" }] },
+          data: {
+            nodes: [
+              {
+                depth: 0,
+                type: "Application",
+                identifier: "ai.x.GrokApp",
+                rect: { x: 0, y: 0, width: 1112, height: 834 },
+              },
+            ],
+          },
         };
       }
-      return { ok: true, data: { found: false, nodes: [] } };
-    }
-    if (command.command === "snapshot") {
-      assert.equal(command.depth, 0);
-      return {
-        ok: true,
-        data: {
-          nodes: [
-            {
-              depth: 0,
-              type: "Application",
-              identifier: "ai.x.GrokApp",
-              rect: { x: 0, y: 0, width: 1112, height: 834 },
-            },
-          ],
-        },
-      };
-    }
-    throw new Error("unbounded snapshot must not run when chrome identifiers resolve");
-  });
+      throw new Error("unbounded snapshot must not run when chrome identifiers resolve");
+    }),
+  );
   const device = {
     capture: {
       snapshot: async () => {
@@ -1039,6 +1044,7 @@ test("prefers a LISTENER_READY runner over the bounded SDK Copy probe", async ()
     },
   };
   try {
+    await rememberTargetApplication("ai.x.GrokApp", { kind: "device", platform: "ios", serial });
     const nodes = await runWithTargetContext(
       { kind: "device", platform: "ios", serial } as const,
       () => snapshot(device as never, { timeoutMs: 20 }),
@@ -1050,13 +1056,22 @@ test("prefers a LISTENER_READY runner over the bounded SDK Copy probe", async ()
         identifier: "ai.x.GrokApp",
         rect: { x: 0, y: 0, width: 1112, height: 834 },
       },
-      { identifier: "ask.toolbar.textfield", label: "Ask Anything", logicalCoordinates: true },
+      {
+        identifier: "ask.toolbar.textfield",
+        label: "Ask Anything",
+        logicalCoordinates: true,
+        bundleId: "ai.x.GrokApp",
+        hittable: true,
+        rect: { x: 10, y: 10, width: 44, height: 44 },
+      },
     ]);
     assert.equal(sdkSnapshots, 0);
   } finally {
     restore();
     if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
     else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -1071,36 +1086,40 @@ test("adopts a LISTENER_READY runner when the SDK session is missing", async () 
   const dir = await mkdtemp(join(tmpdir(), "relay-ios-adopt-snap-"));
   const serial = "ipad-adopt-live-listener";
   const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  process.env.RELAY_WORKSPACE_ROOT = dir;
   await writeFile(
     join(dir, `${serial}.json`),
     JSON.stringify({ runnerPid: process.pid, port: 50937 }),
   );
-  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
-    if (command.command === "querySelector") {
-      if (command.selectorValue === "ask.toolbar.textfield") {
-        return { ok: true, data: { nodes: [{ label: "Ask Anything" }] } };
+  const restore = setLiveIosRunnerCommandPostForTests(
+    catalogAwarePost(async (_listener, command) => {
+      if (command.command === "querySelector") {
+        if (command.selectorValue === "ask.toolbar.textfield") {
+          return { ok: true, data: { nodes: [{ label: "Ask Anything" }] } };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
       }
-      return { ok: true, data: { found: false, nodes: [] } };
-    }
-    if (command.command === "snapshot") {
-      assert.equal(command.depth, 0);
-      return {
-        ok: true,
-        data: {
-          nodes: [
-            {
-              depth: 0,
-              type: "Application",
-              identifier: "ai.x.GrokApp",
-              rect: { x: 0, y: 0, width: 1112, height: 834 },
-            },
-          ],
-        },
-      };
-    }
-    throw new Error("unbounded snapshot must not run when chrome identifiers resolve");
-  });
+      if (command.command === "snapshot") {
+        assert.equal(command.depth, 0);
+        return {
+          ok: true,
+          data: {
+            nodes: [
+              {
+                depth: 0,
+                type: "Application",
+                identifier: "ai.x.GrokApp",
+                rect: { x: 0, y: 0, width: 1112, height: 834 },
+              },
+            ],
+          },
+        };
+      }
+      throw new Error("unbounded snapshot must not run when chrome identifiers resolve");
+    }),
+  );
   const device = {
     capture: {
       snapshot: async () => {
@@ -1109,6 +1128,7 @@ test("adopts a LISTENER_READY runner when the SDK session is missing", async () 
     },
   };
   try {
+    await rememberTargetApplication("ai.x.GrokApp", { kind: "device", platform: "ios", serial });
     const nodes = await runWithTargetContext(
       { kind: "device", platform: "ios", serial } as const,
       () => snapshot(device as never, { timeoutMs: 20 }),
@@ -1120,12 +1140,21 @@ test("adopts a LISTENER_READY runner when the SDK session is missing", async () 
         identifier: "ai.x.GrokApp",
         rect: { x: 0, y: 0, width: 1112, height: 834 },
       },
-      { label: "Ask Anything", identifier: "ask.toolbar.textfield", logicalCoordinates: true },
+      {
+        label: "Ask Anything",
+        identifier: "ask.toolbar.textfield",
+        logicalCoordinates: true,
+        bundleId: "ai.x.GrokApp",
+        hittable: true,
+        rect: { x: 10, y: 10, width: 44, height: 44 },
+      },
     ]);
   } finally {
     restore();
     if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
     else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
     await rm(dir, { recursive: true, force: true });
   }
 });

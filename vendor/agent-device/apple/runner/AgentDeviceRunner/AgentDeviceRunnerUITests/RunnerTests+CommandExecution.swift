@@ -14,7 +14,7 @@ extension RunnerTests {
     }
     switch command.command {
     case .status, .activate, .terminate, .targetReset, .shutdown, .recordStart, .recordStop, .uptime,
-      .appState, .appWindowBounds, .querySelectorTapCandidate, .pasteboardWrite, .snapshot:
+      .appState, .appWindowBounds, .querySelectorTapCandidate, .querySelectorCatalog, .pasteboardWrite, .snapshot:
       return Response(
         ok: false,
         error: ErrorPayload(

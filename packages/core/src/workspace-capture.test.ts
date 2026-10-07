@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 import {
   IosSnapshotTimedOutError,
   rememberTargetApplication,
@@ -235,51 +236,56 @@ test("iOS capture adopts the LISTENER_READY runner instead of the bounded Copy p
   const dir = await mkdtemp(join(tmpdir(), "relay-ios-capture-listener-"));
   const serial = "ipad-capture-live-listener";
   const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  process.env.RELAY_WORKSPACE_ROOT = dir;
   await writeFile(
     join(dir, `${serial}.json`),
     JSON.stringify({ runnerPid: process.pid, port: 57051 }),
   );
   let sdkSnapshots = 0;
-  const restore = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
-    assert.equal(listener.port, 57051);
-    if (command.command === "querySelector") {
-      if (command.selectorValue === "ask.toolbar.textfield") {
+  const restore = setLiveIosRunnerCommandPostForTests(
+    catalogAwarePost(async (listener, command) => {
+      assert.equal(listener.port, 57051);
+      if (command.command === "querySelector") {
+        if (command.selectorValue === "ask.toolbar.textfield") {
+          return {
+            ok: true,
+            data: {
+              nodes: [
+                {
+                  type: "TextField",
+                  identifier: "ask.toolbar.textfield",
+                  label: "Ask Anything",
+                  rect: { x: 40, y: 980, width: 600, height: 48 },
+                },
+              ],
+            },
+          };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      if (command.command === "snapshot") {
+        assert.equal(command.depth, 0);
         return {
           ok: true,
           data: {
             nodes: [
               {
-                type: "TextField",
-                identifier: "ask.toolbar.textfield",
-                label: "Ask Anything",
-                rect: { x: 40, y: 980, width: 600, height: 48 },
+                depth: 0,
+                type: "Application",
+                identifier: "ai.x.GrokApp",
+                rect: { x: 0, y: 0, width: 1112, height: 834 },
               },
             ],
           },
         };
       }
-      return { ok: true, data: { found: false, nodes: [] } };
-    }
-    if (command.command === "snapshot") {
-      assert.equal(command.depth, 0);
-      return {
-        ok: true,
-        data: {
-          nodes: [
-            {
-              depth: 0,
-              type: "Application",
-              identifier: "ai.x.GrokApp",
-              rect: { x: 0, y: 0, width: 1112, height: 834 },
-            },
-          ],
-        },
-      };
-    }
-    throw new Error("unbounded snapshot must not run when chrome identifiers resolve");
-  });
+      throw new Error("unbounded snapshot must not run when chrome identifiers resolve");
+    }),
+  );
   try {
+    await rememberTargetApplication("ai.x.GrokApp", { kind: "device", platform: "ios", serial });
     const result = await runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
       captureSnapshot({
         device: {
@@ -302,6 +308,8 @@ test("iOS capture adopts the LISTENER_READY runner instead of the bounded Copy p
     restore();
     if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
     else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
     await rm(dir, { recursive: true, force: true });
   }
 });
