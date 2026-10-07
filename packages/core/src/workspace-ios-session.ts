@@ -35,6 +35,7 @@ import {
 } from "./ios-runner-listener.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { runTargetMutation } from "./target-control.js";
+import { isCoreSimulatorSerial } from "./ios-simulator-serial.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
 import {
   hasUsableSemanticAccessibility,
@@ -48,7 +49,8 @@ import type { IosSessionOperationLifecycle, TargetRuntimeReadiness } from "@rela
  * preparation in flight per device; otherwise an explicit Reconnect and a
  * deliberate evidence start could race to sign/install the same runner.
  */
-const iosRunnerPreparations = new Map<string, Promise<void>>();
+type IosRunnerPreparation = { promise: Promise<void>; settled: boolean };
+const iosRunnerPreparations = new Map<string, IosRunnerPreparation>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
 const iosRuntimeRecoveries = new Map<string, Promise<IosRuntimeRecoveryResult>>();
 const runIosRecoverySingleFlight = createIosSessionRecoverySingleFlight<TargetRuntimeRecovery>();
@@ -542,7 +544,7 @@ async function recoverTargetRuntimeReserved(
   });
 }
 
-export function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> {
+export async function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> {
   const recentFailure = iosRunnerFailures.get(serial);
   if (recentFailure && recentFailure.expiresAt > Date.now()) {
     return Promise.reject(recentFailure.error);
@@ -550,15 +552,25 @@ export function ensureIosRunnerPrepared(device: Device, serial: string): Promise
   if (recentFailure) iosRunnerFailures.delete(serial);
 
   const existing = iosRunnerPreparations.get(serial);
-  if (existing) return existing;
+  if (existing) {
+    if (!existing.settled || isCoreSimulatorSerial(serial)) return existing.promise;
+    // A successful preparation outlives the runner it started. Only a current
+    // live listener can justify reusing that settled physical-device success.
+    const live = await iosSessionHostRuntime.probeLiveIosRunnerListener(serial);
+    const current = iosRunnerPreparations.get(serial);
+    if (current !== existing && current) return current.promise;
+    if (live) return existing.promise;
+    if (current === existing) iosRunnerPreparations.delete(serial);
+  }
 
-  let preparation!: Promise<void>;
+  const preparation: IosRunnerPreparation = { promise: Promise.resolve(), settled: false };
   // Preparation is a single proof attempt. It may install/start XCTest, but
   // it must never repair the host or retry itself: only an explicit Reconnect
   // may own destructive recovery and its mandatory post-repair proof.
-  preparation = iosSessionHostRuntime
+  preparation.promise = iosSessionHostRuntime
     .prepareIosRunner(device, { udid: serial })
     .then(() => {
+      preparation.settled = true;
       iosRunnerFailures.delete(serial);
     })
     .catch((error) => {
@@ -579,7 +591,7 @@ export function ensureIosRunnerPrepared(device: Device, serial: string): Promise
       throw error;
     });
   iosRunnerPreparations.set(serial, preparation);
-  return preparation;
+  return preparation.promise;
 }
 
 /**

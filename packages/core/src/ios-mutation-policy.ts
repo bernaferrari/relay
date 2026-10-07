@@ -104,6 +104,7 @@ type SupervisedIosMutationContext = {
   serial: string;
   operation: IosMutationOperation;
   receipt?: SupervisedIosMutationReceipt;
+  finished?: boolean;
 };
 
 const supervisedIosMutations = new AsyncLocalStorage<SupervisedIosMutationContext>();
@@ -131,13 +132,72 @@ export function currentIosSupervisionMode(): IosSupervisionMode {
 export class IosSupervisionRequiredError extends Error {
   readonly serial: string;
 
-  constructor(serial: string) {
-    super(
-      `Physical iOS mutation for ${serial} requires a durable supervisor before native dispatch`,
-    );
+  constructor(
+    serial: string,
+    message = `Physical iOS mutation for ${serial} requires a durable supervisor before native dispatch`,
+  ) {
+    super(message);
     this.name = "IosSupervisionRequiredError";
     this.serial = serial;
   }
+}
+
+/** A native reply's structured dispatch proof outranks its human message. */
+export class IosNativeMutationError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly dispatched: "no" | "unknown",
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "IosNativeMutationError";
+  }
+}
+
+function assertActiveIosIntention(active: SupervisedIosMutationContext | undefined): void {
+  if (active?.finished) throw new Error("The physical iOS intention has already terminated");
+}
+
+/** Adopted input has no administrative prepare path: every production post
+ * must belong to the exact-once intention for this physical target. */
+export function assertAdoptedIosMutationIntention(targetId: string): void {
+  const active = supervisedIosMutations.getStore();
+  assertActiveIosIntention(active);
+  if (currentIosSupervisionMode() === "required" && (!active || active.serial !== targetId)) {
+    throw new IosSupervisionRequiredError(
+      targetId,
+      `Physical iOS mutation for ${targetId} requires a matching active intention before native dispatch`,
+    );
+  }
+}
+
+/** Only the structured identifier ambiguity route may retire its refused
+ * dispatch before ranking a fresh point. Failed persistence and late replies
+ * leave the existing receipt intact and cannot authorize another input. */
+export async function finishRejectedIosIdentifierDispatch(
+  targetId: string,
+  failure: IosNativeMutationError,
+): Promise<void> {
+  await cooperativeCheckpoint();
+  if (failure.code !== "AMBIGUOUS_MATCH" || failure.dispatched !== "no") throw failure;
+  const active = supervisedIosMutations.getStore();
+  assertActiveIosIntention(active);
+  if (!active || active.serial !== targetId || !active.receipt) return;
+  const result = finishSupervisedIosMutation(
+    active,
+    "not-dispatched",
+    "The native identifier selector was ambiguous before input dispatch.",
+  );
+  if (result.persistenceError) {
+    throw new IosNativeMutationError(
+      "Could not persist the native selector refusal",
+      undefined,
+      "unknown",
+      { cause: result.persistenceError },
+    );
+  }
+  delete active.receipt;
 }
 
 /**
@@ -159,6 +219,7 @@ export async function dispatchSupervisedIosMutation<T>(
     return operation();
   }
   const active = supervisedIosMutations.getStore();
+  assertActiveIosIntention(active);
   if (!active || active.serial !== targetId) return operation();
   if (active.receipt) {
     throw new Error("A physical iOS intention attempted more than one native dispatch");
@@ -303,6 +364,10 @@ function mutationErrorMessage(error: unknown): string {
  * "No active session" is the adapter refusing before it has a session.
  */
 export function iosSelectorWasNotDispatched(error: unknown): boolean {
+  if (error instanceof IosMutationOutcomeUnknownError) return false;
+  if (error instanceof IosNativeMutationError) {
+    return error.dispatched === "no" && error.code === "ELEMENT_NOT_FOUND";
+  }
   if (error instanceof IosHidUnavailableError) return true;
   const message = mutationErrorMessage(error).trim();
   if (/^no active session\. run open first\.?$/i.test(message)) return true;
@@ -385,6 +450,7 @@ export async function runIosMutationOnce<T>(
   try {
     result = await supervisedIosMutations.run(supervised, () => raceCancel(op()));
   } catch (error) {
+    supervised.finished = true;
     // The target lane rejects before it invokes the native SDK callback, so
     // this is not an ambiguous device outcome and must not manufacture a
     // “one native attempt” diagnostic for a command that never left Relay.
@@ -402,7 +468,10 @@ export async function runIosMutationOnce<T>(
     );
     const supervisedFinish = finishSupervisedIosMutation(
       supervised,
-      diagnostic.outcome === "selector-miss" ? "not-dispatched" : "outcome-unknown",
+      diagnostic.outcome === "selector-miss" ||
+        (error instanceof IosNativeMutationError && error.dispatched === "no")
+        ? "not-dispatched"
+        : "outcome-unknown",
       mutationErrorMessage(error),
     );
     iosMutationSequences.set(serial, diagnostic.sequence);
@@ -415,6 +484,7 @@ export async function runIosMutationOnce<T>(
       supervisedFinish.mutationId ? { serial, mutationId: supervisedFinish.mutationId } : undefined,
     );
   }
+  supervised.finished = true;
   const supervisedFinish = finishSupervisedIosMutation(supervised, "completed");
   if (supervisedFinish.persistenceError) {
     const diagnostic = mutationDiagnostic(serial, operation, "outcome-unknown", false);
