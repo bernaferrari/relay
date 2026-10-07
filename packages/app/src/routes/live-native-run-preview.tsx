@@ -65,7 +65,7 @@ function NativeRunPreview({
     () => ({ kind: "device" as const, ...target }),
     [target.platform, target.targetId],
   );
-  const { liveCanvas, liveStatus, previewIssue } = useRecordingLivePreview({
+  const { liveCanvas, liveCanvasSize, liveStatus, previewIssue } = useRecordingLivePreview({
     enabled: true,
     selectedTarget,
     createLiveTarget: productService.previewTarget,
@@ -75,9 +75,9 @@ function NativeRunPreview({
   const unavailable =
     !productService.previewTarget || ["degraded", "offline", "closed"].includes(liveStatus);
   const issue = unavailableDetail(previewIssue);
-  const width = streaming ? (liveCanvas.current?.width ?? 9) : 9;
-  const height = streaming ? (liveCanvas.current?.height ?? 19) : 19;
-  const shape = streaming ? shapeForSize(width, height) : "phone";
+  const width = streaming ? (liveCanvasSize?.width ?? 9) : 9;
+  const height = streaming ? (liveCanvasSize?.height ?? 19) : 19;
+  const shape = streaming ? shapeForSize(width, height, target.platform) : "phone";
 
   return (
     <section
@@ -95,7 +95,7 @@ function NativeRunPreview({
               alt={`Live device: ${targetName ?? target.platform}`}
               shape={shape}
               platform={target.platform}
-              className="[&]:absolute [&]:inset-0 [&]:h-full [&]:w-full [&]:max-w-full [&>div]:h-full [&>div>div]:h-full [&>div>div]:w-full [&>div>div]:aspect-auto [&>div>div]:px-0"
+              className="[&]:absolute [&]:inset-0 [&]:h-full [&]:w-full [&]:max-w-full [&>[data-slot=device-frame-screen]]:h-full [&_[data-slot=device-frame-content]]:h-full [&_[data-slot=device-frame-content]]:w-full [&_[data-slot=device-frame-content]]:aspect-auto [&_[data-slot=device-frame-content]]:px-0"
               placeholder={
                 <div className="relative h-full w-full overflow-hidden bg-card">
                   <canvas

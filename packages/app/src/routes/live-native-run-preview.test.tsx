@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { act, type ComponentProps } from "react";
+import { act, Profiler, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type {
@@ -55,23 +55,91 @@ function session(target: NativeRunPreviewTarget) {
     setAccessibilityInspection: inspection,
     close,
   };
-  function publish(status: LiveTargetStatus, issue?: string) {
-    current = { status, target: selectedTarget, ...(issue ? { issue } : {}) };
+  function publish(
+    status: LiveTargetStatus,
+    issue?: string,
+    size?: { width: number; height: number },
+  ) {
+    if (size) {
+      const canvas = mount.mock.calls[0]![0];
+      canvas.width = size.width;
+      canvas.height = size.height;
+    }
+    current = {
+      status,
+      target: selectedTarget,
+      frameSequence: (current.frameSequence ?? 0) + 1,
+      ...(issue ? { issue } : {}),
+    };
     for (const listener of listeners) listener(current);
   }
   return { live, mount, subscribe, stop, unsubscribe, input, close, inspection, publish };
 }
 
-async function render(props: ComponentProps<typeof LiveNativeRunPreview>) {
+async function render(
+  props: ComponentProps<typeof LiveNativeRunPreview>,
+  onRender?: ComponentProps<typeof Profiler>["onRender"],
+) {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root!.render(<LiveNativeRunPreview {...props} />));
+  const preview = <LiveNativeRunPreview {...props} />;
+  await act(async () =>
+    root!.render(
+      onRender ? (
+        <Profiler id="preview" onRender={onRender}>
+          {preview}
+        </Profiler>
+      ) : (
+        preview
+      ),
+    ),
+  );
   return host;
 }
 
 const target: NativeRunPreviewTarget = { platform: "ios", targetId: "device-A" };
 const fallback = <img src="/retained-run.png" alt="Saved Run screenshot" />;
+
+it.each(["ios", "android"] as const)(
+  "keeps the mounted %s canvas for the first landscape tablet frame and later rotation",
+  async (platform) => {
+    const selected = { ...target, platform };
+    const preview = session(selected);
+    context.productService.previewTarget.mockResolvedValue(preview.live);
+    const onRender = vi.fn();
+    const host = await render({ target: selected }, onRender);
+    const mounted = preview.mount.mock.calls[0]![0];
+    expect(host.querySelector("canvas")).toBe(mounted);
+
+    for (const size of [
+      { width: 2224, height: 1668 },
+      { width: 1668, height: 2224 },
+    ]) {
+      await act(async () => preview.publish("streaming", undefined, size));
+      expect(host.querySelector("canvas")).toBe(mounted);
+      expect(mounted.isConnected).toBe(true);
+      expect(mounted.width).toBe(size.width);
+      expect(mounted.height).toBe(size.height);
+      expect(mounted.closest("figure")?.dataset.shape).toBe("tablet");
+      const sizing = host.querySelector<HTMLElement>('[style*="--native-preview-ratio"]')!;
+      expect(sizing.style.getPropertyValue("--native-preview-ratio")).toBe(
+        String(size.width / size.height),
+      );
+      expect(host.querySelector('[data-slot="device-frame-window-chrome"]')).toBeNull();
+      expect(preview.mount).toHaveBeenCalledExactlyOnceWith(mounted);
+      expect(preview.stop).not.toHaveBeenCalled();
+      expect(preview.close).not.toHaveBeenCalled();
+      expect(preview.input).not.toHaveBeenCalled();
+      await act(async () => preview.publish("streaming", undefined, size));
+      const commits = onRender.mock.calls.length;
+      for (let frame = 0; frame < 3; frame += 1) {
+        await act(async () => preview.publish("streaming", undefined, size));
+        expect(onRender).toHaveBeenCalledTimes(commits);
+      }
+    }
+  },
+);
 
 it.each(["ios", "android"] as const)(
   "opens the exact %s target with inspection disabled and renders a passive streaming canvas",
@@ -107,7 +175,7 @@ it.each(["ios", "android"] as const)(
     else expect(island).not.toBeNull();
     expect(canvas.width).toBe(1080);
     expect(canvas.height).toBe(1920);
-    await act(async () => preview.publish("streaming"));
+    await act(async () => preview.publish("streaming", undefined, { width: 2224, height: 1668 }));
     expect(host.querySelector('[aria-label="Connecting to live device preview"]')).toBeNull();
     expect(host.textContent).toContain("Live device · read only");
     expect(host.querySelector('img[alt="Saved Run screenshot"]')).toBeNull();
@@ -140,7 +208,7 @@ it.each([
     const preview = session(target);
     context.productService.previewTarget.mockResolvedValue(preview.live);
     const host = await render({ target, fallback });
-    await act(async () => preview.publish("streaming"));
+    await act(async () => preview.publish("streaming", undefined, { width: 2224, height: 1668 }));
     const canvas = host.querySelector("canvas")!;
     await act(async () => preview.publish("degraded", issue));
 
