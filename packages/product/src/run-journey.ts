@@ -13,7 +13,7 @@ import type {
   WorkflowProblem,
   WorkflowSnapshot,
 } from "@relay/workflows/types";
-import { projectError, type HumanError } from "./errors.js";
+import { capturedSetupRecovery, projectError, type HumanError } from "./errors.js";
 import { routeUrls } from "./routes.js";
 
 /** Product actions are intents; Relay remains the authority for whether they
@@ -98,6 +98,8 @@ export type ProductRunStartInput = {
   targetProfileId?: string;
   sourceRevision?: SourceRevision;
   startup?: AppMapTestStartup;
+  /** Runtime values resolved and frozen by canonical saved Test admission. */
+  variables?: Record<string, string>;
   confirmRisk?: true;
   /** Requested browser engine. Omitted only when the target is not a browser. */
   engine?: BrowserEngine;
@@ -174,6 +176,8 @@ function boundedString(value: string): string {
 }
 
 function copyProblem(problem: WorkflowProblem): WorkflowProblem {
+  const capturedSetup = capturedSetupRecovery(problem);
+  if (capturedSetup) return { code: problem.code, ...capturedSetup };
   if (problem.sourceCode === "raw-evidence-recapture-required") {
     return {
       code: problem.code,
@@ -191,6 +195,7 @@ function copyProblem(problem: WorkflowProblem): WorkflowProblem {
     recovery: boundedString(problem.recovery),
     retryable: problem.retryable,
     ...(problem.sourceCode ? { sourceCode: boundedString(problem.sourceCode) } : {}),
+    ...(problem.sourceStepId ? { sourceStepId: boundedString(problem.sourceStepId) } : {}),
   };
 }
 
@@ -435,6 +440,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
         ...(input.targetProfileId ? { targetProfileId: input.targetProfileId } : {}),
         ...(input.sourceRevision ? { sourceRevision: structuredClone(input.sourceRevision) } : {}),
         ...(input.startup ? { startup: structuredClone(input.startup) } : {}),
+        ...(input.variables ? { variables: { ...input.variables } } : {}),
         ...(input.engine ? { engine: input.engine } : {}),
         ...(input.account ? { account: structuredClone(input.account) } : {}),
         ...(input.confirmRisk ? { confirmRisk: true } : {}),

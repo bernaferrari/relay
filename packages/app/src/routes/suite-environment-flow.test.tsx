@@ -682,4 +682,84 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).toContain("Previous scheduled runs");
     expect(document.body.textContent).not.toContain("Looks correct");
   });
+
+  it("updates the selected saved schedule to a half-hour repeat without a daily hour", async () => {
+    const schedulePlan = vi.fn(async () => ({ id: "native-schedule" }));
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({
+        schedulePlan,
+        listPlanSchedules: async () => [
+          {
+            id: "native-schedule",
+            intervalMinutes: 1_440,
+            hour: 8,
+            timezone: "UTC",
+            nextRunAt: 1,
+            enabled: true,
+          },
+        ],
+      }),
+    });
+    await clickButton("Change frequency");
+    await act(async () => document.getElementById("plan-schedule-frequency")!.click());
+    const halfHour = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (item) => item.textContent?.trim() === "Every 30 minutes",
+    )!;
+    await act(async () => halfHour.click());
+    await clickButton("Save schedule");
+    expect(schedulePlan).toHaveBeenCalledExactlyOnceWith({
+      appMapId: "app-1",
+      combineId: "suite-1",
+      profileId: "space-1",
+      profileIds: ["space-1"],
+      scheduleId: "native-schedule",
+      intervalMinutes: 30,
+      timezone: "UTC",
+    });
+  });
+
+  it("keeps automatic scheduling disabled while Plan admission is pending", async () => {
+    let finish!: (value: ProductSuitePreview) => void;
+    const admission = new Promise<ProductSuitePreview>((resolve) => {
+      finish = resolve;
+    });
+    const schedulePlan = vi.fn(async () => ({ id: "sched-1" }));
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({ schedulePlan, previewSuite: () => admission }),
+    });
+    const submit = document.querySelector<HTMLButtonElement>(
+      'form[aria-label="Add schedule"] button[type="submit"]',
+    )!;
+    expect(submit.disabled).toBe(true);
+    await act(async () => submit.click());
+    expect(schedulePlan).not.toHaveBeenCalled();
+    await act(async () => finish(suitePreview()));
+    await settle();
+    expect(submit.disabled).toBe(false);
+  });
+
+  it("keeps automatic scheduling disabled for unavailable native execution", async () => {
+    const schedulePlan = vi.fn(async () => ({ id: "sched-1" }));
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({
+        schedulePlan,
+        previewSuite: async () => ({
+          ...suitePreview(),
+          execution: {
+            profileCount: 1,
+            selectedProfileIds: ["space-1"],
+            capacity: "unavailable",
+            duration: "unavailable",
+            detail: "Native execution unavailable",
+          },
+        }),
+      }),
+    });
+    const submit = document.querySelector<HTMLButtonElement>(
+      'form[aria-label="Add schedule"] button[type="submit"]',
+    )!;
+    expect(submit.disabled).toBe(true);
+    await act(async () => submit.click());
+    expect(schedulePlan).not.toHaveBeenCalled();
+  });
 });

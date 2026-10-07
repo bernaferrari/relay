@@ -12,6 +12,7 @@ import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.
 import { PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND, type PlayerMapSnapshot } from "./player-manifest.js";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { prepareJobBatch, type EnqueueJobInput, type TestJob } from "./session.js";
+import { requirePreparedCombineCellInputs } from "./app-map-combine-cell-inputs.js";
 
 type QueuedCombineCellTarget = Extract<
   ExecutionTargetRef,
@@ -109,6 +110,7 @@ export type StagedAppMapCombineCellBatch = {
 export function stagePreparedAppMapCombineCells(
   input: EnqueuePreparedAppMapCombineCellsInput,
 ): StagedAppMapCombineCellBatch {
+  requirePreparedCombineCellInputs(input.cells);
   const batchId = input.batchId?.trim() || randomUUID();
   const operation = currentOperationContext();
   const projectId = input.projectId?.trim() || operation?.projectId || "default";
@@ -147,7 +149,8 @@ export function stagePreparedAppMapCombineCells(
       // Wrapper steps reference generated prefixes ({{v0_…}}, {{v0_…_label}});
       // without these inputs every template stays literal and the appLocale
       // step fails its BCP-47 check before control begins.
-      variables: { ...cell.wrapperInputs },
+      variables: { ...cell.runtimeInputs?.variables, ...cell.wrapperInputs },
+      sensitiveInputNames: cell.runtimeInputs?.sensitiveInputNames,
       recipeSnapshot: cell.recipeSnapshot,
       recipeGraph: cell.recipeGraph,
       batchId,
@@ -189,6 +192,9 @@ export function stagePreparedAppMapCombineCells(
           capturedAt: queuedAt,
           data: {
             kind: "combine-cell",
+            ...(cell.childIntent.frozenInputs
+              ? { inputs: structuredClone(cell.childIntent.frozenInputs) }
+              : {}),
             ...caseIdentity,
             ...(input.combineId ? { combineId: input.combineId } : {}),
             world: cell.worldLabel,
@@ -268,6 +274,9 @@ export function combineCampaignCaseFromPreparedCell(
     targetProfileId: cell.targetProfileId,
     target: structuredClone(cell.executionTarget),
     plannedCaptures: structuredClone(cell.childIntent.plan.plannedSlots ?? []),
+    ...(cell.childIntent.frozenInputs
+      ? { frozenInputs: structuredClone(cell.childIntent.frozenInputs) }
+      : {}),
     childIntentDigest: digestAppMapTestExecutionValue(cell.childIntent),
     outerIntentDigest: cell.outerIntent.digest,
     wrapperGraphDigest: cell.outerIntent.wrapper.recipeGraphDigest,

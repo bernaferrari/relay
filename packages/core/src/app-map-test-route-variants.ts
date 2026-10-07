@@ -9,6 +9,7 @@ import type {
 } from "@relay/protocol";
 import {
   appMapRuntimeTargetProfileFromSaved,
+  appMapRuntimeTargetProfileKey,
   sameAppMapRuntimeTargetProfile,
 } from "./app-map-runtime-target-profile.js";
 
@@ -38,15 +39,11 @@ export function appMapTestViewportClass(
 }
 
 function targetProfileSelectionKey(profile: TargetProfile): string {
-  const viewport = profile.browserCaseProfile?.viewport ?? profile.viewport;
   return JSON.stringify({
-    id: profile.id,
-    targetId: profile.targetId,
-    platform: profile.platform,
-    viewport,
-    browserEngine: profile.browserCaseProfile?.engine,
-    browserCaseProfile: profile.browserCaseProfile,
-    capabilities: [...profile.capabilities].sort(),
+    runtime: appMapRuntimeTargetProfileKey(profile),
+    // Browser capabilities are route facts but are intentionally absent from
+    // the frozen browser environment. Both identities must ignore key order.
+    capabilities: [...new Set(profile.capabilities)].sort(),
   });
 }
 

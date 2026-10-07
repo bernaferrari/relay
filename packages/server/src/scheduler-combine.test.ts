@@ -38,6 +38,7 @@ test("scheduled Plan start freezes every account column", () => {
     ],
   });
   assert.equal(input.combineId, "grok-web-daily");
+  assert.equal(input.seed, 1, "generation uses the persisted due occurrence, not poll time");
   assert.equal(input.profileTargets?.length, 3);
   assert.equal(input.browserTargetId, "grok-com");
   assert.equal(input.profileTargets?.[0]?.account?.kind, "fixture");

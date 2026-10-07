@@ -14,6 +14,42 @@ test("first-read help leads from discovery to explicit offline compilation", () 
   assert.match(family, /not live execution readiness/);
 });
 
+test("runtime prompt inputs and recording edit discovery are available in help", () => {
+  assert.match(renderHelp("test"), /Runtime string inputs.*Project Data sets/u);
+  const recording = renderHelp("edit-recording");
+  assert.match(recording, /expectedVersion.*replace.*interaction JSON/u);
+  assert.match(recording, /same --actor/u);
+});
+
+test("schedule help explains native Test prerequisites and the create payload", () => {
+  const schedule = renderHelp("schedule");
+  for (const field of [
+    "recipeId",
+    "combineId",
+    "appMapId",
+    "targetKind",
+    "targetId",
+    "platform",
+    "intervalMinutes",
+    "hour",
+    "timezone",
+    "repetitions",
+    "enabled",
+    "profileTargets",
+  ]) {
+    assert.match(schedule, new RegExp(`\\b${field}\\b`, "u"));
+  }
+  assert.match(schedule, /choose this or combineId/u);
+  assert.match(schedule, /Required with combineId/u);
+  assert.match(schedule, /1\.\.43200/u);
+  assert.match(schedule, /Run Across/u);
+  assert.match(schedule, /project Data set when each scheduled Run is prepared/u);
+  assert.match(schedule, /static, list, or generated sources/u);
+  assert.match(schedule, /not a testId or per-schedule runtime variables/u);
+  assert.match(schedule, /"combineId":"grok-android-chat-prompts"/u);
+  assert.match(schedule, /"intervalMinutes":30/u);
+});
+
 test("graph Test commands expose one canonical scenario-only workflow", () => {
   assert.equal(graphTestListPath.command, "test list");
   assert.deepEqual(

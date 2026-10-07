@@ -69,6 +69,7 @@ import {
 import type { RequestContext } from "./security.js";
 import { compensateCombineStartFailure } from "./combine-start-compensation.js";
 import { ephemeralCombineFromTest } from "./combine-start-ad-hoc.js";
+import { freezeCombineRunInputs } from "./combine-run-inputs.js";
 
 type CombineStartRequest = {
   appMapId?: string;
@@ -105,6 +106,7 @@ type CombineStartRequest = {
   browserTargetId?: string;
   title?: string;
   seed?: number;
+  variables?: Record<string, string>;
   projectId?: string;
   capture?: AppMapCapturePolicy;
   surfaceCapture?: { forceRecaptureScreenIds: string[] };
@@ -307,6 +309,7 @@ async function executeCombineStartUnlocked(
       combine: scopedCombine,
       selected: body.selected ?? scopedCombine.selected,
       strategy: body.strategy ?? scopedCombine.strategy,
+      seed: body.seed,
       cellRuntimeProfiles: body.cellRuntimeProfiles ?? scopedCombine.cellRuntimeProfiles,
       cellTargetBindings: body.cellTargetBindings,
       selectedCellIds: body.selectedCellIds,
@@ -462,12 +465,14 @@ async function executeCombineStartUnlocked(
                   executionCaseId: combineProfileTargetExecutionCaseId(cell.cellId, profileTarget),
                 })),
               );
-              const selectedCells = groups.flatMap(({ result, profileTarget }) =>
-                result.selectedCells.map((cell) => ({
-                  ...cell,
-                  executionCaseId: combineProfileTargetExecutionCaseId(cell.cellId, profileTarget),
-                })),
+              const selectedIds = new Set(
+                groups.flatMap(({ result, profileTarget }) =>
+                  result.selectedCells.map((cell) =>
+                    combineProfileTargetExecutionCaseId(cell.cellId, profileTarget),
+                  ),
+                ),
               );
+              const selectedCells = cells.filter((cell) => selectedIds.has(cell.executionCaseId));
               return {
                 ...first,
                 cells,
@@ -516,6 +521,12 @@ async function executeCombineStartUnlocked(
       selectedCells = [pilot, ...selectedCells.filter((cell) => cell.cellId !== pilot.cellId)];
     }
     const namedCells = Boolean(body.cell?.trim()) || Boolean(body.selectedCellIds?.length);
+    await freezeCombineRunInputs({
+      projectId: scope.projectId,
+      cells: [...prepared.selectedCells, ...selectedCells],
+      variables: body.variables,
+      seed: prepared.matrix.seed,
+    });
     const isPilotRun = body.executionMode !== "all" && !namedCells;
     const selectedToQueue = queueablePreparedCombineCells(
       isPilotRun ? selectedCells.slice(0, 1) : selectedCells,

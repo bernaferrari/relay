@@ -27,6 +27,7 @@ import {
 import type { Recipe } from "./recipes.js";
 import type { PersistedRun } from "./runs.js";
 import type { TestJob } from "./session-contract.js";
+import { frozenRecipeInputsMatch } from "./frozen-recipe-inputs.js";
 
 type Artifact = { kind: string; data: unknown };
 
@@ -44,6 +45,9 @@ export type AppMapTestExecutionSource = {
    * profile, including its viewport namespace. */
   targetProfile?: TargetProfile;
   browserCaseProfile?: BrowserCaseProfile;
+  resolvedInputs?: Record<string, string>;
+  /** Once execution begins, extract actions can legitimately overwrite inputs. */
+  validateFrozenInputs?: boolean;
 };
 
 export type AppMapTestExecutionIntentAssessment =
@@ -147,6 +151,12 @@ function executionSourceMismatch(
   combineCell?: AppMapCombineCellExecutionIntent,
 ): string | undefined {
   const rootRecipeId = combineCell?.wrapper.rootRecipeId ?? intent.sourcePlan.rootRecipeId;
+  if (
+    source.validateFrozenInputs !== false &&
+    intent.frozenInputs &&
+    !frozenRecipeInputsMatch(intent.frozenInputs, source.resolvedInputs)
+  )
+    return "The queued Test inputs no longer match their frozen admission receipt.";
   const graph = parseCanonicalAppMapTestRecipeGraph(source.recipeGraph);
   if (!graph) return "The frozen Test recipe graph is missing or malformed.";
   const snapshot = parseCanonicalAppMapTestRecipe(source.recipeSnapshot, rootRecipeId);
@@ -430,7 +440,8 @@ export function appMapTestExecutionSourceFromJob(
     | "targetProfile"
     | "browserCaseProfile"
     | "targetContext"
-  >,
+  > &
+    Partial<Pick<TestJob, "resolvedInputs" | "status">>,
 ): AppMapTestExecutionSource {
   return {
     artifacts: job.artifacts,
@@ -445,6 +456,8 @@ export function appMapTestExecutionSourceFromJob(
     },
     targetProfile: job.targetProfile,
     browserCaseProfile: job.browserCaseProfile,
+    resolvedInputs: job.resolvedInputs,
+    validateFrozenInputs: job.status === undefined || job.status === "queued",
   };
 }
 
@@ -459,7 +472,8 @@ export function appMapTestExecutionSourceFromRun(
     | "platform"
     | "targetProfile"
     | "browserCaseProfile"
-  >,
+  > &
+    Partial<Pick<PersistedRun, "resolvedInputs">>,
 ): AppMapTestExecutionSource {
   return {
     artifacts: run.artifacts,
@@ -469,5 +483,7 @@ export function appMapTestExecutionSourceFromRun(
     target: { targetId: run.serial, platform: run.platform },
     targetProfile: run.targetProfile,
     browserCaseProfile: run.browserCaseProfile,
+    resolvedInputs: run.resolvedInputs,
+    validateFrozenInputs: false,
   };
 }

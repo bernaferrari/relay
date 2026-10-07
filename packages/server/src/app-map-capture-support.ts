@@ -4,6 +4,7 @@ import {
   browserCaseProfileForTarget,
   digestAppMapTestExecutionValue,
   listDevices,
+  nativeCaptureTargetProfile,
   readTarget,
   type AppMap,
 } from "@relay/core";
@@ -193,25 +194,20 @@ export async function profileForCapture(
     bounds.height > 0
       ? { width: Math.round(bounds.width), height: Math.round(bounds.height) }
       : undefined;
-  const viewportKey = viewport ? `-${viewport.width}x${viewport.height}` : "";
   if (target.kind === "device") {
     // Inventory enriches an already captured target profile; it is not capture
     // authority. Preserve the exact target identity when host discovery is down.
     const devices = await (dependencies.listDevices ?? listDevices)().catch(() => []);
     const device = devices.find((item) => item.serial === target.targetId);
-    return {
-      id: `device:${target.targetId}${viewportKey}`,
-      targetId: target.targetId,
-      source: "device",
-      platform: target.platform,
-      name: device?.name?.trim() || target.targetId,
-      ...(device?.kind ? { model: device.kind } : {}),
-      ...(device?.avdName ? { androidAvdName: device.avdName } : {}),
-      ...(device?.osVersion ? { osVersion: device.osVersion } : {}),
-      capabilities: ["snapshot", "screenshot"],
+    return nativeCaptureTargetProfile({
+      ...target,
       observedAt,
-      ...(viewport ? { viewport } : {}),
-    };
+      viewport,
+      name: device?.name,
+      model: device?.kind,
+      osVersion: device?.osVersion,
+      androidAvdName: device?.avdName,
+    });
   }
   const fixtureId = authenticationFixtureId?.trim();
   const saved = fixtureId ? await readTarget(target.targetId) : undefined;

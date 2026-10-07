@@ -342,6 +342,12 @@ describe("test editor assertions", () => {
     ).toBe(
       "Captures “Arabic account settings” for a person to review later. Does not approve a baseline.",
     );
+  });
+
+  it.each([
+    ["tests/fixtures/sample.pdf", "tests/fixtures/sample.pdf"],
+    ["", "a workspace file"],
+  ])("describes platform upload behavior for file %j", (file, displayedFile) => {
     expect(
       checkpointBindingCopy({
         id: "step-upload",
@@ -351,11 +357,11 @@ describe("test editor assertions", () => {
         binding: {
           status: "resolved",
           kind: "recipe-step",
-          step: { kind: "upload", file: "tests/fixtures/sample.pdf" },
+          step: { kind: "upload", file },
         },
       }),
     ).toBe(
-      "Attaches tests/fixtures/sample.pdf. iOS compile-blocks without a recorded Files-app path. Not a Grok Files pass. Does not accept a visual baseline.",
+      `Browser attaches ${displayedFile} through a file input or chooser. Android stages it in Downloads; follow with recorded picker steps and check the attachment. iOS upload is blocked; use a reviewed Files-app handoff. Does not accept a visual baseline.`,
     );
   });
 });

@@ -46,6 +46,7 @@ export type StepDraft = {
   note: string;
   capture: boolean;
   expected?: ValidationDraft;
+  textValues?: Record<string, string>;
 };
 
 export function SelectedStepEditor({
@@ -98,6 +99,7 @@ export function SelectedStepEditor({
       note,
       capture,
       ...(expected ? { expected } : {}),
+      ...(draft?.textValues ? { textValues: draft.textValues } : {}),
       ...next,
     };
     onDraftChange?.(value);

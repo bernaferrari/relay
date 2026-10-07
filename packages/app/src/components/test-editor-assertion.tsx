@@ -264,7 +264,7 @@ export function ValidationExpectationEditor({
             />
           </label>
           <label htmlFor="selected-step-expected-wait-max">
-            Max wait (ms)
+            Maximum acceptable duration (ms)
             <Input
               id="selected-step-expected-wait-max"
               value={value.maxMs}
@@ -272,6 +272,10 @@ export function ValidationExpectationEditor({
               placeholder="1000"
             />
           </label>
+          <p className="text-xs text-muted-foreground">
+            Fails if the reply takes longer, even when it finishes. This does not extend the
+            completion timeout.
+          </p>
         </>
       ) : null}
       {value.kind === "extract" ? (

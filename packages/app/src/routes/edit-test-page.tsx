@@ -16,11 +16,7 @@ import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
-import {
-  validationDraft,
-  type EditTransaction,
-  type StepEntry,
-} from "../components/test-editor-step";
+import { type EditTransaction, type StepEntry } from "../components/test-editor-step";
 import type {
   ProductTestEditorDocument,
   ProductTestRepair,
@@ -35,6 +31,7 @@ import {
   type PendingCheckpointDraft,
 } from "./test-editor-route-helpers";
 import { useTestStepDrafts } from "./use-test-step-drafts";
+import { useTestTextChanges } from "./use-test-text-changes";
 import { productLinkClassName } from "../lib/class-names";
 
 export { EditTestPage } from "./edit-test-route";
@@ -125,12 +122,8 @@ function TestEditorDocument({
     setSettingsName(editorDocument?.test.name ?? "");
     setSettingsOrigin(editorDocument?.test.originApplication ?? "");
   }, [editorDocument?.test.name, editorDocument?.test.originApplication]);
-  const { stepDrafts, updateStepDraft, clearStepDraftIfUnchanged } = useTestStepDrafts(
-    platform,
-    testId,
-    setSaveNotice,
-    appMapId,
-  );
+  const { stepDrafts, updateStepDraft, acknowledgeStepDrafts, acknowledgeTextDraft } =
+    useTestStepDrafts(platform, testId, setSaveNotice, appMapId);
   const draggedStepId = useRef<string | undefined>(undefined);
   const selectAfterSave = useRef<string | null | undefined>(undefined);
 
@@ -147,6 +140,14 @@ function TestEditorDocument({
     else queryClient.setQueryData(queryKey, next);
   }
 
+  const textChange = useTestTextChanges({
+    currentDocument,
+    currentLiveEditor,
+    saveDocument,
+    setSaveNotice,
+    acknowledgeTextDraft,
+  });
+
   const edit = useMutation({
     mutationFn: async (transaction: EditTransaction) => {
       const live = currentLiveEditor();
@@ -161,39 +162,7 @@ function TestEditorDocument({
     },
     onSuccess: (next, transaction) => {
       saveDocument(next);
-      for (const edit of transaction.forward) {
-        if (edit.kind === "step.add") {
-          clearStepDraftIfUnchanged(edit.step.id, {
-            intent: edit.step.intent,
-            note: edit.step.note ?? "",
-            capture: edit.step.capture === true,
-            expected: validationDraft(edit.step),
-          });
-          continue;
-        }
-        if (edit.kind !== "step.patch") continue;
-        const savedIntent = edit.patch.intent;
-        const savedNote = edit.patch.note;
-        const savedCapture = edit.patch.capture;
-        if (savedIntent !== undefined && savedNote !== undefined && savedCapture !== undefined) {
-          clearStepDraftIfUnchanged(edit.stepId, {
-            intent: savedIntent,
-            note: savedNote ?? "",
-            capture: savedCapture,
-            ...(edit.patch.binding?.status === "resolved" &&
-            (edit.patch.binding.kind === "assertion" || edit.patch.binding.kind === "recipe-step")
-              ? {
-                  expected: validationDraft({
-                    id: edit.stepId,
-                    kind: "validation",
-                    intent: savedIntent,
-                    binding: edit.patch.binding,
-                  }),
-                }
-              : {}),
-          });
-        }
-      }
+      acknowledgeStepDrafts(transaction.forward);
       if (
         pendingCheckpoint &&
         transaction.forward.some(
@@ -300,7 +269,7 @@ function TestEditorDocument({
   }
 
   function apply(transaction: EditTransaction, nextSelection?: string | null) {
-    if (edit.isPending || repair.isPending) return;
+    if (edit.isPending || repair.isPending || textChange.isPending) return;
     selectAfterSave.current = nextSelection;
     edit.mutate(transaction);
   }
@@ -485,7 +454,11 @@ function TestEditorDocument({
   const hasUnsavedDrafts = Object.keys(stepDrafts).length > 0 || Boolean(pendingCheckpoint);
   useEffect(() => {
     onEditingStateChange?.(
-      edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
+      edit.isPending ||
+        textChange.isPending ||
+        historyAction.isPending ||
+        settings.isPending ||
+        repair.isPending
         ? "saving"
         : document.isError ||
             liveEditor.isError ||
@@ -502,6 +475,7 @@ function TestEditorDocument({
   }, [
     document.isError,
     edit.isPending,
+    textChange.isPending,
     editorDocument,
     hasUnsavedDrafts,
     historyAction.isPending,
@@ -513,9 +487,15 @@ function TestEditorDocument({
     settingsName,
     settingsOrigin,
   ]);
-  const canRedo = latestHistory?.eventType === "test.undone" && Boolean(testEditorService.redo);
+  const textHistoryCurrent =
+    (editorDocument?.latestTextRevision ?? 0) <= (latestHistory?.afterRevision ?? 0);
+  const canRedo =
+    textHistoryCurrent &&
+    latestHistory?.eventType === "test.undone" &&
+    Boolean(testEditorService.redo);
   const canUndo =
     Boolean(testEditorService.undo) &&
+    textHistoryCurrent &&
     Boolean(editorDocument?.history.some((item) => item.eventType !== "test.redone"));
   const stepEditor = editorDocument ? (
     <TestEditorSelectedStep
@@ -524,7 +504,9 @@ function TestEditorDocument({
       stepDrafts={stepDrafts}
       onEditingStateChange={onEditingStateChange}
       updateStepDraft={updateStepDraft}
-      busy={edit.isPending}
+      busy={edit.isPending || textChange.isPending || repair.isPending || historyAction.isPending}
+      onSaveText={(stepId, action, text) => textChange.mutate({ stepId, action, text })}
+      onTextReverted={acknowledgeTextDraft}
       pendingCheckpoint={pendingCheckpoint}
       apply={apply}
       onClearPending={() => setPendingCheckpoint(null)}
@@ -538,7 +520,7 @@ function TestEditorDocument({
   const saveState = (
     <EditorSaveStatus
       {...testEditorSaveState(
-        edit.isPending || historyAction.isPending,
+        edit.isPending || textChange.isPending || historyAction.isPending,
         saveNotice,
         hasUnsavedDrafts,
       )}
@@ -572,7 +554,13 @@ function TestEditorDocument({
         sessionId={sessionId}
         editorDocument={editorDocument}
         saveState={saveState}
-        saving={edit.isPending || historyAction.isPending || settings.isPending || repair.isPending}
+        saving={
+          edit.isPending ||
+          textChange.isPending ||
+          historyAction.isPending ||
+          settings.isPending ||
+          repair.isPending
+        }
         hasUnsavedChanges={
           hasUnsavedDrafts ||
           settingsName !== (editorDocument?.test.name ?? "") ||
@@ -603,7 +591,12 @@ function TestEditorDocument({
       <RecordingProblem
         className="mx-4 mb-4"
         error={
-          liveEditor.error ?? document.error ?? edit.error ?? historyAction.error ?? repair.error
+          liveEditor.error ??
+          document.error ??
+          edit.error ??
+          textChange.error ??
+          historyAction.error ??
+          repair.error
         }
         onRetry={() => void (sessionId ? liveEditor.refetch() : document.refetch())}
         retrying={sessionId ? liveEditor.isFetching : document.isFetching}
@@ -636,7 +629,7 @@ function TestEditorDocument({
           stepEditor={stepEditor}
           entries={entries}
           selected={selected}
-          editPending={edit.isPending}
+          editPending={edit.isPending || textChange.isPending}
           repairPending={repair.isPending}
           draggedStepId={draggedStepId}
           addStep={addStep}

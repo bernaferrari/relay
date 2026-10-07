@@ -21,6 +21,7 @@ export function scheduledCombineStartInput(schedule: LocalSchedule): {
   appMapId: string;
   combineId: string;
   executionMode: "all";
+  seed: number;
   profileTargets?: LocalSchedule["profileTargets"];
   targetKind?: "browser" | "device";
   browserTargetId?: string;
@@ -36,6 +37,7 @@ export function scheduledCombineStartInput(schedule: LocalSchedule): {
       appMapId,
       combineId,
       executionMode: "all",
+      seed: schedule.nextRunAt,
       profileTargets: schedule.profileTargets,
       ...(first.targetKind === "browser" || first.browserTargetId
         ? {
@@ -53,6 +55,7 @@ export function scheduledCombineStartInput(schedule: LocalSchedule): {
     appMapId,
     combineId,
     executionMode: "all",
+    seed: schedule.nextRunAt,
     ...(schedule.targetKind === "browser"
       ? { targetKind: "browser" as const, browserTargetId: schedule.targetId }
       : {

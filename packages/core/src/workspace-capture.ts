@@ -63,7 +63,7 @@ import {
 } from "./target-runtime-readiness.js";
 import {
   formatSnapshotTree,
-  isBlankScreenshot,
+  recordNativeScreenshotViewport,
   screenshotIncludesFollowOnTree,
 } from "./workspace-capture-presentation.js";
 export {
@@ -784,6 +784,13 @@ export async function captureScreenshot(opts?: {
       }
     }
     const visualFingerprint = observeVisualScreenFingerprint(buf);
+    if (context.kind === "device")
+      recordNativeScreenshotViewport(
+        { targetId: context.serial, platform: context.platform },
+        buf,
+        context.platform === "ios" ? iosLogicalBoundsForSerial(context.serial) : undefined,
+        pixelCapturedAt,
+      );
     if (
       opts?.previewTap &&
       Number.isFinite(opts.previewTap.x) &&

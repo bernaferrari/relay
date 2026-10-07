@@ -408,6 +408,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
           ? { sourceRevision: structuredClone(intent.sourceRevision) }
           : {}),
         ...(intent.startup ? { startup: structuredClone(intent.startup) } : {}),
+        ...(intent.variables ? { variables: { ...intent.variables } } : {}),
         ...(intent.engine ? { engine: intent.engine } : {}),
         ...(intent.account ? { account: structuredClone(intent.account) } : {}),
         workflowRequestId: crypto.randomUUID(),
@@ -425,6 +426,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
       ...(intent.sourceRevision ? { sourceRevision: structuredClone(intent.sourceRevision) } : {}),
       ...(intent.startup ? { startup: structuredClone(intent.startup) } : {}),
+      ...(intent.variables ? { variables: { ...intent.variables } } : {}),
       ...(intent.engine ? { engine: intent.engine } : {}),
       ...(intent.account ? { account: structuredClone(intent.account) } : {}),
       workflowRequestId: crypto.randomUUID(),

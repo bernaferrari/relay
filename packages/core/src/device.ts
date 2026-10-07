@@ -25,6 +25,11 @@ import {
   type DeviceTransport,
 } from "./device-dispatch.js";
 import { type DeviceTextInputDependencies, typeDeviceText } from "./device-android-text.js";
+import { typeViaLiveIosListener } from "./device-text-entry.js";
+import {
+  boundedAndroidTextEntrySnapshot,
+  type AndroidTextEntryReceipt,
+} from "./android-text-entry-verification.js";
 export {
   androidKeyboardShifted,
   escapeAndroidShellText,
@@ -48,7 +53,6 @@ import {
   labelNodesViaLiveIosRunnerListener,
   snapshotFromLiveIosRunnerListenerIfReady,
   tapViaLiveIosRunnerListener,
-  typeViaLiveIosRunnerListener,
 } from "./ios-runner-listener-command.js";
 import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
 import {
@@ -670,36 +674,19 @@ export async function swipeGesture(
   );
 }
 
-export async function typeText(device: Device, text: string): Promise<void> {
+export async function typeText(
+  device: Device,
+  text: string,
+): Promise<AndroidTextEntryReceipt | undefined> {
   const dependencies: DeviceTextInputDependencies = {
-    snapshot,
+    snapshot: (target) =>
+      boundedAndroidTextEntrySnapshot(() =>
+        snapshot(target, { raw: true, timeoutMs: 3000, retryAttempts: 1 }),
+      ),
     mutateCurrentTarget,
     typeViaLiveIosListener,
   };
   return typeDeviceText(device, text, dependencies);
-}
-
-async function typeViaLiveIosListener(text: string): Promise<boolean> {
-  if (selectedPlatform() !== "ios") return false;
-  let context: ReturnType<typeof currentTargetContext>;
-  try {
-    context = currentTargetContext();
-  } catch {
-    return false;
-  }
-  const typeRoute = resolveAppleControlRoute(context);
-  if (!isPhysicalRunnerRoute(typeRoute)) return false;
-  const live = await probeLiveIosRunnerListener(typeRoute.udid);
-  if (!live) return false;
-  const appBundleId = await rememberedTargetApplication(context);
-  await controlledMutation("type", () =>
-    typeViaLiveIosRunnerListener({
-      serial: typeRoute.udid,
-      text,
-      ...(appBundleId ? { appBundleId } : {}),
-    }),
-  );
-  return true;
 }
 
 export async function pressKey(device: Device, key: "back" | "home" | "recents"): Promise<void> {

@@ -42,3 +42,66 @@ test("unstructured server errors hide transport details", () => {
   assert.equal(projected.retryable, true);
   assert.doesNotMatch(JSON.stringify(projected), /HTTP|500|stack trace/);
 });
+
+test("captured setup conflict preserves the canonical affected step without leaking device facts", () => {
+  const details = {
+    code: "target-profile-ambiguous",
+    testId: "test-speed",
+    stepId: "step-d950-source",
+    diagnostics: [],
+    recovery: "Open the Test editor and resolve its blocking compile diagnostics.",
+  };
+  for (const body of [
+    {
+      error:
+        "Saved target profile device:private-phone:1080x2340 has conflicting route-selection facts",
+      ...details,
+    },
+    {
+      error:
+        "Saved target profile device:private-phone:1080x2340 has conflicting route-selection facts",
+      ...details,
+      details: { context: "unrelated" },
+    },
+    {
+      error:
+        "Saved target profile device:private-phone:1080x2340 has conflicting route-selection facts",
+      details,
+    },
+  ]) {
+    const projected = projectError(new ApiError(409, body.error, body));
+    assert.equal(projected.title, "Saved setup needs review");
+    assert.equal(projected.sourceCode, "target-profile-ambiguous");
+    assert.equal(projected.sourceStepId, "step-d950-source");
+    assert.equal(projected.retryable, false);
+    assert.match(projected.recovery, /affected step’s capture/u);
+    assert.doesNotMatch(JSON.stringify(projected), /private-phone|1080x2340|route-selection/u);
+  }
+});
+
+test("a malformed optional source step does not crash captured setup recovery", () => {
+  const projected = projectError({
+    sourceCode: "target-profile-ambiguous",
+    sourceStepId: 42,
+    title: "Internal failure",
+    detail: "private device facts",
+    recovery: "Compile again",
+    retryable: true,
+  });
+  assert.equal(projected.title, "Saved setup needs review");
+  assert.equal(projected.sourceStepId, undefined);
+  assert.equal(projected.retryable, false);
+});
+
+test("browser setup selection recovery keeps its existing public explanation", () => {
+  const problem = {
+    code: "compile-blocked",
+    sourceCode: "browser-target-profile-selection-required",
+    title: "This browser’s setup changed since recording",
+    detail: "The Test was recorded with a different browser setup.",
+    recovery: "Record the Test again on this browser, or restore its previous setup in Devices.",
+    retryable: false,
+  };
+  const { code: _code, ...expected } = problem;
+  assert.deepEqual(projectError(problem), expected);
+});

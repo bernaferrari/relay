@@ -57,7 +57,7 @@ import {
   readCompile,
   resolveRunTestLane,
   selectBrowserTargetProfile,
-  selectDeviceTargetProfile,
+  resolveDeviceTargetProfile,
   type ValidCompile,
   validRevision,
   BrowserTargetProfileSelectionError,
@@ -367,7 +367,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       }
     } else if (!targetProfileId && target.kind === "device") {
       try {
-        targetProfileId = selectDeviceTargetProfile(checkedCompile, target);
+        targetProfileId = await resolveDeviceTargetProfile(this.operations, checkedCompile, target);
       } catch (error) {
         return initialProblem({
           intent,
@@ -573,6 +573,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             ...(intent.account ? { account: intent.account } : {}),
           }),
       ...(intent.startup ? { startup: { ...intent.startup } } : {}),
+      ...(intent.variables ? { variables: { ...intent.variables } } : {}),
       ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
       ...(intent.capture
         ? { surfaceCapture: { forceRecaptureScreenIds: [...intent.capture.fullSurfaceScreenIds] } }

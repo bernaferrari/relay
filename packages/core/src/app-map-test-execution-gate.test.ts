@@ -14,6 +14,7 @@ import { runWithOperationContext } from "./operation-context.js";
 import type { Recipe } from "./recipes.js";
 import { replayInputFromPersistedRun } from "./session-job-factory.js";
 import { enqueueJob } from "./session.js";
+import { freezeRecipeInputs } from "./frozen-recipe-inputs.js";
 
 function fixture(originApplication?: string) {
   const root: Recipe = {
@@ -331,5 +332,67 @@ test("packet attribution binds the validated Test origin even without explicit a
   assert.equal(
     proofApplicationId(source as unknown as import("./session.js").TestJob),
     "com.android.settings",
+  );
+});
+
+test("queued Test inputs must match their receipt and replay restores admitted values after extracted outputs", async () => {
+  const { intent, source } = fixture();
+  const inputs = await freezeRecipeInputs({
+    recipeGraph: {
+      root: {
+        id: "root",
+        title: "Prompt",
+        source: "custom",
+        createdAt: 1,
+        updatedAt: 1,
+        steps: [{ kind: "type", text: "{{prompt}}" }],
+      },
+    },
+    definitions: { revision: 1, value: [] },
+    runtimeValues: { prompt: "Admitted prompt" },
+    seed: 42,
+  });
+  assert.ok(inputs);
+  const sealed = createAppMapTestExecutionIntent({
+    plan: intent.plan,
+    recipeGraph: intent.recipeGraph,
+    preflight: intent.preflight,
+    frozenInputs: inputs.receipt,
+  });
+  const artifacts = [{ kind: sealed.kind, capturedAt: 1, data: sealed }];
+  assert.equal(
+    assessAppMapTestExecutionSource({
+      ...source,
+      artifacts,
+      resolvedInputs: { prompt: "Admitted prompt" },
+    }).status,
+    "valid",
+  );
+  assert.equal(
+    assessAppMapTestExecutionSource({
+      ...source,
+      artifacts,
+      resolvedInputs: { prompt: "Tampered prompt" },
+    }).status,
+    "review-required",
+  );
+  const replay = replayInputFromPersistedRun({
+    id: "run-outputs",
+    action: source.action,
+    serial: "android-1",
+    platform: "android",
+    title: "Prompt",
+    resolvedInputs: { prompt: "Extracted answer", other_output: "retained" },
+    recipeSnapshot: source.recipeSnapshot,
+    recipeGraph: source.recipeGraph,
+    artifacts,
+    projectId: "local",
+    ownerId: "agent:test",
+  });
+  assert.deepEqual(replay.variables, { prompt: "Admitted prompt", other_output: "retained" });
+  assert.equal(
+    assessAppMapTestExecutionSource({ ...source, artifacts, resolvedInputs: replay.variables })
+      .status,
+    "valid",
   );
 });

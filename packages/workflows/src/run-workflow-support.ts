@@ -1,5 +1,10 @@
 import { browserCaseProfileForTarget } from "@relay/core/browser-case-profile-target";
 import { sameAppMapRuntimeTargetProfile } from "@relay/core/app-map-runtime-target-profile";
+import {
+  NativeTargetProfileSelectionError,
+  selectNativeTargetProfile,
+  type NativeDeviceFacts,
+} from "@relay/core/native-target-profile";
 import type {
   AuthoringTarget,
   DurableWorkflowOperationOutput,
@@ -179,46 +184,47 @@ export async function selectBrowserTargetProfile(
   return candidates[0]!.id;
 }
 
-/** Select the one device profile actually referenced by this compiled Test.
- * App Maps may retain older profiles for the same serial, so target identity
- * alone is insufficient. The expected screens in the reviewed plan provide
- * the authoritative narrowing signal. */
+/** Native identity comes from current runtime facts. An expected-screen
+ * intersection cannot prove which locale or runtime is currently on a phone. */
 export function selectDeviceTargetProfile(
   compiled: ValidCompile,
   target: Extract<AuthoringTarget, { kind: "device" }>,
+  observed?: NativeDeviceFacts,
 ): string | undefined {
   const candidates = (compiled.plan.rawAccessibilityTargetProfiles ?? []).filter(
     (profile) => profile.platform === target.platform && profile.targetId === target.targetId,
   );
   if (candidates.length === 0) return undefined;
 
-  const referencedProfileIds = referencedTargetProfileIds(
-    compiled,
-    target.platform,
-    target.targetId,
-    true,
-  );
-  const referenced = candidates.filter((profile) => referencedProfileIds.has(profile.id));
-  let eligible = referenced.length ? referenced : candidates;
-  // Historical capture profiles can name the same physical setup differently.
-  // Collapse only complete, matching viewports with no conflicting device facts.
-  if (
-    eligible.length > 1 &&
-    eligible.every((profile) => profile.viewport) &&
-    new Set(eligible.map((profile) => `${profile.viewport!.width}x${profile.viewport!.height}`))
-      .size === 1 &&
-    (["model", "osVersion", "androidAvdName"] as const).every(
-      (key) =>
-        new Set(eligible.flatMap((profile) => (profile[key] ? [profile[key]] : []))).size <= 1,
-    )
-  )
-    eligible = [...eligible].sort((a, b) => a.id.localeCompare(b.id)).slice(0, 1);
-  if (eligible.length !== 1) {
-    throw new DeviceTargetProfileSelectionError(
-      "This device matches more than one saved setup for this Test.",
-    );
+  try {
+    return selectNativeTargetProfile({ target, profiles: candidates, observed })?.id;
+  } catch (error) {
+    if (error instanceof NativeTargetProfileSelectionError)
+      throw new DeviceTargetProfileSelectionError(error.message);
+    throw error;
   }
-  return eligible[0]!.id;
+}
+
+/** An ambiguous saved namespace can be narrowed by passive discovery facts.
+ * Device discovery never starts a screenshot, accessibility query or input. */
+export async function resolveDeviceTargetProfile(
+  operations: RelayOperationPort,
+  compiled: ValidCompile,
+  target: Extract<AuthoringTarget, { kind: "device" }>,
+): Promise<string | undefined> {
+  const candidates =
+    compiled.plan.rawAccessibilityTargetProfiles?.filter(
+      (profile) => profile.targetId === target.targetId && profile.platform === target.platform,
+    ) ?? [];
+  if (candidates.length < 2) return selectDeviceTargetProfile(compiled, target);
+  const inventory = await operations.invoke("target.devices.list", {
+    targetId: target.targetId,
+    targetKind: "device",
+  });
+  const observed = inventory.devices.find(
+    (device) => device.serial === target.targetId && device.platform === target.platform,
+  );
+  return selectDeviceTargetProfile(compiled, target, observed);
 }
 
 export function frozenIdentity(

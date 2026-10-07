@@ -30,6 +30,7 @@ import {
   targetContextFromExecutionTargetRef,
 } from "./target-driver.js";
 import { inferDevicePlatformFromSerial, type TargetContext } from "./target-context.js";
+import { replayAppMapTestInputValues } from "./app-map-test-execution-inputs.js";
 
 function freezeExecutionTarget(target: ExecutionTargetRef): ExecutionTargetRef {
   assertExecutionTargetRef(target);
@@ -263,7 +264,7 @@ export function replayInputFromPersistedRun(
         ? { authenticationHealth: structuredClone(run.authenticationHealth) }
         : {}),
       title: `${run.title ?? run.action} · replay`,
-      variables: structuredClone(run.resolvedInputs),
+      variables: replayAppMapTestInputValues(run),
       recipeSnapshot: structuredClone(run.recipeSnapshot),
       recipeGraph: structuredClone(run.recipeGraph),
       artifacts: structuredClone(run.artifacts ?? []),
@@ -295,7 +296,7 @@ export function replayInputFromPersistedRun(
       : {}),
     ...(run.sourceRevision ? { sourceRevision: structuredClone(run.sourceRevision) } : {}),
     title: `${run.title ?? run.action} · replay`,
-    variables: structuredClone(run.resolvedInputs),
+    variables: replayAppMapTestInputValues(run),
     recipeSnapshot: structuredClone(run.recipeSnapshot),
     recipeGraph: structuredClone(run.recipeGraph),
     artifacts: structuredClone(run.artifacts ?? []),
@@ -341,7 +342,7 @@ export function retryInputFromJob(job: TestJob): EnqueueJobInput {
     prodAccountMatch: job.options?.prodAccountMatch,
     retryOf: job.id,
     title: job.title,
-    variables: job.resolvedInputs,
+    variables: replayAppMapTestInputValues(job),
     sensitiveInputNames: job.sensitiveInputNames ?? [],
     recipeSnapshot: job.recipeSnapshot,
     recipeGraph: job.recipeGraph,
@@ -504,7 +505,7 @@ export function createSessionJob(
     batchId: input.batchId ?? parent?.batchId,
     caseIndex: input.caseIndex ?? parent?.caseIndex,
     caseCount: input.caseCount ?? parent?.caseCount,
-    resolvedInputs: Object.assign({}, parent?.resolvedInputs ?? input.variables),
+    resolvedInputs: Object.assign({}, input.variables ?? parent?.resolvedInputs),
     sensitiveInputNames: [
       ...new Set(parent?.sensitiveInputNames ?? input.sensitiveInputNames ?? []),
     ].sort((left, right) => left.localeCompare(right)),

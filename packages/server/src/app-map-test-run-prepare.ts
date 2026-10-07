@@ -10,6 +10,7 @@ import {
   resolveAppMapTestForTargetProfile,
   type AppMapTestCompileOptions,
   type CompiledAppMapTestForProfile,
+  type NativeDeviceFacts,
 } from "@relay/core";
 import type {
   AppMap,
@@ -97,6 +98,7 @@ export async function prepareAppMapCompanionTestRun(input: {
   target: AuthoringTarget;
   targetProfileId?: string;
   projectId: string;
+  observedDevice?: NativeDeviceFacts;
   compileOptions: Omit<
     AppMapTestCompileOptions,
     "runtimeTargetProfile" | "reviewedDocumentOrigins"
@@ -137,6 +139,7 @@ export async function prepareAppMapCompanionTestRun(input: {
       : frozenEvidenceTargetProfileForTarget({
           target: executionTarget,
           profiles: frozenRawAccessibilityTargetProfiles(resolved.map),
+          observedDevice: input.observedDevice,
         });
     const runtimeTargetProfile =
       explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;

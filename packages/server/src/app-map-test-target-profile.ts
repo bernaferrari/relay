@@ -131,8 +131,12 @@ export function queuedAppMapTestTargetProfile(input: {
   }
   if (
     saved.platform !== "browser" &&
-    ((saved.model !== undefined && observed?.model !== saved.model) ||
+    ((saved.model !== undefined && saved.model !== "device" && observed?.model !== saved.model) ||
       (saved.osVersion !== undefined && observed?.osVersion !== saved.osVersion) ||
+      (saved.viewport !== undefined &&
+        observed?.viewport !== undefined &&
+        (saved.viewport.width !== observed.viewport.width ||
+          saved.viewport.height !== observed.viewport.height)) ||
       (saved.capabilities !== undefined &&
         saved.capabilities.some((capability) => !observed?.capabilities.includes(capability))))
   ) {

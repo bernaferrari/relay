@@ -71,6 +71,7 @@ import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { isTransientError } from "./retry.js";
 import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
 import { frozenScreenIdentityObservations } from "./recipe-screen-frozen-identity.js";
+import { retainScreenMismatch } from "./recipe-screen-mismatch.js";
 import { nativeWorkspaceIdentityNodes } from "./screen-identity-native-workspace.js";
 import { nativeImaginePendingModelSelection } from "./recipe-native-model-entry.js";
 import { stillScreenTimeoutMessage, stillScreenUnchanged } from "./still-screen-wait.js";
@@ -482,6 +483,11 @@ export async function runExpectScreenStep(
       : {}),
   };
   const expected = expectedScreenFingerprints(step, scopedIdentityOptions);
+  const unmaskedExpected = new Set([
+    step.fingerprint,
+    ...(step.aliases ?? []),
+    ...(step.observations ?? []).map((observation) => observation.fingerprint),
+  ]);
   const hostedObservations = reobserveScreenIdentities(step.observations, scopedIdentityOptions);
   let frozenNativeWorkspace = false;
   if (identityOptions.policy?.nativeImagineWorkspace) {
@@ -523,6 +529,8 @@ export async function runExpectScreenStep(
   // Retained from the final attempt so a terminal mismatch can describe what
   // the device actually showed in its repair hint.
   let mismatchObservedFingerprint: string | undefined;
+  let mismatchNodes: SnapshotNode[] | undefined;
+  let mismatchObservedAt: number | undefined;
   let mismatchNodeCount = 0;
   let mismatchResolutionMethod = "a11y";
   let inspectionUnavailable = false;
@@ -559,6 +567,16 @@ export async function runExpectScreenStep(
     const exactNativeWorkspace =
       frozenNativeWorkspace ||
       nativeWorkspaceIdentityNodes(nodes, identityOptions.policy) !== nodes;
+    // A geometric mask cannot be reapplied to compact taught observations:
+    // their rectangles are intentionally absent. Exact full semantic proof
+    // remains valid when its fingerprint was explicitly retained by the Test.
+    // Qualified Imagine workspaces keep their stricter selected-model policy.
+    const exactUnmaskedMatch =
+      !exactNativeWorkspace &&
+      Boolean(scopedIdentityOptions.ignoreRegions?.length) &&
+      unmaskedExpected.has(
+        observeScreenIdentity(nodes, { ...scopedIdentityOptions, ignoreRegions: [] }).fingerprint,
+      );
     const semanticMatch =
       !exactNativeWorkspace &&
       compareObservations.some(
@@ -581,6 +599,7 @@ export async function runExpectScreenStep(
     // must derive ownership from their retained resource identifiers.
     if (
       !exactNativeWorkspace &&
+      !exactUnmaskedMatch &&
       !screenIdentityMatches(expected, observed.fingerprint) &&
       (!step.expectedApp || foregroundApplicationBundle(nodes) === step.expectedApp)
     ) {
@@ -609,6 +628,7 @@ export async function runExpectScreenStep(
     }
     if (
       screenIdentityMatches(expected, observed.fingerprint) ||
+      exactUnmaskedMatch ||
       (!hasLocalizedExpectation && semanticMatch) ||
       localizedSemanticMatch ||
       (!hasLocalizedExpectation && resilientMatch) ||
@@ -620,6 +640,8 @@ export async function runExpectScreenStep(
       break;
     }
     mismatchObservedFingerprint = observed.fingerprint;
+    mismatchNodes = nodes;
+    mismatchObservedAt = observedAt;
     mismatchNodeCount = nodes.length;
     if (
       prelude.preludeSteps?.length &&
@@ -699,6 +721,16 @@ export async function runExpectScreenStep(
   } while (Date.now() < deadline);
 
   if (!reached) {
+    retainScreenMismatch(
+      ctx,
+      step,
+      {
+        nodes: mismatchNodes,
+        observedAt: mismatchObservedAt,
+        fingerprint: mismatchObservedFingerprint,
+      },
+      scopedIdentityOptions,
+    );
     const hint: DestinationRepairHint = {
       expectedScreenId: step.screenId,
       expectedScreenTitle: step.screenTitle,

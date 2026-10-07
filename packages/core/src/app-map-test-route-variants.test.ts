@@ -8,10 +8,12 @@ import {
   type TargetProfile,
 } from "@relay/protocol";
 import { compileAppMapTest } from "./map-work.js";
+import { appMapRuntimeTargetProfileFromSaved } from "./app-map-runtime-target-profile.js";
 import {
   AppMapTestRouteSelectionError,
   appMapTestViewportClass,
   recordedTestRoutePlatforms,
+  savedTestRouteTargetProfile,
   selectReviewedTestRouteVariant,
 } from "./app-map-test-route-variants.js";
 
@@ -347,4 +349,92 @@ test("screen variants record platforms without originApplication", () => {
     },
   ];
   assert.deepEqual(recordedTestRoutePlatforms(map, test), ["android", "browser"]);
+});
+
+test("identical saved route facts survive capture property and capability ordering", () => {
+  const map = mapFixture();
+  const original = map.screenVariants["android-home"]!;
+  const current = {
+    ...original.targetProfile,
+    id: "device:RQCY104BG8X-1080x2340",
+    targetId: "RQCY104BG8X",
+    model: "device",
+    osVersion: "16",
+    viewport: { width: 1_080, height: 2_340 },
+    capabilities: ["snapshot", "screenshot"] as TargetProfile["capabilities"],
+  };
+  original.targetProfile = current;
+  map.screenVariants["new-capture"] = {
+    ...structuredClone(original),
+    id: "new-capture",
+    targetProfile: {
+      ...current,
+      viewport: { height: 2_340, width: 1_080 },
+      capabilities: ["screenshot", "snapshot", "snapshot"],
+      observedAt: at + 1,
+    },
+  };
+  assert.deepEqual(
+    savedTestRouteTargetProfile(map, appMapRuntimeTargetProfileFromSaved(current)),
+    current,
+  );
+
+  const browser = map.screenVariants["browser-home"]!;
+  const environment = browser.targetProfile.browserCaseProfile!;
+  map.screenVariants["new-browser-capture"] = {
+    ...structuredClone(browser),
+    id: "new-browser-capture",
+    targetProfile: {
+      ...browser.targetProfile,
+      viewport: { height: 800, width: 390 },
+      browserCaseProfile: {
+        ...Object.fromEntries(Object.entries(environment).reverse()),
+        viewport: { height: 800, width: 390 },
+      } as typeof environment,
+    },
+  };
+  assert.deepEqual(
+    savedTestRouteTargetProfile(map, appMapRuntimeTargetProfileFromSaved(browser.targetProfile)),
+    browser.targetProfile,
+  );
+});
+
+test("canonical route selection retains exact runtime and capability guards", () => {
+  for (const changed of [{ osVersion: "17" }, { viewport: { width: 1_080, height: 2_341 } }]) {
+    const map = mapFixture();
+    const variant = map.screenVariants["android-home"]!;
+    const runtime = appMapRuntimeTargetProfileFromSaved({
+      ...variant.targetProfile,
+      osVersion: "16",
+    });
+    variant.targetProfile = { ...variant.targetProfile, ...changed };
+    assert.throws(
+      () => savedTestRouteTargetProfile(map, runtime),
+      (error: unknown) =>
+        error instanceof AppMapTestRouteSelectionError && error.code === "target-surface-required",
+    );
+  }
+  const map = mapFixture();
+  const browser = map.screenVariants["browser-home"]!;
+  const runtime = appMapRuntimeTargetProfileFromSaved(browser.targetProfile);
+  map.screenVariants["conflicting-capability"] = {
+    ...structuredClone(browser),
+    id: "conflicting-capability",
+    targetProfile: { ...browser.targetProfile, capabilities: ["screenshot"] },
+  };
+  assert.throws(
+    () => savedTestRouteTargetProfile(map, runtime),
+    (error: unknown) =>
+      error instanceof AppMapTestRouteSelectionError && error.code === "target-profile-ambiguous",
+  );
+  delete map.screenVariants["conflicting-capability"];
+  browser.targetProfile.browserCaseProfile = {
+    ...browser.targetProfile.browserCaseProfile!,
+    locale: "fr-FR",
+  };
+  assert.throws(
+    () => savedTestRouteTargetProfile(map, runtime),
+    (error: unknown) =>
+      error instanceof AppMapTestRouteSelectionError && error.code === "target-surface-required",
+  );
 });

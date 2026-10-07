@@ -164,6 +164,7 @@ function deviceCompileStep(selectedProfileId?: string): ScriptedRelayStep {
     targetId: target.targetId,
     platform: target.platform,
     viewport: { width: 1080, height: 2400 },
+    osVersion: id.endsWith("-old") ? "15" : "16",
     capabilities: [],
   }));
   return {
@@ -217,9 +218,24 @@ function deviceCompileStep(selectedProfileId?: string): ScriptedRelayStep {
   };
 }
 
-test("automatically binds the device profile referenced by the reviewed Test", async () => {
+test("automatically binds exact native runtime facts on a cold discovery before recompiling and running", async () => {
   const scripted = createScriptedRelayClient([
     deviceCompileStep(),
+    {
+      id: "target.devices.list",
+      output: {
+        devices: [
+          {
+            id: target.targetId,
+            serial: target.targetId,
+            name: "Pixel 9",
+            platform: "android",
+            osVersion: "16",
+            viewport: { width: 1080, height: 2400 },
+          },
+        ],
+      },
+    },
     deviceCompileStep("device:pixel-9-current"),
     runStep(7),
   ]);
@@ -237,7 +253,7 @@ test("automatically binds the device profile referenced by the reviewed Test", a
   );
   assert.deepEqual(
     scripted.invocations.map(({ id }) => id),
-    ["app-map.test.compile", "app-map.test.compile", "app-map.test.run"],
+    ["app-map.test.compile", "target.devices.list", "app-map.test.compile", "app-map.test.run"],
   );
 });
 
@@ -503,6 +519,21 @@ test("an exact revision bypasses the current read and remains the run revision",
   assert.ok(runInvocation);
   assert.equal(runInvocation.id, "app-map.test.run");
   assert.equal((runInvocation.input as { expectedRevision?: unknown }).expectedRevision, 12);
+});
+
+test("runtime prompts reach saved Test admission without entering the public frozen identity", async () => {
+  const variables = { chat_prompt: "Prompt B", token: "private runtime value" };
+  const scripted = createScriptedRelayClient([compileStep(12), runStep(12)]);
+  const snapshot = await createRelayWorkflows(scripted.client).start(
+    intent({ revision: { exact: 12 }, variables }),
+  );
+  assert.equal(snapshot.phase, "queued");
+  assert.deepEqual(
+    (scripted.invocations[1]!.input as { variables?: unknown }).variables,
+    variables,
+  );
+  assert.equal("variables" in snapshot.frozen!, false);
+  assert.equal(JSON.stringify(snapshot).includes(variables.token), false);
 });
 
 test("a revision that changes before compile fails closed without a run", async () => {

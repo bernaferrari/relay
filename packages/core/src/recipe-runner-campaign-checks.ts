@@ -7,7 +7,7 @@ import {
 } from "./control.js";
 import { now } from "./events.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
-import { InputOutcomeUnknownError } from "./input-not-dispatched.js";
+import { isTerminalInputError } from "./input-not-dispatched.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import {
@@ -292,10 +292,7 @@ export async function runCampaignCheck(
       ctx,
       error instanceof Error ? error.message : `Campaign check ${step.check.id} failed.`,
     );
-    if (
-      error instanceof IosMutationOutcomeUnknownError ||
-      error instanceof InputOutcomeUnknownError
-    ) {
+    if (error instanceof IosMutationOutcomeUnknownError || isTerminalInputError(error)) {
       // An iOS native command may already have landed. Evidence is read-only,
       // but cleanup would issue a second physical command against an unknown
       // state, so preserve the exact error and stop this recipe/tour here.
@@ -313,7 +310,7 @@ export async function runCampaignCheck(
     const cleanup = step.check.cleanup;
     if (
       primaryError instanceof IosMutationOutcomeUnknownError ||
-      primaryError instanceof InputOutcomeUnknownError
+      isTerminalInputError(primaryError)
     ) {
       cleanupOutcome = "skipped";
       const capturedAt = now();
@@ -326,13 +323,13 @@ export async function runCampaignCheck(
             recipeId: cleanup.recipeId,
             terminalScreenId: cleanup.terminalScreenId,
             status: "skipped",
-            reason: "An iOS mutation has an unknown outcome; no cleanup command is safe.",
+            reason: "Native input could not be safely verified; no cleanup command is safe.",
             startedAt: capturedAt,
             finishedAt: capturedAt,
           },
         });
       }
-      ctx.log(`check cleanup skipped: ${step.check.title} — iOS mutation outcome unknown`);
+      ctx.log(`check cleanup skipped: ${step.check.title} — native input unverified`);
     } else if (cleanup && targetUnavailableError) {
       cleanupOutcome = "skipped";
       const capturedAt = now();
@@ -435,10 +432,7 @@ export async function runCampaignCheck(
         } catch (error) {
           cleanupError = error;
           const finishedAt = now();
-          if (
-            error instanceof IosMutationOutcomeUnknownError ||
-            error instanceof InputOutcomeUnknownError
-          ) {
+          if (error instanceof IosMutationOutcomeUnknownError || isTerminalInputError(error)) {
             // Cleanup is a physical recipe too. Its command may have landed,
             // so the campaign cannot turn that ambiguity into a normal failed
             // check, defer it, or begin a sibling check.

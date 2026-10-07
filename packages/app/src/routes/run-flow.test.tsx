@@ -718,6 +718,19 @@ describe("Run and Report", () => {
 
   it("keeps saved Test steps separate from historical evidence and preserves definition selection", async () => {
     const fake = fakeRunService(runState("succeeded"));
+    fake.service.listTestRuns = async () => [
+      {
+        id: "other-failed-run",
+        title: "Another run failed",
+        action: "saved-test",
+        status: "error",
+        phase: "completed",
+        outcome: "harness-failure",
+        queuedAt: 2,
+        identity: { runId: "other-failed-run" },
+        links: { self: "/runs/other-failed-run" },
+      },
+    ];
     const { history } = await renderRun(
       "/tests/test-1?run=run-1",
       fake.service,
@@ -728,7 +741,11 @@ describe("Run and Report", () => {
     expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
       "Result",
     );
+    expect(document.body.textContent).not.toContain("Last run");
+    expect(document.querySelector('a[href="/runs/other-failed-run"]')).toBeNull();
     await click(button("Test"));
+    expect(document.body.textContent).toContain("Last run");
+    expect(document.querySelector('a[href="/runs/other-failed-run"]')).not.toBeNull();
     const steps = editorSteps();
     expect(steps).toHaveLength(3);
     await click(steps[1]!);
@@ -1430,6 +1447,34 @@ describe("Run and Report", () => {
     await click(button("Run now"));
     expect(fake.startInputs[0]).toMatchObject({ targetId: "browser-golden" });
   });
+
+  it.each([
+    { buildId: undefined, expanded: false },
+    { buildId: "build-android-1", expanded: true },
+  ])(
+    "shows Advanced options only for an explicit build ($buildId)",
+    async ({ buildId, expanded }) => {
+      const fake = fakeRunService();
+      const storage = platformWithStorage({
+        [runConfigurationStorageKey({
+          server: "http://127.0.0.1:8787",
+          appId: "settings-language-proof",
+          entity: "test-run:test-1",
+        })]: JSON.stringify({ targetId: "emulator-5554", startupMode: "cold", buildId }),
+      });
+      await renderRun("/tests/test-1", fake.service, storage.platform);
+      await openRunSettings();
+      const summary = [...document.querySelectorAll("summary")].find(
+        (candidate) => candidate.textContent?.trim() === "Advanced run options",
+      )!;
+      expect(summary.closest("details")!.open).toBe(expanded);
+      const restart = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].find(
+        (input) => input.parentElement?.textContent?.includes("Restart app before running"),
+      )!;
+      expect(restart.getAttribute("aria-checked")).toBe("true");
+      expect(fake.startInputs).toHaveLength(0);
+    },
+  );
 
   it("submits the visible build and cold-start choices", async () => {
     const fake = fakeRunService();

@@ -3,6 +3,15 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { RecordingProblem } from "./recording-shared";
+import { ApiError } from "@relay/client";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: Root[] = [];
@@ -17,6 +26,22 @@ async function render(node: React.ReactNode) {
   roots.push(root);
   await act(async () => root.render(node));
   return host;
+}
+
+async function renderInTestRouter(node: React.ReactNode) {
+  const rootRoute = createRootRoute({ component: Outlet });
+  const testRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/tests/$testId",
+    component: () => node,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([testRoute]),
+    history: createMemoryHistory({ initialEntries: ["/tests/test-speed"] }),
+  });
+  await router.load();
+  const host = await render(<RouterProvider router={router} />);
+  return { host, router };
 }
 
 it("preserves the next step alongside the explanation", async () => {
@@ -93,9 +118,84 @@ it("identifies interrupted replay without offering another execution", async () 
       onRetry={retry}
     />,
   );
-  expect(host.textContent).toContain("Replay was interrupted. Your saved steps are safe.");
+  expect(host.textContent).toContain("Replay status needs checking. Your saved steps are safe.");
   expect(host.textContent).not.toContain("Step status");
   expect(host.textContent).not.toContain("Try again");
   expect(host.querySelector("button")?.textContent).toContain("Check status");
   expect(retry).not.toHaveBeenCalled();
+});
+
+it("routes the canonical captured setup conflict to its affected step instead of retrying", async () => {
+  const retry = vi.fn();
+  const { host, router } = await renderInTestRouter(
+    <RecordingProblem
+      operation="run"
+      error={
+        new ApiError(
+          409,
+          "Saved target profile device:private-phone:1080x2340 has conflicting route-selection facts",
+          {
+            code: "target-profile-ambiguous",
+            testId: "test-speed",
+            stepId: "step-d950-source",
+            diagnostics: [],
+            recovery: "Open the Test editor and resolve its blocking compile diagnostics.",
+          },
+        )
+      }
+      testContext={{ testId: "test-speed", appMapId: "grok-android" }}
+      onRetry={retry}
+      action={<button onClick={retry}>Try again</button>}
+    />,
+  );
+  expect(host.textContent).toContain("Saved setup needs review");
+  expect(host.textContent).not.toMatch(/private-phone|1080x2340|route-selection|Try again/u);
+  const review = host.querySelector("a");
+  expect(review?.textContent).toBe("Review affected step");
+  await act(async () => {
+    review?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+  expect(router.state.location.search).toEqual({ app: "grok-android", step: "step-d950-source" });
+  expect(retry).not.toHaveBeenCalled();
+});
+
+it("opens the Test without guessing an affected step when Relay supplies none", async () => {
+  const { host, router } = await renderInTestRouter(
+    <RecordingProblem
+      recovery={{
+        sourceCode: "target-profile-ambiguous",
+        title: "Internal setup failure",
+        detail: "private device facts",
+        recovery: "Compile again",
+        retryable: true,
+      }}
+      testContext={{ testId: "test-speed" }}
+    />,
+  );
+  const review = host.querySelector("a");
+  expect(review?.textContent).toBe("Review Test");
+  await act(async () => {
+    review?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+  expect(router.state.location.search).toEqual({});
+  expect(host.textContent).not.toContain("private device facts");
+});
+
+it("keeps browser selection recovery and its provided action", async () => {
+  const host = await render(
+    <RecordingProblem
+      recovery={{
+        sourceCode: "browser-target-profile-selection-required",
+        title: "This browser’s setup changed since recording",
+        detail: "This Test was recorded with a different browser setup.",
+        recovery:
+          "Record the Test again on this browser, or restore its previous setup in Devices.",
+        retryable: false,
+      }}
+      action={<button>Review browser setup</button>}
+    />,
+  );
+  expect(host.textContent).toContain("This browser’s setup changed since recording");
+  expect(host.querySelector("button")?.textContent).toBe("Review browser setup");
+  expect(host.textContent).not.toContain("Recorded screens disagree");
 });

@@ -1,6 +1,10 @@
 import * as z from "zod/v4";
 import { identifier, text } from "./operation-schema-primitives.js";
 
+export const testRuntimeVariablesSchema = z
+  .record(z.string().regex(/^[A-Za-z0-9_.-]+$/u), z.string().min(1).max(20_000))
+  .refine((values) => Object.keys(values).length <= 100, "variables may name at most 100 inputs");
+
 export const requirementActionKind = z
   .enum(["capture-view", "test-action"])
   .describe(

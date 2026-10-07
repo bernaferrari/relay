@@ -30,6 +30,7 @@ import { mutateAppMap } from "./mutation.js";
 import { attachRecordedTest } from "./recorded-test.js";
 import { recordingSourceForCommit } from "./recording-source.js";
 import { recordedSourceAnchor } from "./recording-source-anchor.js";
+import { nativeCaptureTargetProfile } from "../native-target-profile.js";
 
 export type AppMapRecordingInput = {
   sessionId: string;
@@ -222,6 +223,17 @@ function targetProfile(
   supplied?: TargetProfile,
   observation?: AuthoringObservation,
 ): TargetProfile {
+  if (target.kind === "device" && (!supplied || supplied.id === `device:${target.targetId}`)) {
+    return nativeCaptureTargetProfile({
+      ...target,
+      observedAt: at,
+      viewport: observation?.bounds ?? supplied?.viewport,
+      name: supplied?.name,
+      model: supplied?.model,
+      osVersion: supplied?.osVersion,
+      androidAvdName: supplied?.androidAvdName,
+    });
+  }
   const profile: TargetProfile = supplied
     ? {
         ...structuredClone(supplied),
@@ -504,7 +516,7 @@ export function commitAppMapScreenCapture(
     },
   );
   const screen = appMap.screens[screenId]!;
-  const profile = targetProfile(input.target, context.at, input.targetProfile);
+  const profile = targetProfile(input.target, context.at, input.targetProfile, input.observation);
   const variantId = screen.variantIds.find(
     (id) => appMap.screenVariants[id]?.targetProfile.id === profile.id,
   );

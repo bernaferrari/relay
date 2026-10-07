@@ -1,23 +1,61 @@
 import { ApiError } from "@relay/client";
 import type { WorkflowProblem } from "@relay/workflows";
-export type HumanError = { title: string; detail: string; recovery: string; retryable: boolean };
+export type HumanError = {
+  title: string;
+  detail: string;
+  recovery: string;
+  retryable: boolean;
+  sourceCode?: string;
+  sourceStepId?: string;
+};
+
+export function capturedSetupRecovery(problem: {
+  sourceCode?: string;
+  sourceStepId?: string;
+}): HumanError | undefined {
+  if (problem.sourceCode !== "target-profile-ambiguous") return undefined;
+  const stepId =
+    typeof problem.sourceStepId === "string"
+      ? problem.sourceStepId.trim().slice(0, 8_192)
+      : undefined;
+  return {
+    title: "Saved setup needs review",
+    detail:
+      "Recorded screens disagree about the setup for this Test. Relay cannot choose one safely.",
+    recovery: "Review the affected step’s capture in the Test editor before running again.",
+    retryable: false,
+    sourceCode: problem.sourceCode,
+    ...(stepId ? { sourceStepId: stepId } : {}),
+  };
+}
+
 export function projectError(error: unknown): HumanError {
   if (isWorkflowProblem(error))
-    return {
-      title: error.title,
-      detail: error.detail,
-      recovery: error.recovery,
-      retryable: error.retryable,
-    };
+    return (
+      capturedSetupRecovery(error) ?? {
+        title: error.title,
+        detail: error.detail,
+        recovery: error.recovery,
+        retryable: error.retryable,
+        ...(error.sourceCode ? { sourceCode: error.sourceCode } : {}),
+        ...(error.sourceStepId ? { sourceStepId: error.sourceStepId } : {}),
+      }
+    );
   if (error instanceof ApiError) {
     const problem = workflowProblemFromBody(error.body);
     if (problem)
-      return {
-        title: problem.title,
-        detail: problem.detail,
-        recovery: problem.recovery,
-        retryable: problem.retryable,
-      };
+      return (
+        capturedSetupRecovery(problem) ?? {
+          title: problem.title,
+          detail: problem.detail,
+          recovery: problem.recovery,
+          retryable: problem.retryable,
+          ...(problem.sourceCode ? { sourceCode: problem.sourceCode } : {}),
+          ...(problem.sourceStepId ? { sourceStepId: problem.sourceStepId } : {}),
+        }
+      );
+    const capturedSetup = capturedSetupFromBody(error.body);
+    if (capturedSetup) return capturedSetup;
     if ([502, 503, 504].includes(error.status)) {
       return {
         title: "Relay is temporarily unavailable",
@@ -94,6 +132,25 @@ export function projectError(error: unknown): HumanError {
     recovery: "Check your connection and inspect Relay status before attempting this action again.",
     retryable: false,
   };
+}
+
+function capturedSetupFromBody(body: unknown): HumanError | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const details =
+    "code" in body && body.code === "target-profile-ambiguous"
+      ? body
+      : "details" in body && body.details && typeof body.details === "object"
+        ? body.details
+        : body;
+  if (!("code" in details) || details.code !== "target-profile-ambiguous") return undefined;
+  const stepId =
+    "stepId" in details && typeof details.stepId === "string"
+      ? details.stepId.trim().slice(0, 8_192)
+      : undefined;
+  return capturedSetupRecovery({
+    sourceCode: details.code,
+    ...(stepId ? { sourceStepId: stepId } : {}),
+  });
 }
 
 function isLocalServiceTransportFailure(error: unknown): boolean {

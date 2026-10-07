@@ -47,6 +47,24 @@ const workspace = parsePairedConfigurationWorkspace(
 );
 
 describe("start owned Test runs", () => {
+  it("keeps prompt overrides on one frozen Test start and refuses unsupported batch overrides", () => {
+    const variables = { chat_prompt: "A distinct prompt" };
+    const input = {
+      workspace: emptyPairedWorkspace(),
+      testId: "chat",
+      appMapId: "grok",
+      documentRevision: 12,
+      targetId: "phone",
+      variables,
+    };
+    const request = testStartRequests(input)[0]!;
+    expect(request).toMatchObject({ documentRevision: 12, targetId: "phone", variables });
+    expect(request.variables).not.toBe(variables);
+    expect(() => testStartRequests({ ...input, workspace, usePairedWorkspace: true })).toThrow(
+      "single device",
+    );
+  });
+
   it("uses the paired compiler instead of a single target when the workspace is selected", () => {
     const requests = testStartRequests({
       usePairedWorkspace: true,

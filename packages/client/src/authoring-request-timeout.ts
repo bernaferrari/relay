@@ -23,3 +23,32 @@ export function authoringRequestTimeout(
   }, 0);
   return declaredMs > 0 ? declaredMs + acknowledgementMs : undefined;
 }
+
+/** The canonical Take supplies replay waits; captured execution durations do
+ * not. Allow normal evidence/setup time for each action without retrying it. */
+export function authoringReplayRequestTimeout(session: unknown, acknowledgementMs: number): number {
+  const take = (
+    session as
+      | {
+          take?: {
+            currentRevision?: number;
+            revisions?: Array<{
+              revision: number;
+              actions?: Array<{
+                steps?: Array<{ kind?: string; ms?: number; timeoutMs?: number }>;
+              }>;
+            }>;
+          };
+        }
+      | undefined
+  )?.take;
+  const actions =
+    take?.revisions?.find((revision) => revision.revision === take.currentRevision)?.actions ?? [];
+  const steps = actions.flatMap((action) => action.steps ?? []);
+  const declaredMs = steps.reduce(
+    (total, step) =>
+      total + Math.max(0, step.kind === "sleep" ? (step.ms ?? 0) : (step.timeoutMs ?? 0)),
+    0,
+  );
+  return declaredMs + Math.max(180_000, actions.length * acknowledgementMs);
+}

@@ -15,6 +15,7 @@ import {
   repeatWorkflowMutationSchema,
   requirementActionKind,
   sourceRevisionSchema,
+  testRuntimeVariablesSchema,
 } from "./app-map-test-run-schemas.js";
 export { repeatWorkflowMutationSchema, sourceRevisionSchema } from "./app-map-test-run-schemas.js";
 
@@ -79,6 +80,7 @@ export const appMapTestRunInputSchema = z
         "Variable id → selected value ids. Upserts a Combine for this Test × those worlds and starts a campaign.",
       ),
     strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
+    variables: testRuntimeVariablesSchema.optional(),
     pilotCase: z
       .record(identifier("Repeat dimension identifier"), identifier("Repeat value identifier"))
       .optional(),
@@ -147,6 +149,13 @@ export const appMapTestRunInputSchema = z
       }
     }
     if (input.in === undefined) return;
+    if (input.variables !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["variables"],
+        message: "variables cannot be combined with in; run one Test with these inputs",
+      });
+    }
     if (input.repeatRecovery) {
       const requestedIds = input.repeatRecovery.resolved.dimensions.map((item) => item.id);
       if (

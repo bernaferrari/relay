@@ -1,4 +1,9 @@
-import { appMapRuntimeTargetProfileKey } from "@relay/core";
+import {
+  appMapRuntimeTargetProfileKey,
+  selectNativeTargetProfile,
+  NativeTargetProfileSelectionError,
+  type NativeDeviceFacts,
+} from "@relay/core";
 import type { AppMapCompiledRuntimeTargetProfile, OperationInput } from "@relay/protocol";
 import { HttpError } from "./http.js";
 
@@ -51,6 +56,7 @@ export function assertReviewedBrowserTargetProfile(input: {
 export function frozenEvidenceTargetProfileForTarget(input: {
   target: Pick<NonNullable<OperationInput<"app-map.test.run">["target"]>, "targetId" | "platform">;
   profiles: AppMapCompiledRuntimeTargetProfile[] | undefined;
+  observedDevice?: NativeDeviceFacts;
 }): AppMapCompiledRuntimeTargetProfile | undefined {
   const profiles = [
     ...new Map(
@@ -84,6 +90,17 @@ export function frozenEvidenceTargetProfileForTarget(input: {
     .sort()
     .join(", ");
   if (matching.length > 1) {
+    if (input.target.platform !== "browser") {
+      try {
+        return selectNativeTargetProfile({
+          target: { ...input.target, platform: input.target.platform },
+          profiles: matching,
+          observed: input.observedDevice,
+        });
+      } catch (error) {
+        if (!(error instanceof NativeTargetProfileSelectionError)) throw error;
+      }
+    }
     throw new HttpError(
       409,
       `Choose one frozen evidence profile for ${input.target.platform}:${input.target.targetId}`,

@@ -19,6 +19,8 @@ import { managedBrowserTargetProfile } from "./browser-case-profile-target.js";
 import { now } from "./events.js";
 import { readTarget } from "./targets.js";
 import { authoringOriginApplication } from "./authoring-session-runtime.js";
+import { listDevices } from "./workspace-devices.js";
+import { nativeCaptureTargetProfile } from "./native-target-profile.js";
 
 export type AuthoringMapCommitFault = (
   boundary: "before-verify" | "after-verify" | "before-rename" | "before-persist",
@@ -167,7 +169,20 @@ async function frozenAuthoringTargetProfile(
   session: AuthoringSession,
   observedAt: number,
 ): Promise<TargetProfile | undefined> {
-  if (session.target.kind !== "browser") return undefined;
+  if (session.target.kind !== "browser") {
+    const device = (await listDevices().catch(() => [])).find(
+      (item) =>
+        item.serial === session.target.targetId && item.platform === session.target.platform,
+    );
+    return nativeCaptureTargetProfile({
+      ...session.target,
+      observedAt,
+      name: device?.name,
+      model: device?.kind,
+      osVersion: device?.osVersion,
+      androidAvdName: device?.avdName,
+    });
+  }
   const target = await readTarget(session.target.targetId);
   if (!target?.browser) {
     throw new AuthoringStateError(

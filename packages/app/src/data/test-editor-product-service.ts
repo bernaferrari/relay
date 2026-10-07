@@ -18,6 +18,11 @@ import { scenarioTestOriginMissingEvidence } from "@relay/product/test-origin-re
 import { testInstructionDisplayTitles } from "@relay/workflows/recorded-step-presentation";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
+import {
+  replaceActionText,
+  testTextActions,
+  type ProductTestTextAction,
+} from "./test-text-actions";
 
 export type ProductTestHistoryItem = Pick<
   ActivityEvent,
@@ -52,6 +57,8 @@ export type ProductTestEditorDocument = {
   stepPlatformBlockers?: Readonly<Record<string, string>>;
   originEvidenceMissing?: string;
   hasRememberableReply?: boolean;
+  textActions?: Readonly<Record<string, readonly ProductTestTextAction[]>>;
+  latestTextRevision?: number;
   history: readonly ProductTestHistoryItem[];
   repairs: readonly ProductTestRepair[];
 };
@@ -64,6 +71,13 @@ export type TestEditorProductService = {
     instructions: readonly string[];
   }): Promise<ProductTestEditorDocument>;
   get(testId: string, appMapId?: string): Promise<ProductTestEditorDocument | undefined>;
+  listTextParameters?(): Promise<import("@relay/protocol").TestData[]>;
+  saveText?(input: {
+    document: ProductTestEditorDocument;
+    stepId: string;
+    action: ProductTestTextAction;
+    text: string;
+  }): Promise<ProductTestEditorDocument>;
   saveSettings?(input: {
     document: ProductTestEditorDocument;
     name: string;
@@ -91,6 +105,37 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
   }
 
   return {
+    async listTextParameters() {
+      return (await (await client()).invoke("workspace.variables.get", {})).value;
+    },
+    async saveText({ document, stepId, action, text }) {
+      if (!text.trim() || text.length > 20_000)
+        throw new TypeError("Enter text up to 20,000 characters.");
+      const relay = await client();
+      const { appMap: current } = await relay.invoke("app-map.get", {
+        appMapId: document.appMapId,
+      });
+      if (current.revision !== document.revision)
+        throw new TypeError("The saved Test changed. Reload before saving this text.");
+      const addressed = testTextActions(current, document.test.id)[stepId]?.find(
+        (item) => item.key === action.key,
+      );
+      if (!addressed || addressed.text !== action.text)
+        throw new TypeError("This text action changed. Reload the Test.");
+      const { appMap } = await relay.invoke("app-map.connection.update", {
+        appMapId: document.appMapId,
+        connectionId: addressed.connectionId,
+        expectedRevision: document.revision,
+        patch: {
+          actions: replaceActionText(
+            current.connections[addressed.connectionId]!.actions,
+            addressed,
+            text,
+          ),
+        },
+      });
+      return requireDocument(appMap, document.test.id);
+    },
     async createDraft({ appMapId, testId, name, instructions }) {
       const relay = await client();
       const { appMap: current } = await relay.invoke("app-map.get", { appMapId });
@@ -273,6 +318,23 @@ export function documentFromMap(
   ) as Partial<Record<PlanPlatform, string>>;
   const hasRememberableReply = testHasRememberableReply(test, appMap);
   const originEvidenceMissing = scenarioTestOriginMissingEvidence(appMap, test)?.title;
+  const textActions = testTextActions(appMap, testId);
+  const textConnectionIds = new Set(
+    Object.values(textActions)
+      .flat()
+      .map((action) => action.connectionId),
+  );
+  const latestTextRevision = Math.max(
+    0,
+    ...Object.values(appMap.activity)
+      .filter(
+        (event) =>
+          event.subject.kind === "connection" &&
+          textConnectionIds.has(event.subject.id) &&
+          event.eventType === "connection.updated",
+      )
+      .map((event) => event.afterRevision),
+  );
   return {
     appMapId: appMap.id,
     appName: appMap.name,
@@ -286,6 +348,8 @@ export function documentFromMap(
     revision: appMap.revision,
     test: structuredClone(test),
     displayTitles: testInstructionDisplayTitles(appMap, test),
+    textActions,
+    ...(latestTextRevision ? { latestTextRevision } : {}),
     savedPaths: Object.values(appMap.connections ?? {})
       .filter((connection) => connection.state === "ready" && connection.actions.length > 0)
       .map((connection) => ({

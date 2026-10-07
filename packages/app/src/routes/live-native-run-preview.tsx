@@ -11,11 +11,13 @@ export function LiveNativeRunPreview({
   target,
   targetName,
   fallback,
+  fallbackCaption,
 }: {
   target: NativeRunPreviewTarget;
   targetName?: string;
   /** The Run's latest retained screenshot, without review or input controls. */
   fallback?: ReactNode;
+  fallbackCaption?: string;
 }) {
   return (
     <NativeRunPreview
@@ -23,6 +25,7 @@ export function LiveNativeRunPreview({
       target={target}
       targetName={targetName}
       fallback={fallback}
+      fallbackCaption={fallbackCaption}
     />
   );
 }
@@ -50,10 +53,12 @@ function NativeRunPreview({
   target,
   targetName,
   fallback,
+  fallbackCaption = "Latest captured screenshot · not live",
 }: {
   target: NativeRunPreviewTarget;
   targetName?: string;
   fallback?: ReactNode;
+  fallbackCaption?: string;
 }) {
   const { productService } = useRouteContext({ from: "__root__" });
   const selectedTarget = useMemo(
@@ -131,7 +136,7 @@ function NativeRunPreview({
             <div className="flex min-h-0 flex-1 flex-col gap-2">
               <div className="flex min-h-0 flex-1 items-center justify-center">{fallback}</div>
               <p className="shrink-0 text-center text-xs text-muted-foreground">
-                Latest captured screenshot · not live
+                {fallbackCaption}
               </p>
             </div>
           ) : (

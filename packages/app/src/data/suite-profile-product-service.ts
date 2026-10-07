@@ -198,21 +198,29 @@ export type SuiteProfileProductService = {
     executionMode?: "pilot" | "all";
     accounts?: readonly PlanStartAccountBinding[];
   }): Promise<{ batchId: string }>;
-  schedulePlan?(input: {
-    appMapId: string;
-    combineId: string;
-    profileId: string;
-    profileIds?: readonly string[];
-    accounts?: readonly PlanStartAccountBinding[];
-    hour: number;
-    timezone: string;
-  }): Promise<{ id: string }>;
+  schedulePlan?(
+    input: ProductPlanScheduleTiming & {
+      appMapId: string;
+      combineId: string;
+      profileId: string;
+      profileIds?: readonly string[];
+      accounts?: readonly PlanStartAccountBinding[];
+    },
+  ): Promise<{ id: string }>;
   removePlanSchedule?(id: string): Promise<void>;
   listPlanSchedules?(input: { combineId: string }): Promise<readonly ProductPlanSchedule[]>;
 };
 
+export type ProductPlanScheduleTiming = {
+  scheduleId?: string;
+  intervalMinutes?: number;
+  hour?: number;
+  timezone: string;
+};
+
 export type ProductPlanSchedule = {
   readonly id: string;
+  readonly intervalMinutes?: number;
   readonly hour?: number;
   readonly timezone?: string;
   readonly nextRunAt: number;
@@ -783,6 +791,36 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       }
     },
     async schedulePlan(input) {
+      const intervalMinutes = input.intervalMinutes ?? 1_440;
+      if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 43_200)
+        throw new TypeError("Choose a valid repeat frequency.");
+      const hour = intervalMinutes === 1_440 ? input.hour : undefined;
+      if (hour !== undefined && (!Number.isInteger(hour) || hour < 0 || hour > 23))
+        throw new TypeError("Hour must be between 0 and 23.");
+      const timezone = input.timezone.trim();
+      if (!timezone) throw new TypeError("Timezone is required.");
+      const relay = await client();
+      if (input.scheduleId) {
+        const { schedules } = await relay.invoke("schedule.list", {});
+        const saved = schedules.find((item) => item.id === input.scheduleId);
+        if (!saved || saved.combineId !== input.combineId || saved.appMapId !== input.appMapId)
+          throw new TypeError("That schedule changed. Reload this Plan before saving.");
+        const result = await relay.invoke("schedule.create", {
+          id: saved.id,
+          combineId: saved.combineId,
+          appMapId: saved.appMapId,
+          targetKind: saved.targetKind,
+          targetId: saved.targetId,
+          platform: saved.platform,
+          intervalMinutes,
+          ...(hour === undefined ? {} : { hour }),
+          timezone,
+          repetitions: saved.repetitions,
+          enabled: saved.enabled,
+          ...(saved.profileTargets?.length ? { profileTargets: saved.profileTargets } : {}),
+        });
+        return { id: result.schedule.id };
+      }
       const selectedProfileIds = [
         ...(input.profileIds ?? []),
         ...(input.profileId ? [input.profileId] : []),
@@ -799,12 +837,6 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       const profile =
         selectedProfiles[0] ?? availableEnvironments.find((item) => item.id === input.profileId);
       if (!profile) throw new TypeError("Choose a browser or device first.");
-      const hour = Math.trunc(input.hour);
-      if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
-        throw new TypeError("Hour must be between 0 and 23.");
-      }
-      const timezone = input.timezone.trim();
-      if (!timezone) throw new TypeError("Timezone is required.");
       const profileTargets =
         selectedProfiles.length || input.accounts?.length
           ? compilePlanProfileTargets(
@@ -812,16 +844,14 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
               input.accounts ?? [],
             )
           : undefined;
-      const result = await (
-        await client()
-      ).invoke("schedule.create", {
+      const result = await relay.invoke("schedule.create", {
         combineId: input.combineId,
         appMapId: input.appMapId,
         targetKind: profile.platform === "browser" ? "browser" : "device",
         targetId: profile.targetId,
         platform: profile.platform,
-        intervalMinutes: 1_440,
-        hour,
+        intervalMinutes,
+        ...(hour === undefined ? {} : { hour }),
         timezone,
         ...(profileTargets?.length ? { profileTargets } : {}),
       });
@@ -838,6 +868,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         .filter((item) => item.combineId === combineId)
         .map((item) => ({
           id: item.id,
+          intervalMinutes: item.intervalMinutes,
           ...(item.hour === undefined ? {} : { hour: item.hour }),
           ...(item.timezone ? { timezone: item.timezone } : {}),
           nextRunAt: item.nextRunAt,
