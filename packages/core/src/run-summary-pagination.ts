@@ -1,5 +1,5 @@
 import { captureReviewQueueForRun } from "./capture-review-queue.js";
-import { runTestSource } from "./run-test-source.js";
+import { runSummaryLineage } from "./run-matrix-case.js";
 import type { RunSummary } from "@relay/protocol";
 import { catalogSummaryPage, rebuildRunCatalog } from "./run-catalog.js";
 import type { PersistedRun } from "./runs.js";
@@ -58,8 +58,9 @@ export type PersistedRunSummaryPageInput = RunSummaryPageInput & {
 };
 
 function persistedSummary(run: PersistedRun): RunSummary {
+  const lineage = runSummaryLineage(run);
   return {
-    ...(runTestSource(run) ? { sourceTest: runTestSource(run) } : {}),
+    ...lineage,
     captureSummary: captureReviewQueueForRun(run).summary,
     id: run.id,
     action: run.action,
@@ -216,7 +217,7 @@ export async function listPersistedRunSummariesPageAtRoot(
         run.projectId === projectId &&
         run.ownerId === ownerId &&
         (!appMapId ||
-          runTestSource(run)?.appMapId === appMapId ||
+          runSummaryLineage(run).sourceTest?.appMapId === appMapId ||
           run.action.startsWith(`app-map:${appMapId}:`)),
     )
     .sort((left, right) => right.writtenAt - left.writtenAt || right.id.localeCompare(left.id));

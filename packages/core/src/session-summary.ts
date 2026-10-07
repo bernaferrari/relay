@@ -1,15 +1,14 @@
 import {
-  canonicalAppMapCombineCellValues,
   captureReviewIdentityFramePaths,
   destIdentityCheckpointFramePaths,
   isCaptureReviewLeftoverCaption,
-  parseAppMapTestTupleIdentity,
   describeCoverageStepReasons,
   type CampaignCheckSummary,
   type CoverageStepReason,
   type JobSummary,
 } from "@relay/protocol";
 import type { TestJob } from "./session-contract.js";
+import { summarizeMatrixCase } from "./run-matrix-case.js";
 
 /** Dest wait-for for job.list / campaign envelopes. Missing dest-phase is not
  * "omit destIdentity so callers fall back to every frame": leftover Transition
@@ -32,43 +31,6 @@ function jobDestIdentity(job: TestJob): JobSummary["destIdentity"] {
     const frame = byPath.get(path);
     return frame?.caption ? { path, caption: frame.caption } : { path };
   });
-}
-
-function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
-  const candidate = data as Record<string, unknown>;
-  if (
-    (candidate.kind !== "combine" && candidate.kind !== "combine-cell") ||
-    typeof candidate.world !== "string"
-  )
-    return undefined;
-  if (
-    !candidate.values ||
-    typeof candidate.values !== "object" ||
-    Array.isArray(candidate.values)
-  ) {
-    return undefined;
-  }
-  const values = canonicalAppMapCombineCellValues(
-    Object.fromEntries(
-      Object.entries(candidate.values).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string",
-      ),
-    ),
-  );
-  const identity = parseAppMapTestTupleIdentity(candidate);
-  return {
-    kind: "combine",
-    ...(identity ? { ...identity } : { values }),
-    ...(typeof candidate.combineId === "string" && candidate.combineId.trim()
-      ? { combineId: candidate.combineId.trim() }
-      : {}),
-    world: candidate.world,
-    ...(typeof candidate.expectedScreenshots === "number" &&
-    Number.isFinite(candidate.expectedScreenshots)
-      ? { expectedScreenshots: candidate.expectedScreenshots }
-      : {}),
-  };
 }
 
 export function summarizeJob(job: TestJob): JobSummary {

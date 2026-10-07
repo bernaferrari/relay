@@ -9,6 +9,9 @@ import {
 import { prepareAppMapCombineCells } from "./app-map-combine-cell-prepare.js";
 import { preflightAppMapCombine } from "./app-map-combine-preflight.js";
 import { localExecutionTargetRef } from "./app-map-combine-cell-target-binding.js";
+import { stagePreparedAppMapCombineCells } from "./app-map-combine-cell-run.js";
+import { runSummaryLineage } from "./run-matrix-case.js";
+import { runWithOperationContext } from "./operation-context.js";
 
 const at = 1;
 
@@ -288,6 +291,46 @@ test("combine prepare of grok-web home × android compiles the companion, not an
     testId: "test-grok-web-signed-in-home",
   });
   assert.ok(!/not saved in this App Map/u.test(JSON.stringify(cell)));
+  const staged = runWithOperationContext(
+    {
+      schemaVersion: 1,
+      actorId: "human:planner",
+      actorKind: "human",
+      organizationId: "org",
+      projectId: "project",
+      operationId: "job.combine.start",
+      requestId: "companion-lineage-staging",
+      idempotencyKey: "companion-lineage-staging",
+      issuedAt: 1,
+    },
+    () =>
+      stagePreparedAppMapCombineCells({
+        cells: prepared.cells,
+        combineId: "parent-plan",
+        targetForCell: (item) => item.executionTarget,
+        queuedTargetProfile: () => androidProfile(),
+        projectId: "project",
+        ownerId: "human:planner",
+      }),
+  );
+  try {
+    const job = staged.jobs[0]!;
+    const frozen = job.artifacts.find((item) => item.kind === "frozen-inputs")!.data as Record<
+      string,
+      unknown
+    >;
+    assert.equal(frozen.appMapId, "grok-web");
+    assert.equal(frozen.testId, test.id);
+    assert.equal(cell.childIntent.sourcePlan.appMapId, "grok-android");
+    assert.equal(cell.childIntent.sourcePlan.testId, "test-grok-android-home-chrome");
+    const lineage = runSummaryLineage(job);
+    assert.deepEqual(lineage.sourceTest, { appMapId: "grok-web", testId: test.id });
+    assert.equal(lineage.matrixCase!.appMapId, "grok-web");
+    assert.equal(lineage.matrixCase!.testId, test.id);
+    assert.equal(lineage.matrixCase!.combineId, "parent-plan");
+  } finally {
+    staged.rollback();
+  }
 });
 
 test("Search × iOS combine prepare fail-closes instead of inventing a companion", async () => {

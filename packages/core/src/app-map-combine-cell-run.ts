@@ -126,8 +126,16 @@ export function stagePreparedAppMapCombineCells(
         browserTargetId: input.browserTargetId,
       });
     const queuedAt = Date.now();
+    const companion = cell.outerIntent.nativeCompanion;
+    const authoredCompanion =
+      companion &&
+      companion.appMapId === cell.childIntent.sourcePlan.appMapId &&
+      companion.testId === cell.childIntent.sourcePlan.testId &&
+      companion.requestedFrom.testId === cell.testId;
     const caseIdentity = canonicalAppMapTestTupleIdentity({
-      appMapId: cell.childIntent.sourcePlan.appMapId,
+      appMapId: authoredCompanion
+        ? companion.requestedFrom.appMapId
+        : cell.childIntent.sourcePlan.appMapId,
       testId: cell.testId,
       values: cell.values,
     });

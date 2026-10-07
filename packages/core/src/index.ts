@@ -21,6 +21,7 @@ export * from "./workspace.js";
 export * from "./connected-target-inventory.js";
 export * from "./trace.js";
 export * from "./runs.js";
+export { runSummaryLineage } from "./run-matrix-case.js";
 export * from "./capture-review.js";
 export * from "./capture-references.js";
 export * from "./run-thumbnail.js";
