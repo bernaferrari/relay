@@ -63,6 +63,15 @@ const publicCodes = new Set([
   "INPUT_OUTCOME_UNKNOWN",
 ]);
 
+type ReviewErrorContext = { code?: string; sourceCode?: string; httpStatus?: number };
+
+function httpStatus(error: unknown, recovery?: ReviewErrorContext): number | undefined {
+  const status = error instanceof ApiError ? error.status : recovery?.httpStatus;
+  return typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599
+    ? status
+    : undefined;
+}
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 }
@@ -70,17 +79,11 @@ function record(value: unknown): Record<string, unknown> | undefined {
 export function recordingReviewDiagnostics(
   operation: RecordingReviewOperation,
   error: unknown,
-  recovery?: { code?: string; sourceCode?: string },
+  recovery?: ReviewErrorContext,
 ): readonly string[] {
   const lines = [`Operation: ${operations[operation].label}`];
-  if (
-    error instanceof ApiError &&
-    Number.isInteger(error.status) &&
-    error.status >= 100 &&
-    error.status <= 599
-  ) {
-    lines.push(`HTTP status: ${error.status}`);
-  }
+  const status = httpStatus(error, recovery);
+  if (status !== undefined) lines.push(`HTTP status: ${status}`);
   const body = error instanceof ApiError ? record(error.body) : undefined;
   const problem = record(body?.error);
   const details = record(body?.details);
@@ -106,7 +109,7 @@ export function recordingReviewErrorCopy(
   operation: RecordingReviewOperation,
   projected: Pick<HumanError, "title" | "detail" | "recovery"> | undefined,
   error: unknown,
-  recovery?: { code?: string; sourceCode?: string },
+  recovery?: ReviewErrorContext,
 ): Pick<HumanError, "title" | "detail" | "recovery"> | undefined {
   const transport =
     isRelayTransportFailure(error) || recovery?.sourceCode === "local-service-transport";
@@ -120,8 +123,15 @@ export function recordingReviewErrorCopy(
       "Relay is temporarily unavailable",
       "Relay needs your attention",
       "Relay is not connected",
+      "Recording status is unavailable",
     ].includes(projected.title);
   if (!generic) return projected;
+  if (operation === "inspect" && !recovery?.sourceCode && httpStatus(error, recovery) === 503)
+    return {
+      title: "Recording status is temporarily unavailable",
+      detail: "Relay could not complete this status check.",
+      recovery: "Wait a moment, then check status.",
+    };
   return {
     title:
       transport && operation === "inspect"
@@ -133,7 +143,12 @@ export function recordingReviewErrorCopy(
           ? "Relay could not reach the service while checking this recording."
           : "The recording status could not be loaded."
         : "Check status before choosing your next action.",
-    recovery: operation === "inspect" ? "Check the Relay connection, then check status." : "",
+    recovery:
+      operation === "inspect"
+        ? transport
+          ? "Check the Relay connection, then check status."
+          : "Check status again."
+        : "",
   };
 }
 

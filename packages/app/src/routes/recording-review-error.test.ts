@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@relay/client";
 import {
   recordingReviewDiagnostics,
+  recordingReviewErrorCopy,
   reviewRequestProblem,
   reviewTransitionConfirmed,
 } from "./recording-review-error";
@@ -113,6 +114,44 @@ it("does not fabricate code, request correlation, or HTTP status for an arbitrar
       new ApiError(999, "private", { code: "private-token", requestId: "private" }),
     ),
   ).toEqual(["Operation: Check recording status"]);
+});
+
+it("retains bounded read response status and leaves mutation confirmation copy unchanged", () => {
+  const recovery = { code: "operation-unavailable", httpStatus: 503 };
+  expect(recordingReviewDiagnostics("inspect", undefined, recovery)).toEqual([
+    "Operation: Check recording status",
+    "HTTP status: 503",
+    "Code: operation-unavailable",
+  ]);
+  expect(recordingReviewErrorCopy("inspect", undefined, undefined, recovery)).toEqual({
+    title: "Recording status is temporarily unavailable",
+    detail: "Relay could not complete this status check.",
+    recovery: "Wait a moment, then check status.",
+  });
+  expect(recordingReviewErrorCopy("replay", undefined, undefined, recovery)).toEqual({
+    title: "Could not confirm the replay",
+    detail: "Check status before choosing your next action.",
+    recovery: "",
+  });
+  const specific = {
+    title: "Saved setup needs review",
+    detail: "Review the captured setup.",
+    recovery: "Open the Test.",
+  };
+  expect(
+    recordingReviewErrorCopy("inspect", specific, undefined, {
+      ...recovery,
+      sourceCode: "target-profile-ambiguous",
+    }),
+  ).toEqual(specific);
+  for (const httpStatus of [0, 999, 503.5, Number.NaN]) {
+    expect(recordingReviewDiagnostics("inspect", undefined, { httpStatus })).toEqual([
+      "Operation: Check recording status",
+    ]);
+    expect(recordingReviewErrorCopy("inspect", undefined, undefined, { httpStatus })?.title).toBe(
+      "Could not load the recording",
+    );
+  }
 });
 
 it("attributes status reads and mutation failures to their actual operation", () => {

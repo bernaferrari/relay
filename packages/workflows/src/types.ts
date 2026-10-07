@@ -171,6 +171,8 @@ export type WorkflowProblem = {
   recovery: string;
   retryable: boolean;
   sourceCode?: string;
+  /** Bounded status retained from a failed HTTP read, without its response body. */
+  httpStatus?: number;
   /** Canonical source step, when Relay identifies the affected saved step. */
   sourceStepId?: string;
 };

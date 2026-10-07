@@ -7,7 +7,11 @@ import {
 } from "@relay/protocol";
 import { snapshotFromAuthoringSession } from "./authoring-projection.js";
 import { recordedConditionFailureReceipt } from "./authoring-condition-failure.js";
-import { isRelayTransportFailure, type RelayOperationPort } from "./operation-port.js";
+import {
+  isRelayTransportFailure,
+  relayHttpErrorStatus,
+  type RelayOperationPort,
+} from "./operation-port.js";
 import type {
   AuthorTestDecision,
   DurableAuthorTestDecision,
@@ -38,6 +42,16 @@ function unavailableProblem(stage: string, error: unknown): WorkflowProblem {
 }
 
 function inspectionProblem(error: unknown): WorkflowProblem {
+  const httpStatus = relayHttpErrorStatus(error);
+  if (httpStatus !== undefined)
+    return {
+      code: "operation-unavailable",
+      title: "Recording status is unavailable",
+      detail: "Relay could not load the recording status.",
+      recovery: "Check status again. This check did not change your recording.",
+      retryable: true,
+      httpStatus,
+    };
   return isRelayTransportFailure(error)
     ? {
         code: "operation-unavailable",
