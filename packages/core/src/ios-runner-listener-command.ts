@@ -29,6 +29,7 @@ export type LiveIosRunnerCommandResult = {
     found?: boolean;
     truncated?: boolean;
     systemSurface?: { bundleId?: string };
+    selectorCandidateReceipt?: unknown;
   };
   nodes?: SnapshotNode[];
 };

@@ -68,6 +68,8 @@ export type RunnerCommand = {
     | 'desktopScroll'
     | 'findText'
     | 'querySelector'
+    /** No-activation observation using the native tap selector policy. */
+    | 'querySelectorTapCandidate'
     | 'readText'
     | 'snapshot'
     | 'screenshot'
@@ -350,6 +352,25 @@ export type RunnerApplicationWindowBounds = Readonly<{
   coordinateSpace: 'application-logical';
   geometrySource: 'xcui-window-frame';
   bounds: Readonly<{ x: number; y: number; width: number; height: number }>;
+}>;
+
+/** Current native selector census, not permission for a later tap. No AX content is retained. */
+export type RunnerSelectorCandidateReceipt = Readonly<{
+  version: 1;
+  source: 'xcui-tap-selector-policy';
+  appBundleId: string;
+  appStateBefore: 'runningForeground';
+  appStateAfter: 'runningForeground';
+  selectorKey: 'id' | 'label' | 'value' | 'text';
+  selectorValue: string;
+  allowNonHittableCoordinateFallback: boolean;
+  filtersByExpectedPoint: boolean;
+  coordinateSpace: 'application-logical';
+  status: 'resolved' | 'ambiguous' | 'unresolved';
+  candidateCount: number;
+  candidateBounds?: Readonly<{ x: number; y: number; width: number; height: number }>;
+  candidateHittable?: boolean;
+  windowBounds?: Readonly<{ x: number; y: number; width: number; height: number }>;
 }>;
 
 export type RunnerResponsePayload = {

@@ -115,3 +115,4 @@ export * from "./android-network-evidence.js";
 export * from "./run-test-step-evidence.js";
 
 export * from "./goal-request.js";
+export * from "./interact-preview-selection.js";

@@ -446,3 +446,31 @@ snapshot penalty to make the first tap safe.
 The recorder consumes optional-read issues before forwarding to XCTest. XCTest's
 expected-failure API must not own this scope: in a long-lived command test it can
 complete the enclosing test even when the command response succeeds.
+
+### 2026-10-07 amendment: observation-time native selector preview
+
+Relay's named iOS preview uses the distinct read-only `querySelectorTapCandidate`
+command. Ordinary `querySelector` retains its existing read policy. The distinct
+command makes an older runner refuse before app preparation rather than ignoring
+an opt-in field and entering an activation-capable route.
+
+The receipt binds an exact foreground app before and after one actual native
+selector census, with no registered foreground system surface. It shares the tap
+classifier and requested fallback/expected-point options. It does not activate,
+bind, input, retry, or establish future dispatch permission. A bounded chrome
+capture cannot substitute for this census, including when it contains one local
+match. Counts include matches beyond the retained snapshot node cap.
+
+Only a stable hittable selected element with finite current geometry and the same
+observed existing window used by tap eligibility can produce a location. No
+`app.frame` fallback supplies window geometry. A nonhittable coordinate fallback
+remains unmarked. Relay captures PNG after this receipt and annotates only when
+zero-origin logical window geometry agrees with raster orientation and aspect.
+Ambiguous, unresolved, unavailable, unsupported and malformed observations remain
+unmarked, including when the author supplied a fallback point. Actual input must
+resolve again; a mark proves an observation-time location only.
+
+`resolutionState` accompanies the public preview: `resolved` requires a location;
+`ambiguous`, `unresolved` and `unavailable` forbid one. Legacy previews may omit
+state. The pure Swift policy and actual core preview orchestration regressions
+own these decisions; physical preview qualification owns the live XCUI receipt.

@@ -1,3 +1,4 @@
+import { interactPreviewSelectionSchema } from "./interact-preview-selection.js";
 import type { DeviceSummary } from "./operations.js";
 import type { IosSessionOperationLifecycle } from "./target-contract.js";
 
@@ -118,17 +119,19 @@ function compactInteractResolution(value: unknown): Record<string, unknown> | un
   const record = value as Record<string, unknown>;
   const point =
     record.point && typeof record.point === "object" && !Array.isArray(record.point)
-      ? record.point
+      ? (record.point as Record<string, unknown>)
       : undefined;
   const bounds =
     record.bounds && typeof record.bounds === "object" && !Array.isArray(record.bounds)
-      ? record.bounds
+      ? (record.bounds as Record<string, unknown>)
       : undefined;
-  if (typeof record.method !== "string" && !point && !bounds) return undefined;
   return {
-    ...(typeof record.method === "string" ? { method: record.method } : {}),
-    ...(point ? { point } : {}),
-    ...(bounds ? { bounds } : {}),
+    method: record.method,
+    ...(point ? { point: { x: point.x, y: point.y } } : {}),
+    ...(bounds
+      ? { bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } }
+      : {}),
+    ...(record.activation === "snapshot-point" ? { activation: record.activation } : {}),
   };
 }
 
@@ -151,7 +154,10 @@ function interactPreviewDigest(result: unknown): Record<string, unknown> | undef
     const preview = record.preview === true;
     const hasPng = record.mime === "image/png" && typeof record.base64 === "string";
     if (preview || hasPng) {
-      const resolution = compactInteractResolution(record.resolution);
+      const selection = interactPreviewSelectionSchema.safeParse({
+        resolution: compactInteractResolution(record.resolution),
+        resolutionState: record.resolutionState,
+      });
       const bytes = finiteNumber(record.bytes);
       const width = finiteNumber(record.width);
       const height = finiteNumber(record.height);
@@ -163,9 +169,13 @@ function interactPreviewDigest(result: unknown): Record<string, unknown> | undef
         ...(width !== undefined ? { width } : {}),
         ...(height !== undefined ? { height } : {}),
         ...(typeof record.inspectable === "boolean" ? { inspectable: record.inspectable } : {}),
-        ...(resolution ? { resolution } : {}),
+        ...(selection.success ? selection.data : {}),
         nextHint: preview
-          ? "Commit with target.interact (preview:false). Then screenshot again."
+          ? selection.success && selection.data.resolution
+            ? "Observed location only. Tap resolves again with target.interact (preview:false)."
+            : selection.success && selection.data.resolutionState === "ambiguous"
+              ? "Use a unique identifier or preview an explicit point after checking the current screen."
+              : "Inspect and verify the current screen before choosing a target."
           : "Tap with target.interact (preview:true marks only). Do not start with test run.",
         ...(!hasPng && preview
           ? {

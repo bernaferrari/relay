@@ -178,6 +178,15 @@ extension RunnerTests {
     if let unavailable = runnerUnavailableResponse(command: command) {
       return unavailable
     }
+    if command.command == .querySelectorTapCandidate {
+      return try runMainThreadWork(
+        "tap_candidate_receipt",
+        timeout: RunnerApplicationWindowBounds.timeoutSeconds(command.timeoutMs),
+        timeoutError: Self.mainThreadExecutionTimeoutError
+      ) {
+        try self.executeOnMainSafely(command: command, routeToSpringboard: false)
+      }
+    }
     if command.command == .appWindowBounds {
       return try runMainThreadWork(
         "application_window_bounds",
@@ -379,6 +388,9 @@ extension RunnerTests {
     alertDeadline: Date?,
     routeToSpringboard: Bool
   ) throws -> Response {
+    if command.command == .querySelectorTapCandidate {
+      return executeSelectorCandidateReceipt(command: command)
+    }
     if command.command == .appWindowBounds {
       return executeApplicationWindowBounds(command: command)
     }
@@ -628,6 +640,10 @@ extension RunnerTests {
   /// state, not tree content: a torn-down host still serves a rich tree, and it can only be
   /// foreground-with-a-stale-tree if something activated it, which the open guard refuses. `state`
   /// never activates and is cheap when the host is absent. See docs/adr/0004.
+  func hasForegroundSystemSurfaceForSelectorReceipt() -> Bool {
+    presentedSystemSurfaceHost() != nil
+  }
+
   private func presentedSystemSurfaceHost() -> (host: SystemSurfaceHost, app: XCUIApplication)? {
 #if os(iOS)
     for host in SystemSurfaceHostRegistry.hosts {

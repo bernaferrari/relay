@@ -13,6 +13,10 @@ import {
   browserAuthenticationHealthSchema,
 } from "./browser-authentication-fixture.js";
 import { combineProfileTargetInputSchema } from "./combine-profile-target-schema.js";
+import {
+  interactPreviewSelectionSchema,
+  namedControlResolutionSchema as namedControlResolution,
+} from "./interact-preview-selection.js";
 
 const text = z.string().min(1);
 const natural = z.number().int().nonnegative();
@@ -194,15 +198,6 @@ const interactInput = z.discriminatedUnion("kind", [
     })
     .strict(),
 ]);
-
-const namedControlResolution = z
-  .object({
-    method: z.enum(["identifier", "label", "text", "relation", "point"]),
-    point,
-    bounds,
-    activation: z.literal("snapshot-point").optional(),
-  })
-  .strict();
 
 const iosSessionLifecycle = z
   .object({
@@ -778,9 +773,22 @@ export const workspaceTargetOperationOutputSchemas = {
         width: z.number().positive().optional(),
         height: z.number().positive().optional(),
         inspectable: z.boolean(),
-        resolution: namedControlResolution.optional(),
+        ...interactPreviewSelectionSchema.shape,
       })
-      .strict(),
+      .strict()
+      .superRefine((preview, ctx) => {
+        if (
+          !interactPreviewSelectionSchema.safeParse({
+            resolution: preview.resolution,
+            resolutionState: preview.resolutionState,
+          }).success
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Preview selection state must agree with its resolution",
+          });
+        }
+      }),
     z
       .object({
         ok: z.literal(true),

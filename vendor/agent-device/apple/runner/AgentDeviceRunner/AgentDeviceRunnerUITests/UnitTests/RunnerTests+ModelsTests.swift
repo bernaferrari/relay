@@ -208,7 +208,7 @@ extension RunnerTests {
   /// Commands that did not exist at the merge-base, so no classification of its is compared with
   /// theirs. `appState` arrived with #2929, `pasteboardWrite` with the runner-written simulator
   /// clipboard.
-  private static let commandsNewerThanTheMergeBase: Set<CommandType> = [.appState, .appWindowBounds, .pasteboardWrite, .clipboardPaste, .clipboardCopy]
+  private static let commandsNewerThanTheMergeBase: Set<CommandType> = [.appState, .appWindowBounds, .querySelectorTapCandidate, .pasteboardWrite, .clipboardPaste, .clipboardCopy]
 
   /// The commands production never runs through the prepared path's body: `executeOnMain` answers
   /// these before `executeOnMainPrepared` runs, and `executeDispatched` answers `snapshot` earlier
@@ -216,7 +216,7 @@ extension RunnerTests {
   /// never evaluated for them and neither is the derived one. If a command starts reaching the
   /// prepared path, removing it here is a claim the equivalence assertion below has to keep proving.
   private static let commandsAnsweredBeforeThePreparedPath: Set<CommandType> = [
-    .status, .uptime, .appState, .appWindowBounds, .pasteboardWrite, .activate, .terminate, .targetReset, .shutdown,
+    .status, .uptime, .appState, .appWindowBounds, .querySelectorTapCandidate, .pasteboardWrite, .activate, .terminate, .targetReset, .shutdown,
     .recordStart, .recordStop, .snapshot,
   ]
 
@@ -297,6 +297,7 @@ extension RunnerTests {
       (.status, expectation(interaction: false, retry: true, launch: .noApp, converts: false, retains: true)),
       (.uptime, expectation(interaction: false, retry: false, launch: .noApp, converts: false, retains: true)),
       (.appState, expectation(interaction: false, retry: true, launch: .noApp, converts: false, retains: true)),
+      (.querySelectorTapCandidate, expectation(interaction: false, retry: false, launch: .noApp, converts: false, retains: true)),
       (.appWindowBounds, expectation(interaction: false, retry: false, launch: .noApp, converts: false, retains: true)),
       (.pasteboardWrite, expectation(interaction: false, retry: false, launch: .noApp, converts: false, retains: true)),
       (.activate, expectation(interaction: false, retry: false, launch: .mayLaunch, converts: true, retains: true)),

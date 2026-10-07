@@ -64,6 +64,7 @@ extension RunnerTests {
     let element: XCUIElement?
     let isAmbiguous: Bool
     let usedNonHittableFallback: Bool
+    var rawMatchCount: Int = 0
   }
 
   func performBackGesture(app: XCUIApplication) {
@@ -189,14 +190,15 @@ extension RunnerTests {
       rawMatchPolicy: rawMatchPolicy
     ) {
     case .noMatch:
-      return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
+      return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false, rawMatchCount: matches.count)
     case .ambiguous:
-      return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
+      return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false, rawMatchCount: matches.count)
     case let .selected(index, usedNonHittableFallback):
       return SelectorElementMatch(
         element: matches[index],
         isAmbiguous: false,
-        usedNonHittableFallback: usedNonHittableFallback
+        usedNonHittableFallback: usedNonHittableFallback,
+        rawMatchCount: matches.count
       )
     }
   }
