@@ -13,6 +13,20 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
     reason: "Exposed through the read-only `relay run get` resource command.",
   },
   {
+    operationId: "run.panel-manifest.get",
+    paths: [
+      {
+        command: "run panel-manifest get",
+        arguments: ["runId"],
+        summary: "Read bounded retained Run metadata",
+        inputHelp: [
+          { name: "offset", type: "number", description: "First retained step to include" },
+          { name: "limit", type: "number", description: "Maximum retained steps to include" },
+        ],
+      },
+    ],
+  },
+  {
     operationId: "run.replay.offline",
     exclusion: "internal",
     reason: "Exposed through the read-only `relay run replay-offline` resource command.",
