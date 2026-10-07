@@ -62,8 +62,7 @@ test("plan run --export invokes combine export with the campaign id", async () =
     const exportDir = join(directory, "out");
     await seedPack(rootDir);
     const calls: unknown[] = [];
-    const results: unknown[] = [];
-    await exportWatchedCombinePack({
+    const result = await exportWatchedCombinePack({
       operationId: "job.combine.start",
       exportDir,
       started: { campaign: { id: "camp-1" } },
@@ -71,12 +70,11 @@ test("plan run --export invokes combine export with the campaign id", async () =
         calls.push({ operationId, payload });
         return { rootDir };
       },
-      output: { result: (operationId, value) => results.push({ operationId, value }) },
     });
     assert.deepEqual(calls, [
       { operationId: "job.combine.export", payload: { batchId: "camp-1" } },
     ]);
-    assert.equal((results[0] as { value: { exportDir: string } }).value.exportDir, exportDir);
+    assert.deepEqual(result, { rootDir, exportDir });
     assert.match(await readFile(join(exportDir, "index.html"), "utf8"), /relay-review-checklist/);
   } finally {
     await rm(directory, { recursive: true, force: true });

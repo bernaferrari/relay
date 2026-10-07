@@ -191,11 +191,12 @@ export class CliOutput {
     }
   }
 
-  error(error: CliError, operationId?: string): void {
+  error(error: CliError, operationId?: string, result?: unknown): void {
     const terminal = {
       type: "error",
       ok: false,
       ...(operationId ? { operationId } : {}),
+      ...(result !== undefined ? { result } : {}),
       error: {
         message: error.message,
         exitCode: error.exitCode,

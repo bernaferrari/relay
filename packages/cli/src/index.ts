@@ -39,7 +39,11 @@ import { liveTitleFromInput, watchJobsLive } from "./live-run-view.js";
 import { abortError, assertOutcomeSucceeded, waitForOutcome, waitForPoll } from "./outcome-wait.js";
 export { assertOutcomeSucceeded, waitForOutcome } from "./outcome-wait.js";
 import { teeWritable, writeEvidenceReviewDir, writeRunOutDir } from "./cli-out.js";
-import { exportWatchedCombinePack, finalizeCombineExportResult } from "./evidence-pack-cli.js";
+import {
+  exportWatchedCombinePack,
+  finalizeCombineExportResult,
+  WatchedRunOutput,
+} from "./evidence-pack-cli.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { persistScrollSurvey, scrollSurveyPersistDigest } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
@@ -539,6 +543,7 @@ export async function runCli(
   let output = new CliOutput(fallbackMode(argv), argv.includes("--quiet"), streams);
   let operationId: string | undefined;
   let findingsRequested = false;
+  let watchedRunOutput: WatchedRunOutput | undefined;
   let outDir: string | undefined;
   let readStderr = (): string => "";
   const persistOut = async (code: number): Promise<number> => {
@@ -736,14 +741,15 @@ export async function runCli(
         } catch (error) {
           watchFailure = error;
         }
-        if (!watchFailure) {
-          output.result(
-            operationId,
-            results.length === 1
-              ? summarizeResult("job.get", results[0])
-              : { jobs: results.map(summarizedJobFromWatch) },
-          );
-        }
+        watchedRunOutput = new WatchedRunOutput(
+          output,
+          operationId,
+          results.length === 1
+            ? summarizeResult("job.get", results[0])
+            : { jobs: results.map(summarizedJobFromWatch) },
+          parsed.config.output,
+        );
+        if (!watchFailure) watchedRunOutput.executionSucceeded();
         if (parsed.findings) {
           const batchId = startedPlanBatchId(started);
           if (!batchId) {
@@ -756,8 +762,9 @@ export async function runCli(
             { batchId, ...(parsed.triage === "jev" ? { triage: "jev" } : {}) },
             abort.signal,
           );
-          output.result(
+          watchedRunOutput.phase(
             "job.combine.analysis",
+            "findings",
             parsed.config.output === "human"
               ? renderPlanFindingsMarkdown(
                   analysis as Parameters<typeof renderPlanFindingsMarkdown>[0],
@@ -766,14 +773,20 @@ export async function runCli(
           );
         }
         if (watchFailure) throw watchFailure;
-        await exportWatchedCombinePack({
+        const evidencePack = await exportWatchedCombinePack({
           operationId,
           exportDir: "exportDir" in parsed ? parsed.exportDir : undefined,
           todoFile: "todoFile" in parsed ? parsed.todoFile : undefined,
           started,
-          invoke: (id, payload) => invoke(client, id, payload, abort.signal),
-          output,
+          invoke: async (id, payload) => {
+            const result = await invoke(client, id, payload, abort.signal);
+            assertOperationSucceeded(id, result);
+            return result;
+          },
         });
+        if (evidencePack !== undefined)
+          watchedRunOutput.phase("job.combine.export", "evidencePack", evidencePack);
+        watchedRunOutput.finish();
       } else {
         const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
         const surveyDir = typeof input.dir === "string" ? input.dir : undefined;
@@ -846,7 +859,7 @@ export async function runCli(
       const report = planFindingsReportFromError(classified.details);
       if (report) output.result("job.combine.analysis", renderPlanFindingsMarkdown(report));
     }
-    output.error(classified, operationId);
+    output.error(classified, operationId, watchedRunOutput?.retainedResult);
     return await persistOut(classified.exitCode);
   }
 }

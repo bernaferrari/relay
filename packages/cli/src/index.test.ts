@@ -1454,7 +1454,7 @@ test("root and family help are useful without creating a client", async () => {
       matches: [
         /Start with App, Device, Test, Checkpoint, Run, and Report/,
         /Topology\s+map, screen, connect, flow/,
-        /Authoring\s+variable, test, combine, proposal, session/,
+        /Authoring\s+variable, test, plan, combine, proposal, session/,
         /device screenshot <serial>/,
         /--binary/,
         /--timeout <ms>.*default 180s/,
