@@ -46,6 +46,7 @@ import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkba
 import { currentAccessibilityInspection } from "../data/talkback-overlay";
 import { conditionTextSuggestions } from "../data/recording-condition-suggestions";
 import { useRecordingInputReceipt } from "./use-recording-input-receipt";
+import { useRecordingConditionRecovery } from "./use-recording-condition-recovery";
 import { prepareRecordingStop, recordingStopBlockedReason } from "../data/recording-stop-state";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
@@ -191,7 +192,15 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
   ]);
 
   const snapshot = recording.data?.snapshot;
-  const captureReady = recording.data?.status === "recording" && !recording.data.recovery;
+  const conditionUnconfirmed = useRecordingConditionRecovery({
+    action,
+    recording: recording.data,
+    workflowId,
+    service: productService,
+    queryClient,
+  });
+  const captureReady =
+    recording.data?.status === "recording" && !recording.data.recovery && !conditionUnconfirmed;
   const previewAvailable = Boolean(
     snapshot &&
     snapshot.stage !== "cancelled" &&
@@ -257,7 +266,11 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     inspectAccessibility: talkBack.on,
   });
   const liveToolsDisabled =
-    liveStatus !== "streaming" || action.isPending || liveInputBusy || recoveryKind === "unknown";
+    liveStatus !== "streaming" ||
+    action.isPending ||
+    liveInputBusy ||
+    recoveryKind === "unknown" ||
+    conditionUnconfirmed;
   // Browser inspection belongs to the exact frame/page/sequence on screen;
   // a separate SDK snapshot reports content extents, not the video viewport.
   const inspection =

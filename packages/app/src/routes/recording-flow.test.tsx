@@ -471,6 +471,7 @@ describe("record, review, replay, and save", () => {
           status: "needs-attention",
           recovery: {
             code: "operation-unavailable",
+            sourceCode: "AUTHORING_INTERACTION_FAILED",
             title: "The condition did not match",
             detail,
             recovery: "Choose the exact text and try again.",
@@ -488,6 +489,7 @@ describe("record, review, replay, and save", () => {
       expect(document.querySelector<HTMLInputElement>("#condition-text")?.value).toBe(
         "Account: member",
       );
+      expect(fake.service.recordCondition).toHaveBeenCalledTimes(1);
       await fill(document.querySelector<HTMLInputElement>("#condition-text")!, "Account member");
       await click(button("Add step"));
       expect(fake.service.recordCondition).toHaveBeenCalledTimes(2);
@@ -499,6 +501,38 @@ describe("record, review, replay, and save", () => {
       expect(document.querySelector('[role="dialog"]')).toBeNull();
     },
   );
+
+  it("keeps an unknown recorded Wait draft paused after healthy inspection without repeating any input", async () => {
+    const initial = state("recording", ["inspect", "record", "checkpoint", "stop"]);
+    const fake = fakeService(initial);
+    fake.service.recordCondition = vi.fn(async (): Promise<ProductRecordingState> => ({
+      ...initial,
+      recovery: {
+        code: "mutation-outcome-unknown",
+        title: "The Wait response was lost",
+        detail: "Relay cannot confirm that the condition was recorded.",
+        recovery: "Check its exact receipt before continuing.",
+        retryable: false,
+      },
+    }));
+    await renderJourney("/recordings/workflow-1", fake.service, platformWithStorage().platform);
+    await click(button("Wait or check"));
+    await fill(document.querySelector<HTMLInputElement>("#condition-text")!, "Copy");
+    await click(button("Add step"));
+    await settle();
+    expect(document.querySelector<HTMLInputElement>("#condition-text")?.value).toBe("Copy");
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
+      "Relay cannot confirm that the condition was recorded.",
+    );
+    expect(button("Add step").disabled).toBe(true);
+    await click(button("Add step"));
+    expect(fake.service.recordCondition).toHaveBeenCalledOnce();
+    await click(button("Cancel"));
+    await tapLiveTarget();
+    expect(fake.calls.filter((call) => call.startsWith("input:"))).toEqual([]);
+    await click(button("Stop and review"));
+    expect(fake.calls).not.toContain("stop");
+  });
 
   it("aligns browser labels with the current live frame, without using content extents as viewport", async () => {
     const browser = { kind: "browser", platform: "browser", targetId: "browser-checkout" } as const;
