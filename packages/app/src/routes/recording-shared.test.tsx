@@ -219,3 +219,113 @@ it("keeps browser selection recovery and its provided action", async () => {
   expect(host.querySelector("button")?.textContent).toBe("Review browser setup");
   expect(host.textContent).not.toContain("Recorded screens disagree");
 });
+
+it("identifies a failed recording status read without claiming replay failed", async () => {
+  const host = await render(
+    <RecordingProblem
+      reviewOperation="inspect"
+      error={new TypeError("Failed to fetch")}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(host.textContent).toContain("Recording status is unavailable");
+  expect(host.textContent).toContain("checking this recording");
+  expect(host.querySelector("button")?.textContent).toContain("Check status");
+  expect(host.querySelector("summary")?.textContent).toBe("Details");
+  expect(host.textContent).toContain("Operation: Check recording status");
+  expect(host.textContent).toContain("Code: local-service-transport");
+  expect(host.textContent).not.toContain("Replay failed");
+});
+
+it("exposes only safe HTTP diagnostics for a recording action failure", async () => {
+  const host = await render(
+    <RecordingProblem
+      reviewOperation="replay"
+      error={
+        new ApiError(500, "private prompt and native stack", {
+          code: "ACTION_FAILED",
+          message: "private prompt",
+          stack: "private stack",
+          requestId: "private invented correlation",
+          details: { token: "private token" },
+        })
+      }
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(host.textContent).toContain("Could not confirm the replay");
+  expect(host.textContent).toContain("Operation: Run recorded steps");
+  expect(host.textContent).toContain("HTTP status: 500");
+  expect(host.textContent).toContain("Code: ACTION_FAILED");
+  expect(host.textContent).not.toMatch(/private|stack|correlation/u);
+  expect(host.querySelector("button")?.textContent).toContain("Check status");
+});
+
+it("offers a read-only status check for an unexpected non-retryable action error", async () => {
+  const check = vi.fn();
+  const host = await render(
+    <RecordingProblem
+      reviewOperation="edit"
+      error={new Error("unexpected private payload")}
+      onRetry={check}
+    />,
+  );
+  expect(host.textContent).toContain("Could not confirm the recording update");
+  const button = host.querySelector("button");
+  expect(button?.textContent).toContain("Check status");
+  await act(async () => button?.click());
+  expect(check).toHaveBeenCalledOnce();
+  expect(host.textContent).not.toContain("unexpected private payload");
+});
+
+it("omits unrecognized codes and preserves unsafe replay recovery", async () => {
+  const host = await render(
+    <RecordingProblem
+      operation="replay"
+      reviewOperation="replay"
+      error={new ApiError(409, "private text", { code: "private-token-value" })}
+      recovery={{
+        code: "mutation-outcome-unknown",
+        title: "Unknown",
+        detail: "private receipt",
+        recovery: "Inspect",
+        retryable: false,
+      }}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(host.textContent).toContain("Replay status needs checking");
+  expect(host.textContent).not.toMatch(/private|Try again|Could not confirm the replay/u);
+  expect(host.querySelector("button")?.textContent).toContain("Check status");
+});
+
+it("keeps uncertain review actions neutral unless replay is attributable", async () => {
+  const recovery = {
+    code: "mutation-outcome-unknown",
+    title: "Unknown",
+    detail: "Private",
+    recovery: "Inspect",
+    retryable: false,
+  };
+  const edit = await render(
+    <RecordingProblem
+      operation="replay"
+      reviewOperation="edit"
+      recovery={recovery}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(edit.textContent).toContain("Recording status needs checking");
+  expect(edit.textContent).not.toContain("Replay status");
+  const replay = await render(
+    <RecordingProblem
+      reviewOperation="inspect"
+      recovery={{ ...recovery, action: "replay" }}
+      error={new TypeError("Failed to fetch")}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(replay.textContent).toContain("Replay status needs checking");
+  expect(replay.textContent).toContain("Could not refresh the recording status");
+  expect(replay.textContent).toContain("Operation: Check recording status");
+});

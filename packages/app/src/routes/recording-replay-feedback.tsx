@@ -6,6 +6,7 @@ import type { ProductRecordingState } from "../data/recording-product-service";
 import { RecordingProblem } from "./recording-shared";
 import type { ReviewAction } from "./recording-review-presentation";
 import { reviewInspectionRecovery, type DraftSaveAttempt } from "./recording-review-state";
+import type { RecordingReviewOperation } from "./recording-review-error";
 
 type FailedAction = NonNullable<NonNullable<AuthoringReview["latestReplay"]>["failedAction"]>;
 
@@ -149,6 +150,7 @@ export function RecordingReviewProblem({
   onRetry,
   retrying,
   recover,
+  reviewOperation = "inspect",
 }: {
   review?: AuthoringReview;
   failure?: FailedAction;
@@ -159,6 +161,7 @@ export function RecordingReviewProblem({
   onRetry(): void;
   retrying: boolean;
   recover?: { pending: boolean; onRecover(): void };
+  reviewOperation?: RecordingReviewOperation;
 }) {
   return (
     <>
@@ -177,7 +180,8 @@ export function RecordingReviewProblem({
         recovery={failure ? undefined : recovery}
         onRetry={onRetry}
         retrying={retrying}
-        operation="replay"
+        operation="recording"
+        reviewOperation={reviewOperation}
         action={
           recover ? (
             <Button size="sm" onClick={recover.onRecover} disabled={recover.pending}>
