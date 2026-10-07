@@ -1,4 +1,5 @@
 import type { Device } from "./device.js";
+import { RecipeScreenInspectionError } from "./recipe-screen-inspection.js";
 import {
   armCompensatingCleanup,
   disarmCompensatingCleanup,
@@ -37,6 +38,28 @@ function coverageResultFields(ctx: RecipeStepContext, coverageArtifactStart: num
     coverageOutcomes,
     coverageNote: describeCoverageStepReasons(coverageOutcomes),
   };
+}
+
+function retainFailedInspectionCheck(
+  ctx: RecipeStepContext,
+  check: NonNullable<RecipeStep["check"]>,
+  startedAt: number,
+  error: RecipeScreenInspectionError,
+  phase: "primary" | "cleanup",
+): void {
+  ctx.job?.artifacts.push({
+    kind: "campaign-check-result",
+    capturedAt: now(),
+    data: {
+      ...check,
+      status: "failed",
+      phase,
+      error: error.message,
+      inspection: error.inspection,
+      startedAt,
+      finishedAt: now(),
+    },
+  });
 }
 
 function freshCleanupTerminalObservation(
@@ -299,6 +322,19 @@ export async function runCampaignCheck(
       await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "primary");
       throw error;
     }
+    if (error instanceof RecipeScreenInspectionError) {
+      await captureCampaignFailureEvidence(
+        device,
+        step.check,
+        ctx,
+        startedAt,
+        error.message,
+        "primary",
+      );
+      retainFailedInspectionCheck(ctx, step.check, startedAt, error, "primary");
+      disarmCompensatingCleanup(cancellationCleanupJobId);
+      throw error;
+    }
     if (isTargetUnavailableError(error)) {
       recordTargetUnavailable(error, "primary");
     } else if (!isCancel(error)) {
@@ -307,7 +343,11 @@ export async function runCampaignCheck(
     }
   } finally {
     const cleanup = step.check.cleanup;
-    if (isTerminalIosMutationError(primaryError) || isTerminalInputError(primaryError)) {
+    if (
+      isTerminalIosMutationError(primaryError) ||
+      isTerminalInputError(primaryError) ||
+      primaryError instanceof RecipeScreenInspectionError
+    ) {
       cleanupOutcome = "skipped";
       const capturedAt = now();
       if (cleanup) {
@@ -320,15 +360,23 @@ export async function runCampaignCheck(
             terminalScreenId: cleanup.terminalScreenId,
             status: "skipped",
             reason:
-              primaryError instanceof IosMutationRejectedError
-                ? "The native selector was rejected before input; cleanup cannot replace the refused action."
-                : "Native input could not be safely verified; no cleanup command is safe.",
+              primaryError instanceof RecipeScreenInspectionError
+                ? "Screen identity is unproven; cleanup cannot replace the failed prerequisite."
+                : primaryError instanceof IosMutationRejectedError
+                  ? "The native selector was rejected before input; cleanup cannot replace the refused action."
+                  : "Native input could not be safely verified; no cleanup command is safe.",
             startedAt: capturedAt,
             finishedAt: capturedAt,
           },
         });
       }
-      ctx.log(`check cleanup skipped: ${step.check.title} — terminal native input failure`);
+      ctx.log(
+        `check cleanup skipped: ${step.check.title} — ${
+          primaryError instanceof RecipeScreenInspectionError
+            ? "screen identity unproven"
+            : "terminal native input failure"
+        }`,
+      );
     } else if (cleanup && targetUnavailableError) {
       cleanupOutcome = "skipped";
       const capturedAt = now();
@@ -431,9 +479,17 @@ export async function runCampaignCheck(
         } catch (error) {
           cleanupError = error;
           const finishedAt = now();
-          if (isTerminalIosMutationError(error) || isTerminalInputError(error)) {
+          if (
+            isTerminalIosMutationError(error) ||
+            isTerminalInputError(error) ||
+            error instanceof RecipeScreenInspectionError
+          ) {
             // A terminal cleanup failure cannot begin a sibling check.
-            cleanupOutcome = error instanceof IosMutationRejectedError ? "failed" : "interrupted";
+            cleanupOutcome =
+              error instanceof IosMutationRejectedError ||
+              error instanceof RecipeScreenInspectionError
+                ? "failed"
+                : "interrupted";
             ctx.job?.artifacts.push({
               kind: "campaign-check-cleanup",
               capturedAt: finishedAt,
@@ -444,9 +500,11 @@ export async function runCampaignCheck(
                 status: cleanupOutcome,
                 error: error.message,
                 reason:
-                  error instanceof IosMutationRejectedError
-                    ? "The native cleanup selector was rejected before input; no further command is permitted."
-                    : "An iOS cleanup mutation has an unknown outcome; no further command is safe.",
+                  error instanceof RecipeScreenInspectionError
+                    ? "Cleanup screen identity is unproven; no dependent check can use it."
+                    : error instanceof IosMutationRejectedError
+                      ? "The native cleanup selector was rejected before input; no further command is permitted."
+                      : "An iOS cleanup mutation has an unknown outcome; no further command is safe.",
                 startedAt: cleanupStartedAt,
                 finishedAt,
               },
@@ -459,7 +517,9 @@ export async function runCampaignCheck(
               error.message,
               "cleanup",
             );
-            // eslint-disable-next-line no-unsafe-finally -- unknown cleanup state must remain terminal.
+            if (error instanceof RecipeScreenInspectionError)
+              retainFailedInspectionCheck(ctx, step.check, startedAt, error, "cleanup");
+            // eslint-disable-next-line no-unsafe-finally -- terminal cleanup failure cannot start a dependent check.
             throw error;
           }
           if (isTargetUnavailableError(error)) recordTargetUnavailable(error, "cleanup");
