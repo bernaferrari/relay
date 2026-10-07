@@ -3404,6 +3404,7 @@ describe("recording review request recovery", () => {
         organizationId: "local",
         projectId: "default",
         actorId: "human:test",
+        actorKind: "human",
       },
       {
         fetch: async (input, init) => {
