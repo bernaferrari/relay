@@ -11,6 +11,8 @@ import {
   readRemoteConnectionState,
   remoteConnectionLeaseIdentityMatches,
   removeRemoteConnectionState,
+  connectionPlatformMatchesSelection,
+  narrowConnectionPlatform,
   writeRemoteConnectionState,
   type RemoteConnectionState,
   type RemoteConnectionRequestMetadata,
@@ -27,6 +29,7 @@ import {
   verifyResolvedConnectProvider,
 } from '../connection/connect-provider-adapters.ts';
 import {
+  connectionPlatformConflict,
   hasDeferredMetroConfig,
   releaseRemoteConnectionLease,
   releasePreviousLease,
@@ -86,7 +89,7 @@ export const connectCommand: ClientCommandHandler = async ({ positionals, flags,
     stateDir,
     connectFlags,
     context.previous,
-    state.daemon?.baseUrl,
+    state,
   );
   const runtimePreparation = buildRuntimePreparationNotice(connectFlags, state);
   const readiness = presentConnectReadiness(state, verification);
@@ -161,7 +164,13 @@ function buildConnectedState(options: {
     : null;
   const now = new Date().toISOString();
   const leaseBinding = buildConnectionLeaseBinding(flags, previous, connectionMetadata);
-  const runtimeBinding = buildConnectionRuntimeBinding(flags, previous, now);
+  const runtimeBinding = buildConnectionRuntimeBinding(
+    flags,
+    previous,
+    now,
+    leaseBinding,
+    context.session,
+  );
   return {
     version: 1,
     session: context.session,
@@ -176,30 +185,72 @@ function buildConnectedState(options: {
   };
 }
 
+type ConnectionLeaseBinding = Pick<
+  RemoteConnectionState,
+  'clientId' | 'deviceKey' | 'leaseBackend' | 'leaseId' | 'leaseProvider'
+>;
+
 function buildConnectionLeaseBinding(
   flags: CliFlags,
   previous: RemoteConnectionState | null,
   connectionMetadata: RemoteConnectionRequestMetadata | undefined,
-): Pick<
-  RemoteConnectionState,
-  'clientId' | 'deviceKey' | 'leaseBackend' | 'leaseId' | 'leaseProvider'
-> {
+): ConnectionLeaseBinding {
   const connection = mergeRemoteConnectionRequestMetadata(connectionMetadata ?? {}, previous ?? {});
+  const leaseBackend = previous?.leaseBackend ?? resolveRequestedLeaseBackend(flags);
+  if (leaseBackend === 'macos-app') {
+    return buildHostAllocatedLeaseBinding(flags, previous, connection);
+  }
   return {
     leaseId: previous?.leaseId,
-    leaseBackend: previous?.leaseBackend ?? resolveRequestedLeaseBackend(flags),
+    leaseBackend,
     ...connection,
     deviceKey: previous?.deviceKey ?? connection.deviceKey,
   };
 }
 
+function buildHostAllocatedLeaseBinding(
+  flags: CliFlags,
+  previous: RemoteConnectionState | null,
+  connection: RemoteConnectionRequestMetadata,
+): ConnectionLeaseBinding {
+  return {
+    leaseId: flags.leaseId ?? previous?.leaseId,
+    leaseBackend: 'macos-app',
+    ...connection,
+  };
+}
+
+/**
+ * Writes what a reused connection is bound to on the platform axis.
+ *
+ * `--platform apple` on a connection whose backend rents iOS instances is the family being named
+ * again, not a request to widen the record back to the family: once a lease is bound the leaf is the
+ * truth, and a record that loses it lets the next command ask for any Apple leaf and be served on
+ * this one (#2962). The lease binding is asked first because the backend is what decides a family.
+ */
 function buildConnectionRuntimeBinding(
   flags: CliFlags,
   previous: RemoteConnectionState | null,
   now: string,
+  leaseBinding: Pick<RemoteConnectionState, 'leaseBackend'>,
+  session: string,
 ): Pick<RemoteConnectionState, 'connectedAt' | 'metro' | 'platform' | 'runtime' | 'target'> {
+  const platform = narrowConnectionPlatform({
+    leaseBackend: leaseBinding.leaseBackend,
+    recordedPlatform: previous?.platform,
+    requestedPlatform: flags.platform,
+  });
+  if (!platform.ok) {
+    throw connectionPlatformConflict({
+      session,
+      leaseBackend: leaseBinding.leaseBackend,
+      boundPlatform: platform.boundPlatform,
+      requestedPlatform: platform.requestedPlatform,
+      detail: previous ? 'bound-connection' : 'requested-backend',
+    });
+  }
   return {
-    platform: flags.platform ?? previous?.platform,
+    platform: platform.platform,
     target: flags.target ?? previous?.target,
     runtime: previous?.runtime,
     metro: previous?.metro,
@@ -219,13 +270,14 @@ async function cleanupForcedPreviousConnection(
   stateDir: string,
   flags: CliFlags,
   previous: RemoteConnectionState | null,
-  nextDaemonBaseUrl: string | undefined,
+  next: RemoteConnectionState,
 ): Promise<PreviousLeaseReleaseNotice | undefined> {
   if (!previous || !flags.force) return undefined;
   await stopMetroCleanup(previous.metro);
   await stopReactDevtoolsCleanup({ stateDir, state: previous });
+  if (previous.leaseId && previous.leaseId === next.leaseId) return undefined;
   return await releasePreviousLease(client, previous, {
-    nextDaemonBaseUrl,
+    nextDaemonBaseUrl: next.daemon?.baseUrl,
     ambientDaemonAuthToken: flags.daemonAuthToken,
     cwd: process.cwd(),
     env: process.env,
@@ -424,12 +476,23 @@ function optionalConnectionFieldsMatch(
   state: RemoteConnectionState,
   options: Parameters<typeof isCompatibleConnection>[1],
 ): boolean {
+  if (!connectionPlatformMatchesSelection(state, options.flags.platform)) return false;
   const fieldsMatch = [
     [state.leaseBackend, options.desiredLeaseBackend],
-    [state.platform, options.flags.platform],
     [state.target, options.flags.target],
   ].every(([left, right]) => right === undefined || left === right);
-  return fieldsMatch && remoteConnectionLeaseIdentityMatches(state, options.connection);
+  return (
+    fieldsMatch &&
+    macosAppLeaseIdMatches(state, options.flags.leaseId) &&
+    remoteConnectionLeaseIdentityMatches(state, options.connection)
+  );
+}
+
+function macosAppLeaseIdMatches(
+  state: RemoteConnectionState,
+  leaseId: string | undefined,
+): boolean {
+  return state.leaseBackend !== 'macos-app' || leaseId === undefined || leaseId === state.leaseId;
 }
 
 function isSameDaemonState(

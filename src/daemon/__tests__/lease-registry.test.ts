@@ -44,6 +44,46 @@ test('allocateLease is idempotent per tenant/run/backend and refreshes expiry', 
   assert.equal(second.expiresAt, 12_000);
 });
 
+test('a later allocation asking for retainOnClose turns it on for the reused lease', () => {
+  const registry = new LeaseRegistry();
+  const first = registry.allocateLease({ tenantId: 'tenant-a', runId: 'run-1' });
+  const second = registry.allocateLease({
+    tenantId: 'tenant-a',
+    runId: 'run-1',
+    retainOnClose: true,
+  });
+  const third = registry.allocateLease({ tenantId: 'tenant-a', runId: 'run-1' });
+  assert.equal(second.leaseId, first.leaseId);
+  assert.equal(first.retainOnClose, undefined);
+  assert.equal(second.retainOnClose, true);
+  assert.equal(third.retainOnClose, true);
+});
+
+test('a request without the owning clientId cannot turn retainOnClose on for a run lease', () => {
+  const registry = new LeaseRegistry();
+  const owned = registry.allocateLease({ tenantId: 'tenant-a', runId: 'run-1', clientId: 'a' });
+  const reused = registry.allocateLease({
+    tenantId: 'tenant-a',
+    runId: 'run-1',
+    retainOnClose: true,
+  });
+  assert.equal(reused.leaseId, owned.leaseId);
+  assert.equal(reused.retainOnClose, undefined);
+});
+
+test('only an unexpired retainOnClose lease counts as retained', () => {
+  let now = 1_000;
+  const registry = new LeaseRegistry({ now: () => now, defaultLeaseTtlMs: 10_000 });
+  registry.allocateLease({ tenantId: 'tenant-a', runId: 'run-plain' });
+  assert.equal(registry.hasRetainedLeases(), false);
+
+  registry.allocateLease({ tenantId: 'tenant-a', runId: 'run-retained', retainOnClose: true });
+  assert.equal(registry.hasRetainedLeases(), true);
+
+  now = 20_000;
+  assert.equal(registry.hasRetainedLeases(), false);
+});
+
 test('heartbeatLease extends active lease and releaseLease is idempotent', () => {
   let now = 1_000;
   const registry = new LeaseRegistry({
@@ -383,6 +423,22 @@ test('human holds protect leases and release refreshes the original lease TTL at
   assert.equal(registry.consumeExpiredLeases()[0]?.leaseId, lease.leaseId);
 });
 
+test('a human-control hold keeps a past-due retained lease registered but not retained', async () => {
+  let now = 1_000;
+  const registry = new LeaseRegistry({ now: () => now, defaultLeaseTtlMs: 5_000 });
+  const lease = registry.allocateLease({
+    ...HUMAN_CONTROL_LEASE_REQUEST,
+    ttlMs: 10_000,
+    retainOnClose: true,
+  });
+  await registry.putHumanControlHold({ kind: 'lease', leaseId: lease.leaseId }, 'console', {});
+  assert.equal(registry.hasRetainedLeases(), true);
+
+  now = 25_000;
+  assert.equal(registry.listActiveLeases()[0]?.leaseId, lease.leaseId);
+  assert.equal(registry.hasRetainedLeases(), false);
+});
+
 test('hold expiry refreshes from the expiry instant, without reviving abandoned leases', async () => {
   let now = 0;
   const registry = new LeaseRegistry({ now: () => now, defaultLeaseTtlMs: 5_000 });
@@ -646,6 +702,59 @@ test('releasing a lease drops the work claims recorded against it', () => {
   assert.equal(registry.listActiveLeases().length, 0, 'a released lease must not come back');
 });
 
+// #2946: a caller that heartbeats without repeating its allocation TTL is asking for the same lease
+// to keep going, not for the registry default. Resolving an absent `ttlMs` to that default silently
+// shortened every lease allocated above it, which is how an upload expired the lease paying for the
+// device it was uploading to.
+test('a heartbeat with no ttlMs renews the lease for the window it already carries', () => {
+  let now = 1_000;
+  const registry = new LeaseRegistry({ now: () => now, defaultLeaseTtlMs: 10_000 });
+  const lease = registry.allocateLease({ tenantId: 'tenant-a', runId: 'run-1', ttlMs: 60_000 });
+
+  now = 2_000;
+  const renewed = registry.heartbeatLease({ leaseId: lease.leaseId });
+  assert.equal(renewed.heartbeatAt, 2_000);
+  assert.equal(renewed.expiresAt, 62_000, 'the allocated 60s window, not the 10s default');
+});
+
+test('a heartbeat with no ttlMs keeps a long-TTL lease outliving the default TTL', () => {
+  let now = 0;
+  const registry = new LeaseRegistry({ now: () => now, defaultLeaseTtlMs: 60_000 });
+  const lease = registry.allocateLease({
+    tenantId: 'tenant-a',
+    runId: 'run-1',
+    leaseProvider: 'proxy',
+    deviceKey: 'android:mobile:emulator-5554',
+    ttlMs: 5 * 60_000,
+  });
+
+  // The 1m47s upload from the issue, beaten every 20s by the client and admitted after it lands.
+  for (const elapsed of [20_000, 40_000, 60_000, 80_000, 100_000, 107_000]) {
+    now = elapsed;
+    registry.heartbeatLease({
+      leaseId: lease.leaseId,
+      tenantId: 'tenant-a',
+      runId: 'run-1',
+      leaseProvider: 'proxy',
+      deviceKey: 'android:mobile:emulator-5554',
+    });
+  }
+
+  const active = registry.listActiveLeases().find((entry) => entry.leaseId === lease.leaseId);
+  assert.ok(active, 'the lease is still active at the end of the upload');
+  assert.equal(active.expiresAt - active.heartbeatAt, 5 * 60_000);
+});
+
+test('a heartbeat with an explicit ttlMs still sets that window', () => {
+  let now = 1_000;
+  const registry = new LeaseRegistry({ now: () => now, defaultLeaseTtlMs: 10_000 });
+  const lease = registry.allocateLease({ tenantId: 'tenant-a', runId: 'run-1', ttlMs: 60_000 });
+
+  now = 2_000;
+  const renewed = registry.heartbeatLease({ leaseId: lease.leaseId, ttlMs: 5_000 });
+  assert.equal(renewed.expiresAt, 7_000, 'an explicit window is the caller asking to change it');
+});
+
 function inFlightClaimKeys(registry: LeaseRegistry): string[] {
   const work = (
     registry as unknown as {
@@ -654,3 +763,28 @@ function inFlightClaimKeys(registry: LeaseRegistry): string[] {
   ).inFlightWork;
   return [...work.entriesByLeaseId.keys()];
 }
+
+test('a tenant heartbeat cannot stretch a host-allocated lease past the window the host chose', () => {
+  let now = 1_000;
+  const registry = new LeaseRegistry({ now: () => now, maxLeaseTtlMs: 3_600_000 });
+  const leaseId = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+  const scope = {
+    tenantId: 'stim',
+    runId: 'run-1',
+    leaseBackend: 'macos-app' as const,
+    deviceKey: 'com.example.app',
+  };
+  registry.putHostLease(leaseId, { ...scope, ttlMs: 60_000 });
+
+  now = 2_000;
+  const stretched = registry.heartbeatLease({ ...scope, leaseId, ttlMs: 600_000 });
+  assert.equal(stretched.expiresAt, 62_000);
+
+  now = 3_000;
+  const shorter = registry.heartbeatLease({ ...scope, leaseId, ttlMs: 30_000 });
+  assert.equal(shorter.expiresAt, 33_000);
+
+  registry.putHostLease(leaseId, { ...scope, ttlMs: 120_000 });
+  now = 4_000;
+  assert.equal(registry.heartbeatLease({ ...scope, leaseId, ttlMs: 600_000 }).expiresAt, 124_000);
+});

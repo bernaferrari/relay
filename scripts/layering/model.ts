@@ -64,6 +64,7 @@ const TARGET_DAG_RANK = new Map([
   ['metro', 4],
   ['remote', 4],
   ['sdk', 4],
+  ['plugins', 4],
   ['daemon-client', 5],
   ['cli', 6],
 ]);
@@ -107,6 +108,7 @@ export const UNRANKED_ZONES: ReadonlySet<string> = new Set([
   ...PLATFORMS.map((family) => `platform-${family}`),
   'provider-webdriver',
   'provider-limrun',
+  'proxy',
   'xml',
 ]);
 

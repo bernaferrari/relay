@@ -1,4 +1,5 @@
 import { isDeepLinkTarget } from '@agent-device/contracts/command';
+import type { SettingOptions } from '@agent-device/contracts/settings';
 import type {
   DeviceLease,
   DeviceRotation,
@@ -7,7 +8,7 @@ import type {
 } from '@agent-device/contracts/device';
 import type { FillBackendResult, Interactor } from '@agent-device/contracts/interactor-types';
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import { AppError } from '@agent-device/kernel/errors';
+import { AppError, discloseDispatchAfterSteps } from '@agent-device/kernel/errors';
 import type Limrun from '@limrun/api';
 import {
   createInstanceClient as createIosInstanceClient,
@@ -23,12 +24,14 @@ import {
   awaitLimrunDeploymentOperation,
   type LimrunRequestOperationDrain,
 } from './request-cancellation.ts';
+import type { LimrunInstanceOwnership } from './instance-access.ts';
 import type { LimrunRuntimeDependencies } from './runtime-dependencies.ts';
 
 export type LimrunIosSession = {
   platform: 'ios';
   lease: DeviceLease;
   instanceId: string;
+  readonly ownership: LimrunInstanceOwnership;
   device: DeviceInfo;
   client: LimrunIosClient;
   /** Instance bearer token; the recording download the SDK would run inline is done by the host instead. */
@@ -52,6 +55,7 @@ export async function createLimrunIosSession(
   options: {
     lease: DeviceLease;
     instanceId: string;
+    ownership: LimrunInstanceOwnership;
     device: DeviceInfo;
     apiUrl: string;
     token: string;
@@ -67,6 +71,7 @@ export async function createLimrunIosSession(
     platform: 'ios',
     lease: options.lease,
     instanceId: options.instanceId,
+    ownership: options.ownership,
     device: options.device,
     client,
     token: options.token,
@@ -181,9 +186,9 @@ class LimrunIosInteractor implements Interactor {
     this.session = session;
   }
 
-  async open(app: string, options?: { url?: string }): Promise<void> {
+  async open(app: string, options?: { url?: string; launchArgs?: string[] }): Promise<void> {
     if (options?.url) {
-      await this.session.client.launchApp(await this.session.dependencies.ios.resolveAppAlias(app));
+      await this.launch(app, options.launchArgs);
       await this.session.client.openUrl(options.url);
       return;
     }
@@ -191,7 +196,30 @@ class LimrunIosInteractor implements Interactor {
       await this.session.client.openUrl(app);
       return;
     }
-    await this.session.client.launchApp(await this.session.dependencies.ios.resolveAppAlias(app));
+    await this.launch(app, options?.launchArgs);
+  }
+
+  private async launch(app: string, launchArgs: string[] = []): Promise<void> {
+    const bundleId = await this.session.dependencies.ios.resolveAppAlias(app);
+    if (launchArgs.length === 0) {
+      await this.session.client.launchApp(bundleId);
+      return;
+    }
+    // Limrun's launchApp takes no arguments, and an app reads them only at process start.
+    const result = await this.session.client
+      .simctl(['launch', '--terminate-running-process', 'booted', bundleId, ...launchArgs])
+      .wait();
+    if (result.code !== 0) {
+      throw new AppError(
+        'COMMAND_FAILED',
+        `Limrun iOS could not launch ${bundleId} with arguments.`,
+        {
+          bundleId,
+          exitCode: result.code,
+          stderr: result.stderr.trim(),
+        },
+      );
+    }
   }
 
   async openDevice(): Promise<void> {}
@@ -286,9 +314,15 @@ class LimrunIosInteractor implements Interactor {
    */
   private async enterText(text: string, delayMs?: number): Promise<void> {
     if (delayMs && delayMs > 0) {
-      for (const char of Array.from(text)) {
-        await this.session.client.typeText(char, false, { requireFocus: false });
-        await sleep(delayMs);
+      let dispatchedChars = 0;
+      try {
+        for (const char of Array.from(text)) {
+          await this.session.client.typeText(char, false, { requireFocus: false });
+          dispatchedChars += 1;
+          await sleep(delayMs);
+        }
+      } catch (error) {
+        throw discloseDispatchAfterSteps(error, dispatchedChars);
       }
       return;
     }
@@ -322,6 +356,37 @@ class LimrunIosInteractor implements Interactor {
     await this.session.client.pressKey('escape');
   }
 
+  /** One press and release of the hardware home button, sent as a single action batch. */
+  async home(): Promise<void> {
+    await this.session.client.performActions([
+      { type: 'buttonDown', button: 'home' },
+      { type: 'buttonUp', button: 'home' },
+    ]);
+  }
+
+  async readClipboard(): Promise<string> {
+    const result = await this.pasteboard(['pbpaste', 'booted']);
+    return result.stdout.replaceAll('\r\n', '\n').replace(/\n$/, '');
+  }
+
+  async writeClipboard(text: string): Promise<void> {
+    await this.pasteboard(['pbcopy', 'booted'], text);
+  }
+
+  private async pasteboard(argv: string[], stdin?: string) {
+    const result = await this.session.client
+      .simctl(argv, stdin === undefined ? undefined : { stdin })
+      .wait();
+    if (result.code !== 0) {
+      throw new AppError('COMMAND_FAILED', 'Limrun iOS could not access the clipboard.', {
+        command: argv[0],
+        exitCode: result.code,
+        stderr: result.stderr.trim(),
+      });
+    }
+    return result;
+  }
+
   async setOrientation(orientation: DeviceRotation): Promise<void> {
     if (orientation === 'portrait-upside-down') {
       throw unsupported(
@@ -332,8 +397,14 @@ class LimrunIosInteractor implements Interactor {
     await this.session.client.setOrientation(orientation === 'portrait' ? 'Portrait' : 'Landscape');
   }
 
-  async setSetting(): Promise<never> {
-    throw unsupported('settings', 'Limrun iOS direct sessions do not expose settings changes yet.');
+  async setSetting(
+    setting: string,
+    state: string,
+    appId?: string,
+    options?: SettingOptions,
+  ): Promise<Record<string, unknown> | void> {
+    const { setLimrunIosSetting } = await import('./ios-settings.ts');
+    return await setLimrunIosSetting(this.session, setting, state, appId, options);
   }
 }
 

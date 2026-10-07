@@ -1,12 +1,15 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { AppError, isRequestCanceledError } from '@agent-device/kernel/errors';
 import { resetAllProcessMemosForTests } from '@agent-device/kernel/ttl-memo';
 import { IOS_DEVICE, IOS_SIMULATOR, MACOS_DEVICE } from './device-fixtures.ts';
 import { appleRunnerTestHost } from '../test-host.ts';
 import type { ExecOptions } from '@agent-device/host-kit/command';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   createRunnerPhaseBudget,
+  requireRunnerBuildSettingsMatchBuildLog,
   diffComparableRunnerCacheMetadata,
   resolveRunnerBundleBuildSettings,
   resolveRunnerMaxConcurrentDestinationsFlag,
@@ -14,9 +17,18 @@ import {
   resolveRunnerPerformanceBuildSettings,
   resolveRunnerSandboxBuildArgs,
   resolveExpectedRunnerCacheMetadata,
+  resolveRunnerDerivedPath,
+  memoizedRunnerXcodeVersion,
 } from '../runner-cache-metadata.ts';
 import { COLD_TOOLCHAIN_PROBE_TIMEOUT_MS } from '../apple-runner-platform.ts';
-import { appleToolchainProbeResult, stubAppleToolchainProbes } from './apple-toolchain-fixtures.ts';
+import {
+  appleToolchainProbeResult,
+  STUBBED_APPLE_TOOLCHAIN,
+  stubAppleToolchainProbes,
+} from './apple-toolchain-fixtures.ts';
+import { mkdtempForTestSync } from './tmp-dir.ts';
+import { xcodebuildLogWithBuildArguments } from './runner-build-log.fixtures.ts';
+import { withoutRunnerDerivedPathEnv } from './runner-xctestrun.fixtures.ts';
 
 const runCmdSync = stubAppleToolchainProbes();
 
@@ -121,7 +133,7 @@ test('resolveRunnerSandboxBuildArgs disables nested Xcode and Swift sandboxing',
     '-IDEPackageSupportDisableManifestSandbox=1',
     '-IDEPackageSupportDisablePluginExecutionSandbox=1',
     'ENABLE_USER_SCRIPT_SANDBOXING=NO',
-    'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox',
+    'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_ISOLATION_CANARY',
   ]);
 });
 
@@ -133,7 +145,7 @@ test('resolveRunnerSandboxBuildArgs includes Swift runner unit tests only when r
       '-IDEPackageSupportDisableManifestSandbox=1',
       '-IDEPackageSupportDisablePluginExecutionSandbox=1',
       'ENABLE_USER_SCRIPT_SANDBOXING=NO',
-      'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_UNIT_TESTS',
+      'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_ISOLATION_CANARY -D AGENT_DEVICE_RUNNER_UNIT_TESTS',
     ]);
   } finally {
     if (previous === undefined) {
@@ -172,9 +184,10 @@ test('metadata diff names only the comparable keys that differ, with expected an
     runnerPerformanceBuildSettings: ['ENABLE_CODE_COVERAGE=YES'],
     artifacts: {
       xctestrunPath: '/tmp/derived/Runner.xctestrun',
-      xctestrunMtimeMs: 1,
       xctestrunSize: 2,
-      productPaths: [{ path: '/tmp/derived/Runner.app', mtimeMs: 1, size: 2 }],
+      xctestrunDigest: 'a'.repeat(64),
+      productPaths: ['/tmp/derived/Runner.app'],
+      entries: [{ path: 'Runner.app/Runner', size: 2, mode: 0o755, digest: 'b'.repeat(64) }],
     },
   };
 
@@ -681,4 +694,133 @@ test('only a complete, parsed toolchain fingerprint is memoized', () => {
     [second.xcodeVersion, second.xcodeBuildVersion, second.sdkVersion, second.sdkBuildVersion],
     [first.xcodeVersion, first.xcodeBuildVersion, first.sdkVersion, first.sdkBuildVersion],
   );
+});
+
+function recordedRunnerBuildArguments(): string[] {
+  const metadata = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+  return [
+    ...metadata.runnerBundleBuildSettings,
+    ...metadata.runnerSigningBuildSettings,
+    ...metadata.runnerPerformanceBuildSettings,
+    ...metadata.runnerArchBuildSettings,
+    ...metadata.runnerSandboxBuildArgs,
+  ];
+}
+
+function writeRunnerBuildLog(root: string, args: readonly string[]): string {
+  const logPath = path.join(root, 'agent-device-build-for-testing.log');
+  fs.writeFileSync(logPath, xcodebuildLogWithBuildArguments(args));
+  return logPath;
+}
+
+test('a build log holding the recorded recipe certifies the build', () => {
+  const root = mkdtempForTestSync('runner-build-log-');
+  const metadata = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+  const logPath = writeRunnerBuildLog(root, recordedRunnerBuildArguments());
+
+  assert.doesNotThrow(() => requireRunnerBuildSettingsMatchBuildLog(metadata, logPath));
+});
+
+test('a build log missing a recorded package-sandbox flag fails the check', () => {
+  const root = mkdtempForTestSync('runner-build-log-');
+  const metadata = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+  // `-I` flags are not build settings, so the settings block would stay complete without them.
+  const logPath = writeRunnerBuildLog(
+    root,
+    recordedRunnerBuildArguments().filter((arg) => !arg.startsWith('-IDEPackageSupport')),
+  );
+
+  assert.throws(
+    () => requireRunnerBuildSettingsMatchBuildLog(metadata, logPath),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.deepEqual(
+        (error.details as { differences: Array<{ key: string; expected: string }> }).differences
+          .map((difference) => difference.expected)
+          .sort(),
+        [
+          '-IDEPackageSupportDisableManifestSandbox=1',
+          '-IDEPackageSupportDisablePluginExecutionSandbox=1',
+        ],
+      );
+      return true;
+    },
+  );
+});
+
+test('an unreadable or setting-less build log fails the check', () => {
+  const root = mkdtempForTestSync('runner-build-log-');
+  const metadata = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+
+  assert.throws(
+    () =>
+      requireRunnerBuildSettingsMatchBuildLog(metadata, path.join(root, 'never-written-build.log')),
+    /did not use the settings its cache identity records/,
+  );
+});
+
+test('a toolchain read under one DEVELOPER_DIR does not answer for another, so its runner is stale', () => {
+  // An AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH override pins one path for every toolchain.
+  withoutRunnerDerivedPathEnv();
+  let developerDir: string | undefined = '/Applications/Xcode-A.app/Contents/Developer';
+  appleRunnerTestHost.update({ commandDeveloperDir: () => developerDir });
+  runCmdSync.mockImplementation((command: string, args: readonly string[]) =>
+    developerDir === '/Applications/Xcode-B.app/Contents/Developer' && command === 'xcodebuild'
+      ? { exitCode: 0, stdout: 'Xcode 27.0\nBuild version 18A100\n', stderr: '' }
+      : appleToolchainProbeResult(command, args),
+  );
+
+  const underA = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+  developerDir = '/Applications/Xcode-B.app/Contents/Developer';
+  runCmdSync.mockClear();
+  const underB = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+  expect(runCmdSync.mock.calls.map(([command]) => command)).toEqual([
+    'xcodebuild',
+    'xcrun',
+    'xcrun',
+  ]);
+  assert.equal(underA.xcodeBuildVersion, STUBBED_APPLE_TOOLCHAIN.xcodeBuildVersion);
+  assert.equal(underB.xcodeBuildVersion, '18A100');
+  // The derived path is what a retained runner is reused by, so a differing one makes it stale.
+  assert.notEqual(
+    resolveRunnerDerivedPath(IOS_SIMULATOR, underA),
+    resolveRunnerDerivedPath(IOS_SIMULATOR, underB),
+  );
+
+  developerDir = '/Applications/Xcode-A.app/Contents/Developer';
+  runCmdSync.mockClear();
+  assert.equal(
+    resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR).xcodeBuildVersion,
+    STUBBED_APPLE_TOOLCHAIN.xcodeBuildVersion,
+  );
+  expect(runCmdSync).not.toHaveBeenCalled();
+});
+
+test('a toolchain fingerprint expires once no request uses it; each use renews it', () => {
+  vi.useFakeTimers();
+  try {
+    appleRunnerTestHost.update({
+      commandDeveloperDir: () => '/Applications/Xcode-A.app/Contents/Developer',
+    });
+    resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+    runCmdSync.mockClear();
+    // Used every 9 minutes, it outlives a 10-minute window without another probe.
+    vi.advanceTimersByTime(9 * 60_000);
+    resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+    vi.advanceTimersByTime(9 * 60_000);
+    resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+    expect(runCmdSync).not.toHaveBeenCalled();
+    expect(memoizedRunnerXcodeVersion(IOS_SIMULATOR)).toBe(STUBBED_APPLE_TOOLCHAIN.xcodeVersion);
+
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(memoizedRunnerXcodeVersion(IOS_SIMULATOR)).toBeUndefined();
+    resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+    expect(runCmdSync.mock.calls.map(([command]) => command)).toEqual([
+      'xcodebuild',
+      'xcrun',
+      'xcrun',
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
 });

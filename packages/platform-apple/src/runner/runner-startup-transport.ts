@@ -1,5 +1,8 @@
 import {
   createRequestCanceledError,
+  discloseDispatch,
+  discloseUnclassifiedDispatch,
+  type DispatchDisclosure,
   isRequestCanceledError,
   AppError,
 } from '@agent-device/kernel/errors';
@@ -22,6 +25,7 @@ import {
 import {
   classifyRunnerStartupFailure,
   enrichRunnerStartupFailureWithDeviceStates,
+  isRunnerCommandProvablyUnwritten,
   isUsbmuxDeviceUnattachedError,
   RUNNER_CACHE_RECOVERY_HINT,
   runnerConnectFailureDetails,
@@ -30,6 +34,18 @@ import {
 } from './runner-error-classification.ts';
 import type { RunnerCommand } from './runner-contract.ts';
 import type { RunnerSession } from './runner-session-types.ts';
+
+export type RunnerConnectionSession = Pick<
+  RunnerSession,
+  | 'startupRetryWake'
+  | 'child'
+  | 'startupDeviceStates'
+  | 'state'
+  | 'testPromise'
+  | 'readLogTail'
+  | 'device'
+  | 'runnerLogPath'
+>;
 import {
   runnerSimulatorSetFailureDetails,
   simulatorSetDestinationNotFoundMessage,
@@ -53,13 +69,16 @@ export async function waitForRunner(
   command: RunnerCommand,
   logPath?: string,
   timeoutMs: number = RUNNER_STARTUP_TIMEOUT_MS,
-  session?: RunnerSession,
+  session?: RunnerConnectionSession,
   signal?: AbortSignal,
 ): Promise<Response> {
   const deadline = Deadline.fromTimeoutMs(timeoutMs);
   const { resolveRoute, markUsbmuxUnattached } = createRunnerCommandRouteResolver(device, port);
   let route = await resolveRoute(deadline.remainingMs());
   let lastError: unknown = null;
+  // Every attempt posts the command itself, so the loop gives up "before send" only when no
+  // attempt could have written it.
+  let commandMayHaveBeenWritten = false;
   const maxAttempts = Math.max(1, Math.ceil(timeoutMs / RUNNER_CONNECT_ATTEMPT_INTERVAL_MS));
   try {
     return await retryWithPolicy(
@@ -81,6 +100,7 @@ export async function waitForRunner(
           },
           setLastError: (err) => {
             lastError = err;
+            if (!isRunnerCommandProvablyUnwritten(err)) commandMayHaveBeenWritten = true;
           },
         });
         if (response) return response;
@@ -122,22 +142,50 @@ export async function waitForRunner(
   if (device.kind === 'simulator') {
     const remainingMs = deadline.remainingMs();
     if (remainingMs <= 0) {
-      throw buildRunnerConnectError({ port, endpoints: route.endpoints, logPath, lastError });
+      throw withRunnerWriteEvidence(
+        buildRunnerConnectError({ port, endpoints: route.endpoints, logPath, lastError }),
+        commandMayHaveBeenWritten,
+      );
     }
-    const simResponse = await postCommandViaSimulator(device, port, command, remainingMs, signal);
+    const simResponse = await postCommandViaSimulator(
+      device,
+      port,
+      command,
+      remainingMs,
+      signal,
+    ).catch((error: unknown) => {
+      throw withRunnerWriteEvidence(error, commandMayHaveBeenWritten);
+    });
     return new Response(simResponse.body, { status: simResponse.status });
   }
 
   if (session?.child.exitCode !== null && session?.child.exitCode !== undefined) {
-    throw await buildRunnerEarlyExitError({ session, port, logPath });
+    throw withRunnerWriteEvidence(
+      await buildRunnerEarlyExitError({ session, port, logPath }),
+      commandMayHaveBeenWritten,
+    );
   }
-  throw buildRunnerConnectError({
-    port,
-    endpoints: route.endpoints,
-    logPath,
-    lastError,
-    deviceStates: session?.startupDeviceStates,
-  });
+  throw withRunnerWriteEvidence(
+    buildRunnerConnectError({
+      port,
+      endpoints: route.endpoints,
+      logPath,
+      lastError,
+      deviceStates: session?.startupDeviceStates,
+    }),
+    commandMayHaveBeenWritten,
+  );
+}
+
+/**
+ * An earlier attempt that may have written the command may also have executed it, so the loop's
+ * failure is `unknown` whatever a later refused attempt stamped.
+ */
+function withRunnerWriteEvidence(error: unknown, commandMayHaveBeenWritten: boolean): unknown {
+  if (!(error instanceof AppError)) return error;
+  return commandMayHaveBeenWritten
+    ? discloseDispatch(error, 'unknown')
+    : discloseUnclassifiedDispatch(error, 'no');
 }
 
 type RunnerRouteResolver = ReturnType<typeof createRunnerCommandRouteResolver>['resolveRoute'];
@@ -148,7 +196,7 @@ async function attemptRunnerConnection(params: {
   command: RunnerCommand;
   timeoutMs: number;
   logPath?: string;
-  session?: RunnerSession;
+  session?: RunnerConnectionSession;
   route: RunnerCommandRoute;
   resolveRoute: RunnerRouteResolver;
   markUsbmuxUnattached: () => void;
@@ -172,7 +220,7 @@ async function ensureRunnerAttemptCanStart(params: {
   port: number;
   timeoutMs: number;
   logPath?: string;
-  session?: RunnerSession;
+  session?: RunnerConnectionSession;
   attemptDeadline?: Deadline;
 }): Promise<void> {
   if (params.attemptDeadline?.isExpired()) {
@@ -246,7 +294,7 @@ async function tryReadySimulatorEndpoint(params: {
   device: DeviceInfo;
   port: number;
   command: RunnerCommand;
-  session?: RunnerSession;
+  session?: RunnerConnectionSession;
   signal?: AbortSignal;
   attemptDeadline?: Deadline;
   setLastError: (error: unknown) => void;
@@ -326,10 +374,13 @@ async function tryRunnerRoute(
   try {
     const remainingMs = params.attemptDeadline?.remainingMs() ?? params.timeoutMs;
     if (remainingMs <= 0) {
-      throw new AppError('COMMAND_FAILED', 'Runner connection deadline exceeded', {
-        port: params.port,
-        timeoutMs: params.timeoutMs,
-      });
+      throw discloseDispatch(
+        new AppError('COMMAND_FAILED', 'Runner connection deadline exceeded', {
+          port: params.port,
+          timeoutMs: params.timeoutMs,
+        }),
+        'no',
+      );
     }
     return await usbmuxRunnerTransport.postCommand(
       device.id,
@@ -373,10 +424,13 @@ async function tryRunnerEndpoints(
     try {
       const remainingMs = attemptDeadline?.remainingMs() ?? timeoutMs;
       if (remainingMs <= 0) {
-        throw new AppError('COMMAND_FAILED', 'Runner connection deadline exceeded', {
-          port,
-          timeoutMs,
-        });
+        throw discloseDispatch(
+          new AppError('COMMAND_FAILED', 'Runner connection deadline exceeded', {
+            port,
+            timeoutMs,
+          }),
+          'no',
+        );
       }
       return await fetchWithTimeout(
         endpoint,
@@ -423,6 +477,8 @@ async function tryRunnerSimulatorEndpoint(
   }
 }
 
+const CURL_COULD_NOT_CONNECT_EXIT_CODE = 7;
+
 async function postCommandViaSimulator(
   device: DeviceInfo,
   port: number,
@@ -459,6 +515,10 @@ async function postCommandViaSimulator(
         reason,
         hint: bootFailureHint(reason),
         ...runnerConnectFailureDetails('runner_connect_refused'),
+        // curl exit 7: it could not connect, so it sent nothing. Any other exit may follow the POST.
+        dispatched: (result.exitCode === CURL_COULD_NOT_CONNECT_EXIT_CODE
+          ? 'no'
+          : 'unknown') satisfies DispatchDisclosure,
       };
     },
   );
@@ -516,7 +576,7 @@ function buildRunnerConnectError(params: {
 }
 
 export async function buildRunnerEarlyExitError(params: {
-  session: RunnerSession;
+  session: RunnerConnectionSession;
   port: number;
   logPath?: string;
 }): Promise<AppError> {

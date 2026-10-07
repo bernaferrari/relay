@@ -2,6 +2,7 @@ import type { AppleRunnerHost } from '../runner/index.ts';
 import { publishFileSync, acquireProcessLock, withProcessLock } from '@agent-device/host-kit/file';
 
 import {
+  commandDeveloperDir,
   isCommandTimeoutError,
   requireExecSuccess,
   runCmdBackground,
@@ -18,6 +19,7 @@ import {
   signalPidsBestEffort,
   signalProcessGroupBestEffort,
   classifyOwnerLiveness,
+  readHostCpuArchSync,
 } from '@agent-device/host-kit/process';
 import { Deadline, isEnvTruthy, retryWithPolicy } from '@agent-device/host-kit/retry';
 
@@ -42,7 +44,12 @@ import {
   getRunnerLeaseOwnerStateDir,
 } from './runner-owner-state.ts';
 import { buildSimctlArgsForDevice, simulatorAddressFor } from './simctl.ts';
-import { readApplePlistJson, runAppleToolCommand, runXcrun } from './tool-provider.ts';
+import {
+  hasScopedAppleToolProvider,
+  readApplePlistJson,
+  runAppleToolCommand,
+  runXcrun,
+} from './tool-provider.ts';
 
 /**
  * The real host capabilities for `@agent-device/platform-apple/runner`: the one place
@@ -63,6 +70,7 @@ export const appleRunnerHost: AppleRunnerHost = {
   runCmdBackground,
   requireExecSuccess,
   isCommandTimeoutError,
+  commandDeveloperDir,
   shellQuote,
   emitDiagnostic,
   withDiagnosticTimer,
@@ -82,6 +90,7 @@ export const appleRunnerHost: AppleRunnerHost = {
   withKeyedLock,
   publishFileSync,
   classifyOwnerLiveness,
+  readHostCpuArchSync,
   createTtlMemo,
   parseBooleanLiteral,
   isRecord,
@@ -93,6 +102,7 @@ export const appleRunnerHost: AppleRunnerHost = {
   runAppleToolCommand,
   runXcrun,
   readApplePlistJson,
+  hasScopedAppleToolProvider,
   buildSimctlArgsForDevice,
   simulatorAddressFor,
   resolveIosPhysicalDeviceControl,

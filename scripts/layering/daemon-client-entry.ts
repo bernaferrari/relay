@@ -44,6 +44,16 @@ export const DAEMON_CLIENT_ENTRY_EDGES: readonly DaemonClientEntryEdge[] = [
     rationale: REQUEST_RATIONALE,
   },
   {
+    file: 'src/daemon-client/daemon-client-lease-beat.ts',
+    target: 'src/daemon/daemon-request.ts',
+    rationale: REQUEST_RATIONALE,
+  },
+  {
+    file: 'src/daemon-client/daemon-client-liveness-probe.ts',
+    target: 'src/daemon/daemon-request.ts',
+    rationale: REQUEST_RATIONALE,
+  },
+  {
     file: 'src/daemon-client/daemon-client-progress.ts',
     target: 'src/daemon/daemon-request.ts',
     rationale: REQUEST_RATIONALE,

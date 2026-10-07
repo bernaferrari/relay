@@ -1,4 +1,3 @@
-import type { CommandFlags } from '@agent-device/contracts/command';
 import type { SnapshotDiagnosticsState } from '@agent-device/contracts/capture';
 import type { AppLogFailure, AppLogLiveHandle } from '@agent-device/contracts/app-log-runtime';
 import type { AudioProbeLiveHandle } from '@agent-device/contracts/audio-probe-runtime';
@@ -68,7 +67,7 @@ export type InteractionSurfaceEntry = {
    * False for structurally fixed elements (the viewport root, keyboard
    * chrome) whose rect is invariant regardless of any gesture — shared
    * evidence limited to these is not evidence at all. See
-   * `classifyBaselineSurfaceEvidence` in interaction-outcome-policy.ts.
+   * `classifyBaselineSurfaceEvidence` in interaction-surface-signature.ts.
    */
   discriminating: boolean;
 };
@@ -100,16 +99,6 @@ export type PostGestureStabilization = {
   baselineBackend?: string;
 };
 
-export type PendingInteractionOutcome = {
-  action: string;
-  command: string;
-  positionals: string[];
-  flags?: CommandFlags;
-  markedAt: number;
-  attemptsRemaining: number;
-  preSignature: InteractionSurfaceEntry[];
-};
-
 /**
  * A session together with the store key that addresses it: `address` is the exact string
  * `--session` must carry to reach `session`, and it is NOT always `session.name`. An implicitly
@@ -119,10 +108,11 @@ export type PendingInteractionOutcome = {
  * target takes this pair rather than a bare record, so it cannot be handed a session whose address
  * was never resolved.
  */
-export type SessionRef = {
+export type SessionRef = Readonly<{
   address: string;
   session: SessionState;
-};
+  lifetime: object;
+}>;
 
 export type SessionState = {
   name: string;
@@ -137,6 +127,15 @@ export type SessionState = {
     clientId?: string;
     expiresAt?: number;
   };
+  /**
+   * #2833: the instant a command that attaches to this session last finished, which is what the
+   * opt-in inactivity deadline for a claim-holding session is measured from. Absent until then, in
+   * which case the session's own `createdAt` is the base — so the abandonment this exists for
+   * (`open`, then silence) still expires on its own. Written only through `SessionStore
+   * .noteSessionActivity`, under the session's execution lock. A session with a remote lease is
+   * governed by that lease's own `expiresAt` instead and is never measured from this field.
+   */
+  lastActivityAtMs?: number;
   /** Enforced host-global local-device claim owned by this session, if acquired. */
   deviceClaim?: {
     deviceKey: string;
@@ -188,7 +187,6 @@ export type SessionState = {
   lastComparisonSafeSnapshot?: SnapshotState;
   androidSnapshotFreshness?: SnapshotFreshnessWindow;
   postGestureStabilization?: PostGestureStabilization;
-  pendingInteractionOutcome?: PendingInteractionOutcome;
   snapshotDiagnostics?: SnapshotDiagnosticsState;
   trace?: {
     outPath: string;

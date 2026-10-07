@@ -2,12 +2,17 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import {
+  commandAcceptsReadinessBudget,
   commandDescriptors,
   resolveCommandPostActionObservationSupport,
   resolveCommandTimeoutPolicy,
 } from '@agent-device/command-registry/registry';
+import { INTERACTION_DISPATCH_PATHS } from '@agent-device/contracts/interaction-guarantees';
+import { SELECTOR_PIPELINE_POLICIES } from '@agent-device/selectors/selector-pipeline-policy';
+import { OVERLAY_BUDGET_MS } from '@agent-device/capture-kit/recording-overlay';
 import {
   DEFAULT_TIMEOUT_POLICY,
+  READINESS_BUDGET_MAX_MS,
   resolveCommandRequestTimeoutMs,
 } from '@agent-device/command-registry/timeout-policy';
 import { DEFAULT_STABLE_TIMEOUT_MS } from '../commands/interaction/runtime/stable-capture.ts';
@@ -67,6 +72,9 @@ test('daemon-preserving timeout commands are a bounded, reviewed set', () => {
   // sessions the daemon owns, so a client-side timeout must not SIGKILL the
   // daemon mid-create/mid-release and orphan them (and every other provider
   // session held).
+  // record joined because a `record stop` export can outlast the envelope: a
+  // reset mid-export left an ownerless open manifest that refused every later
+  // `record start` on the device.
   const preserving = commandDescriptors
     .filter((descriptor) => descriptor.timeoutPolicy.onTimeout === 'preserve-daemon')
     .map((descriptor) => descriptor.name);
@@ -83,6 +91,7 @@ test('daemon-preserving timeout commands are a bounded, reviewed set', () => {
     'lease_release',
     'longpress',
     'press',
+    'record',
     'scroll',
     'snapshot',
     'type',
@@ -113,9 +122,9 @@ test('budget sources deviating from the default are bounded, reviewed sets', () 
   }
   // --timeout bounds the request envelope for these commands only.
   assert.deepEqual(flagBoundBudget.sort(), ['replay', 'snapshot']);
-  // --timeout is a daemon-side startup budget on these commands (#2324); the
+  // --timeout is a daemon-side startup budget on these commands (#2324, #3004); the
   // envelope keeps a margin over it so the daemon's own timeout wins the race.
-  assert.deepEqual(flagMarginBudget.sort(), ['open', 'prepare']);
+  assert.deepEqual(flagMarginBudget.sort(), ['boot', 'open', 'prepare']);
   // --timeout bounds the --settle wait on these commands (#1101); like wait's
   // positional budget it only ever widens the envelope, never shrinks it.
   assert.deepEqual(flagWidenBudget.sort(), settleObservationCommandNames());
@@ -326,6 +335,18 @@ test('snapshot uses the standard daemon request timeout with an explicit overrid
   );
 });
 
+test('the touch overlay budget leaves record stop room inside its request envelope', () => {
+  // The recorder stop, the copies and the playability checks around the overlay are outside its
+  // budget (about 1 s for a 10-minute simulator recording), so the envelope keeps a reserve for
+  // them beyond it.
+  const reserveMs = 20_000;
+  const envelopeMs = resolveCommandRequestTimeoutMs(resolveCommandTimeoutPolicy('record'), {
+    positionals: ['stop'],
+    flags: {},
+  });
+  assert.ok(envelopeMs !== undefined && OVERLAY_BUDGET_MS + reserveMs <= envelopeMs);
+});
+
 test('open and prepare startup budgets keep a client-envelope margin over the daemon deadline', () => {
   const base = { positionals: [] as string[], flags: {} };
 
@@ -402,4 +423,58 @@ test('open and prepare startup budgets keep a client-envelope margin over the da
     }),
     90_000,
   );
+});
+
+test('a readiness budget widens the request envelope on top of the settle envelope', () => {
+  const press = resolveCommandTimeoutPolicy('press');
+  const withoutReadiness = resolveCommandRequestTimeoutMs(press, { flags: {} });
+  assert.equal(withoutReadiness, 90_000);
+  assert.equal(
+    resolveCommandRequestTimeoutMs(press, { flags: { readinessTimeoutMs: 2_000 } }),
+    92_000,
+  );
+  assert.equal(
+    resolveCommandRequestTimeoutMs(press, { flags: { settle: true, readinessTimeoutMs: 2_000 } }),
+    90_000 + 10_000 + 30_000 + 2_000,
+  );
+  assert.equal(
+    resolveCommandRequestTimeoutMs(resolveCommandTimeoutPolicy('longpress'), {
+      flags: { readinessTimeoutMs: 2_000 },
+    }),
+    212_000,
+  );
+  assert.equal(resolveCommandRequestTimeoutMs(press, { flags: { readinessTimeoutMs: 0 } }), 90_000);
+  assert.equal(
+    resolveCommandRequestTimeoutMs(press, { flags: { readinessTimeoutMs: 999_000 } }),
+    90_000 + 2_000,
+  );
+});
+
+test('the envelope readiness cap is the promotedTarget row poll ceiling', () => {
+  assert.equal(
+    READINESS_BUDGET_MAX_MS,
+    SELECTOR_PIPELINE_POLICIES.promotedTarget.poll.maxTimeoutMs,
+  );
+  assert.equal(
+    resolveCommandRequestTimeoutMs(resolveCommandTimeoutPolicy('fill'), {
+      flags: { readinessTimeoutMs: 2_000 },
+    }),
+    90_000,
+  );
+});
+
+test('the readiness-budgeted commands are the ones a runtime targetReadiness cell enforces', () => {
+  const declared = commandDescriptors
+    .map((descriptor) => descriptor.name)
+    .filter((command) => commandAcceptsReadinessBudget(command))
+    .sort();
+  const enforced = [
+    ...new Set(
+      Object.values(INTERACTION_DISPATCH_PATHS).flatMap((path) => {
+        const cell = path.guarantees.targetReadiness;
+        return cell.kind === 'runtime' ? (cell.appliesTo ?? path.commands) : [];
+      }),
+    ),
+  ].sort();
+  assert.deepEqual(declared, enforced);
 });

@@ -4,7 +4,9 @@ import type {
   SnapshotOptions,
   SnapshotQualityVerdict,
   ScreenshotOverlayRef,
+  SnapshotViewportSize,
 } from '@agent-device/kernel/snapshot';
+import type { DeviceRotation } from './device-rotation.ts';
 import type { SnapshotDiagnosticsSummary } from './snapshot-diagnostics.ts';
 
 export type ScreenshotResultData = {
@@ -14,6 +16,8 @@ export type ScreenshotResultData = {
   logicalWidth?: number;
   logicalHeight?: number;
   pixelDensity?: number;
+  /** Display rotation the capture was rendered in; absent when the target reports none. */
+  displayRotation?: DeviceRotation;
   overlayRefs?: ScreenshotOverlayRef[];
   warnings?: string[];
 };
@@ -25,6 +29,11 @@ export type BackendSnapshotResult = {
   appName?: string;
   appBundleId?: string;
   snapshotDiagnostics?: SnapshotDiagnosticsSummary;
+  /**
+   * The box the node rects are measured in, as the producer measured it (#3182). Absent means the
+   * producer measured no box; see {@link SnapshotViewportSize} for what each producer measures.
+   */
+  viewport?: SnapshotViewportSize;
   analysis?: { rawNodeCount: number; maxDepth: number };
   androidSnapshot?: AndroidSnapshotBackendMetadata;
   freshness?: {
@@ -64,6 +73,12 @@ export type AndroidSnapshotBackendMetadata = {
   captureMode?: string;
   systemSurfaceOnly?: boolean;
   windowCount?: number;
+  /**
+   * `AccessibilityWindowInfo` types of the listed windows the helper could not serialize because
+   * reading their root returned null or threw (`2` is an input method window); `windowCount` counts
+   * only the roots it serialized. Empty when every listed window was read. Absent on an older helper.
+   */
+  missingRootWindowTypes?: number[];
   nodeCount?: number;
   helperTruncated?: boolean;
   elapsedMs?: number;
