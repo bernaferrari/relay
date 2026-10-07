@@ -8,6 +8,8 @@ import { AuthoringWorkspace } from "./authoring-workspace";
 import { RecordingAppChoice } from "./recording-app-choice";
 import { RecordingDeviceChoice } from "../components/recording-device-choice";
 import { InstalledAppChoice } from "../components/installed-app-choice";
+import { IOSStartingAppChoice } from "./ios-starting-app-choice";
+import type { RecordingSetupAdmission } from "../data/recording-setup-admission";
 import { BrowserSetup } from "./new-test-browser-setup";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { Button } from "@relay/ui-react/components/button";
@@ -46,7 +48,7 @@ export function NewTestDetailedSetup({
   onOpened,
   formReady,
   startHint,
-  beginPending,
+  admission,
   submit,
   browserContext,
   previewIssue,
@@ -96,7 +98,7 @@ export function NewTestDetailedSetup({
   onOpened(value: string): void;
   formReady: boolean;
   startHint: string;
-  beginPending: boolean;
+  admission: RecordingSetupAdmission;
   submit(event: FormEvent<HTMLFormElement>): void;
   browserContext?: LiveTargetBrowserContext;
   previewIssue?: string;
@@ -129,12 +131,14 @@ export function NewTestDetailedSetup({
     : targetOptions;
   const deviceChoice = (
     <RecordingDeviceChoice
+      admission={admission}
       service={deviceService}
       loading={targetFetching}
       deviceOnly={deviceOnly}
       onStarted={async (serial) => {
+        if (!admission.mayEdit()) return;
         await onRefreshTargets();
-        chooseTarget(serial);
+        if (admission.mayEdit()) chooseTarget(serial);
       }}
       value={targetId}
       options={choices.map((target) => {
@@ -145,6 +149,7 @@ export function NewTestDetailedSetup({
         };
       })}
       onChange={(value) => {
+        if (!admission.mayEdit()) return;
         onNewBrowserOpen(false);
         chooseTarget(value);
       }}
@@ -168,8 +173,10 @@ export function NewTestDetailedSetup({
             type="button"
             variant="outline"
             className="w-fit"
-            disabled={targetFetching}
-            onClick={() => void onRefreshTargets()}
+            disabled={targetFetching || admission.busy}
+            onClick={() => {
+              if (admission.mayEdit()) void onRefreshTargets();
+            }}
           >
             <RotateCcw aria-hidden="true" />
             {targetFetching ? "Checking…" : "Refresh devices"}
@@ -199,6 +206,7 @@ export function NewTestDetailedSetup({
             </p>
           ) : null}
           <RecordingAppChoice
+            admission={admission}
             apps={apps}
             value={appId}
             onChange={chooseApp}
@@ -211,7 +219,9 @@ export function NewTestDetailedSetup({
             <Button
               type="button"
               variant="outline"
+              disabled={admission.busy}
               onClick={() => {
+                if (!admission.mayEdit()) return;
                 chooseTarget("");
                 onNewBrowserOpen(true);
               }}
@@ -219,16 +229,35 @@ export function NewTestDetailedSetup({
               New browser
             </Button>
           ) : null}
-          {selectedTarget?.kind === "device" ? (
-            <InstalledAppChoice
+          {selectedTarget?.kind === "device" && selectedTarget.platform === "ios" ? (
+            <IOSStartingAppChoice
+              admission={admission}
               service={deviceService}
               serial={selectedTarget.targetId}
               value={originApplication}
               onChange={(value) => {
+                if (!admission.mayEdit()) return;
                 onOriginChange(value);
                 onOpened("");
               }}
-              onOpened={onOpened}
+              onOpened={(value) => {
+                if (admission.mayEdit()) onOpened(value);
+              }}
+            />
+          ) : selectedTarget?.kind === "device" ? (
+            <InstalledAppChoice
+              admission={admission}
+              service={deviceService}
+              serial={selectedTarget.targetId}
+              value={originApplication}
+              onChange={(value) => {
+                if (!admission.mayEdit()) return;
+                onOriginChange(value);
+                onOpened("");
+              }}
+              onOpened={(value) => {
+                if (admission.mayEdit()) onOpened(value);
+              }}
             />
           ) : null}
           {!formReady ? (
@@ -247,7 +276,7 @@ export function NewTestDetailedSetup({
             className="w-full"
           >
             <Play aria-hidden="true" />
-            {beginPending ? "Starting…" : "Start recording"}
+            {admission.busy ? "Starting…" : "Start recording"}
           </Button>
         </form>
       }
@@ -267,7 +296,10 @@ export function NewTestDetailedSetup({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => onExploreUrl(browserContext.pageUrl!)}
+                    disabled={admission.busy}
+                    onClick={() => {
+                      if (admission.mayEdit()) onExploreUrl(browserContext.pageUrl!);
+                    }}
                   >
                     <Compass aria-hidden="true" />
                     Explore URL in a new browser
@@ -278,8 +310,9 @@ export function NewTestDetailedSetup({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled={reconnecting}
+                    disabled={reconnecting || admission.busy}
                     onClick={() => {
+                      if (!admission.mayEdit()) return;
                       if (
                         selectedTarget.platform === "android" ||
                         selectedTarget.platform === "ios"
@@ -301,12 +334,14 @@ export function NewTestDetailedSetup({
                 canvasRef={previewCanvas}
                 status={previewStatus}
                 issue={previewIssue}
-                busy={previewBusy}
+                busy={previewBusy || admission.busy}
                 targetTitle={targetLabel(selectedTarget).title}
                 targetDetail={targetLabel(selectedTarget).detail}
                 browserContext={browserContext}
                 directBrowser={selectedTarget.kind === "browser"}
-                send={sendPreview}
+                send={(input) =>
+                  admission.mayEdit() ? sendPreview(input) : Promise.resolve(false)
+                }
                 recording={false}
                 showTargetDetails={false}
                 targetPlatform={selectedTarget?.platform}
@@ -315,12 +350,14 @@ export function NewTestDetailedSetup({
               {inputFailure ? (
                 <RecordingInputRecovery
                   failure={inputFailure}
-                  busy={inputRecoveryBusy}
+                  busy={inputRecoveryBusy || admission.busy}
                   issue={
                     previewIssue ??
                     "Relay lost confirmation of the last interaction. Check the live screen before continuing."
                   }
-                  onObserve={onObserveInput}
+                  onObserve={(observed) =>
+                    admission.mayEdit() ? onObserveInput(observed) : Promise.resolve()
+                  }
                 />
               ) : null}
             </section>
@@ -342,8 +379,10 @@ export function NewTestDetailedSetup({
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={targetFetching}
-                  onClick={() => void onRefreshTargets()}
+                  disabled={targetFetching || admission.busy}
+                  onClick={() => {
+                    if (admission.mayEdit()) void onRefreshTargets();
+                  }}
                 >
                   Check again
                 </Button>
@@ -355,7 +394,14 @@ export function NewTestDetailedSetup({
                 <p role="alert" className="text-sm text-destructive">
                   Saved browsers could not be loaded. Your existing browser choices are unavailable.
                 </p>
-                <Button type="button" variant="outline" onClick={() => void onRetryBrowsers()}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={admission.busy}
+                  onClick={() => {
+                    if (admission.mayEdit()) onRetryBrowsers();
+                  }}
+                >
                   Retry browser lookup
                 </Button>
               </div>
@@ -365,13 +411,21 @@ export function NewTestDetailedSetup({
               browsers={savedBrowsers}
               browserUrl={browserUrl}
               newBrowserOpen={newBrowserOpen || !savedBrowsers.length}
-              pending={browserStarting}
+              pending={browserStarting || admission.busy}
               checking={targetFetching}
               error={browserStartError}
-              onBrowserUrlChange={onBrowserUrlChange}
-              onToggleNewBrowser={() => onToggleNewBrowser()}
-              onStart={onBrowserStart}
-              onCheckAgain={() => void onRefreshTargets()}
+              onBrowserUrlChange={(value) => {
+                if (admission.mayEdit()) onBrowserUrlChange(value);
+              }}
+              onToggleNewBrowser={() => {
+                if (admission.mayEdit()) onToggleNewBrowser();
+              }}
+              onStart={(browser) => {
+                if (admission.mayEdit()) onBrowserStart(browser);
+              }}
+              onCheckAgain={() => {
+                if (admission.mayEdit()) void onRefreshTargets();
+              }}
             />
           ) : (
             <div className="grid min-h-0 w-full place-items-center p-6">

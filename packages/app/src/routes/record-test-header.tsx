@@ -9,6 +9,7 @@ import {
   DialogTrigger,
 } from "@relay/ui-react/components/dialog";
 import { AuthoringHeader } from "./authoring-header";
+import { useId } from "react";
 
 export function RecordTestHeader({
   open,
@@ -16,6 +17,7 @@ export function RecordTestHeader({
   interrupted,
   cancelDisabled,
   stopDisabled,
+  stopBlockedReason,
   failed,
   pending,
   stopping,
@@ -28,6 +30,7 @@ export function RecordTestHeader({
   interrupted: boolean;
   cancelDisabled: boolean;
   stopDisabled: boolean;
+  stopBlockedReason?: string;
   failed: boolean;
   pending: boolean;
   stopping: boolean;
@@ -35,6 +38,7 @@ export function RecordTestHeader({
   onLeave(): void;
   onStop(): void;
 }) {
+  const stopReasonId = useId();
   return (
     <div className="min-w-0">
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,6 +95,7 @@ export function RecordTestHeader({
                 size="sm"
                 onClick={() => onStop()}
                 disabled={stopDisabled}
+                aria-describedby={stopBlockedReason ? stopReasonId : undefined}
               >
                 {failed
                   ? pending
@@ -100,6 +105,15 @@ export function RecordTestHeader({
                     ? "Finishing interaction…"
                     : "Stop and review"}
               </Button>
+              {stopBlockedReason ? (
+                <p
+                  id={stopReasonId}
+                  className="max-w-xs text-xs text-muted-foreground"
+                  role="status"
+                >
+                  {stopBlockedReason}
+                </p>
+              ) : null}
             </>
           }
         />

@@ -36,13 +36,14 @@ const failure: RecordingInputOutcome = {
 async function harness(
   fetch: NonNullable<RecordingProductService["fetchRecordingInputReceipt"]>,
   suspendNewWorkflow = false,
+  currentFailure = failure,
 ) {
   const confirmed = vi.fn(async () => {});
   const service = { fetchRecordingInputReceipt: fetch } as RecordingProductService;
   const suspended = new Promise<void>(() => {});
   function Probe({ selected, workflowId }: { selected: AuthoringTarget; workflowId: string }) {
     useRecordingInputReceipt({
-      failure,
+      failure: currentFailure,
       target: selected,
       workflowId,
       service,
@@ -55,7 +56,9 @@ async function harness(
   document.body.append(host);
   root = createRoot(host);
   async function render(
-    selected: AuthoringTarget = target,
+    selected: AuthoringTarget = currentFailure.kind === "unknown"
+      ? (currentFailure.recordingMutation?.target ?? target)
+      : target,
     workflowId = "workflow-1",
     transition = false,
   ) {
@@ -75,6 +78,29 @@ async function harness(
 }
 
 describe("bounded automatic recording receipt recovery", () => {
+  it.each(["ios", "android"] as const)(
+    "recovers a late %s receipt through reads alone",
+    async (platform) => {
+      vi.useFakeTimers();
+      const nativeFailure: RecordingInputOutcome = {
+        ...failure,
+        recordingMutation: {
+          ...failure.recordingMutation!,
+          target: { kind: "device", platform, targetId: "native-1" },
+        },
+      };
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce({ outcome: "unknown" })
+        .mockResolvedValue({ outcome: "applied" });
+      const h = await harness(fetch, false, nativeFailure);
+      expect(h.confirmed).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(750));
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenLastCalledWith(nativeFailure.recordingMutation);
+      expect(h.confirmed).toHaveBeenCalledWith(nativeFailure, expect.any(Function));
+    },
+  );
   it("ignores old success when a new workflow render suspends before effect cleanup", async () => {
     let resolve!: (value: { outcome: "applied" }) => void;
     const fetch = vi.fn(

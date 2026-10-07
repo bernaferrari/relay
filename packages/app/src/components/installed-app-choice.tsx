@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, RotateCcw } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { DeviceProductService } from "../data/device-product-service";
+import type { RecordingSetupAdmission } from "../data/recording-setup-admission";
 
 export function InstalledAppChoice({
   service,
@@ -15,6 +16,7 @@ export function InstalledAppChoice({
   onChange,
   onOpened,
   label = "Starting app",
+  admission,
 }: {
   service: DeviceProductService;
   serial: string;
@@ -22,15 +24,16 @@ export function InstalledAppChoice({
   onChange(value: string): void;
   onOpened(packageName: string): void;
   label?: string;
+  admission?: RecordingSetupAdmission;
 }) {
   const controlId = useId();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState<string>();
-  const selectionRef = useRef({ serial, value });
+  const selectionRef = useRef({ service, serial, value, admission });
   const requestRef = useRef(0);
-  selectionRef.current = { serial, value };
+  selectionRef.current = { service, serial, value, admission };
   const apps = useQuery({
     queryKey: ["installed-apps", serial],
     queryFn: () => service.listInstalledApps!(serial),
@@ -52,9 +55,9 @@ export function InstalledAppChoice({
     requestRef.current += 1;
     setOpening(false);
     setOpenError(undefined);
-  }, [serial, value]);
+  }, [service, serial, value]);
   async function openSelectedApp() {
-    if (!value || !service.launchApp) return;
+    if (admission?.mayEdit() === false || opening || !value || !service.launchApp) return;
     const requestId = ++requestRef.current;
     const requested = { serial, value };
     setOpening(true);
@@ -63,6 +66,8 @@ export function InstalledAppChoice({
       await service.launchApp(serial, value, true);
       if (
         requestRef.current === requestId &&
+        selectionRef.current.admission?.mayEdit() !== false &&
+        selectionRef.current.service === service &&
         selectionRef.current.serial === requested.serial &&
         selectionRef.current.value === requested.value
       )
@@ -70,6 +75,8 @@ export function InstalledAppChoice({
     } catch (error) {
       if (
         requestRef.current === requestId &&
+        selectionRef.current.admission?.mayEdit() !== false &&
+        selectionRef.current.service === service &&
         selectionRef.current.serial === requested.serial &&
         selectionRef.current.value === requested.value
       )
@@ -85,6 +92,7 @@ export function InstalledAppChoice({
       <Popover
         open={open}
         onOpenChange={(next) => {
+          if (admission?.mayEdit() === false) return;
           setOpen(next);
           if (!next) setSearch("");
         }}
@@ -98,6 +106,7 @@ export function InstalledAppChoice({
               className="min-h-11 w-full justify-between"
               aria-label={label}
               aria-haspopup="listbox"
+              disabled={admission?.busy}
             />
           }
         >
@@ -110,7 +119,10 @@ export function InstalledAppChoice({
           <Input
             autoFocus
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              if (admission?.mayEdit() !== false) setSearch(event.target.value);
+            }}
+            disabled={admission?.busy}
             placeholder="Search installed apps…"
             aria-label="Search installed apps"
           />
@@ -119,8 +131,10 @@ export function InstalledAppChoice({
               type="button"
               role="option"
               aria-selected={!value}
+              disabled={admission?.busy}
               className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
               onClick={() => {
+                if (admission?.mayEdit() === false) return;
                 onChange("");
                 setOpen(false);
               }}
@@ -144,7 +158,10 @@ export function InstalledAppChoice({
                   size="sm"
                   variant="ghost"
                   className="w-fit"
-                  onClick={() => void apps.refetch()}
+                  disabled={admission?.busy}
+                  onClick={() => {
+                    if (admission?.mayEdit() !== false) void apps.refetch();
+                  }}
                 >
                   <RotateCcw aria-hidden="true" /> Try again
                 </Button>
@@ -164,8 +181,10 @@ export function InstalledAppChoice({
                     type="button"
                     role="option"
                     aria-selected={app.package === value}
+                    disabled={admission?.busy}
                     className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                     onClick={() => {
+                      if (admission?.mayEdit() === false) return;
                       onChange(app.package);
                       setOpen(false);
                     }}
@@ -197,7 +216,7 @@ export function InstalledAppChoice({
           type="button"
           variant="secondary"
           className="w-fit"
-          disabled={opening || !service.launchApp}
+          disabled={opening || admission?.busy || !service.launchApp}
           onClick={() => void openSelectedApp()}
         >
           {opening ? "Opening app…" : "Open app"}

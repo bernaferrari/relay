@@ -35,7 +35,9 @@ export type ProductDeviceRecovery = {
   session: { status: string; detail: string; app?: string; fallback?: boolean };
 };
 
-export type ProductLaunchedApp = OperationOutput<"target.app.launch">["launched"];
+export type ProductLaunchedApp = OperationOutput<"target.app.launch">["launched"] & {
+  observed?: OperationOutput<"target.app.launch">["observed"];
+};
 export type ProductInstalledApp = OperationOutput<"target.app.list">["apps"][number];
 export type ProductAppLocales = OperationOutput<"target.app.locales">;
 
@@ -132,7 +134,26 @@ function readiness(device: DeviceSummary): { runnable: boolean; recovery?: strin
         device.readiness.evidenceCapture,
       ]
     : [];
-  if (channels.some((channel) => channel.freshness === "stale")) {
+  const runtime = device.readiness;
+  const currentPixels =
+    runtime &&
+    [runtime.previewPixels, runtime.evidenceCapture].every(
+      (channel) => channel.state === "proven" && channel.freshness === "current",
+    );
+  // A confirmed screen change invalidates labels without invalidating current
+  // pixels. Preserve that stale proof; the server still binds every input.
+  const staleLabelsWithPixels =
+    currentPixels &&
+    runtime.semanticControl.state === "proven" &&
+    (runtime.semanticControl.invalidated?.reason === "input-changed" ||
+      runtime.semanticControl.invalidated?.reason === "visual-changed");
+  if (
+    channels.some(
+      (channel) =>
+        channel.freshness === "stale" &&
+        !(channel === runtime?.semanticControl && staleLabelsWithPixels),
+    )
+  ) {
     return {
       runnable: false,
       recovery: "Keep the device on the expected screen, then check its status again.",
@@ -267,7 +288,7 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
         app: name,
         ...(relaunch === undefined ? {} : { relaunch }),
       });
-      return result.launched;
+      return { ...result.launched, observed: result.observed };
     },
     async listInstalledApps(serial) {
       const result = await (await client()).invoke("target.app.list", { serial });

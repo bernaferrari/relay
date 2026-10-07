@@ -46,6 +46,7 @@ import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkba
 import { currentAccessibilityInspection } from "../data/talkback-overlay";
 import { conditionTextSuggestions } from "../data/recording-condition-suggestions";
 import { useRecordingInputReceipt } from "./use-recording-input-receipt";
+import { prepareRecordingStop, recordingStopBlockedReason } from "../data/recording-stop-state";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
 const recordingRouteApi = getRouteApi("/recordings/$recordingId");
@@ -479,33 +480,14 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     if (!allowed.has("stop") || action.isPending || stopWaitingForInput) return;
     setStopWaitingForInput(true);
     try {
-      const outcome = await liveInputOutcome.current.catch((): RecordingInputOutcome => ({
-        kind: "unknown",
-        message: "The last interaction did not finish cleanly.",
-      }));
-      if (outcome.kind === "refresh-failed") {
-        await recoverRecordingRefreshOnly();
-      }
-      const latestOutcome = recordingLedger.current.mutations.at(-1) ?? outcome;
-      if (latestOutcome.kind !== "confirmed" && latestOutcome.kind !== "not-dispatched") {
-        setLiveIssue(
-          recordingInputRecoveryMessage(latestOutcome) ??
-            "Relay could not confirm the last interaction.",
-        );
-        return;
-      }
-      if (recordingRecoveryBlocksSend(recordingLedger.current)) {
-        setLiveIssue(
-          "An earlier interaction is still unconfirmed. Observe the app before stopping.",
-        );
-        return;
-      }
-      const latest = await refreshRecording(queryClient, productService, workflowId);
-      const latestAllowed = new Set(latest.snapshot?.allowedNextActions ?? []);
-      if (latest.recovery || latest.status !== "recording" || !latestAllowed.has("stop")) {
-        setLiveIssue(
-          "The recording changed while the interaction was finishing. Refresh before stopping.",
-        );
+      const blocked = await prepareRecordingStop({
+        outcome: liveInputOutcome.current,
+        ledger: () => recordingLedger.current,
+        refreshOnly: recoverRecordingRefreshOnly,
+        inspect: () => refreshRecording(queryClient, productService, workflowId),
+      });
+      if (blocked) {
+        setLiveIssue(blocked);
         return;
       }
       action.mutate({ action: "stop" });
@@ -513,6 +495,9 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
       setStopWaitingForInput(false);
     }
   }
+
+  const stopBlockedReason =
+    snapshot?.stage === "failed" ? undefined : recordingStopBlockedReason(recordingLedger.current);
 
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-card">
@@ -525,8 +510,10 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
           (!allowed.has("stop") &&
             !(snapshot?.stage === "failed" && productService.recoverForReview)) ||
           action.isPending ||
-          stopWaitingForInput
+          stopWaitingForInput ||
+          Boolean(stopBlockedReason)
         }
+        stopBlockedReason={stopBlockedReason}
         failed={snapshot?.stage === "failed"}
         pending={action.isPending}
         stopping={stopWaitingForInput}

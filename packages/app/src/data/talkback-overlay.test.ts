@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACCESSIBILITY_LABEL_MODE_OPTIONS,
   currentAccessibilityInspection,
+  distinctTalkBackOverlays,
   retainAccessibilityObservation,
   talkBackItemAtPoint,
   talkBackOverlayBox,
@@ -26,6 +27,33 @@ function rect(x: number, y: number, width: number, height: number): DOMRect {
 }
 
 describe("talkBackOverlayBox", () => {
+  it("deduplicates equivalent labels while retaining different controls and raw review rows", () => {
+    const settings = {
+      id: "sidebar.settings.button:0:76:768",
+      identifier: "sidebar.settings.button",
+      index: 1,
+      name: "Settings",
+      announcement: "Settings, Button",
+      role: "Button",
+      interactive: true,
+      issues: [],
+      rect: { x: 76, y: 768, width: 48, height: 48 },
+    };
+    const repeated = { ...settings, index: 2 };
+    const otherName = { ...settings, name: "Account", announcement: "Account, Button", index: 3 };
+    const otherBounds = { ...settings, rect: { ...settings.rect, width: 96 }, index: 4 };
+    const raw = [settings, repeated, otherName, otherBounds];
+    const projected = distinctTalkBackOverlays(raw);
+    expect(projected.map(({ item }) => item)).toEqual([settings, otherName, otherBounds]);
+    expect(new Set(projected.map(({ key }) => key)).size).toBe(3);
+    expect(
+      distinctTalkBackOverlays([...raw].reverse())
+        .map(({ key }) => key)
+        .sort(),
+    ).toEqual(projected.map(({ key }) => key).sort());
+    expect(raw).toHaveLength(4);
+    expect(raw[1]).toBe(repeated);
+  });
   it("maps device pixels onto a letterboxed canvas", () => {
     const canvas = {
       width: 1080,

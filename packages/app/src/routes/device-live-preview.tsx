@@ -17,6 +17,7 @@ import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkba
 export function DeviceLivePreview({
   platform,
   canvas,
+  onCanvasChange,
   target,
   browserContext,
   status,
@@ -31,6 +32,7 @@ export function DeviceLivePreview({
 }: {
   platform: string;
   canvas: RefObject<HTMLCanvasElement | null>;
+  onCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
   target?: { name: string; detail: string };
   browserContext?: LiveTargetBrowserContext;
   status: LiveTargetStatus;
@@ -55,8 +57,8 @@ export function DeviceLivePreview({
             : "Keep the device awake and connected, then reconnect."
         }
         action={
-          <Button size="sm" onClick={reconnect}>
-            <RotateCcw aria-hidden="true" /> Reconnect
+          <Button size="sm" onClick={reconnect} disabled={reconnecting}>
+            <RotateCcw aria-hidden="true" /> {reconnecting ? "Reconnecting…" : "Reconnect"}
           </Button>
         }
       />
@@ -64,7 +66,7 @@ export function DeviceLivePreview({
   }
   return (
     <section
-      className="flex min-h-0 min-w-0 flex-col rounded-xl bg-muted/30 max-[900px]:h-[65dvh]"
+      className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl bg-muted/30 max-[900px]:h-[65dvh] max-[900px]:flex-none"
       aria-labelledby="device-live-title"
     >
       <div className="flex shrink-0 items-center justify-between gap-4 px-3 py-2">
@@ -72,9 +74,9 @@ export function DeviceLivePreview({
           Live {platform === "browser" ? "browser" : "device"}
           <span className="ml-2 text-xs font-normal text-muted-foreground">Not recording</span>
         </h2>
-        {status === "streaming" || (status === "idle" && !pending) ? (
+        {reconnecting || status === "streaming" || (status === "idle" && !pending) ? (
           <Button size="sm" variant="ghost" onClick={reconnect} disabled={reconnecting}>
-            <RotateCcw aria-hidden="true" /> Reconnect
+            <RotateCcw aria-hidden="true" /> {reconnecting ? "Reconnecting…" : "Reconnect"}
           </Button>
         ) : null}
       </div>
@@ -88,7 +90,8 @@ export function DeviceLivePreview({
       <div className="min-h-0 flex-1">
         <LiveTargetCanvas
           canvasRef={canvas}
-          status={pending ? "connecting" : status}
+          onCanvasChange={onCanvasChange}
+          status={pending || reconnecting ? "connecting" : status}
           issue={issue}
           issueAction={issueAction}
           busy={busy}

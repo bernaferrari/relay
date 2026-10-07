@@ -3,11 +3,15 @@ import type { EvidenceCollectionPolicy, RedactionPolicy } from "@relay/protocol"
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
-import type { DeviceProductService, ProductDevice } from "../data/device-product-service";
-import type { LiveTargetSession } from "../data/live-target-session";
+import type {
+  DeviceProductService,
+  ProductDevice,
+  ProductLaunchedApp,
+} from "../data/device-product-service";
+import type { LiveTargetSession, LiveTargetSnapshot } from "../data/live-target-session";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { SettingsProductService } from "../data/settings-product-service";
 import type { Platform } from "../platform/types";
@@ -15,6 +19,9 @@ import type { Platform } from "../platform/types";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const roots: Root[] = [];
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
+});
 
 afterEach(async () => {
   await act(async () => {
@@ -23,6 +30,7 @@ afterEach(async () => {
   document.body.replaceChildren();
   delete document.documentElement.dataset.colorScheme;
   delete document.documentElement.dataset.colorSchemePreference;
+  vi.unstubAllGlobals();
 });
 
 function productDevice(
@@ -246,7 +254,108 @@ function input(label: string): HTMLElement {
   return element;
 }
 
+function liveIpadPreview() {
+  const target = { kind: "device", platform: "ios", targetId: "ipad" } as const;
+  const previews: Array<{
+    closed: boolean;
+    publish?: (snapshot: LiveTargetSnapshot) => void;
+  }> = [];
+  const service = {
+    connect: async () => ({ targets: [target] }),
+    presentTargets: async () => [{ ...target, name: "Design iPad", detail: "Apple device" }],
+    previewTarget: async (): Promise<LiveTargetSession> => {
+      const preview: (typeof previews)[number] = { closed: false };
+      const status = previews.length === 0 ? "streaming" : "connecting";
+      previews.push(preview);
+      return {
+        snapshot: () => ({ target, status }),
+        subscribe(listener) {
+          preview.publish = listener;
+          listener({ target, status });
+          return () => {
+            preview.publish = undefined;
+          };
+        },
+        mount: () => () => undefined,
+        input: async () => undefined,
+        close: () => {
+          preview.closed = true;
+        },
+      };
+    },
+  } as unknown as RecordingProductService;
+  return {
+    service,
+    previews,
+    ready: () => previews.at(-1)?.publish?.({ target, status: "streaming", frameSequence: 1 }),
+  };
+}
+
 describe("Devices", () => {
+  it("hands an acknowledged iOS launch to Test setup once and retains its replay origin without an inventory request or second launch", async () => {
+    const service = fakeDeviceService();
+    service.launchApp = vi.fn(async (serial: string, app: string): Promise<ProductLaunchedApp> => ({
+      serial,
+      app,
+      platform: "ios",
+      launchedAt: Date.now(),
+      observed: { app: "Grok", matched: true },
+    }));
+    service.listInstalledApps = vi.fn(async () => {
+      throw new Error("iOS inventory unsupported");
+    });
+    const preview = liveIpadPreview();
+    preview.service.listApps = async () => [{ id: "grok-ios", name: "Grok iOS", platform: "ios" }];
+    // End this route test at the canonical begin boundary, without simulating
+    // native recording or treating the launch acknowledgement as foreground proof.
+    preview.service.begin = vi.fn(async () => {
+      throw new Error("Fixture reached begin");
+    });
+    await renderPath("/devices/ipad", { deviceService: service, productService: preview.service });
+    await click(button("Open app"));
+    await fillInput(document.querySelector<HTMLInputElement>("#device-app-identifier")!, "Grok");
+    await click(button("Launch app"));
+    await act(async () => preview.ready());
+    const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (link) => link.textContent?.trim() === "Record a Test",
+    )!;
+    await click(record);
+    expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe("Grok");
+    expect(button("Start recording").disabled).toBe(true);
+    await act(async () => preview.ready());
+    await settle();
+    expect(button("Start recording").disabled).toBe(false);
+    expect(service.listInstalledApps).not.toHaveBeenCalled();
+    expect(service.launchApp).toHaveBeenCalledOnce();
+    await click(button("Start recording"));
+    expect(preview.service.begin).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        appMapId: "grok-ios",
+        targetId: "ipad",
+        targetKind: "device",
+        originApplication: "Grok",
+      }),
+    );
+  });
+
+  it("keeps direct originApplication URLs unacknowledged on iOS without unsupported installed-app calls", async () => {
+    const service = fakeDeviceService();
+    service.listInstalledApps = vi.fn(async () => {
+      throw new Error("iOS inventory unsupported");
+    });
+    const preview = liveIpadPreview();
+    preview.service.listApps = async () => [{ id: "grok-ios", name: "Grok iOS", platform: "ios" }];
+    await renderPath(
+      "/tests/new?app=grok-ios&target=ipad&targetKind=device&originApplication=Grok",
+      { deviceService: service, productService: preview.service },
+    );
+    expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe("Grok");
+    expect(button("Start recording").disabled).toBe(true);
+    expect(document.body.textContent).toContain("Open the selected app first");
+    expect(document.body.textContent).not.toContain("Installed apps could not be loaded");
+    expect(service.listInstalledApps).not.toHaveBeenCalled();
+  });
+
   it("reopens a browser without invoking phone recovery", async () => {
     const devices = fakeDeviceService();
     const opened: string[] = [];
@@ -507,7 +616,16 @@ describe("Devices", () => {
       launchCalls.push({ deviceId, app, relaunch });
       return { serial: deviceId, app, platform: "ios", launchedAt: 10 };
     };
-    await renderPath("/devices/ipad", { deviceService: service });
+    await renderPath("/devices/ipad", {
+      deviceService: service,
+      productService: {
+        connect: async () => ({ targets: [] }),
+        presentTargets: async () => [],
+      } as unknown as RecordingProductService,
+    });
+
+    expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
+    await click(button("Open app"));
 
     const identifier = document.querySelector<HTMLInputElement>("#device-app-identifier");
     if (!identifier) throw new Error("App identifier input not found");
@@ -517,6 +635,8 @@ describe("Devices", () => {
     await click(button("Launch app"));
 
     expect(launchCalls).toEqual([{ deviceId: "ipad", app: "com.example.shop", relaunch: true }]);
+    expect(button("Reconnect").disabled).toBe(false);
+    await click(button("Open app"));
     expect(document.body.textContent).toContain("Launch requested");
     expect(document.body.textContent).toContain(
       "Launch requested for com.example.shop on Design iPad.",
@@ -538,6 +658,7 @@ describe("Devices", () => {
       throw new Error("target disconnected");
     };
     await renderPath("/devices/ipad", { deviceService: service });
+    await click(button("Open app"));
     const identifier = document.querySelector<HTMLInputElement>("#device-app-identifier");
     if (!identifier) throw new Error("App identifier input not found");
     await fillInput(identifier, "com.example.shop");
@@ -557,9 +678,137 @@ describe("Devices", () => {
       return { serial: deviceId, app: "", platform: "ios", launchedAt: 10 };
     };
     await renderPath("/devices/ipad", { deviceService: service });
+    await click(button("Open app"));
     expect(button("Launch app").disabled).toBe(true);
     await click(button("Launch app"));
     expect(launchCalls).toEqual([]);
+  });
+
+  it.each([true, false, undefined])(
+    "refreshes the preview after iOS launch and carries only a verified app (%s)",
+    async (matched) => {
+      const service = fakeDeviceService();
+      service.launchApp = async (serial, app) => ({
+        serial,
+        app,
+        platform: "ios",
+        launchedAt: 10,
+        ...(matched === undefined ? {} : { observed: { app: "Shop", matched } }),
+      });
+      const preview = liveIpadPreview();
+      await renderPath("/devices/ipad", {
+        deviceService: service,
+        productService: preview.service,
+      });
+      expect(preview.previews).toHaveLength(1);
+      await click(button("Open app"));
+      await fillInput(
+        document.querySelector<HTMLInputElement>("#device-app-identifier")!,
+        "com.example.shop",
+      );
+      await click(button("Launch app"));
+
+      expect(preview.previews).toHaveLength(2);
+      expect(preview.previews[0].closed).toBe(true);
+      expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
+      const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+        (candidate) => candidate.textContent?.trim() === "Record a Test",
+      )!;
+      expect(new URL(record.href).searchParams.get("originApplication")).toBe(
+        matched ? "com.example.shop" : null,
+      );
+      expect(button("Reconnecting…").disabled).toBe(true);
+      expect(
+        document.querySelector<HTMLCanvasElement>('canvas[data-slot="capture-live-target"]')
+          ?.tabIndex,
+      ).toBe(-1);
+      await act(async () => preview.ready());
+      await settle();
+      expect(button("Reconnect").disabled).toBe(false);
+      expect(
+        document.querySelector<HTMLCanvasElement>('canvas[data-slot="capture-live-target"]')
+          ?.tabIndex,
+      ).toBe(0);
+    },
+  );
+
+  it("keeps a pending launch and its draft across closing the app panel", async () => {
+    const service = fakeDeviceService();
+    let finish!: (result: ProductLaunchedApp) => void;
+    let launches = 0;
+    service.launchApp = async () => {
+      launches += 1;
+      return new Promise<ProductLaunchedApp>((resolve) => {
+        finish = resolve;
+      });
+    };
+    await renderPath("/devices/ipad", { deviceService: service });
+    await click(button("Open app"));
+    await fillInput(
+      document.querySelector<HTMLInputElement>("#device-app-identifier")!,
+      "com.example.shop",
+    );
+    await click(button("Launch app"));
+    expect(button("Launching…").disabled).toBe(true);
+    await click(document.querySelector<HTMLButtonElement>('[data-slot="sheet-close"]')!);
+    await click(button("Open app"));
+    expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe(
+      "com.example.shop",
+    );
+    expect(button("Launching…").disabled).toBe(true);
+    await click(button("Launching…"));
+    expect(launches).toBe(1);
+    await act(async () =>
+      finish({ serial: "ipad", app: "com.example.shop", platform: "ios", launchedAt: 10 }),
+    );
+    await settle();
+  });
+
+  it("closes app controls with Escape and preserves the draft when reopened", async () => {
+    const service = fakeDeviceService();
+    service.launchApp = async (serial, app) => ({ serial, app, platform: "ios", launchedAt: 10 });
+    await renderPath("/devices/ipad", { deviceService: service });
+    const trigger = button("Open app");
+    await click(trigger);
+    const identifier = document.querySelector<HTMLInputElement>("#device-app-identifier")!;
+    await fillInput(identifier, "com.example.shop");
+    await act(async () => {
+      identifier.focus();
+      identifier.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    await click(trigger);
+    expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe(
+      "com.example.shop",
+    );
+  });
+
+  it("shows reconnecting through recovery and replacement preview connection", async () => {
+    const service = fakeDeviceService();
+    const recovered = await service.recover("ipad");
+    let finish!: (result: typeof recovered) => void;
+    service.recover = async () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    const preview = liveIpadPreview();
+    await renderPath("/devices/ipad", { deviceService: service, productService: preview.service });
+    await click(button("Reconnect"));
+    expect(button("Reconnecting…").disabled).toBe(true);
+    expect(preview.previews).toHaveLength(1);
+    expect(
+      document.querySelector<HTMLCanvasElement>('canvas[data-slot="capture-live-target"]')
+        ?.tabIndex,
+    ).toBe(-1);
+    await act(async () => finish(recovered));
+    await settle();
+    expect(preview.previews).toHaveLength(2);
+    expect(button("Reconnecting…").disabled).toBe(true);
+    await act(async () => preview.ready());
+    await settle();
+    expect(button("Reconnect").disabled).toBe(false);
   });
 });
 
@@ -624,6 +873,8 @@ describe("Device app controls", () => {
     };
     await renderPath("/devices/phone", { deviceService: service });
     expect(document.body.textContent).not.toContain("App and language");
+    expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
+    await click(button("Open app"));
     const picker = document.querySelector<HTMLButtonElement>('[aria-label="App"]')!;
     await click(picker);
     const settings = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
@@ -634,7 +885,11 @@ describe("Device app controls", () => {
     expect(document.body.textContent).not.toContain("com.android.settings");
     expect(document.body.textContent).not.toContain("Loading supported languages");
     expect(document.querySelector('[aria-label="Language"]')).toBeNull();
-    await click(button("Open app"));
+    const launch = [...document.querySelectorAll<HTMLButtonElement>("aside button")].find(
+      (candidate) => candidate.textContent?.trim() === "Open app",
+    );
+    if (!launch) throw new Error("App launch button not found");
+    await click(launch);
     expect(launches).toEqual(["com.android.settings"]);
     expect(
       document.querySelector<HTMLAnchorElement>('a[href*="originApplication"]')?.href,
@@ -673,6 +928,7 @@ describe("Device app controls", () => {
       return { packageName: "com.android.settings", locale: "en" };
     };
     await renderPath("/devices/phone", { deviceService: service });
+    await click(button("Open app"));
     await click(document.querySelector<HTMLButtonElement>('[aria-label="App"]')!);
     const settings = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
       (item) => item.textContent === "Settings",
