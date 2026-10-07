@@ -60,6 +60,7 @@ export type AppMapCombinePreflightIssue = {
     | "compile-failed"
     | "large-run"
     | "unknown-screenshot-count"
+    | "unused-input-data-set"
     | "target-missing"
     | "target-not-ready"
     | "missing-binding"
@@ -82,6 +83,9 @@ export type AppMapCombinePreflightIssue = {
   testId?: string;
   values?: Record<string, string>;
   targetProfileId?: string;
+  variableId?: string;
+  inputId?: string;
+  inputName?: string;
 };
 
 export type AppMapCombineCellBindingStatus =

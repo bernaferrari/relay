@@ -277,6 +277,53 @@ afterEach(async () => {
 });
 
 describe("Suite and Environment routes", () => {
+  it("checks unused prompt values before choosing a device and links to the scoped Test", async () => {
+    const previewSuite = vi.fn(async () => ({
+      ...suitePreview(),
+      caseCount: 2,
+      warnings: [
+        {
+          code: "unused-input-data-set",
+          message: "Chat prompts are not used. Connect a Type step to Run input chat_prompt.",
+        },
+      ],
+    }));
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({ listEnvironmentProfiles: async () => [], previewSuite }),
+    });
+    expect(previewSuite).toHaveBeenCalledWith(expect.objectContaining({ profileIds: [] }));
+    expect(document.body.textContent).toContain("Prompts aren’t connected");
+    expect(document.body.textContent).toContain("2 data combinations");
+    const connect = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (item) => item.textContent === "Connect input in Complete checkout",
+    );
+    expect(connect).toBeTruthy();
+    expect(new URL(connect!.href).pathname).toBe("/tests/test-1");
+    expect(new URL(connect!.href).searchParams.get("app")).toBe("app-1");
+    expect(document.body.textContent).not.toContain("Set up the selected browser");
+  });
+
+  it("keeps unused prompt Plans from running despite a ready device preview", async () => {
+    const startSuite = vi.fn(async () => ({ batchId: "must-not-start" }));
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({
+        startSuite,
+        previewSuite: async () => ({
+          ...suitePreview(),
+          warnings: [
+            { code: "unused-input-data-set", message: "Connect chat_prompt before running." },
+          ],
+        }),
+      }),
+    });
+    const run = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent?.trim() === "Run test",
+    );
+    expect(run?.disabled).toBe(true);
+    await act(async () => run?.click());
+    expect(startSuite).not.toHaveBeenCalled();
+  });
+
   it("shows only the displayed App's plans as groups on Tests", async () => {
     const scopedSuite = { ...suite, appMapId: "app-2", appName: "Billing", name: "Billing smoke" };
     const listSuites = vi.fn(async () => [suite, scopedSuite]);
