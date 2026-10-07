@@ -39,6 +39,26 @@ export function relayAppPackage(args = []) {
   return "@relay/app";
 }
 
+export function relayAppLaunchArgs(port, args = []) {
+  const appPackage = relayAppPackage(args);
+  relayBrowserOrigin(port);
+  // A rebase can briefly remove this file. Explicit config loading fails
+  // closed during Vite restart instead of silently dropping the API proxy.
+  return [
+    "--filter",
+    appPackage,
+    "dev",
+    "--",
+    "--config",
+    join(root, "packages", "app", "vite.config.ts"),
+    "--host",
+    "127.0.0.1",
+    "--port",
+    String(port),
+    "--strictPort",
+  ];
+}
+
 /** Keep the existing :8787 process. `node scripts/dev-app.mjs` must not kill Relay. */
 export function ensureServerLaunchArgs() {
   return ["--reuse"];
@@ -63,7 +83,8 @@ async function chooseAppPort(preferred) {
 }
 
 async function main() {
-  const appPackage = relayAppPackage(process.argv.slice(2));
+  const appOptions = process.argv.slice(2);
+  relayAppPackage(appOptions);
   const configured = Number(process.env.RELAY_APP_PORT || 3000);
   if (!Number.isSafeInteger(configured) || configured < 1 || configured > 65_535) {
     throw new Error("RELAY_APP_PORT must be an integer between 1 and 65535");
@@ -93,21 +114,11 @@ async function main() {
     throw new Error("Relay service could not start; see the diagnostic above");
   }
 
-  const app = spawn(
-    "pnpm",
-    [
-      "--filter",
-      appPackage,
-      "dev",
-      "--",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--strictPort",
-    ],
-    { cwd: root, env, stdio: "inherit" },
-  );
+  const app = spawn("pnpm", relayAppLaunchArgs(port, appOptions), {
+    cwd: root,
+    env,
+    stdio: "inherit",
+  });
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.once(signal, () => app.kill(signal));
   }

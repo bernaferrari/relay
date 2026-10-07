@@ -3,6 +3,45 @@ import { isAbsolute, resolve } from "node:path";
 import { applyReviewChecklistTodosToPack, parseReviewChecklistTodoFile } from "@relay/core";
 import { startedPlanBatchId } from "./cli-run-flags.js";
 import { UsageError } from "./errors.js";
+import type { OutputMode } from "./config.js";
+
+/** JSON is one command receipt. Streaming modes keep their phase receipts. */
+export class WatchedRunOutput {
+  private readonly deferred: boolean;
+  private readonly phases: { findings?: unknown; evidencePack?: unknown } = {};
+
+  constructor(
+    private readonly output: { result: (operationId: string, value: unknown) => void },
+    private readonly operationId: string,
+    private readonly execution: unknown,
+    mode: OutputMode,
+  ) {
+    this.deferred = mode === "json" && operationId === "job.combine.start";
+  }
+
+  /** Retained on a later phase failure so --out still includes completed Runs. */
+  get retainedResult(): unknown {
+    if (!this.deferred) return undefined;
+    if (Object.keys(this.phases).length === 0) return this.execution;
+    return {
+      ...(this.execution && typeof this.execution === "object" ? this.execution : {}),
+      ...this.phases,
+    };
+  }
+
+  executionSucceeded(): void {
+    if (!this.deferred) this.output.result(this.operationId, this.execution);
+  }
+
+  phase(operationId: string, key: "findings" | "evidencePack", value: unknown): void {
+    if (this.deferred) this.phases[key] = value;
+    else this.output.result(operationId, value);
+  }
+
+  finish(): void {
+    if (this.deferred) this.output.result(this.operationId, this.retainedResult);
+  }
+}
 
 export function exportedPackRootDir(result: unknown): string {
   if (!result || typeof result !== "object" || !("rootDir" in result)) {
@@ -47,8 +86,7 @@ export async function exportWatchedCombinePack(input: {
   todoFile?: string;
   started: unknown;
   invoke: (operationId: string, payload: unknown) => Promise<unknown>;
-  output: { result: (operationId: string, value: unknown) => void };
-}): Promise<void> {
+}): Promise<unknown> {
   if (!input.exportDir && !input.todoFile) return;
   if (input.operationId !== "job.combine.start") return;
   const batchId = startedPlanBatchId(input.started);
@@ -59,10 +97,10 @@ export async function exportWatchedCombinePack(input: {
     exportDir: input.exportDir,
     todoFile: input.todoFile,
   });
-  input.output.result("job.combine.export", {
+  return {
     ...(exported && typeof exported === "object" ? exported : {}),
     ...finalized,
-  });
+  };
 }
 
 export async function finalizeCombineExportResult(input: {
