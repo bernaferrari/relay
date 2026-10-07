@@ -86,6 +86,21 @@ function frozenAuthor(requestId = "author-request-1") {
   } as const;
 }
 
+function nativeRunJob(id: string, requestId: string, profileId = "current-native-setup"): TestJob {
+  const job = runJob(id, "running", requestId);
+  const execution = job.artifacts.find((item) => item.kind === "app-map-test-execution-intent")!
+    .data as Record<string, unknown>;
+  const profile = {
+    id: profileId,
+    targetId: "pixel-9",
+    platform: "android",
+    viewport: { width: 1080, height: 2400 },
+  };
+  execution.plan = { rawAccessibilityTargetProfiles: [profile] };
+  execution.selectedRuntimeTargetProfile = profile;
+  return job;
+}
+
 async function withServer(
   operation: (input: {
     port: number;
@@ -296,6 +311,86 @@ test("request identity is durable across restart and project scope remains autho
       restored.workflow.audit.map((event) => event.transition),
       ["created", "run-attached"],
     );
+  });
+});
+
+test("native automatic attach and uncertain-run reconciliation freeze the canonical selected setup", async () => {
+  await withServer(async ({ port, jobs }) => {
+    const runner = client(port, "agent:first");
+    for (const reconcile of [false, true]) {
+      const requestId = `native-profile-${reconcile}`;
+      const created = await runner.invoke("workflow.create", {
+        workflowId: requestId,
+        kind: "run-test",
+        frozenIdentity: frozen(requestId),
+        expiresAt: 50_000,
+      });
+      const job = nativeRunJob(`native-job-${reconcile}`, requestId);
+      jobs.set(job.id, job);
+      const attached = reconcile
+        ? await runner.invoke("workflow.get", { workflowId: created.workflow.record.workflowId })
+        : await runner.invoke("workflow.transition", {
+            workflowId: created.workflow.record.workflowId,
+            expectedVersion: 1,
+            action: "attach-run",
+            jobId: job.id,
+          });
+      const identity = attached.workflow.record.frozenIdentity as Record<string, unknown>;
+      assert.equal(identity.targetProfileId, "current-native-setup");
+      assert.equal(identity.planDigest, "server-plan");
+      assert.equal(identity.rootRecipeId, "open-settings");
+      assert.equal(attached.job?.id, job.id);
+    }
+  });
+});
+
+test("native attach rejects missing, malformed, foreign or explicitly different selected profiles", async () => {
+  await withServer(async ({ port, jobs }) => {
+    const runner = client(port, "agent:first");
+    const profiles = [
+      undefined,
+      { id: "current-native-setup", targetId: "other-device", platform: "android" },
+      { id: "current-native-setup", targetId: "pixel-9", platform: "ios" },
+      {
+        id: "current-native-setup",
+        targetId: "pixel-9",
+        platform: "android",
+        viewport: { width: 0, height: 2400 },
+      },
+      { id: "different-setup", targetId: "pixel-9", platform: "android" },
+    ];
+    for (const [index, profile] of profiles.entries()) {
+      const requestId = `invalid-profile-${index}`;
+      const created = await runner.invoke("workflow.create", {
+        workflowId: requestId,
+        kind: "run-test",
+        frozenIdentity: {
+          ...frozen(requestId),
+          ...(index === 4 ? { targetProfileId: "explicit-setup" } : {}),
+        },
+        expiresAt: 50_000,
+      });
+      const job = nativeRunJob(`invalid-native-job-${index}`, requestId);
+      const execution = job.artifacts.find((item) => item.kind === "app-map-test-execution-intent")!
+        .data as Record<string, unknown>;
+      execution.selectedRuntimeTargetProfile = profile;
+      jobs.set(job.id, job);
+      await assert.rejects(
+        runner.invoke("workflow.transition", {
+          workflowId: created.workflow.record.workflowId,
+          expectedVersion: 1,
+          action: "attach-run",
+          jobId: job.id,
+        }),
+        (error: unknown) => error instanceof ApiError && error.status === 409,
+      );
+      const inspected = await runner.invoke("workflow.get", {
+        workflowId: created.workflow.record.workflowId,
+      });
+      assert.equal(inspected.workflow.record.resource, undefined);
+      assert.equal(inspected.job, undefined);
+      assert.equal(inspected.workflow.record.version, 1);
+    }
   });
 });
 

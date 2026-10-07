@@ -84,6 +84,7 @@ export * from "./campaign-repair-proposal.js";
 export * from "./case-plan.js";
 export * from "./private-inputs.js";
 export * from "./recipe-input-plan.js";
+export * from "./recipe-input-availability.js";
 export * from "./schedules.js";
 export * from "./schedule-next-run.js";
 export * from "./schedule-notify.js";

@@ -3,6 +3,7 @@ import {
   createAppMapTestExecutionIntent,
   enqueueJob,
   listDevices,
+  observeIosNativeViewport,
   prepareRegisteredBuildForProof,
   readBuild,
   readProjectVariables,
@@ -15,6 +16,7 @@ import type { RequestContext } from "./security.js";
 /** Host seam for proving a blocked Test run stays entirely offline. */
 export type AppMapTestRunRouteRuntime = {
   listDevices: typeof listDevices;
+  observeIosNativeViewport: typeof observeIosNativeViewport;
   assertTargetControl: typeof assertTargetControl;
   createAppMapTestExecutionIntent: typeof createAppMapTestExecutionIntent;
   enqueueJob: typeof enqueueJob;
@@ -25,6 +27,7 @@ export type AppMapTestRunRouteRuntime = {
 
 export const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
   listDevices,
+  observeIosNativeViewport,
   assertTargetControl,
   createAppMapTestExecutionIntent,
   enqueueJob,

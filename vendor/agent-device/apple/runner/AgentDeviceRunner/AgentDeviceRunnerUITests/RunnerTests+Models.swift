@@ -36,6 +36,7 @@ enum CommandType: String, Codable, CaseIterable {
   case status
   case uptime
   case appState
+  case appWindowBounds
   case pasteboardWrite
   case activate
   case terminate
@@ -284,7 +285,7 @@ extension Command {
         ? .presentedSurfaceQuery
         : .presentedSurfaceMutation
 
-    case .recordStop, .uptime, .terminate, .targetReset, .shutdown:
+    case .recordStop, .uptime, .appWindowBounds, .terminate, .targetReset, .shutdown:
       return .runnerLifecycle
 
     case .pasteboardWrite:
@@ -450,6 +451,13 @@ struct DataPayload: Codable {
   var referenceHeight: Double?
   var currentUptimeMs: Double?
   var applicationState: String?
+  var appBundleId: String?
+  var appStateBefore: String?
+  var appStateAfter: String?
+  var source: String?
+  var coordinateSpace: String?
+  var geometrySource: String?
+  var bounds: ApplicationWindowBounds?
   var commandId: String?
   var lifecycleState: String?
   var lifecycleCommand: String?

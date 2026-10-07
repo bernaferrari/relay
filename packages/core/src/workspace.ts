@@ -9,6 +9,10 @@ export {
 } from "./ios-geometry.js";
 export { center } from "./device.js";
 export {
+  IosNativeViewportUnavailableError,
+  observeIosNativeViewport,
+} from "./ios-native-viewport.js";
+export {
   type ListedDevice,
   listAndroidDevicesFast,
   listDevices,

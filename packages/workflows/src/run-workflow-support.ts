@@ -432,6 +432,25 @@ export function authoritativePreDispatch(error: unknown): boolean {
 }
 
 export function preDispatchProblem(error: unknown): WorkflowProblem {
+  const body =
+    error && typeof error === "object" && "body" in error && error.body ? error.body : undefined;
+  const details = body && typeof body === "object" && "details" in body ? body.details : body;
+  if (
+    details &&
+    typeof details === "object" &&
+    "code" in details &&
+    details.code === "TARGET_VIEWPORT_UNAVAILABLE"
+  ) {
+    return {
+      code: "operation-unavailable",
+      title: "Relay couldn’t check this device’s screen size",
+      detail: "Relay could not verify the device’s current screen size before running the Test.",
+      recovery:
+        "Reconnect this device in Devices, or choose a saved setup in Run settings, then start a new Run.",
+      retryable: false,
+      sourceCode: "TARGET_VIEWPORT_UNAVAILABLE",
+    };
+  }
   return {
     code: "operation-unavailable",
     title: "Relay rejected the Test run before dispatch",

@@ -14,6 +14,7 @@ import {
   compileAppMapConnection,
   compileAppMapFlow,
   findActiveCombineCampaignForCombine,
+  frozenRawAccessibilityTargetProfiles,
   listDevices,
   listDeviceLeases,
   listTargets,
@@ -35,7 +36,11 @@ import {
   type Recipe,
 } from "@relay/core";
 import type { OperationInput } from "@relay/protocol";
-import { assertTargetControl, targetLeaseBelongsToCaller } from "./access-control.js";
+import {
+  assertTargetControl,
+  assertTargetObservation,
+  targetLeaseBelongsToCaller,
+} from "./access-control.js";
 import { executeCombineStart } from "./combine-start-route.js";
 import { applyAppMapMutation } from "./app-map-route-mutations.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
@@ -52,7 +57,7 @@ import {
   offlinePreflightProfileRecovery,
 } from "./app-map-run-target-admission.js";
 import { appMapProofExecutionAdmission } from "./app-map-proof-execution-admission.js";
-import { prepareTestRunInputs } from "./app-map-test-run-inputs.js";
+import { assertTestRunInputAvailability, prepareTestRunInputs } from "./app-map-test-run-inputs.js";
 import { queuedAppMapTestArtifacts } from "./app-map-test-run-artifacts.js";
 import { assertAppMapTestBrowserIdentity } from "./app-map-browser-identity-admission.js";
 
@@ -241,7 +246,14 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
 
     const targetProfileId = body.targetProfileId?.trim() || undefined;
     let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
-    if (!targetProfileId && body.target.kind === "device") {
+    if (
+      !targetProfileId &&
+      body.target.kind === "device" &&
+      frozenRawAccessibilityTargetProfiles(map).filter(
+        (profile) =>
+          profile.targetId === body.target.targetId && profile.platform === body.target.platform,
+      ).length > 1
+    ) {
       observedDevices = await runtime.listDevices().catch(() => undefined);
     }
     const prepared = await prepareAppMapCompanionTestRun({
@@ -254,6 +266,21 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         (device) =>
           device.serial === body.target.targetId && device.platform === body.target.platform,
       ),
+      nativeProfileObservation: {
+        observeViewport: async (serial, originApplication) => {
+          assertTargetObservation(input.scope, serial);
+          return runtime.observeIosNativeViewport(serial, originApplication);
+        },
+        validateInputs: async (preliminary, preflight) => {
+          appMapProofExecutionAdmission({ authority: input.proofExecutionAuthority, preflight });
+          await assertTestRunInputAvailability({
+            projectId: input.scope.projectId,
+            recipeGraph: preliminary.graph,
+            variables: body.variables,
+            readProjectVariables: runtime.readProjectVariables,
+          });
+        },
+      },
       compileOptions: {
         forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
         entryCheckpointScreenId:
@@ -406,7 +433,13 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     }
     const observedTargetProfile = (
       await buildTargetProfiles({
-        devices: observedDevices ?? (await runtime.listDevices().catch(() => [])),
+        devices: (observedDevices ?? (await runtime.listDevices().catch(() => []))).map((device) =>
+          prepared.observedDevice?.viewport &&
+          device.serial === targetId &&
+          device.platform === executionTarget.platform
+            ? { ...device, viewport: prepared.observedDevice.viewport }
+            : device,
+        ),
         targets: await listTargets(),
       })
     ).find(

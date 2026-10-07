@@ -5,6 +5,7 @@ import { afterEach, beforeEach, test, vi } from 'vitest';
 import { tryAdoptRunnerSessionFromLease } from '../runner-adoption.ts';
 import { notifyIosRunnerAppRelaunched, prepareIosRunner } from '../runner-client.ts';
 import { RUNNER_COMMAND_TRAITS } from '../runner-command-traits.ts';
+import { buildApplicationWindowBoundsRequest } from '../runner-application-window-bounds.ts';
 import type { RunnerCommand } from '../runner-contract.ts';
 import { disposeRunnerSession } from '../runner-disposal.ts';
 import { buildRunnerLease, writeRunnerLease } from '../runner-lease.ts';
@@ -125,6 +126,10 @@ test('runner-internal request sites build exactly their runner-requests.json ent
     ['uptime', 'uptime', 'sequence', 'targetReset', 'status', 'shutdown', 'uptime'],
   );
   assertProducedRunnerRequests(import.meta.filename, [
+    [
+      'ios-device.application-window-bounds.current-window',
+      buildApplicationWindowBoundsRequest(APP),
+    ],
     ['ios-simulator.runner-client-prepare.uptime', sent[0]],
     ['ios-simulator.runner-lifecycle-prepare.uptime', received[0]],
     ['ios-simulator.runner-session-readiness.uptime', received[1]],

@@ -93,6 +93,8 @@ export type RunnerCommand = {
     // The session app's XCUIApplication.state by name. A lifecycle read: it skips the activation
     // preflight, so it reports the state the app is in rather than the one a repair leaves.
     | 'appState'
+    /** Reads only the named foreground app's current window, without activation or binding. */
+    | 'appWindowBounds'
     // Sets the device's general pasteboard from the runner's own process: a simulator's
     // `simctl pbcopy` only promises its data from a process that exits before anything reads it.
     | 'pasteboardWrite'
@@ -339,6 +341,16 @@ export function classifyRunnerReportedError(
     }),
   });
 }
+
+export type RunnerApplicationWindowBounds = Readonly<{
+  appBundleId: string;
+  appStateBefore: 'runningForeground';
+  appStateAfter: 'runningForeground';
+  source: 'current-window';
+  coordinateSpace: 'application-logical';
+  geometrySource: 'xcui-window-frame';
+  bounds: Readonly<{ x: number; y: number; width: number; height: number }>;
+}>;
 
 export type RunnerResponsePayload = {
   ok?: unknown;
