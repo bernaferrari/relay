@@ -23,6 +23,7 @@ import { readWorkflowPointer } from "../data/workflow-pointer";
 import type { ProductPlanSchedule, ProductSuite } from "../data/suite-profile-product-service";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { NewPlanDialog } from "./new-plan-dialog";
+import { PlanLibraryQueryState } from "./plan-library-query-state";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/tests");
@@ -70,6 +71,7 @@ export function TestsPage() {
     queryKey: ["suites", "all"],
     queryFn: () => suiteProfileService.listSuites(undefined),
     staleTime: 15_000,
+    retry: false,
   });
   const recordings = useQuery({
     queryKey: recordingQueryKeys.drafts,
@@ -233,7 +235,7 @@ export function TestsPage() {
             >
               {label}
               <span className="text-xs text-muted-foreground tabular-nums">
-                {tests.data ? count : ""}
+                {(value === "plans" ? suites.data : tests.data) ? count : ""}
               </span>
             </TabsTrigger>
           ))}
@@ -275,6 +277,16 @@ export function TestsPage() {
             retrying={tests.isFetching}
             layout="centered"
           />
+
+          {view === "plans" ? (
+            <PlanLibraryQueryState
+              state={
+                suites.isError ? "error" : suites.isPending && !tests.isPending ? "loading" : null
+              }
+              retrying={suites.isFetching}
+              onRetry={() => void suites.refetch()}
+            />
+          ) : null}
 
           {view === "drafts" ? (
             <>
@@ -376,7 +388,7 @@ export function TestsPage() {
               ) : null}
             </section>
           ) : null}
-          {tests.data && view === "plans" ? (
+          {tests.data && suites.data && view === "plans" ? (
             <section aria-labelledby="plans-heading" className="mt-4">
               <h2 id="plans-heading" className="sr-only">
                 Test plans

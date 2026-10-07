@@ -136,6 +136,7 @@ async function render(
     tests?: readonly ProductTestSummary[];
     runs?: readonly ProductRunSummary[];
     suites?: readonly ProductSuite[];
+    listSuites?: () => Promise<readonly ProductSuite[]>;
     platform?: Platform;
     productService?: RecordingProductService;
   } = {},
@@ -164,7 +165,7 @@ async function render(
         catalogService={catalogService}
         suiteProfileService={
           {
-            listSuites: async () => options.suites ?? [smoke],
+            listSuites: options.listSuites ?? (async () => options.suites ?? [smoke]),
           } as unknown as SuiteProfileProductService
         }
       />,
@@ -317,6 +318,37 @@ describe("Tests home", () => {
     expect(main().querySelector('[data-library-view="tests"]')?.textContent).toBe("Tests2");
     expect(main().querySelector('[data-library-view="plans"]')?.textContent).toBe("Plans1");
     expect(main().textContent).not.toContain("Pay invoice");
+  });
+
+  it("waits for the Plan query without claiming the saved Plans list is empty", async () => {
+    let resolvePlans!: (value: readonly ProductSuite[]) => void;
+    const pending = new Promise<readonly ProductSuite[]>((resolve) => {
+      resolvePlans = resolve;
+    });
+    await render("/tests?view=plans&app=app-shop", { listSuites: () => pending });
+    expect(main().querySelector('[data-library-view="plans"]')?.textContent).toBe("Plans");
+    expect(main().textContent).not.toContain("No plans yet");
+    await act(async () => resolvePlans([smoke]));
+    await settle();
+    expect(main().querySelector('[data-library-view="plans"]')?.textContent).toBe("Plans1");
+    expect(main().textContent).toContain("Release smoke");
+  });
+
+  it("offers retry for failed Plan lookup and reveals the saved Plan after retry", async () => {
+    let attempts = 0;
+    await render("/tests?view=plans&app=app-shop", {
+      listSuites: async () => {
+        if (++attempts === 1) throw new Error("Connection interrupted");
+        return [smoke];
+      },
+    });
+    expect(main().querySelector('[data-library-view="plans"]')?.textContent).toBe("Plans");
+    expect(main().textContent).toContain("Couldn’t load saved Plans.");
+    expect(main().textContent).not.toContain("No plans yet");
+    await press(buttonNamed("Try again", main()));
+    expect(main().textContent).toContain("Release smoke");
+    expect(main().textContent).not.toContain("Couldn’t load saved Plans.");
+    expect(attempts).toBe(2);
   });
 
   it("uses singular test wording when one Test belongs to the chosen App", async () => {
