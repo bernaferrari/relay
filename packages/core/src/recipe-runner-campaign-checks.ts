@@ -6,7 +6,7 @@ import {
   runWithCancellationShield,
 } from "./control.js";
 import { now } from "./events.js";
-import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
+import { IosMutationRejectedError, isTerminalIosMutationError } from "./ios-mutation-policy.js";
 import { isTerminalInputError } from "./input-not-dispatched.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
@@ -292,10 +292,9 @@ export async function runCampaignCheck(
       ctx,
       error instanceof Error ? error.message : `Campaign check ${step.check.id} failed.`,
     );
-    if (error instanceof IosMutationOutcomeUnknownError || isTerminalInputError(error)) {
-      // An iOS native command may already have landed. Evidence is read-only,
-      // but cleanup would issue a second physical command against an unknown
-      // state, so preserve the exact error and stop this recipe/tour here.
+    if (isTerminalIosMutationError(error) || isTerminalInputError(error)) {
+      // Terminal native failures prohibit recovery input, whether the gesture
+      // was refused or its outcome is unknown. Evidence remains read-only.
       const message = error.message;
       await captureCampaignFailureEvidence(device, step.check, ctx, startedAt, message, "primary");
       throw error;
@@ -308,10 +307,7 @@ export async function runCampaignCheck(
     }
   } finally {
     const cleanup = step.check.cleanup;
-    if (
-      primaryError instanceof IosMutationOutcomeUnknownError ||
-      isTerminalInputError(primaryError)
-    ) {
+    if (isTerminalIosMutationError(primaryError) || isTerminalInputError(primaryError)) {
       cleanupOutcome = "skipped";
       const capturedAt = now();
       if (cleanup) {
@@ -323,13 +319,16 @@ export async function runCampaignCheck(
             recipeId: cleanup.recipeId,
             terminalScreenId: cleanup.terminalScreenId,
             status: "skipped",
-            reason: "Native input could not be safely verified; no cleanup command is safe.",
+            reason:
+              primaryError instanceof IosMutationRejectedError
+                ? "The native selector was rejected before input; cleanup cannot replace the refused action."
+                : "Native input could not be safely verified; no cleanup command is safe.",
             startedAt: capturedAt,
             finishedAt: capturedAt,
           },
         });
       }
-      ctx.log(`check cleanup skipped: ${step.check.title} — native input unverified`);
+      ctx.log(`check cleanup skipped: ${step.check.title} — terminal native input failure`);
     } else if (cleanup && targetUnavailableError) {
       cleanupOutcome = "skipped";
       const capturedAt = now();
@@ -432,11 +431,9 @@ export async function runCampaignCheck(
         } catch (error) {
           cleanupError = error;
           const finishedAt = now();
-          if (error instanceof IosMutationOutcomeUnknownError || isTerminalInputError(error)) {
-            // Cleanup is a physical recipe too. Its command may have landed,
-            // so the campaign cannot turn that ambiguity into a normal failed
-            // check, defer it, or begin a sibling check.
-            cleanupOutcome = "interrupted";
+          if (isTerminalIosMutationError(error) || isTerminalInputError(error)) {
+            // A terminal cleanup failure cannot begin a sibling check.
+            cleanupOutcome = error instanceof IosMutationRejectedError ? "failed" : "interrupted";
             ctx.job?.artifacts.push({
               kind: "campaign-check-cleanup",
               capturedAt: finishedAt,
@@ -444,10 +441,12 @@ export async function runCampaignCheck(
                 checkId: step.check.id,
                 recipeId: cleanup.recipeId,
                 terminalScreenId: cleanup.terminalScreenId,
-                status: "interrupted",
+                status: cleanupOutcome,
                 error: error.message,
                 reason:
-                  "An iOS cleanup mutation has an unknown outcome; no further command is safe.",
+                  error instanceof IosMutationRejectedError
+                    ? "The native cleanup selector was rejected before input; no further command is permitted."
+                    : "An iOS cleanup mutation has an unknown outcome; no further command is safe.",
                 startedAt: cleanupStartedAt,
                 finishedAt,
               },

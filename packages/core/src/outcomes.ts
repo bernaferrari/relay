@@ -19,6 +19,9 @@ export function classifyRunOutcome(input: {
   if (/input outcome unknown:|may already have reached the device/.test(message)) {
     return { outcome: "uncertain", failureCategory: "action" };
   }
+  if (/^the ios [\w-]+ was rejected before input:/.test(message)) {
+    return { outcome: "harness-failure", failureCategory: "locator" };
+  }
   // Infrastructure is causal when an assertion could not obtain trustworthy
   // target evidence. Check it before assertion wording because lower layers
   // often preserve both messages (for example, "expect-screen ... session
