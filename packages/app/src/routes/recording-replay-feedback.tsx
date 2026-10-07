@@ -5,8 +5,55 @@ import type { AuthoringReview } from "@relay/workflows";
 import type { ProductRecordingState } from "../data/recording-product-service";
 import { RecordingProblem } from "./recording-shared";
 import type { ReviewAction } from "./recording-review-presentation";
+import { reviewInspectionRecovery, type DraftSaveAttempt } from "./recording-review-state";
 
 type FailedAction = NonNullable<NonNullable<AuthoringReview["latestReplay"]>["failedAction"]>;
+
+export function useReviewInstruction(action?: Pick<ReviewAction, "id" | "intent">) {
+  const [intent, setIntent] = useState("");
+  const previousActionId = useRef<string | undefined>(undefined);
+  const edited = useRef(false);
+  useEffect(() => {
+    const sameAction = previousActionId.current === action?.id;
+    // A canonical refresh can acknowledge an earlier save while the editor
+    // contains a newer local instruction. Keep that unsaved edit intact.
+    setIntent((current) => {
+      if (sameAction && edited.current && current !== action?.intent) return current;
+      edited.current = false;
+      return action?.intent ?? "";
+    });
+    previousActionId.current = action?.id;
+  }, [action?.id, action?.intent]);
+  return [
+    intent,
+    (value: string) => {
+      edited.current = true;
+      setIntent(value);
+    },
+  ] as const;
+}
+
+export function useReviewStatusRecovery(workflowId: string) {
+  const attempt = useRef<DraftSaveAttempt | undefined>(undefined);
+  return {
+    beginDraftSave(reviewRevision?: number, rename?: DraftSaveAttempt["rename"]) {
+      attempt.current =
+        reviewRevision === undefined
+          ? undefined
+          : {
+              workflowId,
+              reviewRevision,
+              ...(rename ? { rename: { ...rename } } : {}),
+            };
+    },
+    clearDraftSave() {
+      attempt.current = undefined;
+    },
+    inspectRecovered(state: ProductRecordingState | undefined) {
+      return reviewInspectionRecovery(state, workflowId, attempt.current);
+    },
+  };
+}
 
 export function useReviewSelection(
   actions: readonly ReviewAction[],

@@ -2717,6 +2717,157 @@ describe("record, review, replay, and save", () => {
     expect(button("Stop and review").disabled).toBe(false);
   });
 
+  it("clears a failed review recovery only after a healthy inspection of the same workflow", async () => {
+    const interrupted: ProductRecordingState = {
+      ...state("reviewing", ["inspect"]),
+      status: "needs-attention",
+      recovery: {
+        code: "mutation-outcome-unknown",
+        title: "Replay status unknown",
+        detail: "Receipt pending",
+        recovery: "Inspect",
+        retryable: false,
+      },
+    };
+    interrupted.snapshot!.phase = "needs-attention";
+    interrupted.snapshot!.review!.recovery = "observe";
+    const fake = fakeService(interrupted);
+    fake.service.recoverForReview = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Review saved steps"));
+    expect(document.body.textContent).toContain("Relay is not connected");
+    const other = state("reviewing", ["inspect", "edit", "replay"]);
+    other.snapshot!.workflow!.workflowId = "other-workflow";
+    fake.service.inspect = async () => other;
+    await click(button("Try again"));
+    expect(document.body.textContent).toContain("Relay is not connected");
+    fake.service.inspect = async () => interrupted;
+    await click(button("Try again"));
+    expect(document.body.textContent).toContain("Relay is not connected");
+    fake.service.inspect = async () => state("reviewing", ["inspect"]);
+    await click(button("Try again"));
+    expect(document.body.textContent).toContain("Relay is not connected");
+    fake.service.inspect = async () => state("reviewing", ["inspect", "edit", "replay"]);
+    await click(button("Try again"));
+    expect(document.body.textContent).not.toContain("Relay is not connected");
+    expect(fake.service.recoverForReview).toHaveBeenCalledOnce();
+    expect(fake.calls).not.toContain("replay");
+  });
+
+  it.each(["New unsaved instruction", "Open Settings"])(
+    "clears a failed draft save only when inspection proves its exact revision and preserves %s",
+    async (newInstruction) => {
+      const initial = state("reviewing", ["inspect", "edit", "replay"]);
+      initial.snapshot!.review!.currentRevision = 7;
+      const fake = fakeService(initial);
+      fake.service.saveDraft = vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      });
+      await renderJourney(
+        "/recordings/workflow-1/review",
+        fake.service,
+        platformWithStorage().platform,
+      );
+      await click(button("Edit steps"));
+      await fill(
+        document.querySelector<HTMLInputElement>("#review-action-intent")!,
+        "Saved instruction",
+      );
+      await click(button("Save draft"));
+      expect(document.body.textContent).toContain("Relay is not connected");
+      await click(button("Try again"));
+      expect(document.body.textContent).toContain("Relay is not connected");
+      expect(document.querySelector<HTMLInputElement>("#review-action-intent")?.value).toBe(
+        "Saved instruction",
+      );
+      await fill(
+        document.querySelector<HTMLInputElement>("#review-action-intent")!,
+        newInstruction,
+      );
+      const confirmed = structuredClone(initial);
+      confirmed.snapshot!.review!.currentRevision = 8;
+      fake.service.inspect = async () => confirmed;
+      await click(button("Try again"));
+      expect(document.body.textContent).toContain("Relay is not connected");
+      confirmed.snapshot!.review!.actions[0]!.intent = "Saved instruction";
+      await click(button("Try again"));
+      expect(document.body.textContent).not.toContain("Relay is not connected");
+      expect(document.querySelector<HTMLInputElement>("#review-action-intent")?.value).toBe(
+        newInstruction,
+      );
+      expect(fake.service.saveDraft).toHaveBeenCalledOnce();
+      expect(fake.calls).not.toContain("replay");
+      expect(fake.calls).not.toContain("approve");
+    },
+  );
+
+  it("retains a domain review recovery error after a healthy status read", async () => {
+    const interrupted: ProductRecordingState = {
+      ...state("reviewing", ["inspect"]),
+      status: "needs-attention",
+      recovery: {
+        code: "mutation-outcome-unknown",
+        title: "Replay status unknown",
+        detail: "Receipt pending",
+        recovery: "Inspect",
+        retryable: false,
+      },
+    };
+    interrupted.snapshot!.phase = "needs-attention";
+    interrupted.snapshot!.review!.recovery = "observe";
+    const fake = fakeService(interrupted);
+    fake.service.recoverForReview = vi.fn(async () => {
+      throw {
+        title: "Saved steps need repair",
+        detail: "One step needs a new captured control.",
+        recovery: "Review the affected step.",
+        retryable: true,
+      };
+    });
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Review saved steps"));
+    fake.service.inspect = async () => state("reviewing", ["inspect", "edit", "replay"]);
+    await click(button("Try again"));
+    expect(document.body.textContent).toContain("Saved steps need repair");
+    expect(document.body.textContent).not.toContain("Relay is not connected");
+    expect(fake.service.recoverForReview).toHaveBeenCalledOnce();
+    expect(fake.calls).not.toContain("replay");
+  });
+
+  it("does not call a local draft validation error a connection failure or render it twice", async () => {
+    const initial = state("reviewing", ["inspect", "edit", "replay"]);
+    initial.snapshot!.review!.currentRevision = 7;
+    const fake = fakeService(initial);
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Edit steps"));
+    await fill(
+      document.querySelector<HTMLInputElement>("#review-action-intent")!,
+      "Unsaved instruction",
+    );
+    await click(button("Back to Tests"));
+    expect(document.body.textContent).toContain("Save the instruction before closing this draft");
+    expect(document.body.textContent).not.toContain("when the connection returns");
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(document.querySelector<HTMLInputElement>("#review-action-intent")?.value).toBe(
+      "Unsaved instruction",
+    );
+    expect(fake.calls).not.toContain("replay");
+  });
+
   it("clears a replay recovery warning when canonical inspection has reconciled it", async () => {
     const healthy = state("reviewing", ["inspect", "replay"], { replay: "failed" });
     const fake = fakeService(healthy);
@@ -2789,11 +2940,12 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
     fake.service.inspect = async () => {
-      throw new Error("Connection interrupted");
+      throw new TypeError("Failed to fetch");
     };
     await click(button("Back to Tests"));
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
-    expect(document.body.textContent).toContain("Could not confirm the saved draft");
+    expect(document.body.textContent).toContain("Relay is not connected");
+    expect(document.body.textContent).not.toContain("when the connection returns");
     expect(fake.calls).not.toContain("approve");
   });
 

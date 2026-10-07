@@ -4,6 +4,7 @@ import { RecordingReviewActions } from "./recording-review-actions";
 import {
   blocksReview,
   reviewEditIntent,
+  unsavedDraftInstructionProblem,
   type ReviewTransitionIntent,
 } from "./recording-review-state";
 import type { ProductRecordingState } from "../data/recording-product-service";
@@ -14,6 +15,7 @@ import { RecordingTrimPanel } from "./recording-trim-panel";
 import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage } from "../components/page-layout";
 import type { AuthoringRecordingEdit } from "@relay/protocol";
+import { isRelayTransportFailure } from "@relay/workflows/operation-port";
 import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -31,7 +33,12 @@ import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, targetLabel } from "./recording-shared";
 import { RecordingActionsPanel } from "./recording-review-panels";
 import { useRecordingReviewEvidence } from "./use-recording-review-evidence";
-import { RecordingReviewProblem, useReviewSelection } from "./recording-replay-feedback";
+import {
+  RecordingReviewProblem,
+  useReviewInstruction,
+  useReviewSelection,
+  useReviewStatusRecovery,
+} from "./recording-replay-feedback";
 import { reviewPersistence } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingReviewInspector } from "./recording-review-inspector";
@@ -78,7 +85,6 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   });
   const nameDraftKey = `recordingName:${workflowId}`;
   const [selectedActionIds, setSelectedActionIds] = useState<readonly string[]>([]);
-  const [actionIntent, setActionIntent] = useState("");
   const [splitAfterStep, setSplitAfterStep] = useState(1);
   const [evidenceRole, setEvidenceRole] = useState<"entrance" | "exit">("exit");
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string>();
@@ -90,7 +96,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   const [selecting, setSelecting] = useState(false);
   const historyInitialized = useRef(false);
   const [savePhase, setSavePhase] = useState<"checking" | "saving">();
-
+  const { beginDraftSave, clearDraftSave, inspectRecovered } = useReviewStatusRecovery(workflowId);
   const recording = useQuery({
     queryKey: recordingQueryKeys.workflow(workflowId),
     queryFn: () => productService.inspect(workflowId),
@@ -187,9 +193,10 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
 
   const leaveDraft = useMutation({
     mutationFn: async () => {
+      clearDraftSave();
       await nameWrites.current;
-      if (pendingInstruction && !productService.saveDraft)
-        throw new Error("Save the instruction before closing this draft.");
+      if (pendingInstruction && !productService.saveDraft) throw unsavedDraftInstructionProblem;
+      beginDraftSave(currentRevision, pendingInstruction);
       const persisted =
         productService.saveDraft && currentRevision !== undefined
           ? await productService.saveDraft({
@@ -240,6 +247,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     [actions, selectedActionIds],
   );
   const selectedAction = selectedActions.length === 1 ? selectedActions[0] : undefined;
+  const [actionIntent, setActionIntent] = useReviewInstruction(selectedAction);
   const selectedIndex = selectedAction
     ? actions.findIndex((action) => action.id === selectedAction.id)
     : -1;
@@ -314,9 +322,6 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     setSelectedEvidenceId,
     setEditing,
   );
-  useEffect(() => {
-    setActionIntent(selectedAction?.intent ?? "");
-  }, [selectedAction?.id, selectedAction?.intent]);
   useEffect(() => {
     if (!review?.timeline) return;
     setTrimStartMs(review.videoClip?.startMs ?? 0);
@@ -564,23 +569,24 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
         }
         onRetry={() => {
           void recording.refetch().then((result) => {
-            if (!result.error && result.data && !blocksReview(result.data)) transition.reset();
+            if (result.error) return;
+            const recovered = inspectRecovered(result.data);
+            if (!recovered.healthy) return;
+            transition.reset();
+            if (isRelayTransportFailure(recoverReview.error)) recoverReview.reset();
+            if (recovered.draftSaved && isRelayTransportFailure(leaveDraft.error)) {
+              leaveDraft.reset();
+              clearDraftSave();
+            }
           });
         }}
         retrying={recording.isFetching}
         recover={
-          canRecoverReview
+          canRecoverReview && !recoverReview.error
             ? { pending: recoverReview.isPending, onRecover: () => recoverReview.mutate() }
             : undefined
         }
       />
-
-      {leaveDraft.error ? (
-        <p role="alert" className="m-0 rounded-lg border border-border p-3 text-sm">
-          Could not confirm the saved draft. Your work is still open here. Try saving the draft
-          again when the connection returns.
-        </p>
-      ) : null}
 
       {!recording.isPending && snapshot && review ? (
         <>
