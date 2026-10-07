@@ -80,13 +80,27 @@ async function withSavedStartup(
   const counts = { preparations: 0, launches: 0, sdkReads: 0 };
   const logs: string[] = [];
   const commands: LiveIosRunnerCommand[] = [];
-  const job = {
+  const job: TestJob = {
     id: serial,
     targetContext: context,
     platform: "ios",
     serial,
+    targetKind: "device",
+    action: "saved-test",
+    status: "running",
+    queuedAt: 1,
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Verify",
+    tone: "dim",
+    title: "Saved startup",
     artifacts: [],
-  } as TestJob;
+    resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
+  };
   const device = deviceTestDouble({
     capture: {
       async snapshot() {
