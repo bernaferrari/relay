@@ -52,10 +52,16 @@ test("observed busy-to-result transition learns bounded conditions, not elapsed 
   after.capturedAt = 3_600_000;
   assert.deepEqual(inferredAuthoringCompletionWait(before, after), {
     kind: "steps",
+    applied: true,
     label: "Wait for result · Copy message",
     steps: [
-      { kind: "expect", target: { label: "Stop message" }, condition: "gone", timeoutMs: 300_000 },
-      { kind: "wait-for", target: { label: "Copy message" }, timeoutMs: 300_000 },
+      {
+        kind: "wait-response",
+        target: { label: "Copy message" },
+        busyTarget: { label: "Stop message" },
+        idleTarget: { label: "Copy message" },
+        timeoutMs: 120_000,
+      },
     ],
   });
 });
@@ -158,10 +164,9 @@ test("identical answer text alone teaches nothing; a new Copy control teaches on
   after.nodes!.push(observation(false).nodes![1]!);
   const inferred = inferredAuthoringCompletionWait(before, after);
   assert.equal(inferred?.kind, "steps");
+  assert.ok(inferred?.kind === "steps" && inferred.applied === true);
   assert.ok(
     inferred?.kind === "steps" &&
-      inferred.steps.every(
-        (step) => step.kind === "wait-for" || (step.kind === "expect" && step.condition === "gone"),
-      ),
+      inferred.steps.every((step) => step.kind === "wait-response" && step.timeoutMs === 120_000),
   );
 });

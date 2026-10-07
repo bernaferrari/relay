@@ -95,10 +95,12 @@ export function inferredAuthoringCompletionWait(
     if (resolveNamedControlOutcome(current, target).status !== "resolved") continue;
     return {
       kind: "steps",
+      // These two current observations already establish readiness in this
+      // recording. Retain the condition for replay without executing it again.
+      applied: true,
       label: `Wait for result · ${name}`,
       steps: [
-        { kind: "expect", target: busyTarget, condition: "gone", timeoutMs: 300_000 },
-        { kind: "wait-for", target, timeoutMs: 300_000 },
+        { kind: "wait-response", target, busyTarget, idleTarget: target, timeoutMs: 120_000 },
       ],
     };
   }

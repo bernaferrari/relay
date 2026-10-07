@@ -5,13 +5,20 @@ import {
   combineCampaignCaseFromPreparedCell,
   createCombineCampaign,
   listJobs,
+  parseAppMapCombineCellExecutionIntent,
   prepareAppMapCombineCells,
+  registerGenerationProvider,
+  deterministicGenerationProvider,
   runWithOperationContext,
   stagePreparedAppMapCombineCells,
   writeProjectVariables,
 } from "@relay/core";
 import { startServer } from "./index.js";
-import { freezeCombineRunInputs } from "./combine-run-inputs.js";
+import {
+  freezeCombineRunInputs,
+  restoreCombineRunInputs,
+  requireCombineRunInputs,
+} from "./combine-run-inputs.js";
 import { nativePromptCombineFixture } from "./native-combine-inputs-test-fixture.js";
 
 test("native Combine rejects missing prompts before discovery and stages exact frozen defaults with wrapper inputs", async () => {
@@ -207,5 +214,172 @@ test("real campaign resume retains admitted prompt despite changed project Data 
     assert.equal(listJobs().length, before);
   } finally {
     await server.close();
+  }
+});
+
+test("selected rows freeze distinct approved child inputs and resume their exact receipts", async () => {
+  const projectId = "native-combine-selected-inputs";
+  const { map, targetId } = await nativePromptCombineFixture(projectId);
+  map.variables.language!.name = "chat_prompt";
+  const data = {
+    id: "prompt-data",
+    name: "chat_prompt",
+    scope: "shared" as const,
+    source: "list" as const,
+    values: ["en", "it"],
+  };
+  const prepare = () =>
+    prepareAppMapCombineCells({
+      map,
+      combine: map.combines.daily!,
+      target: { targetId, platform: "android" },
+      seed: 1000,
+    });
+  const prepared = await prepare();
+  const graphs = prepared.cells.map((cell) => JSON.stringify(cell.childIntent.recipeGraph));
+  const digests = prepared.cells.map((cell) => cell.outerIntent.digest);
+  await freezeCombineRunInputs({
+    projectId,
+    cells: prepared.cells,
+    seed: 1000,
+    readProjectVariables: async () => ({ revision: 3, updatedAt: 1, value: [data] }),
+  });
+  assert.deepEqual(
+    prepared.cells.map((cell) => cell.runtimeInputs?.variables.chat_prompt),
+    ["en", "it"],
+  );
+  assert.notEqual(
+    prepared.cells[0]!.runtimeInputs?.receipt.valuesDigest,
+    prepared.cells[1]!.runtimeInputs?.receipt.valuesDigest,
+  );
+  for (const [index, cell] of prepared.cells.entries()) {
+    assert.equal(JSON.stringify(cell.childIntent.recipeGraph), graphs[index]);
+    assert.notEqual(cell.outerIntent.digest, digests[index]);
+    const sealed = parseAppMapCombineCellExecutionIntent(cell.outerIntent);
+    assert.deepEqual(sealed?.cell.values, cell.values);
+    assert.deepEqual(sealed?.child.frozenInputs, cell.runtimeInputs?.receipt);
+    assert.ok(Object.values(cell.wrapperInputs).includes(cell.values.language!));
+  }
+  const cases = prepared.cells.map((cell, index) =>
+    combineCampaignCaseFromPreparedCell(cell, { index, phase: "coverage", status: "pending" }),
+  );
+  const restored = await prepare();
+  restored.cells.forEach((cell) => {
+    cell.selectedDataRows![0]!.name = "Renamed after admission";
+  });
+  restoreCombineRunInputs(restored.cells, cases);
+  requireCombineRunInputs(restored.cells);
+  assert.deepEqual(
+    restored.cells.map((cell) => cell.runtimeInputs?.variables.chat_prompt),
+    ["en", "it"],
+  );
+  assert.deepEqual(
+    restored.cells.map((cell) => cell.outerIntent.digest),
+    prepared.cells.map((cell) => cell.outerIntent.digest),
+  );
+
+  const override = await prepare();
+  await assert.rejects(
+    freezeCombineRunInputs({
+      projectId,
+      cells: override.cells,
+      seed: 1000,
+      variables: { "prompt-data": "en" },
+      readProjectVariables: async () => ({ revision: 3, updatedAt: 1, value: [data] }),
+    }),
+    /Selected row and supplied value disagree/,
+  );
+  assert.ok(override.cells.every((cell) => !cell.runtimeInputs));
+});
+
+test("the entire row and wrapper scope validates before any generation or binding", async () => {
+  const projectId = "native-combine-row-input-preflight";
+  const { map, targetId } = await nativePromptCombineFixture(projectId);
+  map.variables.language!.name = "chat_prompt";
+  map.tests.prompt!.steps[0]!.binding = {
+    status: "resolved",
+    kind: "script",
+    source: 'return "{{chat_prompt}} {{extra_input}}";',
+  };
+  const prepared = await prepareAppMapCombineCells({
+    map,
+    combine: map.combines.daily!,
+    target: { targetId, platform: "android" },
+    seed: 1000,
+  });
+  let generations = 0;
+  const unregister = registerGenerationProvider({
+    id: "deterministic",
+    generate: async () => {
+      generations++;
+      throw new Error("Generation must not start");
+    },
+  });
+  const digests = prepared.cells.map((cell) => cell.outerIntent.digest);
+  try {
+    await assert.rejects(
+      freezeCombineRunInputs({
+        projectId,
+        cells: prepared.cells,
+        seed: 1000,
+        readProjectVariables: async () => ({
+          revision: 3,
+          updatedAt: 1,
+          value: [
+            {
+              id: "prompt-data",
+              name: "chat_prompt",
+              scope: "shared",
+              source: "list",
+              values: ["en"],
+            },
+            {
+              id: "extra",
+              name: "extra_input",
+              scope: "shared",
+              source: "generated",
+              prompt: "Generate a question",
+            },
+          ],
+        }),
+      }),
+      /not an approved Test input value/,
+    );
+    assert.equal(generations, 0);
+    assert.ok(prepared.cells.every((cell) => !cell.runtimeInputs));
+    assert.deepEqual(
+      prepared.cells.map((cell) => cell.outerIntent.digest),
+      digests,
+    );
+    const first = prepared.cells[0]!;
+    first.childIntent.recipeGraph[first.childIntent.sourcePlan.rootRecipeId]!.steps.push({
+      kind: "type",
+      text: `{{${Object.keys(first.wrapperInputs)[0]}}}`,
+    });
+    await assert.rejects(
+      freezeCombineRunInputs({
+        projectId,
+        cells: prepared.cells,
+        seed: 1000,
+        readProjectVariables: async () => ({
+          revision: 3,
+          updatedAt: 1,
+          value: [
+            {
+              id: "prompt-data",
+              name: "chat_prompt",
+              scope: "shared",
+              source: "list",
+              values: ["en", "it"],
+            },
+          ],
+        }),
+      }),
+      /conflicts with its Combine wrapper inputs/,
+    );
+    assert.equal(generations, 0);
+  } finally {
+    unregister();
+    registerGenerationProvider(deterministicGenerationProvider);
   }
 });

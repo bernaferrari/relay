@@ -401,20 +401,20 @@ for (const stop of [false, true]) {
         );
     const revision = session.take!.revisions.at(-1)!;
     assert.equal(revision.actions[1]!.label, "Wait for result · Copy message");
-    assert.deepEqual(executed[1], {
-      kind: "steps",
-      label: "Wait for result · Copy message",
-      steps: [
-        {
-          kind: "expect",
-          target: { label: "Stop message" },
-          condition: "gone",
-          timeoutMs: 300_000,
-        },
-        { kind: "wait-for", target: { label: "Copy message" }, timeoutMs: 300_000 },
-      ],
-    });
-    assert.equal(executed.length, 2);
+    const readiness = revision.actions[1]!;
+    assert.equal(readiness.steps.length, 1);
+    const step = readiness.steps[0]!;
+    assert.equal(step.kind, "wait-response");
+    assert.ok(step.kind === "wait-response");
+    assert.equal(step.timeoutMs, 120_000);
+    assert.deepEqual(step.target, { label: "Copy message" });
+    assert.deepEqual(step.busyTarget, { label: "Stop message" });
+    assert.deepEqual(step.idleTarget, { label: "Copy message" });
+    assert.equal(readiness.entranceObservationId, "frame-1");
+    assert.equal(readiness.exitObservationId, "frame-3");
+    assert.ok(revision.observations?.some((item) => item.id === "frame-1"));
+    assert.ok(revision.observations?.some((item) => item.id === "frame-3"));
+    assert.equal(executed.length, 1, "observed completion is retained without a second execution");
     assert.equal(writes.length, stop ? 2 : 3);
     assert.ok(
       revision.actions.every((action) => action.steps.every((step) => step.kind !== "sleep")),

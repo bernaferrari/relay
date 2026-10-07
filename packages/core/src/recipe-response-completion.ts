@@ -55,10 +55,15 @@ export async function waitForResponseCompletion(
   const timeoutMs = Math.min(step.timeoutMs ?? 90_000, MAX_WAIT_MS);
   const stableForMs = step.stableForMs ?? 2_000;
   const pollMs = 250;
-  const beganAt = now();
-  const deadline = beganAt + timeoutMs;
-  const initialNodes = await snapshot(device);
+  const waitBeganAt = now();
   const boundary = ctx.runtime?.responseBoundary;
+  const beganAt = boundary?.source === "initiating-action" ? boundary.capturedAt : waitBeganAt;
+  const timingBasis =
+    boundary?.source === "initiating-action" ? "input-to-readiness" : "wait-to-readiness";
+  const deadline = beganAt + timeoutMs;
+  const observedInitially = now() < deadline;
+  const initialNodes = observedInitially ? await snapshot(device) : [];
+  const initialCapturedAt = now();
   const initialText = textForTarget(initialNodes, step.target);
   let previousText = initialText;
   const initiallyIdle = step.idleTarget
@@ -77,11 +82,13 @@ export async function waitForResponseCompletion(
     Boolean(initialText && initiallyIdle && !completionTargetIsIdle) &&
     boundary?.source !== "initiating-action";
   let startedAt: number | undefined =
-    leftoverComplete || initialAction.started ? beganAt : undefined;
+    leftoverComplete || initialAction.started ? initialCapturedAt : undefined;
   let quotaOnly = initialAction.quotaOnly;
   let stableSince: number | undefined = startedAt;
-  let samples = 1;
-  let lastSignals: string[] = startedAt ? ["response-started", "idle-visible"] : [];
+  let samples = observedInitially ? 1 : 0;
+  let lastSignals: string[] = startedAt
+    ? ["response-started", ...(initiallyIdle ? ["idle-visible"] : [])]
+    : [];
   const pollDiagnostics: Array<Record<string, unknown>> = [];
   const firstPollDiagnostics: Array<Record<string, unknown>> = [];
   let previousPixels: string | undefined;
@@ -98,7 +105,10 @@ export async function waitForResponseCompletion(
       capturedAt: completedAt,
       data: {
         status,
+        timingBasis,
         beganAt,
+        waitBeganAt,
+        deadline,
         startedAt,
         completedAt,
         durationMs: completedAt - beganAt,
@@ -135,15 +145,18 @@ export async function waitForResponseCompletion(
     }
   };
 
-  if (startedAt && leftoverComplete && stableForMs <= 0) {
-    finish(beganAt, initialText);
+  if (initialCapturedAt < deadline && startedAt && leftoverComplete && stableForMs <= 0) {
+    finish(initialCapturedAt, initialText);
     return;
   }
 
   while (now() < deadline) {
-    await sleep(pollMs, device);
-    const capturedAt = now();
+    await sleep(Math.min(pollMs, Math.max(0, deadline - now())), device);
+    if (now() >= deadline) break;
     const nodes = await snapshot(device);
+    const capturedAt = now();
+    // A slow read cannot make evidence arriving after the budget look timely.
+    if (capturedAt >= deadline) break;
     samples += 1;
     const text = textForTarget(nodes, step.target);
     const matched = nodes.filter((node) => nodeMatchesTarget(node, step.target));

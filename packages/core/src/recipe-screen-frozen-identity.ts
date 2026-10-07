@@ -3,6 +3,29 @@ import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.j
 import type { RecipeStep } from "./recipes.js";
 import { observeScreenIdentity, type ObserveScreenIdentityOptions } from "./screen-identity.js";
 import { nativeWorkspaceIdentityNodes } from "./screen-identity-native-workspace.js";
+import { nativeHomeIdentityNodes } from "./screen-identity-native-home.js";
+import type { SnapshotNode } from "./device.js";
+
+/** Compact taught observations cannot reapply geometric masks. Preserve exact
+ * retained full semantics; strict Imagine states still need their model proof. */
+export function matchesRecordedUnmaskedScreen(
+  nodes: readonly SnapshotNode[],
+  options: ObserveScreenIdentityOptions,
+  expected: ReadonlySet<string>,
+  exactNativeWorkspace: boolean,
+): boolean {
+  if (!options.ignoreRegions?.length) return false;
+  const full = observeScreenIdentity(nodes).fingerprint;
+  if (exactNativeWorkspace)
+    return Boolean(
+      expected.has(full) &&
+      nativeHomeIdentityNodes(nodes, options.policy?.nativeImagineWorkspace?.packageName ?? ""),
+    );
+  return (
+    expected.has(full) ||
+    expected.has(observeScreenIdentity(nodes, { ...options, ignoreRegions: [] }).fingerprint)
+  );
+}
 
 /** Reapply a reviewed native workspace policy to the immutable raw evidence
  * frozen with this Test. Missing provenance, incompatible targets or damaged

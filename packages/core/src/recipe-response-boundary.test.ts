@@ -56,3 +56,30 @@ test("quota banners are not assistant prose, even when the answer mentions a lim
     1,
   );
 });
+
+test("visible result controls are captured before input and cannot become a fresh turn", () => {
+  for (const label of ["Copy message", " COPY\nMESSAGE ", "Copy message, previous answer"]) {
+    const old = { label, role: "button", ref: "@old", visibleToUser: true };
+    const boundary = captureResponseBoundary([old], "initiating-action", "ask-next");
+    assert.equal(
+      turnsAfterBoundary(
+        [{ label: "Copy message", role: "button", ref: "@new" }],
+        { label: "Copy message" },
+        boundary,
+      ).length,
+      0,
+      label,
+    );
+  }
+});
+
+test("a newly visible result control is fresh while hidden old controls are not evidence", () => {
+  const hidden = { label: "Enhance Quality", visibleToUser: false };
+  const boundary = captureResponseBoundary([hidden], "initiating-action", "ask-image");
+  assert.equal(turnsAfterBoundary([hidden], { label: "Enhance Quality" }, boundary).length, 0);
+  assert.equal(
+    turnsAfterBoundary([{ ...hidden, visibleToUser: true }], { label: "Enhance Quality" }, boundary)
+      .length,
+    1,
+  );
+});

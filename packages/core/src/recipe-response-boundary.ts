@@ -1,6 +1,7 @@
 import type { StepTarget } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { nodeMatchesTarget } from "./recipe-target-match.js";
+import { snapshotLabelMatches } from "./device-target-resolution.js";
 
 const ASSISTANT_SLOT =
   /^(?:assistant-message|assistant-output|last-reply-container|response-.+)$/iu;
@@ -22,6 +23,9 @@ export type ResponseBoundary = {
   readonly initiatingActionId?: string;
   readonly turnIds: readonly string[];
   readonly quotaIds: readonly string[];
+  /** Runtime-only visible evidence lets a later readiness target exclude old
+   * result controls. Refs and screen geometry are never turn identity. */
+  readonly priorTargetNodes?: readonly SnapshotNode[];
   readonly capturedAt: number;
 };
 
@@ -119,8 +123,13 @@ export function listAssistantTurns(
   target?: StepTarget,
 ): AssistantTurnRecord[] {
   const scoped = target
-    ? nodes.filter((node) => nodeMatchesTarget(node, target) && !isUserEcho(node))
-    : nodes.filter((node) => isAssistantSlot(node) && !isUserEcho(node));
+    ? nodes.filter(
+        (node) =>
+          nodeMatchesTarget(node, target) && !isUserEcho(node) && node.visibleToUser !== false,
+      )
+    : nodes.filter(
+        (node) => isAssistantSlot(node) && !isUserEcho(node) && node.visibleToUser !== false,
+      );
   const slotted = scoped.filter(isAssistantSlot);
   const pool = target && slotted.length === 0 ? scoped : slotted.length ? slotted : scoped;
   const items = pool.flatMap((node) => {
@@ -153,6 +162,11 @@ export function captureResponseBoundary(
     ...(initiatingActionId?.trim() ? { initiatingActionId: initiatingActionId.trim() } : {}),
     turnIds: listAssistantTurns(nodes).map((turn) => turn.id),
     quotaIds: listQuotaObservations(nodes).map((item) => item.id),
+    priorTargetNodes: structuredClone(
+      nodes.filter(
+        (node) => node.visibleToUser !== false && !isUserEcho(node) && node.editable !== true,
+      ),
+    ),
     capturedAt: Date.now(),
   };
 }
@@ -162,7 +176,15 @@ export function turnsAfterBoundary(
   target: StepTarget,
   boundary: ResponseBoundary,
 ): AssistantTurnRecord[] {
-  const known = new Set(boundary.turnIds);
+  const previous = (boundary.priorTargetNodes ?? []).map((node) =>
+    target.label && !isAssistantSlot(node) && snapshotLabelMatches(target.label, node.label)
+      ? { ...node, label: target.label }
+      : node,
+  );
+  const known = new Set([
+    ...boundary.turnIds,
+    ...listAssistantTurns(previous, target).map((turn) => turn.id),
+  ]);
   return listAssistantTurns(nodes, target).filter((turn) => !known.has(turn.id));
 }
 

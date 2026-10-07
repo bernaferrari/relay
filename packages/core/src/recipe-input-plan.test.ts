@@ -239,3 +239,37 @@ test("plain assertion and semantic inputs require external values but extracted 
     {},
   );
 });
+
+test("referenced Data set aliases and differing runtime values fail before generation", async () => {
+  await assert.rejects(
+    prepareFrozenRecipeInputs({
+      recipeGraph: graph("{{chat_prompt}}"),
+      definitions: [prompt],
+      runtimeValues: {
+        "prompt-data": "First supplied prompt",
+        chat_prompt: "Second supplied prompt",
+      },
+    }),
+    /different values through its ID and name/,
+  );
+  await assert.rejects(
+    prepareFrozenRecipeInputs({
+      recipeGraph: graph("{{prompt}}"),
+      definitions: [
+        { id: "prompt", name: "first_name", scope: "shared", source: "static", values: ["First"] },
+        { id: "other-data", name: "prompt", scope: "shared", source: "static", values: ["Second"] },
+      ],
+    }),
+    /matches multiple Data sets/,
+  );
+  assert.deepEqual(
+    (
+      await prepareFrozenRecipeInputs({
+        recipeGraph: graph("{{chat_prompt}} {{prompt-data}}"),
+        definitions: [prompt],
+        runtimeValues: { "prompt-data": " Same prompt ", chat_prompt: "Same prompt" },
+      })
+    ).variables,
+    { chat_prompt: "Same prompt", "prompt-data": "Same prompt" },
+  );
+});
