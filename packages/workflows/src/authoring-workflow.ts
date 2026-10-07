@@ -6,6 +6,7 @@ import {
   type OperationOutput,
 } from "@relay/protocol";
 import { snapshotFromAuthoringSession } from "./authoring-projection.js";
+import { recordedConditionFailureReceipt } from "./authoring-condition-failure.js";
 import { isRelayTransportFailure, type RelayOperationPort } from "./operation-port.js";
 import type {
   AuthorTestDecision,
@@ -549,6 +550,24 @@ export class CanonicalAuthoringWorkflow {
         await this.operations.invoke("workflow.transition", durableTransitionInput(decision)),
       );
     } catch (error) {
+      const failed = recordedConditionFailureReceipt(error, decision);
+      if (failed) {
+        const snapshot = durableAuthorSnapshot(failed);
+        return {
+          ...snapshot,
+          problems: [
+            ...snapshot.problems,
+            {
+              code: "operation-unavailable",
+              sourceCode: "AUTHORING_INTERACTION_FAILED",
+              title: "The recorded condition failed",
+              detail: errorDetail(error),
+              recovery: "Review the condition and the current screen before adding it again.",
+              retryable: true,
+            },
+          ],
+        };
+      }
       try {
         const inspected = durableAuthorSnapshot(
           await this.operations.invoke("workflow.get", { workflowId: decision.workflowId }),
