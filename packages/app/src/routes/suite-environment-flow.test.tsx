@@ -277,6 +277,41 @@ afterEach(async () => {
 });
 
 describe("Suite and Environment routes", () => {
+  it("discovers run destinations in the saved App and Plan scope", async () => {
+    const listEnvironmentProfiles = vi.fn(async () => [environment]);
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({ listEnvironmentProfiles }),
+    });
+    expect(listEnvironmentProfiles).toHaveBeenCalledWith({
+      appMapId: "app-1",
+      combineId: "suite-1",
+    });
+    expect(document.body.textContent).toContain("Staging browser");
+  });
+
+  it("opens the connected device when a native Plan needs setup", async () => {
+    const native: ProductEnvironmentProfile = {
+      ...environment,
+      id: "saved-ipad-profile",
+      targetId: "ipad-serial",
+      name: "iPad Pro",
+      platform: "ios",
+      target: { id: "ipad-serial", name: "iPad Pro", kind: "ios" },
+    };
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({
+        listEnvironmentProfiles: async () => [native],
+        previewSuite: async () =>
+          suitePreview([{ code: "device-unavailable", message: "Reconnect the iPad." }]),
+      }),
+    });
+    const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (item) => item.textContent?.trim() === "Open selected setup",
+    );
+    expect(link?.getAttribute("href")).toBe("/devices/ipad-serial");
+    expect(document.body.textContent).toContain("Reconnect the iPad.");
+  });
+
   it("checks unused prompt values before choosing a device and links to the scoped Test", async () => {
     const previewSuite = vi.fn(async () => ({
       ...suitePreview(),
