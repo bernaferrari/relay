@@ -41,7 +41,7 @@ test("recordedPlanPlatformsFromAppMap uses browser variants when origin is missi
   assert.deepEqual(platforms, ["browser"]);
 });
 
-test("a grok.com Test without native variants shows Android and iOS as unrecorded", () => {
+test("a grok.com test without native variants shows Android and iOS as unrecorded", () => {
   const statuses = testRoutePlatformStatuses({
     originApplication: "https://grok.com",
   });

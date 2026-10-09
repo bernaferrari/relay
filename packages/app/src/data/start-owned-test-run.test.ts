@@ -46,8 +46,8 @@ const workspace = parsePairedConfigurationWorkspace(
   }),
 );
 
-describe("start owned Test runs", () => {
-  it("keeps prompt overrides on one frozen Test start and refuses unsupported batch overrides", () => {
+describe("start owned test runs", () => {
+  it("keeps prompt overrides on one frozen test start and refuses unsupported batch overrides", () => {
     const variables = { chat_prompt: "A distinct prompt" };
     const input = {
       workspace: emptyPairedWorkspace(),
@@ -97,7 +97,7 @@ describe("start owned Test runs", () => {
     ).toEqual([{ testId: "checkout", appMapId: "app-1", documentRevision: 8, targetId: "pixel" }]);
   });
 
-  it("starts a single request through the ordinary Run path", async () => {
+  it("starts a single request through the ordinary run path", async () => {
     const started: string[] = [];
     const result = await startOwnedTestRun({
       requests: [{ testId: "checkout", appMapId: "app-1", targetId: "pixel" }],

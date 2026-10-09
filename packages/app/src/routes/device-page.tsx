@@ -343,7 +343,7 @@ export function DevicePage() {
                     />
                   }
                 >
-                  Back to Test setup
+                  Back to test setup
                 </Button>
               ) : null}
               {device.data?.status === "needs-attention" ? (
@@ -379,7 +379,7 @@ export function DevicePage() {
                     />
                   }
                 >
-                  Record a Test
+                  Record a test
                 </Button>
               ) : null}
             </>

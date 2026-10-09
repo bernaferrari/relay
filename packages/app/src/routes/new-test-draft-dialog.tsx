@@ -36,7 +36,7 @@ export function NewTestDraftDialog() {
     .filter(Boolean);
   const stepsError =
     instructions.length > APP_MAP_TEST_INTENT_LIMITS.maxSteps
-      ? `Use no more than ${APP_MAP_TEST_INTENT_LIMITS.maxSteps} steps per Test.`
+      ? `Use no more than ${APP_MAP_TEST_INTENT_LIMITS.maxSteps} steps per test.`
       : instructions.some((line) => line.length > APP_MAP_TEST_INTENT_LIMITS.maxIntentLength)
         ? `Keep each step under ${APP_MAP_TEST_INTENT_LIMITS.maxIntentLength + 1} characters.`
         : undefined;

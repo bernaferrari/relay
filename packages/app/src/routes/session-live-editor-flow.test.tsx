@@ -35,7 +35,7 @@ const platform: Platform = {
 
 const session = {
   id: "session-live",
-  title: "Checkout Session",
+  title: "Checkout session",
   state: "recording",
   target: { kind: "browser", platform: "browser", targetId: "browser-1" },
   appMapId: "app-1",
@@ -198,7 +198,7 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-describe("live Session to Test editor", () => {
+describe("live session to test editor", () => {
   it("clears target and search constraints when opening saved drafts", async () => {
     const history = await render("/sessions?status=history&target=other&q=missing", {
       sessionService: sessionService({ ...session, state: "reviewing" }),
@@ -207,10 +207,10 @@ describe("live Session to Test editor", () => {
     await click("Show drafts");
 
     expect(history.location.search).toBe("?status=drafts");
-    expect(document.body.textContent).toContain("Checkout Session");
+    expect(document.body.textContent).toContain("Checkout session");
   });
 
-  it("shows a compact recovery state when the Session cannot be loaded", async () => {
+  it("shows a compact recovery state when the session cannot be loaded", async () => {
     const unavailable = sessionService();
     unavailable.get = vi.fn(async () => {
       throw new Error("Relay returned HTTP 400.");
@@ -229,11 +229,11 @@ describe("live Session to Test editor", () => {
     ).toBe(true);
   });
 
-  it("only offers live Test editing for a controllable committed Session and preserves the binding", async () => {
+  it("only offers live test editing for a controllable committed session and preserves the binding", async () => {
     const service = sessionService();
     await render("/sessions/session-live", { sessionService: service });
 
-    expect(document.body.textContent).toContain("Edit Test live");
+    expect(document.body.textContent).toContain("Edit test live");
     expect(document.body.textContent).toContain("End session");
     expect(document.body.textContent).not.toContain("Investigate");
     // No Session overflow menu; the shell's mobile "More navigation" button is not part of the page.
@@ -270,9 +270,9 @@ describe("live Session to Test editor", () => {
       lease: { ...session.lease, expiresAt: Date.now() + 60_000 },
     } as unknown as ProductSessionDetail;
     const endedHistory = await render("/sessions/session-live", { session: ended });
-    expect(document.body.textContent).not.toContain("Edit Test live");
+    expect(document.body.textContent).not.toContain("Edit test live");
     expect(document.body.textContent).not.toContain("End session");
-    expect(document.body.textContent).toContain("Open saved Test");
+    expect(document.body.textContent).toContain("Open saved test");
     expect(endedHistory.location.pathname).toBe("/sessions/session-live");
 
     await clearMountedApp();
@@ -281,7 +281,7 @@ describe("live Session to Test editor", () => {
       committedTestId: undefined,
     } as unknown as ProductSessionDetail;
     await render("/sessions/session-live", { session: uncommitted });
-    expect(document.body.textContent).not.toContain("Edit Test live");
+    expect(document.body.textContent).not.toContain("Edit test live");
   });
 
   it("shows a recovery explanation instead of a connecting canvas for an expired reservation", async () => {
@@ -297,7 +297,7 @@ describe("live Session to Test editor", () => {
     expect(document.querySelector("canvas")).toBeNull();
   });
 
-  it("ends an active Session from the visible header action", async () => {
+  it("ends an active session from the visible header action", async () => {
     const ended = {
       ...session,
       state: "cancelled",
@@ -324,7 +324,7 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).not.toContain("End session");
   });
 
-  it("adopts an external Session end after the canonical refresh", async () => {
+  it("adopts an external session end after the canonical refresh", async () => {
     const ended = {
       ...session,
       state: "cancelled",
@@ -362,7 +362,7 @@ describe("live Session to Test editor", () => {
 
     expect(open).toHaveBeenCalledWith({ testId: "test-live", sessionId: "session-live" });
     expect(harness.editor.get).toHaveBeenCalledWith("test-live");
-    expect(document.body.textContent).not.toContain("Open Session");
+    expect(document.body.textContent).not.toContain("Open session");
     expect(document.querySelector("#session-stage-title")?.textContent).not.toBe("Live");
     expect(document.querySelector("#live-editor-title")?.textContent).toBeTruthy();
     expect(document.querySelector('[data-slot="live-device-rail"]')).not.toBeNull();

@@ -30,7 +30,7 @@ function document(
   };
 }
 
-it("keeps legacy Tests with unknown platforms discoverable", () => {
+it("keeps legacy tests with unknown platforms discoverable", () => {
   expect(recordedTestRunPlatforms(document())).toBeUndefined();
   expect(recordedTestRunPlatforms(null)).toBeUndefined();
 });

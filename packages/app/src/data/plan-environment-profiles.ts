@@ -193,7 +193,7 @@ function savedNativeProfiles(map: AppMap, combineId?: string) {
         (existing.targetId !== profile.targetId || existing.platform !== profile.platform)
       )
         throw new TypeError(
-          "The saved device setup is ambiguous. Open the Plan’s Test and review its recorded setup.",
+          "The saved device setup is ambiguous. Open the plan’s test and review its recorded setup.",
         );
       if (!existing || capturedAt(profile) > capturedAt(existing))
         profiles.set(profile.id, profile);

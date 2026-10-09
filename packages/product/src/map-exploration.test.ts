@@ -217,7 +217,7 @@ test("map projection exposes selectable variants only for canonical screenshot e
   assert.equal(overview.screens[0]?.accessibilityTreeUri, undefined);
 });
 
-test("map drilldowns reuse the canonical App Map snapshot and fail closed for unknown ids", async () => {
+test("map drilldowns reuse the canonical app Map snapshot and fail closed for unknown ids", async () => {
   const map = {
     id: "app-1",
     name: "Checkout",

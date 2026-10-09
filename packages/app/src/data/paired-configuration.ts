@@ -502,6 +502,6 @@ export async function startPairedTestRuns(input: {
 
 export function pairedWorkspaceSummary(workspace: PairedConfigurationWorkspace): string {
   const count = workspace.rows.length;
-  if (count === 0) return "No paired Browser and Account rows yet.";
-  return `${count} paired ${count === 1 ? "configuration" : "configurations"}`;
+  if (count === 0) return "None saved yet.";
+  return `${count} saved`;
 }

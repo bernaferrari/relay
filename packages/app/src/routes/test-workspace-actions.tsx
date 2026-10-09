@@ -130,7 +130,7 @@ export function TestWorkspaceActions({
                     {configurationName !== "Run settings" ? (
                       <>
                         <span className="sr-only">Run on</span>
-                        <span className="max-w-40 truncate font-normal opacity-90">
+                        <span className="max-w-56 truncate font-normal opacity-90">
                           {configurationName}
                         </span>
                       </>
@@ -153,7 +153,7 @@ export function TestWorkspaceActions({
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="ghost" size="icon-sm" />}
-                aria-label="More Test actions"
+                aria-label="More test actions"
               >
                 <MoreHorizontal aria-hidden="true" />
               </DropdownMenuTrigger>

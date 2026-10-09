@@ -177,7 +177,7 @@ export const ROUTE_DEFINITIONS = [
     "plan",
     "planApp",
   ]),
-  d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", [
+  d("/tests/new", "/tests", "New test", "Test", "tests", "record-test", [
     "app",
     "site",
     "account",
@@ -198,13 +198,13 @@ export const ROUTE_DEFINITIONS = [
     "screen",
     "run",
   ]),
-  d("/tests/:testId/edit", "/tests/:testId", "Edit Test", "Test", "tests", "record-test", [
+  d("/tests/:testId/edit", "/tests/:testId", "Edit test", "Test", "tests", "record-test", [
     "app",
     "step",
     "screen",
     "session",
   ]),
-  d("/tests/:testId/record", "/tests/:testId", "Record Test", "Test", "tests", "record-test", [
+  d("/tests/:testId/record", "/tests/:testId", "Record test", "Test", "tests", "record-test", [
     "screen",
   ]),
   d("/tests/:testId/run-across", "/tests/:testId", "Run Across", "Test", "tests", "run-test", [

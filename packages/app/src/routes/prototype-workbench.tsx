@@ -39,7 +39,7 @@ const steps = [
 ];
 
 const operatingStates = [
-  ["Live · Not recording", "Input reaches the app but does not append Test steps."],
+  ["Live · Not recording", "Input reaches the app but does not append test steps."],
   ["Recording", "Confirmed actions append to the draft in this step list."],
   ["Automation running", "Relay controls the target; manual takeover is explicit."],
   [

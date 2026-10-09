@@ -48,7 +48,7 @@ export function reviewPersistence(input: {
     return {
       kind: "name-only",
       label: "Name updated — recorded steps are unchanged",
-      detail: "The name is kept on this computer. It does not change the executable Test.",
+      detail: "The name is kept on this computer. It does not change the executable test.",
       editorState: input.nameSaveState === "dirty" ? "dirty" : "saved",
     };
   }
@@ -64,7 +64,7 @@ export function reviewPersistence(input: {
     return {
       kind: "changed-since-verified",
       label: "Changed since last verified replay",
-      detail: "Replay the reviewed steps before saving the Test.",
+      detail: "Replay the reviewed steps before saving the test.",
       editorState: "dirty",
     };
   }
@@ -72,7 +72,7 @@ export function reviewPersistence(input: {
     return {
       kind: "ready-for-review",
       label: "Ready for review",
-      detail: "Review the steps, then replay before saving the Test.",
+      detail: "Review the steps, then replay before saving the test.",
       editorState: "dirty",
     };
   }

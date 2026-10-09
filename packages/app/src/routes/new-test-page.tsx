@@ -463,6 +463,7 @@ export function NewTestPage() {
     target: Boolean(selectedTarget),
     starting: begin.isPending,
     appNotOpened: Boolean(originApplication && openedApplication !== originApplication),
+    previewConnecting: Boolean(productService.previewTarget) && previewStatus !== "streaming",
   });
 
   function chooseTarget(nextTargetId: string) {
@@ -538,7 +539,7 @@ export function NewTestPage() {
               <p>
                 {begin.data?.recovery
                   ? "Open the saved recording to inspect its latest server state."
-                  : "Continue the recording you started before creating another Test."}
+                  : "Continue the recording you started before creating another test."}
               </p>
             </AlertDescription>
             <AlertAction>

@@ -81,7 +81,7 @@ function run(
   };
 }
 
-test("projects production App Maps into app-scoped Tests with recent Run links", () => {
+test("projects production app Maps into app-scoped tests with recent run links", () => {
   const first = app("app-one", "Shopping", { ready: scenario("ready", "Checkout") });
   const second = app("app-two", "Admin", { attention: scenario("attention", "Users", true) });
   const summaries = projectProductTests(
@@ -108,7 +108,7 @@ test("projects production App Maps into app-scoped Tests with recent Run links",
   assert.equal(summaries[1]?.href, "/tests/attention");
 });
 
-test("a Test not yet confirmed by a run stays runnable; running it confirms it", () => {
+test("a test not yet confirmed by a run stays runnable; running it confirms it", () => {
   const valid = scenario("validated", "Validated");
   valid.validation = {
     status: "passed",
@@ -200,7 +200,7 @@ test("explicitly unrecorded names stay blocked while generation names reflect se
   assert.equal(productTestStatusLabel("ready", "Header More on existing chat"), "Ready");
 });
 
-test("projects Run views with durable identity, human joins, phases, and filters", () => {
+test("projects run views with durable identity, human joins, phases, and filters", () => {
   const maps = [app("app-one", "Shopping", { ready: scenario("ready", "Checkout") })];
   const runs = projectProductRuns(
     [
@@ -236,12 +236,12 @@ test("projects Run views with durable identity, human joins, phases, and filters
     app: "/apps/app-one",
   });
   assert.equal(runs[1]?.phase, "running");
-  assert.equal(runs[1]?.title, "Saved Test");
+  assert.equal(runs[1]?.title, "Saved test");
   assert.doesNotMatch(JSON.stringify(runs[1]), /ready/u);
   assert.equal(runs[0]?.review?.status, "pending");
 });
 
-test("Run summaries preserve only the exact saved Plan attribution of their canonical matrix case", () => {
+test("Run summaries preserve only the exact saved plan attribution of their canonical matrix case", () => {
   const matrixCase = {
     kind: "combine" as const,
     appMapId: "grok",
@@ -282,7 +282,7 @@ test("Run summaries preserve only the exact saved Plan attribution of their cano
   for (const item of projected.slice(1)) assert.equal(item.combineId, undefined);
 });
 
-test("catalog calls canonical operations and fails closed on ambiguous Test identity", async () => {
+test("catalog calls canonical operations and fails closed on ambiguous test identity", async () => {
   const one = app("app-one", "Shopping", { duplicate: scenario("duplicate", "One") });
   const two = app("app-two", "Admin", { duplicate: scenario("duplicate", "Two") });
   const scripted = createScriptedRelayClient([
@@ -342,7 +342,7 @@ test("Run list applies public views after the server-scoped query", async () => 
   assert.deepEqual(scripted.invocations[0]?.input, { appMapId: "app-one" });
 });
 
-test("Complete Run history follows the canonical opaque cursor", async () => {
+test("Complete run history follows the canonical opaque cursor", async () => {
   const map = app("app-one", "Shopping", { ready: scenario("ready", "Checkout") });
   const scripted = createScriptedRelayClient([
     {
@@ -384,7 +384,7 @@ test("Complete Run history follows the canonical opaque cursor", async () => {
   );
 });
 
-test("latest Run view keeps one newest durable Run per Test", async () => {
+test("latest run view keeps one newest durable run per test", async () => {
   const map = app("app-one", "Shopping", { ready: scenario("ready", "Checkout") });
   const scripted = createScriptedRelayClient([
     {
@@ -423,7 +423,7 @@ test("run details expose inspectable steps/evidence while retaining the canonica
   assert.equal(detail.links.self, "/runs/run-1");
 });
 
-test("Run detail recovers Test identity from the immutable execution artifact", () => {
+test("Run detail recovers test identity from the immutable execution artifact", () => {
   const detail = productRunDetail(
     run({
       id: "run-2",
@@ -486,7 +486,7 @@ test("Run execution identity keeps warm and cold start states and leaves unknown
   assert.equal(unknown.executionIdentity?.startupMode, undefined);
 });
 
-test("Run detail exposes stable authored-step evidence and keeps legacy Runs empty", () => {
+test("Run detail exposes stable authored-step evidence and keeps legacy runs empty", () => {
   const detail = productRunDetail(
     run({
       id: "run-provenance",

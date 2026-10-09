@@ -155,7 +155,7 @@ it.each([
   }
 });
 
-it("keeps evidence inspection available when the saved Test cannot be edited", () => {
+it("keeps evidence inspection available when the saved test cannot be edited", () => {
   const container = render(
     { id: "tap", kind: "tap", label: "Tap Save", state: "failed" },
     undefined,

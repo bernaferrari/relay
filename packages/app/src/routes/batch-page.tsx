@@ -323,7 +323,7 @@ function BatchDocument({ batchId }: { batchId: string }) {
                 Review before continuing
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Check the representative Run before Relay starts the remaining cases.
+                Check the representative run before Relay starts the remaining cases.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2.5">
                 <Button

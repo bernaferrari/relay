@@ -284,7 +284,7 @@ function humanizeIdentifier(value: string): string {
     .replaceAll(/[-_.]+/gu, " ")
     .replaceAll(/\s+/gu, " ")
     .trim();
-  return words ? `${words[0]!.toLocaleUpperCase()}${words.slice(1)}` : "Repository Change";
+  return words ? `${words[0]!.toLocaleUpperCase()}${words.slice(1)}` : "Repository change";
 }
 
 function detailsOf(value: Inspect): ProductChangeDetails {
@@ -592,7 +592,7 @@ export function createProductChangeJourney(input: {
     },
     async watch(watchInput = {}) {
       const id = selectedId;
-      if (!id) return fail(new TypeError("Open a Change before watching it."));
+      if (!id) return fail(new TypeError("Open a change before watching it."));
       const pollMs = watchInput.pollMs ?? 2_000;
       while (!watchInput.signal?.aborted) {
         const next = await inspect(id, false);
@@ -642,7 +642,7 @@ export function createProductChangeJourney(input: {
       try {
         const currentState = await inspect(rerunInput.changeId, false);
         const currentProof = currentState.details?.change;
-        if (!currentProof) throw new TypeError("Open this Change before preparing a rerun.");
+        if (!currentProof) throw new TypeError("Open this change before preparing a rerun.");
         const { change } = await input.operations.invoke("workspace.change.inspect", {});
         if (
           !change.readyForProof ||
@@ -660,7 +660,7 @@ export function createProductChangeJourney(input: {
           change.head.sha === currentProof.requestedRevision
         ) {
           throw new TypeError(
-            "The current workspace does not contain a newer revision for this Change.",
+            "The current workspace does not contain a newer revision for this change.",
           );
         }
         const original = currentState.details;
@@ -680,11 +680,11 @@ export function createProductChangeJourney(input: {
             id: original.audit.policyId,
             version: original.audit.policyVersion,
           },
-          coverageGaps: ["Exact replacement builds and affected Tests must be prepared."],
+          coverageGaps: ["Exact replacement builds and affected tests must be prepared."],
           residualRisk: currentProof.residualRisk,
           smallestNextVerification: {
             kind: "provide-build",
-            reason: "Prepare exact replacement builds before rerunning affected Tests.",
+            reason: "Prepare exact replacement builds before rerunning affected tests.",
           },
         });
         return inspect(result.replacement.id);

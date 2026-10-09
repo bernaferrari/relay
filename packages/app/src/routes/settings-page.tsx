@@ -5,7 +5,9 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-reac
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useRouteContext } from "@tanstack/react-router";
+import { Link, useRouteContext } from "@tanstack/react-router";
+import { deviceQueryKeys } from "../data/device-product-service";
+import { productClientForPlatform } from "../data/product-client";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { settingsQueryKeys, type SettingsCategory } from "../data/settings-product-service";
 import { AppearanceSettings } from "./appearance-settings";
@@ -18,6 +20,7 @@ import {
   type SaveState,
 } from "./settings-frame";
 import { AboutSettings } from "./settings-about";
+import { AgentConnectSettings } from "./agent-connect-settings";
 import {
   CHANNELS,
   CONNECTION_QUERY_KEY,
@@ -29,14 +32,60 @@ import {
   judgeProviderChecks,
 } from "./settings-support";
 
+/** Shortcuts that exist in the product today, grouped where they work. */
+const SHORTCUTS: readonly { area: string; keys: readonly (readonly [string, string])[] }[] = [
+  { area: "Anywhere", keys: [["⌘ K", "Search or run a command"]] },
+  {
+    area: "Review screenshots",
+    keys: [
+      ["J  K", "Next or previous screenshot"],
+      ["A", "Looks correct"],
+      ["⇧ A", "Accept as reference"],
+      ["R", "Report an issue"],
+      ["1  2  3", "Side by side, highlight changes, swipe"],
+    ],
+  },
+  {
+    area: "Map",
+    keys: [
+      ["F", "Fit the map"],
+      ["⇧ F", "Focus the selected screen"],
+      ["+  −", "Zoom in or out"],
+      ["0", "Reset the view"],
+    ],
+  },
+];
+
+function formatUptime(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return "just started";
+  if (minutes < 60) return `running for ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `running for ${hours} h`;
+  return `running for ${Math.floor(hours / 24)} days`;
+}
+
 function GeneralSettings() {
-  const { platform } = useRouteContext({ from: "__root__" });
+  const { platform, deviceService } = useRouteContext({ from: "__root__" });
   const connection = useQuery({
     queryKey: CONNECTION_QUERY_KEY,
     queryFn: () =>
       platform.getServerConnection
         ? platform.getServerConnection()
         : Promise.resolve(platform.getServerUrl()).then((url) => ({ url })),
+  });
+  const health = useQuery({
+    queryKey: ["settings", "health"] as const,
+    queryFn: async () =>
+      (await productClientForPlatform(platform)).client.invoke("system.health.get", {}),
+    refetchInterval: 30_000,
+    retry: false,
+  });
+  const devices = useQuery({
+    queryKey: deviceQueryKeys.devices,
+    queryFn: () => deviceService.list(),
+    staleTime: 5_000,
+    retry: false,
   });
   const hostname = useMemo(() => {
     try {
@@ -47,30 +96,64 @@ function GeneralSettings() {
   }, [connection.data]);
   const notification = useMutation({
     mutationFn: async () =>
-      platform.notify?.("Relay notifications are ready", "Important Run updates can appear here."),
+      platform.notify?.("Relay notifications are ready", "Important run updates can appear here."),
   });
+  const hardware = (devices.data ?? []).filter((device) => device.platform !== "browser");
+  const ready = hardware.filter((device) => device.status === "ready").length;
+  const attention = hardware.filter((device) => device.status === "needs-attention").length;
+  const virtual = hardware.filter((device) => device.status === "virtual").length;
 
   return (
-    <SettingsFrame category="general" saveState={connection.isError ? "unavailable" : undefined}>
-      <SettingsGroup>
+    <SettingsFrame
+      category="general"
+      saveState={connection.isError || health.isError ? "unavailable" : undefined}
+    >
+      <SettingsGroup title="Status">
         <SettingRow
-          title="Workspace connection"
+          title="Relay"
           description={
-            connection.isError
-              ? "Relay could not read this computer’s address."
-              : hostname
-                ? `Relay is using ${hostname}.`
-                : "Checking the current Relay workspace."
+            health.isPending
+              ? "Checking…"
+              : health.isError
+                ? `Relay isn’t answering${hostname ? ` at ${hostname}` : ""}. Start it, or change its address in Advanced.`
+                : `Version ${health.data.version} · ${formatUptime(health.data.uptimeMs)}${hostname ? ` · ${hostname}` : ""}`
           }
         >
-          {connection.isPending ? (
-            <span>Checking</span>
-          ) : connection.isError ? (
-            <span className="text-warning-foreground">Unavailable</span>
-          ) : null}
+          {health.isPending ? null : health.isError ? (
+            <Button size="sm" variant="outline" onClick={() => void health.refetch()}>
+              Try again
+            </Button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success-foreground">
+              <span className="size-1.5 rounded-full bg-success" aria-hidden="true" />
+              Connected
+            </span>
+          )}
+        </SettingRow>
+        <SettingRow
+          title="Devices"
+          description={
+            devices.isPending
+              ? "Looking for phones and tablets…"
+              : devices.isError
+                ? "Relay couldn’t list devices right now."
+                : !hardware.length
+                  ? "No phones, tablets, or emulators yet. Connect one by USB or start an emulator."
+                  : [
+                      `${ready} ready`,
+                      attention ? `${attention} need${attention === 1 ? "s" : ""} attention` : "",
+                      virtual ? `${virtual} emulator${virtual === 1 ? "" : "s"} available` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+          }
+        >
+          <Button size="sm" variant="ghost" nativeButton={false} render={<Link to="/devices" />}>
+            Manage
+          </Button>
         </SettingRow>
         {platform.notify ? (
-          <SettingRow title="Desktop notifications" description="Notify when a Run finishes.">
+          <SettingRow title="Desktop notifications" description="Notify when a run finishes.">
             <Button
               size="sm"
               variant="ghost"
@@ -98,6 +181,30 @@ function GeneralSettings() {
           </AlertAction>
         </Alert>
       ) : null}
+      <SettingsGroup title="Keyboard shortcuts">
+        {SHORTCUTS.map((group) => (
+          <div key={group.area} className="grid gap-2 py-3">
+            <h3 className="text-xs font-medium text-muted-foreground">{group.area}</h3>
+            <dl className="grid gap-1.5">
+              {group.keys.map(([keys, action]) => (
+                <div key={keys} className="flex items-center justify-between gap-4 text-sm">
+                  <dt>{action}</dt>
+                  <dd className="flex shrink-0 gap-1">
+                    {keys.split(/\s{2}/u).map((key) => (
+                      <kbd
+                        key={key}
+                        className="min-w-6 rounded border border-border bg-muted/50 px-1.5 py-0.5 text-center font-sans text-xs text-muted-foreground"
+                      >
+                        {key}
+                      </kbd>
+                    ))}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </SettingsGroup>
     </SettingsFrame>
   );
 }
@@ -255,32 +362,36 @@ function IntegrationsSettings() {
       ) : null}
       {integrations.data?.length ? (
         <SettingsGroup>
-          {integrations.data.map((integration) => (
-            <SettingRow
-              key={integration.provider}
-              title={integration.name}
-              description={integration.detail}
-            >
-              {integration.state === "connected" ||
-              integration.state === "server-managed" ? null : (
-                <span
-                  className={
-                    integration.state === "unavailable" ? "text-warning-foreground" : undefined
-                  }
-                >
-                  {integration.state
-                    .replace(/-/gu, "")
-                    .replace(/^./u, (letter) => letter.toLocaleUpperCase())}
-                </span>
-              )}
-            </SettingRow>
-          ))}
+          {/* A service this workspace can't use is not a setting; leave it out. */}
+          {integrations.data
+            .filter((integration) => integration.state !== "unsupported")
+            .map((integration) => (
+              <SettingRow
+                key={integration.provider}
+                title={integration.name}
+                description={integration.detail}
+              >
+                {integration.state === "connected" ||
+                integration.state === "server-managed" ? null : (
+                  <span
+                    className={
+                      integration.state === "unavailable" ? "text-warning-foreground" : undefined
+                    }
+                  >
+                    {integration.state
+                      .replace(/-/gu, " ")
+                      .replace(/^./u, (letter) => letter.toLocaleUpperCase())}
+                  </span>
+                )}
+              </SettingRow>
+            ))}
         </SettingsGroup>
       ) : connection.data ? (
         <SettingsGroup>
           <SettingRow title="Relay workspace" description={serverName} />
         </SettingsGroup>
       ) : null}
+      <AgentConnectSettings />
     </SettingsFrame>
   );
 }
@@ -375,9 +486,8 @@ function AdvancedSettings() {
                 ) : null}
               </div>
               <FieldDescription>
-                Local Vite uses this same origin at /relay (for example
-                http://127.0.0.1:5175/relay). Direct http://127.0.0.1:8787 is for desktop and curl —
-                browsers that cannot call another loopback port should keep the /relay address.
+                Where this computer reaches your Relay server. In a browser, keep the address ending
+                in /relay.
               </FieldDescription>
               {connectionError ? (
                 <p role="alert">
@@ -432,17 +542,7 @@ function AdvancedSettings() {
           }
         />
         <SetupRow
-          title="Signed desktop build"
-          checks={operatorBuildChecks(apple.data)}
-          loading={apple.isPending}
-        />
-        <SetupRow
-          title="Lab Mac server"
-          checks={labServerChecks(apple.data)}
-          loading={apple.isPending}
-        />
-        <SetupRow
-          title="Visual and semantic judges"
+          title="Screenshot and text checks"
           checks={judgeProviderChecks(apple.data)}
           loading={apple.isPending}
         />
@@ -465,6 +565,25 @@ function AdvancedSettings() {
           }
         />
       </SettingsGroup>
+
+      {/* Release and lab hosting only matter to people shipping Relay itself. */}
+      <details className="group/dev text-sm">
+        <summary className="w-fit cursor-pointer py-1 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+          For Relay developers
+        </summary>
+        <div className="mt-2">
+          <SetupRow
+            title="Signed desktop build"
+            checks={operatorBuildChecks(apple.data)}
+            loading={apple.isPending}
+          />
+          <SetupRow
+            title="Lab Mac server"
+            checks={labServerChecks(apple.data)}
+            loading={apple.isPending}
+          />
+        </div>
+      </details>
     </SettingsFrame>
   );
 }

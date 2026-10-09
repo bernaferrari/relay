@@ -20,7 +20,7 @@ export function PlanLibraryQueryState({
       className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm"
     >
       <CircleX className="size-4 text-destructive" aria-hidden="true" />
-      <span className="flex-1">Couldn’t load saved Plans.</span>
+      <span className="flex-1">Couldn’t load saved plans.</span>
       <Button size="sm" variant="outline" disabled={retrying} onClick={onRetry}>
         {retrying ? "Loading…" : "Try again"}
       </Button>

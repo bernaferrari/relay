@@ -182,8 +182,8 @@ function copyProblem(problem: WorkflowProblem): WorkflowProblem {
     return {
       code: problem.code,
       title: "The starting screen needs a fresh capture",
-      detail: "Relay does not have enough saved screen information to run this Test safely.",
-      recovery: "Open the Test, record its starting screen again, then save it.",
+      detail: "Relay does not have enough saved screen information to run this test safely.",
+      recovery: "Open the test, record its starting screen again, then save it.",
       retryable: false,
       sourceCode: problem.sourceCode,
     };
@@ -275,7 +275,7 @@ function isAbortError(error: unknown): boolean {
 
 function asRunSnapshot(snapshot: WorkflowSnapshot): RunTestSnapshot {
   if (snapshot.kind !== "run-test") {
-    throw new TypeError("The durable workflow is not a Test Run.");
+    throw new TypeError("The durable workflow is not a test run.");
   }
   return snapshot;
 }
@@ -424,7 +424,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
   async function start(input: ProductRunStartInput): Promise<ProductRunState> {
     if (!input.testId.trim()) {
       return publishIdleRecovery(
-        new TypeError("Starting a Run requires a saved Test identifier."),
+        new TypeError("Starting a run requires a saved test identifier."),
         "start",
       );
     }
@@ -456,7 +456,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
   ): Promise<ProductRunState> {
     if (!workflowId?.trim()) {
       return publishIdleRecovery(
-        new TypeError("A durable Run workflow identifier is required."),
+        new TypeError("A durable run workflow identifier is required."),
         "inspect",
       );
     }
@@ -517,13 +517,13 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
   async function cancel(input: ProductRunCancelInput = {}): Promise<ProductRunState> {
     const workflowId = input.workflowId?.trim() || selectedCanonical()?.workflow?.workflowId;
     if (!workflowId) {
-      return publishIdleRecovery(new TypeError("No durable Run is selected."), "cancel");
+      return publishIdleRecovery(new TypeError("No durable run is selected."), "cancel");
     }
     const stored = byWorkflow.get(workflowId);
     const expectedVersion = input.expectedVersion ?? stored?.workflow?.expectedVersion;
     if (expectedVersion === undefined) {
       return publishRecovery(
-        new TypeError("Cancel requires the durable workflow version for this Run."),
+        new TypeError("Cancel requires the durable workflow version for this run."),
         "cancel",
         workflowId,
       );

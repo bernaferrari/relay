@@ -90,7 +90,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
   });
   const createSuite = useMutation({
     mutationFn: async () => {
-      if (!editor.data) throw new TypeError("Choose an App before saving this Plan.");
+      if (!editor.data) throw new TypeError("Choose an app before saving this plan.");
       return suiteProfileService.saveSuite({
         appMapId: editor.data.appMapId,
         suiteId: suiteIdFor(name),
@@ -180,7 +180,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
               <SelectField
                 id="suite-app"
                 label="App"
-                placeholder="Choose an App"
+                placeholder="Choose an app"
                 value={appId}
                 disabled={addingDataSet || createSuite.isPending}
                 options={(apps.data ?? []).map((app) => ({
@@ -197,7 +197,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
               />
             </Field>
           ) : null}
-          {editor.isPending && appId ? <PageLoading label="Loading App Tests…" /> : null}
+          {editor.isPending && appId ? <PageLoading label="Loading app tests…" /> : null}
           {editor.error ? (
             <FieldError>
               Relay could not load this App’s Plan editor.{" "}
@@ -222,8 +222,8 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                   </span>
                 </legend>
                 <Input
-                  aria-label="Search Tests for this Plan"
-                  placeholder="Find a Test…"
+                  aria-label="Search tests for this plan"
+                  placeholder="Find a test…"
                   value={testQuery}
                   onChange={(event) => setTestQuery(event.currentTarget.value)}
                   className="mb-2"
@@ -233,7 +233,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                     test.name.toLocaleLowerCase().includes(testQuery.trim().toLocaleLowerCase()),
                   ) ? (
                     <p className="p-3 text-sm text-muted-foreground">
-                      No Tests match your search. Your selection is preserved.
+                      No tests match your search. Your selection is preserved.
                     </p>
                   ) : null}
                   {editor.data.tests
@@ -374,7 +374,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
             <FieldError>
               {createSuite.error instanceof Error
                 ? createSuite.error.message
-                : "Relay could not save this Plan."}
+                : "Relay could not save this plan."}
             </FieldError>
           ) : null}
           <div className="sticky bottom-0 -mb-4 border-t border-border bg-popover py-4 flex flex-wrap items-center justify-end gap-2.5">

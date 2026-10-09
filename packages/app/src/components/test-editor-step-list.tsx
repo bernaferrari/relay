@@ -8,7 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@relay/ui-react/components/dropdown-menu";
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleAlert, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import { EmptyState } from "./product-patterns";
 import { TestEditorRoutes } from "./test-editor-routes";
@@ -127,16 +127,27 @@ export function TestEditorStepOutline({
                     <strong className="block overflow-hidden text-sm font-medium break-words">
                       {displayTitles?.[entry.step.id] ?? entry.step.intent}
                     </strong>
-                    <small className="mt-0.5 block overflow-hidden text-xs text-muted-foreground break-words empty:hidden">
-                      {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
-                      {stepReadinessLabel(entry.step, {
+                    {(() => {
+                      const readiness = stepReadinessLabel(entry.step, {
                         productName: test.name,
                         originEvidenceMissing,
                         platformBlocker: stepPlatformBlockers?.[entry.step.id],
                       })
                         .split(" · ")[0]!
-                        .replace(/^Ready$/, "")}
-                    </small>
+                        .replace(/^Ready$/, "");
+                      // A step that can't run yet blocks the whole Test; say so in warning tone.
+                      return (
+                        <small className="mt-0.5 flex items-center gap-1 overflow-hidden text-xs text-muted-foreground break-words empty:hidden">
+                          {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
+                          {readiness ? (
+                            <span className="inline-flex items-center gap-1 text-warning-foreground">
+                              <CircleAlert className="size-3 shrink-0" aria-hidden="true" />
+                              {readiness}
+                            </span>
+                          ) : null}
+                        </small>
+                      );
+                    })()}
                   </span>
                   <ChevronRight
                     className={`size-3.5 text-muted-foreground ${selectedStepId === entry.step.id && selectedEditor ? "rotate-90" : ""}`}
@@ -150,8 +161,8 @@ export function TestEditorStepOutline({
         </ol>
       ) : (
         <EmptyState
-          title="This Test has no steps"
-          detail="Record this Test again to give Relay steps to repeat."
+          title="This test has no steps"
+          detail="Record this test again to give Relay steps to repeat."
         />
       )}
       <div className="mt-2 flex flex-wrap items-center gap-1 px-1">

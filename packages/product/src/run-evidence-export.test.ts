@@ -47,7 +47,7 @@ function exported(runId: string, options: { digest?: string } = {}): TracePackEx
         {
           code: "MISSING_EVIDENCE",
           statement: "The fixture has no verified future-device claim.",
-          resolution: "Replay the frozen Test on the intended target.",
+          resolution: "Replay the frozen test on the intended target.",
         },
       ],
       smallestLiveVerification: {
@@ -59,7 +59,7 @@ function exported(runId: string, options: { digest?: string } = {}): TracePackEx
   };
 }
 
-test("run evidence export keeps the requested Run identity on the file", () => {
+test("run evidence export keeps the requested run identity on the file", () => {
   const document = runEvidenceExportDocument("run-184", exported("run-184"));
   assert.equal(document.fileName, "relay-run-run-184.json");
   assert.equal(document.digest, digest);
@@ -69,7 +69,7 @@ test("run evidence export keeps the requested Run identity on the file", () => {
   assert.equal(parsed.analysis.futureTransitionVerdict, "unknown");
 });
 
-test("run evidence export rejects a TracePack from a different Run", () => {
+test("run evidence export rejects a TracePack from a different run", () => {
   assert.throws(
     () => runEvidenceExportDocument("run-184", exported("run-from-test-B")),
     /different Run/u,
@@ -82,7 +82,7 @@ test("run evidence export rejects analysis that does not match the pack digest",
   assert.throws(() => runEvidenceExportDocument("run-184", result), /different evidence digest/u);
 });
 
-test("walkthrough export keeps the requested Run and rejects a different pack", () => {
+test("walkthrough export keeps the requested run and rejects a different pack", () => {
   const pack = {
     pack: {
       schemaVersion: 1 as const,

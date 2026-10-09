@@ -33,7 +33,7 @@ const map = {
   tests: {
     fast: {
       id: "fast",
-      name: "Ordinary Test",
+      name: "Ordinary test",
       steps: [
         {
           id: "type-step",
@@ -282,7 +282,7 @@ it("retains canonical native incompatibility blockers rather than replacing them
   expect(relay.invoke).not.toHaveBeenCalledWith("job.combine.start", expect.anything());
 });
 
-it("retains the selected saved profile in exactly one native Run and the thirty-minute schedule payload", async () => {
+it("retains the selected saved profile in exactly one native run and the thirty-minute schedule payload", async () => {
   discovery();
   const service = createSuiteProfileProductService({} as never);
   await expect(
@@ -389,7 +389,7 @@ it("keeps unscoped browser consumers and their managed preflight unchanged", asy
   expect(relay.invoke).toHaveBeenCalledWith("target.preflight", { targetId: "browser-1" });
 });
 
-it("does not offer a linked native companion as this App's recorded route", async () => {
+it("does not offer a linked native companion as this app's recorded route", async () => {
   const browserMap = structuredClone(map);
   browserMap.tests.fast!.family = {
     logicalIntentRevision: 1,
@@ -419,7 +419,7 @@ it("does not offer a linked native companion as this App's recorded route", asyn
   expect(relay.invoke).not.toHaveBeenCalledWith("target.devices.list", expect.anything());
 });
 
-it("requires a common recorded platform for every selected Test, independent of names", async () => {
+it("requires a common recorded platform for every selected test, independent of names", async () => {
   const mixedMap = structuredClone(map);
   mixedMap.tests.web = {
     ...mixedMap.tests.fast!,

@@ -51,7 +51,7 @@ export function ChangePage() {
   const mutation = useMutation({
     mutationFn: async (action: ChangeAction) => {
       const current = change.data?.state.change;
-      if (!current) throw new TypeError("This Change is not available.");
+      if (!current) throw new TypeError("This change is not available.");
       if (action === "approve") return changeService.approve(current.id, current.version);
       if (action === "run") return changeService.run(current.id, current.version);
       if (action === "cancel") return changeService.cancel(current.id, current.version);
@@ -118,10 +118,10 @@ export function ChangePage() {
           title="Change"
         />
       ) : null}
-      {change.isPending ? <PageLoading label="Loading Change verification…" /> : null}
+      {change.isPending ? <PageLoading label="Loading change verification…" /> : null}
       {change.isError ? (
         <EmptyState
-          title="Relay could not load this Change"
+          title="Relay could not load this change"
           detail="Check the local service, then try again. The saved verification is unchanged."
           tone="notice"
           action={<Button onClick={() => void change.refetch()}>Try again</Button>}
@@ -129,11 +129,11 @@ export function ChangePage() {
       ) : null}
       {!change.isPending && !change.isError && !current ? (
         <EmptyState
-          title="This Change is not available"
-          detail="It may have been replaced or removed. Return to Changes to see the current history."
+          title="This change is not available"
+          detail="It may have been replaced or removed. Return to changes to see the current history."
           action={
             <Link className={productLinkClassName} to="/changes">
-              View Changes
+              View changes
             </Link>
           }
         />
@@ -220,7 +220,7 @@ export function ChangePage() {
                   : details.delivery.phase === "re-verifying"
                     ? "Replacement verification"
                     : details.delivery.phase === "failed"
-                      ? "Required Test failed"
+                      ? "Required test failed"
                       : details.delivery.phase === "blocked"
                         ? "New build required"
                         : "Verification"}
@@ -457,7 +457,7 @@ function primaryAction(
   ) {
     return {
       kind: "run",
-      label: change.status === "ready" ? "Verify Change" : "Continue verification",
+      label: change.status === "ready" ? "Verify change" : "Continue verification",
       pendingLabel: "Starting verification…",
     };
   }
@@ -518,11 +518,11 @@ function RiskSection({
 
 function verdictTitle(status: string): string {
   if (status === "proved") return "Ready to merge";
-  if (status === "rejected") return "This Change should not merge yet";
+  if (status === "rejected") return "This change should not merge yet";
   if (status === "needs-review") return "A person needs to review the evidence";
   if (status === "insufficient-evidence") return "Relay needs more evidence";
   if (["running", "running-pilot", "awaiting-expansion"].includes(status))
-    return "Relay is verifying this Change";
+    return "Relay is verifying this change";
   if (status === "ready") return "The reviewed plan is ready";
   if (status === "planning") return "Review the plan before Relay controls a device or browser";
   if (status === "awaiting-build") return "Exact builds are still being prepared";

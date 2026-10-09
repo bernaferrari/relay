@@ -146,7 +146,7 @@ export function ValidationExpectationEditor({
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             Current viewport. A person will review later. Capture succeeded is not the same as
             review accepted. Looks correct reviews this capture. Accept as reference also governs
-            later Runs. No AI key required.
+            later runs. No AI key required.
           </p>
         </>
       ) : null}

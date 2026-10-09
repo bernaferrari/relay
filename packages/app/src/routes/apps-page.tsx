@@ -69,20 +69,19 @@ export function AppsPage() {
   return (
     <LibraryPage className="max-w-5xl">
       <PageHeader
-        context="Workspace"
         title="Apps"
         description="Tests and results for each app."
         actions={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger render={<Button variant="default" />}>
-              <Plus aria-hidden="true" /> Add App
+              <Plus aria-hidden="true" /> Add app
             </DialogTrigger>
 
             <DialogContent showCloseButton={false}>
-              <DialogTitle>Add an App</DialogTitle>
+              <DialogTitle>Add an app</DialogTitle>
               <DialogDescription>
                 Give the app a clear name. Relay will create its saved Map, then take you directly
-                to target selection so you can record the first Test.
+                to target selection so you can record the first test.
               </DialogDescription>
               <form onSubmit={submit}>
                 <Field>
@@ -116,7 +115,7 @@ export function AppsPage() {
                     variant="default"
                     disabled={!name.trim() || createApp.isPending}
                   >
-                    {createApp.isPending ? "Adding…" : "Add App"}
+                    {createApp.isPending ? "Adding…" : "Add app"}
                   </Button>
                 </div>
               </form>
@@ -147,8 +146,8 @@ export function AppsPage() {
       ) : null}
       {!loading && !error && secondaryError ? (
         <RecoveryState
-          title="Some App activity is unavailable"
-          detail="The App list is available. Test and Run counts will return when Relay reconnects."
+          title="Some app activity is unavailable"
+          detail="The app list is available. Test and run counts will return when Relay reconnects."
           action={
             <Button
               variant="outline"
@@ -168,7 +167,7 @@ export function AppsPage() {
           detail="Add the first app you want Relay to map, test, and verify."
           action={
             <Button variant="default" onClick={() => setDialogOpen(true)}>
-              Add App
+              Add app
             </Button>
           }
         />
@@ -199,12 +198,12 @@ export function AppsPage() {
                     <strong>{app.name}</strong>
                     <small className="text-xs text-muted-foreground">
                       {tests.isPending
-                        ? "Loading Test count…"
+                        ? "Loading test count…"
                         : tests.error
                           ? "Test count unavailable"
                           : `${testCount} ${testCount === 1 ? "Test" : "Tests"}`}
                       {runs.isPending
-                        ? " · Loading Run history…"
+                        ? " · Loading run history…"
                         : runs.error
                           ? " · Run history unavailable"
                           : latest

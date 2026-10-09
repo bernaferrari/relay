@@ -75,7 +75,8 @@ function TestRow({
             </span>
           </span>
           <span className="flex min-w-0 items-center text-xs text-muted-foreground [&_[data-slot=status-pill]]:bg-transparent [&_[data-slot=status-pill]]:p-0 [&_[data-slot=badge]]:border-0 [&_[data-slot=badge]]:bg-transparent [&_[data-slot=badge]]:p-0">
-            {test.status !== "ready" ? (
+            {/* Every draft is unrecorded; the Drafts tab and "Edit draft" already say so. */}
+            {draft ? null : test.status !== "ready" ? (
               <ReadinessMark
                 status={test.status}
                 name={test.name}

@@ -16,7 +16,7 @@ import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
 import { productTestStatusLabel } from "@relay/product/catalog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { Play, RotateCcw, Trash2 } from "lucide-react";
+import { Play, RotateCcw } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-patterns";
@@ -33,7 +33,7 @@ import { PlanDailySchedule } from "./plan-daily-schedule";
 import type { ProductPlanScheduleTiming } from "../data/suite-profile-product-service";
 import { PlanChecklist } from "./plan-checklist";
 import { PlanInputUsageWarnings } from "./plan-input-usage-warnings";
-import { PlanEditDialog, PlanRemoveSection } from "./plan-edit-dialog";
+import { PlanEditDialog, PlanHeaderActions, PlanRemoveDialog } from "./plan-edit-dialog";
 import { PageLoading } from "./recording-shared";
 import { friendlySuiteIssue, summarizeSuiteSetup } from "../data/suite-preflight-copy";
 import { productLinkClassName } from "../lib/class-names";
@@ -67,6 +67,7 @@ export function SuitePage() {
   const navigate = useNavigate();
   const scope = useRunConfigurationKey(platform, `suite:${suiteId}`, appId);
   const [editOpen, setEditOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
   const [executionMode, setExecutionMode] = useState<"pilot" | "all">(defaultPlanExecutionMode);
   const suite = useQuery({
     queryKey: ["suites", appId, suiteId],
@@ -178,7 +179,7 @@ export function SuitePage() {
   const schedule = useMutation({
     mutationFn: (input: ProductPlanScheduleTiming) => {
       if (!suiteProfileService.schedulePlan)
-        throw new TypeError("Scheduling this Plan is unavailable.");
+        throw new TypeError("Scheduling this plan is unavailable.");
       if (missingAccountMessage) throw new TypeError(missingAccountMessage);
       const profileId = selectedProfileIds[0];
       if (!profileId) throw new TypeError("Choose a browser or device first.");
@@ -243,7 +244,7 @@ export function SuitePage() {
     : configuration.targetUnavailable
       ? {
           tone: "error",
-          message: "This device or browser is unavailable. Choose another in Run setup.",
+          message: "This device or browser is unavailable. Choose another in run setup.",
         }
       : preview.error
         ? {
@@ -253,18 +254,18 @@ export function SuitePage() {
             }`,
           }
         : previewChecking && previewSlow
-          ? { tone: "muted", message: "Still checking this Plan's setup…" }
+          ? { tone: "muted", message: "Still checking this plan's setup…" }
           : null;
   const unfinishedBatchId = unfinishedRunOf(start.error);
   const runningCases = executionMode === "pilot" ? Math.min(1, plannedCases) : plannedCases;
 
   return (
     <LibraryPage className="max-w-5xl">
-      {suite.isPending ? <PageLoading label="Loading Plan…" /> : null}
+      {suite.isPending ? <PageLoading label="Loading plan…" /> : null}
       {suite.error ? (
         <RecoveryState
           layout="centered"
-          title="This Plan is unavailable"
+          title="This plan is unavailable"
           detail="Relay could not load this plan. Try again."
           action={
             <Button variant="outline" onClick={() => void suite.refetch()}>
@@ -276,10 +277,10 @@ export function SuitePage() {
       {!suite.isPending && !suite.error && !value ? (
         <EmptyState
           title="Plan not found"
-          detail="It may have been removed from this App."
+          detail="It may have been removed from this app."
           action={
             <Link className={productLinkClassName} to="/suites">
-              Back to Plans
+              Back to plans
             </Link>
           }
         />
@@ -296,9 +297,10 @@ export function SuitePage() {
               .filter(Boolean)
               .join(" · ")}
             actions={
-              <Button variant="ghost" onClick={() => setEditOpen(true)}>
-                Edit Plan
-              </Button>
+              <PlanHeaderActions
+                onEdit={() => setEditOpen(true)}
+                onRemove={() => setRemoveOpen(true)}
+              />
             }
           />
 
@@ -524,7 +526,7 @@ export function SuitePage() {
                 <FieldError>
                   {preview.error instanceof Error
                     ? preview.error.message
-                    : "Relay could not check this Plan."}
+                    : "Relay could not check this plan."}
                 </FieldError>
               ) : null}
               <div className="mt-5 grid gap-3 border-t border-border pt-4">
@@ -617,7 +619,7 @@ export function SuitePage() {
                 <FieldError>
                   {start.error instanceof Error
                     ? start.error.message
-                    : "Relay could not start this Plan."}
+                    : "Relay could not start this plan."}
                 </FieldError>
               ) : null}
             </section>
@@ -650,7 +652,13 @@ export function SuitePage() {
             />
           ) : null}
 
-          <PlanRemoveSection appId={appId} suiteId={suiteId} value={value} />
+          <PlanRemoveDialog
+            appId={appId}
+            suiteId={suiteId}
+            value={value}
+            open={removeOpen}
+            onOpenChange={setRemoveOpen}
+          />
 
           {editOpen ? (
             <PlanEditDialog

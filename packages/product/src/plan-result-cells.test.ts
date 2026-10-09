@@ -31,7 +31,7 @@ function item(
   };
 }
 
-test("one passed and nine blocked is incomplete, never Plan completed", () => {
+test("one passed and nine blocked is incomplete, never plan completed", () => {
   const grid = summarizeProductResultGrid([
     item("passed"),
     ...Array.from({ length: 9 }, () => item("blocked", { findingCode: "BLOCKED" })),

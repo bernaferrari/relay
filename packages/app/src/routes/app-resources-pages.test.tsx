@@ -387,7 +387,7 @@ describe("App routes", () => {
     expect(button("Save account").disabled).toBe(false);
   });
 
-  it("lists production apps and creates an App through the canonical service", async () => {
+  it("lists production apps and creates an app through the canonical service", async () => {
     const created: string[] = [];
     const history = await render(
       "/apps",
@@ -400,12 +400,12 @@ describe("App routes", () => {
     );
 
     expect(document.body.textContent).toContain("Checkout");
-    expect(document.body.textContent).toContain("1 Test · Last run");
+    expect(document.body.textContent).toContain("1 test · Last run");
     expect(document.querySelector('a[href="/apps/checkout-app"]')).not.toBeNull();
-    await click(button("Add App"));
+    await click(button("Add app"));
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     await fill(document.querySelector<HTMLInputElement>("#new-app-name")!, "Inventory");
-    await click(button("Add App", document.querySelector('[role="dialog"]')!));
+    await click(button("Add app", document.querySelector('[role="dialog"]')!));
 
     expect(created).toEqual(["Inventory"]);
     expect(history.location.pathname).toBe("/tests/new");
@@ -426,7 +426,7 @@ describe("App routes", () => {
     expect(alert?.querySelectorAll("button")).toHaveLength(1);
   });
 
-  it("shows real workspace builds without inventing an App association", async () => {
+  it("shows real workspace builds without inventing an app association", async () => {
     await render(
       "/apps/checkout-app/versions",
       resources({

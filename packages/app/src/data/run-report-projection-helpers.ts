@@ -36,15 +36,15 @@ export const channelLabels: Partial<Record<EvidenceChannel, string>> = {
   input: "Interactions",
 };
 export const channelSummaries: Partial<Record<EvidenceChannel, string>> = {
-  screenshot: "See the screens Relay captured while this Test ran.",
+  screenshot: "See the screens Relay captured while this test ran.",
   "ui-tree": "Inspect the interface structure Relay used for semantic checks.",
   logs: "Read messages captured from the device and Relay.",
-  network: "Review the network observations available for this Run.",
-  performance: "Review timing and performance observations from this Run.",
-  crash: "Inspect crash evidence captured while this Test ran.",
-  video: "Watch the recorded visual evidence from this Run.",
-  audio: "Listen to audio evidence captured during this Run.",
-  input: "Review the interactions Relay performed during this Run.",
+  network: "Review the network observations available for this run.",
+  performance: "Review timing and performance observations from this run.",
+  crash: "Inspect crash evidence captured while this test ran.",
+  video: "Watch the recorded visual evidence from this run.",
+  audio: "Listen to audio evidence captured during this run.",
+  input: "Review the interactions Relay performed during this run.",
 };
 export function publicNetworkUrl(value: unknown): string | undefined {
   const raw = text(value);
@@ -247,20 +247,20 @@ export function publicRunCause(value: string | undefined): string | undefined {
   if (
     /raw accessibility|immutable raw|offline geometry|raw-evidence-recapture-required/iu.test(value)
   ) {
-    return "Relay needs a fresh capture of the starting screen before this Test can run.";
+    return "Relay needs a fresh capture of the starting screen before this test can run.";
   }
   if (/app map selection is ambiguous/iu.test(value)) {
-    return "Relay could not identify which app owns this Test.";
+    return "Relay could not identify which app owns this test.";
   }
   if (/target selection is ambiguous|choose one by id/iu.test(value)) {
-    return "Relay needs one exact device or browser before this Test can run.";
+    return "Relay needs one exact device or browser before this test can run.";
   }
   if (
     /identifier|selector|xpath|geometry|accessibility tree|appmapid|targetid|expectedversion|\bat .+\.ts:\d+/iu.test(
       value,
     )
   ) {
-    return "Relay could not complete this Test with the saved recording.";
+    return "Relay could not complete this test with the saved recording.";
   }
   return value;
 }

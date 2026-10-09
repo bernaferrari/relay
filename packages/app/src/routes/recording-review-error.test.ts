@@ -75,7 +75,7 @@ describe("recording action confirmation", () => {
     expect(reviewTransitionConfirmed(result, canonical, { action: "replay" })).toBe(false);
   });
 
-  it("requires exact edit revision or the exact committed Test", () => {
+  it("requires exact edit revision or the exact committed test", () => {
     const result = recordedResult();
     const canonical = structuredClone(result);
     expect(
@@ -136,7 +136,7 @@ it("retains bounded read response status and leaves mutation confirmation copy u
   const specific = {
     title: "Saved setup needs review",
     detail: "Review the captured setup.",
-    recovery: "Open the Test.",
+    recovery: "Open the test.",
   };
   expect(
     recordingReviewErrorCopy("inspect", specific, undefined, {

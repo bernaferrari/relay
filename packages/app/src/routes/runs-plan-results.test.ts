@@ -55,7 +55,7 @@ describe("Plan Result rows", () => {
     ).toBeUndefined();
   });
 
-  it("does not retain a representative pass while another Run is still active", () => {
+  it("does not retain a representative pass while another run is still active", () => {
     const rows = collapsePlanResultRows([
       run({
         id: "done",
@@ -78,7 +78,7 @@ describe("Plan Result rows", () => {
     expect(planResultListCause(rows[0]!)).toBe("In progress");
   });
 
-  it("collapses Run Across cells onto one Plan Result that opens the grid", () => {
+  it("collapses run Across cells onto one plan Result that opens the grid", () => {
     const upload = run({
       id: "run-upload",
       title: "Upload a file while logged out",
@@ -121,7 +121,7 @@ describe("Plan Result rows", () => {
     expect(resultRowHref(rows[1]!)).toBe("/runs/run-solo");
   });
 
-  it("does not call an Infra Plan a product pass or a product failure", () => {
+  it("does not call an Infra plan a product pass or a product failure", () => {
     const rows = collapsePlanResultRows(
       Array.from({ length: 8 }, (_, index) =>
         run({
@@ -185,11 +185,11 @@ describe("Plan Result rows", () => {
     expect(planResultListCause(rows[0]!)).toBe("Needs review");
   });
 
-  it("does not turn an all-cancelled Plan into a successful result", () => {
+  it("does not turn an all-cancelled plan into a successful result", () => {
     const rows = collapsePlanResultRows([
       run({
         id: "run-cancelled",
-        title: "Cancelled Test",
+        title: "Cancelled test",
         phase: "cancelled",
         outcome: "cancelled",
         queuedAt: 1,
@@ -201,7 +201,7 @@ describe("Plan Result rows", () => {
     expect(planResultListCause(rows[0]!)).toBe("Cancelled");
   });
 
-  it("keeps a mixed Plan as a product failure when any cell is a product issue", () => {
+  it("keeps a mixed plan as a product failure when any cell is a product issue", () => {
     const rows = collapsePlanResultRows([
       run({
         id: "run-ok",
@@ -235,7 +235,7 @@ describe("Plan Result rows", () => {
     expect(planResultListCause(rows[0]!)).toBe("Failed");
   });
 
-  it("keeps a Plan Result failed when any cell failed", () => {
+  it("keeps a plan Result failed when any cell failed", () => {
     const rows = collapsePlanResultRows([
       run({
         id: "run-ok",
@@ -262,7 +262,7 @@ describe("Plan Result rows", () => {
     expect(resultRowHref(rows[0]!)).toBe("/batches/batch-1");
   });
 
-  it("uses the saved Plan name from the job title, not a generic app Result", () => {
+  it("uses the saved plan name from the job title, not a generic app Result", () => {
     const rows = collapsePlanResultRows([
       run({
         id: "run-hourly",

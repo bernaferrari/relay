@@ -72,52 +72,65 @@ export function PairedWorkspacePanel({
   });
 
   return (
-    <section className="mt-8 grid gap-3" aria-labelledby="paired-workspace-title">
-      <div>
-        <h2 id="paired-workspace-title" className="text-base font-semibold">
-          Saved browser sign-ins
-        </h2>
-        <p className="text-sm text-muted-foreground">{pairedWorkspaceSummary(workspace)}</p>
+    <section className="mt-10 grid gap-4" aria-labelledby="paired-workspace-title">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="grid gap-1">
+          <h2 id="paired-workspace-title" className="text-base font-semibold">
+            Saved browser sign-ins
+          </h2>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Pair a browser with an account so one run can check several people at once — for example
+            Admin and Member side by side.
+          </p>
+        </div>
+        {workspace.rows.length ? (
+          <Button variant="outline" disabled={openLive.isPending} onClick={() => openLive.mutate()}>
+            {openLive.isPending ? "Opening…" : "Open all side by side"}
+          </Button>
+        ) : null}
       </div>
       {workspace.rows.length ? (
-        <table className="w-full border-collapse text-sm">
-          <caption className="sr-only">Saved browser sign-ins</caption>
-          <thead>
-            <tr className="text-left text-muted-foreground">
-              <th className="border-b border-border py-2 pr-3 font-medium">Name</th>
-              <th className="border-b border-border py-2 pr-3 font-medium">Browser</th>
-              <th className="border-b border-border py-2 font-medium">Account</th>
-            </tr>
-          </thead>
-          <tbody>
+        <div className="grid gap-1.5">
+          <p className="text-xs text-muted-foreground">{pairedWorkspaceSummary(workspace)}</p>
+          <ul
+            className="m-0 grid list-none divide-y divide-border overflow-hidden rounded-xl border border-border bg-card p-0"
+            aria-label="Saved browser sign-ins"
+          >
             {workspace.rows.map((row) => (
-              <tr key={row.id}>
-                <td className="border-b border-border py-2 pr-3">{row.name}</td>
-                <td className="border-b border-border py-2 pr-3">
+              <li key={row.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                <span className="truncate text-sm font-medium">{row.name}</span>
+                <span className="truncate text-xs text-muted-foreground">
                   {row.browserName}
-                  {row.engine ? ` · ${row.engine}` : ""}
-                </td>
-                <td className="border-b border-border py-2">{row.accountName ?? "Signed out"}</td>
-              </tr>
+                  {row.engine ? ` · ${row.engine}` : ""} · {row.accountName ?? "Signed out"}
+                </span>
+              </li>
             ))}
-          </tbody>
-        </table>
+          </ul>
+        </div>
+      ) : null}
+      {openLive.data ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Opened {openLive.data.plan.map((row) => row.name).join(", ")}.
+        </p>
       ) : null}
       <form
-        className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+        className="grid gap-3 rounded-xl border border-dashed border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
+        aria-label="Add a sign-in combination"
         onSubmit={(event) => {
           event.preventDefault();
           saveRow.mutate();
         }}
       >
-        <Input
-          value={name}
-          onChange={(event) => setName(event.currentTarget.value)}
-          placeholder="Admin desktop"
-          aria-label="Pair name"
-        />
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium">
+          Name
+          <Input
+            value={name}
+            onChange={(event) => setName(event.currentTarget.value)}
+            placeholder="e.g. Admin desktop"
+            aria-label="Combination name"
+          />
+        </label>
         <SelectField
-          compact
           label="Browser"
           value={browserId}
           options={spaces.map((space) => ({ value: space.id, label: space.name }))}
@@ -127,8 +140,7 @@ export function PairedWorkspacePanel({
           }}
         />
         <SelectField
-          compact
-          label="Account"
+          label="Signed in as"
           value={accountId || "signed-out"}
           options={[
             { value: "signed-out", label: "Signed out" },
@@ -136,8 +148,8 @@ export function PairedWorkspacePanel({
           ]}
           onValueChange={(value) => setAccountId(value === "signed-out" ? "" : value)}
         />
-        <Button type="submit" variant="outline" disabled={!spaces.length || saveRow.isPending}>
-          {saveRow.isPending ? "Saving…" : "Add pair"}
+        <Button type="submit" disabled={!spaces.length || !name.trim() || saveRow.isPending}>
+          {saveRow.isPending ? "Adding…" : "Add"}
         </Button>
       </form>
       {saveRow.error ? (
@@ -145,20 +157,6 @@ export function PairedWorkspacePanel({
           {saveRow.error instanceof Error ? saveRow.error.message : "Could not save this pair."}
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="default"
-          disabled={!workspace.rows.length || openLive.isPending}
-          onClick={() => openLive.mutate()}
-        >
-          {openLive.isPending ? "Opening…" : "Open in Live"}
-        </Button>
-        {openLive.data ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Opened {openLive.data.plan.map((row) => row.name).join(", ")}.
-          </p>
-        ) : null}
-      </div>
     </section>
   );
 }

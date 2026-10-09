@@ -92,7 +92,7 @@ export function PlanInputBindingChoices({
   if (preview.isPending)
     return (
       <p role="status" className="text-sm">
-        Loading Test text actions…
+        Loading test text actions…
       </p>
     );
   if (preview.error)
@@ -100,17 +100,17 @@ export function PlanInputBindingChoices({
       <FieldError>
         {preview.error instanceof Error
           ? preview.error.message
-          : "Could not load Test text actions."}
+          : "Could not load test text actions."}
       </FieldError>
     );
   if (!preview.data) return null;
   return (
     <div className="grid min-w-0 gap-4 border-t border-border pt-3">
       <p className="text-sm text-muted-foreground">
-        Choose the text action each Test will read from these saved values.
+        Choose the text action each test will read from these saved values.
       </p>
       {!preview.data.tests.length ? (
-        <p className="text-sm">Select Tests for this Plan first.</p>
+        <p className="text-sm">Select tests for this plan first.</p>
       ) : null}
       {preview.data.tests.map((test) => {
         const choice = choices[test.id];
@@ -127,7 +127,7 @@ export function PlanInputBindingChoices({
             <legend className="mb-2 text-sm font-medium">{test.name}</legend>
             {!test.actions.length ? (
               <p className="text-xs text-muted-foreground">
-                This Test has no eligible text action. Its steps stay unchanged.
+                This test has no eligible text action. Its steps stay unchanged.
               </p>
             ) : (
               <>
@@ -186,8 +186,8 @@ export function PlanInputBindingChoices({
           </fieldset>
         );
       })}
-      <fieldset aria-label="Values for this Plan" className="grid max-h-64 gap-2 overflow-y-auto">
-        <legend className="mb-2 text-sm font-medium">Values for this Plan</legend>
+      <fieldset aria-label="Values for this plan" className="grid max-h-64 gap-2 overflow-y-auto">
+        <legend className="mb-2 text-sm font-medium">Values for this plan</legend>
         {preview.data.options.map((option, index) => (
           <FieldLabel
             key={option.id}

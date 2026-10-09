@@ -22,8 +22,8 @@ export function capturedSetupRecovery(problem: {
   return {
     title: "Saved setup needs review",
     detail:
-      "Recorded screens disagree about the setup for this Test. Relay cannot choose one safely.",
-    recovery: "Review the affected step’s capture in the Test editor before running again.",
+      "Recorded screens disagree about the setup for this test. Relay cannot choose one safely.",
+    recovery: "Review the affected step’s capture in the test editor before running again.",
     retryable: false,
     sourceCode: problem.sourceCode,
     ...(stepId ? { sourceStepId: stepId } : {}),

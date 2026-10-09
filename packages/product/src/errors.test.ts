@@ -49,7 +49,7 @@ test("captured setup conflict preserves the canonical affected step without leak
     testId: "test-speed",
     stepId: "step-d950-source",
     diagnostics: [],
-    recovery: "Open the Test editor and resolve its blocking compile diagnostics.",
+    recovery: "Open the test editor and resolve its blocking compile diagnostics.",
   };
   for (const body of [
     {
@@ -98,8 +98,8 @@ test("browser setup selection recovery keeps its existing public explanation", (
     code: "compile-blocked",
     sourceCode: "browser-target-profile-selection-required",
     title: "This browser’s setup changed since recording",
-    detail: "The Test was recorded with a different browser setup.",
-    recovery: "Record the Test again on this browser, or restore its previous setup in Devices.",
+    detail: "The test was recorded with a different browser setup.",
+    recovery: "Record the test again on this browser, or restore its previous setup in Devices.",
     retryable: false,
   };
   const { code: _code, ...expected } = problem;

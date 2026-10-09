@@ -23,7 +23,7 @@ export function EditTestPage() {
       replace: true,
     });
   }, [appMapId, navigate, sessionId, stepId, testId]);
-  if (!sessionId) return <PageLoading label="Opening the Test…" />;
+  if (!sessionId) return <PageLoading label="Opening the test…" />;
   return (
     <TestEditor
       key={`${appMapId ?? "unscoped"}:${testId}`}

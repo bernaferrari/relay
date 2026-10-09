@@ -28,7 +28,7 @@ import {
   useNavigate,
   useRouteContext,
 } from "@tanstack/react-router";
-import { ChevronRight, RotateCcw } from "lucide-react";
+import { ChevronRight, Plus, RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { FormPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
@@ -205,8 +205,9 @@ export function EnvironmentPage() {
               variant="ghost"
               onClick={() => refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })}
               disabled={refreshAccount.isPending}
+              title="Save this browser's current sign-in over the stored one"
             >
-              Refresh
+              Update sign-in
             </Button>
             <Button
               size="sm"
@@ -281,7 +282,7 @@ export function EnvironmentPage() {
                       )
                     }
                   >
-                    {continuation.kind === "run-setup" ? "Back to Test" : "Back to recording"}
+                    {continuation.kind === "run-setup" ? "Back to test" : "Back to recording"}
                   </Button>
                 ) : null}
                 <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
@@ -375,12 +376,25 @@ export function EnvironmentPage() {
             className="mt-6 border-t border-border pt-5"
             aria-labelledby="environment-account-title"
           >
-            <h2
-              id="environment-account-title"
-              className="text-sm font-medium text-muted-foreground"
-            >
-              Accounts
-            </h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2
+                id="environment-account-title"
+                className="text-sm font-medium text-muted-foreground"
+              >
+                Accounts
+              </h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAccountName("");
+                  saveAccount.reset();
+                  setAccountOpen(true);
+                }}
+              >
+                <Plus aria-hidden="true" /> Save current sign-in
+              </Button>
+            </div>
             {fixtures.isPending ? <PageLoading label="Loading accounts…" /> : null}
             {currentAccounts.length ? (
               <ul data-slot="environment-accounts" className="mt-2 grid list-none p-0">
@@ -430,18 +444,6 @@ export function EnvironmentPage() {
                   : "Relay could not update this sign-in."}
               </FieldError>
             ) : null}
-            <Button
-              className="mt-3"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setAccountName("");
-                saveAccount.reset();
-                setAccountOpen(true);
-              }}
-            >
-              Save account
-            </Button>
           </section>
 
           <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
@@ -518,8 +520,8 @@ export function EnvironmentPage() {
             <DialogContent showCloseButton={false}>
               <DialogTitle>Revoke {revokeFixture?.name}?</DialogTitle>
               <DialogDescription>
-                Relay will keep the audit record and existing Run evidence. This named sign-in will
-                no longer be valid for future authenticated Tests.
+                Relay will keep the audit record and existing run evidence. This named sign-in will
+                no longer be valid for future authenticated tests.
               </DialogDescription>
               {revokeAccount.error ? (
                 <FieldError>

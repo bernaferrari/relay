@@ -37,7 +37,7 @@ function implicitRecordedPlatform(origin?: string): PlanPlatform | undefined {
 }
 
 function unrecordedReason(platform: PlanPlatform): string {
-  return `Record this Test on ${PLATFORM_LABEL[platform]} before running it there.`;
+  return `Record this test on ${PLATFORM_LABEL[platform]} before running it there.`;
 }
 
 function connectionIdsFromSteps(steps: readonly AppMapScenarioTestStep[]): string[] {
@@ -124,7 +124,7 @@ export function testRoutePlatformStatuses(
         label,
         status: "linked" as const,
         companion: { appMapId: companion.appMapId, testId: companion.testId },
-        reason: `Same intent lives on ${companion.appMapId} ${companion.testId}. This Test stays unrecorded on ${label}.`,
+        reason: `Same intent lives on ${companion.appMapId} ${companion.testId}. This test stays unrecorded on ${label}.`,
       };
     }
     if (!test.family && (implicit === platform || options?.recordedPlatforms?.includes(platform))) {
@@ -158,5 +158,5 @@ export function unrecordedNativeEditorNotice(
   const missing = statuses.filter((item) => item.status === "unrecorded");
   if (!missing.length) return undefined;
   const names = missing.map((item) => item.label).join(" and ");
-  return `Record the missing platforms (${names}) to run this Test on them.`;
+  return `Record the missing platforms (${names}) to run this test on them.`;
 }

@@ -311,7 +311,7 @@ describe("RunWorkbench", () => {
     expect(host.querySelector('img[alt="Checkout submitted"]')).not.toBeNull();
   });
 
-  it("shows unlinked artifacts for a legacy Run with no timeline", () => {
+  it("shows unlinked artifacts for a legacy run with no timeline", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -655,7 +655,7 @@ describe("RunWorkbench", () => {
             },
             {
               id: "frames/004.png",
-              title: "after · Run saved Test",
+              title: "after · Run saved test",
               media: { kind: "image", src: "/leftover-close.png", width: 320, height: 200 },
             },
           ],
@@ -727,7 +727,7 @@ describe("RunWorkbench", () => {
             },
             {
               id: "frames/004.png",
-              title: "after · Run saved Test",
+              title: "after · Run saved test",
               media: { kind: "image", src: "/leftover-close.png", width: 320, height: 200 },
             },
           ],

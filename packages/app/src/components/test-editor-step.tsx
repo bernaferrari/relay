@@ -246,7 +246,7 @@ export function SelectedStepEditor({
         <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
           <AlertTriangle aria-hidden="true" />
           <div>
-            <AlertTitle>Not saved on this Test</AlertTitle>
+            <AlertTitle>Not saved on this test</AlertTitle>
             <AlertDescription>
               Choose what Relay should prove, then Save step. An unbound Prove the result is not
               compiled. This does not accept a visual baseline.

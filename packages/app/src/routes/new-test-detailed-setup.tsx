@@ -129,31 +129,38 @@ export function NewTestDetailedSetup({
   const choices = deviceOnly
     ? targetOptions.filter((target) => target.kind === "device")
     : targetOptions;
+  const selectedChoice = choices.find((target) => target.targetId === targetId);
   const deviceChoice = (
-    <RecordingDeviceChoice
-      admission={admission}
-      service={deviceService}
-      loading={targetFetching}
-      deviceOnly={deviceOnly}
-      onStarted={async (serial) => {
-        if (!admission.mayEdit()) return;
-        await onRefreshTargets();
-        if (admission.mayEdit()) chooseTarget(serial);
-      }}
-      value={targetId}
-      options={choices.map((target) => {
-        const label = targetLabel(target);
-        return {
+    <div className="grid gap-1">
+      <RecordingDeviceChoice
+        admission={admission}
+        service={deviceService}
+        loading={targetFetching}
+        deviceOnly={deviceOnly}
+        onStarted={async (serial) => {
+          if (!admission.mayEdit()) return;
+          await onRefreshTargets();
+          if (admission.mayEdit()) chooseTarget(serial);
+        }}
+        value={targetId}
+        // Names only, so the closed menu never truncates mid-word; the chosen
+        // target's detail sits beneath it.
+        options={choices.map((target) => ({
           value: target.targetId,
-          label: label.detail ? `${label.title} · ${label.detail}` : label.title,
-        };
-      })}
-      onChange={(value) => {
-        if (!admission.mayEdit()) return;
-        onNewBrowserOpen(false);
-        chooseTarget(value);
-      }}
-    />
+          label: targetLabel(target).title,
+        }))}
+        onChange={(value) => {
+          if (!admission.mayEdit()) return;
+          onNewBrowserOpen(false);
+          chooseTarget(value);
+        }}
+      />
+      {selectedChoice ? (
+        <p className="truncate text-xs text-muted-foreground">
+          {targetLabel(selectedChoice).detail}
+        </p>
+      ) : null}
+    </div>
   );
   if (deviceOnly && !targetId) {
     return (

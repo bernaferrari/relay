@@ -44,7 +44,7 @@ export function MapScreenMergeDialog({
           <DialogTitle>Merge captures into {screen.title}</DialogTitle>
           <DialogDescription>
             Choose another capture of this same screen, such as Home with the keyboard open.
-            Captures, actions, and Test connections are kept under one screen.
+            Captures, actions, and test connections are kept under one screen.
           </DialogDescription>
         </DialogHeader>
         <SelectField

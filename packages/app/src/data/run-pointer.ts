@@ -32,7 +32,7 @@ export async function readRunPointer(platform: Platform): Promise<RunPointer | u
 
 export async function writeRunPointer(platform: Platform, pointer: RunPointer): Promise<void> {
   const valid = parseRunPointer(JSON.stringify(pointer));
-  if (!valid) throw new TypeError("The Run workflow pointer is invalid.");
+  if (!valid) throw new TypeError("The run workflow pointer is invalid.");
   await platform.storage.set(RUN_POINTER_KEY, JSON.stringify(valid));
 }
 

@@ -28,7 +28,7 @@ describe("insertPendingCheckpoint", () => {
     expect(next.map((step) => step.id)).toEqual(["step-cart", "step-pending"]);
   });
 
-  it("does not duplicate a checkpoint that already landed on the saved Test", () => {
+  it("does not duplicate a checkpoint that already landed on the saved test", () => {
     const saved: AppMapScenarioTestStep[] = [
       {
         id: "step-cart",

@@ -17,6 +17,6 @@ test("a present OpenRouter key is ready without returning the key", () => {
   const status = inspectOpenRouterJudgeSetup({ OPENROUTER_API_KEY: "sk-or-v1-test" });
   assert.equal(status.status, "ready");
   assert.equal(status.configured, true);
-  assert.match(status.detail, /OPENROUTER_API_KEY is set/u);
+  assert.match(status.detail, /OpenRouter key found/u);
   assert.doesNotMatch(status.detail, /sk-or-v1-test/u);
 });

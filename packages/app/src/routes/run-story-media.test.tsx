@@ -6,7 +6,7 @@ import { RunStoryView } from "./run-story";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-it("keeps pending frames neutral and never labels a previous Run's pixels as the current Run", async () => {
+it("keeps pending frames neutral and never labels a previous run's pixels as the current run", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);

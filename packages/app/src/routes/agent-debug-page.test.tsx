@@ -175,10 +175,10 @@ describe("Agent Debug route", () => {
       "Name the problem, pick a device, and start capturing.",
     );
     expect(document.body.textContent).not.toContain(
-      "Relay keeps the Session, target owner, evidence, and human review boundary visible",
+      "Relay keeps the session, target owner, evidence, and human review boundary visible",
     );
     expect(document.body.textContent).not.toContain(
-      "Starting opens a server-owned recording Session on the selected target",
+      "Starting opens a server-owned recording session on the selected target",
     );
   });
 
@@ -291,7 +291,7 @@ describe("Agent Debug route", () => {
     expect(document.body.textContent).toContain("Target is owned by another actor.");
   });
 
-  it("loads contextual Report details from a canonical runId without serializing evidence", async () => {
+  it("loads contextual report details from a canonical runId without serializing evidence", async () => {
     const debugBug = vi.fn(async () => startOutcome());
     const getReport = vi.fn(async () => ({
       runId: "run-failed",
@@ -349,7 +349,7 @@ describe("Agent Debug route", () => {
     expect(history.location.pathname).toBe("/debug");
   });
 
-  it("binds a pre-step failure to the source Run without guessing a same-name device", async () => {
+  it("binds a pre-step failure to the source run without guessing a same-name device", async () => {
     const debugBug = vi.fn(async () => startOutcome());
     const getReport = vi.fn(async () => ({
       runId: "run-pre-step",
@@ -420,7 +420,7 @@ describe("Agent Debug route", () => {
     expect(debugBug).toHaveBeenCalledTimes(2);
   });
 
-  it("opens the live Session after a successful start", async () => {
+  it("opens the live session after a successful start", async () => {
     const history = await render({
       agentDebugService: debugService(vi.fn(async () => startOutcome("session-durable"))),
       devices: [productDevice("ready", "Ready Pixel", true, "android")],

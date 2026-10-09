@@ -29,7 +29,7 @@ describe("active work projection", () => {
     ]);
   });
 
-  it("groups active batch cases and retains independent Runs and Changes", () => {
+  it("groups active batch cases and retains independent runs and changes", () => {
     const baseRun = {
       title: "Checkout",
       action: "run",

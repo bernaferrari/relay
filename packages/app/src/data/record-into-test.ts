@@ -58,7 +58,7 @@ export async function foldRecordingIntoTest(
 ): Promise<string | undefined> {
   const recorded = await service.get(input.recordedTestId);
   const target = await service.get(input.into.testId);
-  if (!recorded || !target) throw new TypeError("The Test to add these steps to is gone.");
+  if (!recorded || !target) throw new TypeError("The test to add these steps to is gone.");
   const topLevel = target.test.steps.map((step) => step.id);
   const after = input.into.afterStepId ? topLevel.indexOf(input.into.afterStepId) : -1;
   const start = after >= 0 ? after + 1 : topLevel.length;

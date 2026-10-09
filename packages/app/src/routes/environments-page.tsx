@@ -115,7 +115,6 @@ export function EnvironmentsPage() {
   return (
     <LibraryPage className="max-w-5xl">
       <PageHeader
-        context="Workspace"
         title="Browsers"
         description="Saved browsers you can open, record on, and sign into."
         actions={
@@ -146,7 +145,7 @@ export function EnvironmentsPage() {
                   )
                 }
               >
-                {continuation.kind === "run-setup" ? "Back to Test" : "Back to recording"}
+                {continuation.kind === "run-setup" ? "Back to test" : "Back to recording"}
               </Button>
             ) : null}
             <Dialog
@@ -312,7 +311,7 @@ export function EnvironmentsPage() {
         <EmptyState
           icon={Globe2}
           title="No browsers yet"
-          detail="Start one to record or run a Test."
+          detail="Start one to record or run a test."
           action={
             <Button
               variant="default"

@@ -75,7 +75,7 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
   return (
     <Collapsible data-slot="change-audit" className="mt-8">
       <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
-        Audit details
+        Technical details
         <ChevronDown className="size-3.5 opacity-70 transition-transform group-aria-expanded:rotate-180" />
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-3">

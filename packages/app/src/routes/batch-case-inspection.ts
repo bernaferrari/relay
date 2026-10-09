@@ -18,6 +18,6 @@ export function batchCaseEvidenceMessage(item: Pick<ProductBatchCase, "status">)
   if (item.status === "pending" || item.status === "queued") return "Waiting to start.";
   if (item.status === "running")
     return "Run in progress. Evidence will appear here as it is saved.";
-  if (item.status === "cancelled") return "This case stopped without saved Run evidence.";
-  return "This case ended without saved Run evidence.";
+  if (item.status === "cancelled") return "This case stopped without saved run evidence.";
+  return "This case ended without saved run evidence.";
 }

@@ -86,7 +86,7 @@ describe("TestStepEvidencePreview", () => {
     expect(host.textContent).toContain("Open report");
   });
 
-  it("prefers dest wait-for pixels over leftover Run saved Test last-frame", () => {
+  it("prefers dest wait-for pixels over leftover run saved test last-frame", () => {
     const host = render({
       ...baseReport,
       captureReview: {
@@ -168,7 +168,7 @@ describe("TestStepEvidencePreview", () => {
           items: [
             {
               id: "frames/004.png",
-              title: "after · Run saved Test",
+              title: "after · Run saved test",
               media: { kind: "image", src: "/leftover.png", width: 100, height: 80 },
             },
             {

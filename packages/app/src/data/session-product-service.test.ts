@@ -78,13 +78,13 @@ describe("Session product projection", () => {
     expect(projected).not.toHaveProperty("take.revisions");
   });
 
-  it("does not attach another actor's lease to a Session", () => {
+  it("does not attach another actor's lease to a session", () => {
     const projected = projectSessionSummary(session(), [lease({ ownerId: "agent:other" })]);
 
     expect(projected.lease).toBeNull();
   });
 
-  it("lists durable authoring Sessions and does not infer a lease", async () => {
+  it("lists durable authoring sessions and does not infer a lease", async () => {
     client.invoke.mockReset();
     client.invoke.mockImplementation(async (operation: string) => {
       if (operation === "authoring.session.list") return { sessions: [session()] };

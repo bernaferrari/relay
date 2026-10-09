@@ -57,7 +57,7 @@ function PromotionResult({ result }: { result: AuthorTestSnapshot }) {
       <AlertTitle>Test promotion ready for review</AlertTitle>
       <AlertDescription>
         {result.title} is now in the existing Authoring flow at <strong>{result.stage}</strong>.
-        Human review and approval remain required before it becomes a saved Test.
+        Human review and approval remain required before it becomes a saved test.
       </AlertDescription>
     </Alert>
   );
@@ -568,7 +568,7 @@ export function GoalPage() {
                 {canPromote ? (
                   <div className="grid gap-3 rounded-lg border border-border/60 bg-background/50 p-3">
                     <div>
-                      <p className="font-medium text-foreground">Save as a Test</p>
+                      <p className="font-medium text-foreground">Save as a test</p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         Fresh reproduction succeeded. Promotion records the path, then leaves human
                         review and approval in control.
@@ -588,9 +588,9 @@ export function GoalPage() {
                       <Checkbox
                         checked={confirmPromotion}
                         onCheckedChange={(checked) => setConfirmPromotion(checked === true)}
-                        aria-label="Confirm Test promotion"
+                        aria-label="Confirm test promotion"
                       />
-                      <span>I confirm Relay may control the fresh target to record this Test.</span>
+                      <span>I confirm Relay may control the fresh target to record this test.</span>
                     </label>
                     <Button
                       type="button"
@@ -606,7 +606,7 @@ export function GoalPage() {
                       }}
                     >
                       <Save aria-hidden="true" />
-                      {promote.isPending ? "Saving…" : "Save as Test"}
+                      {promote.isPending ? "Saving…" : "Save as test"}
                     </Button>
                   </div>
                 ) : null}

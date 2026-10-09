@@ -8,7 +8,7 @@ it("retains the original cause for exact story joins while keeping public copy r
     "layout assertion: identifier team-seats overlaps identifier save-settings by 44×44 px";
   const report = projectRunReport("layout", { error: technicalCause }, {});
   expect(report.technicalCause).toBe(technicalCause);
-  expect(report.cause).toBe("Relay could not complete this Test with the saved recording.");
+  expect(report.cause).toBe("Relay could not complete this test with the saved recording.");
 });
 
 describe("Run report video clock mapping", () => {

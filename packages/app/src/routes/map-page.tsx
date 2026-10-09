@@ -271,10 +271,10 @@ export function MapPage() {
               ) : (
                 <EmptyState
                   title="No known screens yet"
-                  detail="Record a Test to give Relay a starting point for exploration."
+                  detail="Record a test to give Relay a starting point for exploration."
                   action={
                     <Link className={productLinkClassName} to="/tests/new" search={{ app: appId }}>
-                      Record a Test
+                      Record a test
                     </Link>
                   }
                 />

@@ -99,7 +99,7 @@ async function render(
 }
 
 const target: NativeRunPreviewTarget = { platform: "ios", targetId: "device-A" };
-const fallback = <img src="/retained-run.png" alt="Saved Run screenshot" />;
+const fallback = <img src="/retained-run.png" alt="Saved run screenshot" />;
 
 it.each(["ios", "android"] as const)(
   "keeps the mounted %s canvas for the first landscape tablet frame and later rotation",
@@ -159,7 +159,7 @@ it.each(["ios", "android"] as const)(
     );
     const connecting = host.querySelector('[aria-label="Connecting to live device preview"]');
     expect(connecting?.getAttribute("aria-busy")).toBe("true");
-    expect(host.querySelector('img[alt="Saved Run screenshot"]')).toBeNull();
+    expect(host.querySelector('img[alt="Saved run screenshot"]')).toBeNull();
     expect(preview.mount).not.toHaveBeenCalled();
 
     await act(async () => connect(preview.live));
@@ -178,7 +178,7 @@ it.each(["ios", "android"] as const)(
     await act(async () => preview.publish("streaming", undefined, { width: 2224, height: 1668 }));
     expect(host.querySelector('[aria-label="Connecting to live device preview"]')).toBeNull();
     expect(host.textContent).toContain("Live device · read only");
-    expect(host.querySelector('img[alt="Saved Run screenshot"]')).toBeNull();
+    expect(host.querySelector('img[alt="Saved run screenshot"]')).toBeNull();
     expect(
       host.querySelector("button, input, select, textarea, [contenteditable=true]"),
     ).toBeNull();
@@ -214,7 +214,7 @@ it.each([
 
     expect(host.textContent).toContain(title);
     expect(host.textContent).toContain("Latest captured screenshot · not live");
-    expect(host.querySelector('img[alt="Saved Run screenshot"]')?.getAttribute("src")).toBe(
+    expect(host.querySelector('img[alt="Saved run screenshot"]')?.getAttribute("src")).toBe(
       "/retained-run.png",
     );
     expect(canvas.closest(".hidden")).not.toBeNull();
@@ -224,18 +224,18 @@ it.each([
     await act(async () => preview.publish("streaming"));
     expect(host.querySelector("canvas")).toBe(canvas);
     expect(canvas.closest(".hidden")).toBeNull();
-    expect(host.querySelector('img[alt="Saved Run screenshot"]')).toBeNull();
+    expect(host.querySelector('img[alt="Saved run screenshot"]')).toBeNull();
     expect(host.textContent).toContain("Live device · read only");
   },
 );
 
-it("keeps an unavailable preview explicit when the Run has no captured screenshot", async () => {
+it("keeps an unavailable preview explicit when the run has no captured screenshot", async () => {
   context.productService.previewTarget.mockImplementation(async () => {
     throw new Error("iOS device not available");
   });
   const host = await render({ target });
   expect(host.textContent).toContain("Live view unavailable");
-  expect(host.textContent).toContain("Captured screenshots will appear as the Test reaches them.");
+  expect(host.textContent).toContain("Captured screenshots will appear as the test reaches them.");
   expect(host.querySelector("img")).toBeNull();
   expect(host.textContent).not.toContain("Live device · read only");
 });

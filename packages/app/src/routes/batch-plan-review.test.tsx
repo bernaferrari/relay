@@ -82,12 +82,12 @@ describe("BatchFindingsPanel flaky filter", () => {
     const titles = [...host.querySelectorAll("h3")].map((item) => item.textContent);
     expect(titles).toEqual(["Home", "Login"]);
     expect(host.textContent).toContain("Flaky");
-    expect(host.textContent).toContain("Hide flaky Tests");
+    expect(host.textContent).toContain("Hide flaky tests");
     expect(host.textContent).toContain("does not skip a run or accept a visual baseline");
     const toggle = host.querySelector<HTMLButtonElement>(
-      '[role="checkbox"][aria-label="Hide flaky Tests"]',
+      '[role="checkbox"][aria-label="Hide flaky tests"]',
     );
-    if (!toggle) throw new Error("Hide flaky Tests control missing");
+    if (!toggle) throw new Error("Hide flaky tests control missing");
     await act(async () => toggle.click());
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
     expect([...host.querySelectorAll("h3")].map((item) => item.textContent)).toEqual(["Home"]);
@@ -95,7 +95,7 @@ describe("BatchFindingsPanel flaky filter", () => {
     expect(host.textContent).not.toContain("approve-new-baseline");
   });
 
-  it("does not offer a hide control when Findings lack a comparable flaky Test", async () => {
+  it("does not offer a hide control when Findings lack a comparable flaky test", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -103,7 +103,7 @@ describe("BatchFindingsPanel flaky filter", () => {
     await act(async () => {
       root.render(<BatchFindingsPanel report={report()} notes={[]} onNotes={() => undefined} />);
     });
-    expect(host.textContent).not.toContain("Hide flaky Tests");
+    expect(host.textContent).not.toContain("Hide flaky tests");
     expect([...host.querySelectorAll("h3")].map((item) => item.textContent)).toEqual([
       "Login",
       "Home",

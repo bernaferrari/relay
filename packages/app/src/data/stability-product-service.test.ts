@@ -35,7 +35,7 @@ function run(
 }
 
 describe("stability product service", () => {
-  it("projects Run execution identity onto the stability sample", () => {
+  it("projects run execution identity onto the stability sample", () => {
     const [sample] = stabilitySamplesFromRuns([
       {
         ...run("run-id", "passed", 1_000),
@@ -62,7 +62,7 @@ describe("stability product service", () => {
     });
   });
 
-  it("reports a complete, explainable summary from identified terminal Runs", () => {
+  it("reports a complete, explainable summary from identified terminal runs", () => {
     const samples = stabilitySamplesFromRuns([
       run("run-1", "passed", 1_000, 100),
       run("run-2", "product-failure", 2_000, 110),
@@ -95,13 +95,13 @@ describe("stability product service", () => {
     expect(summary.signals).toEqual([
       expect.objectContaining({
         kind: "mixed-outcomes",
-        summary: "Different outcomes were observed. Compare these Runs.",
+        summary: "Different outcomes were observed. Compare these runs.",
       }),
     ]);
     expect(summary.recommendations).toEqual([
       expect.objectContaining({
         action: "inspect-environment",
-        summary: "Different outcomes were observed. Compare these Runs.",
+        summary: "Different outcomes were observed. Compare these runs.",
       }),
     ]);
     expect(summary.signals.some((signal) => signal.kind === "possible-flakiness")).toBe(false);
@@ -157,11 +157,11 @@ describe("stability product service", () => {
         kind: "possible-flakiness",
         testId: "test-1",
         summary:
-          "This Test passed and failed on the same revision, build, target, account, and starting state.",
+          "This test passed and failed on the same revision, build, target, account, and starting state.",
         runIds: ["run-1", "run-2"],
       }),
     ]);
-    expect(summary.recommendations[0]?.summary).toContain("same Test revision, build, target");
+    expect(summary.recommendations[0]?.summary).toContain("same test revision, build, target");
     expect([...flakyTestIdsFromStability(summary)]).toEqual(["test-1"]);
   });
 
@@ -255,7 +255,7 @@ describe("stability product service", () => {
     expect(summary.signals).toEqual([]);
   });
 
-  it("does not call a mixed Test/environment history flaky without durable identity", () => {
+  it("does not call a mixed test/environment history flaky without durable identity", () => {
     const samples: ProductStabilitySample[] = [
       {
         id: "run-1",
@@ -430,7 +430,7 @@ describe("stability product service", () => {
     );
   });
 
-  it("groups Apps and attached failure clusters without inventing cluster identity", () => {
+  it("groups apps and attached failure clusters without inventing cluster identity", () => {
     const samples: ProductStabilitySample[] = [
       {
         id: "cell-a",

@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 describe("test editing history", () => {
-  it("says undo changes the Test and does not reverse an external effect", async () => {
+  it("says undo changes the test and does not reverse an external effect", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -30,7 +30,7 @@ describe("test editing history", () => {
       );
     });
     expect(host.querySelector('[aria-label="Undo last saved change"]')?.getAttribute("title")).toBe(
-      "Undo changes the Test. It does not reverse a payment, message, or deletion.",
+      "Undo changes the test. It does not reverse a payment, message, or deletion.",
     );
     expect(host.querySelector('[aria-label="Undo last saved change"]')).not.toBeNull();
   });

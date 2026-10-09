@@ -22,7 +22,7 @@ export function RouteErrorPage({ reset }: ErrorComponentProps) {
             nativeButton={false}
             render={<Link to="/tests" search={{}} />}
           >
-            Back to Tests
+            Back to tests
           </Button>
         </div>
       </div>

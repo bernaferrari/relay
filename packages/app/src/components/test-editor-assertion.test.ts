@@ -36,7 +36,7 @@ describe("test editor assertions", () => {
     ]);
   });
 
-  it("hides Remember reply and Semantic judge on visual chrome Tests", () => {
+  it("hides Remember reply and Semantic judge on visual chrome tests", () => {
     expect(
       validationKindGroupsForEditor({ hasRememberableReply: false }).flatMap((group) =>
         group.kinds.map((kind) => kind.value),

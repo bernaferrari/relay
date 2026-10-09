@@ -23,7 +23,7 @@ describe("integration and issue handoff product service", () => {
     expect(JSON.stringify(integrations)).not.toMatch(/token|secret|credential/iu);
   });
 
-  it("composes a redacted Run handoff and never creates a delivery payload", () => {
+  it("composes a redacted run handoff and never creates a delivery payload", () => {
     const draft = composeProductIssue({
       kind: "run",
       report: {
@@ -57,7 +57,7 @@ describe("integration and issue handoff product service", () => {
     expect(draft.body).toContain("[redacted]");
   });
 
-  it("supports Batch and Change handoff sources without exposing raw evidence", () => {
+  it("supports Batch and change handoff sources without exposing raw evidence", () => {
     const batch = composeProductIssue({
       kind: "batch",
       report: {

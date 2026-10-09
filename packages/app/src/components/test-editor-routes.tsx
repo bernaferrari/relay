@@ -33,7 +33,7 @@ export function TestEditorRoutes({
         Platforms
       </h2>
       <p className="text-xs leading-snug text-muted-foreground">
-        One Test. Web, Android, and iOS routes stay visible even when a platform is not recorded.
+        One test. Web, Android, and iOS routes stay visible even when a platform is not recorded.
       </p>
       <ul className="grid list-none gap-1.5 p-0">
         {statuses.map((item) => (

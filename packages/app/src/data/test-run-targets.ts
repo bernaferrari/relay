@@ -27,7 +27,7 @@ export function testRunDestinationCopy(platforms?: readonly PlanPlatform[]) {
     return {
       label: "Device or browser",
       placeholder: "Choose a device or browser",
-      emptyTitle: "This Test has no recorded route",
+      emptyTitle: "This test has no recorded route",
       emptyDetail: "Record its steps on a device or browser before running.",
     };
   const platform = platforms?.length === 1 ? platforms[0] : undefined;
@@ -51,12 +51,12 @@ export function testRunDestinationCopy(platforms?: readonly PlanPlatform[]) {
       label: "Browser",
       placeholder: "Choose a browser",
       emptyTitle: "No browser is ready",
-      emptyDetail: "Open a managed browser in Devices to run this Test.",
+      emptyDetail: "Open a managed browser in Devices to run this test.",
     };
   return {
     label: "Device or browser",
     placeholder: "Choose a device or browser",
     emptyTitle: "No compatible device or browser is ready",
-    emptyDetail: "Open Devices to connect a destination for this Test.",
+    emptyDetail: "Open Devices to connect a destination for this test.",
   };
 }

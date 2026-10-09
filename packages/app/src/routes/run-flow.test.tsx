@@ -117,7 +117,7 @@ function report(outcome: ProductRunReportOverview["outcome"] = "passed"): Produc
         label: "Screenshots",
         count: 2,
         detail: "2 screenshots",
-        summary: "See the screens Relay captured while this Test ran.",
+        summary: "See the screens Relay captured while this test ran.",
         inspectable: true,
         items: [
           {
@@ -361,7 +361,7 @@ function fakeEditorService(): TestEditorProductService {
   } as TestEditorProductService;
 }
 
-describe("recorded Test destinations", () => {
+describe("recorded test destinations", () => {
   it.each([
     {
       label: "bound app",
@@ -382,7 +382,7 @@ describe("recorded Test destinations", () => {
       startup: undefined,
     },
   ])(
-    "uses the intended initial startup for a fresh Android Test with $label",
+    "uses the intended initial startup for a fresh Android test with $label",
     async ({ path, originApplication, startup }) => {
       const fake = fakeRunService();
       const editor = fakeEditorService();
@@ -404,7 +404,7 @@ describe("recorded Test destinations", () => {
   );
 
   it.each(["saved warm setup", "explicit restart opt-out"])(
-    "preserves %s for an Android Test with a bound app",
+    "preserves %s for an Android test with a bound app",
     async (scenario) => {
       const fake = fakeRunService();
       const editor = fakeEditorService();
@@ -465,7 +465,7 @@ describe("recorded Test destinations", () => {
     },
   );
 
-  it("offers an Android reconnect path instead of browsers for a disconnected Android Test", async () => {
+  it("offers an Android reconnect path instead of browsers for a disconnected Android test", async () => {
     const fake = fakeRunService();
     fake.service.listTargets = async () => [
       {
@@ -506,7 +506,7 @@ describe("recorded Test destinations", () => {
     expect(fake.startInputs).toHaveLength(0);
   });
 
-  it("does not start a recorded Android Test on a ready browser selected in its URL", async () => {
+  it("does not start a recorded Android test on a ready browser selected in its URL", async () => {
     const fake = fakeRunService();
     const editor = fakeEditorService();
     const get = editor.get;
@@ -526,7 +526,7 @@ describe("recorded Test destinations", () => {
     expect(fake.startInputs[0]).toMatchObject({ targetId: "emulator-5554" });
   });
 
-  it("blocks a restored browser workspace for a recorded Android Test", async () => {
+  it("blocks a restored browser workspace for a recorded Android test", async () => {
     const fake = fakeRunService();
     const editor = fakeEditorService();
     const get = editor.get;
@@ -668,7 +668,7 @@ async function selectOption(label: string, option: string) {
   await click(item);
 }
 
-describe("Run and Report", () => {
+describe("Run and report", () => {
   it.each(["passed", "empty", "unavailable"])(
     "keeps unknown history distinct from no runs until it resolves as %s",
     async (result) => {
@@ -723,7 +723,7 @@ describe("Run and Report", () => {
     },
   );
 
-  it("keeps saved Test steps separate from historical evidence and preserves definition selection", async () => {
+  it("keeps saved test steps separate from historical evidence and preserves definition selection", async () => {
     const fake = fakeRunService(runState("succeeded"));
     fake.service.listTestRuns = async () => [
       {
@@ -848,7 +848,7 @@ describe("Run and Report", () => {
       recovery: {
         code: "compile-blocked",
         sourceCode: "raw-evidence-variant-recapture-required",
-        title: "The Test has 5 compile blockers",
+        title: "The test has 5 compile blockers",
         detail: "workflow compile raw selector proof failed",
         recovery: "Review selector bindings",
         retryable: false,
@@ -873,7 +873,7 @@ describe("Run and Report", () => {
     expect(review).toBeDefined();
   });
 
-  it("opens Run settings directly from a library setup link", async () => {
+  it("opens run settings directly from a library setup link", async () => {
     const fake = fakeRunService();
     await renderRun("/tests/test-1?setup=run", fake.service, platformWithStorage().platform);
     expect(
@@ -924,27 +924,27 @@ describe("Run and Report", () => {
     expect(document.querySelector('[aria-label="Search values"]')).toBeNull();
     expect(document.querySelector('[aria-label="Run configuration"]')).toBeNull();
     const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (item) => item.textContent === "Run this Test once",
+      (item) => item.textContent === "Run this test once",
     );
     expect(link?.getAttribute("href")).toContain("/tests/test-1?setup=run");
     expect(preview).not.toHaveBeenCalled();
   });
 
-  it("keeps colliding Test IDs scoped to the selected App through setup, cache, and return links", async () => {
+  it("keeps colliding test IDs scoped to the selected app through setup, cache, and return links", async () => {
     const fake = fakeRunService();
     const original = await fake.service.getTest("test-1");
     const getTest = vi.fn(async (id: string, app?: string) => ({
       ...original!,
       id,
       appMapId: app!,
-      name: `${app} Test`,
+      name: `${app} test`,
     }));
     fake.service.getTest = getTest;
     const getSetup = vi.fn(async (appMapId: string, testId: string) => ({
       appMapId,
       appMapRevision: 1,
       testId,
-      testName: `${appMapId} Test`,
+      testName: `${appMapId} test`,
       appName: appMapId,
       dataSet: { name: "Languages", dimensions: [] },
     }));
@@ -975,7 +975,7 @@ describe("Run and Report", () => {
     await settle();
     expect(getTest).toHaveBeenCalledWith("test-1", "second-app");
     expect(getSetup).toHaveBeenCalledWith("second-app", "test-1");
-    expect(document.body.textContent).toContain("second-app Test");
+    expect(document.body.textContent).toContain("second-app test");
     expect(document.querySelector<HTMLAnchorElement>('a[href*="setup=run"]')?.href).toContain(
       "app=second-app",
     );
@@ -1060,14 +1060,14 @@ describe("Run and Report", () => {
             ? "Saved Browser profiles are unavailable."
             : "Relay has no saved profile for this Browser and Account pair.",
       );
-      expect(button("Run selected cases").disabled).toBe(true);
+      expect(button("Run combinations").disabled).toBe(true);
       expect(preview).not.toHaveBeenCalled();
-      await click(button("Run selected cases"));
+      await click(button("Run combinations"));
       expect(startPilot).not.toHaveBeenCalled();
     },
   );
 
-  it("asks for saved pairs when Run Across has no data and one browser is chosen", async () => {
+  it("asks for saved pairs when run Across has no data and one browser is chosen", async () => {
     const fake = fakeRunService();
     const preview = vi.fn((input) => ({
       selected: input.selected,
@@ -1100,17 +1100,17 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Choose saved browser sign-ins here");
     expect(
       [...document.querySelectorAll<HTMLAnchorElement>("a")]
-        .find((item) => item.textContent?.trim() === "Run once from Test")
+        .find((item) => item.textContent?.trim() === "Run once from test")
         ?.getAttribute("href"),
     ).toContain("/tests/test-1?setup=run");
-    expect(button("Run selected cases").disabled).toBe(true);
+    expect(button("Run combinations").disabled).toBe(true);
     expect(startPilot).not.toHaveBeenCalled();
   });
 
   it("opens an existing Batch when starting selected cases finds one already running", async () => {
     const fake = fakeRunService();
     const startPilot = vi.fn(async () => {
-      throw Object.assign(new Error("This Plan is already running"), {
+      throw Object.assign(new Error("This plan is already running"), {
         body: { code: "ACTIVE_REPEAT_EXISTS", repeatId: "batch-existing" },
       });
     });
@@ -1147,7 +1147,7 @@ describe("Run and Report", () => {
     );
     if (!value) throw new Error("English value missing");
     await click(value.closest("label") ?? value);
-    await click(button("Run selected case"));
+    await click(button("Run 1 combination"));
     expect(startPilot).toHaveBeenCalledTimes(1);
     expect(
       [...document.querySelectorAll<HTMLAnchorElement>("a")]
@@ -1208,7 +1208,7 @@ describe("Run and Report", () => {
     expect(preview).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Choose a value for Language, Region.");
     expect(document.querySelector('[role="alert"]')).toBeNull();
-    expect(button("Run selected cases").disabled).toBe(true);
+    expect(button("Run combinations").disabled).toBe(true);
 
     const values = [
       ...document.querySelectorAll<HTMLElement>(
@@ -1225,7 +1225,7 @@ describe("Run and Report", () => {
     expect(preview).toHaveBeenCalledTimes(1);
     expect(preview.mock.calls[0]?.[0].target.label).toBe("Checkout browser");
     expect(document.body.textContent).toContain("1 case on Checkout browser");
-    await click(button("Run selected case"));
+    await click(button("Run 1 combination"));
     expect(startPilot).toHaveBeenCalledWith(
       expect.objectContaining({
         target: expect.objectContaining({ label: "Checkout browser" }),
@@ -1342,7 +1342,7 @@ describe("Run and Report", () => {
         .at(-1)?.[0]
         .profileTargets.map((item: { profileId: string }) => item.profileId),
     ).toEqual(["admin-profile", "member-profile"]);
-    await click(button(`Run ${scenario.caseCount} selected cases`));
+    await click(button(`Run ${scenario.caseCount} combinations`));
     expect(startPilot).toHaveBeenCalledWith(
       expect.objectContaining({
         executionMode: "all",
@@ -1354,7 +1354,7 @@ describe("Run and Report", () => {
     );
   });
 
-  it("selects the only ready target so a Test can run immediately", async () => {
+  it("selects the only ready target so a test can run immediately", async () => {
     const fake = fakeRunService();
     fake.service.listTargets = async () => [
       {
@@ -1375,7 +1375,7 @@ describe("Run and Report", () => {
     expect(button("Run now").disabled).toBe(false);
   });
 
-  it("blocks Run when the saved Test revision changes after the editor loads", async () => {
+  it("blocks run when the saved test revision changes after the editor loads", async () => {
     const fake = fakeRunService();
     fake.service.listTargets = async () => [
       {
@@ -1406,14 +1406,14 @@ describe("Run and Report", () => {
     remoteRevision = 2;
     await click(button("Run now"));
     expect(fake.startInputs).toHaveLength(0);
-    expect(document.body.textContent).toContain("saved Test changed");
-    await click(button("Reload Test"));
+    expect(document.body.textContent).toContain("saved test changed");
+    await click(button("Reload test"));
     await openRunSettings();
     await click(button("Run now"));
     expect(fake.startInputs[0]).toMatchObject({ documentRevision: 2 });
   });
 
-  it("refreshes the owned Test after completion so the same flow can run again", async () => {
+  it("refreshes the owned test after completion so the same flow can run again", async () => {
     const fake = fakeRunService();
     const editor = fakeEditorService();
     const get = editor.get.bind(editor);
@@ -1437,7 +1437,7 @@ describe("Run and Report", () => {
     await click(button("Run"));
     expect(fake.startInputs).toHaveLength(2);
     expect(fake.startInputs[1]).toMatchObject({ documentRevision: 2 });
-    expect(document.body.textContent).not.toContain("The saved Test changed.");
+    expect(document.body.textContent).not.toContain("The saved test changed.");
   });
 
   it("keeps the recording browser over a different workspace destination", async () => {
@@ -1546,7 +1546,7 @@ describe("Run and Report", () => {
     expect(fake.startInputs).toHaveLength(0);
   });
 
-  it("keeps a saved Test browser and profile over workspace and recording defaults", async () => {
+  it("keeps a saved test browser and profile over workspace and recording defaults", async () => {
     const fake = fakeRunService();
     fake.service.listProfiles = async () => [
       {
@@ -1600,7 +1600,7 @@ describe("Run and Report", () => {
     ).toContain("Member");
   });
 
-  it("names and binds the sole saved account on the last-used browser before Run", async () => {
+  it("names and binds the sole saved account on the last-used browser before run", async () => {
     const fake = fakeRunService();
     fake.service.listProfiles = async () => [
       {
@@ -1670,7 +1670,7 @@ describe("Run and Report", () => {
     },
   );
 
-  it("exposes the canonical live Run before a slow pointer write finishes", async () => {
+  it("exposes the canonical live run before a slow pointer write finishes", async () => {
     const fake = fakeRunService();
     const stored = platformWithStorage();
     let finishWrite!: () => void;
@@ -1712,7 +1712,7 @@ describe("Run and Report", () => {
     ).toContain("Checkout browser");
   });
 
-  it("starts one canonical Run, follows progress, and renders only real evidence", async () => {
+  it("starts one canonical run, follows progress, and renders only real evidence", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage();
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
@@ -1720,7 +1720,7 @@ describe("Run and Report", () => {
     expect(button("Run").disabled).toBe(false);
     expect(
       document.querySelectorAll(
-        'button[aria-label="More Test actions"], button[aria-label^="Run settings:"]',
+        'button[aria-label="More test actions"], button[aria-label^="Run settings:"]',
       ),
     ).toHaveLength(2);
     await openRunSettings();
@@ -1728,7 +1728,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("browser-golden");
     expect(document.body.textContent).not.toContain("emulator-5554");
-    expect(document.body.textContent).toContain("Run the Test and its screenshots show up here.");
+    expect(document.body.textContent).toContain("Run the test and its screenshots show up here.");
     const savedSteps = editorSteps();
     expect(savedSteps).toHaveLength(3);
     await click(savedSteps[1]!);
@@ -1750,7 +1750,7 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).not.toContain("Draft issue");
-    await click(button("More Test actions"));
+    await click(button("More test actions"));
     expect(document.body.textContent).toContain("Review result");
     expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
@@ -1996,7 +1996,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("emulator-5554");
   });
 
-  it("shows live authored steps and a passive device beside an attached running Test", async () => {
+  it("shows live authored steps and a passive device beside an attached running test", async () => {
     const fake = fakeRunService();
     fake.service.liveJob = async () => ({
       status: "running",
@@ -2020,7 +2020,7 @@ describe("Run and Report", () => {
           id: "opening",
           recipeId: "root",
           recipeStepId: "open",
-          title: "Run saved Test",
+          title: "Run saved test",
           status: "running",
         },
       ],
@@ -2049,7 +2049,7 @@ describe("Run and Report", () => {
     expect(fake.calls).toContain("cancel");
   });
 
-  it("restores an active Run from canonical server state without local storage", async () => {
+  it("restores an active run from canonical server state without local storage", async () => {
     const fake = fakeRunService();
     fake.service.inspectExecution = async (runId) => {
       fake.calls.push(`execution:${runId}`);
@@ -2061,11 +2061,11 @@ describe("Run and Report", () => {
     expect(fake.calls).not.toContain("restore:run-1");
     expect(fake.calls).toContain("execution:run-1");
     expect(document.body.textContent).toContain("Checking Language");
-    expect(document.body.textContent).toContain("Cancel Run");
+    expect(document.body.textContent).toContain("Cancel run");
     expect(document.body.textContent).not.toContain("Run unavailable");
   });
 
-  it("keeps an active run scoped while moving Test A to Test B and back", async () => {
+  it("keeps an active run scoped while moving test A to test B and back", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage({
       activeRunWorkflow: JSON.stringify({
@@ -2083,7 +2083,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("Checking Language");
     expect(
       document.querySelector(
-        'button[aria-label="More Test actions"], button[aria-label^="Run settings:"]',
+        'button[aria-label="More test actions"], button[aria-label^="Run settings:"]',
       ),
     ).not.toBeNull();
 
@@ -2092,7 +2092,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Checking Language");
   });
 
-  it("restores the URL Run when local storage points at a different Run", async () => {
+  it("restores the URL Run when local storage points at a different run", async () => {
     const fake = fakeRunService(runState("running", ["inspect"]));
     fake.service.restore = async (runId) => {
       fake.calls.push(`restore:${runId}`);
@@ -2111,7 +2111,7 @@ describe("Run and Report", () => {
     );
     expect(fake.calls).toContain("restore:run-2");
     expect(document.body.textContent).toContain("Checking Language");
-    expect(document.body.textContent).not.toContain("Cancel Run");
+    expect(document.body.textContent).not.toContain("Cancel run");
   });
 
   it("falls back to the canonical terminal report when restore finds no workflow", async () => {
@@ -2169,10 +2169,10 @@ describe("Run and Report", () => {
 
     await renderRun("/runs/run-raw-1", fake.service, platformWithStorage().platform);
     expect(document.body.textContent).toContain("Checking Language");
-    expect(button("Cancel Run").disabled).toBe(false);
-    await click(button("Cancel Run"));
+    expect(button("Cancel run").disabled).toBe(false);
+    await click(button("Cancel run"));
     expect(fake.calls).toContain("cancel-execution:run-raw-1");
-    expect(document.body.textContent).not.toContain("Cancel Run");
+    expect(document.body.textContent).not.toContain("Cancel run");
   });
 
   it("renders the terminal report after a workflow-less job completes", async () => {
@@ -2189,7 +2189,7 @@ describe("Run and Report", () => {
     expect(reportOutcome()).toBe("Passed");
   });
 
-  it("shows only one centered recovery state when an in-progress Run disconnects", async () => {
+  it("shows only one centered recovery state when an in-progress run disconnects", async () => {
     const fake = fakeRunService();
     fake.service.inspect = async () => {
       throw new TypeError("Failed to fetch");
@@ -2207,14 +2207,14 @@ describe("Run and Report", () => {
     expect(recovery).not.toBeNull();
     expect(recovery?.textContent).toContain("Relay is not connected");
     expect(document.body.textContent).not.toContain("Restoring progress");
-    expect(document.body.textContent).not.toContain("Loading the Run");
+    expect(document.body.textContent).not.toContain("Loading the run");
     expect(document.querySelector('[data-slot="run-progress"]')).toBeNull();
     const recoveryHeading = document.querySelector("h1");
     expect(recoveryHeading?.classList.contains("sr-only")).toBe(true);
     expect(button("Try again")).not.toBeNull();
   });
 
-  it("attaches an active Run to the Test instead of starting another", async () => {
+  it("attaches an active run to the test instead of starting another", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage({
       activeRunWorkflow: JSON.stringify({
@@ -2226,13 +2226,13 @@ describe("Run and Report", () => {
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Checking Language");
-    await click(button("More Test actions"));
+    await click(button("More test actions"));
     expect(
       [...document.querySelectorAll('[role="menuitem"]')].some((item) =>
         item.textContent?.includes("Run settings"),
       ),
     ).toBe(false);
-    await click(button("More Test actions"));
+    await click(button("More test actions"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("View live run"),
@@ -2246,7 +2246,7 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
     expect(document.body.textContent).toContain("Test passed");
-    await click(button("More Test actions"));
+    await click(button("More test actions"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("Review result"),
@@ -2254,7 +2254,7 @@ describe("Run and Report", () => {
     ).toBe(true);
     expect(
       document.querySelector(
-        'button[aria-label="More Test actions"], button[aria-label^="Run settings:"]',
+        'button[aria-label="More test actions"], button[aria-label^="Run settings:"]',
       ),
     ).not.toBeNull();
   });
@@ -2269,12 +2269,12 @@ describe("Run and Report", () => {
       }),
     });
     await renderRun("/runs/run-1", fake.service, storage.platform);
-    await click(button("Cancel Run"));
+    await click(button("Cancel run"));
 
     expect(fake.calls).toContain("cancel");
     expect(reportOutcome()).toBe("Cancelled");
     expect(document.body.textContent).toContain("Pixel 9");
-    expect(document.body.textContent).not.toContain("Cancel Run");
+    expect(document.body.textContent).not.toContain("Cancel run");
   });
 
   it("does not offer Cancel when canonical state withholds it", async () => {
@@ -2289,7 +2289,7 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Checking Language");
-    expect(document.body.textContent).not.toContain("Cancel Run");
+    expect(document.body.textContent).not.toContain("Cancel run");
   });
 
   it("loads a durable terminal report directly without a local pointer", async () => {
@@ -2320,7 +2320,7 @@ describe("Run and Report", () => {
     }
   });
 
-  it("restores an available Report destination from the URL", async () => {
+  it("restores an available report destination from the URL", async () => {
     const fake = fakeRunService();
     await renderRun("/runs/run-1?view=evidence", fake.service, platformWithStorage().platform);
 
@@ -2330,7 +2330,7 @@ describe("Run and Report", () => {
     expect(document.querySelector('[role="tablist"][aria-label="Run views"]')).not.toBeNull();
   });
 
-  it("routes durable Run review decisions with the canonical Run identity", async () => {
+  it("routes durable run review decisions with the canonical run identity", async () => {
     const fake = fakeRunService();
     const review = vi.fn().mockResolvedValue({ status: "approved" } as never);
     fake.service.review = review;
@@ -2446,7 +2446,7 @@ describe("Run and Report", () => {
     });
   });
 
-  it("loads the original last screenshot in the Test preview", async () => {
+  it("loads the original last screenshot in the test preview", async () => {
     const fake = fakeRunService();
     fake.service.listTestRuns = async () =>
       [
@@ -2469,7 +2469,7 @@ describe("Run and Report", () => {
     ).toBe(original);
   });
 
-  it("labels Test reliability as partial while loaded Run history is incomplete", async () => {
+  it("labels test reliability as partial while loaded run history is incomplete", async () => {
     const fake = fakeRunService();
     fake.service.listTestRuns = async () =>
       [
@@ -2490,7 +2490,7 @@ describe("Run and Report", () => {
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).not.toContain("Run history");
-    await click(button("More Test actions"));
+    await click(button("More test actions"));
     const historyAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (item) => item.textContent === "Run history",
     );
@@ -2500,7 +2500,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Showing loaded runs. Totals may be incomplete.");
   });
 
-  it("labels Test reliability complete only when the explicit complete-history read is available", async () => {
+  it("labels test reliability complete only when the explicit complete-history read is available", async () => {
     const fake = fakeRunService();
     const history = [
       {
@@ -2526,7 +2526,7 @@ describe("Run and Report", () => {
     fake.service.listTestRunsComplete = async () => history;
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
-    await click(button("More Test actions"));
+    await click(button("More test actions"));
     const historyAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (item) => item.textContent === "Run history",
     );
@@ -2556,7 +2556,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("run-1");
   });
 
-  it("keeps a failed Report compact and opens technical details without expanding the page", async () => {
+  it("keeps a failed report compact and opens technical details without expanding the page", async () => {
     const fake = fakeRunService();
     fake.service.getReport = async () => ({
       runId: "run-1",
@@ -2594,7 +2594,7 @@ describe("Run and Report", () => {
     );
   });
 
-  it("returns to the selected Review screenshot even when the run has no Test", async () => {
+  it("returns to the selected Review screenshot even when the run has no test", async () => {
     const fake = fakeRunService();
     const { history } = await renderRun(
       "/runs/run-1?returnTo=" +
@@ -2613,7 +2613,7 @@ describe("Run and Report", () => {
     expect(history.location.search).toContain("app=app-1");
   });
 
-  it("returns to Runs with its filters even when the run belongs to a Test", async () => {
+  it("returns to runs with its filters even when the run belongs to a test", async () => {
     const fake = fakeRunService();
     fake.service.getReport = async () => ({ ...report(), testId: "test-1" });
     const { history } = await renderRun(
@@ -2631,7 +2631,7 @@ describe("Run and Report", () => {
     expect(String(history.location.search)).toContain("app=app-1");
   });
 
-  it("returns from the run to the Test with its plan context", async () => {
+  it("returns from the run to the test with its plan context", async () => {
     const fake = fakeRunService();
     fake.service.getReport = async () => ({ ...report(), testId: "test-1" });
     const { history } = await renderRun(
@@ -2669,7 +2669,7 @@ describe("Run and Report", () => {
     expect(fake.calls.some((call) => call.startsWith("start:"))).toBe(false);
   });
 
-  it("exports the attached Run as a TracePack named for that Run", async () => {
+  it("exports the attached run as a TracePack named for that run", async () => {
     const fake = fakeRunService(runState("succeeded"));
     const created: string[] = [];
     const originalCreate = URL.createObjectURL;
@@ -2698,7 +2698,7 @@ describe("Run and Report", () => {
     }
   });
 
-  it("does not offer a pack from a different Run as this Run's export", async () => {
+  it("does not offer a pack from a different run as this run's export", async () => {
     const fake = fakeRunService(runState("succeeded"));
     fake.service.exportEvidence = async (runId) =>
       runEvidenceExportDocument(runId, tracePackForRun("run-from-test-B"));
@@ -2710,7 +2710,7 @@ describe("Run and Report", () => {
       )!,
     );
     await click(button("Prepare download"));
-    expect(document.body.textContent).toContain("TracePack evidence for a different Run");
+    expect(document.body.textContent).toContain("TracePack evidence for a different run");
     expect(document.querySelector("a[download]")).toBeNull();
   });
 });
@@ -2757,7 +2757,7 @@ function tracePackForRun(runId: string): TracePackExportResponse {
         {
           code: "MISSING_EVIDENCE",
           statement: "The fixture has no verified future-device claim.",
-          resolution: "Replay the frozen Test on the intended target.",
+          resolution: "Replay the frozen test on the intended target.",
         },
       ],
       smallestLiveVerification: {

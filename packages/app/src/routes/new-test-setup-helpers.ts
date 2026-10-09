@@ -82,6 +82,7 @@ export function recordingStartHint(state: {
   target: boolean;
   starting: boolean;
   appNotOpened: boolean;
+  previewConnecting?: boolean;
 }): string {
   if (!state.app) return "Choose an app";
   if (state.creatingApp) return "Finish creating your app";
@@ -92,5 +93,6 @@ export function recordingStartHint(state: {
   if (!state.target) return "Choose a Device or Browser";
   if (state.starting) return "Starting…";
   if (state.appNotOpened) return "Open the selected app first";
+  if (state.previewConnecting) return "Waiting for the live view…";
   return "Start recording";
 }

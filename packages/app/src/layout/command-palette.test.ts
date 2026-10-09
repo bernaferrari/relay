@@ -3,8 +3,8 @@ import { commandMatches } from "./command-palette";
 
 describe("command palette search", () => {
   const command = {
-    label: "Review failed Runs",
-    detail: "Open failure-first Run history",
+    label: "Review failed runs",
+    detail: "Open failure-first run history",
     keywords: "reports failures",
   };
 

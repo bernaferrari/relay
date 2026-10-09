@@ -83,7 +83,7 @@ async function settled() {
     await vi.waitFor(() => expect(document.body.textContent).not.toContain("Loading results"));
   });
 }
-it("unrelated failed Runs do not become results of a new Plan", async () => {
+it("unrelated failed runs do not become results of a new plan", async () => {
   const listRuns = await render([
     run({ id: "standalone", action: "app-map:grok:test:speed:run", status: "error", queuedAt: 3 }),
     run({
@@ -107,14 +107,14 @@ it("unrelated failed Runs do not become results of a new Plan", async () => {
     }),
   ]);
   await settled();
-  expect(document.body.textContent).toContain("Latest Plan runs");
-  expect(document.body.textContent).toContain("No Plan runs found");
+  expect(document.body.textContent).toContain("Latest plan runs");
+  expect(document.body.textContent).toContain("No plan runs found");
   expect(document.body.textContent).not.toContain("not run");
   expect(document.body.textContent).not.toContain("failed");
   expect(document.querySelector('a[href^="/runs/"]')).toBeNull();
   expect(listRuns).toHaveBeenCalledWith({ appMapId: "grok" });
 });
-it("only an exactly attributed Plan Run supplies result state and its evidence link", async () => {
+it("only an exactly attributed plan run supplies result state and its evidence link", async () => {
   await render([
     run({ id: "own-plan", matrixCase, status: "ok", outcome: "passed", queuedAt: 2 }),
     run({
@@ -130,7 +130,7 @@ it("only an exactly attributed Plan Run supplies result state and its evidence l
   expect(document.querySelector('a[href="/runs/own-plan"]')).not.toBeNull();
 });
 
-it("loading and failed history never claim that the Plan has not run", async () => {
+it("loading and failed history never claim that the plan has not run", async () => {
   let finish!: (runs: RunSummary[]) => void;
   await render(
     () =>
@@ -139,11 +139,11 @@ it("loading and failed history never claim that the Plan has not run", async () 
       }),
   );
   expect(document.body.textContent).toContain("Loading results…");
-  expect(document.body.textContent).not.toContain("No Plan run");
+  expect(document.body.textContent).not.toContain("No plan run");
   expect(document.body.textContent).not.toContain("not run");
   await act(async () => finish([]));
   await settled();
-  expect(document.body.textContent).toContain("No Plan runs found");
+  expect(document.body.textContent).toContain("No plan runs found");
   act(() => root.unmount());
   document.body.replaceChildren();
   await render(async () => {
@@ -151,6 +151,6 @@ it("loading and failed history never claim that the Plan has not run", async () 
   });
   await settled();
   expect(document.body.textContent).toContain("Results unavailable");
-  expect(document.body.textContent).not.toContain("No Plan run");
+  expect(document.body.textContent).not.toContain("No plan run");
   expect(document.body.textContent).not.toContain("not run");
 });

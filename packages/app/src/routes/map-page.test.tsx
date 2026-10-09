@@ -514,7 +514,7 @@ describe("Map exploration", () => {
     expect(button("Screen 29 → Cart: Journey 29")).toBeDefined();
   });
 
-  it("focuses a screen into its Tests and failure evidence, with repair gated", async () => {
+  it("focuses a screen into its tests and failure evidence, with repair gated", async () => {
     await render();
     const cart = [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Cart"),
@@ -543,7 +543,7 @@ describe("Map exploration", () => {
               {
                 id: "proposal-1",
                 title: "Add checkout path",
-                description: "Observed during a reviewed Session.",
+                description: "Observed during a reviewed session.",
                 status: "pending",
                 createdAt: 1,
                 updatedAt: 2,

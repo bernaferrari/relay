@@ -71,7 +71,7 @@ it("fails closed when the OpenRouter judge key is missing from the payload", () 
   });
   expect(checks[0]?.status).toBe("needs-attention");
   expect(checks[0]?.detail).toMatch(/OPENROUTER_API_KEY/u);
-  expect(checks[0]?.detail).toMatch(/never a silent pass/u);
+  expect(checks[0]?.detail).toMatch(/never pass silently/u);
 });
 
 it("is ready only when OPENROUTER_API_KEY is configured", () => {

@@ -103,7 +103,7 @@ export function ChangesPage() {
         />
       ) : null}
       <RecordingProblem recovery={prepare.data?.state.recovery} error={prepare.error} />
-      {changes.isPending ? <PageLoading label="Loading Changes…" /> : null}
+      {changes.isPending ? <PageLoading label="Loading changes…" /> : null}
 
       {changes.data !== undefined && visible.length ? (
         <section className="mt-7" aria-labelledby="changes-result-title">
@@ -135,21 +135,21 @@ export function ChangesPage() {
                 size="sm"
                 onClick={() => void navigate({ search: { status: "history" } })}
               >
-                View all Changes
+                View all changes
               </Button>
             }
           />
         ) : (
           <EmptyState
-            title="No Changes verified yet"
-            detail="Prepare the current repository Change and Relay will select the Tests, builds, and devices needed to verify it."
+            title="No changes verified yet"
+            detail="Prepare the current repository change and Relay will select the tests, builds, and devices needed to verify it."
             action={
               <Button
                 variant="default"
                 onClick={() => prepare.mutate()}
                 disabled={prepare.isPending}
               >
-                Verify current Change
+                Verify current change
               </Button>
             }
           />
@@ -262,15 +262,15 @@ function viewLabel(view: ChangeView): string {
   if (view === "ready") return "Ready to verify";
   if (view === "attention") return "Needs attention";
   if (view === "history") return "Complete history";
-  return "Current Changes";
+  return "Current changes";
 }
 
 function emptyViewTitle(view: ChangeView): string {
-  if (view === "active") return "No Changes in progress";
-  if (view === "ready") return "No Changes ready to verify";
-  if (view === "attention") return "No Changes need attention";
-  if (view === "history") return "No Change history yet";
-  return "No current Changes";
+  if (view === "active") return "No changes in progress";
+  if (view === "ready") return "No changes ready to verify";
+  if (view === "attention") return "No changes need attention";
+  if (view === "history") return "No change history yet";
+  return "No current changes";
 }
 
 function relativeTime(timestamp: number): string {

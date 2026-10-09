@@ -178,7 +178,7 @@ function findingBlock(finding: CombineEvidenceFinding, flakyTestIds?: ReadonlySe
   if (testId) lines.push(`- **Test:** ${testId}`);
   if (flakyTestIds && planFindingIsFlaky(finding, flakyTestIds)) {
     lines.push(
-      "- **Stability:** Flaky. Same Test passed and failed on comparable history. This label never skips a run or accepts a visual baseline.",
+      "- **Stability:** Flaky. Same test passed and failed on comparable history. This label never skips a run or accepts a visual baseline.",
     );
   }
   if (finding.expected !== undefined) lines.push(`- **expected:** ${finding.expected}`);
@@ -198,9 +198,9 @@ function findingBlock(finding: CombineEvidenceFinding, flakyTestIds?: ReadonlySe
 
 /** Morning copy when a Plan Result has zero findings. Confirm/Reject still never accept a baseline. */
 export const PLAN_FINDINGS_EMPTY_GUIDANCE = [
-  "No findings. Passing cases are not a license to skip the next daily Plan.",
+  "No findings. Passing cases are not a license to skip the next daily plan.",
   "A missing Thread, a draft Delete, a rate-limit SOS, or a Cloudflare block is not a product pass.",
-  "Confirm and Reject never accept a visual baseline. Accept a baseline from a Report's visual review, or relay run visual review.",
+  "Confirm and Reject never accept a visual baseline. Accept a baseline from a report's visual review, or relay run visual review.",
   "Check Sign-ins before the next unattended run. Expired accounts fail closed as Infra.",
 ] as const;
 

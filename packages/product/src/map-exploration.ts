@@ -215,7 +215,7 @@ function projectMap(map: AppMap): ProductMapOverview {
   const tests = Object.values(map.tests);
   const testByConnection = new Map<string, { id: string; name: string }[]>();
   for (const test of tests) {
-    const summary = { id: test.id, name: text(test.name, "Saved Test") };
+    const summary = { id: test.id, name: text(test.name, "Saved test") };
     for (const connectionId of connectionIds(test.steps)) {
       const covering = testByConnection.get(connectionId) ?? [];
       covering.push(summary);

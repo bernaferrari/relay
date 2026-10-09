@@ -240,7 +240,7 @@ export function RunConfigurationComposer({
                   key={option.id}
                   className="flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-accent has-data-checked:bg-accent"
                 >
-                  {optionCopy(option)}
+                  {/* The box sits beside its label, not across the cell from it. */}
                   <Checkbox
                     checked={selection?.dataSetIds?.includes(option.id) ?? false}
                     onCheckedChange={(checked) => {
@@ -250,6 +250,7 @@ export function RunConfigurationComposer({
                       onSelectionChange({ ...selection, dataSetIds: [...next] });
                     }}
                   />
+                  {optionCopy(option)}
                 </FieldLabel>
               ))}
               {!filteredValues?.length ? (

@@ -67,7 +67,7 @@ const { calls, invoke } = vi.hoisted(() => {
           errorCount: 0,
           concurrentAccountsPossible: false,
           concurrentReason:
-            "One live account. Concurrent N-account Plans need another saved sign-in.",
+            "One live account. Concurrent N-account plans need another saved sign-in.",
           electronGrokLabPartitionPresent: false,
           electronGrokLabReason:
             "Electron persist:lane:grok-lab is absent. Playwright SuperGrok fixture is not Electron coverage.",

@@ -233,7 +233,7 @@ describe("resolvePlanFindings", () => {
     expect(resolvePlanFindings(batch, analysis).analysis.findings).toEqual([]);
   });
 
-  it("copies durable Test identity from the Result cell onto analyzed findings", () => {
+  it("copies durable test identity from the Result cell onto analyzed findings", () => {
     const batch = batchReport();
     const analysis = report([{ jobId: "job-a", locale: "en", status: "failed", frames: [] }]);
     analysis.analysis.findings = [
@@ -252,7 +252,7 @@ describe("resolvePlanFindings", () => {
     ]);
   });
 
-  it("does not invent a Test id from a similar screen label", () => {
+  it("does not invent a test id from a similar screen label", () => {
     const source = batchReport();
     const batch = {
       ...source,

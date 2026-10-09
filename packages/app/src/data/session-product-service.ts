@@ -126,7 +126,7 @@ function boundedText(value: string | undefined, maxLength = 512): string | undef
 
 function titleForSession(session: AuthoringSession): string {
   return (
-    boundedText(session.testName, 160) ?? boundedText(session.group, 160) ?? "Untitled Session"
+    boundedText(session.testName, 160) ?? boundedText(session.group, 160) ?? "Untitled session"
   );
 }
 

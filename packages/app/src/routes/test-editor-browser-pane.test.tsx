@@ -161,8 +161,8 @@ async function click(text: string) {
   });
 }
 
-describe("saved Test browser", () => {
-  it("starts with the test website and keeps other configurations behind Change", async () => {
+describe("saved test browser", () => {
+  it("starts with the test website and keeps other configurations behind change", async () => {
     await setup("https://grok.com/");
     expect(document.querySelector('[aria-label="Websites"]')).toBeNull();
     expect(document.body.textContent).toContain("Change website");
@@ -222,7 +222,7 @@ describe("saved Test browser", () => {
     ]);
     expect(document.body.textContent).not.toContain("authfx:");
   });
-  it("defaults to the account the Test last ran as", async () => {
+  it("defaults to the account the test last ran as", async () => {
     const harness = await setup("https://grok.com/", { recentAccountIds: ["mail", "lab"] });
     expect(document.querySelector<HTMLSelectElement>('select[aria-label="Account"]')?.value).toBe(
       "authfx:mail:1",

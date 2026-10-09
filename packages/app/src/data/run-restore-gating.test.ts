@@ -7,11 +7,11 @@ describe("shouldRestorePersistedRun", () => {
     expect(shouldRestorePersistedRun(null, "run-1")).toBe(false);
   });
 
-  it("does not restore when the pointer already names this Run", () => {
+  it("does not restore when the pointer already names this run", () => {
     expect(shouldRestorePersistedRun({ runId: "run-1" }, "run-1")).toBe(false);
   });
 
-  it("restores only when a stored pointer names a different Run", () => {
+  it("restores only when a stored pointer names a different run", () => {
     expect(shouldRestorePersistedRun({ runId: "run-other" }, "run-1")).toBe(true);
   });
 });

@@ -127,7 +127,7 @@ afterEach(async () => {
 });
 
 describe("Batch review controls", () => {
-  it("opens and inspects the exact running Plan job before immutable evidence exists", async () => {
+  it("opens and inspects the exact running plan job before immutable evidence exists", async () => {
     const inspectExecution = vi.fn<NonNullable<RunProductService["inspectExecution"]>>(
       async (jobId) => ({
         status: "running",
@@ -135,7 +135,7 @@ describe("Batch review controls", () => {
         snapshot: {
           schemaVersion: 1,
           kind: "run-test",
-          title: "Live Plan case",
+          title: "Live plan case",
           phase: "running",
           version: "v1",
           progress: { label: "Checking the first prompt", completed: 0, total: 2 },
@@ -176,7 +176,7 @@ describe("Batch review controls", () => {
     ]);
     expect(inspectExecution).toHaveBeenCalledExactlyOnceWith("live-prompt-job");
     expect(document.body.textContent).toContain("Checking the first prompt");
-    expect(document.body.textContent).not.toContain("stopped before a Run captured evidence");
+    expect(document.body.textContent).not.toContain("stopped before a run captured evidence");
     expect(document.querySelector('a[href*="earlier-prompt-run"]')).toBeNull();
     expect(
       [...document.querySelectorAll("a")].some(
@@ -189,7 +189,7 @@ describe("Batch review controls", () => {
     { status: "pending", message: "Waiting to start." },
     { status: "queued", message: "Waiting to start." },
     { status: "running", message: "Run in progress. Evidence will appear here as it is saved." },
-    { status: "failed", message: "This case ended without saved Run evidence." },
+    { status: "failed", message: "This case ended without saved run evidence." },
   ] as const)(
     "shows truthful $status copy when a case has no inspection reference",
     async ({ status, message }) => {
@@ -206,12 +206,12 @@ describe("Batch review controls", () => {
         },
       } as unknown as RunAcrossProductService);
       expect(document.body.textContent).toContain(message);
-      expect(document.body.textContent).not.toContain("stopped before a Run captured evidence");
+      expect(document.body.textContent).not.toContain("stopped before a run captured evidence");
       expect(document.querySelector('[aria-label="Plan run"] a')).toBeNull();
     },
   );
 
-  it("does not attach an old Plan download to the next Plan", async () => {
+  it("does not attach an old plan download to the next plan", async () => {
     let finish!: (blob: Blob) => void;
     const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:old-plan");
     const getReport = vi.fn(async (id: string) => ({
@@ -559,7 +559,7 @@ describe("Batch review controls", () => {
     expect(reject).toBeInstanceOf(HTMLButtonElement);
   });
 
-  it("reviews Plan screenshots from the Batch page without accepting a baseline", async () => {
+  it("reviews plan screenshots from the Batch page without accepting a baseline", async () => {
     const reviewCaptures = vi.fn(async () => ({
       queue: {
         items: [
@@ -653,7 +653,7 @@ describe("Batch review controls", () => {
     ]);
   });
 
-  it("reviews captured Plan screenshots while the Plan is still running", async () => {
+  it("reviews captured plan screenshots while the plan is still running", async () => {
     await render({
       getReport: async () => ({ ...report, status: "running" as const }),
       getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),

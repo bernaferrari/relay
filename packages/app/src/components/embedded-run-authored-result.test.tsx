@@ -7,7 +7,7 @@ import { projectRunReport } from "../data/run-report-projection";
 import { retainedNativeFastRun } from "../data/fixtures/native-fast-authored-run";
 import { EmbeddedRunResult } from "./embedded-run-result";
 
-it("presents the retained 31-trace Fast Run as seven authored actions", () => {
+it("presents the retained 31-trace Fast run as seven authored actions", () => {
   expect(retainedNativeFastRun.steps).toHaveLength(31);
   const report = projectRunReport("a1a09d67", retainedNativeFastRun, {});
   const html = renderToStaticMarkup(

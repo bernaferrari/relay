@@ -277,7 +277,7 @@ afterEach(async () => {
 });
 
 describe("Suite and Environment routes", () => {
-  it("discovers run destinations in the saved App and Plan scope", async () => {
+  it("discovers run destinations in the saved app and plan scope", async () => {
     const listEnvironmentProfiles = vi.fn(async () => [environment]);
     await render("/apps/app-1/suites/suite-1", {
       suiteService: suiteService({ listEnvironmentProfiles }),
@@ -289,7 +289,7 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).toContain("Staging browser");
   });
 
-  it("opens the connected device when a native Plan needs setup", async () => {
+  it("opens the connected device when a native plan needs setup", async () => {
     const native: ProductEnvironmentProfile = {
       ...environment,
       id: "saved-ipad-profile",
@@ -312,14 +312,14 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).toContain("Reconnect the iPad.");
   });
 
-  it("checks unused prompt values before choosing a device and links to the scoped Test", async () => {
+  it("checks unused prompt values before choosing a device and links to the scoped test", async () => {
     const previewSuite = vi.fn(async () => ({
       ...suitePreview(),
       caseCount: 2,
       warnings: [
         {
           code: "unused-input-data-set",
-          message: "Chat prompts are not used. Connect a Type step to Run input chat_prompt.",
+          message: "Chat prompts are not used. Connect a Type step to run input chat_prompt.",
         },
       ],
     }));
@@ -338,7 +338,7 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).not.toContain("Set up the selected browser");
   });
 
-  it("keeps unused prompt Plans from running despite a ready device preview", async () => {
+  it("keeps unused prompt plans from running despite a ready device preview", async () => {
     const startSuite = vi.fn(async () => ({ batchId: "must-not-start" }));
     await render("/apps/app-1/suites/suite-1", {
       suiteService: suiteService({
@@ -359,7 +359,7 @@ describe("Suite and Environment routes", () => {
     expect(startSuite).not.toHaveBeenCalled();
   });
 
-  it("shows only the displayed App's plans as groups on Tests", async () => {
+  it("shows only the displayed app's plans as groups on tests", async () => {
     const scopedSuite = { ...suite, appMapId: "app-2", appName: "Billing", name: "Billing smoke" };
     const listSuites = vi.fn(async () => [suite, scopedSuite]);
     await render("/tests?app=app-2&view=plans", {
@@ -378,7 +378,7 @@ describe("Suite and Environment routes", () => {
     expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).toBeNull();
   });
 
-  it("redirects the old Plans list to Tests and opens a plan's canonical detail route", async () => {
+  it("redirects the old plans list to tests and opens a plan's canonical detail route", async () => {
     const { history } = await render("/suites");
     expect(history.location.pathname).toBe("/tests");
     expect(document.querySelector("h1")?.textContent).toBe("Tests");
@@ -393,7 +393,7 @@ describe("Suite and Environment routes", () => {
     expect(history.location.pathname).toBe("/apps/app-1/suites/suite-1");
   });
 
-  it("keeps Tests search in the URL and restores all saved Tests on Clear", async () => {
+  it("keeps tests search in the URL and restores all saved tests on Clear", async () => {
     const { history } = await render("/tests");
     const search = document.querySelector<HTMLInputElement>('input[aria-label="Search tests"]');
     if (!search) throw new Error("Search tests input missing");
@@ -412,7 +412,7 @@ describe("Suite and Environment routes", () => {
     expect(document.querySelector('section[aria-labelledby="loose-heading"]')).not.toBeNull();
   });
 
-  it("creates a plan from the New plan dialog on Tests and opens it", async () => {
+  it("creates a plan from the New plan dialog on tests and opens it", async () => {
     let resolveSave!: (value: ProductSuite) => void;
     const saveReply = new Promise<ProductSuite>((resolve) => {
       resolveSave = resolve;
@@ -499,7 +499,7 @@ describe("Suite and Environment routes", () => {
     expect((run as HTMLButtonElement).disabled).toBe(true);
     expect(document.body.textContent).toContain("Setup needed before running");
 
-    await clickButton("Edit Plan");
+    await clickButton("Edit plan");
     expect(document.querySelector("#edit-suite-name")).not.toBeNull();
     await fill("edit-suite-name", "Release smoke updated");
     await clickButton("Save changes");
@@ -512,8 +512,12 @@ describe("Suite and Environment routes", () => {
       referenceReviewMode: "human",
     });
 
-    await clickButton("Remove");
-    await clickButton("Remove Plan");
+    await act(async () =>
+      document.querySelector<HTMLElement>('button[aria-label="More plan actions"]')!.click(),
+    );
+    await settle();
+    await clickButton("Remove plan…");
+    await clickButton("Remove plan");
     expect(calls.remove).toEqual([{ appMapId: "app-1", suiteId: "suite-1", expectedRevision: 7 }]);
     expect(calls.start).toBe(0);
     // Removing a plan returns to Tests, where plans are listed as groups.
@@ -542,9 +546,9 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).toContain("Multi-environment execution is unavailable.");
   });
 
-  it("opens the existing Plan result instead of offering a second start", async () => {
+  it("opens the existing plan result instead of offering a second start", async () => {
     const start = vi.fn(async () => {
-      throw Object.assign(new Error("This Plan has a run in progress"), {
+      throw Object.assign(new Error("This plan has a run in progress"), {
         body: { code: "ACTIVE_REPEAT_EXISTS", repeatId: "batch-existing" },
       });
     });
@@ -567,7 +571,7 @@ describe("Suite and Environment routes", () => {
       browserService: browserService({ createSpace: create }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Browsers");
-    expect(document.querySelector('[data-slot="page-context"]')?.textContent).toBe("Workspace");
+    expect(document.querySelector('[data-slot="page-context"]')).toBeNull();
     expect(document.body.textContent).toContain("Staging browser");
     expect(document.body.textContent).not.toContain("Fresh browser each session");
     expect(document.body.textContent).not.toContain("Open →");
@@ -620,7 +624,7 @@ describe("Suite and Environment routes", () => {
     )!;
     expect(expiredRow.textContent).toContain("Expired");
     expect([...expiredRow.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
-      "Refresh",
+      "Update sign-in",
       "Revoke",
     ]);
     const history = document.querySelector<HTMLButtonElement>(
@@ -695,14 +699,14 @@ describe("Suite and Environment routes", () => {
       history.back();
     });
 
-    await clickButton("Save account");
+    await clickButton("Save current sign-in");
     await fill("account-fixture-name", "QA member");
     await clickButton("Save");
     expect(calls.save).toEqual([{ spaceId: "space-1", name: "QA member" }]);
 
     await clickButton("Revoke");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      "existing Run evidence",
+      "existing run evidence",
     );
     await clickButton("Revoke sign-in");
     expect(calls.revoke).toEqual([{ spaceId: "space-1", reference: fixture.reference }]);
@@ -714,7 +718,7 @@ describe("Suite and Environment routes", () => {
     expect(history.location.pathname).toBe("/environments");
   });
 
-  it("schedules the Plan daily on the first selected browser", async () => {
+  it("schedules the plan daily on the first selected browser", async () => {
     const schedulePlan = vi.fn(async () => ({ id: "sched-1" }));
     await render("/apps/app-1/suites/suite-1", {
       suiteService: suiteService({ schedulePlan }),
@@ -800,7 +804,7 @@ describe("Suite and Environment routes", () => {
     });
   });
 
-  it("keeps automatic scheduling disabled while Plan admission is pending", async () => {
+  it("keeps automatic scheduling disabled while plan admission is pending", async () => {
     let finish!: (value: ProductSuitePreview) => void;
     const admission = new Promise<ProductSuitePreview>((resolve) => {
       finish = resolve;

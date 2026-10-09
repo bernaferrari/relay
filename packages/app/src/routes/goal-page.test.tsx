@@ -187,7 +187,7 @@ afterEach(async () => {
 });
 
 describe("Goal page", () => {
-  it("carries a retained finding through fresh replay and explicit Test promotion", async () => {
+  it("carries a retained finding through fresh replay and explicit test promotion", async () => {
     const { host, service } = await render();
 
     expect(host.textContent).toContain("Start from a goal");
@@ -222,14 +222,14 @@ describe("Goal page", () => {
     await settle();
     expect(service.reproduceSession).toHaveBeenCalled();
     expect(vi.mocked(service.reproduceSession).mock.calls[0]?.[0]).toBe("goal-1");
-    expect(host.textContent).toContain("Save as a Test");
+    expect(host.textContent).toContain("Save as a test");
 
     await act(async () => {
-      const control = document.querySelector('[aria-label="Confirm Test promotion"]');
+      const control = document.querySelector('[aria-label="Confirm test promotion"]');
       control?.closest("label")?.click();
     });
     await settle();
-    await act(async () => button("Save as Test").click());
+    await act(async () => button("Save as test").click());
     await settle();
 
     expect(service.promoteSession).toHaveBeenCalled();

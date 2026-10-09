@@ -21,7 +21,7 @@ describe("run configuration", () => {
     expect(runConfigurationReady({ values: {} })).toBe(false);
   });
 
-  it("is the shared setup composer for Test, Suite, and dataset setup surfaces", () => {
+  it("is the shared setup composer for test, Suite, and dataset setup surfaces", () => {
     const surfaces = [
       "../routes/test-run-settings.tsx",
       "../routes/suite-page.tsx",

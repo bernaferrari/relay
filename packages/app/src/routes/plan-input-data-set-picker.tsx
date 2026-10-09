@@ -66,7 +66,7 @@ export function PlanInputDataSetPicker({
       if (!catalog.data || !selected || (!bindHere && selected.addedToApp))
         throw new TypeError("Choose saved values that have not been added yet.");
       if (bindHere && !bindingReady)
-        throw new TypeError("Choose current Test actions and saved values first.");
+        throw new TypeError("Choose current test actions and saved values first.");
       return service.addInputDataSet({
         appMapId,
         expectedRevision: revision,
@@ -161,7 +161,7 @@ export function PlanInputDataSetPicker({
   return (
     <div className="grid gap-3 rounded-lg border border-border bg-muted/20 p-3">
       <p className="text-sm text-muted-foreground">
-        Run the same Tests with saved prompts or other inputs.
+        Run the same tests with saved prompts or other inputs.
       </p>
       {catalog.isPending ? (
         <p role="status" className="text-sm">
@@ -232,7 +232,7 @@ export function PlanInputDataSetPicker({
                 <p className="text-xs leading-5 text-muted-foreground">
                   {bindHere
                     ? "These values are already shared by a saved Data set. Review the shared text changes below before applying."
-                    : "Used by a saved Data set. Create a new input to keep existing Plans unchanged."}
+                    : "Used by a saved Data set. Create a new input to keep existing plans unchanged."}
                 </p>
               ) : service.saveInputDefinition && !editing ? (
                 <Button
@@ -326,7 +326,7 @@ export function PlanInputDataSetPicker({
               rel="noopener noreferrer"
               className="w-fit underline underline-offset-4"
             >
-              Open this App’s Tests in a new tab
+              Open this app’s tests in a new tab
             </a>
           )}
         </div>
@@ -384,7 +384,7 @@ export function PlanInputDataSetPicker({
           {add.isPending
             ? "Adding…"
             : bindHere
-              ? "Use values in Tests"
+              ? "Use values in tests"
               : selected?.addedToApp
                 ? "Already added"
                 : "Add Data set"}

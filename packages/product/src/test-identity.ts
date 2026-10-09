@@ -11,7 +11,7 @@ export class ProductTestIdentityAmbiguityError extends Error {
 
   constructor(testId: string, appMapIds: readonly string[]) {
     super(
-      `Relay found more than one saved Test with the identity ${testId}. Open the Test from its App and try again.`,
+      `Relay found more than one saved test with the identity ${testId}. Open the test from its app and try again.`,
     );
     this.name = "ProductTestIdentityAmbiguityError";
     this.appMapIds = [...appMapIds];

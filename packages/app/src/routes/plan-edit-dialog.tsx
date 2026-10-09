@@ -1,11 +1,17 @@
 /** @jsxImportSource react */
+import { MoreHorizontal, Trash2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@relay/ui-react/components/dropdown-menu";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
-  DialogTrigger,
 } from "@relay/ui-react/components/dialog";
 import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
@@ -15,7 +21,6 @@ import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { productTestStatusLabel } from "@relay/product/catalog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
-import { Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { ProductSuite } from "../data/suite-profile-product-service";
 import { SelectField } from "../components/filter-select";
@@ -87,8 +92,8 @@ export function PlanEditDialog({
         showCloseButton={false}
         className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
       >
-        <DialogTitle>Edit Plan</DialogTitle>
-        <DialogDescription>Removing a Test from this Plan does not delete it.</DialogDescription>
+        <DialogTitle>Edit plan</DialogTitle>
+        <DialogDescription>Removing a test from this plan does not delete it.</DialogDescription>
         <form onSubmit={submit}>
           <Field>
             <FieldLabel htmlFor="edit-suite-name">Plan name</FieldLabel>
@@ -112,7 +117,7 @@ export function PlanEditDialog({
             />
             <p className="text-xs text-muted-foreground">
               {referenceReviewMode === "approved-reference"
-                ? "Matching approved reference images are marked automatically. Accept as reference explicitly chooses the image for later Runs."
+                ? "Matching approved reference images are marked automatically. Accept as reference explicitly chooses the image for later runs."
                 : "Every captured image waits for a person. Looks correct does not create a future reference."}
             </p>
           </Field>
@@ -168,7 +173,7 @@ export function PlanEditDialog({
           </div>
           {save.error ? (
             <FieldError>
-              {save.error instanceof Error ? save.error.message : "Relay could not save this Plan."}
+              {save.error instanceof Error ? save.error.message : "Relay could not save this plan."}
             </FieldError>
           ) : null}
           <div className="flex flex-wrap items-center justify-end gap-2.5">
@@ -187,19 +192,23 @@ export function PlanEditDialog({
   );
 }
 
-/** Remove the Plan grouping; its Tests and Reports stay. */
-export function PlanRemoveSection({
+/** Remove the Plan grouping; its Tests and Reports stay. Opened from the
+ * Plan's overflow menu so a destructive action never sits in the page body. */
+export function PlanRemoveDialog({
   appId,
   suiteId,
   value,
+  open: removeOpen,
+  onOpenChange: setRemoveOpen,
 }: {
   appId: string;
   suiteId: string;
   value: ProductSuite;
+  open: boolean;
+  onOpenChange(open: boolean): void;
 }) {
   const { suiteProfileService, queryClient } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate();
-  const [removeOpen, setRemoveOpen] = useState(false);
   const remove = useMutation({
     mutationFn: () =>
       suiteProfileService.removeSuite({
@@ -213,47 +222,50 @@ export function PlanRemoveSection({
     },
   });
   return (
-    <section
-      className="mt-8 flex items-center justify-between gap-5 border-t border-border pt-5 max-sm:items-start"
-      aria-labelledby="remove-suite-title"
-    >
-      <div>
-        <h2 id="remove-suite-title" className="text-sm font-semibold text-foreground">
-          Remove Plan
-        </h2>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          Tests and Reports stay in the App.
-        </p>
-      </div>
-      <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
-        <DialogTrigger render={<Button variant="outline" />}>
-          <Trash2 aria-hidden="true" /> Remove
-        </DialogTrigger>
+    <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
+      <DialogContent showCloseButton={false}>
+        <DialogTitle>Remove {value.name}?</DialogTitle>
+        <DialogDescription>
+          This removes the plan grouping. Its tests and reports stay in the app.
+        </DialogDescription>
+        {remove.error ? (
+          <FieldError>
+            {remove.error instanceof Error
+              ? remove.error.message
+              : "Relay could not remove this plan."}
+          </FieldError>
+        ) : null}
+        <div className="flex flex-wrap items-center justify-end gap-2.5">
+          <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+          <Button variant="destructive" onClick={() => remove.mutate()} disabled={remove.isPending}>
+            {remove.isPending ? "Removing…" : "Remove plan"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-        <DialogContent showCloseButton={false}>
-          <DialogTitle>Remove {value.name}?</DialogTitle>
-          <DialogDescription>
-            This removes the Plan grouping. Its Tests and Reports remain available.
-          </DialogDescription>
-          {remove.error ? (
-            <FieldError>
-              {remove.error instanceof Error
-                ? remove.error.message
-                : "Relay could not remove this Plan."}
-            </FieldError>
-          ) : null}
-          <div className="flex flex-wrap items-center justify-end gap-2.5">
-            <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-            <Button
-              variant="destructive"
-              onClick={() => remove.mutate()}
-              disabled={remove.isPending}
-            >
-              {remove.isPending ? "Removing…" : "Remove Plan"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </section>
+/** Edit stays one click; removal waits behind the overflow menu. */
+export function PlanHeaderActions({ onEdit, onRemove }: { onEdit(): void; onRemove(): void }) {
+  return (
+    <>
+      <Button variant="ghost" onClick={onEdit}>
+        Edit plan
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="icon" />}
+          aria-label="More plan actions"
+        >
+          <MoreHorizontal aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem variant="destructive" onClick={onRemove}>
+            <Trash2 aria-hidden="true" /> Remove plan…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
   );
 }

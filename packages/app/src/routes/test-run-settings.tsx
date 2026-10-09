@@ -164,11 +164,11 @@ export function TestRunSettings({
               ? [
                   {
                     id: "test-document",
-                    label: editorState === "saving" ? "Saving Test changes" : "Save Test changes",
+                    label: editorState === "saving" ? "Saving test changes" : "Save test changes",
                     detail:
                       editorState === "failed"
-                        ? "Resolve the save problem before running this Test."
-                        : "Run uses the saved Test. Save the visible edits first.",
+                        ? "Resolve the save problem before running this test."
+                        : "Run uses the saved test. Save the visible edits first.",
                   },
                 ]
               : []),
@@ -298,7 +298,7 @@ export function TestRunSettings({
     </section>
   ) : (
     <p className="p-4 text-sm text-muted-foreground">
-      {activeRun ? "This Test is running." : "Devices are unavailable right now."}
+      {activeRun ? "This test is running." : "Devices are unavailable right now."}
     </p>
   );
 }

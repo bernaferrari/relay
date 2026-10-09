@@ -46,7 +46,7 @@ it("downloads the canonical walkthrough as HTML without changing evidence JSON e
   }
 });
 
-it("explains a timed-out export and lets the user retry the same Run", async () => {
+it("explains a timed-out export and lets the user retry the same run", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -140,8 +140,8 @@ it("removes a previous walkthrough when a new export refuses changed evidence", 
 
 it.each([
   [
-    new ApiError(403, "You do not have permission to export this Run."),
-    "You do not have permission to export this Run.",
+    new ApiError(403, "You do not have permission to export this run."),
+    "You do not have permission to export this run.",
   ],
   [
     new DOMException("The operation was aborted.", "AbortError"),
@@ -149,8 +149,8 @@ it.each([
   ],
   [new TypeError("Failed to fetch"), "Could not reach Relay. Check the connection and try again."],
   [
-    new Error("Relay returned TracePack evidence for a different Run."),
-    "Relay returned TracePack evidence for a different Run.",
+    new Error("Relay returned TracePack evidence for a different run."),
+    "Relay returned TracePack evidence for a different run.",
   ],
 ])("retains an actionable export failure without offering a download", async (failure, message) => {
   const host = document.createElement("div");
@@ -183,7 +183,7 @@ it.each([
   }
 });
 
-it("does not expose an old Run download when its export completes after navigation", async () => {
+it("does not expose an old run download when its export completes after navigation", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);

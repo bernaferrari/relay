@@ -234,7 +234,7 @@ async function render(
 }
 
 describe("App overview", () => {
-  it("keeps Tests, Reports, coverage, and the next action together", async () => {
+  it("keeps tests, reports, coverage, and the next action together", async () => {
     const filters: string[] = [];
     const service = catalog({
       listTests: async (filter) => {
@@ -321,7 +321,7 @@ describe("Tests library", () => {
     );
   });
 
-  it("opens a ready Test at the Run composer instead of a second dialog", async () => {
+  it("opens a ready test at the run composer instead of a second dialog", async () => {
     const { history } = await render("/tests");
     expect(
       document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
@@ -369,7 +369,7 @@ async function click(label: string) {
 }
 
 describe("Tests workspace", () => {
-  it("lists saved Test summaries first and exposes plans in their own view", async () => {
+  it("lists saved test summaries first and exposes plans in their own view", async () => {
     const { history } = await render(
       "/tests",
       catalog(),
@@ -437,7 +437,7 @@ describe("Tests workspace", () => {
     expect(history.location.pathname).toBe("/tests/test-language-internal");
   });
 
-  it("uses the centered shared recovery state when saved Tests cannot load", async () => {
+  it("uses the centered shared recovery state when saved tests cannot load", async () => {
     await render(
       "/tests",
       catalog({
@@ -488,7 +488,7 @@ describe("Tests workspace", () => {
     expect(document.body.textContent).toContain("Complete checkout");
   });
 
-  it("does not invent Suites from Test checkboxes", async () => {
+  it("does not invent Suites from test checkboxes", async () => {
     await render("/tests");
     expect(document.querySelector("#loose-heading")?.textContent).toBe("All tests");
     expect(document.querySelector("#plans-heading")).toBeNull();
@@ -496,10 +496,10 @@ describe("Tests workspace", () => {
     expect(document.querySelectorAll('#main-content [role="checkbox"]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain("Create Suite");
     expect(document.body.textContent).not.toContain("Save Suite");
-    expect(document.body.textContent).not.toContain("Your selection spans Apps");
+    expect(document.body.textContent).not.toContain("Your selection spans apps");
   });
 
-  it("keeps a recording resume when the selected App owns it", async () => {
+  it("keeps a recording resume when the selected app owns it", async () => {
     const productService = recordingInspect("app-shop-internal");
     await render("/tests?app=app-shop-internal", catalog(), undefined, undefined, undefined, {
       platform: platformWithPointer("workflow-shop"),
@@ -514,7 +514,7 @@ describe("Tests workspace", () => {
     expect(chip?.textContent).toContain("Continue recording");
   });
 
-  it("does not hide a recording whose App ownership is still unknown", async () => {
+  it("does not hide a recording whose app ownership is still unknown", async () => {
     await render("/tests?app=app-shop-internal", catalog(), undefined, undefined, undefined, {
       platform: platformWithPointer("workflow-unknown"),
       productService: recordingInspect(),
@@ -526,7 +526,7 @@ describe("Tests workspace", () => {
     expect(chip?.textContent).toContain("Continue recording");
   });
 
-  it("hides a recording resume that belongs to a different App", async () => {
+  it("hides a recording resume that belongs to a different app", async () => {
     await render("/tests?app=app-bank-internal", catalog(), undefined, undefined, undefined, {
       platform: platformWithPointer("workflow-shop"),
       productService: recordingInspect("app-shop-internal"),
@@ -540,7 +540,7 @@ describe("Tests workspace", () => {
 });
 
 describe("Runs workspace", () => {
-  it("folds screenshot review into Runs with a count and a focused review entry", async () => {
+  it("folds screenshot review into runs with a count and a focused review entry", async () => {
     inbox.count = 3;
     await render("/runs?app=app-shop-internal", catalog({ listRuns: async () => [passedRun] }));
     const main = document.querySelector("main")!;
@@ -587,7 +587,7 @@ describe("Runs workspace", () => {
     expect(row?.textContent).not.toContain("Needs review");
   });
 
-  it("keeps the whole Plan outcome when searching for one successful Test", async () => {
+  it("keeps the whole plan outcome when searching for one successful test", async () => {
     const planRuns = [
       productRun({
         id: "ok",
@@ -611,7 +611,7 @@ describe("Runs workspace", () => {
     await render("/runs?q=Open%20home", catalog({ listRuns: async () => planRuns }));
     const row = document.querySelector('a[href^="/batches/mixed?"]');
     expect(row?.textContent).toContain("Could not complete");
-    expect(row?.textContent).toContain("2 Tests");
+    expect(row?.textContent).toContain("2 tests");
     expect(row?.textContent).not.toContain("Passed");
   });
 
@@ -654,17 +654,17 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).not.toContain("Couldn’t refresh runs");
   }, 10_000);
 
-  it("keeps the Run view tabs on their own rail above the filters", async () => {
+  it("keeps the run view tabs on their own rail above the filters", async () => {
     await render("/runs");
 
     const tabs = document.querySelector('[data-slot="tabs"]');
-    const filters = document.querySelector('[aria-label="Filter Runs"]');
+    const filters = document.querySelector('[aria-label="Filter runs"]');
     expect(tabs?.className).not.toContain("border-b");
     expect(filters?.className).not.toContain("mt-3");
     expect(filters?.parentElement?.className).toMatch(/gap-5|gap-6/);
   });
 
-  it("defaults to All Runs and keeps every row durably addressable", async () => {
+  it("defaults to All runs and keeps every row durably addressable", async () => {
     await render("/runs");
 
     expect(document.body.textContent?.match(/Change language/g)).toHaveLength(2);
@@ -680,7 +680,7 @@ describe("Runs workspace", () => {
     expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(0);
   });
 
-  it("uses the centered shared recovery state when Runs cannot load", async () => {
+  it("uses the centered shared recovery state when runs cannot load", async () => {
     await render(
       "/runs",
       catalog({
@@ -710,12 +710,12 @@ describe("Runs workspace", () => {
 
     await fill(document.querySelector<HTMLInputElement>("#run-search")!, "missing");
     expect(document.body.textContent).toContain("Nothing failed");
-    await click("Show all Runs");
+    await click("Show all runs");
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Complete checkout");
   });
 
-  it("opens a Plan Result grid instead of one Test Run from a Run Across pack", async () => {
+  it("opens a plan Result grid instead of one test run from a run Across pack", async () => {
     await render(
       "/runs",
       catalog({
@@ -757,11 +757,11 @@ describe("Runs workspace", () => {
     expect(document.querySelector('a[href^="/runs/run-plan-upload?"]')).toBeNull();
     expect(document.body.textContent).toContain("Grok.com daily Result");
     expect(document.body.textContent).toContain("Plan Result");
-    expect(document.body.textContent).toContain("8 Tests");
+    expect(document.body.textContent).toContain("8 tests");
     expect(document.body.textContent).not.toContain("Run Across");
   });
 
-  it("windows very large histories and keeps every rendered Report as a keyboard URL", async () => {
+  it("windows very large histories and keeps every rendered report as a keyboard URL", async () => {
     const largeHistory = Array.from({ length: 500 }, (_, index) =>
       productRun({
         id: `run-${index}`,

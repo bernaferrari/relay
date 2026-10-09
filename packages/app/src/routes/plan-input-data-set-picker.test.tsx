@@ -103,13 +103,13 @@ it("previews saved values and adds them only after an explicit action", async ()
 });
 it("keeps the selection visible after a failed write and reloads without retrying the mutation", async () => {
   const addInputDataSet = vi.fn(async () => {
-    throw new Error("This App changed");
+    throw new Error("This app changed");
   });
   const { onReload, onAdded } = await render({ addInputDataSet });
   await choose();
   await act(async () => button("Add Data set").click());
   await act(async () => {
-    await vi.waitFor(() => expect(document.body.textContent).toContain("This App changed"));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("This app changed"));
   });
   expect((document.querySelector("#input-data-set-name") as HTMLInputElement).value).toBe(
     "chat prompt",
@@ -248,7 +248,7 @@ it("edits an unlinked public input by its stable ID without adding a Map Data se
 });
 
 it.each([true, false])(
-  "keeps already linked inputs read-only; added to this App: %s",
+  "keeps already linked inputs read-only; added to this app: %s",
   async (addedToApp) => {
     const saveInputDefinition = vi.fn();
     const { service } = await render({
@@ -260,7 +260,7 @@ it.each([true, false])(
     });
     await choose("Add prompt values", `chat_prompt${addedToApp ? " · Already added" : ""}`);
     expect(document.body.textContent).toContain(
-      "Create a new input to keep existing Plans unchanged",
+      "Create a new input to keep existing plans unchanged",
     );
     expect(
       [...document.querySelectorAll("button")].some(

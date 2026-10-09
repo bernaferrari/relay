@@ -313,7 +313,7 @@ export function TestsPage() {
 
           {tests.data && !testCount && view === "tests" ? (
             <EmptyState
-              title={app ? "No tests for this App yet" : "No tests yet"}
+              title={app ? "No tests for this app yet" : "No tests yet"}
               detail="Record a flow on your website or device, then save it as a test."
               action={
                 <Button

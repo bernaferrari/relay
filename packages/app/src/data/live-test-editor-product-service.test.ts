@@ -28,8 +28,8 @@ function liveTarget(): LiveTargetSession {
   return { close: vi.fn() } as unknown as LiveTargetSession;
 }
 
-describe("live Test editor product binding", () => {
-  it("opens a legacy Session as observe-only and never invents recording authority", async () => {
+describe("live test editor product binding", () => {
+  it("opens a legacy session as observe-only and never invents recording authority", async () => {
     const target = liveTarget();
     const editor = {
       get: vi.fn().mockResolvedValue(document),
@@ -103,12 +103,12 @@ describe("live Test editor product binding", () => {
     });
 
     await expect(service.open({ testId: "test-1", sessionId: "session-1" })).rejects.toThrow(
-      "different App Maps",
+      "different app Maps",
     );
     expect(sessions.live).not.toHaveBeenCalled();
   });
 
-  it("delegates edits to the existing App Map editor and keeps the live binding", async () => {
+  it("delegates edits to the existing app Map editor and keeps the live binding", async () => {
     const target = liveTarget();
     const nextDocument = { ...document, revision: 4 };
     const editor = {

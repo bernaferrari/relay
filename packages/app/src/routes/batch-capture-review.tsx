@@ -358,7 +358,7 @@ export function PlanCaptureReviewSection({
         <p role="status" className="py-10 text-center text-sm text-muted-foreground">
           {streaming
             ? "Screenshots will appear here as cases finish."
-            : "This Plan didn’t capture any screenshots."}
+            : "This plan didn’t capture any screenshots."}
         </p>
       )}
       {streaming && layout.rows.length ? (

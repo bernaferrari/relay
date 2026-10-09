@@ -83,7 +83,7 @@ test("feature functions use canonical operations", async () => {
   assert.equal(typeof features.change.open, "function");
   assert.equal(typeof features.change.run, "function");
 });
-test("global Test lookup uses app-map.list", async () => {
+test("global test lookup uses app-map.list", async () => {
   const app = { tests: { wanted: { id: "wanted" } } };
   const scripted = createScriptedRelayClient([{ id: "app-map.list", output: { appMaps: [app] } }]);
   const found = await createProductFeatures(scripted.client, { actorId: "actor-1" }).test.get(
@@ -91,7 +91,7 @@ test("global Test lookup uses app-map.list", async () => {
   );
   assert.equal(found?.id, "wanted");
 });
-test("global Test lookup fails closed when an identity belongs to multiple Apps", async () => {
+test("global test lookup fails closed when an identity belongs to multiple apps", async () => {
   const test = { id: "duplicate" };
   const scripted = createScriptedRelayClient([
     {
@@ -149,14 +149,14 @@ test("projectError preserves structured server WorkflowProblem semantics", () =>
     new ApiError(409, "opaque transport text", {
       error: {
         code: "stale-workflow-version",
-        title: "This Change is out of date",
-        detail: "Inspect the latest Change before acting again.",
-        recovery: "Open the Change and review its current state.",
+        title: "This change is out of date",
+        detail: "Inspect the latest change before acting again.",
+        recovery: "Open the change and review its current state.",
         retryable: false,
       },
     }),
   );
-  assert.equal(error.title, "This Change is out of date");
+  assert.equal(error.title, "This change is out of date");
   assert.equal(error.retryable, false);
   assert.doesNotMatch(error.detail, /opaque transport text/);
 });

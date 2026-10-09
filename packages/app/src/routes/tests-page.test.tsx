@@ -259,7 +259,7 @@ describe("Tests home", () => {
     expect(main().textContent).toContain("Try again");
     expect(main().textContent).not.toContain("No unfinished tests");
   });
-  it("puts saved Tests first, including plan members, and keeps drafts in their own view", async () => {
+  it("puts saved tests first, including plan members, and keeps drafts in their own view", async () => {
     const draft = test({
       id: "draft-checkout",
       name: "UNRECORDED — Checkout",
@@ -284,7 +284,7 @@ describe("Tests home", () => {
       "Edit draft",
     );
   });
-  it("preserves the App on an Edit draft link when two Apps share a Test id", async () => {
+  it("preserves the app on an Edit draft link when two apps share a test id", async () => {
     const drafts = [
       test({ id: "shared-draft", name: "DRAFT — Checkout", appMapId: "app-shop", stepCount: 0 }),
       test({ id: "shared-draft", name: "DRAFT — Billing", appMapId: "app-bank", stepCount: 0 }),
@@ -301,9 +301,9 @@ describe("Tests home", () => {
     expect(main().textContent).not.toContain("Release smoke");
   });
 
-  it("offers a scoped first test when only other Apps have tests", async () => {
+  it("offers a scoped first test when only other apps have tests", async () => {
     await render("/tests?app=app-empty");
-    expect(main().textContent).toContain("No tests for this App yet");
+    expect(main().textContent).toContain("No tests for this app yet");
     const links = [...main().querySelectorAll<HTMLAnchorElement>('a[href^="/tests/new"]')];
     expect(links.length).toBeGreaterThan(0);
     expect(links.every((link) => new URL(link.href).searchParams.get("app") === "app-empty")).toBe(
@@ -311,7 +311,7 @@ describe("Tests home", () => {
     );
     expect(main().textContent).not.toContain("Pay invoice");
   });
-  it("summarizes tests and plans for the chosen App", async () => {
+  it("summarizes tests and plans for the chosen app", async () => {
     await render("/tests?app=app-shop");
     expect(main().querySelector("h1")?.textContent).toBe("Tests");
     // Banking's invoice test is out of scope.
@@ -320,7 +320,7 @@ describe("Tests home", () => {
     expect(main().textContent).not.toContain("Pay invoice");
   });
 
-  it("waits for the Plan query without claiming the saved Plans list is empty", async () => {
+  it("waits for the plan query without claiming the saved plans list is empty", async () => {
     let resolvePlans!: (value: readonly ProductSuite[]) => void;
     const pending = new Promise<readonly ProductSuite[]>((resolve) => {
       resolvePlans = resolve;
@@ -334,7 +334,7 @@ describe("Tests home", () => {
     expect(main().textContent).toContain("Release smoke");
   });
 
-  it("offers retry for failed Plan lookup and reveals the saved Plan after retry", async () => {
+  it("offers retry for failed plan lookup and reveals the saved plan after retry", async () => {
     let attempts = 0;
     await render("/tests?view=plans&app=app-shop", {
       listSuites: async () => {
@@ -343,21 +343,21 @@ describe("Tests home", () => {
       },
     });
     expect(main().querySelector('[data-library-view="plans"]')?.textContent).toBe("Plans");
-    expect(main().textContent).toContain("Couldn’t load saved Plans.");
+    expect(main().textContent).toContain("Couldn’t load saved plans.");
     expect(main().textContent).not.toContain("No plans yet");
     await press(buttonNamed("Try again", main()));
     expect(main().textContent).toContain("Release smoke");
-    expect(main().textContent).not.toContain("Couldn’t load saved Plans.");
+    expect(main().textContent).not.toContain("Couldn’t load saved plans.");
     expect(attempts).toBe(2);
   });
 
-  it("uses singular test wording when one Test belongs to the chosen App", async () => {
+  it("uses singular test wording when one test belongs to the chosen app", async () => {
     await render("/tests?app=app-bank");
     expect(main().querySelector('[data-library-view="tests"]')?.textContent).toBe("Tests1");
     expect(main().textContent).not.toContain("1 tests");
   });
 
-  it("groups a plan's tests in the Plans view and reveals members on expand", async () => {
+  it("groups a plan's tests in the plans view and reveals members on expand", async () => {
     await render("/tests?view=plans");
     const plans = main().querySelector<HTMLElement>('section[aria-labelledby="plans-heading"]')!;
     const toggle = plans.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
@@ -436,13 +436,13 @@ describe("Tests home", () => {
     expect(main().querySelector('section[aria-labelledby="loose-heading"]')).not.toBeNull();
   });
 
-  it("hides the failing chip when the failing test belongs to another App", async () => {
+  it("hides the failing chip when the failing test belongs to another app", async () => {
     await render("/tests?app=app-bank");
     expect(needsYou()).toBeNull();
     expect(main().textContent).not.toMatch(/failing/u);
   });
 
-  it("finds planned tests through the default Test search", async () => {
+  it("finds planned tests through the default test search", async () => {
     const { history } = await render("/tests");
     await search("cart");
     expect(history.location.search).toBe("?q=cart");
@@ -541,7 +541,7 @@ describe("Tests home", () => {
     expect(chip?.textContent).toContain("Watch");
   });
 
-  it("links screenshots waiting for review, counting only the chosen App", async () => {
+  it("links screenshots waiting for review, counting only the chosen app", async () => {
     inbox.current = {
       entries: [
         { runId: "r1", title: "Sign in", appMapId: "app-shop", finishedAt: now, items: [{}, {}] },

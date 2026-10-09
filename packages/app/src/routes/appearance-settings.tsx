@@ -19,7 +19,7 @@ import {
 import { SettingsFrame, SettingsGroup, type SaveState } from "./settings-frame";
 
 const schemes = [
-  { value: "system", title: "System", description: "Follow this computer" },
+  { value: "system", title: "System", description: "Same as your OS" },
   { value: "light", title: "Light", description: "Light surfaces" },
   { value: "dark", title: "Dark", description: "Low-light surfaces" },
 ] as const;

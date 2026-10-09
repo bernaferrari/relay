@@ -169,7 +169,7 @@ export function createPlanInputDataSetService(
         )
       )
         throw new TypeError(
-          "This input is already used by an App in this Project. Create a new input to keep existing Plans unchanged.",
+          "This input is already used by an app in this Project. Create a new input to keep existing plans unchanged.",
         );
       const inputId = existing?.id ?? `input-${crypto.randomUUID()}`;
       if (
@@ -208,7 +208,7 @@ export function createPlanInputDataSetService(
         });
       const current = await catalog(input.appMapId);
       if (current.appMap.revision !== input.expectedRevision)
-        throw new TypeError("This App changed. Reload its Data sets and try again.");
+        throw new TypeError("This app changed. Reload its Data sets and try again.");
       if (current.revision !== input.catalogRevision)
         throw new TypeError("These saved values changed. Reload the Data sets and try again.");
       const definition = current.inputs.find((item) => item.id === input.inputId);

@@ -1,3 +1,4 @@
+import { CircleAlert } from "lucide-react";
 import { TestStepButton } from "../components/test-workspace";
 import type { ProductTestStep } from "@relay/product/catalog";
 export function ReadableStep({
@@ -21,7 +22,10 @@ export function ReadableStep({
       >
         <strong className="block text-sm font-medium">{step.label ?? step.intent}</strong>
         {step.status === "needs-review" ? (
-          <small className="mt-0.5 block text-xs text-muted-foreground">Needs setup</small>
+          <small className="mt-0.5 flex items-center gap-1 text-xs text-warning-foreground">
+            <CircleAlert className="size-3 shrink-0" aria-hidden="true" />
+            Needs setup
+          </small>
         ) : null}
       </TestStepButton>
       {step.children?.length ? (

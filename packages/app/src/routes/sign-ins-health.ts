@@ -47,13 +47,13 @@ export function revokedSignIns(
 
 export function concurrentAccountCopy(liveCount: number): string {
   if (liveCount >= 3) {
-    return `${liveCount} live accounts can run the same Test concurrently. Preflight still quotes observed serial until a measured N-account pack exists.`;
+    return `${liveCount} live accounts can run the same test concurrently. Preflight still quotes observed serial until a measured N-account pack exists.`;
   }
   if (liveCount === 2) {
-    return "Two live accounts can run concurrently. A 3-account Plan needs a third saved sign-in.";
+    return "Two live accounts can run concurrently. A 3-account plan needs a third saved sign-in.";
   }
   if (liveCount === 1) {
-    return "One live account. Concurrent N-account Plans need another saved sign-in. Signed-out remains a separate lane.";
+    return "One live account. Concurrent N-account plans need another saved sign-in. Signed-out remains a separate lane.";
   }
   return "No live accounts. Signed-out remains a separate lane. Save a sign-in before a fixture Lane.";
 }

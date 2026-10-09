@@ -82,7 +82,7 @@ const fixtures = [
   { id: "test-editor", heading: "Complete checkout and confirm the order" },
   { id: "map-overview", heading: "App map" },
   { id: "device-detail", heading: "Pixel 9 Pro XL" },
-  { id: "changes-list", heading: "Change verification" },
+  { id: "changes-list", heading: "Changes" },
   { id: "change-detail", heading: "Keep Arabic settings readable" },
   { id: "run-across", heading: "Run across" },
   { id: "settings-general", heading: "General" },
@@ -423,12 +423,20 @@ async function assertLayout(page, fixture, viewport) {
   if ((await reportLinks.count()) < 1) {
     throw new Error("Batch fixture did not render a Report link");
   }
-  if ((await page.getByText("1 product issue to review", { exact: true }).count()) !== 1) {
-    throw new Error("Batch fixture did not render the current product-issue review summary");
+  // The Batch opens on its screenshot review; problems sit one tab away with a count.
+  const problems = page.getByRole("tab", { name: /^Problems\s*1$/u });
+  if ((await problems.count()) !== 1) {
+    throw new Error("Batch fixture did not count its one failed case on the Problems tab");
   }
-  if ((await page.getByRole("button", { name: "Next unresolved", exact: true }).count()) !== 1) {
-    throw new Error("Batch fixture did not render the unresolved-case review control");
+  if ((await page.getByRole("button", { name: /^Mark all \d+ correct$/u }).count()) !== 1) {
+    throw new Error("Batch fixture did not offer bulk screenshot review");
   }
+  await problems.click();
+  if ((await page.getByRole("button", { name: "Mark resolved", exact: true }).count()) < 1) {
+    throw new Error("Batch fixture did not render the failed-case review control");
+  }
+  // Layout checks run before capture: return to the default view the baseline shows.
+  await page.getByRole("tab", { name: "Screenshots", exact: true }).click();
   const firstLink = await reportLinks.first().boundingBox();
   if (!firstLink || firstLink.height < 44) {
     throw new Error(`Batch Report link misses the 44px target floor (${firstLink?.height ?? 0}px)`);

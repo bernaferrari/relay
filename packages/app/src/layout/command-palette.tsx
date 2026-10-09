@@ -58,7 +58,7 @@ const workspaceCommands: readonly Command[] = [
   {
     id: "record-test",
     group: "Actions",
-    label: "Record a new Test",
+    label: "Record a new test",
     detail: "Start from a device or browser",
     href: "/tests/new",
     icon: Plus,
@@ -66,8 +66,8 @@ const workspaceCommands: readonly Command[] = [
   {
     id: "failed-runs",
     group: "Actions",
-    label: "Review failed Runs",
-    detail: "Open failure-first Run history",
+    label: "Review failed runs",
+    detail: "Open failure-first run history",
     href: "/runs?view=failed",
     icon: History,
     keywords: "reports failures",

@@ -65,7 +65,7 @@ export function PlanDailySchedule({
         <h2 id="plan-daily-title" className="text-base font-semibold">
           Schedule
         </h2>
-        <p className="text-sm text-muted-foreground">Repeat this Plan automatically.</p>
+        <p className="text-sm text-muted-foreground">Repeat this plan automatically.</p>
       </div>
       {schedules.length ? (
         <ul className="mt-4 grid gap-3">

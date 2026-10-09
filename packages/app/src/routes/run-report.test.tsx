@@ -67,7 +67,7 @@ function report(): ProductRunReportOverview {
     runId: "layout",
     title: "Settings layout",
     outcome: "product-failure",
-    cause: "Relay could not complete this Test with the saved recording.",
+    cause: "Relay could not complete this test with the saved recording.",
     technicalCause: `1 campaign check failed: Check settings: ${error}`,
     timeline: [
       {
@@ -200,14 +200,14 @@ it.each([
     ],
   },
 ])(
-  "retains the generic notice when the story does not account for the Run cause: %o",
+  "retains the generic notice when the story does not account for the run cause: %o",
   async (override) => {
     const container = await render({ ...report(), ...override });
     expect(container.querySelector('button[aria-label="Technical details"]')).not.toBeNull();
   },
 );
 
-it("keeps Run-level technical details available outside the story", async () => {
+it("keeps run-level technical details available outside the story", async () => {
   route.search = { reportView: "steps" };
   const container = await render(report());
   expect(container.querySelector('button[aria-label="Technical details"]')).not.toBeNull();

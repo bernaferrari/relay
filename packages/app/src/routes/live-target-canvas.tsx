@@ -93,7 +93,7 @@ export function LiveTargetCanvas({
     helpText !== ""
       ? (helpText ??
         (recording
-          ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test. Enter and Backspace are supported keys."
+          ? "Click, drag, scroll, or type here. Relay records each supported interaction in this test. Enter and Backspace are supported keys."
           : "Click, drag, scroll, or type. Enter and Backspace are supported keys."))
       : undefined;
 

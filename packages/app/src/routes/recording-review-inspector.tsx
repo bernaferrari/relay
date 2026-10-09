@@ -86,34 +86,36 @@ export function RecordingReviewInspector({
         {selectedAction ? (
           <>
             <Field>
-              <FieldLabel htmlFor="review-action-intent" className="sr-only">
-                Instruction
+              <FieldLabel htmlFor="review-action-intent" className="text-xs text-muted-foreground">
+                What this step does
               </FieldLabel>
-              <Input
-                id="review-action-intent"
-                value={actionIntent}
-                onChange={(event) => setActionIntent(event.currentTarget.value)}
-                maxLength={240}
-                disabled={!canEdit}
-              />
+              {/* Save appears only once the instruction differs from what's saved. */}
+              <div className="flex gap-2">
+                <Input
+                  id="review-action-intent"
+                  value={actionIntent}
+                  onChange={(event) => setActionIntent(event.currentTarget.value)}
+                  maxLength={240}
+                  disabled={!canEdit}
+                />
+                {canEdit && actionIntent.trim() && actionIntent.trim() !== selectedAction.intent ? (
+                  <Button
+                    size="sm"
+                    aria-label="Save instruction"
+                    className="h-auto"
+                    onClick={() =>
+                      onEdit({
+                        kind: "rename",
+                        actionId: selectedAction.id,
+                        intent: actionIntent.trim(),
+                      })
+                    }
+                  >
+                    Save
+                  </Button>
+                ) : null}
+              </div>
             </Field>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="justify-self-start"
-              onClick={() =>
-                onEdit({
-                  kind: "rename",
-                  actionId: selectedAction.id,
-                  intent: actionIntent.trim(),
-                })
-              }
-              disabled={
-                !canEdit || !actionIntent.trim() || actionIntent.trim() === selectedAction.intent
-              }
-            >
-              Save instruction
-            </Button>
             <RecordingWaitConditions
               key={selectedAction.id}
               action={selectedAction}
@@ -121,7 +123,8 @@ export function RecordingReviewInspector({
               onEdit={onEdit}
               onSaveWait={onSaveWait}
             />
-            <div className="flex flex-wrap items-center gap-1">
+            <h3 className="mt-1 text-xs font-medium text-muted-foreground">Change</h3>
+            <div className="-mt-1.5 flex flex-wrap items-center gap-1">
               {selectedAction.kind === "tap" ? (
                 <RecordingTargetPicker
                   controls={controls}
@@ -160,24 +163,6 @@ export function RecordingReviewInspector({
                   onEdit({ kind: "insert-before", actionId: selectedAction.id, interaction })
                 }
               />
-            </div>
-            <div className="flex flex-wrap items-center gap-1" aria-label="Reorder action">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onMoveSelected(-1)}
-                disabled={!canEdit || selectedIndex <= 0}
-              >
-                <ArrowUp aria-hidden="true" /> Move up
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onMoveSelected(1)}
-                disabled={!canEdit || selectedIndex === actions.length - 1}
-              >
-                <ArrowDown aria-hidden="true" /> Move down
-              </Button>
             </div>
             {selectedAction.stepCount > 1 ? (
               <div className="grid gap-1.5">
@@ -225,44 +210,62 @@ export function RecordingReviewInspector({
         )}
 
         {selectedActions.length ? (
-          <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-            <DialogTrigger
-              render={
+          <div className="mt-1 flex items-center gap-1 border-t border-border pt-3">
+            {selectedAction ? (
+              <div className="flex items-center gap-0.5" role="group" aria-label="Reorder action">
                 <Button
-                  size="sm"
+                  size="icon-sm"
                   variant="ghost"
-                  className="justify-self-start"
-                  disabled={!canEdit}
-                />
-              }
-            >
-              <Trash2 aria-hidden="true" /> Remove{" "}
-              {selectedActions.length === 1 ? "action" : "actions"}
-            </DialogTrigger>
-            <DialogContent showCloseButton={false}>
-              <DialogTitle>
-                Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
-              </DialogTitle>
-              <DialogDescription>
-                This changes the steps and requires a new replay before saving.
-              </DialogDescription>
-              <div className="flex flex-wrap items-center justify-end gap-2.5">
-                <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    setDeleteOpen(false);
-                    onEdit({
-                      kind: "remove",
-                      actionIds: selectedActions.map((action) => action.id),
-                    });
-                  }}
+                  aria-label="Move up"
+                  title="Move up"
+                  onClick={() => onMoveSelected(-1)}
+                  disabled={!canEdit || selectedIndex <= 0}
                 >
-                  Remove
+                  <ArrowUp aria-hidden="true" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Move down"
+                  title="Move down"
+                  onClick={() => onMoveSelected(1)}
+                  disabled={!canEdit || selectedIndex === actions.length - 1}
+                >
+                  <ArrowDown aria-hidden="true" />
                 </Button>
               </div>
-            </DialogContent>
-          </Dialog>
+            ) : null}
+            <span className="flex-1" />
+            <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+              <DialogTrigger render={<Button size="sm" variant="ghost" disabled={!canEdit} />}>
+                <Trash2 aria-hidden="true" /> Remove{" "}
+                {selectedActions.length === 1 ? "action" : "actions"}
+              </DialogTrigger>
+              <DialogContent showCloseButton={false}>
+                <DialogTitle>
+                  Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
+                </DialogTitle>
+                <DialogDescription>
+                  This changes the steps and requires a new replay before saving.
+                </DialogDescription>
+                <div className="flex flex-wrap items-center justify-end gap-2.5">
+                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setDeleteOpen(false);
+                      onEdit({
+                        kind: "remove",
+                        actionIds: selectedActions.map((action) => action.id),
+                      });
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         ) : null}
       </section>
     </aside>

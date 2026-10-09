@@ -62,7 +62,7 @@ it("retains a parent capture when its nested wait has no screenshot", () => {
     "run",
     {
       steps: [
-        { id: "parent", title: "Run saved Test", status: "ok", frames: [{ path: "welcome.png" }] },
+        { id: "parent", title: "Run saved test", status: "ok", frames: [{ path: "welcome.png" }] },
         { id: "wait", title: "Sleep 10000ms", status: "ok", frames: [] },
       ],
     },
@@ -153,7 +153,7 @@ it("does not repeat a wrapper capture when the same authored step has visible ca
     "run",
     {
       steps: [
-        { id: "parent", title: "Run saved Test", status: "ok", frames: [{ path: "parent.png" }] },
+        { id: "parent", title: "Run saved test", status: "ok", frames: [{ path: "parent.png" }] },
         {
           id: "capture",
           title: "Screenshot · Individual",
@@ -181,7 +181,7 @@ it("does not repeat a wrapper capture when the same authored step has visible ca
   expect(result.timeline.map((step) => step.id)).toEqual(["capture"]);
 });
 
-it("dest-end Observe is dest wait-for, not leftover Run saved Test last-frame", () => {
+it("dest-end Observe is dest wait-for, not leftover run saved test last-frame", () => {
   const result = projectRunReport(
     "dest-end-observe",
     {
@@ -202,9 +202,9 @@ it("dest-end Observe is dest wait-for, not leftover Run saved Test last-frame", 
         {
           id: "trace-module",
           index: 4,
-          title: "Run saved Test",
+          title: "Run saved test",
           status: "ok",
-          frames: [{ path: "frames/004.png", caption: "after · Run saved Test" }],
+          frames: [{ path: "frames/004.png", caption: "after · Run saved test" }],
         },
         {
           id: "trace-wait",
@@ -607,7 +607,7 @@ it("dest-end Observe timeline and shots drop prelude Reach / Land when dest-phas
           path: "frames/002.png",
           caption: "step:step-expect-signed-in-home:Land on signed-in home",
         },
-        { path: "frames/004.png", caption: "after · Run saved Test" },
+        { path: "frames/004.png", caption: "after · Run saved test" },
         { path: "frames/003.png", caption: "step:step-observe:Observe" },
       ],
       steps: [
@@ -651,10 +651,10 @@ it("dest-end Observe timeline and shots drop prelude Reach / Land when dest-phas
         {
           id: "trace-close",
           index: 4,
-          title: "Run saved Test",
+          title: "Run saved test",
           status: "ok",
           actions: [{ kind: "ok" }],
-          frames: [{ path: "frames/004.png", caption: "after · Run saved Test" }],
+          frames: [{ path: "frames/004.png", caption: "after · Run saved test" }],
         },
         {
           id: "trace-dest",
@@ -703,7 +703,7 @@ it("dest-end Observe timeline drops prelude Wait for label / Sleep beside dest",
         },
       ],
       frames: [
-        { path: "frames/004.png", caption: "after · Run saved Test" },
+        { path: "frames/004.png", caption: "after · Run saved test" },
         { path: "frames/003.png", caption: "step:step-observe:Observe" },
       ],
       steps: [
@@ -783,7 +783,7 @@ it("dest-end timeline drops prelude Wait for text beside dest Capture for review
         },
       ],
       frames: [
-        { path: "frames/004.png", caption: "after · Run saved Test" },
+        { path: "frames/004.png", caption: "after · Run saved test" },
         {
           path: "frames/003.png",
           caption: "step:step-action:Switch to private chat signed-in",
@@ -877,7 +877,7 @@ it("dest-end Model selector SuperGrok keeps product title, not Captured result",
           path: "frames/002.png",
           caption: "after · Tap identifier toolbar.model.selector.button",
         },
-        { path: "frames/004.png", caption: "after · Run saved Test" },
+        { path: "frames/004.png", caption: "after · Run saved test" },
         {
           path: "frames/003.png",
           caption: "step:step-action:Model selector SuperGrok",
@@ -887,10 +887,10 @@ it("dest-end Model selector SuperGrok keeps product title, not Captured result",
         {
           id: "trace-run",
           index: 0,
-          title: "Run saved Test",
+          title: "Run saved test",
           status: "ok",
           actions: [{ kind: "ok" }],
-          frames: [{ path: "frames/004.png", caption: "after · Run saved Test" }],
+          frames: [{ path: "frames/004.png", caption: "after · Run saved test" }],
         },
         {
           id: "trace-tap",
@@ -1020,7 +1020,7 @@ it("failed dest-end firstEvidence is Capture for review, not prelude Wait for", 
   );
 });
 
-it("dest-end Observe timeline keeps Capture frame, not leftover Run saved Test from testStepEvidence", () => {
+it("dest-end Observe timeline keeps Capture frame, not leftover run saved test from testStepEvidence", () => {
   const result = projectRunReport(
     "dest-end-observe-leftover-004-framepaths",
     {
@@ -1053,10 +1053,10 @@ it("dest-end Observe timeline keeps Capture frame, not leftover Run saved Test f
         {
           id: "trace-leftover",
           index: 4,
-          title: "Run saved Test",
+          title: "Run saved test",
           status: "ok",
           actions: [{ kind: "ok" }],
-          frames: [{ path: "frames/004.png", caption: "after · Run saved Test" }],
+          frames: [{ path: "frames/004.png", caption: "after · Run saved test" }],
         },
         {
           id: "trace-dest",

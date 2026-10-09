@@ -41,7 +41,7 @@ export function BindingRepair({
       <div className="grid gap-3 border-t border-border p-3">
         <div>
           <p className="mt-0.5 text-xs leading-normal text-muted-foreground">
-            Choose the action that matches this step and its starting screen. Run the Test to verify
+            Choose the action that matches this step and its starting screen. Run the test to verify
             it.
           </p>
         </div>

@@ -58,7 +58,6 @@ export function AppPage() {
       {app.data ? (
         <>
           <PageHeader
-            context="App overview"
             title={app.data.appName}
             description={app.data.description}
             actions={

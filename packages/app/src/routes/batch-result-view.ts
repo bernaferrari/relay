@@ -55,7 +55,7 @@ export type BatchClusterCopy = {
 export function batchResultHeadline(report: ProductBatchReport): string {
   const grid = summarizeProductResultGrid(report.cases);
   if (grid.coverage.planned === 0) return "No cases were run";
-  if (grid.cells.cancelled === grid.coverage.planned) return "This Plan Result was cancelled";
+  if (grid.cells.cancelled === grid.coverage.planned) return "This plan Result was cancelled";
   if (grid.failed === 1) return "1 product issue to review";
   if (grid.failed > 1) return `${grid.failed} product issues to review`;
   if (grid.cells["needs-review"] === 1) return "1 case needs review";
@@ -66,9 +66,9 @@ export function batchResultHeadline(report: ProductBatchReport): string {
   if (grid.cells["could-not-run"] > 1) {
     return `${grid.cells["could-not-run"]} cases could not run`;
   }
-  if (grid.cells.running || grid.cells.pending) return "This Plan Result is still running";
+  if (grid.cells.running || grid.cells.pending) return "This plan Result is still running";
   if (grid.passed === grid.coverage.planned) return "All selected cases passed";
-  return "This Plan Result did not finish every case";
+  return "This plan Result did not finish every case";
 }
 
 export function batchResultFacts(report: ProductBatchReport): readonly BatchResultFact[] {

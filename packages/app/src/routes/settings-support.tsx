@@ -25,7 +25,7 @@ export const CHANNELS: readonly {
   {
     id: "audio",
     label: "Audio",
-    description: "Keep audio when a Test checks sound.",
+    description: "Keep audio when a test checks sound.",
   },
   {
     id: "network-body",
@@ -35,7 +35,7 @@ export const CHANNELS: readonly {
   {
     id: "network-raw",
     label: "Packet captures",
-    description: "Keep PCAP files after a Run.",
+    description: "Keep PCAP files after a run.",
   },
   {
     id: "browser-trace",
@@ -73,7 +73,7 @@ const MISSING_OPERATOR_BUILD =
   "A Developer ID Application identity is required to ship a signed operator build. Apple Development is not enough. Morning review stays on the Vite UI and local server until that identity exists.";
 
 const MISSING_LAB_SERVER =
-  "Lab Mac launchd stays unloaded. Job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.";
+  "Lab Mac launchd stays unloaded. Job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a plan is live — it would restart :8787.";
 
 /** Signed operator .dmg. Missing payload fails closed — never treat Apple Development as ready. */
 export function operatorBuildChecks(value: unknown): readonly SetupCheck[] {
@@ -126,7 +126,7 @@ export function judgeProviderChecks(value: unknown): readonly SetupCheck[] {
       label: "OPENROUTER_API_KEY",
       status: "needs-attention",
       detail:
-        "Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra, never a silent pass.",
+        "Add an OpenRouter key (OPENROUTER_API_KEY) so Relay can judge screenshots and on-screen text. Until then, those checks say they couldn’t run — they never pass silently.",
     },
   ];
 }

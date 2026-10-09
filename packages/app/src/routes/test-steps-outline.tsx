@@ -66,7 +66,7 @@ export function TestStepsOutline({
           ))}
         </ol>
       ) : (
-        <p className="mt-4 text-sm text-muted-foreground">This Test has no reviewed steps yet.</p>
+        <p className="mt-4 text-sm text-muted-foreground">This test has no reviewed steps yet.</p>
       )}
     </section>
   );

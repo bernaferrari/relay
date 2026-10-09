@@ -15,7 +15,7 @@ export function currentTestOutlineCopy(input: {
 
 export function historicalRunCaption(input: { runId: string; sourceRevision?: string }): string {
   if (input.sourceRevision) {
-    return `Viewing historical Run ${input.runId}, which executed revision ${input.sourceRevision}. Current Test steps stay selected separately.`;
+    return `Viewing historical run ${input.runId}, which executed revision ${input.sourceRevision}. Current test steps stay selected separately.`;
   }
-  return `Viewing historical Run ${input.runId}. Current Test steps stay selected separately.`;
+  return `Viewing historical run ${input.runId}. Current test steps stay selected separately.`;
 }

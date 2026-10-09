@@ -202,7 +202,7 @@ describe("browser spaces and compare set product service", () => {
     );
   });
 
-  it("projects saved App Map Combines and writes them with revision guards", async () => {
+  it("projects saved app Map Combines and writes them with revision guards", async () => {
     calls.length = 0;
     const service = createBrowserSpacesProductService({} as Platform);
     const compareSets = await service.listCompareSets("app-1");

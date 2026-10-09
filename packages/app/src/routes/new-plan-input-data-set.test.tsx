@@ -44,7 +44,7 @@ async function fill(id: string, value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-it("passes the chosen prompt row identities from inline binding into the saved Plan", async () => {
+it("passes the chosen prompt row identities from inline binding into the saved plan", async () => {
   const editor = {
     appMapId: "grok",
     appName: "Grok",
@@ -138,11 +138,11 @@ it("passes the chosen prompt row identities from inline binding into the saved P
   await wait(() => expect(document.body.textContent).toContain("Original prompt"));
   await act(async () =>
     document
-      .querySelector<HTMLElement>('[aria-label="Values for this Plan"] [role="checkbox"]')!
+      .querySelector<HTMLElement>('[aria-label="Values for this plan"] [role="checkbox"]')!
       .closest("label")!
       .click(),
   );
-  await click("Use values in Tests");
+  await click("Use values in tests");
   await wait(() => expect(addInputDataSet).toHaveBeenCalledOnce());
   await click("Create plan");
   await wait(() => expect(saveSuite).toHaveBeenCalledOnce());
@@ -155,7 +155,7 @@ it("passes the chosen prompt row identities from inline binding into the saved P
     }),
   );
 });
-it("retains the unsaved Plan and Test selection while adding prompt values, then saves at the returned map revision", async () => {
+it("retains the unsaved plan and test selection while adding prompt values, then saves at the returned map revision", async () => {
   const editor = {
     appMapId: "grok",
     appName: "Grok",
@@ -260,7 +260,7 @@ it("retains the unsaved Plan and Test selection while adding prompt values, then
   );
 });
 
-it("creates two public prompt values inside the unsaved Plan, blocks parent submission while saving, and adds them explicitly", async () => {
+it("creates two public prompt values inside the unsaved plan, blocks parent submission while saving, and adds them explicitly", async () => {
   const editor = {
     appMapId: "grok",
     appName: "Grok",
@@ -387,7 +387,7 @@ it("creates two public prompt values inside the unsaved Plan, blocks parent subm
   );
 });
 
-it("disambiguates similar saved Speed Tests by canonical step count and update time while retaining the Plan draft", async () => {
+it("disambiguates similar saved Speed tests by canonical step count and update time while retaining the plan draft", async () => {
   const saveSuite = vi.fn(async () => ({ id: "plan", appMapId: "grok" }));
   const tests = [
     {

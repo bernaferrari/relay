@@ -120,7 +120,7 @@ function fixture(map = appMap(), failWrite = false) {
         requests.push({ method, path, body });
         if (method !== "GET" && failWrite)
           return new Response(
-            JSON.stringify({ error: { message: "The App changed", code: "CONFLICT" } }),
+            JSON.stringify({ error: { message: "The app changed", code: "CONFLICT" } }),
             { status: 409 },
           );
         const result =
@@ -213,7 +213,7 @@ it("preserves the binding and row draft and sends a rejected commit once", async
   expect(requests.filter((request) => request.method !== "GET")).toHaveLength(1);
 });
 
-it("previews exact leaf addresses and every shared instruction, including another step in the same Test", async () => {
+it("previews exact leaf addresses and every shared instruction, including another step in the same test", async () => {
   const map = appMap();
   map.tests.fast!.steps.push({ ...step, id: "again", intent: "Repeat prompt" });
   const { service, requests } = fixture(map);

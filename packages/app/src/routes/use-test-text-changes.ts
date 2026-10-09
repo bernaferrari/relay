@@ -24,7 +24,7 @@ export function useTestTextChanges({
     mutationFn: async (input: { stepId: string; action: ProductTestTextAction; text: string }) => {
       const document = currentDocument();
       if (!document || !testEditorService.saveText)
-        throw new TypeError("Text editing is unavailable. Reload this Test.");
+        throw new TypeError("Text editing is unavailable. Reload this test.");
       return testEditorService.saveText({ document, ...input });
     },
     onMutate: () => setSaveNotice("Saving…"),

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { attachedRunLinkTestId, attachedRunOwnership } from "./attached-run-ownership";
 
-describe("attached Run ownership", () => {
-  it("does not treat a copied foreign Run as owned by the current Test", () => {
+describe("attached run ownership", () => {
+  it("does not treat a copied foreign run as owned by the current test", () => {
     expect(
       attachedRunOwnership({
         routeTestId: "test-A",
@@ -21,7 +21,7 @@ describe("attached Run ownership", () => {
     ).toBe("test-B");
   });
 
-  it("keeps a matching Test+Run pair owned", () => {
+  it("keeps a matching test+Run pair owned", () => {
     expect(
       attachedRunOwnership({
         routeTestId: "test-A",

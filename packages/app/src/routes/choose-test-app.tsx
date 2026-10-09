@@ -12,9 +12,9 @@ export function ChooseTestApp({
 }) {
   return (
     <section className="mx-4 my-3 max-w-2xl rounded-xl border border-border px-4 py-4 text-sm">
-      <h2 className="font-medium text-foreground">Which app is this Test in?</h2>
+      <h2 className="font-medium text-foreground">Which app is this test in?</h2>
       <p className="mt-1 text-muted-foreground">
-        More than one app has a Test with this name. Choose the one you want to open.
+        More than one app has a test with this name. Choose the one you want to open.
       </p>
       <ul className="mt-3 flex flex-wrap gap-2">
         {owners.map((owner) => (

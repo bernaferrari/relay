@@ -431,7 +431,7 @@ describe("Run walkthrough player", () => {
     let fail = false;
     service.exportWalkthrough = async () => {
       if (fail) {
-        throw new Error("Run unscoped-run has no App Map plan identity and cannot be joined");
+        throw new Error("Run unscoped-run has no app Map plan identity and cannot be joined");
       }
       return { fileName: "pack.html", digest: `sha256:${"a".repeat(64)}`, body: "<html></html>" };
     };
@@ -444,7 +444,7 @@ describe("Run walkthrough player", () => {
     expect(text()).not.toContain("Save walkthrough");
     fail = true;
     await click(button);
-    expect(text()).toContain("Run unscoped-run has no App Map plan identity and cannot be joined");
+    expect(text()).toContain("Run unscoped-run has no app Map plan identity and cannot be joined");
     expect(text()).not.toContain("Save walkthrough");
   });
 
