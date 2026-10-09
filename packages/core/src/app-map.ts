@@ -86,6 +86,11 @@ export {
 export { compileIntentWalk, type IntentWalkResult } from "./app-map/intent-walk.js";
 export { observeAppMapRuns, projectObservedRuns } from "./app-map-observed.js";
 export {
+  growAppMapFromRun,
+  growAppMapsFromPastRuns,
+  registerScreenNamer,
+} from "./app-map-run-growth.js";
+export {
   draftTestSteps,
   registerTestStepDrafter,
   type DraftedTest,

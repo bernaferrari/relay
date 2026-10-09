@@ -10,6 +10,7 @@ import { listPersistedRuns, type PersistedRun } from "./runs.js";
 import { recordAppMapRun, recordAppMapTestValidation } from "./app-map/run-operations.js";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import { readFrameTreeNodes } from "./run-frame-tree.js";
+import { growAppMapFromRun } from "./app-map-run-growth.js";
 import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
 
 /** Overlay fixtures must not reuse the unsigned saved profile id. */
@@ -406,6 +407,9 @@ export function connectionObservationsFromPersistedRun(
 /** Reconcile a durable report into its App Map. Safe to call after restarts:
  * an already projected run is a successful no-op. */
 export async function projectPersistedAppMapRun(run: PersistedRun): Promise<boolean> {
+  // Every run grows its map, pass or fail. Additions are drafts Tests never
+  // replay, so a failure here must never block the run's own projection.
+  await growAppMapFromRun(run).catch(() => 0);
   const testProvenance = compiledTestProvenance(run);
   if (testProvenance && !compiledPlan(run)) {
     const projected = await recordSuccessfulTestValidation(run, testProvenance);

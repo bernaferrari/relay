@@ -128,10 +128,19 @@ export async function observeRun(
   return observed;
 }
 
-type IdentityCandidate = { id: string; observation: ScreenIdentityObservation };
+export type IdentityCandidate = { id: string; observation: ScreenIdentityObservation };
+
+/** Saved observations of every screen variant, for fuzzy matching. */
+export function knownScreenCandidates(map: AppMap): IdentityCandidate[] {
+  return Object.values(map.screenVariants ?? {}).flatMap((variant) =>
+    variant.observation && map.screens[variant.screenId]
+      ? [{ id: variant.screenId, observation: variant.observation }]
+      : [],
+  );
+}
 
 /** Exact fingerprint first, then the same fuzzy matcher repair uses. */
-function matchScreen(
+export function matchScreen(
   map: AppMap,
   candidates: readonly IdentityCandidate[],
   frame: ObservedRunFrame,
@@ -158,15 +167,13 @@ export function projectObservedRuns(map: AppMap, runs: readonly ObservedRun[]): 
       title: screen.title,
       status: "untested",
       runCount: 0,
+      addedAt: screen.createdAt,
+      ...(/^observed-[0-9a-f]{16}$/u.test(screen.id) ? { addedByRuns: true } : {}),
     });
   }
   const transitions = new Map<string, AppMapObservedTransition & { lastAt: number }>();
   const ordered = [...runs].sort((left, right) => left.finishedAt - right.finishedAt);
-  const known: IdentityCandidate[] = Object.values(map.screenVariants ?? {}).flatMap((variant) =>
-    variant.observation && map.screens[variant.screenId]
-      ? [{ id: variant.screenId, observation: variant.observation }]
-      : [],
-  );
+  const known = knownScreenCandidates(map);
   // Screens the map lacks are grouped the same way, so a chat whose text
   // changes every run is one new screen, not one per run.
   const fresh: IdentityCandidate[] = [];

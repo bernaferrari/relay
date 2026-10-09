@@ -607,35 +607,54 @@ it("opens every captured screen in a directly linked gallery and focuses the cho
   expect(document.querySelector('[aria-label="Map screens"]')).toBeNull();
 });
 
-it("colors screens by the latest runs and lists screens the map does not know", async () => {
+it("colors screens by the latest runs and marks run-added screens new until seen", async () => {
   const observed: AppMapObserved = {
     appMapId: "shop",
     runsScanned: 2,
     screens: [
-      { key: "home", screenId: "home", title: "Home", status: "passing", runCount: 2 },
-      { key: "cart", screenId: "cart", title: "Cart", status: "failing", runCount: 1 },
       {
-        key: "new:fp",
-        title: "Order summary",
-        status: "new",
+        key: "home",
+        screenId: "home",
+        title: "Home",
+        status: "passing",
+        runCount: 2,
+        addedAt: 1,
+      },
+      {
+        key: "cart",
+        screenId: "cart",
+        title: "Cart",
+        status: "failing",
         runCount: 1,
-        lastRunId: "run-2",
-        lastSeenAt: 5,
-        frame: { runId: "run-2", file: "004.png", capturedAt: 5 },
+        addedByRuns: true,
+        addedAt: Date.now() - 1_000,
       },
     ],
     transitions: [],
-    summary: { known: 2, tested: 2, failing: 1, new: 1 },
+    summary: { known: 2, tested: 2, failing: 1, new: 0 },
   };
-  await render({ get: async () => overview, observed: async () => observed });
-  expect(document.body.textContent).toContain(
-    "2 screens · 2 reached by recent runs · 1 failing · 1 new",
-  );
-  expect(
-    [...document.querySelectorAll("[data-status]")].map((dot) => dot.getAttribute("data-status")),
-  ).toEqual(expect.arrayContaining(["passing", "failing"]));
-  const tray = document.querySelector('[aria-label="New screens from runs"]');
-  expect(tray?.textContent).toContain("Order summary");
-  expect(tray?.textContent).toContain("Seen in 1 run");
-  expect(tray?.querySelector("a")?.getAttribute("href")).toBe("/runs/run-2");
+  const stored = new Map<string, string>();
+  platform.storage = {
+    get: (key) => stored.get(key) ?? null,
+    set: (key, value) => void stored.set(key, value),
+    remove: (key) => void stored.delete(key),
+  };
+  try {
+    await render({ get: async () => overview, observed: async () => observed });
+    expect(document.body.textContent).toContain(
+      "2 screens · 2 reached by recent runs · 1 failing · 1 new",
+    );
+    const statuses = () =>
+      [...document.querySelectorAll("[data-status]")].map((dot) => dot.getAttribute("data-status"));
+    expect(statuses()).toEqual(expect.arrayContaining(["passing", "new"]));
+    expect(stored.get("relay:map-seen:shop")).toBeDefined();
+
+    for (const root of roots.splice(0)) act(() => root.unmount());
+    document.body.replaceChildren();
+    await render({ get: async () => overview, observed: async () => observed });
+    expect(statuses()).toEqual(expect.arrayContaining(["passing", "failing"]));
+    expect(statuses()).not.toContain("new");
+  } finally {
+    platform.storage = { get: () => null, set: () => undefined, remove: () => undefined };
+  }
 });

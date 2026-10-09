@@ -14,8 +14,7 @@ import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
 import { ChevronLeft, Plus } from "lucide-react";
 import { mapCoverageLine } from "../components/map-status";
-import { MapNewScreensTray } from "../components/map-new-screens-tray";
-import { runFrameUri } from "../data/map-product-service";
+import { useScreensNewSinceVisit } from "../components/use-screens-new-since-visit";
 import { EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import type { ProductMapScreen } from "@relay/product/map-exploration";
@@ -53,12 +52,16 @@ export function MapPage() {
     enabled: Boolean(mapService.observed),
     staleTime: 15_000,
   });
+  // Screens runs added since this person last opened the map read as "new".
+  const newSinceVisit = useScreensNewSinceVisit(appId, observed.data);
   const screenStatus = new Map(
     (observed.data?.screens ?? []).flatMap((screen) =>
-      screen.screenId ? [[screen.screenId, screen.status] as const] : [],
+      screen.screenId
+        ? [[screen.screenId, newSinceVisit.has(screen.screenId) ? "new" : screen.status] as const]
+        : [],
     ),
   );
-  const coverage = mapCoverageLine(observed.data);
+  const coverage = mapCoverageLine(observed.data, newSinceVisit.size);
   const proposals = useQuery({
     queryKey: ["map", appId, "proposals"],
     queryFn: () => mapService.listProposals?.(appId) ?? Promise.resolve([]),
@@ -256,20 +259,7 @@ export function MapPage() {
                       : undefined
                   }
                   appId={appId}
-                  runs={
-                    observed.data
-                      ? {
-                          status: screenStatus,
-                          aboveCanvas: (
-                            <MapNewScreensTray
-                              screens={observed.data.screens}
-                              frameUri={runFrameUri}
-                              loadScreenshot={mapService.loadScreenshot}
-                            />
-                          ),
-                        }
-                      : undefined
-                  }
+                  runs={observed.data ? { status: screenStatus } : undefined}
                   screens={visibleScreens}
                   paths={visiblePaths}
                   onMergeScreen={

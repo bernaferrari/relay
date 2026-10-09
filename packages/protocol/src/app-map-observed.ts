@@ -27,6 +27,10 @@ export type AppMapObservedScreen = {
   screenId?: string;
   title: string;
   status: AppMapObservedStatus;
+  /** True when a run added this screen to the map on its own. */
+  addedByRuns?: boolean;
+  /** When the screen joined the map. */
+  addedAt?: number;
   runCount: number;
   lastSeenAt?: number;
   lastRunId?: string;

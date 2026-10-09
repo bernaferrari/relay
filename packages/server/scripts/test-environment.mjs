@@ -17,6 +17,7 @@ process.env.RELAY_STATE_DIR = stateStore;
 // other's startup metadata and report "Failed to start daemon".
 process.env.AGENT_DEVICE_STATE_DIR = join(stateStore, "agent-device");
 process.env.RELAY_SKIP_BROWSER_WARMUP = "1";
+process.env.RELAY_SKIP_MAP_BACKFILL = "1";
 
 process.once("exit", () => {
   rmSync(runStore, { recursive: true, force: true });
