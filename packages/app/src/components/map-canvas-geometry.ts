@@ -17,18 +17,18 @@ export type MapNodeSize = {
 /** Phones: tall, narrow screenshots. */
 export const PORTRAIT_NODE: MapNodeSize = {
   width: 208,
-  height: 368,
+  height: 372,
   titleHeight: 20,
-  gap: 8,
+  gap: 12,
   imageHeight: 300,
 };
 
 /** Tablets in landscape and browsers: wide screenshots get a wide box. */
 export const LANDSCAPE_NODE: MapNodeSize = {
   width: 360,
-  height: 308,
+  height: 312,
   titleHeight: 20,
-  gap: 8,
+  gap: 12,
   imageHeight: 240,
 };
 

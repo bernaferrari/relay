@@ -177,12 +177,11 @@ export function MapCanvasWorld({
         const position = positions.get(screen.id) ?? { x: 0, y: 0 };
         const selectedNode = selectedScreenId === screen.id || selectedIds.has(screen.id);
         return (
-          <button
-            type="button"
+          <div
             data-slot="map-screen"
-            className="group/map-screen absolute left-(--box-left) top-(--box-top) flex h-(--box-height) w-(--box-width) flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring"
+            className="group/map-screen absolute left-(--box-left) top-(--box-top) flex h-(--box-height) w-(--box-width) flex-col gap-(--node-gap) text-left focus-visible:outline-2 focus-visible:outline-ring"
             key={screen.id}
-            aria-pressed={selectedNode}
+            data-selected={selectedNode}
             onClick={(event) => {
               if (suppressNodeClick.current) {
                 suppressNodeClick.current = false;
@@ -208,7 +207,11 @@ export function MapCanvasWorld({
               suppressNodeClick.current = false;
               event.stopPropagation();
               event.preventDefault();
-              event.currentTarget.setPointerCapture(event.pointerId);
+              const capture =
+                event.target instanceof Element
+                  ? (event.target.closest("button") ?? event.currentTarget)
+                  : event.currentTarget;
+              capture.setPointerCapture(event.pointerId);
               nodeDrag.current = {
                 id: screen.id,
                 start: { x: event.clientX, y: event.clientY },
@@ -236,7 +239,8 @@ export function MapCanvasWorld({
               const drag = nodeDrag.current;
               nodeDrag.current = undefined;
               setAlignmentGuides([]);
-              event.currentTarget.releasePointerCapture(event.pointerId);
+              if (event.currentTarget.hasPointerCapture(event.pointerId))
+                event.currentTarget.releasePointerCapture(event.pointerId);
               if (drag?.moved && onUpdateScreen) {
                 suppressNodeClick.current = true;
                 const position = alignedDragPosition(drag, event).position;
@@ -280,6 +284,7 @@ export function MapCanvasWorld({
                 "--box-width": `${node.width}px`,
                 "--box-height": `${node.height}px`,
                 "--image-height": `${node.imageHeight}px`,
+                "--node-gap": `${node.gap}px`,
               } as CSSProperties
             }
           >
@@ -288,9 +293,27 @@ export function MapCanvasWorld({
               className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-sm font-medium leading-tight ${selectedNode ? "text-brand" : "text-foreground/80"}`}
             >
               <MapStatusDot status={screenStatus?.get(screen.id)} />
-              <MapFrameTitle title={screen.title} />
+              <MapFrameTitle
+                title={screen.title}
+                disabled={saving || panningTool}
+                canEdit={() => {
+                  if (suppressNodeClick.current) {
+                    suppressNodeClick.current = false;
+                    return false;
+                  }
+                  return !panningTool && !saving;
+                }}
+                onRename={
+                  onUpdateScreen ? (title) => onUpdateScreen(screen.id, { title }) : undefined
+                }
+              />
             </span>
-            <div className="relative h-(--image-height) w-full shrink-0">
+            <button
+              type="button"
+              aria-label={`Select ${screen.title}`}
+              aria-pressed={selectedNode}
+              className="relative h-(--image-height) w-full shrink-0 rounded-xl focus-visible:outline-2 focus-visible:outline-foreground/60"
+            >
               <MapScreenPreview
                 dimensions={imageDimensions.get(screen.id)}
                 selected={selectedNode}
@@ -320,8 +343,8 @@ export function MapCanvasWorld({
                   node={node}
                 />
               ) : null}
-            </div>
-          </button>
+            </button>
+          </div>
         );
       })}
       {visibleScreens.map((screen) => {
