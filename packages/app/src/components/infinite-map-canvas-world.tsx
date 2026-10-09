@@ -2,12 +2,11 @@
 import type { AppMapObservedStatus } from "@relay/protocol";
 import { MapStatusDot } from "./map-status";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
-import { Compass, RotateCcw } from "lucide-react";
+import { Compass } from "lucide-react";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { MapAccessibilityOverlay } from "./map-accessibility-overlay";
 import { canvasMapPaths } from "./map-path-groups";
-import { isMapReturn } from "./map-edge-paths";
-import { MapEdges, isRoutineReturn } from "./map-edges";
+import { MapEdges } from "./map-edges";
 import { mapClusters } from "./map-clusters";
 import { MapFrameTitle } from "./map-frame-title";
 import { MapScreenPreview } from "./map-screen-preview";
@@ -89,7 +88,7 @@ export function MapCanvasWorld({
   showInteractionTargets: boolean;
   imageDimensions: Map<string, ImageDimensions>;
   node: MapNodeSize;
-  layoutMode: "saved" | "aligned" | "staggered" | "horizontal";
+  layoutMode: "saved" | "aligned";
   loadScreenshot?: (uri: string) => Promise<Blob>;
   loadAccessibilityTree?: (uri: string) => Promise<unknown>;
   setImageDimensions: Dispatch<SetStateAction<Map<string, ImageDimensions>>>;
@@ -159,21 +158,15 @@ export function MapCanvasWorld({
         />
       ))}
       <MapEdges
-        horizontal={layoutMode === "horizontal"}
         selectedPathId={selectedPathId}
         onSelectPath={panningTool ? undefined : onSelectPath}
+        // Unrecorded destinations live in the inspector. MapEdges decides
+        // which returns to show (only for the selected screen or path).
         paths={canvasMapPaths(
-          originPaths.filter(
-            (path) =>
-              path.id === selectedPathId ||
-              // Unrecorded destinations live in the inspector, avoiding overlapping terminal wires.
-              (!isMapReturn(path, positions, layoutMode === "horizontal") &&
-                Boolean(path.toScreenId)),
-          ),
+          originPaths.filter((path) => Boolean(path.toScreenId)),
           selectedPathId,
         )}
         positions={positions}
-        markerId={markerId}
         selectedScreenId={selectedScreenId}
         showInteractionTargets={showControlOrigins}
         screens={visibleScreens}
@@ -332,18 +325,13 @@ export function MapCanvasWorld({
         );
       })}
       {visibleScreens.map((screen) => {
-        const returns = visiblePaths.filter(
-          (path) =>
-            path.fromScreenId === screen.id &&
-            isMapReturn(path, positions, layoutMode === "horizontal"),
-        );
         const unexplored =
           selectedScreenId === screen.id
-            ? 0
-            : visiblePaths.filter((path) => path.fromScreenId === screen.id && !path.toScreenId)
-                .length;
+            ? visiblePaths.filter((path) => path.fromScreenId === screen.id && !path.toScreenId)
+                .length
+            : 0;
         const position = positions.get(screen.id);
-        if (!position || (!returns.length && !unexplored)) return null;
+        if (!position || !unexplored) return null;
         const image = containedImageRect(
           {
             x: position.x,
@@ -360,7 +348,7 @@ export function MapCanvasWorld({
         if (!image) return null;
         return (
           <div
-            key={`returns-${screen.id}`}
+            key={`unexplored-${screen.id}`}
             data-slot="map-screen-chips"
             className="absolute left-(--box-left) top-(--box-top) z-20 flex w-(--box-width) flex-col items-center gap-1"
             style={
@@ -371,33 +359,6 @@ export function MapCanvasWorld({
               } as CSSProperties
             }
           >
-            {/* Rows are tightly packed; more than one stacked chip runs into the
-                next row's title. The inspector lists every return. */}
-            {returns.slice(0, 1).map((path) => (
-              <button
-                key={path.id}
-                type="button"
-                aria-label={`Inspect ${path.label} to ${path.toTitle ?? "previous screen"}${returns.length > 1 ? ` and ${returns.length - 1} more` : ""}`}
-                aria-pressed={selectedPathId === path.id}
-                className="flex max-w-full items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent"
-                onClick={() => {
-                  onSelectPath(selectedPathId === path.id ? undefined : path.id);
-                  onSelectScreen(screen.id);
-                }}
-              >
-                <RotateCcw className="size-3 shrink-0" aria-hidden="true" />
-                <span className="truncate">
-                  {!isRoutineReturn(path) || /^(?:disable)\b/i.test(path.label)
-                    ? path.label
-                    : path.toTitle
-                      ? `Back to ${path.toTitle}`
-                      : path.label}
-                </span>
-                {returns.length > 1 ? (
-                  <span className="shrink-0 tabular-nums opacity-70">+{returns.length - 1}</span>
-                ) : null}
-              </button>
-            ))}
             {unexplored ? (
               <button
                 type="button"

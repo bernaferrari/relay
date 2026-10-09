@@ -1,33 +1,43 @@
-import {
-  roundedConnector,
-  returnConnector,
-  isRoutineReturn,
-  quadraticReturn,
-  selfLoopConnector,
-} from "./map-edge-paths";
-export {
-  roundedConnector,
-  returnConnector,
-  isRoutineReturn,
-  quadraticReturn,
-  selfLoopConnector,
-} from "./map-edge-paths";
-import type { PresentedMapPath } from "./map-presentation";
+/** @jsxImportSource react */
 import { useState, type CSSProperties } from "react";
-import { forwardRoute, avoidPreviewObstacles, routeCrossesBox } from "./map-forward-route";
+import type { PresentedMapPath } from "./map-presentation";
+import { isRoutineReturn } from "./map-edge-paths";
 import {
-  type MapPoint,
-  type MapBounds,
+  arrowHead,
+  midpointAlong,
+  returnRoute,
+  roundedPath,
+  routeElbows,
+  type CardBox,
+} from "./map-edge-routing";
+import {
   containedImageRect,
-  type ImageDimensions,
   PORTRAIT_NODE,
+  type ImageDimensions,
+  type MapBounds,
   type MapNodeSize,
+  type MapPoint,
 } from "./map-canvas-geometry";
+export { isRoutineReturn } from "./map-edge-paths";
+
+type Geometry = {
+  path: PresentedMapPath;
+  d: string;
+  arrow: string;
+  label: MapPoint;
+  returning: boolean;
+  anchor?: MapPoint;
+};
+
+/**
+ * Connections between screens. Forward moves are always drawn, quietly, behind
+ * the cards. Moves back to an earlier screen appear only for the selected
+ * screen or path. Labels appear only for the path under the pointer or the
+ * selected one, so the map reads as screens first.
+ */
 export function MapEdges({
   paths,
-  horizontal = false,
   positions,
-  markerId,
   selectedScreenId,
   selectedPathId,
   onSelectPath,
@@ -36,10 +46,8 @@ export function MapEdges({
   imageDimensions,
   node = PORTRAIT_NODE,
 }: {
-  horizontal?: boolean;
   paths: readonly PresentedMapPath[];
   positions: ReadonlyMap<string, MapPoint>;
-  markerId: string;
   selectedScreenId?: string;
   selectedPathId?: string;
   onSelectPath?: (id: string) => void;
@@ -50,586 +58,301 @@ export function MapEdges({
 }) {
   const [hoveredPathId, setHoveredPathId] = useState<string>();
   const activePathId = hoveredPathId ?? selectedPathId;
-  const geometries = paths.flatMap((path, index) => {
+  const card = (id: string): CardBox | undefined => {
+    const point = positions.get(id);
+    return point ? { x: point.x, y: point.y, width: node.width, height: node.height } : undefined;
+  };
+  const image = (id: string): CardBox | undefined => {
+    const point = positions.get(id);
+    if (!point) return undefined;
+    const frame = {
+      x: point.x,
+      y: point.y + node.titleHeight + node.gap,
+      width: node.width,
+      height: node.imageHeight,
+    };
+    const hasShot = screens.some((screen) => screen.id === id && screen.screenshotUri);
+    return (
+      (hasShot
+        ? containedImageRect(frame, imageDimensions.get(id) ?? { width: 0, height: 0 }, "top")
+        : undefined) ?? frame
+    );
+  };
+  const columns = new Map<number, CardBox[]>();
+  for (const id of positions.keys()) {
+    const box = card(id)!;
+    columns.set(box.x, [...(columns.get(box.x) ?? []), box]);
+  }
+
+  // Each forward connection gets its own port: outgoing ones spread down the
+  // source's right edge in the order of their targets, incoming ones down the
+  // target's left edge in the order of their sources. No shared bus.
+  const isForward = (path: PresentedMapPath) => {
     const from = positions.get(path.fromScreenId);
-    if (!from) return [];
     const to = path.toScreenId ? positions.get(path.toScreenId) : undefined;
-    // A path whose target is outside the bounded visible set is omitted rather
-    // than being misrepresented as a terminal path.
-    if (path.toScreenId && !to) return [];
-    const sourceScreen = screens.find((screen) => screen.id === path.fromScreenId);
-    const imageRect = sourceScreen?.screenshotUri
-      ? containedImageRect(
-          {
-            x: from.x,
-            y: from.y + node.titleHeight + node.gap,
-            width: node.width,
-            height: node.imageHeight,
-          },
-          imageDimensions.get(path.fromScreenId) ?? { width: 0, height: 0 },
-          "top",
-        )
-      : undefined;
-    const targetScreen = to ? screens.find((screen) => screen.id === path.toScreenId) : undefined;
-    const targetImageRect = targetScreen?.screenshotUri
-      ? containedImageRect(
-          {
-            x: to!.x,
-            y: to!.y + node.titleHeight + node.gap,
-            width: node.width,
-            height: node.imageHeight,
-          },
-          imageDimensions.get(path.toScreenId!) ?? { width: 0, height: 0 },
-          "top",
-        )
-      : undefined;
-    const anchor =
-      showInteractionTargets && path.sourceAnchor && imageRect
-        ? {
-            x: imageRect.x + path.sourceAnchor.point.x * imageRect.width,
-            y: imageRect.y + path.sourceAnchor.point.y * imageRect.height,
-          }
-        : undefined;
-    const anchorRect =
-      anchor && path.sourceAnchor?.rect
-        ? {
-            x: imageRect!.x + path.sourceAnchor.rect.x * imageRect!.width,
-            y: imageRect!.y + path.sourceAnchor.rect.y * imageRect!.height,
-            width: path.sourceAnchor.rect.width * imageRect!.width,
-            height: path.sourceAnchor.rect.height * imageRect!.height,
-          }
-        : undefined;
-    const backwards = Boolean(to && to.x < from.x);
-    const start = {
-      x:
-        anchor?.x ??
-        (imageRect
-          ? backwards
-            ? imageRect.x
-            : imageRect.x + imageRect.width
-          : from.x + (backwards ? 0 : node.width)),
-      y: anchor?.y ?? (imageRect ? imageRect.y + imageRect.height / 2 : from.y + node.height / 2),
-    };
-    const end = to
-      ? {
-          x: targetImageRect
-            ? backwards
-              ? targetImageRect.x + targetImageRect.width
-              : targetImageRect.x
-            : to.x + (backwards ? node.width : 0),
-          y: targetImageRect
-            ? targetImageRect.y + targetImageRect.height / 2
-            : to.y + node.height / 2,
-        }
-      : { x: start.x + 116, y: start.y };
-    // Leave an intentional gap around previews. Recorded click origins retain
-    // their exact position inside the source screenshot.
-    const clearance = 14;
-    if (!anchor) start.x += backwards ? -clearance : clearance;
-    if (to) end.x += backwards ? clearance : -clearance;
-    if (!to) {
-      const width = Math.min(240, Math.max(168, path.label.length * 6.2 + 24));
-      const left = start.x + 32;
-      return [
-        {
-          path,
-          id: `-${index}`,
-          anchor,
-          anchorRect,
-          d: `M ${start.x} ${start.y} L ${left} ${start.y}`,
-          label: { x: left + width / 2, y: start.y - 5, width },
-          bounds: {
-            minX: start.x - 24,
-            minY: start.y - 30,
-            maxX: left + width + 24,
-            maxY: start.y + 36,
-          },
-        },
-      ];
-    }
-    const sourceBox = imageRect ?? {
-      x: from.x,
-      y: from.y + node.titleHeight + node.gap,
-      width: node.width,
-      height: node.imageHeight,
-    };
-    const selfLoop = path.toScreenId === path.fromScreenId;
-    const labelWidth = Math.min(180, Math.max(44, path.label.length * 6.2 + 18));
-    if (selfLoop) {
-      const slot = paths
-        .filter(
-          (candidate) =>
-            candidate.fromScreenId === path.fromScreenId &&
-            candidate.toScreenId === path.fromScreenId,
-        )
-        .findIndex((candidate) => candidate.id === path.id);
-      const points = selfLoopConnector(sourceBox, Math.max(0, slot), anchor);
-      return [
-        {
-          path,
-          id: `-${index}`,
-          anchor,
-          anchorRect,
-          d: roundedConnector(points, 20),
-          label: { x: points[1]!.x, y: points[1]!.y, width: labelWidth },
-          bounds: {
-            minX: Math.min(...points.map((point) => point.x)) - 24,
-            minY: Math.min(...points.map((point) => point.y)) - 24,
-            maxX: Math.max(...points.map((point) => point.x)) + 24,
-            maxY: Math.max(...points.map((point) => point.y)) + 24,
-          },
-        },
-      ];
-    }
-    const isReturn = backwards || /^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label);
-    const targetBox = targetImageRect ?? {
-      x: to.x,
-      y: to.y + node.titleHeight + node.gap,
-      width: node.width,
-      height: node.imageHeight,
-    };
-    if (horizontal) {
-      const upward = to.y < from.y;
-      const leavesRight = targetBox.x + targetBox.width / 2 >= sourceBox.x + sourceBox.width / 2;
-      const controlOrigin = anchor && {
-        x: anchorRect ? anchorRect.x + (leavesRight ? anchorRect.width : 0) : anchor.x,
-        y: anchor.y,
-      };
-      const origin = controlOrigin ?? {
-        x: sourceBox.x + sourceBox.width / 2,
-        y: upward ? from.y - clearance : sourceBox.y + sourceBox.height + clearance,
-      };
-      const destination = {
-        x: targetBox.x + targetBox.width / 2,
-        y: upward ? targetBox.y + targetBox.height + clearance : to.y - clearance,
-      };
-      // All siblings branch before the nearest destination. Choosing a lane
-      // per destination sends the farther trunks through nearer captures.
-      const siblingRows = paths
-        .filter(
-          (candidate) =>
-            candidate.fromScreenId === path.fromScreenId && !isRoutineReturn(candidate),
-        )
-        .flatMap((candidate) => {
-          const target = positions.get(candidate.toScreenId ?? "");
-          return target && target.y < from.y === upward ? [target.y] : [];
-        });
-      const lane = upward
-        ? Math.max(destination.y, ...siblingRows.map((y) => y + node.height + clearance)) + 80
-        : Math.min(destination.y, ...siblingRows.map((y) => y - clearance)) - 80;
-      const exitX = leavesRight ? sourceBox.x + sourceBox.width + 24 : sourceBox.x - 24;
-      const direct = [origin, { x: destination.x, y: origin.y }, destination];
-      const directClear =
-        controlOrigin &&
-        Math.abs(destination.x - origin.x) > 24 &&
-        [...positions].every(
-          ([id, point]) =>
-            id === path.fromScreenId ||
-            id === path.toScreenId ||
-            direct.slice(1).every(
-              (end, index) =>
-                !routeCrossesBox(direct[index]!, end, {
-                  x: point.x - 14,
-                  y: point.y - 14,
-                  width: node.width + 28,
-                  height: node.height + 28,
-                }),
-            ),
-        );
-      const points = directClear
-        ? direct
-        : controlOrigin
-          ? [
-              origin,
-              { x: exitX, y: origin.y },
-              { x: exitX, y: lane },
-              { x: destination.x, y: lane },
-              destination,
-            ]
-          : Math.abs(origin.x - destination.x) < 1
-            ? [origin, destination]
-            : [origin, { x: origin.x, y: lane }, { x: destination.x, y: lane }, destination];
-      return [
-        {
-          path,
-          id: `-${index}`,
-          anchor: controlOrigin,
-          anchorRect,
-          d: roundedConnector(points),
-          label: {
-            x: destination.x,
-            y: directClear
-              ? destination.y - 20
-              : points.length === 2
-                ? (origin.y + destination.y) / 2
-                : lane - 12,
-            width: labelWidth,
-          },
-          bounds: {
-            minX: Math.min(...points.map((p) => p.x)) - labelWidth / 2,
-            minY: Math.min(...points.map((p) => p.y)) - 40,
-            maxX: Math.max(...points.map((p) => p.x)) + labelWidth / 2,
-            maxY: Math.max(...points.map((p) => p.y)) + 40,
-          },
-        },
-      ];
-    }
-    // Give each return to this destination a stable landing port. Ordering by
-    // source height keeps nearby branches from swapping lanes on selection.
-    const siblings = paths
-      .filter(
-        (candidate) =>
-          candidate.toScreenId === path.toScreenId &&
-          (positions.get(candidate.fromScreenId)?.x ?? Infinity) > to.x,
-      )
+    return Boolean(from && to && to.x > from.x && !isRoutineReturn(path));
+  };
+  const forwardPaths = paths.filter(isForward);
+  const port = (box: CardBox, index: number, count: number) =>
+    box.y + box.height * (count <= 1 ? 0.5 : 0.25 + (0.5 * index) / (count - 1));
+  const portIndex = (
+    path: PresentedMapPath,
+    side: "fromScreenId" | "toScreenId",
+    other: "fromScreenId" | "toScreenId",
+  ) => {
+    const siblings = forwardPaths
+      .filter((candidate) => candidate[side] === path[side])
       .sort(
         (a, b) =>
-          (positions.get(a.fromScreenId)?.y ?? 0) - (positions.get(b.fromScreenId)?.y ?? 0) ||
+          (positions.get(a[other]!)?.y ?? 0) - (positions.get(b[other]!)?.y ?? 0) ||
           a.id.localeCompare(b.id),
       );
-    const slot = Math.max(
-      0,
-      siblings.findIndex((candidate) => candidate.id === path.id),
-    );
-    const returning = isReturn
-      ? returnConnector(sourceBox, targetBox, slot, siblings.length, anchor)
-      : undefined;
-    const portY = (screenId: string, fraction = 0.5) => {
-      const point = positions.get(screenId);
-      const dimensions = imageDimensions.get(screenId);
-      const height = dimensions
-        ? Math.min(node.imageHeight, (node.width * dimensions.height) / dimensions.width)
-        : node.imageHeight;
-      return (point?.y ?? 0) + node.titleHeight + node.gap + height * fraction;
+    return {
+      index: siblings.findIndex((candidate) => candidate.id === path.id),
+      count: siblings.length,
     };
-    // Order the whole corridor, not each source independently. Otherwise two
-    // branching screens reuse the same lanes and their exits interleave.
-    const directionSiblings = paths
-      .filter((candidate) => {
-        const source = positions.get(candidate.fromScreenId);
-        const target = candidate.toScreenId ? positions.get(candidate.toScreenId) : undefined;
-        if (
-          !source ||
-          !target ||
-          source.x !== from.x ||
-          target.x <= source.x ||
-          isRoutineReturn(candidate)
-        )
-          return false;
-        const sourceY = portY(
-          candidate.fromScreenId,
-          showInteractionTargets ? candidate.sourceAnchor?.point.y : undefined,
-        );
-        return portY(candidate.toScreenId!) < sourceY === end.y < start.y;
-      })
-      .sort((a, b) => portY(a.toScreenId!) - portY(b.toScreenId!) || a.id.localeCompare(b.id));
-    const corridorEnd = Math.min(
-      end.x,
-      ...directionSiblings.map((candidate) => positions.get(candidate.toScreenId!)!.x - clearance),
-    );
-    const forwardSlot = Math.max(
-      0,
-      directionSiblings.findIndex((candidate) => candidate.id === path.id),
-    );
-    // Center-origin branches form one visual bus. Direction-specific lanes
-    // are only needed when the paths originate at different controls/screens.
-    const sourceBranches = anchor
-      ? []
-      : paths.filter(
-          (candidate) =>
-            candidate.fromScreenId === path.fromScreenId &&
-            candidate.toScreenId &&
-            !isRoutineReturn(candidate) &&
-            (positions.get(candidate.toScreenId)?.x ?? -Infinity) > from.x,
-        );
-    const sharedJunction = sourceBranches.length > 1;
-    const branchEnd = sharedJunction
-      ? Math.min(
-          ...sourceBranches.map((candidate) => positions.get(candidate.toScreenId!)!.x - clearance),
-        )
-      : corridorEnd;
-    let points =
-      returning?.points ??
-      forwardRoute(
-        start,
-        end,
-        from.x + node.width,
-        sharedJunction ? 0 : forwardSlot,
-        sharedJunction ? 1 : directionSiblings.length,
-        branchEnd,
-      );
-    points = avoidPreviewObstacles(
-      points,
-      [...positions]
-        .filter(([id]) => id !== path.fromScreenId && id !== path.toScreenId)
-        .flatMap(([id, point]) => {
-          const image = containedImageRect(
-            {
-              x: point.x,
-              y: point.y + node.titleHeight + node.gap,
-              width: node.width,
-              height: node.imageHeight,
-            },
-            imageDimensions.get(id) ?? { width: node.width, height: node.imageHeight },
-            "top",
-          )!;
-          return [
-            {
-              x: image.x - 10,
-              y: image.y - 10,
-              width: image.width + 20,
-              height: image.height + 20,
-            },
-            {
-              x: point.x - 8,
-              y: point.y - 8,
-              width: node.width + 16,
-              height: node.titleHeight + 16,
-            },
-          ];
-        }),
-    );
+  };
+
+  const ends = new Map<string, { start: MapPoint; end: MapPoint; anchor?: MapPoint }>();
+  for (const path of forwardPaths) {
+    const sourceCard = card(path.fromScreenId)!;
+    const targetCard = card(path.toScreenId!)!;
+    const source = image(path.fromScreenId)!;
+    const target = image(path.toScreenId!)!;
+    const anchor =
+      showInteractionTargets && path.sourceAnchor
+        ? {
+            x: source.x + path.sourceAnchor.point.x * source.width,
+            y: source.y + path.sourceAnchor.point.y * source.height,
+          }
+        : undefined;
+    // Outgoing moves leave from one port and share a trunk per direction;
+    // incoming moves land on separate ports so their sources stay distinct.
+    const inc = portIndex(path, "toScreenId", "fromScreenId");
+    ends.set(path.id, {
+      start: {
+        x: sourceCard.x + sourceCard.width + 8,
+        y: anchor?.y ?? source.y + source.height / 2,
+      },
+      end: { x: targetCard.x - 8, y: port(target, inc.index, inc.count) },
+      ...(anchor ? { anchor } : {}),
+    });
+  }
+  const routes = routeElbows(
+    [...ends].map(([id, { start, end }]) => ({ id, start, end })),
+    columns,
+    node.width,
+  );
+
+  const geometries = paths.flatMap((path): Geometry[] => {
+    if (!path.toScreenId || path.toScreenId === path.fromScreenId) return [];
+    const sourceCard = card(path.fromScreenId);
+    const targetCard = card(path.toScreenId);
+    if (!sourceCard || !targetCard) return [];
+    const involved =
+      path.id === activePathId ||
+      path.fromScreenId === selectedScreenId ||
+      path.toScreenId === selectedScreenId;
+    const route = routes.get(path.id);
+    if (!route) {
+      if (!involved) return [];
+      const slot = paths
+        .filter((other) => other.toScreenId === path.toScreenId && !routes.has(other.id))
+        .findIndex((other) => other.id === path.id);
+      const points = returnRoute(sourceCard, targetCard, Math.max(0, slot));
+      return [
+        {
+          path,
+          d: roundedPath(points),
+          arrow: arrowHead(points),
+          label: midpointAlong(points),
+          returning: true,
+        },
+      ];
+    }
+    const anchor = ends.get(path.id)?.anchor;
+    const points = anchor ? [anchor, ...route] : route;
+    const label = midpointAlong(points);
     return [
       {
         path,
-        id: `-${index}`,
-        anchor,
-        anchorRect,
-        // A same-row return reads best as one shallow curve. Between rows the
-        // curve would cut through the target screen; follow the corridor.
-        d: roundedConnector(points),
-        label: {
-          x:
-            returning?.label.x ??
-            end.x - Math.min(labelWidth / 2 + 4, Math.abs(end.x - points.at(-2)!.x) / 2),
-          y: returning?.label.y ?? end.y - 12,
-          width: labelWidth,
-        },
-        bounds: {
-          minX: Math.min(...points.map((point) => point.x)) - 24,
-          minY: Math.min(...points.map((point) => point.y)) - 40,
-          maxX: Math.max(...points.map((point) => point.x)) + 24,
-          maxY: Math.max(...points.map((point) => point.y)) + 40,
-        },
+        d: roundedPath(points),
+        arrow: arrowHead(points),
+        label,
+        returning: false,
+        ...(anchor ? { anchor } : {}),
       },
     ];
   });
-  // Paint selection last. Hover/focus must not move a pressed control in the DOM:
-  // reordering it between pointer down and up cancels browser click activation.
+  // Paint the active path last so it sits above the others.
   geometries.sort(
-    (a, b) => Number(a.path.id === selectedPathId) - Number(b.path.id === selectedPathId),
+    (a, b) => Number(a.path.id === activePathId) - Number(b.path.id === activePathId),
   );
-  const edgeBounds = geometries.reduce<MapBounds>(
-    (result, geometry) => ({
-      minX: Math.min(result.minX, geometry.bounds.minX),
-      minY: Math.min(result.minY, geometry.bounds.minY),
-      maxX: Math.max(result.maxX, geometry.bounds.maxX),
-      maxY: Math.max(result.maxY, geometry.bounds.maxY),
+  const bounds = [...positions.values()].reduce<MapBounds>(
+    (result, point) => ({
+      minX: Math.min(result.minX, point.x - 240),
+      minY: Math.min(result.minY, point.y - 240),
+      maxX: Math.max(result.maxX, point.x + node.width + 240),
+      maxY: Math.max(result.maxY, point.y + node.height + 240),
     }),
-    { minX: -240, minY: -240, maxX: 1800, maxY: 1200 },
+    { minX: -240, minY: -240, maxX: 240, maxY: 240 },
   );
+  const isActive = (path: PresentedMapPath) =>
+    path.id === activePathId ||
+    Boolean(
+      selectedScreenId &&
+      (path.fromScreenId === selectedScreenId || path.toScreenId === selectedScreenId),
+    );
+  // Quiet connections sit behind the cards; the hovered or selected ones are
+  // lifted above them so they can be followed end to end.
   return (
-    <svg
-      className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-10 h-(--box-height) w-(--box-width) overflow-visible"
-      aria-label="Screen connections"
-      viewBox={`${edgeBounds.minX} ${edgeBounds.minY} ${edgeBounds.maxX - edgeBounds.minX} ${edgeBounds.maxY - edgeBounds.minY}`}
-      style={
-        {
-          "--box-left": `${edgeBounds.minX}px`,
-          "--box-top": `${edgeBounds.minY}px`,
-          "--box-width": `${edgeBounds.maxX - edgeBounds.minX}px`,
-          "--box-height": `${edgeBounds.maxY - edgeBounds.minY}px`,
-        } as CSSProperties
-      }
-    >
-      <defs>
-        {["neutral", "selected", "muted"].map((state) => (
-          <marker
-            key={state}
-            id={`${markerId}-${state}`}
-            viewBox="0 0 10 10"
-            refX="8"
-            refY="5"
-            markerWidth="8"
-            markerHeight="8"
-            orient="auto-start-reverse"
-          >
-            <path
-              d="M 1 1 L 8 5 L 1 9"
-              fill="none"
-              stroke={
-                state === "selected"
-                  ? "var(--info)"
-                  : state === "muted"
-                    ? "color-mix(in oklch, var(--muted-foreground) 80%, var(--background) 20%)"
-                    : "var(--muted-foreground)"
-              }
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </marker>
-        ))}
-      </defs>
-      {geometries.map((geometry) => {
-        const dimmed = activePathId
-          ? geometry.path.id !== activePathId
-          : Boolean(
+    <>
+      {renderLayer(geometries, "under")}
+      {renderLayer(
+        geometries.filter((geometry) => isActive(geometry.path)),
+        "over",
+      )}
+    </>
+  );
+
+  function renderLayer(layer: readonly Geometry[], depth: "under" | "over") {
+    return (
+      <svg
+        className={`pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) overflow-visible ${depth === "over" ? "z-20" : "z-0"}`}
+        aria-label={depth === "under" ? "Screen connections" : "Highlighted connections"}
+        viewBox={`${bounds.minX} ${bounds.minY} ${bounds.maxX - bounds.minX} ${bounds.maxY - bounds.minY}`}
+        style={
+          {
+            "--box-left": `${bounds.minX}px`,
+            "--box-top": `${bounds.minY}px`,
+            "--box-width": `${bounds.maxX - bounds.minX}px`,
+            "--box-height": `${bounds.maxY - bounds.minY}px`,
+          } as CSSProperties
+        }
+      >
+        {layer.map((geometry) => {
+          const { path } = geometry;
+          const active =
+            path.id === activePathId ||
+            Boolean(
               selectedScreenId &&
-              geometry.path.fromScreenId !== selectedScreenId &&
-              geometry.path.toScreenId !== selectedScreenId,
+              (path.fromScreenId === selectedScreenId || path.toScreenId === selectedScreenId),
             );
-        const connected = Boolean(
-          selectedScreenId &&
-          (geometry.path.fromScreenId === selectedScreenId ||
-            geometry.path.toScreenId === selectedScreenId),
-        );
-        const source = positions.get(geometry.path.fromScreenId);
-        const target = positions.get(geometry.path.toScreenId ?? "");
-        const returning =
-          isRoutineReturn(geometry.path) || Boolean(source && target && target.x < source.x);
-        const state = dimmed ? "muted" : activePathId || connected ? "selected" : "neutral";
-        const labelText =
-          geometry.path.parallelPaths && geometry.path.id !== activePathId
-            ? `${geometry.path.parallelPaths.length} paths`
-            : geometry.path.label.length > 28 && geometry.path.toScreenId
-              ? `${geometry.path.label.slice(0, 27)}…`
-              : geometry.path.label;
-        // Size the pill to what it shows; the reserved geometry width fits the
-        // longest label and would otherwise spill a short count over screens.
-        const labelWidth = Math.min(
-          geometry.label.width,
-          Math.max(geometry.path.toScreenId ? 44 : 150, Math.ceil(labelText.length * 6.6 + 20)),
-        );
-        return (
-          <g
-            key={geometry.path.id}
-            data-slot="map-edge"
-            data-state={state}
-            role={onSelectPath ? "button" : undefined}
-            tabIndex={onSelectPath ? 0 : undefined}
-            aria-label={`${geometry.path.fromTitle}: ${geometry.path.label}${geometry.path.toTitle ? ` → ${geometry.path.toTitle}` : ""}${geometry.path.parallelPaths ? ` (${geometry.path.parallelPaths.length} paths)` : ""}`}
-            aria-pressed={onSelectPath ? selectedPathId === geometry.path.id : undefined}
-            onPointerEnter={() => setHoveredPathId(geometry.path.id)}
-            onPointerLeave={() => setHoveredPathId(undefined)}
-            onFocus={() => setHoveredPathId(geometry.path.id)}
-            onBlur={() => setHoveredPathId(undefined)}
-            onPointerDown={onSelectPath ? (event) => event.stopPropagation() : undefined}
-            onClick={
-              onSelectPath
-                ? (event) => {
-                    event.stopPropagation();
-                    onSelectPath(geometry.path.id);
-                  }
-                : undefined
-            }
-            onKeyDown={
-              onSelectPath
-                ? (event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
+          const faded = Boolean((activePathId || selectedScreenId) && !active);
+          const more = path.parallelPaths ? path.parallelPaths.length - 1 : 0;
+          const text = `${path.label.length > 32 ? `${path.label.slice(0, 31)}…` : path.label}${more ? ` · ${more} more` : ""}`;
+          const showLabel = path.id === activePathId && depth === "over";
+          // The bottom layer owns every pointer target, so hovering never
+          // re-mounts the element under the pointer. Lifted paths are drawn on
+          // top, visual only.
+          const interactive = depth === "under";
+          const drawn = depth === "over" || !active;
+          const labelWidth = Math.min(260, text.length * 6.6 + 20);
+          return (
+            <g
+              key={path.id}
+              data-slot={interactive ? "map-edge" : "map-edge-lifted"}
+              data-state={active ? "active" : faded ? "faded" : "neutral"}
+              data-draft={path.draft ? "true" : undefined}
+              role={onSelectPath && interactive ? "button" : undefined}
+              tabIndex={onSelectPath && interactive ? 0 : undefined}
+              aria-hidden={interactive ? undefined : true}
+              aria-label={`${path.fromTitle}: ${path.label}${path.toTitle ? ` → ${path.toTitle}` : ""}${more ? ` (and ${more} more)` : ""}`}
+              aria-pressed={onSelectPath ? selectedPathId === path.id : undefined}
+              onPointerEnter={() => setHoveredPathId(path.id)}
+              onPointerLeave={() => setHoveredPathId(undefined)}
+              onFocus={() => setHoveredPathId(path.id)}
+              onBlur={() => setHoveredPathId(undefined)}
+              onPointerDown={onSelectPath ? (event) => event.stopPropagation() : undefined}
+              onClick={
+                onSelectPath
+                  ? (event) => {
                       event.stopPropagation();
-                      onSelectPath(geometry.path.id);
+                      onSelectPath(path.id);
                     }
-                  }
-                : undefined
-            }
-            className={`outline-none ${state === "selected" ? "text-info" : "text-muted-foreground"}`}
-          >
-            {geometry.anchor ? (
-              <>
-                {geometry.anchorRect ? (
-                  <rect
-                    x={geometry.anchorRect.x}
-                    y={geometry.anchorRect.y}
-                    width={geometry.anchorRect.width}
-                    height={geometry.anchorRect.height}
-                    rx="3"
-                    className="fill-info/15 stroke-info"
-                    strokeWidth="1.5"
-                  />
-                ) : null}
-              </>
-            ) : null}
-            {onSelectPath ? (
-              <path
-                data-slot="map-edge-hit"
-                d={geometry.d}
-                fill="none"
-                stroke="transparent"
-                strokeWidth="16"
-                vectorEffect="non-scaling-stroke"
-                pointerEvents="stroke"
-                className="cursor-pointer"
-              />
-            ) : null}
-            <path
-              data-slot="map-edge-clearance"
-              d={geometry.d}
-              fill="none"
-              stroke="var(--background)"
-              strokeWidth="6"
-              vectorEffect="non-scaling-stroke"
-            />
-            <path
-              data-slot="map-edge-line"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              vectorEffect="non-scaling-stroke"
-              id={geometry.id}
-              d={geometry.d}
-              markerEnd={geometry.path.toScreenId ? `url(#${markerId}-${state})` : undefined}
-              strokeDasharray={!geometry.path.toScreenId || returning ? "5 5" : undefined}
-            />
-            {geometry.anchor ? (
-              <path
-                d="M 0 -5 A 5 5 0 1 0 0 5 L 7 0 Z"
-                transform={`translate(${geometry.anchor.x} ${geometry.anchor.y}) rotate(${(positions.get(geometry.path.toScreenId ?? "")?.x ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.x ?? 0) ? 180 : 0})`}
-                fill="var(--info)"
-                stroke="var(--background)"
-                strokeWidth="1.5"
-              />
-            ) : null}
-            {!geometry.path.toScreenId ||
-            geometry.path.id === activePathId ||
-            geometry.path.parallelPaths ? (
-              <g
-                data-slot="map-edge-label"
-                className={onSelectPath ? "pointer-events-auto cursor-pointer" : undefined}
-              >
-                <rect
-                  x={geometry.label.x - labelWidth / 2}
-                  y={geometry.label.y - 14}
-                  width={labelWidth}
-                  height={geometry.path.toScreenId ? 22 : 44}
-                  rx="5"
-                  className="fill-popover stroke-border"
-                  strokeWidth="0.5"
+                  : undefined
+              }
+              onKeyDown={
+                onSelectPath
+                  ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelectPath(path.id);
+                      }
+                    }
+                  : undefined
+              }
+              className={`outline-none transition-opacity ${active ? "text-info" : "text-muted-foreground"} ${faded ? "opacity-25" : path.draft && !active ? "opacity-60" : ""}`}
+            >
+              {onSelectPath && interactive ? (
+                <path
+                  data-slot="map-edge-hit"
+                  d={geometry.d}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth="14"
+                  pointerEvents="stroke"
+                  className="cursor-pointer"
                 />
-                <text
-                  x={geometry.label.x}
-                  y={geometry.label.y}
-                  textAnchor="middle"
-                  className="fill-current font-sans text-xs font-medium"
-                >
-                  {labelText}
-                </text>
-                {!geometry.path.toScreenId ? (
+              ) : null}
+              {drawn ? (
+                <>
+                  <path
+                    data-slot="map-edge-line"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={active ? 2 : 1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d={geometry.d}
+                    strokeDasharray={geometry.returning || path.draft ? "6 5" : undefined}
+                  />
+                  <path
+                    data-slot="map-edge-arrow"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={active ? 2 : 1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d={geometry.arrow}
+                  />
+                </>
+              ) : null}
+              {geometry.anchor ? (
+                <circle
+                  cx={geometry.anchor.x}
+                  cy={geometry.anchor.y}
+                  r="4"
+                  fill="var(--info)"
+                  stroke="var(--background)"
+                  strokeWidth="1.5"
+                />
+              ) : null}
+              {showLabel ? (
+                <g data-slot="map-edge-label">
+                  <rect
+                    x={geometry.label.x - labelWidth / 2}
+                    y={geometry.label.y - 11}
+                    width={labelWidth}
+                    height={22}
+                    rx="11"
+                    className="fill-popover stroke-border"
+                    strokeWidth="0.5"
+                  />
                   <text
                     x={geometry.label.x}
-                    y={geometry.label.y + 17}
+                    y={geometry.label.y + 4}
                     textAnchor="middle"
-                    className="fill-current font-sans text-xs font-normal"
+                    className="fill-current font-sans text-xs font-medium"
                   >
-                    Destination not recorded
+                    {text}
                   </text>
-                ) : null}
-              </g>
-            ) : null}
-          </g>
-        );
-      })}
-    </svg>
-  );
+                </g>
+              ) : null}
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
 }
