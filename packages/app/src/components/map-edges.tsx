@@ -5,7 +5,7 @@ import { isRoutineReturn } from "./map-edge-paths";
 import {
   arrowHead,
   midpointAlong,
-  returnRoute,
+  routeReturns,
   roundedPath,
   routeElbows,
   type CardBox,
@@ -144,6 +144,34 @@ export function MapEdges({
     node.width,
   );
 
+  // Returns are shown only for the selected screen or the active path.
+  const shownReturns = paths.filter(
+    (path) =>
+      path.toScreenId &&
+      path.toScreenId !== path.fromScreenId &&
+      !routes.has(path.id) &&
+      positions.has(path.fromScreenId) &&
+      positions.has(path.toScreenId) &&
+      (path.id === activePathId ||
+        path.fromScreenId === selectedScreenId ||
+        path.toScreenId === selectedScreenId),
+  );
+  const returnRoutes = routeReturns(
+    shownReturns.map((path) => {
+      const source = image(path.fromScreenId)!;
+      const target = image(path.toScreenId!)!;
+      return {
+        id: path.id,
+        source: card(path.fromScreenId)!,
+        target: card(path.toScreenId!)!,
+        sourceY: source.y + source.height * 0.8,
+        targetY: target.y + target.height * 0.8,
+      };
+    }),
+    columns,
+    node.width,
+  );
+
   const geometries = paths.flatMap((path): Geometry[] => {
     if (!path.toScreenId || path.toScreenId === path.fromScreenId) return [];
     const sourceCard = card(path.fromScreenId);
@@ -155,11 +183,8 @@ export function MapEdges({
       path.toScreenId === selectedScreenId;
     const route = routes.get(path.id);
     if (!route) {
-      if (!involved) return [];
-      const slot = paths
-        .filter((other) => other.toScreenId === path.toScreenId && !routes.has(other.id))
-        .findIndex((other) => other.id === path.id);
-      const points = returnRoute(sourceCard, targetCard, Math.max(0, slot));
+      const points = returnRoutes.get(path.id);
+      if (!involved || !points) return [];
       return [
         {
           path,

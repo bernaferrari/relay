@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrowHead, freeGapY, roundedPath, routeElbows } from "./map-edge-routing";
+import { arrowHead, freeGapY, roundedPath, routeElbows, routeReturns } from "./map-edge-routing";
 
 describe("map edge routing", () => {
   it("passes a skipped column through the nearest free gap", () => {
@@ -67,5 +67,52 @@ describe("map edge routing", () => {
     expect(roundedPath(points)).toContain(" Q 50 0 ");
     const head = arrowHead(points);
     expect(head).toMatch(/L 100 80 L/);
+  });
+
+  it("routes returns from the source's left to the target's right, never through a card", () => {
+    const card = (x: number, y: number) => ({ x, y, width: 200, height: 300 });
+    const columns = new Map([
+      [0, [card(0, 0)]],
+      [400, [card(400, 0), card(400, 380)]],
+      [800, [card(800, 380)]],
+    ]);
+    const routes = routeReturns(
+      [
+        {
+          id: "back",
+          source: card(800, 380),
+          target: card(0, 0),
+          sourceY: 620,
+          targetY: 240,
+        },
+        { id: "same", source: card(400, 380), target: card(400, 0), sourceY: 620, targetY: 240 },
+      ],
+      columns,
+      200,
+    );
+    const back = routes.get("back")!;
+    expect(back[0]).toEqual({ x: 792, y: 620 });
+    expect(back.at(-1)).toEqual({ x: 208, y: 240 });
+    const inside = (point: { x: number; y: number }) =>
+      [...columns.values()]
+        .flat()
+        .some(
+          (box) =>
+            point.x > box.x + 1 &&
+            point.x < box.x + box.width - 1 &&
+            point.y > box.y + 1 &&
+            point.y < box.y + box.height - 1,
+        );
+    for (let index = 1; index < back.length; index += 1) {
+      const from = back[index - 1]!;
+      const to = back[index]!;
+      for (let t = 0; t <= 1; t += 0.1)
+        expect(inside({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t })).toBe(
+          false,
+        );
+    }
+    // Same column: a bracket in the gutter to the right, clear of both cards.
+    const same = routes.get("same")!;
+    expect(same.every((point) => point.x >= 608)).toBe(true);
   });
 });
