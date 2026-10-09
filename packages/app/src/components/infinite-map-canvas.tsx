@@ -626,7 +626,6 @@ export function InfiniteMapCanvas({
         resetView={resetView}
         selectedPath={selectedPath}
         setSelectedPathId={setSelectedPathId}
-        aboveCanvas={runs?.aboveCanvas}
       >
         <MapCanvasViewport
           viewportRef={viewportRef}

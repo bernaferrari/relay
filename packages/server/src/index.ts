@@ -34,6 +34,7 @@ export {
 export { publishChangeProofToGitHub } from "./change-proof-github-publisher.js";
 export * from "./github-proof-intake.js";
 import { githubProofWebhookConfigurationFromEnvironment as githubWebhookFromEnv } from "./github-proof-intake.js";
+import { growAppMapsFromPastRuns } from "@relay/core";
 import {
   captureScreenshot,
   currentOperationContext,
@@ -831,6 +832,18 @@ async function startServerWithStateLease(
   publish({ type: "server.ready", at: now(), host, port });
   if (process.env.RELAY_SKIP_BROWSER_WARMUP !== "1") {
     setTimeout(() => void warmBrowserPreflights().catch(() => undefined), 2_000).unref();
+  }
+  if (process.env.RELAY_SKIP_MAP_BACKFILL !== "1") {
+    // Runs that finished before maps grew on their own still teach the map.
+    setTimeout(
+      () =>
+        void growAppMapsFromPastRuns()
+          .then(({ runs, changes }) => {
+            if (changes) console.log(`App Maps grew from ${runs} past runs (${changes} changes)`);
+          })
+          .catch(() => undefined),
+      5_000,
+    ).unref();
   }
   const proofRecovery = proofCoordinator.recover?.(recoverProofCell);
   void proofRecovery?.catch((error: unknown) =>

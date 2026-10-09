@@ -1,11 +1,9 @@
 /** @jsxImportSource react */
 import type { AppMapObserved, AppMapObservedStatus } from "@relay/protocol";
-import type { ReactNode } from "react";
 
-/** What recent runs add to the map canvas: a status per screen and a strip above it. */
+/** What recent runs add to the map canvas: a status per screen. */
 export type MapRunOverlay = {
   status?: ReadonlyMap<string, AppMapObservedStatus>;
-  aboveCanvas?: ReactNode;
 };
 
 const STATUS: Record<AppMapObservedStatus, { label: string; className: string }> = {
@@ -13,7 +11,7 @@ const STATUS: Record<AppMapObservedStatus, { label: string; className: string }>
   failing: { label: "The latest run failed here", className: "bg-destructive" },
   seen: { label: "Reached by runs", className: "bg-warning" },
   untested: { label: "No recent run reached this screen", className: "bg-muted-foreground/40" },
-  new: { label: "New: found by a run, not on the map yet", className: "bg-brand" },
+  new: { label: "New: a run added this screen since your last visit", className: "bg-brand" },
 };
 
 export function mapStatusLabel(status: AppMapObservedStatus): string {
@@ -36,9 +34,12 @@ export function MapStatusDot({ status }: { status: AppMapObservedStatus | undefi
 }
 
 /** "12 screens · 9 reached by recent runs · 2 failing · 3 new" in one line. */
-export function mapCoverageLine(observed: AppMapObserved | undefined): string | undefined {
+export function mapCoverageLine(
+  observed: AppMapObserved | undefined,
+  fresh = 0,
+): string | undefined {
   if (!observed) return undefined;
-  const { known, tested, failing, new: fresh } = observed.summary;
+  const { known, tested, failing } = observed.summary;
   if (!known && !fresh) return undefined;
   return [
     `${known} ${known === 1 ? "screen" : "screens"}`,
