@@ -187,12 +187,62 @@ export function arrowHead(points: readonly MapPoint[], size = 7): string {
   return `M ${back.x - uy * spread} ${back.y + ux * spread} L ${tip.x} ${tip.y} L ${back.x + uy * spread} ${back.y - ux * spread}`;
 }
 
-/** An elbow under both cards for a move back to an earlier or the same column. */
-export function returnRoute(source: CardBox, target: CardBox, slot = 0): MapPoint[] {
-  const start = { x: source.x + source.width / 2, y: source.y + source.height + 8 };
-  const end = { x: target.x + target.width / 2 + 12, y: target.y + target.height + 8 };
-  const below = Math.max(start.y, end.y) + 28 + slot * 10;
-  return [start, { x: start.x, y: below }, { x: end.x, y: below }, end];
+/** A move back to an earlier column, or to a screen in the same column. */
+export type ReturnRequest = {
+  id: string;
+  source: CardBox;
+  target: CardBox;
+  /** Heights of the ports on the source's left and the target's right side. */
+  sourceY: number;
+  targetY: number;
+};
+
+/**
+ * Returns follow the same rules as forward moves, mirrored: leave the source
+ * on its left, enter the target on its right, vertical runs only in gutters,
+ * skipped columns crossed through free gaps, never through a card. A return
+ * within one column is a bracket through the gutter on its right.
+ */
+export function routeReturns(
+  requests: readonly ReturnRequest[],
+  columns: ReadonlyMap<number, readonly CardBox[]>,
+  cardWidth: number,
+): Map<string, MapPoint[]> {
+  const routes = new Map<string, MapPoint[]>();
+  const sameColumn = requests.filter((request) => request.source.x === request.target.x);
+  sameColumn.forEach((request, index) => {
+    const edge = request.source.x + request.source.width + 8;
+    const lane = edge + 36 + index * 12;
+    routes.set(request.id, [
+      { x: edge, y: request.sourceY },
+      { x: lane, y: request.sourceY },
+      { x: lane, y: request.targetY },
+      { x: edge, y: request.targetY },
+    ]);
+  });
+  // Mirror x so a return is a forward move, route it, then mirror back.
+  const mirrored = new Map(
+    [...columns].map(([x, cards]) => [
+      -(x + cardWidth),
+      cards.map((card) => ({ ...card, x: -(card.x + card.width) })),
+    ]),
+  );
+  const backward = requests.filter((request) => request.target.x < request.source.x);
+  const routed = routeElbows(
+    backward.map((request) => ({
+      id: request.id,
+      start: { x: -(request.source.x - 8), y: request.sourceY },
+      end: { x: -(request.target.x + request.target.width + 8), y: request.targetY },
+    })),
+    mirrored,
+    cardWidth,
+  );
+  for (const [id, points] of routed)
+    routes.set(
+      id,
+      points.map((point) => ({ x: -point.x, y: point.y })),
+    );
+  return routes;
 }
 
 /** The point halfway along a polyline, where a connector's label is centred. */
