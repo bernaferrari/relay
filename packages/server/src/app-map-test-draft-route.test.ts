@@ -68,3 +68,21 @@ test("a described Test drafts, saves, and compiles without a recording", async (
     else process.env.OPENROUTER_API_KEY = previousKey;
   }
 });
+
+test("the observed map answers for an App with no runs yet", async () => {
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = clientFor(server.port);
+    await client.invoke("app-map.create", { appMapId: "empty", name: "Empty" });
+    const observed = await client.invoke("app-map.observed", { appMapId: "empty" });
+    assert.deepEqual(observed, {
+      appMapId: "empty",
+      runsScanned: 0,
+      screens: [],
+      transitions: [],
+      summary: { known: 0, tested: 0, failing: 0, new: 0 },
+    });
+  } finally {
+    await server.close();
+  }
+});

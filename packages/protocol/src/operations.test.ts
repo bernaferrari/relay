@@ -769,6 +769,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
     [
       "app-map.list",
       "app-map.get",
+      "app-map.observed",
       "app-map.remove",
       "app-map.create",
       "app-map.duplicate",

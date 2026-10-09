@@ -39,6 +39,7 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
     appMapProposalApproveParser,
     appMapOutputParser,
     appMapRefParser,
+    appMapObservedOutputParser,
     appMapRoutineSaveParser,
     appMapScreenAddParser,
     appMapScreenAliasObserveParser,
@@ -87,6 +88,16 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
       input: appMapRefParser,
       output: appMapOutputParser,
     }),
+    query(
+      "app-map.observed",
+      "What recent runs saw on this App Map, including new screens",
+      "/app-maps/:appMapId/observed",
+      {
+        category: "authoring",
+        input: appMapRefParser,
+        output: appMapObservedOutputParser,
+      },
+    ),
     command("app-map.remove", "Remove App Map", "POST", "/app-maps/:appMapId/remove", {
       category: "authoring",
       confirmation: "confirm",

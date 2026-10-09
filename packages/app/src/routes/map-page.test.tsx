@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import type { AppMapObserved } from "@relay/protocol";
 import type { ProductMapOverview } from "@relay/product/map-exploration";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
@@ -111,60 +112,6 @@ async function render(
 }
 
 describe("Map exploration", () => {
-  it("collapses repeated action rows while preserving exact path inspection and search", async () => {
-    const paths = [
-      {
-        ...overview.paths[0]!,
-        id: "first",
-        coveringTests: [{ id: "first-test", name: "First checkout" }],
-      },
-      {
-        ...overview.paths[0]!,
-        id: "second",
-        coveringTests: [{ id: "second-test", name: "Second checkout" }],
-      },
-      { ...overview.paths[0]!, id: "other-action", label: "Swipe to cart" },
-    ];
-    const { history } = await render(
-      { get: async () => ({ ...overview, paths }) },
-      undefined,
-      "/apps/shop/map?view=paths",
-    );
-    const group = [...document.querySelectorAll("summary")].find((item) =>
-      item.textContent?.includes("Open cart"),
-    );
-    expect(group).toBeDefined();
-    expect(group?.textContent).toContain("2 paths");
-    expect(group?.textContent).toContain("2 tests");
-    expect(
-      [...document.querySelectorAll("button")].some((item) =>
-        item.textContent?.includes("Swipe to cart"),
-      ),
-    ).toBe(true);
-    await act(async () => group!.click());
-    await act(async () => button("Inspect Open cart · Second checkout").click());
-    expect(history.location.search).toContain("path=second");
-    await act(async () => button("Choose path").click());
-    const namedPath = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes("First checkout"),
-    );
-    expect(namedPath).toBeDefined();
-    await act(async () => (namedPath as HTMLElement).click());
-    expect(history.location.search).toContain("path=first");
-    await act(async () => button("Paths").click());
-    const search = document.querySelector('input[aria-label="Search paths"]')!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        search,
-        "First checkout",
-      );
-      search.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(document.body.textContent).not.toContain("Second checkout");
-    await act(async () => button("Home → Cart: Open cart").click());
-    expect(history.location.search).toContain("path=first");
-  });
-
   it("restores an inspected screen from a deep link and keeps it while changing views", async () => {
     const { history } = await render(undefined, undefined, "/apps/shop/map?screen=cart");
     expect(document.body.textContent).toContain("Cart");
@@ -365,8 +312,16 @@ describe("Map exploration", () => {
     );
     expect(world?.style.transform).not.toBe(beforeWheel);
 
-    await act(async () => button("Paths").click());
-    await act(async () => button("Home → Cart: Open cart").click());
+    // Paths are inspected from the canvas; there is no separate Paths list.
+    expect(document.body.textContent).not.toContain("Paths");
+    await act(async () =>
+      document.querySelector<HTMLElement>('[aria-label="Select tool"]')!.click(),
+    );
+    await act(async () =>
+      document
+        .querySelector<SVGElement>('[data-slot="map-edge"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
     expect(history.location.pathname).toBe("/apps/shop/map");
     expect(document.querySelector('[aria-label="Selected path"]')).not.toBeNull();
     const pathLink = document.querySelector<HTMLAnchorElement>('a[href*="path=home-cart"]');
@@ -487,31 +442,6 @@ describe("Map exploration", () => {
     await act(async () => previous?.click());
     expect(document.querySelector('a[href="/runs/old-run"]')).not.toBeNull();
     expect(document.querySelector('[aria-label="Screen details"] h3')?.textContent).toBe("Home");
-  });
-
-  it("searches paths beyond the former 24-row limit and clears empty results", async () => {
-    await render({
-      get: async () => ({
-        ...overview,
-        paths: Array.from({ length: 30 }, (_, index) => ({
-          ...overview.paths[0]!,
-          id: `path-${index}`,
-          fromTitle: `Screen ${index}`,
-          label: `Journey ${index}`,
-        })),
-      }),
-    });
-    await act(async () => button("Paths").click());
-    expect(button("Screen 29 → Cart: Journey 29")).toBeDefined();
-    const input = document.querySelector<HTMLInputElement>("#map-path-search")!;
-    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-    await act(async () => {
-      set.call(input, "missing");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(document.body.textContent).toContain("No matching paths");
-    await act(async () => button("Clear search").click());
-    expect(button("Screen 29 → Cart: Journey 29")).toBeDefined();
   });
 
   it("focuses a screen into its tests and failure evidence, with repair gated", async () => {
@@ -677,13 +607,35 @@ it("opens every captured screen in a directly linked gallery and focuses the cho
   expect(document.querySelector('[aria-label="Map screens"]')).toBeNull();
 });
 
-it("opens a path screen preview without redundant caption text", async () => {
-  await render(undefined, undefined, "/apps/shop/map?view=paths");
-  await act(async () => button("Preview Home").click());
-  const dialog = document.querySelector('[role="dialog"]');
-  expect(dialog?.textContent).toContain("Home");
-  expect(dialog?.textContent).not.toContain("Captured screen");
-  expect(document.querySelector('[data-slot="map-canvas"]')).toBeNull();
-  await act(async () => button("Open in map").click());
-  expect(document.querySelector('[data-slot="map-canvas"]')).not.toBeNull();
+it("colors screens by the latest runs and lists screens the map does not know", async () => {
+  const observed: AppMapObserved = {
+    appMapId: "shop",
+    runsScanned: 2,
+    screens: [
+      { key: "home", screenId: "home", title: "Home", status: "passing", runCount: 2 },
+      { key: "cart", screenId: "cart", title: "Cart", status: "failing", runCount: 1 },
+      {
+        key: "new:fp",
+        title: "Order summary",
+        status: "new",
+        runCount: 1,
+        lastRunId: "run-2",
+        lastSeenAt: 5,
+        frame: { runId: "run-2", file: "004.png", capturedAt: 5 },
+      },
+    ],
+    transitions: [],
+    summary: { known: 2, tested: 2, failing: 1, new: 1 },
+  };
+  await render({ get: async () => overview, observed: async () => observed });
+  expect(document.body.textContent).toContain(
+    "2 screens · 2 reached by recent runs · 1 failing · 1 new",
+  );
+  expect(
+    [...document.querySelectorAll("[data-status]")].map((dot) => dot.getAttribute("data-status")),
+  ).toEqual(expect.arrayContaining(["passing", "failing"]));
+  const tray = document.querySelector('[aria-label="New screens from runs"]');
+  expect(tray?.textContent).toContain("Order summary");
+  expect(tray?.textContent).toContain("Seen in 1 run");
+  expect(tray?.querySelector("a")?.getAttribute("href")).toBe("/runs/run-2");
 });

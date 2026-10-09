@@ -1,3 +1,4 @@
+import type { AppMapObservedStatus } from "@relay/protocol";
 import { compactMap, type PresentedMapPath } from "./map-presentation";
 import { useIsMobile } from "@relay/ui-react/hooks/use-mobile";
 import { useMapSelection } from "../hooks/use-map-selection";
@@ -52,7 +53,9 @@ export function InfiniteMapCanvas({
   initialScreenId,
   onScreenChange,
   onPathChange,
+  screenStatus,
 }: {
+  screenStatus?: ReadonlyMap<string, AppMapObservedStatus>;
   initialPathId?: string;
   initialScreenId?: string;
   onScreenChange?(id: string | undefined): void;
@@ -637,6 +640,7 @@ export function InfiniteMapCanvas({
           onWheel={handleWheel}
           onKeyDown={handleKeyDown}
           worldProps={{
+            screenStatus,
             worldRef,
             transformRef,
             navigationFrame,

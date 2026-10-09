@@ -5,11 +5,18 @@ import type {
 } from "@relay/product/map-exploration";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
-import type { OperationInput, OperationOutput } from "@relay/protocol";
+import type { AppMapObserved, OperationInput, OperationOutput } from "@relay/protocol";
+
+/** Screenshot URI for a frame a run captured; loadScreenshot resolves it. */
+export function runFrameUri(runId: string, file: string): string {
+  return `relay-run-frame://${encodeURIComponent(runId)}/${encodeURIComponent(file)}`;
+}
 import { createRelayOperationPort } from "@relay/workflows/operation-port";
 import { acquireOwnLease } from "@relay/workflows/target-catalog";
 
 export type MapProductService = Omit<ProductMapService, "prepareRefresh"> & {
+  /** What recent runs saw on this map, including screens it does not know. */
+  observed?(appMapId: string): Promise<AppMapObserved>;
   loadScreenshot?(uri: string): Promise<Blob>;
   loadAccessibilityTree?(uri: string): Promise<unknown>;
   prepareRefresh?(
@@ -53,7 +60,17 @@ export function createMapProductService(platform: Platform): MapProductService {
       return JSON.parse(new TextDecoder().decode(new Uint8Array(resource.bytes))) as unknown;
     },
     // Version retires cached responses that predate origin-aware CORS headers.
+    async observed(appMapId) {
+      const { client } = await productClientForPlatform(platform);
+      return client.invoke("app-map.observed", { appMapId });
+    },
     async loadScreenshot(uri) {
+      const frame = /^relay-run-frame:\/\/([^/]+)\/([^/]+)$/u.exec(uri);
+      if (frame) {
+        const { client } = await productClientForPlatform(platform);
+        const resource = await client.binaryResource(`/runs/${frame[1]}/frames/${frame[2]}`);
+        return new Blob([new Uint8Array(resource.bytes)], { type: "image/png" });
+      }
       const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(uri);
       if (!match) throw new Error("This screen has no supported retained screenshot.");
       const { client } = await productClientForPlatform(platform);
