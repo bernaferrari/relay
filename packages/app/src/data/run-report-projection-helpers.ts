@@ -365,3 +365,25 @@ export function destWaitForEvidenceLabel(rawRun: unknown): string | undefined {
   }
   return undefined;
 }
+
+/** The author's promise for a check or plain-English action, shown as "Expected". */
+export function recipeStepExpectation(
+  step: Record<string, unknown> | undefined,
+): string | undefined {
+  switch (step?.kind) {
+    case "assert-content":
+      return text(step.expected);
+    case "expect-screen":
+      return text(step.screenTitle);
+    case "evaluate-visual":
+      return (
+        array(step.criteria)
+          .flatMap((item) => (typeof item === "string" && item.trim() ? [item.trim()] : []))
+          .join("; ") || undefined
+      );
+    case "act":
+      return text(step.intent);
+    default:
+      return undefined;
+  }
+}

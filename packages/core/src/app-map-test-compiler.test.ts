@@ -3295,25 +3295,61 @@ test("scenario recovery blocks a horizontal swipe destination without a reviewed
   );
 });
 
-test("unresolved intent fails closed with a stable step-specific diagnostic", () => {
+test("plain-English actions and checks compile to model-driven steps", () => {
   const work = scenario();
-  work.steps[0] = {
-    id: "navigate",
-    kind: "instruction",
-    intent: "Open the cart",
-    binding: {
-      status: "unresolved",
-      reason: "Record or choose the connection that opens the cart",
-      candidates: [{ kind: "connection", id: "open-cart", label: "Open cart" }],
+  work.startUrl = "https://shop.example.test/";
+  work.steps = [
+    {
+      id: "navigate",
+      kind: "instruction",
+      intent: "Open the cart",
+      binding: { status: "unresolved", reason: "Not recorded" },
     },
-  };
+    {
+      id: "check",
+      kind: "validation",
+      intent: "The cart shows one item",
+      capture: true,
+      binding: { status: "unresolved", reason: "Not recorded" },
+    },
+  ];
+  const compiled = compileAppMapTest(fixture(), work);
+  assert.deepEqual(
+    compiled.root.steps.map(({ id: _id, ...step }) => step),
+    [
+      { kind: "app", action: "open", url: "https://shop.example.test/" },
+      { kind: "act", intent: "Open the cart" },
+      { kind: "evaluate-visual", criteria: ["The cart shows one item"] },
+      {
+        kind: "screenshot",
+        caption: "step:check:The cart shows one item",
+        review: { mode: "later", lookFor: "The cart shows one item" },
+      },
+    ],
+  );
+  assert.deepEqual(
+    compiled.plan.stepProvenance.map((item) => item.testStepId),
+    ["navigate", "navigate", "check", "check"],
+  );
+});
+
+test("unresolved steps other than actions and checks fail closed", () => {
+  const work = scenario();
+  work.steps = [
+    {
+      id: "remember",
+      kind: "extraction",
+      intent: "Remember the total",
+      binding: { status: "unresolved", reason: "Choose the total element" },
+    },
+  ];
   assert.throws(
     () => compileAppMapTest(fixture(), work),
     (error) =>
       error instanceof AppMapTestCompileError &&
       error.code === "unresolved-step" &&
-      error.stepId === "navigate" &&
-      /Record or choose/.test(error.message),
+      error.stepId === "remember" &&
+      /Choose the total/.test(error.message),
   );
 });
 

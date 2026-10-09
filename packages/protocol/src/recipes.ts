@@ -520,6 +520,17 @@ export type RecipeStep = RecipeStepMetadata &
         secondModel?: string;
       }
     | {
+        /** A plain-English action ("Open Settings", "Search for shoes"). The
+         * runner observes the live screen, asks a model for one concrete
+         * tap/type/scroll/back at a time, and executes it as an ordinary
+         * step, so every chosen action is traced like a recorded one. */
+        kind: "act";
+        intent: string;
+        /** Upper bound on concrete actions for this intent. Default 5. */
+        maxActions?: number;
+        model?: string;
+      }
+    | {
         kind: "evaluate-visual";
         criteria: string[];
         threshold?: number;

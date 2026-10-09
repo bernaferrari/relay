@@ -359,7 +359,49 @@ export function compileAppMapScenarioTest(
         continue;
       }
       if (step.binding.status === "unresolved") {
-        fail("unresolved-step", test, step, `${step.intent}: ${step.binding.reason}`);
+        // Plain-English actions and checks run through the model-driven `act`
+        // step and the visual judge. Other unresolved kinds still need setup.
+        if (step.kind !== "instruction" && step.kind !== "validation") {
+          fail("unresolved-step", test, step, `${step.intent}: ${step.binding.reason}`);
+        }
+        if (pendingEntryCheckpointScreenId) continue;
+        const start = recipeSteps.length;
+        if (suffix === "root" && start === 0) {
+          if (test.startUrl) {
+            recipeSteps.push({ kind: "app", action: "open", url: test.startUrl });
+          } else if (test.originApplication) {
+            recipeSteps.push({ kind: "app", action: "open", app: test.originApplication });
+          }
+        }
+        recipeSteps.push(
+          step.kind === "instruction"
+            ? { kind: "act", intent: step.intent }
+            : { kind: "evaluate-visual", criteria: [step.intent] },
+        );
+        if (step.capture) {
+          recipeSteps.push({
+            kind: "screenshot",
+            caption: `step:${step.id}:${step.intent}`,
+            review: { mode: "later" as const, lookFor: step.intent },
+          });
+        }
+        for (let index = start; index < recipeSteps.length; index += 1) {
+          const recipeStep = recipeSteps[index]!;
+          recipeStep.id = `relay-test-${step.id}-${index - start + 1}`;
+          provenance.push({
+            recipeId: id,
+            stepIndex: index,
+            recipeStepId: recipeStep.id,
+            testId: test.id,
+            testStepId: step.id,
+            bindingKind: "recipe-step",
+            referencedEntityIds: [],
+          });
+        }
+        compiledCount += recipeSteps.length - start;
+        previousInstructionPlan = undefined;
+        previousTerminalScreenId = undefined;
+        continue;
       }
       if (pendingEntryCheckpointScreenId && step.kind !== "instruction") {
         continue;

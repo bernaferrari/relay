@@ -436,6 +436,7 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       "intentSchemaVersion",
       "steps",
       "originApplication",
+      "startUrl",
       "family",
       "nativeRouteCompanions",
       "capture",
@@ -454,6 +455,12 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
   identifier(test.projectId, `${label}.projectId`);
   identifier(test.appMapId, `${label}.appMapId`);
   requiredText(test.name, `${label}.name`);
+  if (
+    test.startUrl !== undefined &&
+    (typeof test.startUrl !== "string" || !/^https?:\/\/\S+$/iu.test(test.startUrl))
+  ) {
+    appMapFail("invalid-map", `${label}.startUrl must be an http(s) address`);
+  }
   if (test.kind !== "scenario") appMapFail("invalid-map", `${label}.kind must be scenario`);
   if (test.intentSchemaVersion !== APP_MAP_TEST_INTENT_SCHEMA_VERSION) {
     appMapFail("invalid-map", `${label}.intentSchemaVersion is unsupported`);

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { describeTraceTitle, reportTraceSteps, storyFromJob, storyFromReport } from "./run-story";
+import {
+  describeTraceTitle,
+  plainObservation,
+  reportTraceSteps,
+  storyFromJob,
+  storyFromReport,
+} from "./run-story";
 
 describe("run story", () => {
   it("says what the engine did in plain words", () => {
@@ -252,5 +258,14 @@ describe("run story", () => {
     expect(saved[0]?.actions[0]).toMatchObject(expected);
     expect(storyFromJob(raw).steps[0]?.actions[0]).toMatchObject(expected);
     expect(describeTraceTitle(raw.steps[0]!.title)?.label).toBe("Check elements do not overlap");
+  });
+});
+
+describe("plainObservation", () => {
+  it("drops runner prefixes from judge output", () => {
+    expect(plainObservation("visual assertion: The badge shows 0.")).toBe("The badge shows 0.");
+    expect(plainObservation("judge uncertain: blurry screenshot")).toBe(
+      "Not sure: blurry screenshot",
+    );
   });
 });

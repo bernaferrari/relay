@@ -29,6 +29,10 @@ export type StoryAction = {
   /** Most useful frame to show for this action (after, else before). */
   framePath?: string;
   detail?: string;
+  /** What the step promised, in the author's words, when the report has it. */
+  expected?: string;
+  /** What Relay saw instead (judge summary or failure message). */
+  observed?: string;
   failure?: ReportTimelineItem["failure"];
 };
 
@@ -39,6 +43,14 @@ export type StoryStep = {
   durationMs?: number;
   actions: StoryAction[];
 };
+
+/** Strip runner prefixes so "Saw" reads as a sentence, not a log line. */
+export function plainObservation(value: string): string {
+  return value
+    .replace(/^(?:judge uncertain: )?(?:visual|semantic) assertion: /iu, "")
+    .replace(/^judge uncertain: /iu, "Not sure: ")
+    .trim();
+}
 
 const QUOTED = /"([^"]+)"|“([^”]+)”/u;
 
@@ -172,6 +184,8 @@ export function storyFromReport(input: {
       state: stateOf(item.state),
       ...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {}),
       ...(framePath ? { framePath } : {}),
+      ...(item.expected ? { expected: item.expected } : {}),
+      ...(item.observed ? { observed: plainObservation(item.observed) } : {}),
       ...(item.failure
         ? { failure: item.failure, detail: item.failure.summary }
         : item.observed || item.expected
