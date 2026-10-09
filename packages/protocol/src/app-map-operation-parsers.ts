@@ -798,7 +798,17 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     },
   );
 
+  const appMapObservedOutputParser = objectParser<AppMapOperationOutput<"app-map.observed">>(
+    "observed map",
+    (output) => {
+      string(output.appMapId, "observed map appMapId");
+      if (!Array.isArray(output.screens)) fail("observed map screens", "must be an array");
+      if (!Array.isArray(output.transitions)) fail("observed map transitions", "must be an array");
+    },
+  );
+
   return {
+    appMapObservedOutputParser,
     appMapTestDraftInputParser,
     appMapTestDraftOutputParser,
     appMapScreenRefreshPrepareParser,

@@ -181,6 +181,11 @@ export const operationInputSchemas = {
       idempotencyKey: z.string().optional(),
     })
     .strict(),
+  "app-map.observed": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+    })
+    .strict(),
   "app-map.get": z
     .object({
       appMapId: identifier("App Map identifier"),

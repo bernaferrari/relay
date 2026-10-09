@@ -347,6 +347,7 @@ const testOperations = [
   "run.story.get",
   "app-map.test.from-intent",
   "app-map.test.draft",
+  "app-map.observed",
   "run.repair.list",
   "run.repair.get",
   "run.repair.retry",

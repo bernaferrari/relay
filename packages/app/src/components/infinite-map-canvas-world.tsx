@@ -1,4 +1,6 @@
 /** @jsxImportSource react */
+import type { AppMapObservedStatus } from "@relay/protocol";
+import { MapStatusDot } from "./map-status";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { Compass, RotateCcw } from "lucide-react";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
@@ -64,7 +66,10 @@ export function MapCanvasWorld({
   setArrangedEdits,
   onUpdateScreen,
   saving,
+  screenStatus,
 }: {
+  /** Latest run evidence per screen id; absent means no run data loaded. */
+  screenStatus?: ReadonlyMap<string, AppMapObservedStatus>;
   worldRef: RefLike<HTMLDivElement | null>;
   transformRef: RefLike<MapTransform>;
   navigationFrame: RefLike<number>;
@@ -289,6 +294,7 @@ export function MapCanvasWorld({
               data-slot="map-screen-title"
               className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-sm font-medium leading-tight ${selectedNode ? "text-brand" : "text-foreground/80"}`}
             >
+              <MapStatusDot status={screenStatus?.get(screen.id)} />
               <MapFrameTitle title={screen.title} />
             </span>
             <div className="relative h-(--image-height) w-full shrink-0">

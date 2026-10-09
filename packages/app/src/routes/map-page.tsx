@@ -3,7 +3,6 @@ import { MapScreensPanel } from "../components/map-screens-panel";
 /** @jsxImportSource react */
 import type { ProductMapOverview } from "@relay/product/map-exploration";
 import { useState } from "react";
-import { MapPathsPanel } from "../components/map-paths-panel";
 import { Button } from "@relay/ui-react/components/button";
 import {
   Collapsible,
@@ -13,13 +12,10 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
-import { ChevronLeft, MoreHorizontal, Plus } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@relay/ui-react/components/dropdown-menu";
+import { ChevronLeft, Plus } from "lucide-react";
+import { mapCoverageLine } from "../components/map-status";
+import { MapNewScreensTray } from "../components/map-new-screens-tray";
+import { runFrameUri } from "../data/map-product-service";
 import { EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import type { ProductMapScreen } from "@relay/product/map-exploration";
@@ -36,9 +32,10 @@ export function MapPage() {
   const [refresh, setRefresh] = useState<{ screen: ProductMapScreen; revision: number }>();
   const { appId } = routeApi.useParams();
   const search = routeApi.useSearch();
-  const view = search.view ?? "map";
+  // Paths live in the screen inspector now; old links to the Paths view open the map.
+  const view = search.view === "screens" ? "screens" : "map";
   const navigate = routeApi.useNavigate();
-  const setView = (view: "map" | "paths" | "screens") =>
+  const setView = (view: "map" | "screens") =>
     void navigate({ search: (previous) => ({ ...previous, view }), replace: true });
   const inspectedScreenId = search.screen;
   const inspectedPathId = search.path;
@@ -49,6 +46,19 @@ export function MapPage() {
     queryFn: () => mapService.get(appId),
     staleTime: 15_000,
   });
+  // Every run feeds the map: status per screen and screens the map lacks.
+  const observed = useQuery({
+    queryKey: ["map", appId, "observed"],
+    queryFn: () => mapService.observed!(appId),
+    enabled: Boolean(mapService.observed),
+    staleTime: 15_000,
+  });
+  const screenStatus = new Map(
+    (observed.data?.screens ?? []).flatMap((screen) =>
+      screen.screenId ? [[screen.screenId, screen.status] as const] : [],
+    ),
+  );
+  const coverage = mapCoverageLine(observed.data);
   const proposals = useQuery({
     queryKey: ["map", appId, "proposals"],
     queryFn: () => mapService.listProposals?.(appId) ?? Promise.resolve([]),
@@ -134,8 +144,10 @@ export function MapPage() {
             <ChevronLeft />
           </Button>
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold">App map</h1>
-            <p className="truncate text-xs text-muted-foreground">{map.data?.appName ?? "App"}</p>
+            <h1 className="text-sm font-semibold">{map.data?.appName ?? "App"} map</h1>
+            <p className="truncate text-xs text-muted-foreground">
+              {coverage ?? "Run a test to see which screens it reaches"}
+            </p>
           </div>
         </div>
         <div
@@ -147,7 +159,6 @@ export function MapPage() {
             [
               ["map", "Map"],
               ["screens", "Screens"],
-              ["paths", "Paths"],
             ] as const
           ).map(([id, label]) => (
             <Button
@@ -170,16 +181,6 @@ export function MapPage() {
             <Plus />
             New test
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button size="icon-sm" variant="ghost" aria-label="More map actions" />}
-            >
-              <MoreHorizontal aria-hidden="true" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem render={<Link to="/sessions" />}>Activity</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </header>
       {mergeScreen && map.data ? (
@@ -230,6 +231,13 @@ export function MapPage() {
               find and open any captured screen.
             </p>
           ) : null}
+          {view === "map" && observed.data ? (
+            <MapNewScreensTray
+              screens={observed.data.screens}
+              frameUri={runFrameUri}
+              loadScreenshot={mapService.loadScreenshot}
+            />
+          ) : null}
           {view === "map" ? (
             <>
               {map.data.screens.length ? (
@@ -255,6 +263,7 @@ export function MapPage() {
                       : undefined
                   }
                   appId={appId}
+                  screenStatus={observed.data ? screenStatus : undefined}
                   screens={visibleScreens}
                   paths={visiblePaths}
                   onMergeScreen={
@@ -286,18 +295,6 @@ export function MapPage() {
               onOpenScreen={openScreen}
               screens={map.data.screens}
               loadScreenshot={mapService.loadScreenshot}
-            />
-          ) : null}
-          {view === "paths" ? (
-            <MapPathsPanel
-              onOpenScreen={openScreen}
-              appId={appId}
-              paths={map.data.paths}
-              screens={map.data.screens}
-              loadScreenshot={mapService.loadScreenshot}
-              onInspect={(id) => {
-                void navigate({ search: { view: "map", path: id }, replace: true });
-              }}
             />
           ) : null}
           {map.data.pendingProposalCount > 0 ? (

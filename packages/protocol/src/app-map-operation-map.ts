@@ -70,6 +70,10 @@ export type AppMapOperationMap = {
     output: { appMaps: AppMap[]; degraded?: DegradedAppMapRef[] };
   };
   "app-map.get": { input: { appMapId: string }; output: { appMap: AppMap } };
+  "app-map.observed": {
+    input: { appMapId: string };
+    output: import("./app-map-observed.js").AppMapObserved;
+  };
   "app-map.remove": { input: { appMapId: string }; output: { ok: true } };
   "app-map.create": {
     input: { appMapId: string; name: string };

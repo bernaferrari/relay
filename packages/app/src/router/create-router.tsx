@@ -270,8 +270,8 @@ const appMapRoute = createRoute({
   path: "/apps/$appId/map",
   validateSearch: (
     search: Record<string, unknown>,
-  ): { view?: "map" | "paths" | "screens"; screen?: string; path?: string } => ({
-    view: search.view === "screens" || search.view === "paths" ? search.view : undefined,
+  ): { view?: "map" | "screens"; screen?: string; path?: string } => ({
+    view: search.view === "screens" ? search.view : undefined,
     screen: typeof search.screen === "string" ? search.screen : undefined,
     path: typeof search.path === "string" ? search.path : undefined,
   }),
