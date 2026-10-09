@@ -1024,7 +1024,7 @@ describe("Settings", () => {
     expect(document.body.textContent).toContain("Lab Mac server");
     expect(document.body.textContent).toContain("dev.relay.lab-server is not loaded");
     expect(document.body.textContent).toContain("Apple Development is not enough");
-    expect(document.body.textContent).toContain("Screenshot and text checks");
+    expect(document.body.textContent).toContain("AI steps and checks");
     expect(document.body.textContent).toContain("OPENROUTER_API_KEY");
     expect(document.body.textContent).toContain("Android devices");
     expect(document.body.textContent).toContain("Install Platform Tools, then reopen Relay.");
@@ -1071,7 +1071,7 @@ describe("Settings", () => {
   it("does not treat a missing OpenRouter key as ready", async () => {
     await renderPath("/settings/advanced");
     const row = [...document.querySelectorAll("h3")]
-      .find((heading) => heading.textContent === "Screenshot and text checks")
+      .find((heading) => heading.textContent === "AI steps and checks")
       ?.closest("div");
     expect(row?.textContent).toContain("Needs attention");
     expect(row?.textContent).toContain("OPENROUTER_API_KEY");

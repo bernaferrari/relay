@@ -225,7 +225,7 @@ describe("Map exploration", () => {
       "Back to app",
     );
     expect(document.querySelector('[aria-label="Screens and verified paths"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("1 of 2 screens covered by tests");
+    expect(document.body.textContent).not.toContain("covered by tests");
     expect(document.body.textContent).not.toContain("Combine");
     expect(document.body.textContent).not.toContain("targetProfile");
     expect(document.querySelector('a[href="/tests/new?app=shop"]')).not.toBeNull();

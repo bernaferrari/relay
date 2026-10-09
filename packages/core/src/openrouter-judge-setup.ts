@@ -10,10 +10,10 @@ export type OpenRouterJudgeSetup = {
 };
 
 export const OPENROUTER_JUDGE_NOT_CONFIGURED =
-  "Add an OpenRouter key (OPENROUTER_API_KEY) so Relay can judge screenshots and on-screen text. Until then, those checks say they couldn’t run — they never pass silently.";
+  "Add an OpenRouter key in Settings (or set OPENROUTER_API_KEY) so Relay can run plain-English steps and judge screenshots. Until then, those steps say they couldn’t run — they never pass silently.";
 
 const OPENROUTER_JUDGE_CONFIGURED =
-  "OpenRouter key found. Relay can judge screenshots and on-screen text.";
+  "OpenRouter key found. Relay can run plain-English steps and judge screenshots.";
 
 /** Presence-only. Empty, whitespace, and unset are all not configured. */
 export function inspectOpenRouterJudgeSetup(

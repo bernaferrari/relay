@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { ModelKeyForm } from "../components/settings-model-key";
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
 import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
@@ -542,10 +543,18 @@ function AdvancedSettings() {
           }
         />
         <SetupRow
-          title="Screenshot and text checks"
+          title="AI steps and checks"
           checks={judgeProviderChecks(apple.data)}
           loading={apple.isPending}
         />
+        {settingsService.setModelKey ? (
+          <ModelKeyForm
+            save={settingsService.setModelKey}
+            onSaved={() =>
+              void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.appleSetup })
+            }
+          />
+        ) : null}
         <SetupRow
           title="Android devices"
           checks={setupChecks(android.data)}

@@ -34,7 +34,7 @@ export {
 export { publishChangeProofToGitHub } from "./change-proof-github-publisher.js";
 export * from "./github-proof-intake.js";
 import { githubProofWebhookConfigurationFromEnvironment as githubWebhookFromEnv } from "./github-proof-intake.js";
-import { growAppMapsFromPastRuns } from "@relay/core";
+import { growAppMapsFromPastRuns, loadSavedModelKey, saveModelKey } from "@relay/core";
 import {
   captureScreenshot,
   currentOperationContext,
@@ -619,6 +619,18 @@ async function handleRequest(
     )
       return;
 
+    if (method === "POST" && pathname === "/system/model-key") {
+      const body = (await parseJsonBody(req)) as { key?: unknown };
+      if (typeof body.key !== "string") throw new HttpError(400, "key must be a string");
+      try {
+        const result = await saveModelKey(body.key);
+        json(res, 200, { configured: result.configured, source: result.source });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : "Invalid key");
+      }
+      return;
+    }
+
     if (method === "GET" && pathname === "/doctor") {
       const result = await runDoctor();
       json(
@@ -685,6 +697,7 @@ async function startServerWithStateLease(
 ): Promise<StartedServer> {
   // Preserve a matching daemon; it may own the only controllable unattended iPad session.
   await loadDeviceSetup();
+  await loadSavedModelKey();
   await restartAgentDeviceDaemonForBuildDrift();
   // Signing env is frozen at daemon spawn. Reconcile shell/stale identity drift
   // against the saved Apple setup so prepare does not fight automatic signing.

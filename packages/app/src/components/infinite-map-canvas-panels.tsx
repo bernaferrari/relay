@@ -206,10 +206,6 @@ export function MapCanvasPanels({
                 Show {Math.min(screens.length, 500) - visibleScreens.length} intermediate screens
               </button>
             ) : null}
-            {(() => {
-              const covered = screens.filter((screen) => screen.coveringTests.length > 0).length;
-              return `${paths.length} ${paths.length === 1 ? "path" : "paths"} · ${covered} of ${screens.length} screens covered by tests`;
-            })()}
           </div>
         </aside>
       ) : null}

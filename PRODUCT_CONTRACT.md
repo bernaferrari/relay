@@ -13,15 +13,24 @@ repeatable journey), **Run** (one execution of a Test), **Change** (code claimin
 behavior), **Device** (where the product executes), and **Session** (a durable live browser or
 device workspace used for recording and debugging).
 
-Supporting public terms are **Plan** (saved Tests and Data sets run together), **Environment**
-(a reusable execution setup), **Checkpoint**, **Report**, **Proof**, **Recording**, **Data set**, and
-**Map**. Record, Repeat, Explore, and Verify are actions. Map is derived, optional App intelligence;
-creating a Map is never an opening toll.
+Supporting public terms are **Step** (an **Action** or a **Check**, written in plain English),
+**Plan** (saved Tests and Data sets run together), **Environment** (a reusable execution setup),
+**Report**, **Proof**, **Recording**, **Data set**, and **Map**. Describe, Record, Repeat, Explore,
+and Verify are actions.
+
+A Test starts from what should work, in a sentence. Relay writes Action and Check steps; Actions
+run with a model choosing each tap, and Checks are decided from the screenshot. Recording is an
+optional way to make a step exact and faster, never the opening toll. A failed Check states what
+was expected and what Relay saw.
+
+The Map grows from every Run on its own: screens a Run reaches are added, and the moves between
+them are added as draft paths that Tests never replay. People correct the Map (rename, merge);
+they do not approve each screen. Creating a Map is never an opening toll.
 
 The normal user-facing flow is:
 
 ```text
-Coverage: App → Record → Review → Replay → Test → Run → Report
+Coverage: App → Describe (or Record) → Test → Run → Report → Map grows
 Verification: Change → Verification plan → Runs → Evidence → merge decision
 ```
 
