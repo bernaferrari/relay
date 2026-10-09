@@ -33,9 +33,9 @@
     "@yume-chan/fetch-scrcpy-server": "1.0.0",
     "@yume-chan/scrcpy": "2.3.0",
     "@yume-chan/stream-extra": "2.6.1",
-    "agent-device": "0.21.15",
-    "ai": "^7.0.116",
-    "playwright-core": "^1.63.0",
+    "agent-device": "0.21.23",
+    "ai": "^7.0.133",
+    "playwright-core": "^1.64.0",
     "pngjs": "^7.0.0",
     "yaml": "^2.9.1",
     "zod": "4.6.5"

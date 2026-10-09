@@ -31,7 +31,7 @@ describe("friendlySuiteIssue", () => {
   it("does not hide a two-profile grok.com ambiguity as a missing saved profile", () => {
     expect(
       friendlySuiteIssue("Bind a saved runtime profile to every selected Combine cell."),
-    ).not.toBe("This browser needs a saved profile before it can run the Plan.");
+    ).not.toBe("This browser needs a saved profile before it can run the plan.");
   });
 });
 

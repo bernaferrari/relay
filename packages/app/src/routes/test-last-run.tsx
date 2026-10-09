@@ -176,7 +176,7 @@ export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
               ? "Opening the original capture."
               : failed
                 ? "Open Result to inspect the run’s evidence."
-                : "Run the Test and its screenshots show up here."}
+                : "Run the test and its screenshots show up here."}
           </p>
         </div>
       </div>

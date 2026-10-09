@@ -10,10 +10,10 @@ export type OpenRouterJudgeSetup = {
 };
 
 export const OPENROUTER_JUDGE_NOT_CONFIGURED =
-  "Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra, never a silent pass.";
+  "Add an OpenRouter key (OPENROUTER_API_KEY) so Relay can judge screenshots and on-screen text. Until then, those checks say they couldn’t run — they never pass silently.";
 
 const OPENROUTER_JUDGE_CONFIGURED =
-  "OPENROUTER_API_KEY is set. Visual and semantic judges can run.";
+  "OpenRouter key found. Relay can judge screenshots and on-screen text.";
 
 /** Presence-only. Empty, whitespace, and unset are all not configured. */
 export function inspectOpenRouterJudgeSetup(

@@ -149,13 +149,13 @@ function WindowedRunHistory({
   return (
     <div data-slot="windowed-run-scroll">
       <p className="sr-only" id="run-history-keyboard-help">
-        This long history is windowed for performance. Use Up and Down to move one Report, Page Up
-        and Page Down to move by a screen, and Home or End to jump to the first or last Report.
+        This long history is windowed for performance. Use Up and Down to move one report, Page Up
+        and Page Down to move by a screen, and Home or End to jump to the first or last report.
       </p>
       <ScrollArea
         viewportRef={viewportRef}
         viewportProps={{
-          "aria-label": `${runs.length} Runs`,
+          "aria-label": `${runs.length} runs`,
           "aria-describedby": "run-history-keyboard-help",
           className: "overscroll-contain",
         }}

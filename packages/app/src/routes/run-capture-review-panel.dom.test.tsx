@@ -287,7 +287,7 @@ describe("CaptureReviewPanel selection", () => {
               },
               {
                 id: "frames/004.png",
-                title: "after · Run saved Test",
+                title: "after · Run saved test",
                 media: { kind: "image", src: "/runs/dest-end-observe/frames/004.png" },
               },
             ]}
@@ -365,7 +365,7 @@ describe("CaptureReviewPanel selection", () => {
               },
               {
                 id: "frames/004.png",
-                title: "after · Run saved Test",
+                title: "after · Run saved test",
                 media: { kind: "image", src: "/runs/dest-end-observe/frames/004.png" },
               },
             ]}

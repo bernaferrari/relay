@@ -49,14 +49,14 @@ it("preserves the next step alongside the explanation", async () => {
     <RecordingProblem
       recovery={{
         title: "Starting screen unavailable",
-        detail: "This Test needs a new starting screen.",
-        recovery: "Open the Test and record its starting screen again.",
+        detail: "This test needs a new starting screen.",
+        recovery: "Open the test and record its starting screen again.",
         retryable: false,
       }}
     />,
   );
-  expect(host.textContent).toContain("This Test needs a new starting screen.");
-  expect(host.textContent).toContain("Open the Test and record its starting screen again.");
+  expect(host.textContent).toContain("This test needs a new starting screen.");
+  expect(host.textContent).toContain("Open the test and record its starting screen again.");
 });
 
 it("does not offer to repeat an error explicitly marked non-retryable", async () => {
@@ -65,7 +65,7 @@ it("does not offer to repeat an error explicitly marked non-retryable", async ()
     <RecordingProblem
       error={{
         title: "Access unavailable",
-        detail: "This account cannot open this Test.",
+        detail: "This account cannot open this test.",
         recovery: "Ask a workspace administrator for access.",
         retryable: false,
       }}
@@ -105,13 +105,13 @@ it("preserves explicit inspection transport provenance without exposing private 
   expect(retry).not.toHaveBeenCalled();
 });
 
-it("does not describe a Run preparation failure as restoring work", async () => {
+it("does not describe a run preparation failure as restoring work", async () => {
   const host = await render(
     <RecordingProblem
       operation="run"
       recovery={{
         code: "operation-unavailable",
-        title: "Relay could not reserve the durable Run workflow",
+        title: "Relay could not reserve the durable run workflow",
         detail: "Workflow request identity is missing",
         recovery: "Resolve the reported Relay problem, then start this workflow again explicitly.",
         retryable: true,
@@ -159,7 +159,7 @@ it("routes the canonical captured setup conflict to its affected step instead of
             testId: "test-speed",
             stepId: "step-d950-source",
             diagnostics: [],
-            recovery: "Open the Test editor and resolve its blocking compile diagnostics.",
+            recovery: "Open the test editor and resolve its blocking compile diagnostics.",
           },
         )
       }
@@ -179,7 +179,7 @@ it("routes the canonical captured setup conflict to its affected step instead of
   expect(retry).not.toHaveBeenCalled();
 });
 
-it("opens the Test without guessing an affected step when Relay supplies none", async () => {
+it("opens the test without guessing an affected step when Relay supplies none", async () => {
   const { host, router } = await renderInTestRouter(
     <RecordingProblem
       recovery={{
@@ -193,7 +193,7 @@ it("opens the Test without guessing an affected step when Relay supplies none", 
     />,
   );
   const review = host.querySelector("a");
-  expect(review?.textContent).toBe("Review Test");
+  expect(review?.textContent).toBe("Review test");
   await act(async () => {
     review?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   });
@@ -207,9 +207,9 @@ it("keeps browser selection recovery and its provided action", async () => {
       recovery={{
         sourceCode: "browser-target-profile-selection-required",
         title: "This browser’s setup changed since recording",
-        detail: "This Test was recorded with a different browser setup.",
+        detail: "This test was recorded with a different browser setup.",
         recovery:
-          "Record the Test again on this browser, or restore its previous setup in Devices.",
+          "Record the test again on this browser, or restore its previous setup in Devices.",
         retryable: false,
       }}
       action={<button>Review browser setup</button>}
@@ -254,7 +254,7 @@ it("exposes only safe HTTP diagnostics for a recording action failure", async ()
     />,
   );
   expect(host.textContent).toContain("Could not confirm the replay");
-  expect(host.textContent).toContain("Operation: Run recorded steps");
+  expect(host.textContent).toContain("Operation: run recorded steps");
   expect(host.textContent).toContain("HTTP status: 500");
   expect(host.textContent).toContain("Code: ACTION_FAILED");
   expect(host.textContent).not.toMatch(/private|stack|correlation/u);

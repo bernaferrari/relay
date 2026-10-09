@@ -64,7 +64,7 @@ export function AboutSettings() {
       <section aria-labelledby="getting-started-title" className="grid gap-4">
         <div className="grid gap-1.5">
           <h2 id="getting-started-title" className="text-lg font-semibold">
-            Your first Test
+            Your first test
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
             Record what you do in your app, run those steps again, then review the screenshots.
@@ -82,7 +82,7 @@ export function AboutSettings() {
               <h3 className="text-sm font-medium">Record a journey</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Choose your app and a browser or device. Record the steps and capture the screens
-                you want to check. Save them as a Test.
+                you want to check. Save them as a test.
               </p>
             </div>
           </li>
@@ -94,9 +94,9 @@ export function AboutSettings() {
               2
             </span>
             <div className="grid gap-1">
-              <h3 className="text-sm font-medium">Run the saved Test</h3>
+              <h3 className="text-sm font-medium">Run the saved test</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Open the Test, choose where to run it, and start. Use Run across when you want to
+                Open the test, choose where to run it, and start. Use run across when you want to
                 try several sets of values.
               </p>
             </div>
@@ -118,7 +118,7 @@ export function AboutSettings() {
           </li>
         </ol>
         <div className="flex flex-wrap gap-2">
-          <Button render={<Link to="/tests/new" />}>Record a Test</Button>
+          <Button render={<Link to="/tests/new" />}>Record a test</Button>
           <Button variant="ghost" render={<Link to="/runs" search={{ view: "needs-review" }} />}>
             Review screenshots
           </Button>
@@ -126,7 +126,7 @@ export function AboutSettings() {
       </section>
       <details className="border-t border-border pt-4">
         <summary className="cursor-pointer py-2 text-sm font-medium">
-          Tests, Plans, and Runs
+          Tests, plans, and runs
         </summary>
         <dl className="grid gap-3 pt-2 text-sm leading-relaxed">
           <div>
@@ -136,7 +136,7 @@ export function AboutSettings() {
           <div>
             <dt className="font-medium">Plan</dt>
             <dd className="m-0 text-muted-foreground">
-              A group of Tests you want to run together. Find Plans inside Tests.
+              A group of tests you want to run together. Find plans inside tests.
             </dd>
           </div>
           <div>
@@ -148,7 +148,7 @@ export function AboutSettings() {
           <div>
             <dt className="font-medium">Data set</dt>
             <dd className="m-0 text-muted-foreground">
-              Values a Test uses, such as a language or a search term.
+              Values a test uses, such as a language or a search term.
             </dd>
           </div>
         </dl>

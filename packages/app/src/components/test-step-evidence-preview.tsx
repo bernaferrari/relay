@@ -179,12 +179,12 @@ export function TestStepEvidencePreview({
       ) : null}
       {!loading && hasRuns && !report ? (
         <p className="mt-2 text-xs leading-normal text-muted-foreground">
-          The latest Run has not produced a report yet.
+          The latest run has not produced a report yet.
         </p>
       ) : null}
       {!loading && report?.stepEvidence && matches.length === 0 ? (
         <p className="mt-2 text-xs leading-normal text-muted-foreground">
-          The latest Run did not save evidence for this step.
+          The latest run did not save evidence for this step.
         </p>
       ) : null}
       {!loading && report && report.stepEvidence === undefined ? (

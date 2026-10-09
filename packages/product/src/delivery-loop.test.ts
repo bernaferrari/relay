@@ -33,7 +33,7 @@ test("delivery loop binds exact build and configuration before a claim can be pr
   assert.equal(snapshot.next.action, "prepare-exact-configuration");
 });
 
-test("a required Test failure yields causal evidence on the original Proof", () => {
+test("a required test failure yields causal evidence on the original Proof", () => {
   const snapshot = classifyDeliveryLoop({ current: proof() });
   assert.equal(snapshot.phase, "failed");
   assert.deepEqual(snapshot.failureEvidence, {

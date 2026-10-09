@@ -3,7 +3,7 @@ import { testRoutePlatformStatuses } from "@relay/product/test-route-platforms";
 import { stepReadinessLabel } from "./test-editor-step";
 
 describe("test editor platform routes", () => {
-  it("shows Android and iOS as not recorded for a grok.com Test", () => {
+  it("shows Android and iOS as not recorded for a grok.com test", () => {
     const statuses = testRoutePlatformStatuses({
       originApplication: "https://grok.com/",
     });

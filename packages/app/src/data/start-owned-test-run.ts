@@ -204,7 +204,7 @@ export function pairedBatchFields(requests: readonly ProductRunStartInput[]): {
 } {
   if (requests.some((request) => request.startup)) {
     throw new TypeError(
-      "This Batch cannot represent a starting state. Run those pairs as separate Tests.",
+      "This Batch cannot represent a starting state. Run those pairs as separate tests.",
     );
   }
   const revisions = new Set(
@@ -215,7 +215,7 @@ export function pairedBatchFields(requests: readonly ProductRunStartInput[]): {
   }
   const documentRevisions = new Set(requests.map((request) => request.documentRevision));
   if (documentRevisions.size > 1) {
-    throw new TypeError("Every pair in this Batch must use the same saved Test revision.");
+    throw new TypeError("Every pair in this Batch must use the same saved test revision.");
   }
   const sourceRevision = requests[0]?.sourceRevision;
   const expectedRevision = requests[0]?.documentRevision;
@@ -308,13 +308,13 @@ async function adoptStartedChild(input: {
   const workflowId = input.started.workflow?.workflowId;
   if (!workflowId) {
     if (input.started.recovery) return input.started;
-    throw new TypeError("Relay could not start this Run.");
+    throw new TypeError("Relay could not start this run.");
   }
   const canonical = await input.inspect(workflowId);
   const runId = canonical.run?.runId ?? input.started.run?.runId;
   if (!runId) {
     if (canonical.recovery) return canonical;
-    throw new TypeError("Relay could not open the new Run.");
+    throw new TypeError("Relay could not open the new run.");
   }
   const durable = canonical.run?.runId ? canonical : { ...canonical, run: input.started.run };
   await input.remember(durable, workflowId, runId);

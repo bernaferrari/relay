@@ -212,7 +212,7 @@ async function settle() {
 }
 
 describe("shell overlays", () => {
-  it("resolves a directly linked Run from its own record even when the cached list misses it", async () => {
+  it("resolves a directly linked run from its own record even when the cached list misses it", async () => {
     let resolveRun!: (run: ProductRunDetail) => void;
     const runDetail = new Promise<ProductRunDetail>((resolve) => {
       resolveRun = resolve;
@@ -280,7 +280,7 @@ describe("shell overlays", () => {
     ["Main navigation", ""],
     ["Primary", "?app=wrong-app"],
     ["Main navigation", "?app=wrong-app"],
-  ])("%s keeps the visible Test App when its URL scope is %s", async (label, search) => {
+  ])("%s keeps the visible test app when its URL scope is %s", async (label, search) => {
     const history = await renderShell({
       initialEntries: [`/tests/test-1${search}`],
       test: {
@@ -307,7 +307,7 @@ describe("shell overlays", () => {
     expect(history.location.search).toBe("?app=checkout");
   });
 
-  it("orders the sidebar as Tests, Runs, Map, then Accounts and Devices, and moves Review, Activity, and Changes out", async () => {
+  it("orders the sidebar as tests, runs, Map, then Accounts and Devices, and moves Review, Activity, and changes out", async () => {
     const history = await renderShell({ initialEntries: ["/tests"] });
     const sidebar = document.querySelector('[aria-label="Relay navigation"]')!;
     const labels = [...sidebar.querySelectorAll("a, button")]
@@ -521,12 +521,12 @@ describe("shell overlays", () => {
     });
     await settle();
     const results = document.querySelector('[role="listbox"][aria-label="Commands"]');
-    expect(results?.textContent).toContain("Review failed Runs");
+    expect(results?.textContent).toContain("Review failed runs");
     expect(results?.textContent).not.toContain("Open Home");
 
     await act(async () => {
       const failedRuns = [...document.querySelectorAll("button")].find((button) =>
-        button.textContent?.includes("Review failed Runs"),
+        button.textContent?.includes("Review failed runs"),
       );
       failedRuns?.click();
     });
@@ -577,7 +577,7 @@ describe("shell overlays", () => {
     await settle();
     expect(document.body.textContent).toContain("Test search is unavailable");
     expect(document.body.textContent).not.toContain("No matching commands");
-    expect(document.body.textContent).toContain("Open Tests");
+    expect(document.body.textContent).toContain("Open tests");
     expect(document.querySelector('button[type="button"]')?.textContent).not.toBeUndefined();
   });
 
@@ -643,7 +643,7 @@ describe("shell overlays", () => {
     ],
     ["Test", ["/tests/test-1", "/runs/run-1"], "/tests/test-1", ""],
     ["fresh deep link", ["/runs/run-1"], "/runs", ""],
-  ])("returns from a Report through %s with global Back", async (_label, entries, path, search) => {
+  ])("returns from a report through %s with global Back", async (_label, entries, path, search) => {
     const history = await renderShell({ initialEntries: entries as string[] });
     const back = document.querySelector<HTMLButtonElement>('[aria-label="Go back"]');
     expect(back?.disabled).toBe(false);
@@ -653,7 +653,7 @@ describe("shell overlays", () => {
     expect(history.location.search).toBe(search);
   });
 
-  it("the Back link on a Run opens the Test definition without substituting browser Back", async () => {
+  it("the Back link on a run opens the test definition without substituting browser Back", async () => {
     const history = await renderShell({
       initialEntries: ["/tests", "/runs/run-1"],
       test: {
@@ -673,7 +673,7 @@ describe("shell overlays", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
   });
 
-  it("keeps App map visible without app context and opens its picker in place", async () => {
+  it("keeps app map visible without app context and opens its picker in place", async () => {
     const history = await renderShell({});
     const originalPath = history.location.pathname;
     const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="App map"]');

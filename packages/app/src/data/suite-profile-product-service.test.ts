@@ -194,7 +194,7 @@ describe("suite and environment product projections", () => {
     });
   });
 
-  it("loads a Suite editor from the current App Map revision", async () => {
+  it("loads a Suite editor from the current app Map revision", async () => {
     const editorMap = {
       ...map,
       revision: 11,
@@ -323,7 +323,7 @@ describe("suite and environment product projections", () => {
     });
   });
 
-  it("rejects stale or invalid Suite saves before mutating the App Map", async () => {
+  it("rejects stale or invalid Suite saves before mutating the app Map", async () => {
     const source = {
       ...map,
       variables: {
@@ -482,7 +482,7 @@ describe("suite and environment product projections", () => {
     expect(relay.invoke).not.toHaveBeenCalledWith("target.preflight", expect.anything());
   });
 
-  it("surfaces observed serial Plan duration and never a guessed recipe estimate", async () => {
+  it("surfaces observed serial plan duration and never a guessed recipe estimate", async () => {
     const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
     const browser = target("browser-1", "browser");
     relay.invoke.mockReset().mockImplementation(async (operation: string) => {
@@ -602,7 +602,7 @@ describe("suite and environment product projections", () => {
     expect(preview.execution?.estimatedDurationMs).not.toBe(17_254);
   });
 
-  it("keeps Plan preview on observed serial when parallel wall-clock is unmeasured", async () => {
+  it("keeps plan preview on observed serial when parallel wall-clock is unmeasured", async () => {
     const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
     const browser = target("browser-1", "browser");
     relay.invoke.mockReset().mockImplementation(async (operation: string) => {
@@ -739,7 +739,7 @@ describe("suite and environment product projections", () => {
       capacity: "multi-target",
       duration: "unavailable",
       detail:
-        "Each selected Plan case can run against every selected environment (up to 64). Duration stays unreported until Relay returns observed timing.",
+        "Each selected plan case can run against every selected environment (up to 64). Duration stays unreported until Relay returns observed timing.",
     });
   });
 
@@ -854,7 +854,7 @@ describe("suite and environment product projections", () => {
     ).resolves.toEqual({ batchId: "batch-device" });
   });
 
-  it("schedules a Plan daily against the selected browser", async () => {
+  it("schedules a plan daily against the selected browser", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
       if (operation === "app-map.get")
         return { appMap: { ...map, combines: { [combine.id]: combine } } };
@@ -894,7 +894,7 @@ describe("suite and environment product projections", () => {
   });
 
   it.each([30, 60])(
-    "round trips a native Plan interval of %i minutes without a daily hour",
+    "round trips a native plan interval of %i minutes without a daily hour",
     async (intervalMinutes) => {
       let saved: Record<string, unknown> | undefined;
       relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
@@ -1012,7 +1012,7 @@ describe("suite and environment product projections", () => {
     expect(relay.invoke).toHaveBeenCalledExactlyOnceWith("schedule.list", {});
   });
 
-  it("lists this Plan's schedules and keeps another Plan's run out", async () => {
+  it("lists this plan's schedules and keeps another plan's run out", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string) => {
       if (operation === "schedule.list") {
         return {
@@ -1116,7 +1116,7 @@ describe("suite and environment product projections", () => {
     ).resolves.toEqual({ batchId: "preflight-batch" });
   });
 
-  it("starts six accounts plus Android and iOS as eight Plan columns", async () => {
+  it("starts six accounts plus Android and iOS as eight plan columns", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
       if (operation === "app-map.get")
         return { appMap: { ...map, combines: { [combine.id]: combine } } };

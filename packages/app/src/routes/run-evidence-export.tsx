@@ -6,7 +6,7 @@ import type { RunEvidenceExportDocument } from "@relay/product/run-evidence-expo
 import { productLinkClassName } from "../lib/class-names";
 
 function exportProblem(error: unknown): string {
-  if (!(error instanceof Error)) return "Relay could not export this Run. Try again.";
+  if (!(error instanceof Error)) return "Relay could not export this run. Try again.";
   if (error.name === "TimeoutError" || /\bsignal timed out\b/iu.test(error.message)) {
     return "Evidence export timed out. Try again.";
   }
@@ -14,7 +14,7 @@ function exportProblem(error: unknown): string {
   if (/failed to fetch|networkerror|network request failed/iu.test(error.message)) {
     return "Could not reach Relay. Check the connection and try again.";
   }
-  return error.message || "Relay could not export this Run. Try again.";
+  return error.message || "Relay could not export this run. Try again.";
 }
 
 function RunEvidenceExportForRun({

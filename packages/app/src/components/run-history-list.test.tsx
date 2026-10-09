@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import { RunHistoryList } from "./run-history-list";
 
-it("preserves the scroll position when a background refresh updates the same Runs", async () => {
+it("preserves the scroll position when a background refresh updates the same runs", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);

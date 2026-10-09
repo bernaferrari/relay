@@ -24,7 +24,7 @@ import {
 describe("recording input outcome", () => {
   it("recovers only legacy local swipes rejected by the gesture planner", () => {
     const message =
-      "Step 1 (swipe ↑ 832,1785 → 649,-130): Gesture trajectory does not fit inside the viewport Inspect the canonical Authoring Session";
+      "Step 1 (swipe ↑ 832,1785 → 649,-130): Gesture trajectory does not fit inside the viewport Inspect the canonical Authoring session";
     const ledger = parseRecordingLedger(
       JSON.stringify({
         mutations: [

@@ -100,7 +100,7 @@ export function TestEditorHistoryBar({
         onClick={onUndo}
         disabled={!canUndo || busy}
         aria-label="Undo last saved change"
-        title="Undo changes the Test. It does not reverse a payment, message, or deletion."
+        title="Undo changes the test. It does not reverse a payment, message, or deletion."
       >
         <Undo2 aria-hidden="true" />
       </Button>

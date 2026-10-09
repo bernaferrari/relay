@@ -163,7 +163,7 @@ export function RunsPage() {
       />
 
       <LibraryToolbar
-        label="Filter Runs"
+        label="Filter runs"
         tabs={
           <Tabs
             className="min-w-0 max-w-full overflow-x-auto"
@@ -190,9 +190,9 @@ export function RunsPage() {
         search={
           <LibrarySearch
             id="run-search"
-            label="Search Runs"
+            label="Search runs"
             value={query}
-            placeholder="Search by Test, app, or device"
+            placeholder="Search by test, app, or device"
             onChange={(next) => {
               setQuery(next);
               void navigate({
@@ -213,7 +213,7 @@ export function RunsPage() {
         }
       />
 
-      {runs.isPending ? <PageLoading label="Loading Runs…" /> : null}
+      {runs.isPending ? <PageLoading label="Loading runs…" /> : null}
       <RecordingProblem
         error={runs.data === undefined ? runs.error : null}
         onRetry={() => void runs.refetch()}
@@ -260,10 +260,10 @@ export function RunsPage() {
         runs.data?.length ? (
           <EmptyState
             title={emptyRunTitle(view)}
-            detail="Choose another view, app, or search. Existing Reports remain unchanged."
+            detail="Choose another view, app, or search. Existing reports remain unchanged."
             action={
               <Button variant="ghost" size="sm" onClick={clearFilters}>
-                Show all Runs
+                Show all runs
               </Button>
             }
           />
@@ -271,10 +271,10 @@ export function RunsPage() {
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
               title="No runs yet"
-              detail="Open a saved Test and run it on a Device or Browser."
+              detail="Open a saved test and run it on a Device or Browser."
               action={
                 <Link className={productLinkClassName} to="/tests">
-                  Browse saved Tests
+                  Browse saved tests
                 </Link>
               }
             />
@@ -332,12 +332,12 @@ function RunRow({
               <span className="sr-only">{device}</span>
             </span>
           ) : (
-            <span className="truncate">{device || (plan ? "Plan Result" : "Saved Run")}</span>
+            <span className="truncate">{device || (plan ? "Plan Result" : "Saved run")}</span>
           )}
           <span aria-hidden="true">·</span>
           <span className="shrink-0 tabular-nums">
             {plan && run.caseCount
-              ? `${run.caseCount} Tests`
+              ? `${run.caseCount} tests`
               : run.durationMs === undefined
                 ? phaseDetail(run)
                 : formatDuration(run.durationMs)}

@@ -42,7 +42,7 @@ describe("plan checklist", () => {
     expect(checkState(run({ captureSummary: summary({ issue: 1 }) }))).toBe("failed");
   });
 
-  it("keeps only the newest run of each Test in the plan", () => {
+  it("keeps only the newest run of each test in the plan", () => {
     const latest = latestRunPerTest(
       [
         run({ id: "old", testId: "login", queuedAt: 1 }),
@@ -57,7 +57,7 @@ describe("plan checklist", () => {
     ]);
   });
 
-  it("excludes standalone, other Plan, other App and unattributed legacy results", () => {
+  it("excludes standalone, other plan, other app and unattributed legacy results", () => {
     const latest = latestRunPerTest(
       [
         run({ id: "own", testId: "speed", queuedAt: 1 }),

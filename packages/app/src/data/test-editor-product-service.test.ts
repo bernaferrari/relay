@@ -107,7 +107,7 @@ describe("Test editor product history transport", () => {
     step.intent = "Submit the expert request";
     expect(documentFromMap(current, "checkout")!.displayTitles).toEqual({});
   });
-  it("opens the selected App's Test when another App uses the same ID", async () => {
+  it("opens the selected app's test when another app uses the same ID", async () => {
     const service = createTestEditorProductService(platform);
     const other = {
       ...map(7, "Admin checkout"),
@@ -468,7 +468,7 @@ describe("manual test drafts", () => {
         action,
         text: "new",
       }),
-    ).rejects.toThrow("saved Test changed");
+    ).rejects.toThrow("saved test changed");
     expect(clientRef.current.invoke).toHaveBeenCalledTimes(1);
     clientRef.current.invoke.mockReset();
     const unbound = structuredClone(current);

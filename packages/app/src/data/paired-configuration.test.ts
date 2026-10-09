@@ -100,7 +100,7 @@ describe("paired Browser and Account workspace", () => {
     expect(starts[0]).not.toEqual(starts[1]);
   });
 
-  it("starts every compiled pair through the same Test start compiler", async () => {
+  it("starts every compiled pair through the same test start compiler", async () => {
     const started: string[] = [];
     const { startPairedTestRuns } = await import("./paired-configuration");
     await startPairedTestRuns({

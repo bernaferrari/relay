@@ -170,7 +170,7 @@ describe("destination summary", () => {
     ).toEqual({ kind: "skip" });
   });
 
-  it("does not let a workspace default overwrite a saved Test destination", () => {
+  it("does not let a workspace default overwrite a saved test destination", () => {
     expect(
       workspaceDestinationDecision({
         storedTargetId: "emulator-5554",

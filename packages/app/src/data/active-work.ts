@@ -109,7 +109,7 @@ function runItem(run: ProductRunSummary): ActiveWorkItem {
     id: `run:${run.id}`,
     kind: "run",
     title: run.testName ?? run.title,
-    detail: run.targetName ?? (run.phase === "queued" ? "Waiting for a target" : "Live Run"),
+    detail: run.targetName ?? (run.phase === "queued" ? "Waiting for a target" : "Live run"),
     status: run.phase === "queued" ? "Queued" : "Running",
     activity: run.phase === "queued" ? "queued" : "running",
     href: `/runs/${encodeURIComponent(run.id)}`,

@@ -100,7 +100,7 @@ export type PlayerManifestProjection = {
 /** The same Test id exists in several apps; the caller must say which one. */
 export class AmbiguousTestError extends Error {
   constructor(readonly owners: readonly { appMapId: string; appName: string }[]) {
-    super("This Test exists in more than one app. Choose the app to open it in.");
+    super("This test exists in more than one app. Choose the app to open it in.");
     this.name = "AmbiguousTestError";
   }
 }

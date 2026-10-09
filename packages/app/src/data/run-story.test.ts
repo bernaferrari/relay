@@ -19,7 +19,7 @@ describe("run story", () => {
       kind: "type",
       label: "Type “hello”",
     });
-    expect(describeTraceTitle("Run saved Test")).toBeUndefined();
+    expect(describeTraceTitle("Run saved test")).toBeUndefined();
   });
 
   it("groups actions under the authored step and keeps the rest as Finish", () => {
@@ -85,7 +85,7 @@ describe("run story", () => {
     expect(live.steps[0]!.actions.map((action) => action.state)).toEqual(["passed", "running"]);
   });
 
-  it("shows frozen pending Test steps and follows exact execution provenance", () => {
+  it("shows frozen pending test steps and follows exact execution provenance", () => {
     const frozen = {
       recipeSnapshot: {
         id: "root",
@@ -117,7 +117,7 @@ describe("run story", () => {
         id: "wrapper",
         recipeId: "root",
         recipeStepId: "open-wrapper",
-        title: "Run saved Test",
+        title: "Run saved test",
         status: "running",
       },
       {
@@ -148,7 +148,7 @@ describe("run story", () => {
           id: "check",
           recipeId: "root",
           recipeStepId: "check-wrapper",
-          title: "Run saved Test",
+          title: "Run saved test",
           status: "running",
         },
       ],

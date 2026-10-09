@@ -16,8 +16,18 @@ const SAMSUNG_FOLDABLES: Readonly<Record<string, string>> = {
 };
 
 /** Galaxy S flagships: SM-S9{generation}{tier}, e.g. S931 = S25, S938 = S25 Ultra. */
-const S_GENERATIONS: Readonly<Record<string, string>> = { "0": "22", "1": "23", "2": "24", "3": "25" };
-const S_TIERS: Readonly<Record<string, string>> = { "1": "", "6": "+", "7": " Edge", "8": " Ultra" };
+const S_GENERATIONS: Readonly<Record<string, string>> = {
+  "0": "22",
+  "1": "23",
+  "2": "24",
+  "3": "25",
+};
+const S_TIERS: Readonly<Record<string, string>> = {
+  "1": "",
+  "6": "+",
+  "7": " Edge",
+  "8": " Ultra",
+};
 /** Galaxy S FE: SM-S7{generation}1. */
 const FE_GENERATIONS: Readonly<Record<string, string>> = { "1": "23", "2": "24", "3": "25" };
 
@@ -59,5 +69,7 @@ export function androidDeviceDisplayName(model: string): string {
 /** For names already stored on Runs and targets: rewrites only Samsung model
  * codes and leaves every other device or browser name exactly as saved. */
 export function readableDeviceName(name: string): string {
-  return /^SM[\s_-]?[A-Z]\d{3}[A-Z0-9]*$/iu.test(name.trim()) ? androidDeviceDisplayName(name) : name;
+  return /^SM[\s_-]?[A-Z]\d{3}[A-Z0-9]*$/iu.test(name.trim())
+    ? androidDeviceDisplayName(name)
+    : name;
 }

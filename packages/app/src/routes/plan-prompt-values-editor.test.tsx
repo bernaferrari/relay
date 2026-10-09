@@ -66,7 +66,7 @@ async function fill(field: HTMLInputElement | HTMLTextAreaElement, value: string
   });
 }
 
-it("associates labels, keeps ordinary Enter for multiline prompts and saves with Ctrl+Enter without submitting the parent Plan", async () => {
+it("associates labels, keeps ordinary Enter for multiline prompts and saves with Ctrl+Enter without submitting the parent plan", async () => {
   const h = await render();
   expect(document.querySelectorAll("form")).toHaveLength(1);
   for (const label of document.querySelectorAll<HTMLLabelElement>("label"))
@@ -98,7 +98,7 @@ it("validates on save and clears each field error as the user corrects it", asyn
   const fields = [...document.querySelectorAll<HTMLTextAreaElement>("textarea")];
   expect(document.querySelector('[aria-invalid="true"]')).toBeNull();
   expect(document.body.textContent).toContain(
-    "Match the Test’s Run input name. Use letters, numbers, _ . or -.",
+    "Match the test’s run input name. Use letters, numbers, _ . or -.",
   );
   await fill(name, "Image prompts");
   await fill(fields[0]!, "First prompt");

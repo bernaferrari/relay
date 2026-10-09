@@ -34,7 +34,7 @@ export function RawEvidenceDisclosure({
   return (
     <Collapsible id="raw-evidence" className="mt-4" open={open} onOpenChange={onOpenChange}>
       <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-        Audit details
+        Technical details
       </CollapsibleTrigger>
       <CollapsibleContent className="border-t pt-3">
         <div className="grid gap-3">
@@ -66,7 +66,7 @@ export function RawEvidenceDisclosure({
               role="alert"
             >
               <p className="text-xs text-muted-foreground">
-                Audit details could not be loaded. The Report outcome above is unchanged.
+                Technical details could not be loaded. The report outcome above is unchanged.
               </p>
               <Button size="sm" variant="outline" onClick={() => void evidence.refetch()}>
                 Try again

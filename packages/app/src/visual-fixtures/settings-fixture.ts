@@ -30,7 +30,7 @@ export const fixtureSettingsService: SettingsProductService = {
       status: "needs-attention",
       configured: false,
       detail:
-        "Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra, never a silent pass.",
+        "Add an OpenRouter key (OPENROUTER_API_KEY) so Relay can judge screenshots and on-screen text. Until then, those checks say they couldn’t run — they never pass silently.",
     },
   }),
   androidSetup: async () => ({

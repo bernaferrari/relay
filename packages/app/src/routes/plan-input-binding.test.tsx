@@ -60,7 +60,7 @@ async function render(ambiguous = false, added = false, rejected = false) {
     editor: { appMapId: "grok", appName: "Grok", revision: 5, tests: [], dataSets: [] },
   };
   const addInputDataSet = vi.fn(async () => {
-    if (rejected) throw new Error("The App changed");
+    if (rejected) throw new Error("The app changed");
     return result;
   });
   const service = {
@@ -128,11 +128,11 @@ it("preselects the sole eligible action visibly, discloses shared effects, and p
   expect(document.body.textContent).toContain("Repeat prompt");
   expect(addInputDataSet).not.toHaveBeenCalled();
   const rows = document.querySelectorAll<HTMLElement>(
-    '[aria-label="Values for this Plan"] [role="checkbox"]',
+    '[aria-label="Values for this plan"] [role="checkbox"]',
   );
   expect(rows).toHaveLength(2);
   await act(async () => rows[0]!.closest("label")!.click());
-  await act(async () => button("Use values in Tests").click());
+  await act(async () => button("Use values in tests").click());
   expect(addInputDataSet).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
       testIds: ["fast"],
@@ -157,25 +157,25 @@ it("preserves a rejected binding draft, then revalidates changed leaf text on ex
   });
   await act(async () =>
     document
-      .querySelector<HTMLElement>('[aria-label="Values for this Plan"] [role="checkbox"]')!
+      .querySelector<HTMLElement>('[aria-label="Values for this plan"] [role="checkbox"]')!
       .closest("label")!
       .click(),
   );
-  await act(async () => button("Use values in Tests").click());
+  await act(async () => button("Use values in tests").click());
   await act(async () => {
-    await vi.waitFor(() => expect(document.body.textContent).toContain("The App changed"));
+    await vi.waitFor(() => expect(document.body.textContent).toContain("The app changed"));
   });
   expect(document.body.textContent).toContain("Original prompt");
   expect(
     document.querySelectorAll(
-      '[aria-label="Values for this Plan"] [role="checkbox"][data-checked]',
+      '[aria-label="Values for this plan"] [role="checkbox"][data-checked]',
     ),
   ).toHaveLength(1);
   await act(async () => button("Reload Data sets").click());
   await act(async () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain("Choose a text action"));
   });
-  expect(button("Use values in Tests").disabled).toBe(true);
+  expect(button("Use values in tests").disabled).toBe(true);
   expect(addInputDataSet).toHaveBeenCalledOnce();
   await act(async () =>
     document.querySelector<HTMLElement>('[aria-label="Text action for Fast chat"]')!.click(),
@@ -186,7 +186,7 @@ it("preserves a rejected binding draft, then revalidates changed leaf text on ex
       .click(),
   );
   expect(document.body.textContent).toContain("Updated prompt");
-  expect(button("Use values in Tests").disabled).toBe(false);
+  expect(button("Use values in tests").disabled).toBe(false);
 });
 
 it("requires an explicit ambiguous text-action choice and can bind an already added Data set in place", async () => {
@@ -194,7 +194,7 @@ it("requires an explicit ambiguous text-action choice and can bind an already ad
   await act(async () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain("Choose a text action"));
   });
-  expect(button("Use values in Tests").disabled).toBe(true);
+  expect(button("Use values in tests").disabled).toBe(true);
   await act(async () =>
     document.querySelector<HTMLElement>('[aria-label="Text action for Fast chat"]')!.click(),
   );
@@ -204,6 +204,6 @@ it("requires an explicit ambiguous text-action choice and can bind an already ad
       .click(),
   );
   expect(document.body.textContent).toContain("Original prompt");
-  await act(async () => button("Use values in Tests").click());
+  await act(async () => button("Use values in tests").click());
   expect(addInputDataSet).toHaveBeenCalledOnce();
 });

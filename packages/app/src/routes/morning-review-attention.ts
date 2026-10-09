@@ -35,7 +35,7 @@ export function morningAttentionItems(input: { apple?: unknown }): MorningAttent
       href: "/suites",
       label: "Grok.com logged-out judged chrome",
       detail: judge?.detail?.trim()
-        ? `${judge.detail} Plan grok-web-judged (--lane grok-daily) is not grok-web-daily and not a judged pass.`
+        ? `${judge.detail} plan grok-web-judged (--lane grok-daily) is not grok-web-daily and not a judged pass.`
         : JUDGE_FALLBACK,
     });
   }
@@ -51,7 +51,7 @@ export function morningAttentionItems(input: { apple?: unknown }): MorningAttent
     href: "/accounts",
     label: "Accounts health",
     detail:
-      "Check live health before the next unattended Plan. Expired or signed-out accounts fail closed as Infra. One SuperGrok fixture is not a 3-account pack.",
+      "Check live health before the next unattended plan. Expired or signed-out accounts fail closed as Infra. One SuperGrok fixture is not a 3-account pack.",
   });
   items.push({
     id: "native",
@@ -66,7 +66,7 @@ export function morningAttentionItems(input: { apple?: unknown }): MorningAttent
       label: "Lab Mac server",
       detail:
         lab?.detail?.trim() ||
-        "Lab Mac launchd stays unloaded. Job dev.relay.lab-server is not loaded. Do not load that job during a live Plan — it restarts :8787.",
+        "Lab Mac launchd stays unloaded. Job dev.relay.lab-server is not loaded. Do not load that job during a live plan — it restarts :8787.",
     });
   }
   return items;

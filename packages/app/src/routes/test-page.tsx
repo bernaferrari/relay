@@ -51,7 +51,7 @@ import { testRunDestinationCopy } from "../data/test-run-targets";
 import { useTestTextInputs } from "../data/use-test-text-inputs";
 
 const routeApi = getRouteApi("/tests/$testId");
-const staleTestMessage = "The saved Test changed.";
+const staleTestMessage = "The saved test changed.";
 
 export function TestPage() {
   const { runService, platform, queryClient, productService, testEditorService } = useRouteContext({
@@ -214,7 +214,7 @@ export function TestPage() {
     mutationFn: async () => {
       if (!test.data || !canStart) {
         throw new TypeError(
-          admission.blockers[0]?.detail ?? "Choose a ready device or browser for this Run.",
+          admission.blockers[0]?.detail ?? "Choose a ready device or browser for this run.",
         );
       }
       const acknowledged = queryClient.getQueryData<{ revision: number }>([
@@ -512,7 +512,7 @@ export function TestPage() {
         onHistoryOpen={() => setHistoryOpen(true)}
       />
 
-      {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
+      {loading ? <PageLoading label="Loading the test and available devices…" /> : null}
       {test.error instanceof AmbiguousTestError ? (
         <ChooseTestApp testId={testId} owners={test.error.owners} />
       ) : null}
@@ -544,7 +544,7 @@ export function TestPage() {
           start.error instanceof TypeError && start.error.message === staleTestMessage
             ? {
                 code: "test-document-changed",
-                title: "Saved Test changed",
+                title: "Saved test changed",
                 detail: staleTestMessage,
                 recovery: "Reload to review its latest steps.",
                 retryable: false,
@@ -565,7 +565,7 @@ export function TestPage() {
                 });
               }}
             >
-              Reload Test
+              Reload test
             </Button>
           ) : start.data?.recovery?.sourceCode === "raw-evidence-variant-recapture-required" ? (
             <Button
@@ -597,11 +597,11 @@ export function TestPage() {
 
       {!loading && !test.data && !test.isError ? (
         <EmptyState
-          title="This Test is not available"
-          detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
+          title="This test is not available"
+          detail="It may have been removed or may belong to another app. Choose a saved test to continue."
           action={
             <Link className={productLinkClassName} to="/tests">
-              Browse saved Tests
+              Browse saved tests
             </Link>
           }
         />

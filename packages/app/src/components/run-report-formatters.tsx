@@ -65,12 +65,12 @@ export function outcomeSentence(
   hasReviewScreenshots = false,
 ): string {
   if (outcome === "passed")
-    return hasReviewScreenshots ? `Run completed on ${target}.` : `This Test passed on ${target}.`;
-  if (outcome === "product-failure") return `This Test found a product problem on ${target}.`;
-  if (outcome === "harness-failure") return `Relay could not complete this Test on ${target}.`;
+    return hasReviewScreenshots ? `Run completed on ${target}.` : `This test passed on ${target}.`;
+  if (outcome === "product-failure") return `This test found a product problem on ${target}.`;
+  if (outcome === "harness-failure") return `Relay could not complete this test on ${target}.`;
   if (outcome === "uncertain") return `Relay could not confirm the outcome on ${target}.`;
-  if (outcome === "cancelled") return `This Run was cancelled on ${target}.`;
-  return `This Run on ${target} has no final result yet.`;
+  if (outcome === "cancelled") return `This run was cancelled on ${target}.`;
+  return `This run on ${target} has no final result yet.`;
 }
 
 export function firstSentence(value: string): string {
@@ -111,7 +111,7 @@ export function resultHeading(
 export function failureTitle(value: string, category?: string): string {
   if (category) return category;
   const line = value.split(/\r?\n/, 1)[0]?.trim();
-  return line || "Relay could not complete this Test";
+  return line || "Relay could not complete this test";
 }
 
 export function formatDuration(durationMs: number): string {
@@ -126,14 +126,14 @@ export function nextAction(
   outcome: Awaited<ReturnType<RunProductService["getReport"]>>["outcome"],
 ): string {
   if (outcome === "product-failure") {
-    return "Review this moment first, then decide whether the app or the saved Test needs to change.";
+    return "Review this moment first, then decide whether the app or the saved test needs to change.";
   }
   if (outcome === "harness-failure") {
-    return "Reconnect the device or browser, then run this Test again.";
+    return "Reconnect the device or browser, then run this test again.";
   }
   if (outcome === "uncertain") {
-    return "Review the evidence before deciding whether to run this Test again.";
+    return "Review the evidence before deciding whether to run this test again.";
   }
-  if (outcome === "cancelled") return "Run this Test again when the device or browser is ready.";
-  return "Review the Report before taking the next action.";
+  if (outcome === "cancelled") return "Run this test again when the device or browser is ready.";
+  return "Review the report before taking the next action.";
 }

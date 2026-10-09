@@ -28,7 +28,7 @@ const operations: Record<RecordingReviewOperation, { label: string; title: strin
   inspect: { label: "Check recording status", title: "Could not load the recording" },
   edit: { label: "Update recorded steps", title: "Could not confirm the recording update" },
   replay: { label: "Run recorded steps", title: "Could not confirm the replay" },
-  approve: { label: "Save Test", title: "Could not confirm the Test save" },
+  approve: { label: "Save test", title: "Could not confirm the test save" },
   recover: { label: "Open saved steps", title: "Could not confirm opening saved steps" },
   "save-draft": { label: "Save recording draft", title: "Could not confirm the draft save" },
 };

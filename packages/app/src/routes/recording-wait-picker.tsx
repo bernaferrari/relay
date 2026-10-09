@@ -42,7 +42,7 @@ export function RecordingWaitPicker({
           <DialogTitle>Wait for a control</DialogTitle>
           <DialogDescription>
             Continue when a control appears or disappears. If the condition is not met before the
-            limit, the Test stops.
+            limit, the test stops.
           </DialogDescription>
           <div role="group" aria-label="Wait until" className="flex gap-2">
             <Button

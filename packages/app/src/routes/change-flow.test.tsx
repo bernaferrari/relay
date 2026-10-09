@@ -82,7 +82,7 @@ function productDetails(status: ProductChange["status"]): ProductChangeDetails {
       {
         appId: "settings",
         testId: "arabic-layout",
-        reason: "The changed layout is verified by this Test.",
+        reason: "The changed layout is verified by this test.",
         confidence: "definite",
         revision: 4,
       },
@@ -105,7 +105,7 @@ function productDetails(status: ProductChange["status"]): ProductChangeDetails {
     ],
     nextVerification:
       status === "planning"
-        ? { kind: "approve-plan", reason: "Review the selected Test and target." }
+        ? { kind: "approve-plan", reason: "Review the selected test and target." }
         : status === "ready"
           ? { kind: "run-pilot", reason: "Run the reviewed pilot." }
           : { kind: "none", reason: "Verification is complete." },
@@ -275,21 +275,21 @@ async function fillTextarea(value: string) {
 }
 
 describe("Change verification", () => {
-  it("keeps a filtered-empty Change view compact and offers a direct reset", async () => {
+  it("keeps a filtered-empty change view compact and offers a direct reset", async () => {
     const fake = fakeChangeService();
     const history = await renderChange("/changes?status=active", fake.service);
 
     const empty = document.querySelector('[data-slot="empty-filtered"]');
     expect(empty).not.toBeNull();
-    expect(empty?.textContent).toContain("No Changes in progress");
+    expect(empty?.textContent).toContain("No changes in progress");
     expect(empty?.textContent).toContain("There is nothing in this view right now.");
 
-    await click(button("View all Changes"));
+    await click(button("View all changes"));
     expect(history.location.search).toBe("?status=history");
     expect(document.body.textContent).toContain("Keep Arabic settings readable");
   });
 
-  it("preserves loaded Changes during a failed refresh and recovers in place", async () => {
+  it("preserves loaded changes during a failed refresh and recovers in place", async () => {
     const client = queryClientModule.createRelayQueryClient();
     vi.spyOn(queryClientModule, "createRelayQueryClient").mockReturnValue(client);
     const fake = fakeChangeService();
@@ -331,7 +331,7 @@ describe("Change verification", () => {
     expect(button("Try again")).not.toBeNull();
   });
 
-  it("prepares the current Change from the index and routes to its canonical detail", async () => {
+  it("prepares the current change from the index and routes to its canonical detail", async () => {
     const fake = fakeChangeService();
     const history = await renderChange("/changes", fake.service);
 
@@ -357,7 +357,7 @@ describe("Change verification", () => {
     expect(fake.calls).toContain("approve:change-proof-private-id:2");
     expect(document.body.textContent).toContain("The reviewed plan is ready");
 
-    await click(button("Verify Change"));
+    await click(button("Verify change"));
     expect(fake.calls).toContain("run:change-proof-private-id:3");
     expect(fake.calls).toContain("watch");
     expect(document.body.textContent).toContain("Ready to merge");
@@ -405,7 +405,7 @@ describe("Change verification", () => {
         },
         next: {
           action: "repair",
-          reason: "A required Test failed on the bound build. Repair, then verify a new build.",
+          reason: "A required test failed on the bound build. Repair, then verify a new build.",
         },
       },
       nextVerification: { kind: "review", reason: "Review the failed screenshot." },
@@ -417,7 +417,7 @@ describe("Change verification", () => {
     fake.service.open = async () => rejected;
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    expect(document.body.textContent).toContain("Required Test failed");
+    expect(document.body.textContent).toContain("Required test failed");
     expect(document.body.textContent).toContain("Failure evidence");
     expect(document.body.textContent).toContain("build-92");
     expect(document.body.textContent).toContain("First problem");
@@ -531,7 +531,7 @@ describe("Change verification", () => {
 
     const audit = document.querySelector('[data-slot="change-audit"]')!;
     expect(audit.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
-    await click(button("Audit details"));
+    await click(button("Technical details"));
     expect(audit.textContent).toContain("change-proof-private-id");
     expect(audit.textContent).toContain("sha256:");
     expect(document.querySelector('[data-slot="change-verdict"]')?.textContent).not.toContain(
@@ -591,7 +591,7 @@ describe("Change verification", () => {
     expect(document.querySelector('[data-slot="change-publication"]')?.textContent).not.toContain(
       "Provider failure",
     );
-    await click(button("Audit details"));
+    await click(button("Technical details"));
     const audit = document.querySelector('[data-slot="change-audit"]')!;
     expect(audit.textContent).toContain("Provider failureProvider rejected delivery");
     expect(audit.textContent).toContain("Next retry2023-11-14T22:13:20.000Z");

@@ -85,9 +85,9 @@ export function replaceActionText(
   else if ((action?.kind === "recorded" || action?.kind === "steps") && address.recipeStepId) {
     const step = action.steps.find((item) => item.id === address.recipeStepId);
     if (!step || step.kind !== "type")
-      throw new TypeError("This text action changed. Reload the Test.");
+      throw new TypeError("This text action changed. Reload the test.");
     step.text = text;
-  } else throw new TypeError("This text action changed. Reload the Test.");
+  } else throw new TypeError("This text action changed. Reload the test.");
   return next;
 }
 

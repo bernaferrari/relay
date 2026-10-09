@@ -99,7 +99,7 @@ export type AgentDebugPlanStep =
       readonly kind: "review-test";
       readonly supported: false;
       readonly requiresHuman: true;
-      readonly reason: "No automatic Test approval is exposed by Agent Debug.";
+      readonly reason: "No automatic test approval is exposed by Agent Debug.";
     }
   | {
       readonly kind: "run";
@@ -264,7 +264,7 @@ export function projectAgentDebugEvidence(
   result: TracePackExportResponse,
 ): AgentDebugEvidenceSummary {
   if (result.tracePack.source.runId !== runId || result.analysis.sourceRunId !== runId) {
-    throw new TypeError("Relay returned evidence for a different Run.");
+    throw new TypeError("Relay returned evidence for a different run.");
   }
   return {
     runId,
@@ -323,7 +323,7 @@ export function planAgentDebug(input: AgentDebugPlanInput): AgentDebugPlan {
       kind: "review-test",
       supported: false,
       requiresHuman: true,
-      reason: "No automatic Test approval is exposed by Agent Debug.",
+      reason: "No automatic test approval is exposed by Agent Debug.",
     });
   }
   if (input.run)
@@ -367,8 +367,8 @@ export function planAgentDebug(input: AgentDebugPlanInput): AgentDebugPlan {
     steps,
     gaps: [
       "Failure inspection is bounded evidence and repair context; no canonical failure-clustering operation exists.",
-      "Discovery promotion, Test approval, repair application, and code mutation remain explicit human-owned operations.",
-      "Recording creates an authoring Session; running still requires an existing saved Test identity.",
+      "Discovery promotion, test approval, repair application, and code mutation remain explicit human-owned operations.",
+      "Recording creates an authoring session; running still requires an existing saved test identity.",
       "Verification is offline and export returns TracePack metadata; neither publishes proof nor predicts future device behavior.",
     ],
   };

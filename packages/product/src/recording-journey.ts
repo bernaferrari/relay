@@ -445,7 +445,7 @@ export function createProductRecordingJourney(input: {
       recovery: {
         code: "unexpected-authoring-state",
         title: "The steps changed",
-        detail: "The reviewed steps changed before this Test could be saved.",
+        detail: "The reviewed steps changed before this test could be saved.",
         recovery: "Review the updated steps and save again.",
         retryable: true,
       },

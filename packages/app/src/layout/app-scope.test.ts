@@ -73,7 +73,7 @@ describe("App scope", () => {
     ).toBe("app-5");
   });
 
-  it("represents multi-App batches and Changes honestly", () => {
+  it("represents multi-App batches and changes honestly", () => {
     expect(
       appScopeDetailsForLocation({
         pathname: "/batches/batch-1",

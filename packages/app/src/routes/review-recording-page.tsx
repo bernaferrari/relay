@@ -176,7 +176,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   const restartEmpty = useMutation({
     mutationFn: async () => {
       if (!productService.cancel)
-        throw new Error("Starting over is unavailable. Return to Tests and try again.");
+        throw new Error("Starting over is unavailable. Return to tests and try again.");
       const result = await productService.cancel();
       if (result.snapshot?.stage !== "cancelled")
         throw new Error("Could not close the empty recording. Try again.");
@@ -444,7 +444,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 ? "Saving draft…"
                 : productService.saveDraft && !saved
                   ? "Save draft"
-                  : "Back to Tests"}
+                  : "Back to tests"}
             </Button>
           ) : null
         }
@@ -536,7 +536,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                   setNameSaveState("dirty");
                   setTestName(event.currentTarget.value);
                 }}
-                placeholder="Name this Test"
+                placeholder="Name this test"
                 maxLength={160}
                 autoComplete="off"
                 spellCheck

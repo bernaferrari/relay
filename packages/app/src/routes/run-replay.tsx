@@ -178,7 +178,7 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
     queryFn: () => {
       if (!runService.getReplayJob)
         throw new Error(
-          "This host cannot follow this replay. Open Run history to find its result.",
+          "This host cannot follow this replay. Open run history to find its result.",
         );
       return runService.getReplayJob(replayJobId);
     },
@@ -264,7 +264,7 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
         </AlertTitle>
         <AlertDescription>
           {replayJob.data.error ??
-            "No saved report is available for this replay. Check Run history for the latest result."}
+            "No saved report is available for this replay. Check run history for the latest result."}
         </AlertDescription>
         <AlertAction>
           <Button

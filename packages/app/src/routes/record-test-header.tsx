@@ -9,7 +9,35 @@ import {
   DialogTrigger,
 } from "@relay/ui-react/components/dialog";
 import { AuthoringHeader } from "./authoring-header";
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
+
+/** Always-visible proof that input is being captured, with elapsed time. */
+function RecordingIndicator() {
+  const [startedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(startedAt);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.floor((now - startedAt) / 1_000);
+  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  return (
+    <span
+      className="inline-flex items-center gap-2 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive"
+      role="status"
+      aria-label={`Recording, ${elapsed} elapsed`}
+    >
+      <span className="relative flex size-2" aria-hidden="true">
+        <span className="absolute inset-0 animate-ping rounded-full bg-destructive opacity-60 motion-reduce:animate-none" />
+        <span className="relative size-2 rounded-full bg-destructive" />
+      </span>
+      Recording
+      <span className="tabular-nums" aria-hidden="true">
+        {elapsed}
+      </span>
+    </span>
+  );
+}
 
 export function RecordTestHeader({
   open,
@@ -45,8 +73,8 @@ export function RecordTestHeader({
         <DialogContent showCloseButton={false}>
           <DialogTitle>Cancel recording?</DialogTitle>
           <DialogDescription>
-            End this recording without saving a Test. Captured evidence remains available in
-            Activity. To keep the steps as a Test, choose Stop and review instead.
+            End this recording without saving a test. Captured evidence remains available in
+            Activity. To keep the steps as a test, choose Stop and review instead.
           </DialogDescription>
           <div className="flex justify-end gap-2 pt-4">
             <DialogClose render={<Button variant="outline">Keep recording</Button>} />
@@ -63,6 +91,7 @@ export function RecordTestHeader({
         </DialogContent>
         <AuthoringHeader
           title={interrupted ? "Recording interrupted" : "Record test"}
+          center={!interrupted && !failed ? <RecordingIndicator /> : undefined}
           back={
             interrupted ? (
               <Button
@@ -71,7 +100,7 @@ export function RecordTestHeader({
                 size="sm"
                 onClick={onLeave}
               >
-                Back to Tests
+                Back to tests
               </Button>
             ) : (
               <DialogTrigger

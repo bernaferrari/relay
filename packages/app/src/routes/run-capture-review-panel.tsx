@@ -462,11 +462,11 @@ export function CaptureReviewPanel({
             <p className="text-xs text-muted-foreground">
               {selectedMeta.blocked
                 ? onReviewMany
-                  ? "Capture blocked. Open Runs and problems to resolve the device or setup issue before rerunning."
+                  ? "Capture blocked. Open runs and problems to resolve the device or setup issue before rerunning."
                   : "Capture blocked. Check this run’s steps, resolve the device or setup issue, then set up another run."
                 : selected.status === "missing"
                   ? onReviewMany
-                    ? "This screenshot was not captured. Open Runs and problems to see what stopped it, then rerun the affected case."
+                    ? "This screenshot was not captured. Open runs and problems to see what stopped it, then rerun the affected case."
                     : "This screenshot was not captured. Check the run’s steps, then set up another run to collect it."
                   : selected.status === "accepted"
                     ? decidedByReference(selected.decidedBy)

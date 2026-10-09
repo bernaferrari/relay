@@ -46,7 +46,7 @@ export function RunReportActions({
     <>
       <Dialog open={rawEvidenceOpen} onOpenChange={setRawEvidenceOpen}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto">
-          <DialogTitle>Audit details</DialogTitle>
+          <DialogTitle>Raw event log</DialogTitle>
           <DialogDescription>Saved technical evidence for this run.</DialogDescription>
           <RawEvidenceDisclosure
             runId={report.runId}

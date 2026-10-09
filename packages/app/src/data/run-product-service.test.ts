@@ -224,7 +224,7 @@ describe("run report projection", () => {
           {
             id: "trace-module",
             index: 0,
-            title: "Run saved Test",
+            title: "Run saved test",
             status: "ok",
             frames: [{ path: "frames/002.png" }],
           },
@@ -259,7 +259,7 @@ describe("run report projection", () => {
     expect(report.timeline[0]?.framePaths).toEqual(["frames/002.png"]);
   });
 
-  it("falls through an empty leaf trace row without crossing Test step identity", () => {
+  it("falls through an empty leaf trace row without crossing test step identity", () => {
     const report = projectRunReport(
       "run-localized",
       {
@@ -267,7 +267,7 @@ describe("run report projection", () => {
           {
             id: "module-a",
             index: 0,
-            title: "Run saved Test",
+            title: "Run saved test",
             status: "ok",
             frames: [{ path: "frames/a.png" }],
           },
@@ -435,7 +435,7 @@ describe("run report projection", () => {
         steps: [
           {
             index: 0,
-            title: "Run saved Test",
+            title: "Run saved test",
             status: "ok",
             tone: "acc",
             actions: [{ kind: "re", at: 1 }],
@@ -497,7 +497,7 @@ describe("run report projection", () => {
     expect(report.evidence.map((section) => section.id)).toEqual(["screenshot", "ui-tree"]);
     expect(report.evidence[0]).toMatchObject({
       detail: "2 screenshots",
-      summary: "See the screens Relay captured while this Test ran.",
+      summary: "See the screens Relay captured while this test ran.",
       inspectable: true,
       items: [
         {
@@ -698,7 +698,7 @@ describe("run report projection", () => {
         outcome: "passed",
         steps: [
           {
-            title: "Run saved Test",
+            title: "Run saved test",
             status: "ok",
             actions: [{ kind: "ok" }],
           },
@@ -718,7 +718,7 @@ describe("run report projection", () => {
     );
 
     expect(report.firstEvidence?.label).toBe("Expected screen content was visible");
-    expect(report.firstEvidence?.label).not.toBe("Run saved Test");
+    expect(report.firstEvidence?.label).not.toBe("Run saved test");
   });
 
   it("uses a named captured screenshot when the only successful command is orchestration", () => {
@@ -728,7 +728,7 @@ describe("run report projection", () => {
         outcome: "passed",
         steps: [
           {
-            title: "Run saved Test",
+            title: "Run saved test",
             status: "ok",
             actions: [{ kind: "ok" }],
           },
@@ -785,7 +785,7 @@ describe("run report projection", () => {
 
     expect(report.targetName).toBeUndefined();
     expect(report.cause).toBe(
-      "Relay needs a fresh capture of the starting screen before this Test can run.",
+      "Relay needs a fresh capture of the starting screen before this test can run.",
     );
     expect(report.firstEvidence).toEqual({ label: report.cause });
     expect(report.technicalCause).toBe(technicalCause);
@@ -799,7 +799,7 @@ describe("run report projection", () => {
     expect(publicCopy).not.toContain("raw accessibility");
   });
 
-  it("prefers a resolved Test name over a machine-generated Run title", () => {
+  it("prefers a resolved test name over a machine-generated run title", () => {
     const report = projectRunReport(
       "run-4",
       { title: "Run test-64f19d0e", outcome: "passed" },

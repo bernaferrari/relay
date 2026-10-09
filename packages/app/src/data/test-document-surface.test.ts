@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { testDocumentSurface } from "./test-document-surface";
 
 describe("test document surface", () => {
-  it("gives live review the stage even when a historical Run is also in the URL", () => {
+  it("gives live review the stage even when a historical run is also in the URL", () => {
     expect(
       testDocumentSurface({
         view: "review",
@@ -12,7 +12,7 @@ describe("test document surface", () => {
     ).toEqual({ kind: "review", recordingId: "workflow-1" });
   });
 
-  it("keeps a historical Run when review is not the live surface", () => {
+  it("keeps a historical run when review is not the live surface", () => {
     expect(testDocumentSurface({ run: "run-184" })).toEqual({
       kind: "historical-run",
       runId: "run-184",

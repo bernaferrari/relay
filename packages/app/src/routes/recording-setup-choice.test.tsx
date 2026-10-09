@@ -71,7 +71,7 @@ const closedAdmission: RecordingSetupAdmission = { busy: true, mayEdit: () => fa
 
 describe("recording setup choices", () => {
   it.each(["Other app", "+ Create app…"])(
-    "rejects an already-open App option (%s) when startup takes admission",
+    "rejects an already-open app option (%s) when startup takes admission",
     async (label) => {
       let available = true;
       const admission: RecordingSetupAdmission = { busy: false, mayEdit: () => available };

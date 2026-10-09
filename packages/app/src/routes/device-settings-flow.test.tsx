@@ -292,7 +292,7 @@ function liveIpadPreview() {
 }
 
 describe("Devices", () => {
-  it("hands an acknowledged iOS launch to Test setup once and retains its replay origin without an inventory request or second launch", async () => {
+  it("hands an acknowledged iOS launch to test setup once and retains its replay origin without an inventory request or second launch", async () => {
     const service = fakeDeviceService();
     service.launchApp = vi.fn(async (serial: string, app: string): Promise<ProductLaunchedApp> => ({
       serial,
@@ -317,7 +317,7 @@ describe("Devices", () => {
     await click(button("Launch app"));
     await act(async () => preview.ready());
     const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (link) => link.textContent?.trim() === "Record a Test",
+      (link) => link.textContent?.trim() === "Record a test",
     )!;
     await click(record);
     expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe("Grok");
@@ -508,7 +508,7 @@ describe("Devices", () => {
     expect(crumbs?.querySelector("a")?.className).not.toContain("min-h-11");
     expect(document.querySelector("h1")?.textContent).toBe("Design iPad");
     expect(document.body.textContent).toContain("Apple device");
-    expect(document.body.textContent).not.toContain("Available for Tests");
+    expect(document.body.textContent).not.toContain("Available for tests");
     expect(document.body.textContent).not.toContain("Device details");
     expect(document.body.textContent).not.toContain("Connection is checked again");
     expect(document.body.textContent).not.toContain("Explore your app here");
@@ -712,7 +712,7 @@ describe("Devices", () => {
       expect(preview.previews[0].closed).toBe(true);
       expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
       const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-        (candidate) => candidate.textContent?.trim() === "Record a Test",
+        (candidate) => candidate.textContent?.trim() === "Record a test",
       )!;
       expect(new URL(record.href).searchParams.get("originApplication")).toBe(
         matched ? "com.example.shop" : null,
@@ -903,7 +903,7 @@ describe("Device app controls", () => {
     expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
     expect(document.body.textContent).not.toContain("App and language");
     expect(document.body.textContent).not.toContain("App controls are unavailable");
-    expect(document.body.textContent).toContain("Record a Test");
+    expect(document.body.textContent).toContain("Record a test");
   });
 
   it("shows the observed device language without changing it", async () => {
@@ -1023,7 +1023,7 @@ describe("Settings", () => {
     expect(document.body.textContent).toContain("Lab Mac server");
     expect(document.body.textContent).toContain("dev.relay.lab-server is not loaded");
     expect(document.body.textContent).toContain("Apple Development is not enough");
-    expect(document.body.textContent).toContain("Visual and semantic judges");
+    expect(document.body.textContent).toContain("Screenshot and text checks");
     expect(document.body.textContent).toContain("OPENROUTER_API_KEY");
     expect(document.body.textContent).toContain("Android devices");
     expect(document.body.textContent).toContain("Install Platform Tools, then reopen Relay.");
@@ -1070,11 +1070,11 @@ describe("Settings", () => {
   it("does not treat a missing OpenRouter key as ready", async () => {
     await renderPath("/settings/advanced");
     const row = [...document.querySelectorAll("h3")]
-      .find((heading) => heading.textContent === "Visual and semantic judges")
+      .find((heading) => heading.textContent === "Screenshot and text checks")
       ?.closest("div");
     expect(row?.textContent).toContain("Needs attention");
     expect(row?.textContent).toContain("OPENROUTER_API_KEY");
-    expect(row?.textContent).toContain("never a silent pass");
+    expect(row?.textContent).toContain("never pass silently");
     expect(row?.textContent).not.toContain("is set");
   });
 
@@ -1260,7 +1260,8 @@ describe("Settings", () => {
     });
 
     await renderPath("/settings/general", { platform });
-    expect(document.body.textContent).toContain("Relay is using 127.0.0.1:9876.");
+    await settle();
+    expect(document.body.textContent).toContain("127.0.0.1:9876");
     expect(document.body.textContent).not.toContain("Change address");
     expect(document.body.textContent).not.toContain("Configured");
     expect(document.body.textContent).not.toContain("Connected");

@@ -61,7 +61,7 @@ describe("screenshot issue note", () => {
     )!;
     await act(async () => promote.click());
     expect(onReview).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).toContain("future Runs");
+    expect(document.body.textContent).toContain("future runs");
     const confirm = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent?.includes("Use as reference"),
     )!;

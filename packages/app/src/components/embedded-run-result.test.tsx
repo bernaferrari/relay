@@ -40,7 +40,7 @@ it("dest-end result thumb is dest wait-for, not leftover Close last-frame", () =
               {
                 id: "leftover",
                 index: 1,
-                title: "after · Run saved Test",
+                title: "after · Run saved test",
                 state: "passed",
                 evidenceCount: 1,
                 framePaths: ["frames/004.png"],
@@ -82,7 +82,7 @@ it("dest-end result thumb is dest wait-for, not leftover Close last-frame", () =
                   },
                   {
                     id: "frames/004.png",
-                    title: "after · Run saved Test",
+                    title: "after · Run saved test",
                     media: { kind: "image", src: "/leftover-close.png" },
                   },
                 ],

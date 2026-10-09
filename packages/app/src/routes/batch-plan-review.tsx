@@ -192,7 +192,7 @@ export function BatchFindingsPanel({
           className="mt-3 max-w-prose min-h-14 items-center rounded-lg border border-border bg-card px-3 py-2.5"
         >
           <FieldContent>
-            <FieldLabel htmlFor="hide-flaky-tests">Hide flaky Tests</FieldLabel>
+            <FieldLabel htmlFor="hide-flaky-tests">Hide flaky tests</FieldLabel>
             <FieldDescription>
               Display only. This does not skip a run or accept a visual baseline.
             </FieldDescription>
@@ -201,7 +201,7 @@ export function BatchFindingsPanel({
             id="hide-flaky-tests"
             checked={hideFlaky}
             onCheckedChange={(checked) => setHideFlaky(checked === true)}
-            aria-label="Hide flaky Tests"
+            aria-label="Hide flaky tests"
           />
         </Field>
       ) : null}

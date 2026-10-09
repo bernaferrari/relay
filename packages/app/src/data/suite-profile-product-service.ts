@@ -334,7 +334,7 @@ export function assessProductAuthenticationFixture(
 function issue(value: { code?: unknown; message?: unknown; cellId?: unknown }): ProductSuiteIssue {
   return {
     code: text(value.code, "preflight-blocked"),
-    message: text(value.message, "Relay could not prove this Plan is ready."),
+    message: text(value.message, "Relay could not prove this plan is ready."),
     ...(typeof value.cellId === "string" ? { suiteCellId: value.cellId } : {}),
   };
 }
@@ -364,8 +364,8 @@ function observedExecution(observed: AppMapCombineObservedDuration): {
   const timing = formatObservedDuration(observed.durationMs);
   const sample =
     observed.sampleCount === 1
-      ? "1 completed Plan run"
-      : `${observed.sampleCount} completed Plan runs`;
+      ? "1 completed plan run"
+      : `${observed.sampleCount} completed plan runs`;
   const provenance =
     observed.provenance === "observed-p95"
       ? `${sample} (p95)`
@@ -433,7 +433,7 @@ function previewFromPreflight(
                       detail:
                         environments.length === 1
                           ? "One canonical target is selected. Duration remains unreported until Relay returns observed timing evidence."
-                          : `Each selected Plan case can run against every selected environment (up to ${MAX_PLAN_PROFILE_TARGETS}). Duration stays unreported until Relay returns observed timing.`,
+                          : `Each selected plan case can run against every selected environment (up to ${MAX_PLAN_PROFILE_TARGETS}). Duration stays unreported until Relay returns observed timing.`,
                     }),
           },
         }
@@ -510,21 +510,21 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       const appMap = await map(input.appMapId);
       if (appMap.revision !== input.expectedRevision) {
         throw new TypeError(
-          "This App changed while you were editing. Reload the Plan and try again.",
+          "This app changed while you were editing. Reload the plan and try again.",
         );
       }
       const name = input.name.trim();
       if (!input.suiteId.trim()) throw new TypeError("Plan identity is required.");
-      if (!name) throw new TypeError("Give this Plan a name.");
+      if (!name) throw new TypeError("Give this plan a name.");
       const testIds = [...new Set(input.testIds.map((id) => id.trim()).filter(Boolean))];
-      if (!testIds.length) throw new TypeError("Select at least one Test for this Plan.");
+      if (!testIds.length) throw new TypeError("Select at least one test for this plan.");
       const missingTest = testIds.find((id) => !appMap.tests[id]);
       if (missingTest)
-        throw new TypeError(`Test ${missingTest} is no longer available in this App.`);
+        throw new TypeError(`Test ${missingTest} is no longer available in this app.`);
       const variableIds = [...new Set(input.variableIds.map((id) => id.trim()).filter(Boolean))];
       const missingVariable = variableIds.find((id) => !appMap.variables[id]);
       if (missingVariable) {
-        throw new TypeError(`Data set ${missingVariable} is no longer available in this App.`);
+        throw new TypeError(`Data set ${missingVariable} is no longer available in this app.`);
       }
       const selected = input.selected
         ? Object.fromEntries(
@@ -553,7 +553,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         } as AppMapCombine,
       });
       const saved = result.appMap.combines[input.suiteId];
-      if (!saved) throw new TypeError("Relay saved the App, but the Plan is unavailable.");
+      if (!saved) throw new TypeError("Relay saved the app, but the plan is unavailable.");
       return projectProductSuite(result.appMap, saved);
     },
     async removeSuite(input) {
@@ -561,7 +561,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       if (!appMap.combines[input.suiteId]) return;
       if (appMap.revision !== input.expectedRevision) {
         throw new TypeError(
-          "This App changed while you were editing. Reload the Plan and try again.",
+          "This app changed while you were editing. Reload the plan and try again.",
         );
       }
       await (
@@ -579,7 +579,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
     async previewSuite(input) {
       const appMap = await map(input.appMapId);
       const combine = appMap.combines[input.suiteId];
-      if (!combine) throw new TypeError(`Plan ${input.suiteId} is not available in this App.`);
+      if (!combine) throw new TypeError(`Plan ${input.suiteId} is not available in this app.`);
       const suite = projectProductSuite(appMap, combine);
       const selectedProfileIds = [
         ...(input.profileIds ?? []),
@@ -681,7 +681,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
                 detail:
                   combinePreflight.accountCapacity && combinePreflight.accountCapacity.laneCount > 1
                     ? `${combinePreflight.accountCapacity.laneCount} browser account lanes selected; parallel wall-clock is unmeasured.`
-                    : `Each selected Plan case can run against every selected environment (up to ${MAX_PLAN_PROFILE_TARGETS}). Duration stays unreported until Relay returns observed timing.`,
+                    : `Each selected plan case can run against every selected environment (up to ${MAX_PLAN_PROFILE_TARGETS}). Duration stays unreported until Relay returns observed timing.`,
               }),
         },
       };
@@ -751,7 +751,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
               }),
         });
         const batchId = result.campaign?.id ?? result.batch.id;
-        if (!batchId) throw new TypeError("Relay started this Plan without a result identity.");
+        if (!batchId) throw new TypeError("Relay started this plan without a result identity.");
         return { batchId };
       } catch (error) {
         const batchId = accountReloginBatchIdFromError(error);
@@ -773,7 +773,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         const { schedules } = await relay.invoke("schedule.list", {});
         const saved = schedules.find((item) => item.id === input.scheduleId);
         if (!saved || saved.combineId !== input.combineId || saved.appMapId !== input.appMapId)
-          throw new TypeError("That schedule changed. Reload this Plan before saving.");
+          throw new TypeError("That schedule changed. Reload this plan before saving.");
         const result = await relay.invoke("schedule.create", {
           id: saved.id,
           combineId: saved.combineId,
@@ -834,7 +834,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
     },
     async listPlanSchedules(input) {
       const combineId = input.combineId.trim();
-      if (!combineId) throw new TypeError("Choose a Plan first.");
+      if (!combineId) throw new TypeError("Choose a plan first.");
       const { schedules } = await (await client()).invoke("schedule.list", {});
       return schedules
         .filter((item) => item.combineId === combineId)

@@ -126,7 +126,7 @@ export function SessionsPage() {
         }
       />
 
-      {sessions.isPending ? <PageLoading label="Loading Sessions…" /> : null}
+      {sessions.isPending ? <PageLoading label="Loading sessions…" /> : null}
       <RecordingProblem
         error={sessions.error}
         onRetry={() => void sessions.refetch()}
@@ -192,7 +192,7 @@ export function SessionsPage() {
             detail={
               sessions.data?.length
                 ? "Open Drafts to continue saved work, or History to find older sessions."
-                : "Start recording a Test or open a live target. Relay will keep that work available here."
+                : "Start recording a test or open a live target. Relay will keep that work available here."
             }
             action={
               sessions.data?.length ? (
@@ -215,7 +215,7 @@ export function SessionsPage() {
                 </Button>
               ) : (
                 <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
-                  Start a new Test
+                  Start a new test
                 </Button>
               )
             }

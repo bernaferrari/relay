@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { captureReviewSummaryLine } from "./run-capture-review-panel";
 
 describe("captureReviewSummaryLine", () => {
-  it("reports captured and pending without calling the Run passed", () => {
+  it("reports captured and pending without calling the run passed", () => {
     expect(
       captureReviewSummaryLine({
         items: [],
@@ -34,7 +34,7 @@ describe("captureReviewSummaryLine", () => {
     ).toBe("47/50 captured · 40 screenshots awaiting review · 5 accepted · 2 issues · 3 missing");
   });
 
-  it("reports planned and blocked on a Plan queue without accepting a baseline", () => {
+  it("reports planned and blocked on a plan queue without accepting a baseline", () => {
     expect(
       captureReviewSummaryLine({
         summary: {

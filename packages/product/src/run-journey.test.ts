@@ -63,7 +63,7 @@ function jobsFor(input: {
   };
 }
 
-test("start adopts canonical inspection and keeps the durable Run identity", async () => {
+test("start adopts canonical inspection and keeps the durable run identity", async () => {
   const inspected = snapshot("running", 8, {
     execution: { jobId: "job-1", runId: "run-1" },
     progress: { label: "Running test", completed: 2, total: 4 },
@@ -131,7 +131,7 @@ test("forwards selected setup and runtime prompt values as one canonical start r
   assert.equal(state.snapshot?.phase, "queued");
 });
 
-test("starts the exact saved Test revision acknowledged by the editor", async () => {
+test("starts the exact saved test revision acknowledged by the editor", async () => {
   let received: unknown;
   const journey = createProductRunJourney({
     jobs: {
@@ -236,7 +236,7 @@ test("cancel forwards the latest durable version and publishes the server result
   assert.equal(cancelled.snapshot?.phase, "cancelled");
 });
 
-test("watch follows canonical snapshots and exposes a completed Report route", async () => {
+test("watch follows canonical snapshots and exposes a completed report route", async () => {
   const states: string[] = [];
   const journey = createProductRunJourney({
     jobs: jobsFor({ started: snapshot("running", 3), watched: snapshot("succeeded", 4) }),
@@ -257,14 +257,14 @@ test("watch follows canonical snapshots and exposes a completed Report route", a
   assert.equal("passed" in (result.report ?? {}), false);
 });
 
-test("failed Runs preserve the server problem and transport errors become recovery guidance", async () => {
+test("failed runs preserve the server problem and transport errors become recovery guidance", async () => {
   const failed = snapshot("failed", 9, {
     problems: [
       {
         code: "operation-unavailable",
         title: "The test did not complete",
         detail: "The first check failed.",
-        recovery: "Inspect the run evidence, then repair the Test.",
+        recovery: "Inspect the run evidence, then repair the test.",
         retryable: false,
       },
     ],
@@ -299,10 +299,10 @@ test("compile diagnostics use public recovery language while preserving their so
     problems: [
       {
         code: "compile-blocked",
-        title: "The Test has 1 compile blocker",
+        title: "The test has 1 compile blocker",
         detail:
           "Start has no immutable raw accessibility tree; recapture this screen before relying on offline geometry.",
-        recovery: "Repair the reviewed Test evidence or selector, then start a new workflow.",
+        recovery: "Repair the reviewed test evidence or selector, then start a new workflow.",
         retryable: false,
         sourceCode: "raw-evidence-recapture-required",
       },
@@ -335,7 +335,7 @@ test("public state does not leak compiled plans, refs, frozen internals, or raw 
   assert.doesNotMatch(serialized, /private|secret|payload/u);
 });
 
-test("captured setup recovery retains the canonical source step in public Run state", async () => {
+test("captured setup recovery retains the canonical source step in public run state", async () => {
   const blocked = snapshot("blocked", 1, {
     workflow: undefined,
     execution: undefined,
@@ -344,10 +344,10 @@ test("captured setup recovery retains the canonical source step in public Run st
         code: "compile-blocked",
         sourceCode: "target-profile-ambiguous",
         sourceStepId: "step-d950-source",
-        title: "The Test has 1 compile blocker",
+        title: "The test has 1 compile blocker",
         detail:
           "Saved target profile device:private-phone:1080x2340 has conflicting route-selection facts",
-        recovery: "Open the Test editor and resolve its blocking compile diagnostics.",
+        recovery: "Open the test editor and resolve its blocking compile diagnostics.",
         retryable: false,
       },
     ],
@@ -362,7 +362,7 @@ test("captured setup recovery retains the canonical source step in public Run st
   assert.equal(state.run, undefined);
 });
 
-test("an inspect transport failure never starts or cancels another Run", async () => {
+test("an inspect transport failure never starts or cancels another run", async () => {
   let cancelCalls = 0;
   const journey = createProductRunJourney({
     jobs: {

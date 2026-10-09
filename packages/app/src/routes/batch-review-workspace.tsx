@@ -219,7 +219,7 @@ export function BatchReviewWorkspace({
                             />
                           }
                         >
-                          {inspection.kind === "live" ? "Open Run" : "Open report"}
+                          {inspection.kind === "live" ? "Open run" : "Open report"}
                         </Button>
                         {focused.runId ? (
                           <Button
@@ -253,7 +253,7 @@ export function BatchReviewWorkspace({
                           />
                         }
                       >
-                        Open Test setup
+                        Open test setup
                       </Button>
                     ) : null}
                     {isBatchCaseProblem(focused) &&
@@ -295,7 +295,7 @@ export function BatchReviewWorkspace({
               </>
             ) : (
               <p className="p-6 text-sm text-muted-foreground">
-                Cases will appear here when the Plan starts.
+                Cases will appear here when the plan starts.
               </p>
             )}
           </div>

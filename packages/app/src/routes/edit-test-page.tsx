@@ -153,7 +153,7 @@ function TestEditorDocument({
       const live = currentLiveEditor();
       if (live) return liveTestEditorService.edit({ current: live, edits: transaction.forward });
       const current = currentDocument();
-      if (!current) throw new TypeError("Reload this Test before saving more changes.");
+      if (!current) throw new TypeError("Reload this test before saving more changes.");
       return testEditorService.edit({ document: current, edits: transaction.forward });
     },
     onMutate: () => {
@@ -194,7 +194,7 @@ function TestEditorDocument({
     mutationFn: async () => {
       const current = currentDocument();
       if (!current || !testEditorService.saveSettings)
-        throw new TypeError("Reload this saved Test before changing settings.");
+        throw new TypeError("Reload this saved test before changing settings.");
       return testEditorService.saveSettings({
         document: current,
         name: settingsName,
@@ -215,7 +215,7 @@ function TestEditorDocument({
       const live = currentLiveEditor();
       if (live) return liveTestEditorService[direction]({ current: live });
       const current = currentDocument();
-      if (!current) throw new TypeError("Reload this Test before changing its history.");
+      if (!current) throw new TypeError("Reload this test before changing its history.");
       const operation = testEditorService[direction];
       if (!operation) throw new TypeError("Saved history is not available on this Relay server.");
       return operation({ document: current });
@@ -248,7 +248,7 @@ function TestEditorDocument({
         });
       }
       const current = currentDocument();
-      if (!current) throw new TypeError("Reload this Test before reviewing a repair.");
+      if (!current) throw new TypeError("Reload this test before reviewing a repair.");
       return testEditorService.decideRepair({
         document: current,
         proposalId: proposal.id,
@@ -299,7 +299,7 @@ function TestEditorDocument({
             intent: "Describe the next action",
             binding: {
               status: "unresolved",
-              reason: "Choose a saved action for this step before running the Test.",
+              reason: "Choose a saved action for this step before running the test.",
             },
           };
     apply(
@@ -586,7 +586,7 @@ function TestEditorDocument({
       />
 
       {(sessionId ? liveEditor.isPending : document.isPending) ? (
-        <PageLoading label="Loading Test steps…" />
+        <PageLoading label="Loading test steps…" />
       ) : null}
       <RecordingProblem
         className="mx-4 mb-4"
@@ -605,11 +605,11 @@ function TestEditorDocument({
       !editorDocument &&
       !(sessionId ? liveEditor.isError : document.isError) ? (
         <EmptyState
-          title="This Test is not available"
-          detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
+          title="This test is not available"
+          detail="It may have been removed or may belong to another app. Choose a saved test to continue."
           action={
             <Link className={productLinkClassName} to="/tests">
-              Browse saved Tests
+              Browse saved tests
             </Link>
           }
         />

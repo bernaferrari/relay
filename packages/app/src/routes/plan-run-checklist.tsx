@@ -131,7 +131,7 @@ export function PlanRunChecklist({
                 <Link
                   to="/runs/$runId"
                   params={{ runId: inspection.id }}
-                  aria-label={`${name} · ${inspection.kind === "live" ? "Open live Run" : "Open Run report"}`}
+                  aria-label={`${name} · ${inspection.kind === "live" ? "Open live run" : "Open run report"}`}
                   className={`${row} transition-colors duration-150 outline-none hover:bg-accent focus-visible:bg-accent`}
                 >
                   {body}

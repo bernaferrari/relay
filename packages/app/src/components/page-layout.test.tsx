@@ -28,7 +28,7 @@ describe("PageHeader", () => {
     const host = await render(
       <PageHeader
         context="Tests"
-        title="Record a Test"
+        title="Record a test"
         description="Choose an app and a device, then start."
       />,
     );
@@ -43,7 +43,7 @@ describe("PageHeader", () => {
     expect(context?.className).toContain("text-xs");
 
     const title = host.querySelector("h1");
-    expect(title?.textContent).toBe("Record a Test");
+    expect(title?.textContent).toBe("Record a test");
     expect(title?.className).toContain("text-3xl");
     expect(host.querySelector('[data-slot="page-title-row"]')?.className).toContain("mt-1");
 
@@ -57,7 +57,7 @@ describe("PageHeader", () => {
     const withName = await render(
       <PageHeader
         context="Tests"
-        title="Saved Tests"
+        title="Saved tests"
         description="Run a saved journey, or record a new one."
       />,
     );
@@ -68,7 +68,7 @@ describe("PageHeader", () => {
             Tests / Record
           </nav>
         }
-        title="Record a Test"
+        title="Record a test"
         description="Choose an app and a device, then start."
       />,
     );

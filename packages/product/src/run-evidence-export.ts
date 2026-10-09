@@ -12,7 +12,7 @@ export function runEvidenceExportDocument(
   result: TracePackExportResponse,
 ): RunEvidenceExportDocument {
   if (result.tracePack.source.runId !== runId || result.analysis.sourceRunId !== runId) {
-    throw new TypeError("Relay returned TracePack evidence for a different Run.");
+    throw new TypeError("Relay returned TracePack evidence for a different run.");
   }
   if (result.analysis.tracePackDigest !== result.tracePack.digest) {
     throw new TypeError("Relay returned TracePack analysis for a different evidence digest.");
@@ -30,7 +30,7 @@ export function walkthroughExportDocument(
   result: WalkthroughPackExportResponse,
 ): RunEvidenceExportDocument {
   if (!result.pack.manifest.pinned.runIds.includes(runId)) {
-    throw new TypeError("Relay returned a walkthrough for a different Run.");
+    throw new TypeError("Relay returned a walkthrough for a different run.");
   }
   return {
     fileName: `relay-walkthrough-${runId}.html`,

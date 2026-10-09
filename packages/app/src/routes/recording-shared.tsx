@@ -40,16 +40,16 @@ export function ReconnectLiveViewButton({
 export function errorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   if (/raw accessibility|immutable raw|offline geometry|raw-evidence/iu.test(message)) {
-    return "Relay needs a fresh capture of the starting screen before this Test can run.";
+    return "Relay needs a fresh capture of the starting screen before this test can run.";
   }
   if (/target selection is ambiguous|choose one by id/iu.test(message)) {
     return "Choose one ready device or browser, then try again.";
   }
   if (/app map selection is ambiguous/iu.test(message)) {
-    return "Choose the app that owns this Test, then try again.";
+    return "Choose the app that owns this test, then try again.";
   }
   if (/this test appears in more than one app/iu.test(message)) {
-    return "This Test appears in more than one app and cannot be opened safely.";
+    return "This test appears in more than one app and cannot be opened safely.";
   }
   if (/no connected .+ target is ready|nothing is ready/iu.test(message)) {
     return "No device or managed browser is ready. Connect one, then try again.";
@@ -57,7 +57,7 @@ export function errorMessage(error: unknown): string {
   if (/failed to fetch|networkerror|connection (?:ended|failed|refused)/iu.test(message)) {
     return "Relay could not reach the local service. Check the connection, then try again.";
   }
-  return "Relay could not complete this request. Try again, or return to the Test.";
+  return "Relay could not complete this request. Try again, or return to the test.";
 }
 
 export function PageLoading({ label }: { label: string }) {
@@ -243,7 +243,7 @@ export function RecordingProblem({
                   />
                 }
               >
-                {capturedSetup.sourceStepId ? "Review affected step" : "Review Test"}
+                {capturedSetup.sourceStepId ? "Review affected step" : "Review test"}
               </Button>
             ) : undefined
           ) : (
@@ -315,8 +315,8 @@ function recoveryCopy(
   if (recovery.code === "raw-evidence-recapture-required") {
     return {
       title: "Relay needs a fresh capture of the starting screen",
-      detail: "This Test cannot run until its starting screen is captured again.",
-      recovery: "Open the Test, record the starting screen again, then save it.",
+      detail: "This test cannot run until its starting screen is captured again.",
+      recovery: "Open the test, record the starting screen again, then save it.",
     };
   }
   const combined = `${recovery.title} ${recovery.detail} ${recovery.recovery}`;
@@ -330,7 +330,7 @@ function recoveryCopy(
       detail: errorMessage(new Error(combined)),
       recovery: recovery.retryable
         ? "Try again after checking the app, device, and Relay connection."
-        : "Return to the Test and choose another available action.",
+        : "Return to the test and choose another available action.",
     };
   }
   return recovery;

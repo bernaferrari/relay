@@ -189,11 +189,11 @@ export function RunInspection({
     if (embedded && ownership.kind === "foreign") {
       return (
         <EmptyState
-          title="This Run belongs to another Test"
-          detail="The copied result is still available, but it is not an attached report for this Test."
+          title="This run belongs to another test"
+          detail="The copied result is still available, but it is not an attached report for this test."
           action={
             <Link className={productLinkClassName} to="/runs/$runId" params={{ runId }}>
-              Open the original Run
+              Open the original run
             </Link>
           }
         />
@@ -370,7 +370,7 @@ export function RunInspection({
             ) : null}
             {canCancel ? (
               <Button variant="outline" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
-                {cancel.isPending ? "Cancelling…" : "Cancel Run"}
+                {cancel.isPending ? "Cancelling…" : "Cancel run"}
               </Button>
             ) : null}
           </>

@@ -43,18 +43,20 @@ export async function assertTestFixtureActions(page, fixture) {
       throw new Error("Recording review did not render every editable action");
     }
     await page.getByRole("button", { name: "Edit steps" }).click();
-    await page.getByRole("button", { name: "Save instruction" }).waitFor();
-    if (await page.getByRole("button", { name: "Save instruction" }).isEnabled()) {
-      throw new Error("Recording review enabled an unchanged instruction");
+    // Save appears only while the instruction differs from what is saved.
+    const save = page.getByRole("button", { name: "Save instruction", exact: true });
+    const instruction = page.getByRole("textbox", { name: "What this step does", exact: true });
+    await instruction.waitFor();
+    if ((await save.count()) !== 0) {
+      throw new Error("Recording review offered to save an unchanged instruction");
     }
-    const instruction = page.getByRole("textbox", { name: "Instruction", exact: true });
     const originalInstruction = await instruction.inputValue();
     await instruction.fill(`${originalInstruction} again`);
-    if (await page.getByRole("button", { name: "Save instruction", exact: true }).isDisabled()) {
-      throw new Error("Recording review did not enable a changed instruction");
+    if ((await save.count()) !== 1 || (await save.isDisabled())) {
+      throw new Error("Recording review did not offer to save a changed instruction");
     }
     await instruction.fill(originalInstruction);
-    if (await page.getByRole("button", { name: "Save instruction", exact: true }).isEnabled()) {
+    if ((await save.count()) !== 0) {
       throw new Error("Recording review kept a reverted instruction marked as changed");
     }
     const replay = page.getByRole("button", { name: "Run test", exact: true });

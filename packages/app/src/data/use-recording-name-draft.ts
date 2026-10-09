@@ -40,7 +40,7 @@ export function useRecordingNameDraft({
           setNameDraftLoaded(true);
           setNameSaveState("failed");
           setNameSaveError(
-            "Could not load the saved name. Keep this page open until you save the Test.",
+            "Could not load the saved name. Keep this page open until you save the test.",
           );
         }
       });

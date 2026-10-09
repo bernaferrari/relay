@@ -84,7 +84,7 @@ export function AppVersionsPage() {
               detail="No mobile build or web deployment has been registered in this workspace yet."
               action={
                 <Link className={productLinkClassName} to="/tests">
-                  Open Tests
+                  Open tests
                 </Link>
               }
             />

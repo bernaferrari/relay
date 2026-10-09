@@ -116,12 +116,12 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
         appMapId: document.appMapId,
       });
       if (current.revision !== document.revision)
-        throw new TypeError("The saved Test changed. Reload before saving this text.");
+        throw new TypeError("The saved test changed. Reload before saving this text.");
       const addressed = testTextActions(current, document.test.id)[stepId]?.find(
         (item) => item.key === action.key,
       );
       if (!addressed || addressed.text !== action.text)
-        throw new TypeError("This text action changed. Reload the Test.");
+        throw new TypeError("This text action changed. Reload the test.");
       const { appMap } = await relay.invoke("app-map.connection.update", {
         appMapId: document.appMapId,
         connectionId: addressed.connectionId,
@@ -167,7 +167,7 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
         (candidate) => (!appMapId || candidate.id === appMapId) && Boolean(candidate.tests[testId]),
       );
       if (owners.length > 1) {
-        throw new TypeError("This Test appears in more than one app and cannot be edited safely.");
+        throw new TypeError("This test appears in more than one app and cannot be edited safely.");
       }
       return owners[0] ? documentFromMap(owners[0], testId) : undefined;
     },
@@ -260,7 +260,7 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
 
 function requireDocument(appMap: AppMap, testId: string): ProductTestEditorDocument {
   const document = documentFromMap(appMap, testId);
-  if (!document) throw new TypeError("The edited Test is no longer available.");
+  if (!document) throw new TypeError("The edited test is no longer available.");
   return document;
 }
 

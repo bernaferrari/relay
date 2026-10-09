@@ -77,7 +77,7 @@ describe("Plan input Data sets", () => {
       },
     });
   });
-  it("offers public inputs with separate Project usage and current App linkage", async () => {
+  it("offers public inputs with separate Project usage and current app linkage", async () => {
     const { service } = fixture(
       [
         definition,
@@ -159,7 +159,7 @@ describe("Plan input Data sets", () => {
     expect(project).toHaveBeenCalledOnce();
   });
   it.each([
-    { change: { expectedRevision: 3 }, message: "This App changed" },
+    { change: { expectedRevision: 3 }, message: "This app changed" },
     { change: { catalogRevision: 1 }, message: "saved values changed" },
     { change: { inputId: "chat_prompt" }, message: "available shared input" },
   ])(
@@ -349,7 +349,7 @@ describe("Plan input Data sets", () => {
       ),
     ).toBe(false);
   });
-  it("protects definitions linked in another Project App while allowing an explicit new link here", async () => {
+  it("protects definitions linked in another Project app while allowing an explicit new link here", async () => {
     const other = {
       ...map,
       id: "another-app",

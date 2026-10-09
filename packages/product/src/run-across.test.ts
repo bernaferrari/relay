@@ -64,7 +64,7 @@ function batchWithStatuses(...statuses: Array<"passed" | "failed" | "blocked" | 
   };
 }
 
-test("Plan Result title uses the saved Plan name instead of Run Across", async () => {
+test("Plan Result title uses the saved plan name instead of run Across", async () => {
   const invoke = async (id: string) => {
     assert.equal(id, "job.combine.campaign.get");
     return {
@@ -381,7 +381,7 @@ test("start, continue, and export use the canonical durable campaign", async () 
   );
 });
 
-test("canonical cases expose Test × environment identity without inventing legacy identity", async () => {
+test("canonical cases expose test × environment identity without inventing legacy identity", async () => {
   const invoke = async (id: string) => {
     assert.equal(id, "job.combine.campaign.get");
     return {
@@ -429,7 +429,7 @@ test("canonical cases expose Test × environment identity without inventing lega
   assert.equal(batch.cases[1]!.identity, undefined);
 });
 
-test("live Plan cases retain their exact job without claiming immutable Run evidence", async () => {
+test("live plan cases retain their exact job without claiming immutable run evidence", async () => {
   const invoke = async (id: string) => {
     assert.equal(id, "job.combine.campaign.get");
     return {

@@ -560,7 +560,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                 {recording.isFetching ? "Reconnecting…" : "Reconnect"}
               </Button>
               <Button variant="outline" onClick={() => void navigate({ to: "/tests" })}>
-                Back to Tests
+                Back to tests
               </Button>
             </div>
           </div>

@@ -35,7 +35,7 @@ export function PlanInputUsageWarnings({
         </summary>
         <p className="mt-1 leading-6">
           Open a text step and choose Text source → Run input. Enter the input name above and save.
-          If the Test has no text step, record one first.
+          If the test has no text step, record one first.
         </p>
       </details>
       <div className="flex flex-wrap gap-x-4 gap-y-2">

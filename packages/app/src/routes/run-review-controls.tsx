@@ -40,7 +40,7 @@ export function RunReviewControls({
   });
   const visualDecision = useMutation({
     mutationFn: (action: "approve-new-baseline" | "keep-baseline" | "retry") => {
-      if (!compare.data) throw new TypeError("Compare this Run before saving a visual decision.");
+      if (!compare.data) throw new TypeError("Compare this run before saving a visual decision.");
       if (action === "approve-new-baseline" && service.approveVisualBaseline) {
         return service.approveVisualBaseline({ runId, action, note: "Reviewed in Relay" });
       }

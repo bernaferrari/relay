@@ -78,7 +78,7 @@ export function MapScreensPanel({
             detail={
               screens.length
                 ? "Try another screen name."
-                : "Record a Test to add screens to this Map."
+                : "Record a test to add screens to this Map."
             }
           />
         )}

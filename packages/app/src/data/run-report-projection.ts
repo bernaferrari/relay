@@ -89,7 +89,7 @@ function channelSections(
       summary:
         presentation.summary ??
         channelSummaries[id] ??
-        "Inspect the evidence Relay captured during this Run.",
+        "Inspect the evidence Relay captured during this run.",
       inspectable: sectionItems.length > 0,
       items: sectionItems,
     });
@@ -142,7 +142,7 @@ function networkEvidenceSummary(
   if (requests && connections) {
     return "HTTP rows are observed requests. An encrypted connection does not establish an HTTP body that was not observed.";
   }
-  if (requests) return "Review the HTTP requests Relay observed during this Run.";
+  if (requests) return "Review the HTTP requests Relay observed during this run.";
   if (connections) {
     return "Transport connections observed on the device. Encrypted traffic does not establish an HTTP body that was not observed.";
   }
@@ -875,7 +875,7 @@ export function projectRunReport(
   return {
     runId,
     ...(testId ? { testId } : {}),
-    title: resolvedTitle ?? canonical?.title ?? text(run.title) ?? "Test Run",
+    title: resolvedTitle ?? canonical?.title ?? text(run.title) ?? "Test run",
     ...(outcome ? { outcome } : {}),
     ...(targetName ? { targetName } : {}),
     ...(finite(run.durationMs) === undefined ? {} : { durationMs: finite(run.durationMs) }),

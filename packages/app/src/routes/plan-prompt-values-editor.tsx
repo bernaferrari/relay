@@ -115,7 +115,7 @@ export function PlanPromptValuesEditor({
           }}
         />
         <p id={`${id}-name-help`} className="text-xs text-muted-foreground">
-          Match the Test’s Run input name. Use letters, numbers, _ . or -.
+          Match the test’s run input name. Use letters, numbers, _ . or -.
         </p>
         {errors.name ? <FieldError id={`${id}-name-error`}>{errors.name}</FieldError> : null}
       </Field>

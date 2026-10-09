@@ -66,7 +66,7 @@ function stepTitles(steps: readonly AppMapScenarioTestStep[]): Map<string, strin
 
 function preview(current: BindingCatalog, input: ProductPlanInputBindingRequest) {
   if (current.appMap.revision !== input.expectedRevision)
-    throw new TypeError("This App changed. Reload its Data sets and try again.");
+    throw new TypeError("This app changed. Reload its Data sets and try again.");
   if (current.revision !== input.catalogRevision)
     throw new TypeError("These saved values changed. Reload the Data sets and try again.");
   const definition = current.inputs.find((item) => item.id === input.inputId);
@@ -89,7 +89,7 @@ function preview(current: BindingCatalog, input: ProductPlanInputBindingRequest)
   );
   if (variables.length > 1)
     throw new TypeError(
-      "This input has multiple Data sets in this App. Choose one in the Test editor.",
+      "This input has multiple Data sets in this app. Choose one in the test editor.",
     );
   const variable = variables[0];
   const options = variable
@@ -114,7 +114,7 @@ function preview(current: BindingCatalog, input: ProductPlanInputBindingRequest)
   const tests = [...new Set(input.testIds)].map((id) => {
     const test = current.appMap.tests[id];
     if (!test)
-      throw new TypeError("A selected Test changed. Reload the Plan before binding inputs.");
+      throw new TypeError("A selected test changed. Reload the plan before binding inputs.");
     const titles = stepTitles(test.steps);
     return {
       id,
@@ -173,7 +173,7 @@ export function createPlanInputBindingService(
         !selectedOptionIds.length ||
         selectedOptionIds.some((id) => !checked.options.some((row) => row.id === id))
       )
-        throw new TypeError("Choose at least one current saved value for this Plan.");
+        throw new TypeError("Choose at least one current saved value for this plan.");
       if (!input.bindings.length) throw new TypeError("Choose a text action to use these values.");
       const chosenTests = new Set<string>();
       const chosenLeaves = new Map<string, ProductTestTextAction>();
@@ -187,7 +187,7 @@ export function createPlanInputBindingService(
               item.text === choice.text,
           );
         if (!action || chosenTests.has(choice.testId))
-          throw new TypeError("This text action changed. Reload the Test choices before saving.");
+          throw new TypeError("This text action changed. Reload the test choices before saving.");
         chosenTests.add(choice.testId);
         chosenLeaves.set(action.key, action);
       }
@@ -237,7 +237,7 @@ export function createPlanInputBindingService(
             await current.relay.invoke("app-map.commit", {
               appMapId: input.appMapId,
               expectedRevision: input.expectedRevision,
-              summary: "Connect Plan prompt values to selected Test text actions",
+              summary: "Connect plan prompt values to selected test text actions",
               changes,
             })
           ).appMap

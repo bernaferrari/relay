@@ -147,7 +147,7 @@ export function classifyDeliveryLoop(input: {
       original,
       next: {
         action: "prepare-exact-configuration",
-        reason: "Bind the exact build, Tests, and targets before proving this change.",
+        reason: "Bind the exact build, tests, and targets before proving this change.",
       },
     };
   }
@@ -157,7 +157,7 @@ export function classifyDeliveryLoop(input: {
       original,
       next: {
         action: "approve-plan",
-        reason: "A human must approve the Verification Plan before execution.",
+        reason: "A human must approve the Verification plan before execution.",
       },
     };
   }
@@ -165,7 +165,7 @@ export function classifyDeliveryLoop(input: {
     return {
       phase: "running",
       original,
-      next: { action: "wait", reason: "Relay is executing the required Tests on the bound build." },
+      next: { action: "wait", reason: "Relay is executing the required tests on the bound build." },
     };
   }
   if (replacement && sameBuild(original, replacement)) {
@@ -291,7 +291,7 @@ export function classifyDeliveryLoop(input: {
         next: {
           action: "repair",
           reason:
-            "A required Test failed. Use the causal evidence; do not treat the original Proof as verified.",
+            "A required test failed. Use the causal evidence; do not treat the original Proof as verified.",
         },
       };
     }
@@ -345,7 +345,7 @@ export function classifyDeliveryLoop(input: {
         : undefined,
       next: {
         action: "repair",
-        reason: "A required Test failed on the bound build. Repair, then verify a new build.",
+        reason: "A required test failed on the bound build. Repair, then verify a new build.",
       },
     };
   }

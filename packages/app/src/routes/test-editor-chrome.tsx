@@ -58,7 +58,7 @@ export function TestEditorChrome({
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold" title={editorDocument?.test.name}>
-              {editorDocument?.test.name ?? "Edit Test"}
+              {editorDocument?.test.name ?? "Edit test"}
             </h1>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {editorDocument?.appName}

@@ -63,15 +63,15 @@ function assertBinding(
   authoring: ProductSessionDetail | undefined,
 ): void {
   if (!document) throw new TypeError(`Test ${testId} is not available for editing.`);
-  if (!authoring) throw new TypeError("The Authoring Session is no longer available.");
+  if (!authoring) throw new TypeError("The Authoring session is no longer available.");
   if (document.test.id !== testId) {
-    throw new TypeError("The editor returned a different Test than requested.");
+    throw new TypeError("The editor returned a different test than requested.");
   }
   if (authoring.appMapId !== document.appMapId) {
-    throw new TypeError("The Test and Authoring Session belong to different App Maps.");
+    throw new TypeError("The test and Authoring session belong to different app Maps.");
   }
   if (authoring.committedTestId && authoring.committedTestId !== testId) {
-    throw new TypeError("The Authoring Session is committed to a different Test.");
+    throw new TypeError("The Authoring session is committed to a different test.");
   }
 }
 
@@ -100,7 +100,7 @@ export function createLiveTestEditorProductService(input: {
       input.sessions.get(inputValue.sessionId),
     ]);
     assertBinding(inputValue.testId, document, authoring);
-    if (!document || !authoring) throw new TypeError("The live Test binding is incomplete.");
+    if (!document || !authoring) throw new TypeError("The live test binding is incomplete.");
     const recording = inputValue.workflowId
       ? await input.recording.inspect(inputValue.workflowId)
       : undefined;
@@ -145,11 +145,11 @@ export function createLiveTestEditorProductService(input: {
     undo: ({ current }) =>
       input.editor.undo
         ? withDocument(current, (document) => input.editor.undo!({ document }))
-        : Promise.reject(new TypeError("Saved Test history is unavailable.")),
+        : Promise.reject(new TypeError("Saved test history is unavailable.")),
     redo: ({ current }) =>
       input.editor.redo
         ? withDocument(current, (document) => input.editor.redo!({ document }))
-        : Promise.reject(new TypeError("Saved Test history is unavailable.")),
+        : Promise.reject(new TypeError("Saved test history is unavailable.")),
     decideRepair: ({ current, proposalId, decision }) =>
       withDocument(current, (document) =>
         input.editor.decideRepair({ document, proposalId, decision }),

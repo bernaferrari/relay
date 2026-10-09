@@ -139,7 +139,7 @@ export function CaptureReviewDecisions({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem disabled={disabled} onClick={() => setReferenceOpen(true)}>
-                <BookmarkPlus aria-hidden="true" /> Accept as reference for future Runs
+                <BookmarkPlus aria-hidden="true" /> Accept as reference for future runs
                 <span className="sr-only">{suffix}</span>
               </DropdownMenuItem>
               <DropdownMenuItem

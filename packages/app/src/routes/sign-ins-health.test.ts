@@ -67,11 +67,11 @@ describe("Sign-ins health", () => {
     expect(probedAccountIdentity(live.fixture)).toBeUndefined();
   });
 
-  it("says one live account cannot be a 3-account Plan", () => {
+  it("says one live account cannot be a 3-account plan", () => {
     expect(concurrentAccountCopy(1)).toContain("One live account");
     expect(concurrentAccountCopy(1)).toContain("another saved sign-in");
     expect(concurrentAccountCopy(3)).toContain(
-      "3 live accounts can run the same Test concurrently",
+      "3 live accounts can run the same test concurrently",
     );
   });
 

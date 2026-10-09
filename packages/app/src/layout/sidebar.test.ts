@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isSidebarItemActive } from "./sidebar";
 
 describe("sidebar route ownership", () => {
-  it("gives Apps an explicit stable destination", () => {
+  it("gives apps an explicit stable destination", () => {
     const primaryItems = [
       "/tests",
       "/runs",
@@ -28,12 +28,12 @@ describe("sidebar route ownership", () => {
     expect(isSidebarItemActive("/accounts", "/accounts")).toBe(true);
   });
 
-  it("keeps the focused screenshot review inside Runs", () => {
+  it("keeps the focused screenshot review inside runs", () => {
     expect(isSidebarItemActive("/review", "/runs")).toBe(true);
     expect(isSidebarItemActive("/review", "/tests")).toBe(false);
   });
 
-  it("folds Plans into Tests and Ask Relay into the workbench context", () => {
+  it("folds plans into tests and Ask Relay into the workbench context", () => {
     expect(isSidebarItemActive("/suites", "/tests")).toBe(true);
     expect(isSidebarItemActive("/apps/app-1/suites/suite-1", "/tests")).toBe(true);
     expect(isSidebarItemActive("/goals", "/tests")).toBe(true);

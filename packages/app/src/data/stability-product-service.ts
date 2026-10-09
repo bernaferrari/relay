@@ -210,7 +210,7 @@ export function stabilityMaintenanceRecommendations(
         id: `rerun-flake:${signal.environmentId ?? "all"}`,
         action: "rerun-flake",
         summary:
-          "Compare these Runs. They used the same Test revision, build, target, account, and starting state.",
+          "Compare these runs. They used the same test revision, build, target, account, and starting state.",
         runIds: signal.runIds,
         ...(signal.environmentId ? { environmentId: signal.environmentId } : {}),
       });
@@ -218,7 +218,7 @@ export function stabilityMaintenanceRecommendations(
       recommendations.push({
         id: `compare-mixed:${signal.environmentId ?? "all"}`,
         action: "inspect-environment",
-        summary: "Different outcomes were observed. Compare these Runs.",
+        summary: "Different outcomes were observed. Compare these runs.",
         runIds: signal.runIds,
         ...(signal.environmentId ? { environmentId: signal.environmentId } : {}),
       });
@@ -498,7 +498,7 @@ export function summarizeProductStability(
           kind: "possible-flakiness",
           severity: "warning",
           summary:
-            "This Test passed and failed on the same revision, build, target, account, and starting state.",
+            "This test passed and failed on the same revision, build, target, account, and starting state.",
           environmentId: group[0]!.environmentId ?? group[0]!.targetProfileId,
           runIds: signalRunIds(group),
           ...(group[0]!.testId ? { testId: group[0]!.testId } : {}),
@@ -511,7 +511,7 @@ export function summarizeProductStability(
       signals.push({
         kind: "mixed-outcomes",
         severity: "info",
-        summary: "Different outcomes were observed. Compare these Runs.",
+        summary: "Different outcomes were observed. Compare these runs.",
         runIds: signalRunIds(mixed),
       });
     }

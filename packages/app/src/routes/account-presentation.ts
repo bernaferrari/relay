@@ -133,7 +133,8 @@ export function accountLastUsedAt(
 
 /** "today", "yesterday", "3 days ago", "2 months ago". */
 export function relativeDay(timestamp: number, now = Date.now()): string {
-  const days = Math.round((startOfDay(timestamp) - startOfDay(now)) / 86_400_000);
+  // Past events only: a clock difference between machines must never read "in 2 days".
+  const days = Math.min(0, Math.round((startOfDay(timestamp) - startOfDay(now)) / 86_400_000));
   const format = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
   if (Math.abs(days) < 30) return format.format(days, "day");
   const months = Math.round(days / 30);

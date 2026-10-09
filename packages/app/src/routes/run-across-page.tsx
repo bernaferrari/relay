@@ -36,7 +36,7 @@ export function RunAcrossPage() {
     queryKey: ["run-across", "setup", appScope ?? null, testId],
     queryFn: async () => {
       const test = await runService.getTest(testId, appScope);
-      if (!test) throw new TypeError("This Test is not available.");
+      if (!test) throw new TypeError("This test is not available.");
       return runAcrossService.getSetup(test.appMapId, testId);
     },
     staleTime: 15_000,
@@ -170,7 +170,7 @@ export function RunAcrossPage() {
     if (!setup.data.dataSet.dimensions.length && !usePairs) {
       return {
         preview: undefined,
-        error: "Choose saved browser sign-ins here, or run once from the Test page.",
+        error: "Choose saved browser sign-ins here, or run once from the test page.",
       };
     }
     try {
@@ -267,7 +267,7 @@ export function RunAcrossPage() {
       {!loading && setup.data && !setup.error && !hasDataValues ? (
         <EmptyState
           title="This data set has no values yet"
-          detail="Add values to the App's saved data set before running across them. You can still run this Test once."
+          detail="Add values to the app's saved data set before running across them. You can still run this test once."
           action={
             <Button
               nativeButton={false}
@@ -279,7 +279,7 @@ export function RunAcrossPage() {
                 />
               }
             >
-              Run this Test once
+              Run this test once
             </Button>
           }
         />
@@ -355,7 +355,12 @@ export function RunAcrossPage() {
             error={scope.error ?? configuration.error}
             onRetry={scope.error ? scope.retry : configuration.retry}
             targetGroupName="run-across-target"
-            pairedWorkspaceLabel={`Use saved browser sign-ins (${paired.workspace.rows.length})`}
+            pairedWorkspaceLabel={
+              // Offering an empty set of sign-ins is a dead end; Browsers is where they're made.
+              paired.workspace.rows.length
+                ? `Use saved browser sign-ins (${paired.workspace.rows.length})`
+                : undefined
+            }
             pairedWorkspaceAction={
               <Link className={productLinkClassName} to="/environments">
                 Manage sign-ins
@@ -394,7 +399,7 @@ export function RunAcrossPage() {
                     : "Relay could not start these cases."}
                 </p>
                 {savedBatchId ? (
-                  <p>The result is saved. Open it before starting another Run.</p>
+                  <p>The result is saved. Open it before starting another run.</p>
                 ) : null}
               </div>
             ) : null}
@@ -422,7 +427,7 @@ export function RunAcrossPage() {
                   params={{ testId }}
                   search={{ setup: "run", app: setup.data.appMapId }}
                 >
-                  Run once from Test
+                  Run once from test
                 </Link>
               ) : null}
               {savedBatchId ? (
@@ -439,12 +444,12 @@ export function RunAcrossPage() {
                   disabled={!preview || start.isPending || configuration.loading || paired.loading}
                 >
                   {start.isPending
-                    ? "Starting selected cases…"
+                    ? "Starting…"
                     : !preview
-                      ? "Run selected cases"
+                      ? "Run combinations"
                       : preview.caseCount === 1
-                        ? "Run selected case"
-                        : `Run ${preview.caseCount} selected cases`}
+                        ? "Run 1 combination"
+                        : `Run ${preview.caseCount} combinations`}
                 </Button>
               )}
             </footer>

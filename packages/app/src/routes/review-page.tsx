@@ -92,8 +92,8 @@ function timeAgo(value: number): string {
 }
 
 const SHORTCUTS: readonly [string, string][] = [
-  ["A", "Looks correct for this Run"],
-  ["Shift+A", "Accept as reference for future Runs"],
+  ["A", "Looks correct for this run"],
+  ["Shift+A", "Accept as reference for future runs"],
   ["R", "Report issue"],
   ["I", "Ignore areas on this screen"],
   ["J / ↓", "Next screenshot"],
@@ -577,7 +577,7 @@ export function ReviewPage() {
                       size="sm"
                       className="ml-auto h-8"
                       disabled={editingIgnore}
-                      title="Accept this screenshot for this Run"
+                      title="Accept this screenshot for this run"
                       onClick={() => decide.mutate({ card: selected, action: "accept" })}
                     >
                       <Check aria-hidden="true" />

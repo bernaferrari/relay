@@ -129,7 +129,7 @@ export function SessionPage() {
 
   async function send(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
     if (!live.current) {
-      setLiveIssue("The live Session is still connecting.");
+      setLiveIssue("The live session is still connecting.");
       return false;
     }
     setLiveBusy(true);
@@ -177,7 +177,7 @@ export function SessionPage() {
                     />
                   }
                 >
-                  <Pencil aria-hidden="true" /> Edit Test live
+                  <Pencil aria-hidden="true" /> Edit test live
                 </Button>
               ) : null}
               {isActiveSession(value) ? (
@@ -211,7 +211,7 @@ export function SessionPage() {
         />
       ) : null}
 
-      {session.isPending ? <PageLoading label="Loading Session…" /> : null}
+      {session.isPending ? <PageLoading label="Loading session…" /> : null}
       {session.isError && !value ? (
         <section
           className="mt-10 flex max-w-xl flex-col items-start"
@@ -225,7 +225,7 @@ export function SessionPage() {
             id="session-load-error-title"
             className="mt-5 text-2xl font-semibold tracking-tight text-foreground"
           >
-            Couldn’t load this Session
+            Couldn’t load this session
           </h1>
           <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">
             Relay couldn’t retrieve this session. It may have expired or the link may no longer be
@@ -257,7 +257,7 @@ export function SessionPage() {
 
       {!session.isPending && !session.isError && !value ? (
         <EmptyState
-          title="This Session is not available"
+          title="This session is not available"
           detail="It may belong to another project or may have been removed. Return to Live to continue available work."
           action={
             <Button nativeButton={false} variant="default" render={<Link to="/sessions" />}>
@@ -362,7 +362,7 @@ export function SessionPage() {
                         <Link to="/tests/$testId" params={{ testId: value.committedTestId }} />
                       }
                     >
-                      Open saved Test
+                      Open saved test
                     </Button>
                   ) : null}
                 </div>

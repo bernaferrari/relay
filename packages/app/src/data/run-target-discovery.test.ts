@@ -76,7 +76,7 @@ vi.mock("./product-client", () => ({
   }),
 }));
 
-describe("saved Test scoped target discovery", () => {
+describe("saved test scoped target discovery", () => {
   it("preflights only the requested browser and scopes its naming inventory too", async () => {
     calls.length = 0;
     const service = createRunProductService({} as Platform);
@@ -91,7 +91,7 @@ describe("saved Test scoped target discovery", () => {
     ]);
   });
 
-  it("loads the actual Run runtime and discovers a native target without Node crypto", async () => {
+  it("loads the actual run runtime and discovers a native target without Node crypto", async () => {
     calls.length = 0;
     const service = createRunProductService({} as Platform);
     const targets = await service.listTargets({ targetKind: "device", targetId: "selected-ipad" });

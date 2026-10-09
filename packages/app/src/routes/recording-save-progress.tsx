@@ -15,6 +15,6 @@ export function RecordingSaveProgress({
   return error ? (
     <RecordingProblem className="m-6" error={error} onRetry={onRetry} retrying={retrying} />
   ) : (
-    <PageLoading label={intoName ? `Adding steps to ${intoName}…` : "Opening the saved Test…"} />
+    <PageLoading label={intoName ? `Adding steps to ${intoName}…` : "Opening the saved test…"} />
   );
 }

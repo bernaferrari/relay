@@ -468,7 +468,7 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Saved");
   });
 
-  it("redirects the legacy editor URL to in-place editing on the Test page", async () => {
+  it("redirects the legacy editor URL to in-place editing on the test page", async () => {
     const history = await render(service().editor, "/tests/test-checkout/edit?step=step-pay");
     expect(history.location.pathname).toBe("/tests/test-checkout");
     expect(history.location.search).toContain("step=step-pay");
@@ -591,7 +591,7 @@ describe("Test editor", () => {
     ).toBe("0.70,0.08,0.28,0.10");
   });
 
-  it("offers Remember reply when the Test already extracts a reply", async () => {
+  it("offers Remember reply when the test already extracts a reply", async () => {
     const source = structuredClone(initialDocument);
     source.hasRememberableReply = true;
     await render(service(source).editor);
@@ -609,7 +609,7 @@ describe("Test editor", () => {
     expect(document.body.textContent).not.toContain('"kind":"connections"');
     await click("Add a check");
     expect(harness.edits).toEqual([]);
-    expect(document.body.textContent).toContain("Not saved on this Test");
+    expect(document.body.textContent).toContain("Not saved on this test");
     expect(document.body.textContent).toContain("does not accept a visual baseline");
     expect(document.body.textContent).toContain("Visual judge");
     await chooseCheckpoint("Visual judge");
@@ -617,7 +617,7 @@ describe("Test editor", () => {
     await click("Remove step");
     await click("Remove step");
     expect(harness.edits).toEqual([]);
-    expect(document.body.textContent).not.toContain("Not saved on this Test");
+    expect(document.body.textContent).not.toContain("Not saved on this test");
   });
 
   it("saves a condition wait and leaves no unsaved draft behind", async () => {
@@ -655,7 +655,7 @@ describe("Test editor", () => {
     expect(history.location.pathname).toBe("/tests/test-checkout");
   });
 
-  it("keeps Run blocked while a visible checkpoint save awaits acknowledgement", async () => {
+  it("keeps run blocked while a visible checkpoint save awaits acknowledgement", async () => {
     const harness = service();
     const saveEdit = harness.editor.edit.bind(harness.editor);
     let acknowledgeSave: (() => void) | undefined;
@@ -787,7 +787,7 @@ describe("Test editor", () => {
     expect(added.step.kind).toBe("instruction");
     expect(added.step.binding).toEqual({
       status: "unresolved",
-      reason: "Choose a saved action for this step before running the Test.",
+      reason: "Choose a saved action for this step before running the test.",
     });
     expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
       "Describe the next action",
@@ -849,7 +849,7 @@ describe("Test editor", () => {
   });
 });
 
-it("keeps an unsaved checkpoint when leaving for Runs until leaving is confirmed", async () => {
+it("keeps an unsaved checkpoint when leaving for runs until leaving is confirmed", async () => {
   const harness = service();
   const history = await render(harness.editor);
   await click("Add a check");
@@ -920,7 +920,7 @@ it("edits shared recorded text, gates pending saves, and runs the saved paramete
   expect(
     document.querySelector<HTMLTextAreaElement>('form[aria-label="Recorded text"] textarea')!.value,
   ).toBe("Original prompt");
-  expect(document.body.textContent).toContain("Also updates 1 other Test.");
+  expect(document.body.textContent).toContain("Also updates 1 other test.");
   const selectedEditor = document.querySelector('[aria-label="Selected step editor"]')!;
   const details = selectedEditor.querySelector("details")!;
   expect(selectedEditor.firstElementChild?.getAttribute("aria-label")).toBe("Recorded text");
@@ -991,7 +991,7 @@ it("preserves recorded text drafts after a rejected save and never retries the m
   };
   const harness = service(source);
   harness.editor.saveText = vi.fn(async () => {
-    throw new TypeError("The saved Test changed. Reload before saving this text.");
+    throw new TypeError("The saved test changed. Reload before saving this text.");
   });
   await render(harness.editor, "/tests/test-checkout?step=step-cart");
   await fill(

@@ -185,18 +185,18 @@ describe("saved Browser and Account workspace", () => {
     });
     await render(platform, browserService(openSpace));
 
-    await fill("Pair name", "Admin desktop");
+    await fill("Combination name", "Admin desktop");
     await choose("Browser", "Chrome");
-    await choose("Account", "Admin");
-    await click("Add pair");
-    await fill("Pair name", "Member desktop");
+    await choose("Signed in as", "Admin");
+    await click("Add");
+    await fill("Combination name", "Member desktop");
     await choose("Browser", "Firefox");
-    await choose("Account", "Member");
-    await click("Add pair");
-    await fill("Pair name", "Signed out");
+    await choose("Signed in as", "Member");
+    await click("Add");
+    await fill("Combination name", "Signed out");
     await choose("Browser", "WebKit");
-    await choose("Account", "Signed out");
-    await click("Add pair");
+    await choose("Signed in as", "Signed out");
+    await click("Add");
 
     expect(document.body.textContent).toContain("Admin desktop");
     expect(document.body.textContent).toContain("Member desktop");
@@ -209,11 +209,11 @@ describe("saved Browser and Account workspace", () => {
     document.body.replaceChildren();
     await render(platform, browserService(openSpace));
 
-    expect(document.body.textContent).toContain("3 paired configurations");
+    expect(document.body.textContent).toContain("3 saved");
     expect(document.body.textContent).toContain("Admin desktop");
     expect(document.body.textContent).toContain("Chrome · chromium");
     expect(document.body.textContent).toContain("Admin");
-    await click("Open in Live");
+    await click("Open all side by side");
     expect(openSpace.mock.calls.map((call) => call[0])).toEqual([
       {
         spaceId: "chrome-1",

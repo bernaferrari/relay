@@ -11,20 +11,20 @@ it.each(["queued", "running"] as const)(
   },
 );
 
-it("prefers the persisted Run when a live job reference is also present", () => {
+it("prefers the persisted run when a live job reference is also present", () => {
   expect(
     batchCaseInspectionReference({ status: "failed", jobId: "job", runId: "immutable-run" }),
   ).toEqual({ kind: "saved", id: "immutable-run" });
 });
 
 it.each(["pending", "passed", "failed", "blocked", "cancelled"] as const)(
-  "does not treat a %s job-only case as available Run evidence",
+  "does not treat a %s job-only case as available run evidence",
   (status) => {
     expect(batchCaseInspectionReference({ status, jobId: "job" })).toBeUndefined();
   },
 );
 
-it("ignores empty references and does not use identity or prior-attempt Run IDs", () => {
+it("ignores empty references and does not use identity or prior-attempt run IDs", () => {
   const item = {
     status: "running" as const,
     jobId: " ",
@@ -39,8 +39,8 @@ it.each([
   ["pending", "Waiting to start."],
   ["queued", "Waiting to start."],
   ["running", "Run in progress. Evidence will appear here as it is saved."],
-  ["cancelled", "This case stopped without saved Run evidence."],
-  ["blocked", "This case ended without saved Run evidence."],
-] as const)("keeps %s evidence copy distinct from a stopped Run", (status, message) => {
+  ["cancelled", "This case stopped without saved run evidence."],
+  ["blocked", "This case ended without saved run evidence."],
+] as const)("keeps %s evidence copy distinct from a stopped run", (status, message) => {
   expect(batchCaseEvidenceMessage({ status })).toBe(message);
 });

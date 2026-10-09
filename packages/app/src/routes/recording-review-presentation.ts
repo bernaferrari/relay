@@ -131,8 +131,8 @@ export function reviewInstruction(
   replayRequired: boolean | undefined,
   canApprove: boolean,
 ): string {
-  if (canApprove) return "Review the steps, then save the Test.";
-  if (replayRequired) return "Review the steps, then replay before saving the Test.";
+  if (canApprove) return "Review the steps, then save the test.";
+  if (replayRequired) return "Review the steps, then replay before saving the test.";
   return "Review the steps while Relay prepares the next action.";
 }
 

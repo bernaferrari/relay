@@ -92,7 +92,7 @@ function readiness(device: DeviceSummary): { runnable: boolean; recovery?: strin
   if (device.platform !== "android" && device.platform !== "ios") {
     return {
       runnable: false,
-      recovery: "Relay checks this managed browser again when you start a Test.",
+      recovery: "Relay checks this managed browser again when you start a test.",
     };
   }
   const connection = device.connectionState?.toLowerCase();

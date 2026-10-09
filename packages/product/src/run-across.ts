@@ -342,7 +342,7 @@ function mapForTest(map: AppMap, testId: string): ProductRunAcrossSetup {
     appMapId: map.id,
     appMapRevision: map.revision,
     testId: test.id,
-    testName: nonEmpty(test.name, "Saved Test"),
+    testName: nonEmpty(test.name, "Saved test"),
     appName: nonEmpty(map.name, "App"),
     dataSet: {
       name: dimensions.length ? "Saved data" : "Default data",
@@ -578,7 +578,7 @@ export function selectProductBatchCases(
       throw new TypeError(`Batch case ${caseId} is ${item.status} and cannot be rerun.`);
     }
     if (!item.runId) {
-      throw new TypeError(`Batch case ${caseId} has no immutable Run evidence.`);
+      throw new TypeError(`Batch case ${caseId} has no immutable run evidence.`);
     }
   }
   return {
@@ -611,7 +611,7 @@ export function previewProductRunAcross(input: {
   const selected = normalizedSelection(input.setup, input.selected);
   if (!input.setup.dataSet.dimensions.length && !input.profileTargets?.length) {
     throw new TypeError(
-      "Choose saved Browser and Account pairs, or run this Test once from its Test page.",
+      "Choose saved Browser and Account pairs, or run this test once from its test page.",
     );
   }
   const pilot = representativeCase(input.setup, selected, input.pilot);
@@ -731,7 +731,7 @@ export function createProductRunAcrossService(
       const selected = normalizedSelection(input.setup, input.selected);
       if (!input.setup.dataSet.dimensions.length && !input.profileTargets?.length) {
         throw new TypeError(
-          "Choose saved Browser and Account pairs, or run this Test once from its Test page.",
+          "Choose saved Browser and Account pairs, or run this test once from its test page.",
         );
       }
       const pilot = representativeCase(input.setup, selected, input.pilot);
@@ -749,7 +749,7 @@ export function createProductRunAcrossService(
           profileTargets: input.profileTargets,
         });
         const batchId = output.campaign?.id;
-        if (!batchId) throw new TypeError("Relay did not create a durable Batch Report.");
+        if (!batchId) throw new TypeError("Relay did not create a durable Batch report.");
         const persisted = await readCampaign(batchId);
         try {
           assertPairedCampaignScope(
@@ -760,7 +760,7 @@ export function createProductRunAcrossService(
           );
         } catch (error) {
           throw new TypeError(
-            `${error instanceof Error ? error.message : "The Batch scope could not be verified."} Batch ${batchId} was created; inspect it in Runs.`,
+            `${error instanceof Error ? error.message : "The Batch scope could not be verified."} Batch ${batchId} was created; inspect it in runs.`,
           );
         }
         return batchFromCampaign(
@@ -780,7 +780,7 @@ export function createProductRunAcrossService(
         executionMode: input.executionMode ?? "pilot",
       });
       const batchId = output.campaign?.id;
-      if (!batchId) throw new TypeError("Relay did not create a durable Batch Report.");
+      if (!batchId) throw new TypeError("Relay did not create a durable Batch report.");
       const batch = await campaign(batchId, input.setup);
       return {
         ...batch,

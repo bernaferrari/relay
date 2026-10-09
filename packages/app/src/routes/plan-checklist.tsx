@@ -124,7 +124,7 @@ export function PlanChecklist({
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-1">
         <div className="grid gap-0.5">
           <h2 id="plan-checklist-title" className="text-sm font-semibold text-foreground">
-            Latest Plan runs
+            Latest plan runs
           </h2>
           {runs.isSuccess && latest.size ? (
             <span className="w-64 max-w-full">
@@ -138,7 +138,7 @@ export function PlanChecklist({
                 ? "Results unavailable"
                 : lastActivity
                   ? `Last activity ${ago(lastActivity)}`
-                  : "No Plan runs found"}
+                  : "No plan runs found"}
           </p>
         </div>
         {toReview ? (

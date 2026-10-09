@@ -340,7 +340,7 @@ function projectRun(run: RunSummary, maps: readonly AppMap[]): ProductRunSummary
     ? maps.find((candidate) => candidate.id === identity.appMapId)
     : undefined;
   const test = identity.testId && map ? map.tests[identity.testId] : undefined;
-  const title = human(run.title, test?.name ?? "Saved Test");
+  const title = human(run.title, test?.name ?? "Saved test");
   const links = {
     self: routeUrls.run(run.id),
     ...(identity.testId ? { test: routeUrls.test(identity.testId) } : {}),

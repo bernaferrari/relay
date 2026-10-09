@@ -141,7 +141,7 @@ function NativeRunPreview({
             </div>
           ) : (
             <p className="text-center text-sm text-muted-foreground">
-              Captured screenshots will appear as the Test reaches them.
+              Captured screenshots will appear as the test reaches them.
             </p>
           )}
         </>

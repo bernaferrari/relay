@@ -104,7 +104,7 @@ test("empty findings do not hide a failed cell", () => {
   assert.doesNotMatch(markdown, /No findings\. Passing cases/);
 });
 
-test("empty findings treat a failed Plan grid as a QA gap even when analysis omitted the cell", () => {
+test("empty findings treat a failed plan grid as a QA gap even when analysis omitted the cell", () => {
   const copy = planFindingsEmptyCopy(report([]), { hasProblems: true });
   assert.match(copy.join(" "), /QA bug, not a pass/);
   assert.doesNotMatch(copy.join(" "), /No findings\. Passing cases/);
@@ -273,7 +273,7 @@ test("expired sign-in is one Infra finding, not a product failure", () => {
   assert.match(renderPlanFindingsMarkdown(report), /ACCOUNT_NEEDS_RELOGIN/u);
 });
 
-test("markdown names the Test and a flaky label without hiding the finding", () => {
+test("markdown names the test and a flaky label without hiding the finding", () => {
   const markdown = renderPlanFindingsMarkdown(
     report([
       {
@@ -297,7 +297,7 @@ test("markdown names the Test and a flaky label without hiding the finding", () 
   assert.match(markdown, /expect-screen missed/u);
 });
 
-test("expired Plan start exposes the persisted Result id", () => {
+test("expired plan start exposes the persisted Result id", () => {
   assert.equal(
     accountReloginBatchIdFromError({
       status: 409,

@@ -387,7 +387,7 @@ describe("Plan review acknowledgements", () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toContain("Connection lost");
     await act(async () => button(host, "Try again").click());
     await settleReview();
-    expect(host.textContent).toContain("This Plan didn’t capture any screenshots.");
+    expect(host.textContent).toContain("This plan didn’t capture any screenshots.");
     expect(get).toHaveBeenCalledTimes(2);
   });
 
@@ -418,7 +418,7 @@ describe("Plan review acknowledgements", () => {
     expect(button(host, "Refresh screenshots")).toBeTruthy();
   });
 
-  it("refreshes the final capture queue when the Plan stops running", async () => {
+  it("refreshes the final capture queue when the plan stops running", async () => {
     const missing = {
       items: [{ status: "missing", captureId: "missing::last", caption: "Last image" }],
       summary: { captured: 0, missing: 1, pending: 0, planned: 1, blocked: 0 },

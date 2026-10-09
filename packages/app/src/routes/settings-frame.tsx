@@ -10,15 +10,15 @@ export type SaveState = "saved" | "saving" | "failed" | "unavailable";
 const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: string }> = {
   general: {
     title: "General",
-    description: "This computer’s connection and notifications.",
+    description: "Relay status, devices, and keyboard shortcuts.",
   },
   evidence: {
     title: "Privacy",
-    description: "What future Runs may capture.",
+    description: "What future runs may capture.",
   },
   integrations: {
     title: "Integrations",
-    description: "This workspace and any connected services.",
+    description: "Coding agents and services connected to Relay.",
   },
   appearance: {
     title: "Appearance",

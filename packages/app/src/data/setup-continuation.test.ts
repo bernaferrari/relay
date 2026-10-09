@@ -6,7 +6,7 @@ import {
 } from "./setup-continuation";
 
 describe("setup continuation", () => {
-  it("round-trips the New Test draft context", () => {
+  it("round-trips the New test draft context", () => {
     const token = newTestSetupContinuation("app checkout", "browser/one");
     expect(readSetupContinuation(token)).toEqual({
       kind: "record-test",
@@ -16,7 +16,7 @@ describe("setup continuation", () => {
     });
   });
 
-  it("round-trips the pending Run setup context for sign-in repair", () => {
+  it("round-trips the pending run setup context for sign-in repair", () => {
     const token = runSetupContinuation("settings-language-arabic");
     expect(readSetupContinuation(token)).toEqual({
       kind: "run-setup",
