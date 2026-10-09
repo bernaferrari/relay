@@ -41,7 +41,7 @@ describe("containedImageRect", () => {
   });
 });
 
-it("aligns horizontal siblings on one row and keeps continuations in their column", () => {
+it("lays branches out in the next column and continuations after them", () => {
   const screens = ["root", "a", "b", "c", "next"].map((id) => ({
     id,
     title: id,
@@ -61,10 +61,9 @@ it("aligns horizontal siblings on one row and keeps continuations in their colum
     label: to,
     coveringTests: [],
   }));
-  const points = layoutMapScreens(screens, paths, "horizontal");
-  expect(points.get("a")!.y).toBe(points.get("b")!.y);
-  expect(points.get("c")!.y).toBe(points.get("b")!.y);
-  expect(points.get("next")!.x).toBe(points.get("b")!.x);
-  expect(points.get("a")!.x).toBeLessThan(points.get("b")!.x);
-  expect(points.get("b")!.x).toBeLessThan(points.get("c")!.x);
+  const points = layoutMapScreens(screens, paths);
+  expect(points.get("a")!.x).toBe(points.get("b")!.x);
+  expect(points.get("c")!.x).toBe(points.get("b")!.x);
+  expect(points.get("b")!.x).toBeGreaterThan(points.get("root")!.x);
+  expect(points.get("next")!.x).toBeGreaterThan(points.get("b")!.x);
 });

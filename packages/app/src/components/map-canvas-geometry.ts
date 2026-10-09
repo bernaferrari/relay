@@ -1,6 +1,6 @@
 import { mapEntryScreenIds } from "./map-entry-screens";
-import { orderMapBranches } from "./map-branch-order";
-import { layoutMapGraph, separateMapScreens, reserveStraightConnections } from "./map-layout";
+import { layeredMapLayout } from "./map-layered-layout";
+import { separateMapScreens } from "./map-layout";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 export const MAP_MIN_SCALE = 0.08;
 export const MAP_MAX_SCALE = 2.2;
@@ -125,83 +125,26 @@ export function fitMapToBounds(
   };
 }
 
+const RETURN_LABEL = /^(back|close|dismiss|return|cancel|disable)\b/i;
+
+/** Columns by distance from the entry screen; see map-layered-layout. */
 export function layoutMapScreens(
   screens: readonly ProductMapScreen[],
   paths: readonly ProductMapPath[] = [],
-  mode: "aligned" | "staggered" | "horizontal" = "aligned",
   node: MapNodeSize = PORTRAIT_NODE,
 ): ReadonlyMap<string, MapPoint> {
-  const positions = layoutMapGraph(
+  const positions = layeredMapLayout(
     screens.map((screen) => screen.id),
-    orderMapBranches(
-      [...paths]
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .filter(
-          (path) =>
-            path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
-        ),
-      mode === "horizontal",
-    )
-      .filter(
-        (path) =>
-          path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
-      )
+    [...paths]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .filter((path) => path.toScreenId && !RETURN_LABEL.test(path.label))
       .map((path) => ({ from: path.fromScreenId, to: path.toScreenId! })),
-    mode === "horizontal" ? 600 : mode === "staggered" ? 560 : node.width + 160,
-    mode === "horizontal" ? node.width + 112 : node.height + 40,
-    mode === "staggered",
-    mapEntryScreenIds(screens, paths),
+    { width: node.width, height: node.height, roots: mapEntryScreenIds(screens, paths) },
   );
-  if (mode === "horizontal") {
-    // Exchange flow and branch axes without rotating the portrait captures.
-    for (const [id, point] of positions) positions.set(id, { x: point.y, y: point.x });
-    for (const screen of screens) if (screen.position) positions.set(screen.id, screen.position);
-    return separateMapScreens(
-      positions,
-      new Set(screens.filter((s) => s.position).map((s) => s.id)),
-      node.width,
-      node.height,
-    );
-  }
-  // Dense branches need a wider routing corridor than a simple continuation.
-  const columns = [...new Set([...positions.values()].map((point) => point.x))].sort(
-    (a, b) => a - b,
-  );
-  const widths = new Map<number, number>();
-  for (const screen of screens) {
-    const x = positions.get(screen.id)!.x;
-    const count = paths.filter(
-      (path) =>
-        path.fromScreenId === screen.id &&
-        path.toScreenId &&
-        !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
-    ).length;
-    widths.set(x, Math.max(widths.get(x) ?? 0, node.width + 160 + Math.max(0, count - 1) * 12));
-  }
-  const columnPositions = new Map<number, number>();
-  let nextX = 0;
-  for (const column of columns) {
-    columnPositions.set(column, nextX);
-    nextX += widths.get(column) ?? node.width + 160;
-  }
-  if (mode === "aligned")
-    for (const point of positions.values()) point.x = columnPositions.get(point.x)!;
   for (const screen of screens) if (screen.position) positions.set(screen.id, screen.position);
-
-  const separated = separateMapScreens(
+  return separateMapScreens(
     positions,
     new Set(screens.filter((screen) => screen.position).map((screen) => screen.id)),
-    node.width,
-    node.height,
-  );
-  return reserveStraightConnections(
-    separated,
-    paths
-      .filter(
-        (path) =>
-          path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
-      )
-      .map((path) => ({ from: path.fromScreenId, to: path.toScreenId! })),
     node.width,
     node.height,
   );

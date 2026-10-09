@@ -36,7 +36,7 @@ import {
   type MapTransform,
 } from "./map-canvas-geometry";
 
-type LayoutMode = "saved" | "aligned" | "staggered" | "horizontal";
+type LayoutMode = "saved" | "aligned";
 
 export function MapCanvasPanels({
   appId,
@@ -299,21 +299,14 @@ export function MapCanvasPanels({
                       ? visibleScreens
                       : visibleScreens.map((screen) => ({ ...screen, position: undefined })),
                     originPaths,
-                    mode === "saved" ? "aligned" : mode,
                   );
                   animateTransform(
                     fitMapToBounds(mapContentBounds(visibleScreens, next), viewportSize()),
                   );
                 }}
               >
-                <DropdownMenuRadioItem value="aligned">Aligned layout</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="staggered">
-                  Staggered · Vertical
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="horizontal">
-                  Aligned · Horizontal
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="saved">Saved positions</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="aligned">Automatic layout</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="saved">My arrangement</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
               {selectedScreenId ? (

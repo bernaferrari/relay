@@ -103,9 +103,7 @@ export function InfiniteMapCanvas({
       }
     | undefined
   >(undefined);
-  const [layoutMode, setLayoutMode] = useState<"saved" | "aligned" | "staggered" | "horizontal">(
-    "aligned",
-  );
+  const [layoutMode, setLayoutMode] = useState<"saved" | "aligned">("aligned");
   const autoArrange = layoutMode !== "saved";
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
   const [layoutAnchors, setLayoutAnchors] = useState<Map<string, ProductMapPath["sourceAnchor"]>>(
@@ -130,7 +128,6 @@ export function InfiniteMapCanvas({
           ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
           : visibleScreens,
         arrangementPaths,
-        layoutMode === "saved" ? "aligned" : layoutMode,
         node,
       ),
     );
@@ -280,7 +277,6 @@ export function InfiniteMapCanvas({
         ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
         : visibleScreens,
       originPaths,
-      layoutMode === "saved" ? "aligned" : layoutMode,
       node,
     );
     animateTransform(

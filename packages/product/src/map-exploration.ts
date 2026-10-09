@@ -59,6 +59,8 @@ export type ProductMapPath = {
   readonly toScreenId?: string;
   readonly fromTitle: string;
   readonly toTitle?: string;
+  /** A move a run made that saved Tests do not replay. */
+  readonly draft?: boolean;
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
   /** Only projected when the anchor's before frame matches the source screenshot. */
   readonly sourceAnchor?: ConnectionSourceAnchor;
@@ -307,6 +309,7 @@ function projectMap(map: AppMap): ProductMapOverview {
       ),
       fromScreenId: connection.fromScreenId,
       ...(destination ? { toScreenId: destination.id } : {}),
+      ...(connection.state === "draft" ? { draft: true } : {}),
       fromTitle: text(source?.title, "Known screen"),
       ...(destination ? { toTitle: text(destination.title, "Known screen") } : {}),
       coveringTests: testByConnection.get(connection.id) ?? [],

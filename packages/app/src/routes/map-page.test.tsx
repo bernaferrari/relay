@@ -139,16 +139,14 @@ describe("Map exploration", () => {
         ],
       }),
     });
+    // Nothing sits under a card; the return appears once its screen is selected.
     expect(document.querySelectorAll('[data-slot="map-edge"]')).toHaveLength(1);
-    const control = document.querySelector<HTMLButtonElement>(
-      'button[aria-label="Inspect Back to Home to Home"]',
+    expect(document.querySelector('[data-slot="map-screen-chips"]')).toBeNull();
+    const cart = [...document.querySelectorAll<HTMLButtonElement>('[data-slot="map-screen"]')].find(
+      (screen) => screen.textContent?.includes("Cart"),
     );
-    expect(control).not.toBeNull();
-    await act(async () => control?.click());
+    await act(async () => cart?.click());
     expect(document.querySelectorAll('[data-slot="map-edge"]')).toHaveLength(2);
-    expect(control?.getAttribute("aria-pressed")).toBe("true");
-    await act(async () => control?.click());
-    expect(document.querySelectorAll('[data-slot="map-edge"]')).toHaveLength(1);
   });
 
   it("lays out connected screens in reading order without cycling", () => {
@@ -240,7 +238,7 @@ describe("Map exploration", () => {
     );
     expect(document.querySelector('[data-slot="map-edge-label"]')).toBeNull();
     expect(
-      document.querySelector<HTMLElement>('[data-slot="map-screen"][style*="left: 368px"]'),
+      document.querySelector<HTMLElement>('[data-slot="map-screen"][style*="left: 408px"]'),
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain("Pan right");
 
