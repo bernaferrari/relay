@@ -278,14 +278,14 @@ describe("Map exploration", () => {
       canvas?.dispatchEvent(pointerEvent("pointerdown", -10000, -10000));
       canvas?.dispatchEvent(pointerEvent("pointermove", 10000, 10000));
     });
-    expect(document.querySelectorAll('[data-slot="map-screen"][aria-pressed="true"]')).toHaveLength(
-      2,
-    );
+    expect(
+      document.querySelectorAll('[data-slot="map-screen"][data-selected="true"]'),
+    ).toHaveLength(2);
     expect(document.body.textContent).toContain("2 screens selected");
     await act(async () => canvas?.dispatchEvent(pointerEvent("pointerup", 10000, 10000)));
-    expect(document.querySelectorAll('[data-slot="map-screen"][aria-pressed="true"]')).toHaveLength(
-      2,
-    );
+    expect(
+      document.querySelectorAll('[data-slot="map-screen"][data-selected="true"]'),
+    ).toHaveLength(2);
     await act(async () =>
       document.querySelector<HTMLButtonElement>('button[aria-label="Hand tool"]')?.click(),
     );
