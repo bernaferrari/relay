@@ -19,6 +19,7 @@ import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
 import { libraryRowSurface } from "../components/library-row-styles";
 import { LibraryPage, PageHeader } from "../components/page-layout";
+import { relativeTime } from "#lib/relative-time";
 
 export function AppsPage() {
   const { productService, catalogService, appResourcesService } = useRouteContext({
@@ -201,7 +202,7 @@ export function AppsPage() {
                         ? "Loading test count…"
                         : tests.error
                           ? "Test count unavailable"
-                          : `${testCount} ${testCount === 1 ? "Test" : "Tests"}`}
+                          : `${testCount} ${testCount === 1 ? "test" : "tests"}`}
                       {runs.isPending
                         ? " · Loading run history…"
                         : runs.error
@@ -227,13 +228,4 @@ export function AppsPage() {
 
 function runTime(run: { finishedAt?: number; startedAt?: number; queuedAt: number }): number {
   return run.finishedAt ?? run.startedAt ?? run.queuedAt;
-}
-
-function relativeTime(timestamp: number): string {
-  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 }

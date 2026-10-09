@@ -197,7 +197,8 @@ export function TestsPage() {
           <h1 className="text-3xl leading-9 font-semibold tracking-tight">Tests</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <NewPlanDialog {...(app ? { appId: app } : {})} />
+          {/* One main action per tab: plans are created where plans are listed. */}
+          {view === "plans" ? <NewPlanDialog {...(app ? { appId: app } : {})} /> : null}
           <Button
             nativeButton={false}
             render={<Link to="/tests/new" search={{ app: app || undefined }} />}

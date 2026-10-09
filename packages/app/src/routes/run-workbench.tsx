@@ -228,16 +228,12 @@ export function RunWorkbench({
           ))}
       </section>
     );
+  const selectView = (value: string) =>
+    value === "story" ? onViewChange?.("story") : setPanel(value as typeof panel);
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Run workbench">
-      <Tabs
-        value={panel}
-        onValueChange={(value) =>
-          value === "story" ? onViewChange?.("story") : setPanel(value as typeof panel)
-        }
-        className="flex min-h-0 flex-1 flex-col gap-0"
-      >
-        <RunViewTabs report={report} />
+      <Tabs value={panel} onValueChange={selectView} className="flex min-h-0 flex-1 flex-col gap-0">
+        <RunViewTabs report={report} value={panel} onSelect={selectView} />
         {panel === "network" || panel === "logs" ? (
           <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col">
             {panel === "network" ? (

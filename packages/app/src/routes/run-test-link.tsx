@@ -6,8 +6,8 @@ import { ChevronLeft } from "lucide-react";
 export function RunTestLink({ testId }: { testId?: string }) {
   const search = useLocation({ select: (location) => location.search }) as Record<string, unknown>;
   return (
+    // Name where Back goes ("Runs", "Test"), like every other back link.
     <ContextBackLink
-      label="Back"
       fallback={
         testId ? (
           <Link
@@ -21,11 +21,11 @@ export function RunTestLink({ testId }: { testId?: string }) {
             }}
             className="inline-flex items-center gap-1 hover:text-foreground"
           >
-            <ChevronLeft className="size-4" aria-hidden="true" /> Back
+            <ChevronLeft className="size-4" aria-hidden="true" /> Test
           </Link>
         ) : (
           <Link to="/runs" className="inline-flex items-center gap-1 hover:text-foreground">
-            <ChevronLeft className="size-4" aria-hidden="true" /> Back
+            <ChevronLeft className="size-4" aria-hidden="true" /> Runs
           </Link>
         )
       }

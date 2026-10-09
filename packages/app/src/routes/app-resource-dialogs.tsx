@@ -248,7 +248,7 @@ export function RevokeAccountDialog({
           <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="default" disabled={pending} onClick={onConfirm}>
+          <Button type="button" variant="destructive" disabled={pending} onClick={onConfirm}>
             {pending ? "Revoking…" : "Revoke account"}
           </Button>
         </div>

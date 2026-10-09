@@ -84,7 +84,7 @@ test("empty findings keep the morning review copy", () => {
   assert.equal(emptyPlanFindingsReport("batch-1").analysis.findings.length, 0);
   assert.match(markdown, /relay run visual review/);
   assert.match(markdown, /Sign-ins/);
-  assert.match(markdown, /Report/);
+  assert.match(markdown, /report/i);
   assert.doesNotMatch(markdown, /approve-new-baseline/i);
 });
 

@@ -2,22 +2,13 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
-import { Camera } from "lucide-react";
+import { Camera, ChevronRight } from "lucide-react";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { WorkspaceScreenshot } from "../components/test-workspace";
-import { StatusPill, runStateOf } from "../components/run-status";
+import { StatusPill, runStateLabel, runStateOf } from "../components/run-status";
 import { storyFromReport } from "../data/run-story";
-
-function ago(value?: number): string {
-  if (!value) return "";
-  const minutes = Math.round((Date.now() - value) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
+import { relativeTime } from "#lib/relative-time";
 
 export function latestRunOf(runs: readonly ProductRunSummary[] | undefined) {
   return [...(runs ?? [])].sort((left, right) => right.queuedAt - left.queuedAt)[0];
@@ -50,32 +41,32 @@ export function TestLastRunLine({
         />
       ) : !run && status === "unavailable" ? (
         <span>Run history unavailable</span>
+      ) : run ? (
+        // One control: the verdict, when, and where it leads (the full report).
+        <Link
+          className="group inline-flex h-8 min-w-0 items-center gap-2 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          to="/runs/$runId"
+          params={{ runId: run.id }}
+          search={{
+            ...(typeof search.plan === "string" ? { plan: search.plan } : {}),
+            ...(typeof search.planApp === "string" ? { planApp: search.planApp } : {}),
+            ...(typeof search.app === "string" ? { app: search.app } : {}),
+          }}
+          aria-label={`Open report: ${runStateLabel(runStateOf(run))}, last run ${relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}`}
+          title={run.targetName ? `On ${run.targetName}` : undefined}
+        >
+          <StatusPill state={runStateOf(run)} />
+          <span className="min-w-0 truncate">
+            Last run {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
+          </span>
+          <ChevronRight
+            className="size-3.5 shrink-0 opacity-60 group-hover:opacity-100"
+            aria-hidden="true"
+          />
+        </Link>
       ) : (
         <StatusPill state={runStateOf(run)} />
       )}
-      {run ? (
-        <>
-          <span
-            className="min-w-0 truncate"
-            title={`Last run ${ago(run.finishedAt ?? run.startedAt ?? run.queuedAt)}${run.targetName ? ` on ${run.targetName}` : ""}`}
-          >
-            Last run {ago(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
-            {run.targetName ? ` on ${run.targetName}` : ""}
-          </span>
-          <Link
-            className="inline-flex h-8 shrink-0 items-center rounded-sm font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-            to="/runs/$runId"
-            params={{ runId: run.id }}
-            search={{
-              ...(typeof search.plan === "string" ? { plan: search.plan } : {}),
-              ...(typeof search.planApp === "string" ? { planApp: search.planApp } : {}),
-              ...(typeof search.app === "string" ? { app: search.app } : {}),
-            }}
-          >
-            Open report
-          </Link>
-        </>
-      ) : null}
     </p>
   );
 }
@@ -132,7 +123,7 @@ export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
         tabIndex={0}
       >
         <WorkspaceScreenshot
-          caption={<>Screenshot from latest run · {ago(run.finishedAt ?? run.queuedAt)}</>}
+          caption={<>Screenshot from latest run · {relativeTime(run.finishedAt ?? run.queuedAt)}</>}
         >
           <EvidenceImageViewer
             key={path ?? media?.src}

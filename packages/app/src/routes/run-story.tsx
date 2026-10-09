@@ -366,7 +366,7 @@ function captureBadge(item?: CaptureReviewItem): string | undefined {
   if (item.reference?.state === "changed")
     return `Changed ${Math.max(0.1, (item.reference.changeRatio ?? 0) * 100).toFixed(1)}%`;
   if (item.reference?.state === "incomparable") return "Cannot compare · review needed";
-  if (item.status === "pending") return "To review";
+  // Pending is the default: the header already counts screenshots to review.
   return undefined;
 }
 

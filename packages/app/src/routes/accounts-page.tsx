@@ -395,19 +395,6 @@ function AccountCard({
                 {busy.opening ? "Opening…" : "Open signed in"}
               </Button>
             )}
-            {siteUrl && !needsSignIn ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                nativeButton={false}
-                aria-label="New test as this account"
-                render={
-                  <Link to="/tests/new" search={{ site: siteUrl, account: account.fixture.id }} />
-                }
-              >
-                New test
-              </Button>
-            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="ghost" size="icon-sm" />}
@@ -420,7 +407,7 @@ function AccountCard({
                 {needsSignIn ? (
                   <DropdownMenuItem onClick={onOpen}>Open signed in</DropdownMenuItem>
                 ) : null}
-                {siteUrl && needsSignIn ? (
+                {siteUrl ? (
                   <DropdownMenuItem
                     render={
                       <Link

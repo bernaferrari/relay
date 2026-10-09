@@ -18,7 +18,8 @@ export function returnDestination(value: unknown) {
       to: url.pathname,
       search: parseSearchWith(JSON.parse)(url.search),
       hash: url.hash.slice(1),
-      label: `Back to ${route.title}`,
+      // The chevron already says "back"; the label names where it goes.
+      label: route.title,
     };
   } catch {
     return undefined;

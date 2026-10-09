@@ -333,7 +333,7 @@ export function SelectedStepEditor({
               >
                 Keep step
               </Button>
-              <Button variant="outline" type="button" disabled={busy} onClick={onRemove}>
+              <Button variant="destructive" type="button" disabled={busy} onClick={onRemove}>
                 Remove step
               </Button>
             </div>

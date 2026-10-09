@@ -7,11 +7,9 @@ describe("return destination", () => {
       to: "/review",
       search: { item: "run-1::capture-2", filter: "new", app: "grok" },
       hash: "",
-      label: "Back to Review",
+      label: "Review",
     });
-    expect(returnDestination("/tests/test-1?view=definition&plan=daily")?.label).toBe(
-      "Back to Test",
-    );
+    expect(returnDestination("/tests/test-1?view=definition&plan=daily")?.label).toBe("Test");
   });
   it("rejects external, malformed, and unknown destinations", () => {
     for (const input of [

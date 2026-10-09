@@ -45,6 +45,31 @@ function device(id: string, name: string, browserUrl?: string): ProductDevice {
   };
 }
 
+function productDevice(
+  id: string,
+  name: string,
+  status: ProductDevice["status"],
+  platform: ProductDevice["platform"],
+): ProductDevice {
+  return {
+    id,
+    name,
+    serial: id,
+    status,
+    platform,
+    kind: platform === "browser" ? "Managed browser" : "Physical device",
+    runnable: status === "ready",
+    device: {
+      id,
+      serial: id,
+      name,
+      platform,
+      kind: platform === "browser" ? "Managed browser" : "Physical device",
+      booted: true,
+    },
+  };
+}
+
 async function settle() {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -389,4 +414,72 @@ describe("device destination picker", () => {
       await settle();
     },
   );
+  it("collapses stopped simulators and keeps the picker compact", async () => {
+    const stopped = Array.from({ length: 38 }, (_, index) => ({
+      ...productDevice(`sim-${index}`, `iPad ${index}`, "needs-attention", "ios"),
+      device: {
+        ...productDevice(`sim-${index}`, `iPad ${index}`, "needs-attention", "ios").device,
+        booted: false,
+      },
+      kind: "simulator",
+      osVersion: "18.5",
+    }));
+    await renderPicker([
+      { ...productDevice("phone", "My phone", "ready", "android"), osVersion: "16" },
+      ...stopped,
+    ]);
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]')!;
+    await act(async () => trigger.click());
+    await settle();
+    const menu = document.querySelector('[role="menu"]')!;
+    expect(menu.textContent).toContain("My phone");
+    expect(menu.textContent).toContain("Android 16");
+    expect(menu.textContent).toContain("38");
+    expect(menu.textContent).not.toContain("stopped");
+    expect(menu.textContent).not.toContain("iPad 0");
+    expect(menu.textContent).not.toContain("Needs attention");
+    expect(menu.textContent).toContain("Check again");
+    expect(menu.querySelectorAll('[role="menuitem"]').length).toBeLessThan(8);
+  });
+
+  it("filters a long destination list and closes after selecting the exact browser", async () => {
+    const items = Array.from({ length: 9 }, (_, index) => ({
+      ...productDevice(
+        `browser-${index}`,
+        `127.0.0.1:8793 · Browser ${index + 1}`,
+        "virtual",
+        "browser",
+      ),
+      browserUrl: "http://127.0.0.1:8793/",
+    }));
+    await renderPicker(items);
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]')!.click(),
+    );
+    await settle();
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Find a device or browser"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Browser 7",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    const option = document.querySelector<HTMLElement>(
+      '[role="menuitem"][aria-label="127.0.0.1:8793 · Browser 7"]',
+    )!;
+    expect(option).not.toBeNull();
+    expect(
+      document.querySelector('[role="menuitem"][aria-label="127.0.0.1:8793 · Browser 6"]'),
+    ).toBeNull();
+    await act(async () => option.click());
+    await settle();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.querySelector('[aria-label^="Device or browser"]')?.textContent).toContain(
+      "Browser 7",
+    );
+  });
 });

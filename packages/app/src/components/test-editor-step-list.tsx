@@ -8,7 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@relay/ui-react/components/dropdown-menu";
-import { ChevronDown, ChevronRight, CircleAlert, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Circle, CircleAlert, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import { EmptyState } from "./product-patterns";
 import { TestEditorRoutes } from "./test-editor-routes";
@@ -42,6 +42,7 @@ export function TestEditorStepOutline({
   draggedStepId,
   onAdd,
   onAddCheckpoint,
+  recordSteps,
   onSelect,
   onMove,
   onDrop,
@@ -61,6 +62,7 @@ export function TestEditorStepOutline({
   draggedStepId: RefObject<string | undefined>;
   onAdd(): void;
   onAddCheckpoint(): void;
+  recordSteps?: { onRecord(): void; disabled: boolean; pending: boolean };
   onSelect(stepId: string): void;
   onMove(entry: StepEntry, delta: -1 | 1): void;
   onDrop(entry: StepEntry, after: boolean): void;
@@ -171,6 +173,15 @@ export function TestEditorStepOutline({
             <Plus aria-hidden="true" /> Add step <ChevronDown aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
+            {recordSteps ? (
+              <DropdownMenuItem
+                disabled={recordSteps.disabled}
+                onClick={() => recordSteps.onRecord()}
+              >
+                <Circle className="fill-destructive text-destructive" aria-hidden="true" />
+                {recordSteps.pending ? "Starting…" : "Record steps"}
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={onAdd}>Write a step</DropdownMenuItem>
             <DropdownMenuItem onClick={onAddCheckpoint}>Add a check</DropdownMenuItem>
           </DropdownMenuContent>

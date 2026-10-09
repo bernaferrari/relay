@@ -317,7 +317,7 @@ describe("Devices", () => {
     await click(button("Launch app"));
     await act(async () => preview.ready());
     const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (link) => link.textContent?.trim() === "Record a test",
+      (link) => link.textContent?.trim() === "New test",
     )!;
     await click(record);
     expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe("Grok");
@@ -492,7 +492,8 @@ describe("Devices", () => {
     expect(row).not.toBeNull();
     expect(row?.textContent).toContain("Design iPad");
     expect(row?.textContent).toContain("Apple device · Physical device");
-    expect(row?.querySelector('[data-slot="library-row-status"]')?.textContent).toContain("Ready");
+    // Ready is the default and goes unsaid; only problems get a status line.
+    expect(row?.querySelector('[data-slot="library-row-status"]')).toBeNull();
     expect(row?.querySelector('[data-slot="device-row-chevron"]')).toBeNull();
 
     await click(row!);
@@ -524,7 +525,7 @@ describe("Devices", () => {
     service.list = async () => {
       throw new TypeError("Failed to fetch");
     };
-    await click(button("Check again"));
+    await click(document.querySelector<HTMLButtonElement>('button[aria-label="Check again"]')!);
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
     await settle();
     const row = [...document.querySelectorAll('[data-slot="device-row"]')].find((item) =>
@@ -537,7 +538,7 @@ describe("Devices", () => {
     service.list = list;
     await click(button("Refresh"));
     expect(document.body.textContent).not.toContain("Couldn’t refresh devices");
-    expect(row?.textContent).toContain("Ready");
+    expect(row?.textContent).not.toContain("Status unavailable");
   });
 
   it("centers a clear recovery state when the local service cannot check devices", async () => {
@@ -712,7 +713,7 @@ describe("Devices", () => {
       expect(preview.previews[0].closed).toBe(true);
       expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
       const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-        (candidate) => candidate.textContent?.trim() === "Record a test",
+        (candidate) => candidate.textContent?.trim() === "New test",
       )!;
       expect(new URL(record.href).searchParams.get("originApplication")).toBe(
         matched ? "com.example.shop" : null,
@@ -903,7 +904,7 @@ describe("Device app controls", () => {
     expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
     expect(document.body.textContent).not.toContain("App and language");
     expect(document.body.textContent).not.toContain("App controls are unavailable");
-    expect(document.body.textContent).toContain("Record a test");
+    expect(document.body.textContent).toContain("New test");
   });
 
   it("shows the observed device language without changing it", async () => {

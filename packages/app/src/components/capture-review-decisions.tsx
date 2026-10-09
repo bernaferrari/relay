@@ -202,7 +202,7 @@ export function CaptureReviewDecisions({
               : "Use this screenshot as a reference?"}
           </DialogTitle>
           <DialogDescription>
-            Relay will compare future Runs with {bulkCount ? "these images" : "this image"}. This
+            Relay will compare future runs with {bulkCount ? "these images" : "this image"}. This
             also marks {bulkCount ? "these screenshots" : "this screenshot"} as correct in this
             review. Choose Looks correct instead if you only want to review this Run.
           </DialogDescription>

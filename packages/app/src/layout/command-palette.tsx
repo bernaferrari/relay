@@ -58,7 +58,7 @@ const workspaceCommands: readonly Command[] = [
   {
     id: "record-test",
     group: "Actions",
-    label: "Record a new test",
+    label: "New test",
     detail: "Start from a device or browser",
     href: "/tests/new",
     icon: Plus,

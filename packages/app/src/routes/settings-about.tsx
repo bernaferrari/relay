@@ -118,7 +118,7 @@ export function AboutSettings() {
           </li>
         </ol>
         <div className="flex flex-wrap gap-2">
-          <Button render={<Link to="/tests/new" />}>Record a test</Button>
+          <Button render={<Link to="/tests/new" />}>New test</Button>
           <Button variant="ghost" render={<Link to="/runs" search={{ view: "needs-review" }} />}>
             Review screenshots
           </Button>

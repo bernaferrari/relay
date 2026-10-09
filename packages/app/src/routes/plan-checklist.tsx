@@ -6,6 +6,7 @@ import type { ProductRunSummary } from "@relay/product/catalog";
 import { CircleAlert, CircleCheck, CircleDashed, Eye, LoaderCircle } from "lucide-react";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { ResultsBar } from "../components/results-bar";
+import { relativeTime } from "#lib/relative-time";
 
 type PlanTest = { id: string; name: string; status: string };
 
@@ -42,16 +43,6 @@ export function latestRunPerTest(
   return latest;
 }
 
-function ago(value?: number): string {
-  if (!value) return "";
-  const minutes = Math.round((Date.now() - value) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
 const STATE_PRESENTATION: Record<
   CheckState,
   { label: string; icon: typeof CircleCheck; className: string }
@@ -80,7 +71,7 @@ function detail(run: ProductRunSummary | undefined, state: CheckState): string {
   if (state === "passed" && summary?.unchanged) parts.push("matches references");
   if (state === "failed" && summary?.issue) parts.push(`${summary.issue} issue reported`);
   if (run.targetName) parts.push(run.targetName);
-  parts.push(ago(run.finishedAt ?? run.startedAt ?? run.queuedAt));
+  parts.push(relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt));
   return parts.filter(Boolean).join(" · ");
 }
 
@@ -137,7 +128,7 @@ export function PlanChecklist({
               : runs.error
                 ? "Results unavailable"
                 : lastActivity
-                  ? `Last activity ${ago(lastActivity)}`
+                  ? `Last activity ${relativeTime(lastActivity)}`
                   : "No plan runs found"}
           </p>
         </div>

@@ -176,7 +176,7 @@ export function RunsPage() {
                   {item.label}
                   {item.id === "needs-review" && reviewCount ? (
                     <span
-                      className="rounded-full bg-brand px-1.5 text-xs font-semibold text-brand-foreground tabular-nums"
+                      className="text-xs text-muted-foreground tabular-nums"
                       aria-label={`${reviewCount} screenshots to review`}
                     >
                       {formatReviewCount(reviewCount)}

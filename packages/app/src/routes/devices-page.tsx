@@ -10,7 +10,16 @@ import {
 } from "@relay/ui-react/components/collapsible";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { AppWindow, ChevronRight, CircleHelp, Smartphone, Tablet } from "lucide-react";
+import {
+  AppWindow,
+  ChevronRight,
+  CircleHelp,
+  Plus,
+  RotateCw,
+  Smartphone,
+  Tablet,
+  Usb,
+} from "lucide-react";
 import {
   createContext,
   useContext,
@@ -59,12 +68,19 @@ function statusLabel(device: ProductDevice): string {
   return "Ready";
 }
 
+/** Two groups people choose between: hardware-like targets and browsers. Each
+ * card already says whether it is physical, an emulator, or a simulator. */
 function deviceGroup(device: ProductDevice): string {
-  if (isBrowser(device) && isGoalScratchTarget(device.id)) return "Agent scratch browsers";
+  if (isBrowser(device) && isGoalScratchTarget(device.id)) return "Created by agents";
   if (isBrowser(device)) return "Browsers";
-  if (/simulator/i.test(device.kind ?? "")) return "iOS simulators";
-  if (/emulator/i.test(device.kind ?? "")) return "Android emulators";
-  return "Physical devices";
+  return "Phones and tablets";
+}
+
+function isNotRunning(device: ProductDevice): boolean {
+  return (
+    device.id.startsWith("avd:") ||
+    (/simulator/i.test(device.kind ?? "") && device.device.booted === false)
+  );
 }
 
 /** A tiny drawing of the hardware so the grid reads at a glance. */
@@ -103,6 +119,32 @@ function DeviceSilhouette({ kind }: { kind: "phone" | "tablet" | "window" | "and
     >
       <span className="absolute top-0.5 left-1/2 h-0.5 w-1.5 -translate-x-1/2 rounded-full bg-foreground/60" />
     </span>
+  );
+}
+
+/** First-run help where a phone would appear: what to do, not an empty grid. */
+function ConnectDeviceHint({ canStartEmulator }: { canStartEmulator: boolean }) {
+  return (
+    <section aria-label="Phones and tablets">
+      <div className="flex min-h-9 items-center px-1 pb-2">
+        <h2 className="text-sm font-semibold">Phones and tablets</h2>
+      </div>
+      <div className="flex items-center gap-3.5 rounded-xl border border-dashed border-border p-4">
+        <span
+          className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+          aria-hidden="true"
+        >
+          <Usb className="size-5" />
+        </span>
+        <span className="grid gap-0.5 text-sm">
+          <strong className="font-medium">Connect a phone or tablet</strong>
+          <span className="text-muted-foreground">
+            Plug it in by USB and unlock it. Relay finds it automatically.
+            {canStartEmulator ? " Or start an emulator from Not running below." : ""}
+          </span>
+        </span>
+      </div>
+    </section>
   );
 }
 
@@ -164,7 +206,8 @@ function DeviceRow({
                   .join(" · ")
               : deviceSummaryLine(device)}
           </span>
-          {!isBrowser(device) || stale ? (
+          {/* Ready is the normal state; only say something when it isn't. */}
+          {(!isBrowser(device) && (stopped || device.status === "needs-attention")) || stale ? (
             <span
               data-slot="library-row-status"
               className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
@@ -385,6 +428,8 @@ export function DevicesPage() {
     queryKey: deviceQueryKeys.devices,
     queryFn: () => deviceService.list(),
     staleTime: 5_000,
+    // Plugging in a phone should just make it appear.
+    refetchInterval: 15_000,
   });
 
   const catalog = useMemo(
@@ -440,15 +485,21 @@ export function DevicesPage() {
                   />
                 }
               >
-                New browser
+                <Plus aria-hidden="true" /> New browser
               </Button>
               {!devices.isError ? (
                 <Button
                   variant="ghost"
+                  size="icon"
+                  aria-label="Check again"
+                  title="Check for devices now. Relay also checks every few seconds."
                   onClick={() => void devices.refetch()}
                   disabled={devices.isFetching}
                 >
-                  {devices.isFetching ? "Checking devices…" : "Check again"}
+                  <RotateCw
+                    className={devices.isFetching ? "animate-spin motion-reduce:animate-none" : ""}
+                    aria-hidden="true"
+                  />
                 </Button>
               ) : null}
             </div>
@@ -564,81 +615,75 @@ export function DevicesPage() {
 
         {visibleCount > 0 ? (
           <div className="mt-3 grid gap-4" aria-live="polite">
-            {(["Physical devices", "Android emulators", "iOS simulators", "Browsers"] as const).map(
-              (title) => {
-                const devicesInSection = visibleDevices.filter(
-                  (device) =>
-                    deviceGroup(device) === title &&
-                    !(title === "Browsers" && localBrowsers.includes(device)) &&
-                    !device.id.startsWith("avd:") &&
-                    !(title === "iOS simulators" && device.device.booted === false),
-                );
-                if (!devicesInSection.length) return null;
+            {(["Phones and tablets", "Browsers"] as const).map((title) => {
+              const devicesInSection = visibleDevices.filter(
+                (device) =>
+                  deviceGroup(device) === title &&
+                  !(title === "Browsers" && localBrowsers.includes(device)) &&
+                  !isNotRunning(device),
+              );
+              if (title === "Phones and tablets" && !devicesInSection.length && !deferredQuery)
                 return (
-                  <DeviceSection
+                  <ConnectDeviceHint
                     key={title}
-                    title={title}
-                    devices={devicesInSection}
-                    stale={title === "Browsers" ? spaces.isError : devices.isError}
-                    returnTo={continuation ? search.returnTo : undefined}
-                    groupBrowsers={title === "Browsers"}
-                    searchActive={Boolean(deferredQuery)}
+                    canStartEmulator={visibleDevices.some(isNotRunning)}
                   />
                 );
-              },
-            )}
-            {(() => {
-              const available = visibleDevices.filter(
-                (device) =>
-                  device.id.startsWith("avd:") ||
-                  (deviceGroup(device) === "iOS simulators" && device.device.booted === false),
-              );
-              const scratch = visibleDevices.filter(
-                (device) => deviceGroup(device) === "Agent scratch browsers",
-              );
-              if (!available.length && !scratch.length && !localBrowsers.length) return null;
-              const android = available.filter((device) => device.id.startsWith("avd:"));
-              const simulators = available.filter((device) => !device.id.startsWith("avd:"));
+              if (!devicesInSection.length) return null;
               return (
-                <div className="grid gap-4">
-                  {localBrowsers.length ? (
+                <DeviceSection
+                  key={title}
+                  title={title}
+                  devices={devicesInSection}
+                  stale={title === "Browsers" ? spaces.isError : devices.isError}
+                  returnTo={continuation ? search.returnTo : undefined}
+                  groupBrowsers={title === "Browsers"}
+                  searchActive={Boolean(deferredQuery)}
+                />
+              );
+            })}
+            {(() => {
+              // Everything you might need occasionally, folded into one quiet area.
+              const notRunning = visibleDevices.filter(isNotRunning);
+              const scratch = visibleDevices.filter(
+                (device) => deviceGroup(device) === "Created by agents",
+              );
+              const groups = [
+                {
+                  title: "Not running",
+                  devices: notRunning,
+                  stale: devices.isError,
+                  browsers: false,
+                },
+                {
+                  title: "Local browsers",
+                  devices: localBrowsers,
+                  stale: spaces.isError,
+                  browsers: true,
+                },
+                {
+                  title: "Created by agents",
+                  devices: scratch,
+                  stale: spaces.isError,
+                  browsers: false,
+                },
+              ].filter((group) => group.devices.length);
+              if (!groups.length) return null;
+              return (
+                <section className="mt-2 grid gap-2" aria-label="More devices and browsers">
+                  <h2 className="px-1 text-xs font-medium text-muted-foreground">More</h2>
+                  {groups.map((group) => (
                     <AvailableSection
-                      title="Local browsers"
-                      devices={localBrowsers}
+                      key={group.title}
+                      title={group.title}
+                      devices={group.devices}
                       returnTo={continuation ? search.returnTo : undefined}
                       searchActive={Boolean(deferredQuery)}
-                      stale={spaces.isError}
-                      groupBrowsers
+                      stale={group.stale}
+                      groupBrowsers={group.browsers}
                     />
-                  ) : null}
-                  {simulators.length ? (
-                    <AvailableSection
-                      title="Available iOS simulators"
-                      devices={simulators}
-                      returnTo={continuation ? search.returnTo : undefined}
-                      searchActive={Boolean(deferredQuery)}
-                      stale={devices.isError}
-                    />
-                  ) : null}
-                  {android.length ? (
-                    <AvailableSection
-                      title="Available Android emulators"
-                      devices={android}
-                      returnTo={continuation ? search.returnTo : undefined}
-                      searchActive={Boolean(deferredQuery)}
-                      stale={devices.isError}
-                    />
-                  ) : null}
-                  {scratch.length ? (
-                    <AvailableSection
-                      title="Agent scratch browsers"
-                      devices={scratch}
-                      returnTo={continuation ? search.returnTo : undefined}
-                      searchActive={Boolean(deferredQuery)}
-                      stale={spaces.isError}
-                    />
-                  ) : null}
-                </div>
+                  ))}
+                </section>
               );
             })()}
           </div>

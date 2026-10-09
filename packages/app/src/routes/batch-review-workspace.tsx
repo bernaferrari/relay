@@ -318,12 +318,12 @@ function caseStatusLabel(item: ProductBatchReport["cases"][number]): string {
       : item.status === "failed"
         ? "Failed"
         : item.status === "blocked"
-          ? "Couldn’t run"
+          ? "Could not run"
           : item.status === "cancelled"
-            ? "Stopped"
+            ? "Cancelled"
             : item.status === "running"
               ? "Running"
-              : "Waiting";
+              : "Waiting to start";
   const triage =
     item.triageStatus === "resolved"
       ? "resolved"

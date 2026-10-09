@@ -596,7 +596,7 @@ describe("suite and environment product projections", () => {
       estimatedDurationMs: 203_184,
     });
     expect(preview.execution?.detail).toMatch(/Observed serial about 3\.4 min/u);
-    expect(preview.execution?.detail).toMatch(/5 completed Plan runs \(p95\)/u);
+    expect(preview.execution?.detail).toMatch(/5 completed plan runs \(p95\)/u);
     expect(preview.execution?.detail).toMatch(/Parallel wall-clock is unmeasured/u);
     expect(preview.execution?.detail).not.toMatch(/about 17s/u);
     expect(preview.execution?.estimatedDurationMs).not.toBe(17_254);

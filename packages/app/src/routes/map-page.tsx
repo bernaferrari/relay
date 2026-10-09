@@ -168,7 +168,7 @@ export function MapPage() {
             render={<Link to="/tests/new" search={{ app: appId }} />}
           >
             <Plus />
-            Record test
+            New test
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -274,7 +274,7 @@ export function MapPage() {
                   detail="Record a test to give Relay a starting point for exploration."
                   action={
                     <Link className={productLinkClassName} to="/tests/new" search={{ app: appId }}>
-                      Record a test
+                      New test
                     </Link>
                   }
                 />

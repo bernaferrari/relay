@@ -156,7 +156,7 @@ function CaseMark({ status }: { status: ProductBatchCase["status"] }) {
   if (status === "blocked")
     return <CircleX className={`${size} text-destructive`} aria-label="Could not run" />;
   if (status === "cancelled")
-    return <CircleSlash className={`${size} text-muted-foreground`} aria-label="Stopped" />;
+    return <CircleSlash className={`${size} text-muted-foreground`} aria-label="Cancelled" />;
   if (status === "running")
     return (
       <LoaderCircle
@@ -171,7 +171,7 @@ function caseDetail(item: ProductBatchCase): string {
   if (item.status === "running") return "Running…";
   if (item.status === "queued" || item.status === "pending") return "Waiting to start";
   if (item.status === "passed") return "Passed";
-  if (item.status === "cancelled") return "Stopped";
+  if (item.status === "cancelled") return "Cancelled";
   const reason = item.error ? plainFailureReason(item.error) : undefined;
   if (item.status === "blocked") return reason ? `Could not run: ${reason}` : "Could not run";
   return reason || "Failed";

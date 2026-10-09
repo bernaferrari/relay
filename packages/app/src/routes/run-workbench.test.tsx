@@ -190,10 +190,7 @@ describe("RunWorkbench", () => {
     };
     const host = render(0, value);
     expect(host.textContent).toContain("Screenshot 1 of");
-    const steps = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.startsWith("Steps"),
-    )!;
-    act(() => steps.click());
+    openRunView(host, "Steps");
     expect(host.textContent).toContain("View all captures");
     expect(host.querySelector('img[alt="Cart"]')).toBeNull();
   });
@@ -272,11 +269,7 @@ describe("RunWorkbench", () => {
         .find((button) => button.textContent === "Screenshots")!
         .click(),
     );
-    act(() =>
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Performance")!
-        .click(),
-    );
+    openRunView(host, "Performance");
     act(() =>
       host
         .querySelectorAll<SVGElement>('svg [role="button"]')[1]!
@@ -293,10 +286,7 @@ describe("RunWorkbench", () => {
     const host = render();
     const image = host.querySelector("img");
     for (const label of ["Checks", "Logs", "Steps"]) {
-      const button = [...host.querySelectorAll("button")].find((item) =>
-        item.textContent?.startsWith(label),
-      )!;
-      act(() => button.click());
+      openRunView(host, label);
       expect(host.querySelector("img")).toBe(image);
     }
   });
@@ -355,11 +345,7 @@ describe("RunWorkbench", () => {
     const host = render();
     expect(host.querySelector('[aria-current="step"]')?.textContent).toContain("Open the cart");
     expect(host.querySelector('img[alt="Cart ready"]')).not.toBeNull();
-    act(() =>
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Checks")!
-        .click(),
-    );
+    openRunView(host, "Checks");
     expect(host.textContent).toContain("Expected");
     expect(host.textContent).toContain("Cart is visible");
   });
@@ -374,11 +360,7 @@ describe("RunWorkbench", () => {
     const preview = host.querySelector('img[alt="Confirmation missing"]')!;
     expect(preview).not.toBeNull();
     expect(preview.closest(".hidden")).toBeNull();
-    act(() =>
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Checks")!
-        .click(),
-    );
+    openRunView(host, "Checks");
     expect(host.textContent).toContain("Confirmation text and order number are visible");
     expect(host.textContent).toContain("Confirmation text was not visible");
     const secondFrame = host.querySelector<HTMLButtonElement>(
@@ -411,11 +393,7 @@ describe("RunWorkbench", () => {
         />,
       ),
     );
-    act(() =>
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Checks")!
-        .click(),
-    );
+    openRunView(host, "Checks");
     expect(host.textContent).not.toContain("Trace interval");
     expect(host.textContent).not.toContain("1970-01-01T00:00:03.000Z");
     expect(host.textContent).toContain("Confirmation text was not visible");
@@ -585,20 +563,13 @@ describe("RunWorkbench", () => {
     )!;
     await act(async () => accept.click());
     expect(review).toHaveBeenCalledWith({ captureId: "arabic", action: "accept" });
-    act(() =>
-      [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-        .find((item) => item.textContent === "Logs")!
-        .click(),
-    );
+    openRunView(host, "Logs");
     expect(host.querySelector('[data-slot="evidence-image-frame"] img')?.getAttribute("alt")).toBe(
       "Checkout submitted",
     );
     expect(host.querySelector('[aria-label="Screenshot review decision"]')).not.toBeNull();
     for (const label of ["Steps", "Logs"]) {
-      const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((item) =>
-        item.textContent?.startsWith(label),
-      )!;
-      act(() => tab.click());
+      openRunView(host, label);
       const decision = [
         ...host.querySelectorAll<HTMLButtonElement>('[data-slot="evidence-image-frame"] button'),
       ].find((item) => item.textContent?.includes("Looks correct"))!;
@@ -768,11 +739,7 @@ describe("RunWorkbench", () => {
       ],
     };
     const host = render(0, value);
-    act(() =>
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Network")!
-        .click(),
-    );
+    openRunView(host, "Network");
     expect(host.querySelector('[aria-label="GET example.com/account"]')).not.toBeNull();
     act(() =>
       (host.querySelector('[aria-label="GET example.com/account"]') as HTMLButtonElement).click(),
@@ -787,3 +754,22 @@ describe("RunWorkbench", () => {
     expect(host.textContent).toContain("TLS · api.example.com");
   });
 });
+
+/** Open a run view: primary views are tabs, the rest live under Details. */
+function openRunView(host: HTMLElement, label: string) {
+  const tab = [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find((item) =>
+    item.textContent?.trim().startsWith(label),
+  );
+  if (tab) {
+    act(() => tab.click());
+    return;
+  }
+  const trigger = host.querySelector<HTMLElement>('[aria-label="More run details"]');
+  if (!trigger) throw new Error("Details menu not found");
+  act(() => trigger.click());
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((entry) =>
+    entry.textContent?.trim().startsWith(label),
+  );
+  if (!item) throw new Error(`Run view not found: ${label}`);
+  act(() => item.click());
+}

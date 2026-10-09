@@ -36,7 +36,7 @@ import { productLinkClassName } from "../lib/class-names";
 
 export { EditTestPage } from "./edit-test-route";
 
-export function TestEditor(props: {
+type TestEditorProps = {
   testId: string;
   appMapId?: string;
   stepId?: string;
@@ -46,7 +46,13 @@ export function TestEditor(props: {
   stage?: ReactNode;
   onSelectedStepChange?(stepId: string | undefined): void;
   onEditingStateChange?(state: "loading" | "dirty" | "saving" | "saved" | "failed"): void;
-}) {
+  /** Record more steps on the live app; offered from the Add step menu. */
+  recordSteps?: { onRecord(): void; disabled: boolean; pending: boolean };
+  /** Increment to open the test's name and details from outside the editor. */
+  detailsRequest?: number;
+};
+
+export function TestEditor(props: TestEditorProps) {
   return <TestEditorDocument {...props} />;
 }
 
@@ -59,16 +65,9 @@ function TestEditorDocument({
   stage,
   onSelectedStepChange,
   onEditingStateChange,
-}: {
-  testId: string;
-  appMapId?: string;
-  stepId?: string;
-  sessionId?: string;
-  onStepChange(stepId: string | undefined): void;
-  stage?: ReactNode;
-  onSelectedStepChange?(stepId: string | undefined): void;
-  onEditingStateChange?(state: "loading" | "dirty" | "saving" | "saved" | "failed"): void;
-}) {
+  recordSteps,
+  detailsRequest,
+}: TestEditorProps) {
   const { testEditorService, liveTestEditorService, runService, queryClient, platform } =
     useRouteContext({
       from: "__root__",
@@ -116,6 +115,9 @@ function TestEditorDocument({
   const [saveNotice, setSaveNotice] = useState("Saved");
   const [workspaceView, setWorkspaceView] = useState<"steps" | "browser">("browser");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (detailsRequest) setSettingsOpen(true);
+  }, [detailsRequest]);
   const [settingsName, setSettingsName] = useState("");
   const [settingsOrigin, setSettingsOrigin] = useState("");
   useEffect(() => {
@@ -617,6 +619,7 @@ function TestEditorDocument({
 
       {editorDocument ? (
         <TestEditorWorkspace
+          recordSteps={recordSteps}
           editorDocument={editorDocument}
           embedded={embedded}
           workspaceView={workspaceView}

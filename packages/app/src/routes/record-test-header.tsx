@@ -77,7 +77,7 @@ export function RecordTestHeader({
             Activity. To keep the steps as a test, choose Stop and review instead.
           </DialogDescription>
           <div className="flex justify-end gap-2 pt-4">
-            <DialogClose render={<Button variant="outline">Keep recording</Button>} />
+            <DialogClose render={<Button variant="ghost">Keep recording</Button>} />
             <Button
               variant="destructive"
               disabled={cancelDisabled}

@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-
 import {
-  Popover,
-  PopoverContent,
-  PopoverTitle,
-  PopoverTrigger,
-} from "@relay/ui-react/components/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@relay/ui-react/components/dropdown-menu";
+
 import {
   ArrowUpRight,
   BookmarkPlus,
@@ -19,7 +20,7 @@ import {
   ChevronRight,
   CircleCheck,
   Flag,
-  Keyboard,
+  MoreHorizontal,
   SquareDashed,
 } from "lucide-react";
 import type {
@@ -35,6 +36,7 @@ import {
 } from "../data/review-product-service";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { ReviewCompare, type CompareMode } from "./review-compare";
+import { relativeTime } from "#lib/relative-time";
 
 type Card = { entry: ReviewInboxEntry; item: CaptureReviewItem; key: string };
 type Filter = "all" | "changed" | "new";
@@ -81,25 +83,6 @@ function StateBadge({ item }: { item: CaptureReviewItem }) {
   }
   return null;
 }
-
-function timeAgo(value: number): string {
-  const minutes = Math.round((Date.now() - value) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
-const SHORTCUTS: readonly [string, string][] = [
-  ["A", "Looks correct for this run"],
-  ["Shift+A", "Accept as reference for future runs"],
-  ["R", "Report issue"],
-  ["I", "Ignore areas on this screen"],
-  ["J / ↓", "Next screenshot"],
-  ["K / ↑", "Previous screenshot"],
-  ["1 2 3", "Side by side · Highlight · Swipe"],
-];
 
 export function ReviewPage() {
   const { platform } = useRouteContext({ from: "__root__" });
@@ -387,7 +370,9 @@ export function ReviewPage() {
                       </p>
                     </div>
                     <p className="truncate text-xs text-muted-foreground">
-                      {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
+                      {[entry.targetName, relativeTime(entry.finishedAt)]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] divide-y divide-border/50">
@@ -538,6 +523,7 @@ export function ReviewPage() {
                       size="sm"
                       variant="ghost"
                       disabled={editingIgnore}
+                      title="Report issue (R)"
                       onClick={() => {
                         setReporting(true);
                         requestAnimationFrame(() => noteRef.current?.focus());
@@ -545,44 +531,44 @@ export function ReviewPage() {
                     >
                       <Flag aria-hidden="true" />
                       Report issue
-                      <kbd className="ml-1 text-xs opacity-60">R</kbd>
                     </Button>
-                    {selected.item.reference?.state === "changed" ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={editingIgnore}
-                        onClick={() => setEditingIgnore(true)}
+                    {/* Two everyday decisions stay visible; reference and ignore
+                        areas are deliberate, less frequent choices. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={<Button size="icon-sm" variant="ghost" disabled={editingIgnore} />}
+                        aria-label="More review options"
                       >
-                        <SquareDashed aria-hidden="true" />
-                        Ignore areas
-                        <kbd className="ml-1 text-xs opacity-60">I</kbd>
-                      </Button>
-                    ) : null}
-                    <ReviewShortcuts />
-
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={editingIgnore}
-                      onClick={() =>
-                        decide.mutate({ card: selected, action: "accept-as-reference" })
-                      }
-                    >
-                      <BookmarkPlus aria-hidden="true" />
-                      Accept as reference
-                      <kbd className="ml-1 text-xs opacity-60">⇧A</kbd>
-                    </Button>
+                        <MoreHorizontal aria-hidden="true" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-60">
+                        <DropdownMenuItem
+                          onClick={() =>
+                            decide.mutate({ card: selected, action: "accept-as-reference" })
+                          }
+                        >
+                          <BookmarkPlus aria-hidden="true" />
+                          Accept as reference
+                          <DropdownMenuShortcut>⇧A</DropdownMenuShortcut>
+                        </DropdownMenuItem>
+                        {selected.item.reference?.state === "changed" ? (
+                          <DropdownMenuItem onClick={() => setEditingIgnore(true)}>
+                            <SquareDashed aria-hidden="true" />
+                            Ignore areas
+                            <DropdownMenuShortcut>I</DropdownMenuShortcut>
+                          </DropdownMenuItem>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                       size="sm"
                       className="ml-auto h-8"
                       disabled={editingIgnore}
-                      title="Accept this screenshot for this run"
+                      title="Looks correct (A) — accept this screenshot for this run"
                       onClick={() => decide.mutate({ card: selected, action: "accept" })}
                     >
                       <Check aria-hidden="true" />
                       Looks correct
-                      <kbd className="ml-1 text-xs opacity-60">A</kbd>
                     </Button>
                   </div>
                 )}
@@ -607,40 +593,5 @@ export function ReviewPage() {
         </div>
       )}
     </section>
-  );
-}
-
-function ReviewShortcuts() {
-  return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="shrink-0"
-            aria-label="Keyboard shortcuts"
-            title="Keyboard shortcuts"
-          />
-        }
-      >
-        <Keyboard aria-hidden="true" />
-      </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-72 p-4">
-        <PopoverTitle>Keyboard shortcuts</PopoverTitle>
-        <dl className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 text-xs">
-          {SHORTCUTS.map(([key, label]) => (
-            <div key={key} className="contents">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd>
-                <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-foreground">
-                  {key}
-                </kbd>
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </PopoverContent>
-    </Popover>
   );
 }

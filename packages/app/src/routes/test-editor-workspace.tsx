@@ -1,8 +1,8 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Link } from "@tanstack/react-router";
-import { Settings2 } from "lucide-react";
-import type { ComponentProps, ReactNode, RefObject } from "react";
+import { useState, type ComponentProps, type ReactNode, type RefObject } from "react";
+import { StageModeContext, type StageMode } from "./test-stage";
 import type {
   ProductTestEditorDocument,
   ProductTestRepair,
@@ -16,6 +16,7 @@ type Outline = ComponentProps<typeof TestEditorStepOutline>;
 type RepairDecision = Parameters<NonNullable<ComponentProps<typeof RepairSection>["onDecision"]>>;
 
 export function TestEditorWorkspace({
+  recordSteps,
   editorDocument,
   embedded,
   workspaceView,
@@ -49,6 +50,7 @@ export function TestEditorWorkspace({
   browserPane,
   latestEvidence,
 }: {
+  recordSteps?: Outline["recordSteps"];
   editorDocument: ProductTestEditorDocument;
   embedded: boolean;
   workspaceView: "steps" | "browser";
@@ -82,23 +84,42 @@ export function TestEditorWorkspace({
   browserPane: ReactNode;
   latestEvidence: ReactNode;
 }) {
+  const [stageMode, setStageMode] = useState<StageMode>("recorded");
+  // One switcher on narrow windows: the steps, the screenshot, or the live app.
+  const compactViews = [
+    { id: "steps", label: "Steps", view: "steps", mode: undefined },
+    { id: "recorded", label: "Screenshot", view: "browser", mode: "recorded" },
+    {
+      id: "live",
+      label: inspectorKind === "device" ? "Live device" : "Live browser",
+      view: "browser",
+      mode: "live",
+    },
+  ] as const;
   return (
-    <>
+    <StageModeContext.Provider value={{ mode: stageMode, setMode: setStageMode }}>
       <div
         className="flex shrink-0 gap-1 border-b border-border px-3 py-2 min-[1100px]:hidden"
         aria-label="Editor view"
       >
-        {(["steps", "browser"] as const).map((view) => (
-          <Button
-            key={view}
-            size="sm"
-            variant={workspaceView === view ? "secondary" : "ghost"}
-            aria-pressed={workspaceView === view}
-            onClick={() => onWorkspaceViewChange(view)}
-          >
-            {view === "steps" ? "Steps" : "Screen"}
-          </Button>
-        ))}
+        {compactViews.map((item) => {
+          const active =
+            workspaceView === item.view && (item.mode === undefined || stageMode === item.mode);
+          return (
+            <Button
+              key={item.id}
+              size="sm"
+              variant={active ? "secondary" : "ghost"}
+              aria-pressed={active}
+              onClick={() => {
+                onWorkspaceViewChange(item.view);
+                if (item.mode) setStageMode(item.mode);
+              }}
+            >
+              {item.label}
+            </Button>
+          );
+        })}
       </div>
       <div
         className={`grid min-h-0 flex-1 ${embedded ? "min-[1100px]:grid-cols-[340px_minmax(0,1fr)]" : "min-[1100px]:grid-cols-[280px_minmax(0,1fr)]"}`}
@@ -108,22 +129,7 @@ export function TestEditorWorkspace({
         >
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
             <TestEditorStepOutline
-              headerAside={
-                embedded ? (
-                  <>
-                    {saveState}
-                    <Button
-                      size="icon-sm"
-                      aria-label="Test settings"
-                      title="Name and details"
-                      variant="ghost"
-                      onClick={() => onToggleSettings()}
-                    >
-                      <Settings2 aria-hidden="true" />
-                    </Button>
-                  </>
-                ) : undefined
-              }
+              headerAside={embedded ? <>{saveState}</> : undefined}
               showDetails={settingsOpen}
               selectedEditor={editorExpanded || hasPendingCheckpoint ? stepEditor : null}
               test={editorDocument.test}
@@ -136,6 +142,7 @@ export function TestEditorWorkspace({
               selectedStepId={selected?.step.id}
               busy={editPending || repairPending}
               draggedStepId={draggedStepId}
+              recordSteps={recordSteps}
               onAdd={addStep}
               onAddCheckpoint={addCheckpoint}
               onSelect={(id) => {
@@ -168,25 +175,32 @@ export function TestEditorWorkspace({
               </details>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2">
-            <TestEditorHistoryBar
-              canUndo={canUndo}
-              canRedo={canRedo}
-              busy={editPending || historyPending}
-              latestSummary={latestSummary}
-              onUndo={undo}
-              onRedo={redo}
-            />
-            {embedded ? null : (
-              <Link
-                className="text-xs text-muted-foreground hover:text-foreground"
-                to="/tests/$testId"
-                params={{ testId }}
-              >
-                Run setup →
-              </Link>
-            )}
-          </div>
+          {/* Undo and redo appear once there is something to undo. */}
+          {canUndo || canRedo || historyPending || !embedded ? (
+            <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2">
+              {canUndo || canRedo || historyPending ? (
+                <TestEditorHistoryBar
+                  canUndo={canUndo}
+                  canRedo={canRedo}
+                  busy={editPending || historyPending}
+                  latestSummary={latestSummary}
+                  onUndo={undo}
+                  onRedo={redo}
+                />
+              ) : (
+                <span />
+              )}
+              {embedded ? null : (
+                <Link
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  to="/tests/$testId"
+                  params={{ testId }}
+                >
+                  Run setup →
+                </Link>
+              )}
+            </div>
+          ) : null}
         </div>
         <div
           className={`${workspaceView === "browser" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto min-[1100px]:flex`}
@@ -196,6 +210,6 @@ export function TestEditorWorkspace({
           {latestEvidence}
         </div>
       </div>
-    </>
+    </StageModeContext.Provider>
   );
 }
