@@ -34,6 +34,7 @@ import { runEvidenceOperationDefinitions } from "./run-evidence-operation-defini
 import { captureReferenceOperationDefinitions } from "./capture-reference-operations.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
+import { createSystemSetupOperationDefinitions } from "./system-operation-definitions.js";
 import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
 import { workspaceResourceOperationDefinitions } from "./workspace-resource-operation-definitions.js";
 import { durableOperationDefinitions } from "./durable-operation-definitions.js";
@@ -585,6 +586,7 @@ const generationOutputParser = objectParser<GenerationResultDto>("generation res
 
 const { command, query } = createOperationBuilders<RelayOperationMap>();
 const discoveryOperationDefinitions = createDiscoveryOperationDefinitions();
+const systemSetupOperationDefinitions = createSystemSetupOperationDefinitions();
 const appMapOperationDefinitions = createAppMapOperationDefinitions({
   boolean,
   emptyInputParser,
@@ -605,11 +607,7 @@ export const operationDefinitions = [
     input: emptyInputParser,
     output: healthParser,
   }),
-  query("system.doctor.get", "Inspect Relay prerequisites", "/doctor", { category: "system" }),
-  query("system.audit.list", "List audit events", "/audit", {
-    category: "system",
-    minimumRole: "admin",
-  }),
+  ...systemSetupOperationDefinitions,
   query("activity.list", "List durable project activity", "/activity", {
     category: "workspace",
     minimumRole: "admin",

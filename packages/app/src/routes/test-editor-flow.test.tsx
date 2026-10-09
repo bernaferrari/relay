@@ -271,7 +271,7 @@ async function click(label: string) {
 }
 
 async function chooseCheckpoint(label: string) {
-  const select = document.querySelector<HTMLSelectElement>('[aria-label="Checkpoint type"]')!;
+  const select = document.querySelector<HTMLSelectElement>('[aria-label="Check type"]')!;
   const option = [...select.options].find((item) => item.textContent === label)!;
   await act(async () => {
     select.value = option.value;
@@ -553,7 +553,7 @@ describe("Test editor", () => {
     expect(document.body.textContent).not.toContain("Semantic judge");
     expect(document.body.textContent).not.toContain("Remember reply");
     expect(document.body.textContent).toContain("Ignore for identity");
-    expect(document.querySelector('[aria-label="Checkpoint type"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Check type"]')).not.toBeNull();
     await chooseCheckpoint("Visual judge");
     expect(document.body.textContent).toContain("Fails closed without OPENROUTER_API_KEY");
     expect(document.body.textContent).toContain("Do not auto-accept a visual baseline");
@@ -625,7 +625,7 @@ describe("Test editor", () => {
     const history = await render(harness.editor, "/tests/test-checkout?step=step-cart");
     await click("Add a check");
     await act(async () => {
-      const select = document.querySelector<HTMLSelectElement>('[aria-label="Checkpoint type"]')!;
+      const select = document.querySelector<HTMLSelectElement>('[aria-label="Check type"]')!;
       select.value = "wait-for";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });

@@ -53,6 +53,11 @@ export const targetOperationInputSchemas = {
   "target.browser-device.inspect": browserDeviceInspectInputSchema,
   "target.browser-device.control": browserDeviceControlInputSchema,
   "system.doctor.get": empty,
+  "system.model-key.set": z
+    .object({
+      key: z.string().max(512).describe("OpenRouter key, or an empty string to remove it"),
+    })
+    .strict(),
   "target.list": empty,
   "target.devices.list": z
     .object({

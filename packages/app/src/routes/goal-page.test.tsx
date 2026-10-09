@@ -321,7 +321,7 @@ describe("Goal page", () => {
     });
     await settle();
     expect(host.textContent).toContain(
-      "Relay opens a fresh browser at the URL above, carrying the grok-lab Lane's saved sign-in. It does not continue your current browser session.",
+      "Relay opens a fresh browser at the URL above, signed in with grok-lab. It does not continue your current browser session.",
     );
 
     await setValue("goal-description", "Open the signed-in account page");

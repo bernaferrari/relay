@@ -126,7 +126,7 @@ export function judgeProviderChecks(value: unknown): readonly SetupCheck[] {
       label: "OPENROUTER_API_KEY",
       status: "needs-attention",
       detail:
-        "Add an OpenRouter key (OPENROUTER_API_KEY) so Relay can judge screenshots and on-screen text. Until then, those checks say they couldn’t run — they never pass silently.",
+        "Add an OpenRouter key in Settings (or set OPENROUTER_API_KEY) so Relay can run plain-English steps and judge screenshots. Until then, those steps say they couldn’t run — they never pass silently.",
     },
   ];
 }

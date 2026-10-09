@@ -49,7 +49,7 @@ function ValidationKindGroups({
     <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
       What should Relay check?
       <select
-        aria-label="Checkpoint type"
+        aria-label="Check type"
         className="h-9 w-full min-w-0 rounded-lg border border-border bg-transparent px-3 text-sm font-normal text-foreground"
         value={selected ?? ""}
         onChange={(event) => onSelect(event.target.value as ValidationDraft["kind"])}

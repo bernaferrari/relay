@@ -236,3 +236,5 @@ export * from "./frozen-recipe-inputs.js";
 export { requirePublicInputDataSet } from "./input-data-set.js";
 
 export * from "./app-map-combine-cell-inputs.js";
+
+export { loadSavedModelKey, saveModelKey, validModelKey } from "./model-key.js";

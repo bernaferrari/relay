@@ -294,9 +294,9 @@ export function GoalPage() {
               />
               <FieldDescription>
                 {laneSharedByWorkers
-                  ? "Multiple workers cannot share one Lane — a Lane is one signed-in account. Use one worker, or run without a Lane for isolated signed-out workers."
+                  ? "Several workers cannot share one saved sign-in. Use one worker, or run signed out so each worker gets its own browser."
                   : laneId
-                    ? `Relay opens a fresh browser at the URL above, carrying the ${laneId} Lane's saved sign-in. It does not continue your current browser session.`
+                    ? `Relay opens a fresh browser at the URL above, signed in with ${laneId}. It does not continue your current browser session.`
                     : "Relay opens a fresh isolated signed-out browser at the URL above — not your current session."}
               </FieldDescription>
             </Field>
@@ -315,7 +315,7 @@ export function GoalPage() {
             />
             <FieldDescription>
               Use one worker for a focused run; up to four isolated workers are supported.
-              {laneSharedByWorkers ? " Set workers to 1 to use a saved Lane." : ""}
+              {laneSharedByWorkers ? " Set workers to 1 to use a saved sign-in." : ""}
             </FieldDescription>
           </Field>
           <details className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">

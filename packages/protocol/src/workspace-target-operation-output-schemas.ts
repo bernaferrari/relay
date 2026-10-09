@@ -686,6 +686,12 @@ export const workspaceTargetOperationOutputSchemas = {
   "system.doctor.get": z
     .object({ ok: z.boolean(), checks: z.array(diagnostic), error: z.string().optional() })
     .strict(),
+  "system.model-key.set": z
+    .object({
+      configured: z.boolean(),
+      source: z.enum(["settings", "environment", "none"]),
+    })
+    .strict(),
   "system.audit.list": z.object({ events: z.array(auditEvent) }).strict(),
   "activity.list": z
     .object({ items: z.array(activityRecord), nextCursor: text.optional() })

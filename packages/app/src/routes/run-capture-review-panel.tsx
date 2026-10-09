@@ -160,14 +160,10 @@ export function CaptureReviewPanel({
     const labeled = planCaptureReviewScreenLabel(item);
     if (labeled && labeled !== item.caption) return labeled;
     if (item.caption.startsWith("step:"))
-      return (
-        item.caption.split(":").slice(2).join(":") || fallbackTitle || `Checkpoint ${index + 1}`
-      );
+      return item.caption.split(":").slice(2).join(":") || fallbackTitle || `Check ${index + 1}`;
     if (item.caption.startsWith("app-map:"))
-      return fallbackTitle
-        ? `${fallbackTitle} · checkpoint ${index + 1}`
-        : `Checkpoint ${index + 1}`;
-    return item.caption || fallbackTitle || `Checkpoint ${index + 1}`;
+      return fallbackTitle ? `${fallbackTitle} · checkpoint ${index + 1}` : `Check ${index + 1}`;
+    return item.caption || fallbackTitle || `Check ${index + 1}`;
   };
   return (
     <div

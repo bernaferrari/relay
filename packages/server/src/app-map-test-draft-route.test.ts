@@ -86,3 +86,27 @@ test("the observed map answers for an App with no runs yet", async () => {
     await server.close();
   }
 });
+
+test("the model key can be saved and removed but is never read back", async () => {
+  const previousKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = clientFor(server.port);
+    await assert.rejects(
+      () => client.invoke("system.model-key.set", { key: "nope" }),
+      /does not look like an OpenRouter key/,
+    );
+    const saved = await client.invoke("system.model-key.set", {
+      key: "sk-or-v1-test-0000000000000000000000",
+    });
+    assert.deepEqual(saved, { configured: true, source: "settings" });
+    assert.equal(JSON.stringify(saved).includes("sk-or"), false);
+    const removed = await client.invoke("system.model-key.set", { key: "" });
+    assert.deepEqual(removed, { configured: false, source: "none" });
+  } finally {
+    await server.close();
+    if (previousKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = previousKey;
+  }
+});
