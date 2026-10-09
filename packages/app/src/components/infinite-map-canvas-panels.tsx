@@ -73,8 +73,11 @@ export function MapCanvasPanels({
   resetView,
   selectedPath,
   setSelectedPathId,
+  aboveCanvas,
   children,
 }: {
+  /** Shown over the canvas column only, never across the Screens sidebar. */
+  aboveCanvas?: ReactNode;
   appId: string;
   screens: readonly ProductMapScreen[];
   paths: readonly ProductMapPath[];
@@ -213,206 +216,213 @@ export function MapCanvasPanels({
           </div>
         </aside>
       ) : null}
-      <div className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden">
-        {!showScreens ? (
-          <div className="absolute left-3 top-3 z-20 rounded-md border border-border bg-card p-1 shadow-sm">
-            <MapControl
-              label="Show screens"
-              icon={PanelLeftOpen}
-              onClick={() => setShowScreens(true)}
-            />
-          </div>
-        ) : null}
-        <div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm"
-          aria-label="Map controls"
-        >
-          <Button
-            size="icon-sm"
-            variant={handTool ? "ghost" : "secondary"}
-            aria-label="Select tool"
-            aria-pressed={!handTool}
-            onClick={() => setHandTool(false)}
-          >
-            <MousePointer2 />
-          </Button>
-          <Button
-            size="icon-sm"
-            variant={handTool ? "secondary" : "ghost"}
-            aria-label="Hand tool"
-            aria-pressed={handTool}
-            onClick={() => setHandTool(true)}
-          >
-            <Hand />
-          </Button>
-          <span className="mx-1 h-5 w-px bg-border" />
-          <MapControl label="Zoom out" icon={Minus} onClick={() => zoomBy(1 / 1.18)} />
-          <span
-            data-slot="map-zoom"
-            className="w-12 text-center font-mono text-xs tabular-nums"
-            ref={zoomLabelRef}
-            aria-live="polite"
-          >
-            100%
-          </span>
-          <MapControl label="Zoom in" icon={Plus} onClick={() => zoomBy(1.18)} />
-          <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-          <MapControl label="Fit map (F)" icon={Focus} onClick={fitContent} />
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button size="icon-sm" variant="ghost" />}
-              aria-label="Map view options"
-              title="Map view options"
-            >
-              <SlidersHorizontal />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" className="w-56">
-              <DropdownMenuCheckboxItem checked={showScreens} onCheckedChange={setShowScreens}>
-                Screen list
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={showIntermediateScreens}
-                onCheckedChange={setShowIntermediateScreens}
-              >
-                Intermediate screens
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={showInteractionTargets}
-                onCheckedChange={setShowInteractionTargets}
-              >
-                Accessibility bounds
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={showControlOrigins}
-                onCheckedChange={setShowControlOrigins}
-              >
-                Arrows from controls
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup
-                value={layoutMode}
-                onValueChange={(value) => {
-                  const mode = value as LayoutMode;
-                  setLayoutMode(mode);
-                  setLayoutAnchors(
-                    new Map(originPaths.map((path) => [path.id, path.sourceAnchor])),
-                  );
-                  setArrangedEdits(new Map());
-                  const next = layoutMapScreens(
-                    mode === "saved"
-                      ? visibleScreens
-                      : visibleScreens.map((screen) => ({ ...screen, position: undefined })),
-                    originPaths,
-                    mode === "saved" ? "aligned" : mode,
-                  );
-                  animateTransform(
-                    fitMapToBounds(mapContentBounds(visibleScreens, next), viewportSize()),
-                  );
-                }}
-              >
-                <DropdownMenuRadioItem value="aligned">Aligned layout</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="staggered">
-                  Staggered · Vertical
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="horizontal">
-                  Aligned · Horizontal
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="saved">Saved positions</DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-              {selectedScreenId ? (
-                <DropdownMenuItem onClick={() => focusScreen(selectedScreenId)}>
-                  Focus selected screen
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onClick={resetView}>Reset view</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        {selectedPath ? (
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {aboveCanvas}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {!showScreens ? (
+            <div className="absolute left-3 top-3 z-20 rounded-md border border-border bg-card p-1 shadow-sm">
+              <MapControl
+                label="Show screens"
+                icon={PanelLeftOpen}
+                onClick={() => setShowScreens(true)}
+              />
+            </div>
+          ) : null}
           <div
-            className={`absolute right-3 top-3 z-20 flex flex-wrap items-center gap-2 rounded-lg bg-card p-2 shadow-md ${showScreens ? "left-3" : "left-16"}`}
-            aria-label="Selected path"
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm"
+            aria-label="Map controls"
           >
             <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => focusScreen(selectedPath.fromScreenId)}
+              size="icon-sm"
+              variant={handTool ? "ghost" : "secondary"}
+              aria-label="Select tool"
+              aria-pressed={!handTool}
+              onClick={() => setHandTool(false)}
             >
-              {selectedPath.fromTitle}
+              <MousePointer2 />
             </Button>
-            <span className="text-xs text-muted-foreground">→ {selectedPath.label} →</span>
-            {selectedPath.toScreenId ? (
+            <Button
+              size="icon-sm"
+              variant={handTool ? "secondary" : "ghost"}
+              aria-label="Hand tool"
+              aria-pressed={handTool}
+              onClick={() => setHandTool(true)}
+            >
+              <Hand />
+            </Button>
+            <span className="mx-1 h-5 w-px bg-border" />
+            <MapControl label="Zoom out" icon={Minus} onClick={() => zoomBy(1 / 1.18)} />
+            <span
+              data-slot="map-zoom"
+              className="w-12 text-center font-mono text-xs tabular-nums"
+              ref={zoomLabelRef}
+              aria-live="polite"
+            >
+              100%
+            </span>
+            <MapControl label="Zoom in" icon={Plus} onClick={() => zoomBy(1.18)} />
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+            <MapControl label="Fit map (F)" icon={Focus} onClick={fitContent} />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button size="icon-sm" variant="ghost" />}
+                aria-label="Map view options"
+                title="Map view options"
+              >
+                <SlidersHorizontal />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" className="w-56">
+                <DropdownMenuCheckboxItem checked={showScreens} onCheckedChange={setShowScreens}>
+                  Screen list
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={showIntermediateScreens}
+                  onCheckedChange={setShowIntermediateScreens}
+                >
+                  Intermediate screens
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={showInteractionTargets}
+                  onCheckedChange={setShowInteractionTargets}
+                >
+                  Accessibility bounds
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={showControlOrigins}
+                  onCheckedChange={setShowControlOrigins}
+                >
+                  Arrows from controls
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={layoutMode}
+                  onValueChange={(value) => {
+                    const mode = value as LayoutMode;
+                    setLayoutMode(mode);
+                    setLayoutAnchors(
+                      new Map(originPaths.map((path) => [path.id, path.sourceAnchor])),
+                    );
+                    setArrangedEdits(new Map());
+                    const next = layoutMapScreens(
+                      mode === "saved"
+                        ? visibleScreens
+                        : visibleScreens.map((screen) => ({ ...screen, position: undefined })),
+                      originPaths,
+                      mode === "saved" ? "aligned" : mode,
+                    );
+                    animateTransform(
+                      fitMapToBounds(mapContentBounds(visibleScreens, next), viewportSize()),
+                    );
+                  }}
+                >
+                  <DropdownMenuRadioItem value="aligned">Aligned layout</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="staggered">
+                    Staggered · Vertical
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="horizontal">
+                    Aligned · Horizontal
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="saved">Saved positions</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                {selectedScreenId ? (
+                  <DropdownMenuItem onClick={() => focusScreen(selectedScreenId)}>
+                    Focus selected screen
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onClick={resetView}>Reset view</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          {selectedPath ? (
+            <div
+              className={`absolute right-3 top-3 z-20 flex flex-wrap items-center gap-2 rounded-lg bg-card p-2 shadow-md ${showScreens ? "left-3" : "left-16"}`}
+              aria-label="Selected path"
+            >
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => focusScreen(selectedPath.toScreenId!)}
+                onClick={() => focusScreen(selectedPath.fromScreenId)}
               >
-                {selectedPath.toTitle}
+                {selectedPath.fromTitle}
               </Button>
-            ) : (
-              <span className="text-xs">Finish</span>
-            )}
-            {paths.filter(
-              (path) =>
-                path.fromScreenId === selectedPath.fromScreenId &&
-                path.toScreenId === selectedPath.toScreenId,
-            ).length > 1 ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
-                  Choose path
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  {paths
-                    .filter(
-                      (path) =>
-                        path.fromScreenId === selectedPath.fromScreenId &&
-                        path.toScreenId === selectedPath.toScreenId,
-                    )
-                    .map((path, index) => (
-                      <DropdownMenuItem key={path.id} onClick={() => setSelectedPathId(path.id)}>
-                        <span className="flex min-w-0 flex-col gap-1">
-                          <span className="whitespace-normal">{path.label}</span>
-                          <span className="whitespace-normal text-xs text-muted-foreground">
-                            {path.coveringTests.map((test) => test.name).join(" · ") ||
-                              `Recorded path ${index + 1}`}
+              <span className="text-xs text-muted-foreground">→ {selectedPath.label} →</span>
+              {selectedPath.toScreenId ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => focusScreen(selectedPath.toScreenId!)}
+                >
+                  {selectedPath.toTitle}
+                </Button>
+              ) : (
+                <span className="text-xs">Finish</span>
+              )}
+              {paths.filter(
+                (path) =>
+                  path.fromScreenId === selectedPath.fromScreenId &&
+                  path.toScreenId === selectedPath.toScreenId,
+              ).length > 1 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+                    Choose path
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {paths
+                      .filter(
+                        (path) =>
+                          path.fromScreenId === selectedPath.fromScreenId &&
+                          path.toScreenId === selectedPath.toScreenId,
+                      )
+                      .map((path, index) => (
+                        <DropdownMenuItem key={path.id} onClick={() => setSelectedPathId(path.id)}>
+                          <span className="flex min-w-0 flex-col gap-1">
+                            <span className="whitespace-normal">{path.label}</span>
+                            <span className="whitespace-normal text-xs text-muted-foreground">
+                              {path.coveringTests.map((test) => test.name).join(" · ") ||
+                                `Recorded path ${index + 1}`}
+                            </span>
                           </span>
-                        </span>
-                      </DropdownMenuItem>
-                    ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-            {selectedPath.intermediateScreens?.length ? (
-              <Button size="sm" variant="outline" onClick={() => setShowIntermediateScreens(true)}>
-                Show intermediate screens
-              </Button>
-            ) : (
+                        </DropdownMenuItem>
+                      ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              {selectedPath.intermediateScreens?.length ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowIntermediateScreens(true)}
+                >
+                  Show intermediate screens
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  nativeButton={false}
+                  render={
+                    <Link
+                      to="/tests/new"
+                      search={{ app: appId, view: "path", path: selectedPath.id }}
+                    />
+                  }
+                >
+                  Create test
+                </Button>
+              )}
               <Button
-                size="sm"
-                variant="outline"
-                nativeButton={false}
-                render={
-                  <Link
-                    to="/tests/new"
-                    search={{ app: appId, view: "path", path: selectedPath.id }}
-                  />
-                }
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Close path inspection"
+                onClick={() => setSelectedPathId(undefined)}
               >
-                Create test
+                <X />
               </Button>
-            )}
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Close path inspection"
-              onClick={() => setSelectedPathId(undefined)}
-            >
-              <X />
-            </Button>
-          </div>
-        ) : null}
-        {children}
+            </div>
+          ) : null}
+          {children}
+        </div>
       </div>
     </>
   );
