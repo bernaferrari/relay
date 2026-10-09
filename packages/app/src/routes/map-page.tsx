@@ -231,13 +231,6 @@ export function MapPage() {
               find and open any captured screen.
             </p>
           ) : null}
-          {view === "map" && observed.data ? (
-            <MapNewScreensTray
-              screens={observed.data.screens}
-              frameUri={runFrameUri}
-              loadScreenshot={mapService.loadScreenshot}
-            />
-          ) : null}
           {view === "map" ? (
             <>
               {map.data.screens.length ? (
@@ -263,7 +256,20 @@ export function MapPage() {
                       : undefined
                   }
                   appId={appId}
-                  screenStatus={observed.data ? screenStatus : undefined}
+                  runs={
+                    observed.data
+                      ? {
+                          status: screenStatus,
+                          aboveCanvas: (
+                            <MapNewScreensTray
+                              screens={observed.data.screens}
+                              frameUri={runFrameUri}
+                              loadScreenshot={mapService.loadScreenshot}
+                            />
+                          ),
+                        }
+                      : undefined
+                  }
                   screens={visibleScreens}
                   paths={visiblePaths}
                   onMergeScreen={

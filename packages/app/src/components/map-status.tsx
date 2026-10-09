@@ -1,5 +1,12 @@
 /** @jsxImportSource react */
 import type { AppMapObserved, AppMapObservedStatus } from "@relay/protocol";
+import type { ReactNode } from "react";
+
+/** What recent runs add to the map canvas: a status per screen and a strip above it. */
+export type MapRunOverlay = {
+  status?: ReadonlyMap<string, AppMapObservedStatus>;
+  aboveCanvas?: ReactNode;
+};
 
 const STATUS: Record<AppMapObservedStatus, { label: string; className: string }> = {
   passing: { label: "Passing in the latest run", className: "bg-success" },

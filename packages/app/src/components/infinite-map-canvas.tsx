@@ -1,4 +1,4 @@
-import type { AppMapObservedStatus } from "@relay/protocol";
+import type { MapRunOverlay } from "./map-status";
 import { compactMap, type PresentedMapPath } from "./map-presentation";
 import { useIsMobile } from "@relay/ui-react/hooks/use-mobile";
 import { useMapSelection } from "../hooks/use-map-selection";
@@ -53,9 +53,9 @@ export function InfiniteMapCanvas({
   initialScreenId,
   onScreenChange,
   onPathChange,
-  screenStatus,
+  runs,
 }: {
-  screenStatus?: ReadonlyMap<string, AppMapObservedStatus>;
+  runs?: MapRunOverlay;
   initialPathId?: string;
   initialScreenId?: string;
   onScreenChange?(id: string | undefined): void;
@@ -214,7 +214,6 @@ export function InfiniteMapCanvas({
     | undefined
   >(undefined);
   const markerId = `${useId().replaceAll(":", "")}`;
-
   const navigationFrame = useRef(0);
   useEffect(() => () => cancelAnimationFrame(navigationFrame.current), []);
 
@@ -627,6 +626,7 @@ export function InfiniteMapCanvas({
         resetView={resetView}
         selectedPath={selectedPath}
         setSelectedPathId={setSelectedPathId}
+        aboveCanvas={runs?.aboveCanvas}
       >
         <MapCanvasViewport
           viewportRef={viewportRef}
@@ -640,7 +640,7 @@ export function InfiniteMapCanvas({
           onWheel={handleWheel}
           onKeyDown={handleKeyDown}
           worldProps={{
-            screenStatus,
+            screenStatus: runs?.status,
             worldRef,
             transformRef,
             navigationFrame,
