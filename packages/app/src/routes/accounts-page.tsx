@@ -2,7 +2,14 @@
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { KeyRound, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@relay/ui-react/components/dropdown-menu";
+import { CircleAlert, KeyRound, MoreHorizontal, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { SiteIcon } from "../components/site-icon";
@@ -148,7 +155,13 @@ export function AppAccountsPage() {
   const listed = accounts.data ?? [];
   const live = listed.filter((account) => accountStatus(account) !== "revoked");
   const revoked = listed.filter((account) => accountStatus(account) === "revoked");
-  const visible = showRevoked ? listed : live;
+  // Accounts that block tests come first; the rest keep their name order.
+  const attentionFirst = (items: readonly ProductBrowserAccount[]) =>
+    [...items].sort(
+      (left, right) =>
+        Number(accountStatus(left) === "signed-in") - Number(accountStatus(right) === "signed-in"),
+    );
+  const visible = attentionFirst(showRevoked ? listed : live);
   const needsSignIn = live.filter((account) => accountStatus(account) !== "signed-in").length;
   const canAdd = Boolean(appResourcesService.saveBrowserAccount);
   const actionError =
@@ -205,7 +218,8 @@ export function AppAccountsPage() {
             </p>
           ) : null}
           {needsSignIn ? (
-            <p className="text-sm text-muted-foreground" role="status">
+            <p className="flex items-center gap-2 text-sm text-warning-foreground" role="status">
+              <CircleAlert className="size-4 shrink-0" aria-hidden="true" />
               {needsSignIn === 1
                 ? "1 account needs sign-in. Tests that use it stop before they start."
                 : `${needsSignIn} accounts need sign-in. Tests that use them stop before they start.`}
@@ -213,7 +227,10 @@ export function AppAccountsPage() {
           ) : null}
           {listed.length ? (
             <>
-              <ul className="grid list-none gap-2 p-0" aria-label="Saved accounts">
+              <ul
+                className="m-0 grid list-none divide-y divide-border overflow-hidden rounded-xl border border-border bg-card p-0"
+                aria-label="Saved accounts"
+              >
                 {visible.map((account) => (
                   <AccountCard
                     key={account.fixture.reference}
@@ -343,31 +360,100 @@ function AccountCard({
   const facts = accountFacts(account, lastUsedAt);
   const active = status !== "revoked";
   const needsSignIn = status === "needs-sign-in" || status === "unchecked-error";
+  const busyLabel = busy.opening || busy.signingIn ? "Opening…" : undefined;
   return (
-    <li
-      className="grid gap-3 rounded-lg border border-border bg-card p-4"
-      aria-label={`${name} on ${host}`}
-    >
-      <div className="flex min-w-0 items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-md border border-border bg-background">
+    <li className="grid gap-2 px-4 py-3" aria-label={`${name} on ${host}`}>
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-background">
           <SiteIcon url={siteUrl} className="size-5" />
         </span>
         <div className="grid min-w-0 flex-1 gap-0.5">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <strong className="truncate text-sm font-semibold">{name}</strong>
+          <div className="flex min-w-0 items-center gap-2">
+            <strong className="truncate text-sm font-medium">{name}</strong>
             <span
-              className={`inline-flex h-5 items-center rounded-full px-2 text-xs font-medium ${STATUS_TONE[status]}`}
+              className={`inline-flex h-5 shrink-0 items-center rounded-full px-2 text-xs font-medium ${STATUS_TONE[status]}`}
             >
               {accountStatusLabel(status)}
             </span>
           </div>
-          <p className="truncate text-sm text-muted-foreground">{host}</p>
-          <p className="text-xs text-muted-foreground">{facts.join(" · ")}</p>
+          <p className="truncate text-xs text-muted-foreground">{[host, ...facts].join(" · ")}</p>
         </div>
+        {active ? (
+          <div className="flex shrink-0 items-center gap-1">
+            {needsSignIn && canSignIn ? (
+              <Button size="sm" onClick={onSignIn} disabled={busy.signingIn}>
+                {busy.signingIn ? "Opening…" : "Sign in again"}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onOpen}
+                disabled={busy.opening}
+                aria-label={`Open ${host} signed in as ${name}`}
+              >
+                {busy.opening ? "Opening…" : "Open signed in"}
+              </Button>
+            )}
+            {siteUrl && !needsSignIn ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                nativeButton={false}
+                aria-label="New test as this account"
+                render={
+                  <Link to="/tests/new" search={{ site: siteUrl, account: account.fixture.id }} />
+                }
+              >
+                New test
+              </Button>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon-sm" />}
+                aria-label={`More actions for ${name}`}
+                disabled={Boolean(busyLabel) || busy.checking}
+              >
+                <MoreHorizontal aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {needsSignIn ? (
+                  <DropdownMenuItem onClick={onOpen}>Open signed in</DropdownMenuItem>
+                ) : null}
+                {siteUrl && needsSignIn ? (
+                  <DropdownMenuItem
+                    render={
+                      <Link
+                        to="/tests/new"
+                        search={{ site: siteUrl, account: account.fixture.id }}
+                      />
+                    }
+                  >
+                    New test as this account
+                  </DropdownMenuItem>
+                ) : null}
+                {!needsSignIn && canSignIn ? (
+                  <DropdownMenuItem onClick={onSignIn}>Refresh sign-in</DropdownMenuItem>
+                ) : null}
+                {canCheck ? (
+                  <DropdownMenuItem onClick={onCheck}>Check sign-in now</DropdownMenuItem>
+                ) : null}
+                {canRevoke ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onClick={onRevoke}>
+                      Revoke…
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null}
       </div>
       {active && waitingForSignIn ? (
         <div
-          className="flex flex-wrap items-center gap-2 rounded-md bg-muted/60 px-3 py-2 text-sm"
+          className="ml-12 flex flex-wrap items-center gap-2 rounded-md bg-muted/60 px-3 py-2 text-sm"
           role="status"
         >
           <span className="min-w-0 flex-1">
@@ -384,63 +470,10 @@ function AccountCard({
           </Button>
         </div>
       ) : null}
-      {active ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {needsSignIn && canSignIn ? (
-            <Button size="sm" onClick={onSignIn} disabled={busy.signingIn}>
-              {busy.signingIn ? "Opening…" : "Sign in again"}
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant={needsSignIn ? "outline" : "default"}
-            onClick={onOpen}
-            disabled={busy.opening}
-            aria-label={`Open ${host} signed in as ${name}`}
-          >
-            {busy.opening ? "Opening…" : "Open signed in"}
-          </Button>
-          {siteUrl ? (
-            <Button
-              size="sm"
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link to="/tests/new" search={{ site: siteUrl, account: account.fixture.id }} />
-              }
-            >
-              New test as this account
-            </Button>
-          ) : null}
-          <span className="flex-1" />
-          {!needsSignIn && canSignIn ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onSignIn}
-              disabled={busy.signingIn}
-              aria-label={`Refresh sign-in for ${name}`}
-            >
-              {busy.signingIn ? "Opening…" : "Refresh sign-in"}
-            </Button>
-          ) : null}
-          {canCheck ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onCheck}
-              disabled={busy.checking}
-              aria-label={`Check ${name}`}
-            >
-              {busy.checking ? "Checking…" : "Check"}
-            </Button>
-          ) : null}
-          {canRevoke ? (
-            <Button size="sm" variant="ghost" onClick={onRevoke} aria-label={`Revoke ${name}`}>
-              Revoke
-            </Button>
-          ) : null}
-        </div>
+      {busy.checking ? (
+        <p className="ml-12 text-xs text-muted-foreground" role="status">
+          Checking sign-in…
+        </p>
       ) : null}
     </li>
   );

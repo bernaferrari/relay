@@ -155,12 +155,6 @@ export function SessionPage() {
           description={`${targetLabel(value)} · ${value.actorKind === "agent" ? "Agent" : "Manual"} · ${sessionStateLabel(value.state)}`}
           actions={
             <>
-              {isActiveSession(value) && !canControl ? (
-                <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
-                  <RefreshCcw aria-hidden="true" />
-                  {refresh.isPending ? "Reconnecting…" : "Reconnect"}
-                </Button>
-              ) : null}
               {canControl ? (
                 <Button
                   variant="outline"
@@ -282,7 +276,7 @@ export function SessionPage() {
           >
             <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
               <h2 id="session-stage-title" className="text-sm font-medium">
-                {canControl ? "Live target" : "Target unavailable"}
+                {canControl ? "Live" : "Disconnected"}
               </h2>
               {canControl && liveStatus === "degraded" ? (
                 <Button
@@ -382,19 +376,11 @@ export function SessionPage() {
               </p>
             ) : null}
             <section className="rounded-xl border border-border bg-card p-5">
-              <h2 className="mb-4 text-sm font-semibold">Session details</h2>
+              <h2 className="mb-4 text-sm font-semibold">Details</h2>
               <dl className="grid grid-cols-2 gap-4 min-[881px]:grid-cols-1">
                 <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Target</dt>
+                  <dt className="text-xs text-muted-foreground">Device or browser</dt>
                   <dd className="break-words text-sm font-medium">{targetLabel(value)}</dd>
-                </div>
-                <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Workspace mode</dt>
-                  <dd className="break-words text-sm font-medium">
-                    {value.state === "ready" || value.state === "preparing"
-                      ? "Not recording"
-                      : sessionStateLabel(value.state)}
-                  </dd>
                 </div>
                 <div className="grid gap-0.5">
                   <dt className="text-xs text-muted-foreground">App</dt>
@@ -403,27 +389,15 @@ export function SessionPage() {
                   </dd>
                 </div>
                 <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Owner</dt>
-                  <dd className="break-words text-sm font-medium">
-                    {value.actorKind === "agent" ? "Agent" : "Human"}
-                  </dd>
-                </div>
-                <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Actions</dt>
+                  <dt className="text-xs text-muted-foreground">Steps recorded</dt>
                   <dd className="break-words text-sm font-medium">
                     {value.take?.actionCount ?? 0}
-                  </dd>
-                </div>
-                <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Evidence</dt>
-                  <dd className="break-words text-sm font-medium">
-                    {value.take?.evidenceCount ?? 0}
                   </dd>
                 </div>
               </dl>
               <Collapsible className="mt-4">
                 <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-                  Audit details
+                  Technical details
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
                   <dl className="grid gap-3">
@@ -449,10 +423,9 @@ export function SessionPage() {
               className="rounded-xl border border-border bg-card p-5"
               aria-labelledby="session-activity-title"
             >
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Activity
-              </p>
-              <h2 id="session-activity-title">Recent operations</h2>
+              <h2 id="session-activity-title" className="text-sm font-semibold">
+                Recent activity
+              </h2>
               {value.activity.length ? (
                 <ol className="mt-4 grid list-none gap-3 p-0">
                   {[...value.activity]
@@ -479,7 +452,7 @@ export function SessionPage() {
                     ))}
                 </ol>
               ) : (
-                <p>No project activity is available to this role.</p>
+                <p className="mt-2 text-sm text-muted-foreground">No activity yet.</p>
               )}
             </section>
           </aside>
@@ -500,9 +473,9 @@ function targetLabel(session: ProductSessionDetail): string {
 }
 
 function sessionAvailability(session: ProductSessionDetail): string {
-  if (!isActiveSession(session)) return "This session has ended. Saved evidence stays.";
-  if (!session.lease) return "Reservation unavailable.";
-  if (session.lease.status !== "leased") return "The device is no longer reserved.";
-  if (session.lease.expiresAt <= Date.now()) return "Reservation expired.";
-  return "The device is not available.";
+  if (!isActiveSession(session))
+    return "This session has ended. Its recording and screenshots are saved.";
+  if (!session.lease || session.lease.status !== "leased" || session.lease.expiresAt <= Date.now())
+    return "The connection to this device timed out. Reconnect to pick up where you left off.";
+  return "This device isn’t available right now.";
 }

@@ -253,13 +253,13 @@ describe("live Session to Test editor", () => {
     expect(service.get).toHaveBeenCalledWith("session-live");
     expect(service.live).toHaveBeenCalledWith("session-live");
     expect(document.body.textContent).toContain("Checkout");
-    expect(document.body.textContent).toContain("Human");
+    expect(document.body.textContent).toContain("Manual");
     expect(document.body.textContent).toContain("Browser");
     expect(document.body.textContent).not.toContain("Browser profile unavailable");
     expect(document.body.textContent).toContain("Recording · captured actions are saved");
     expect(document.body.textContent).toContain("Tap, type, or scroll. Not recorded.");
     expect(document.querySelector('[data-slot="live-device-rail"]')).not.toBeNull();
-    await click("Audit details");
+    await click("Technical details");
     expect(document.body.textContent).toContain("Map ID");
     expect(document.body.textContent).toContain("Device reservation status");
 
@@ -290,7 +290,7 @@ describe("live Session to Test editor", () => {
       lease: { ...session.lease, expiresAt: 1 },
     } as ProductSessionDetail;
     await render("/sessions/session-live", { session: expired });
-    expect(document.body.textContent).toContain("Reservation expired.");
+    expect(document.body.textContent).toContain("The connection to this device timed out.");
     expect(document.body.textContent).toContain("End session");
     expect(document.body.textContent).not.toContain("Investigate");
     expect(document.body.textContent).not.toContain("Connecting to the target");
@@ -363,7 +363,7 @@ describe("live Session to Test editor", () => {
     expect(open).toHaveBeenCalledWith({ testId: "test-live", sessionId: "session-live" });
     expect(harness.editor.get).toHaveBeenCalledWith("test-live");
     expect(document.body.textContent).not.toContain("Open Session");
-    expect(document.body.textContent).not.toContain("Live target");
+    expect(document.querySelector("#session-stage-title")?.textContent).not.toBe("Live");
     expect(document.querySelector("#live-editor-title")?.textContent).toBeTruthy();
     expect(document.querySelector('[data-slot="live-device-rail"]')).not.toBeNull();
     expect(document.querySelector('[data-inspector-kind="device"]')).not.toBeNull();

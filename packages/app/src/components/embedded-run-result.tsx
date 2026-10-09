@@ -9,11 +9,54 @@ import { useState } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { initialRunStep } from "../data/run-timeline-selection";
 import { framePathsForTraceStep } from "../data/run-report-model";
-import { formatDuration } from "./run-report-formatters";
+import { firstSentence, formatDuration } from "./run-report-formatters";
 import { EvidenceImageViewer } from "./evidence-image-viewer";
 import { RunStepDisclosure, runChildStatus } from "./run-step-disclosure";
-import { CheckCircle2, CircleAlert, ImageOff } from "lucide-react";
-import type { ProductRunReportOverview, ReportEvidenceItem } from "../data/run-report-model";
+import {
+  ArrowUpRight,
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  CircleMinus,
+  CircleX,
+  ImageOff,
+  LoaderCircle,
+  RotateCcw,
+  Smartphone,
+} from "lucide-react";
+import type {
+  ProductRunReportOverview,
+  ReportEvidenceItem,
+  ReportTimelineItem,
+} from "../data/run-report-model";
+
+const STEP_STATE: Record<
+  ReportTimelineItem["state"],
+  { label: string; icon: typeof CircleCheck; tone: string }
+> = {
+  passed: { label: "Passed", icon: CircleCheck, tone: "text-success-foreground" },
+  recovered: { label: "Recovered", icon: RotateCcw, tone: "text-warning-foreground" },
+  failed: { label: "Failed", icon: CircleX, tone: "text-destructive" },
+  blocked: { label: "Blocked", icon: CircleMinus, tone: "text-destructive" },
+  running: { label: "Running", icon: LoaderCircle, tone: "text-brand" },
+  pending: { label: "Not run", icon: CircleDashed, tone: "text-muted-foreground/70" },
+};
+
+/** One glanceable verdict per step: icon, word, and colour agree. */
+function StepState({ state, detail }: { state: ReportTimelineItem["state"]; detail?: string }) {
+  const presentation = STEP_STATE[state];
+  const Icon = presentation.icon;
+  return (
+    <span className={`mt-0.5 flex items-center gap-1 text-xs ${presentation.tone}`}>
+      <Icon
+        className={`size-3.5 shrink-0 ${state === "running" ? "animate-spin motion-reduce:animate-none" : ""}`}
+        aria-hidden="true"
+      />
+      <span>{presentation.label}</span>
+      {detail ? <span className="text-muted-foreground">· {detail}</span> : null}
+    </span>
+  );
+}
 
 /** Dest wait-for thumb when leftover Close / Transition executed last-frame
  * captions are also listed. Opener before · Tap cannot fill dest beside those
@@ -34,9 +77,11 @@ function destWaitForEvidenceThumb(
 export function EmbeddedRunResult({
   report,
   onReviewCaptures,
+  onOpenReport,
 }: {
   report: ProductRunReportOverview;
   onReviewCaptures?: () => void;
+  onOpenReport?: () => void;
 }) {
   const passed = report.outcome === "passed";
   const diagnostic = [report.cause, ...report.timeline.map((step) => step.log)].join("");
@@ -59,7 +104,9 @@ export function EmbeddedRunResult({
       ? "Relay couldn’t recognize the taught screen in this capture. Compare it with the recorded screen before running again."
       : passed
         ? undefined
-        : "Open the full report to inspect where the run stopped.";
+        : report.cause
+          ? firstSentence(report.cause)
+          : "The report shows where the run stopped and why.";
   const [inspectingSteps, setInspectingSteps] = useState(() => !passed);
   const outline = report.authoredOutline;
   const timeline = outline?.steps ?? report.timeline;
@@ -95,37 +142,64 @@ export function EmbeddedRunResult({
     finalStepPath ??
     reviewItems.filter((item) => item.framePath).at(-1)?.framePath;
   const lastPath = paths.at(-1);
-  const showingCapturedResult = Boolean(destPath) && !inspectingSteps;
+  const destFrame = destPath
+    ? frames.find((item) => item.id === destPath && item.media)
+    : undefined;
+  const showingCapturedResult = Boolean(destFrame) && !inspectingSteps;
   const thumbId = showingCapturedResult ? destPath : lastPath;
   const frame = step
     ? frames.find((item) => item.id === thumbId && item.media)
     : destPath
       ? frames.find((item) => item.id === destPath && item.media)
       : destWaitForEvidenceThumb(frames);
-  const Icon = passed ? CheckCircle2 : CircleAlert;
+  // A step that stopped before saving a screenshot still has a moment worth
+  // seeing: the last screen Relay captured, labelled as such.
+  const fallbackFrame = !frame?.media && step && !showingCapturedResult ? destFrame : undefined;
+  const shownFrame = frame?.media ? frame : fallbackFrame;
+  const stepFailure =
+    step && (step.state === "failed" || step.state === "blocked")
+      ? step.failure?.summary
+      : undefined;
+  const Icon = passed ? CircleCheck : CircleAlert;
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Run result">
-      <header className="flex shrink-0 items-start gap-2.5 border-b border-border px-5 py-3">
+      <header
+        className={`flex shrink-0 items-start gap-3 border-b border-border px-5 py-3 ${
+          passed ? "" : "bg-destructive/[0.06]"
+        }`}
+      >
         <Icon
-          className={`mt-0.5 size-4 shrink-0 ${passed ? "text-muted-foreground" : "text-foreground"}`}
+          className={`mt-0.5 size-4 shrink-0 ${passed ? "text-success-foreground" : "text-destructive"}`}
+          aria-hidden="true"
         />
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-medium">{title}</h2>
           {detail ? (
-            <p className="mt-1 max-w-prose text-xs leading-5 text-muted-foreground">{detail}</p>
+            <p className="mt-0.5 line-clamp-2 max-w-prose text-xs leading-5 text-muted-foreground">
+              {detail}
+            </p>
           ) : null}
         </div>
         {report.durationMs !== undefined ? (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          <span className="mt-0.5 shrink-0 text-xs tabular-nums text-muted-foreground">
             {formatDuration(report.durationMs)}
           </span>
+        ) : null}
+        {onOpenReport ? (
+          <Button size="sm" variant={passed ? "ghost" : "outline"} onClick={onOpenReport}>
+            Open report
+            <ArrowUpRight data-icon="inline-end" aria-hidden="true" />
+          </Button>
         ) : null}
       </header>
       <TestWorkspace
         outline={
           <div className="grid content-start gap-4 p-4">
-            <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-border pb-3 text-xs text-muted-foreground">
-              <span>{report.targetName ?? "Device not recorded"}</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <Smartphone className="size-3.5" aria-hidden="true" />
+                {report.targetName ?? "Device not recorded"}
+              </span>
               {report.executionContext?.sourceRevision ? (
                 <span>Source revision {report.executionContext.sourceRevision}</span>
               ) : null}
@@ -153,7 +227,7 @@ export function EmbeddedRunResult({
                 </span>
               </Button>
             ) : null}
-            {destPath ? (
+            {destFrame ? (
               <TestStepButton
                 number=""
                 selected={showingCapturedResult}
@@ -176,13 +250,17 @@ export function EmbeddedRunResult({
                         setSelectedTraceId(undefined);
                       }}
                     >
-                      <span className="block font-medium">{item.title}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {item.state}
-                        {outline && runChildStatus(outline.steps[index]?.children ?? [])
-                          ? ` · ${runChildStatus(outline.steps[index]?.children ?? [])}`
-                          : ""}
+                      <span
+                        className={`block font-medium ${item.state === "pending" ? "text-muted-foreground" : ""}`}
+                      >
+                        {item.title}
                       </span>
+                      <StepState
+                        state={item.state}
+                        detail={
+                          outline ? runChildStatus(outline.steps[index]?.children ?? []) : undefined
+                        }
+                      />
                     </TestStepButton>
                   </li>
                 ))}
@@ -211,6 +289,14 @@ export function EmbeddedRunResult({
                 onSelect={setSelectedTraceId}
               />
             ) : null}
+            {stepFailure ? (
+              <p
+                className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-sm leading-5"
+                role="status"
+              >
+                {stepFailure}
+              </p>
+            ) : null}
             {step && !showingCapturedResult ? (
               <div className="grid gap-2">
                 {step.expected ? (
@@ -231,14 +317,24 @@ export function EmbeddedRunResult({
         }
         preview={
           <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-4">
-            {frame?.media ? (
-              <WorkspaceScreenshot>
-                <EvidenceImageViewer key={frame.id} frame={frame} onError={() => {}} />
+            {shownFrame?.media ? (
+              <WorkspaceScreenshot
+                caption={
+                  shownFrame === fallbackFrame
+                    ? "No screenshot for this step — showing the last screen Relay saw"
+                    : undefined
+                }
+              >
+                <EvidenceImageViewer key={shownFrame.id} frame={shownFrame} onError={() => {}} />
               </WorkspaceScreenshot>
             ) : (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
                 <ImageOff className="size-5" aria-hidden="true" />
-                <p className="text-sm">No screenshot was saved for this selection.</p>
+                <p className="text-sm">
+                  {step?.state === "pending"
+                    ? "This step didn’t run."
+                    : "No screenshot was saved for this step."}
+                </p>
               </div>
             )}
           </div>

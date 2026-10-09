@@ -497,9 +497,15 @@ function mergeAdbObservation(
     };
   }
 
+  // A physical phone's adapter name is its hardware code ("SM-S931B"); adb
+  // discovery asks the phone for the name people know. Emulators keep theirs.
+  const physical = observed.kind === "Physical device" && !/emulator/iu.test(existing.kind ?? "");
   return {
     ...existing,
-    name: existing.name || observed.name,
+    name:
+      physical && observed.name !== "Android device"
+        ? observed.name
+        : existing.name || observed.name,
     kind: existing.kind ?? observed.kind,
     booted: connected ? true : false,
     connectionState: observed.connectionState,

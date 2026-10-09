@@ -126,7 +126,7 @@ export function RunReviewControls({
                     disabled={visualDecision.isPending}
                     onClick={() => visualDecision.mutate("approve-new-baseline")}
                   >
-                    Approve new baseline
+                    Use as new reference
                   </Button>
                   {canKeepVisualBaseline(compare.data.code) ? (
                     <Button
@@ -135,7 +135,7 @@ export function RunReviewControls({
                       disabled={visualDecision.isPending}
                       onClick={() => visualDecision.mutate("keep-baseline")}
                     >
-                      Keep baseline
+                      Keep current reference
                     </Button>
                   ) : null}
                   <Button
@@ -167,18 +167,19 @@ export function RunReviewControls({
 }
 
 function visualComparisonLabel(code: string): string {
-  if (code === "VISUAL_MATCH") return "Visual evidence matches the baseline";
-  if (code === "VISUAL_BASELINE_MISSING") return "No approved visual baseline";
-  if (code === "VISUAL_NOT_COMPARABLE") return "No pixels could be compared — review needed";
+  if (code === "VISUAL_MATCH") return "Screenshots match the reference";
+  if (code === "VISUAL_BASELINE_MISSING") return "No reference screenshots yet";
+  if (code === "VISUAL_NOT_COMPARABLE")
+    return "These screenshots couldn’t be compared — please review them";
   if (code === "VISUAL_EXPECTED_VARIATION") return "Expected visual variation";
   return "Visual changes need review";
 }
 
 export function visualPendingCopy(code?: string): string {
   if (code === "VISUAL_BASELINE_MISSING") {
-    return "This compare stays pending until a person approves a baseline. Findings Confirm and Reject never accept. Agents cannot approve.";
+    return "Pick a reference so future runs have something to compare against. Only a person can do this.";
   }
-  return "Findings Confirm and Reject never accept a visual baseline. Agents cannot approve.";
+  return "Only a person can change the reference screenshots.";
 }
 
 export function canKeepVisualBaseline(code?: string): boolean {
@@ -196,8 +197,8 @@ export function visualIgnoreCopy(comparison: {
   const ignored = (comparison.policy?.regions ?? []).filter((region) => region.mode === "ignore");
   if (!ignored.length) {
     return comparison.code === "VISUAL_BASELINE_MISSING"
-      ? "No ignore regions. Dynamic reply bodies will be compared if you approve this baseline."
-      : "No ignore regions on this comparison.";
+      ? "Every part of the screen will be compared, including content that changes between runs."
+      : "Every part of the screen is compared.";
   }
   const names = [
     ...new Set(

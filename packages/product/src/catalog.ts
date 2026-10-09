@@ -7,7 +7,11 @@ import type {
   RunSummary,
   RunTestStepEvidence,
 } from "@relay/protocol";
-import { parseOptionalRunTestStepEvidence, unrecordedProductName } from "@relay/protocol";
+import {
+  parseOptionalRunTestStepEvidence,
+  readableDeviceName,
+  unrecordedProductName,
+} from "@relay/protocol";
 import { createRelayOperationPort, type RelayInvokeClient } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
 import { findUniqueProductTestOwner, type ProductTestOwner } from "./test-identity.js";
@@ -186,7 +190,7 @@ function human(value: unknown, fallback: string): string {
 function targetName(run: RunSummary): string | undefined {
   const candidate = nonEmpty((run as RunSummary & { deviceName?: unknown }).deviceName);
   if (!candidate || machineTarget.test(candidate)) return undefined;
-  return candidate;
+  return readableDeviceName(candidate);
 }
 
 function outcome(value: unknown): RunOutcome | undefined {

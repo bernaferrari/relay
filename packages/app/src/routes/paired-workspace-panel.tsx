@@ -75,13 +75,13 @@ export function PairedWorkspacePanel({
     <section className="mt-8 grid gap-3" aria-labelledby="paired-workspace-title">
       <div>
         <h2 id="paired-workspace-title" className="text-base font-semibold">
-          Saved Browser and Account workspace
+          Saved browser sign-ins
         </h2>
         <p className="text-sm text-muted-foreground">{pairedWorkspaceSummary(workspace)}</p>
       </div>
       {workspace.rows.length ? (
         <table className="w-full border-collapse text-sm">
-          <caption className="sr-only">Named Browser and Account pairs</caption>
+          <caption className="sr-only">Saved browser sign-ins</caption>
           <thead>
             <tr className="text-left text-muted-foreground">
               <th className="border-b border-border py-2 pr-3 font-medium">Name</th>

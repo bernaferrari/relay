@@ -370,10 +370,8 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("must appear here as a finding");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
     expect(document.body.textContent).toContain("Check accounts");
-    expect(document.body.textContent).toContain("never accept a visual baseline");
-    expect(document.body.textContent).toContain(
-      "Review screenshots opens the Report and does not accept a baseline",
-    );
+    // Findings never offer a reference (baseline) decision.
+    expect(document.body.textContent).not.toContain("Use as new reference");
     // Review ownership controls appear once a case is selected.
     expect(document.body.textContent).not.toContain("Assign to me");
     const checkbox = document.querySelector<HTMLButtonElement>(
@@ -448,7 +446,8 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("HARNESS_FAILURE");
     expect(document.body.textContent).toContain("finding to review");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
-    expect(document.body.textContent).toContain("never accept a visual baseline");
+    // Findings never offer a reference (baseline) decision.
+    expect(document.body.textContent).not.toContain("Use as new reference");
     expect(document.body.textContent).toContain("Review screenshots");
     const review = [...document.querySelectorAll("a")].find(
       (link) => link.textContent?.trim() === "Review screenshots",
@@ -548,7 +547,8 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("HARNESS_FAILURE");
     expect(document.body.textContent).toContain("finding to review");
     expect(document.body.textContent).not.toContain("QA bug, not a pass");
-    expect(document.body.textContent).toContain("never accept a visual baseline");
+    // Findings never offer a reference (baseline) decision.
+    expect(document.body.textContent).not.toContain("Use as new reference");
     const confirm = [...document.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "Confirm",
     );
@@ -625,10 +625,10 @@ describe("Batch review controls", () => {
       }),
       reviewCaptures,
     } as unknown as RunAcrossProductService);
-    expect(document.body.textContent).toContain("0 of 1 reviewed");
+    expect(document.body.textContent).toContain("0 of 1 screenshots reviewed");
     expect(document.body.textContent).toContain("1 screenshot wasn’t captured");
     const start = [...document.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "Start reviewing",
+      (button) => button.textContent?.trim() === "Review one by one",
     ) as HTMLButtonElement;
     await act(async () => start.click());
     const accept = [...document.querySelectorAll("button")].find(
@@ -691,6 +691,6 @@ describe("Batch review controls", () => {
       [...document.querySelectorAll("button")].some((item) => item.textContent === "Stop"),
     ).toBe(true);
     expect(document.body.textContent).toContain("New screenshots appear as each case finishes.");
-    expect(document.body.textContent).toContain("0 of 1 reviewed");
+    expect(document.body.textContent).toContain("0 of 1 screenshots reviewed");
   });
 });

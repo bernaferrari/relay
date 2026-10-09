@@ -20,12 +20,15 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { Fragment, useEffect, useMemo, useState, type RefObject } from "react";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { readWorkflowPointer } from "../data/workflow-pointer";
 
+type CommandGroup = "Actions" | "Go to" | "Tests" | "Apps";
+
 type Command = {
   id: string;
+  group: CommandGroup;
   label: string;
   detail: string;
   href: string;
@@ -36,6 +39,7 @@ type Command = {
 const workspaceCommands: readonly Command[] = [
   ...primaryDestinations.map((destination) => ({
     id: destination.to.slice(1),
+    group: "Go to" as const,
     label: `Open ${destination.label}`,
     detail: destination.detail,
     href: destination.to,
@@ -44,6 +48,7 @@ const workspaceCommands: readonly Command[] = [
   })),
   {
     id: "apps",
+    group: "Go to",
     label: "Manage apps",
     detail: "Builds, accounts, and coverage",
     href: "/apps",
@@ -51,7 +56,16 @@ const workspaceCommands: readonly Command[] = [
   },
 
   {
+    id: "record-test",
+    group: "Actions",
+    label: "Record a new Test",
+    detail: "Start from a device or browser",
+    href: "/tests/new",
+    icon: Plus,
+  },
+  {
     id: "failed-runs",
+    group: "Actions",
     label: "Review failed Runs",
     detail: "Open failure-first Run history",
     href: "/runs?view=failed",
@@ -60,6 +74,7 @@ const workspaceCommands: readonly Command[] = [
   },
   {
     id: "review-screenshots",
+    group: "Actions",
     label: "Review screenshots",
     detail: "Approve or reject screenshots that changed",
     href: "/review",
@@ -69,17 +84,11 @@ const workspaceCommands: readonly Command[] = [
 
   {
     id: "versions",
+    group: "Go to",
     label: "Manage versions",
     detail: "Builds you can run against",
     href: "/versions",
     icon: Box,
-  },
-  {
-    id: "record-test",
-    label: "Record a new Test",
-    detail: "Start from a device or browser",
-    href: "/tests/new",
-    icon: Plus,
   },
 ];
 
@@ -149,6 +158,7 @@ export function CommandPalette({
     if (recording.data) {
       contextual.push({
         id: "continue-recording",
+        group: "Actions",
         label: "Continue recording",
         detail: "Return to the active recording",
         href: `/recordings/${encodeURIComponent(recording.data)}`,
@@ -158,6 +168,7 @@ export function CommandPalette({
     for (const app of apps.data ?? []) {
       contextual.push({
         id: `app:${app.id}`,
+        group: "Apps",
         label: `Open ${app.name}`,
         detail: "App overview",
         href: `/apps/${encodeURIComponent(app.id)}`,
@@ -170,6 +181,7 @@ export function CommandPalette({
     for (const test of tests.data ?? []) {
       contextual.push({
         id: `test:${test.appMapId}:${test.id}`,
+        group: "Tests",
         label: `Open ${test.name}`,
         detail: `${test.appName} · ${test.stepCount} ${test.stepCount === 1 ? "step" : "steps"}`,
         href: `/tests/${encodeURIComponent(test.id)}`,
@@ -177,9 +189,18 @@ export function CommandPalette({
         keywords: "run test",
       });
     }
-    return [...contextual, ...workspaceCommands].filter((command) =>
+    // Actions lead, then destinations, then the catalog. With no query, keep
+    // the catalog short so the commands people reach for stay visible.
+    const order: readonly CommandGroup[] = ["Actions", "Go to", "Tests", "Apps"];
+    const matching = [...contextual, ...workspaceCommands].filter((command) =>
       commandMatches(command, query),
     );
+    return order.flatMap((group) => {
+      const inGroup = matching.filter((command) => command.group === group);
+      return query.trim() || group === "Actions" || group === "Go to"
+        ? inGroup
+        : inGroup.slice(0, 6);
+    });
   }, [apps.data, query, recording.data, tests.data]);
 
   useEffect(() => setActiveIndex(0), [query]);
@@ -250,7 +271,7 @@ export function CommandPalette({
             id="command-results"
             role="listbox"
             aria-label="Commands"
-            className="flex flex-col gap-1 p-2"
+            className="flex flex-col gap-0.5 p-2"
           >
             {tests.isError ? (
               <div
@@ -271,29 +292,38 @@ export function CommandPalette({
             ) : null}
             {commands.length ? (
               commands.map((command, index) => (
-                <button
-                  role="option"
-                  type="button"
-                  className={`flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm ${index === activeIndex ? "bg-accent" : ""}`}
-                  key={command.id}
-                  id={`${command.id}`}
-                  aria-selected={index === activeIndex}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  onClick={() => choose(command)}
-                >
-                  <command.icon
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <strong className="overflow-hidden text-ellipsis whitespace-nowrap font-medium">
-                      {command.label}
-                    </strong>
-                    <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
-                      {command.detail}
-                    </small>
-                  </span>
-                </button>
+                <Fragment key={command.id}>
+                  {command.group !== commands[index - 1]?.group ? (
+                    <div
+                      role="presentation"
+                      className="px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground first:pt-1"
+                    >
+                      {command.group}
+                    </div>
+                  ) : null}
+                  <button
+                    role="option"
+                    type="button"
+                    className={`flex min-h-10 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm ${index === activeIndex ? "bg-accent" : ""}`}
+                    id={`${command.id}`}
+                    aria-selected={index === activeIndex}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => choose(command)}
+                  >
+                    <command.icon
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <strong className="overflow-hidden text-ellipsis whitespace-nowrap font-medium">
+                        {command.label}
+                      </strong>
+                      <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
+                        {command.detail}
+                      </small>
+                    </span>
+                  </button>
+                </Fragment>
               ))
             ) : tests.isError ? null : (
               <p className="p-6 text-center text-sm text-muted-foreground">No matching commands</p>

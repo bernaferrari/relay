@@ -489,6 +489,18 @@ export function MapEdges({
         const returning =
           isRoutineReturn(geometry.path) || Boolean(source && target && target.x < source.x);
         const state = dimmed ? "muted" : activePathId || connected ? "selected" : "neutral";
+        const labelText =
+          geometry.path.parallelPaths && geometry.path.id !== activePathId
+            ? `${geometry.path.parallelPaths.length} paths`
+            : geometry.path.label.length > 28 && geometry.path.toScreenId
+              ? `${geometry.path.label.slice(0, 27)}…`
+              : geometry.path.label;
+        // Size the pill to what it shows; the reserved geometry width fits the
+        // longest label and would otherwise spill a short count over screens.
+        const labelWidth = Math.min(
+          geometry.label.width,
+          Math.max(geometry.path.toScreenId ? 44 : 150, Math.ceil(labelText.length * 6.6 + 20)),
+        );
         return (
           <g
             key={geometry.path.id}
@@ -587,9 +599,9 @@ export function MapEdges({
                 className={onSelectPath ? "pointer-events-auto cursor-pointer" : undefined}
               >
                 <rect
-                  x={geometry.label.x - geometry.label.width / 2}
+                  x={geometry.label.x - labelWidth / 2}
                   y={geometry.label.y - 14}
-                  width={geometry.label.width}
+                  width={labelWidth}
                   height={geometry.path.toScreenId ? 22 : 44}
                   rx="5"
                   className="fill-popover stroke-border"
@@ -601,11 +613,7 @@ export function MapEdges({
                   textAnchor="middle"
                   className="fill-current font-sans text-xs font-medium"
                 >
-                  {geometry.path.parallelPaths && geometry.path.id !== activePathId
-                    ? `${geometry.path.parallelPaths.length} paths`
-                    : geometry.path.label.length > 28 && geometry.path.toScreenId
-                      ? `${geometry.path.label.slice(0, 27)}…`
-                      : geometry.path.label}
+                  {labelText}
                 </text>
                 {!geometry.path.toScreenId ? (
                   <text

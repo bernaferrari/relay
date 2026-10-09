@@ -64,8 +64,9 @@ it("shows the proven product overlap and leaves raw selectors collapsed", () => 
       technicalDetail: "identifier team-seats overlaps identifier save-settings by 30×44 px",
     },
   });
-  expect(container.querySelector("p")?.textContent).toContain("Team seats and Save overlap.");
-  expect(container.querySelector("p")?.textContent).not.toMatch(/identifier|didn’t work/u);
+  const visible = [...container.querySelectorAll("p")].map((line) => line.textContent).join(" ");
+  expect(visible).toContain("Team seats and Save overlap.");
+  expect(visible).not.toMatch(/identifier|didn’t work/u);
   expect(container.querySelector("details")?.open).toBe(false);
   expect(container.querySelector("summary")?.textContent).toBe("Technical details");
   expect(container.querySelector("pre")?.textContent).toContain("identifier team-seats");
@@ -99,7 +100,7 @@ it("inspects an unclassified failure before offering a secondary step edit", () 
     },
     "test-settings",
   );
-  expect(container.querySelector("button")?.textContent?.trim()).toBe("Inspect evidence");
+  expect(container.querySelector("button")?.textContent?.trim()).toBe("See where it failed");
   expect(container.querySelector("a")?.textContent).toBe("Edit step");
   expect(container.textContent).not.toContain("Fix this step");
   expect(container.textContent).not.toContain("View check");
@@ -112,24 +113,24 @@ it("does not claim an overlap without proven assertion evidence", () => {
     label: "Check elements do not overlap",
     state: "failed",
   });
-  expect(container.querySelector("p")?.textContent).toContain("didn’t work.");
-  expect(container.querySelector("p")?.textContent).not.toContain("The two elements overlap.");
+  expect(container.querySelector("p")?.textContent).toBe("Check elements do not overlap failed");
+  expect(container.textContent).not.toContain("The two elements overlap.");
   expect(container.querySelector("details")).toBeNull();
 });
 
 it.each([
-  ["product-failure", "deterministic-assertion", "Inspect evidence"],
-  ["product-failure", "semantic-assertion", "Inspect evidence"],
-  ["product-failure", "visual-assertion", "Inspect evidence"],
-  ["product-failure", "locator", "Inspect evidence"],
+  ["product-failure", "deterministic-assertion", "See where it failed"],
+  ["product-failure", "semantic-assertion", "See where it failed"],
+  ["product-failure", "visual-assertion", "See where it failed"],
+  ["product-failure", "locator", "See where it failed"],
   ["harness-failure", "locator", "Edit step"],
   ["harness-failure", "environment", "Repair setup"],
   ["harness-failure", "target-state", "Repair setup"],
-  ["harness-failure", "action", "Inspect evidence"],
-  ["harness-failure", "harness-defect", "Inspect evidence"],
-  ["harness-failure", "unknown-category", "Inspect evidence"],
-  ["uncertain", "locator", "Inspect evidence"],
-  ["uncertain", "judge-uncertainty", "Inspect evidence"],
+  ["harness-failure", "action", "See where it failed"],
+  ["harness-failure", "harness-defect", "See where it failed"],
+  ["harness-failure", "unknown-category", "See where it failed"],
+  ["uncertain", "locator", "See where it failed"],
+  ["uncertain", "judge-uncertainty", "See where it failed"],
 ] as const)("offers %s / %s the recorded next action: %s", (outcome, failureCategory, primary) => {
   const inspect = vi.fn();
   const container = render(
@@ -148,7 +149,7 @@ it.each([
     expect(container.querySelector("a")?.getAttribute("href")).toBe(
       "/tests/test-settings?setup=run",
     );
-  if (primary === "Inspect evidence") {
+  if (primary === "See where it failed") {
     act(() => container.querySelector("button")!.click());
     expect(inspect).toHaveBeenCalledOnce();
   }
@@ -160,6 +161,6 @@ it("keeps evidence inspection available when the saved Test cannot be edited", (
     undefined,
     { outcome: "harness-failure", failureCategory: "locator" },
   );
-  expect(container.querySelector("button")?.textContent?.trim()).toBe("Inspect evidence");
+  expect(container.querySelector("button")?.textContent?.trim()).toBe("See where it failed");
   expect(container.querySelector("a")).toBeNull();
 });

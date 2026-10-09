@@ -1,4 +1,3 @@
-import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 /** @jsxImportSource react */
 import { catalogQueryKeys } from "../data/catalog-queries";
 import {
@@ -403,26 +402,24 @@ export function SuitePage() {
               ) : null}
               {plannedCases > 1 ? (
                 <>
-                  <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
-                    {plannedCases} data combinations
-                  </p>
-                  <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">
-                    {unusedInputs.length
-                      ? "Connect your prompts before running these combinations."
-                      : "Try one first, or run every combination."}
-                  </p>
-                  <Tabs
-                    value={executionMode}
-                    onValueChange={(value) => setExecutionMode(value as "pilot" | "all")}
-                  >
-                    <TabsList
-                      aria-label="Execution scope"
-                      className="w-full group-data-horizontal/tabs:h-11"
-                    >
-                      <TabsTrigger value="pilot">One first</TabsTrigger>
-                      <TabsTrigger value="all">All {plannedCases}</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+                  {unusedInputs.length ? (
+                    <p className="mt-5 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
+                      Connect your prompts before running these combinations.
+                    </p>
+                  ) : null}
+                  <label className="mt-5 flex cursor-pointer items-start gap-3 border-t border-border pt-4 text-sm">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={executionMode === "pilot"}
+                      onCheckedChange={(checked) => setExecutionMode(checked ? "pilot" : "all")}
+                    />
+                    <span className="grid gap-0.5">
+                      <span className="font-medium">Try one combination first</span>
+                      <span className="text-xs text-muted-foreground">
+                        Check it, then continue with the other {plannedCases - 1}. Recommended.
+                      </span>
+                    </span>
+                  </label>
                 </>
               ) : null}
               {(selectedProfileIds.length && preview.data) || missingAccountBlockers.length ? (
@@ -434,17 +431,16 @@ export function SuitePage() {
                   }`}
                   role="status"
                 >
-                  <strong className="font-semibold text-foreground">
-                    {planRunCountLabel({
-                      blockers: previewBlockers.length,
-                      plannedCases,
-                      executionMode,
-                    })}
-                  </strong>
+                  {previewBlockers.length ? (
+                    <strong className="font-semibold text-foreground">
+                      Setup needed before running
+                    </strong>
+                  ) : null}
                   {preview.data && !previewBlockers.length ? (
                     <span className="text-muted-foreground">
-                      {preview.data.checkCount}{" "}
-                      {preview.data.checkCount === 1 ? "test run" : "test runs"}
+                      {value.tests.length} {value.tests.length === 1 ? "test" : "tests"}
+                      {plannedCases > 1 ? ` × ${plannedCases} combinations` : ""} ={" "}
+                      {preview.data.checkCount} {preview.data.checkCount === 1 ? "run" : "runs"}
                       {preview.data.expectedScreenshots === undefined
                         ? ""
                         : ` · about ${preview.data.expectedScreenshots} screenshots`}
@@ -569,8 +565,10 @@ export function SuitePage() {
                         ? "Checking setup…"
                         : start.isPending
                           ? "Starting…"
-                          : executionMode === "all" && plannedCases > 1
-                            ? `Run all ${plannedCases} combinations`
+                          : plannedCases > 1
+                            ? executionMode === "all"
+                              ? `Run all ${preview.data?.checkCount ?? plannedCases}`
+                              : `Run ${value.tests.length === 1 ? "test" : `${value.tests.length} tests`} on one combination`
                             : `Run ${value.tests.length === 1 ? "test" : `all ${value.tests.length} tests`}`}
                   </Button>
                 )}

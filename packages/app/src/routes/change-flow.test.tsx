@@ -335,10 +335,10 @@ describe("Change verification", () => {
     const fake = fakeChangeService();
     const history = await renderChange("/changes", fake.service);
 
-    expect(document.body.textContent).toContain("Change verification");
+    expect(document.querySelector("h1")?.textContent).toBe("Changes");
     expect(document.body.textContent).toContain("Keep Arabic settings readable");
     expect(document.body.textContent).not.toContain("change-proof-private-id");
-    await click(button("Verify current Change"));
+    await click(button("Check current change"));
 
     expect(fake.calls).toContain("prepare");
     expect(history.location.pathname).toBe("/changes/change-proof-private-id");

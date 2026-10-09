@@ -144,7 +144,7 @@ it("passes the chosen prompt row identities from inline binding into the saved P
   );
   await click("Use values in Tests");
   await wait(() => expect(addInputDataSet).toHaveBeenCalledOnce());
-  await click("Save Plan");
+  await click("Create plan");
   await wait(() => expect(saveSuite).toHaveBeenCalledOnce());
   expect(saveSuite).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -209,10 +209,12 @@ it("retains the unsaved Plan and Test selection while adding prompt values, then
   await wait(() => expect(document.body.textContent).toContain("Fast chat"));
   await fill("suite-name", "Grok recurring smoke");
   await act(async () => document.querySelector('[role="checkbox"]')!.closest("label")!.click());
-  await wait(() => expect(document.body.textContent).toContain("Tests · 1 selected"));
-  expect(button("Save Plan").disabled).toBe(false);
+  await wait(() => expect(document.body.textContent).toContain("1 selected"));
+  expect(button("Create plan").disabled).toBe(false);
   await click("Use saved input values");
-  await wait(() => expect(document.querySelectorAll('[role="combobox"]').length).toBe(3));
+  await wait(() =>
+    expect(document.querySelector('[role="combobox"][aria-label="Saved input"]')).not.toBeNull(),
+  );
   await act(async () =>
     document.querySelector<HTMLElement>('[role="combobox"][aria-label="Saved input"]')!.click(),
   );
@@ -225,7 +227,7 @@ it("retains the unsaved Plan and Test selection while adding prompt values, then
   await act(async () => document.getElementById("input-data-set-name")!.dispatchEvent(enter));
   expect(enter.defaultPrevented).toBe(true);
   await wait(() => expect(addInputDataSet).toHaveBeenCalledOnce());
-  expect(button("Save Plan").disabled).toBe(true);
+  expect(button("Create plan").disabled).toBe(true);
   await act(async () =>
     document
       .querySelector("form")!
@@ -242,11 +244,11 @@ it("retains the unsaved Plan and Test selection while adding prompt values, then
       },
     }),
   );
-  await wait(() => expect(button("Save Plan").disabled).toBe(false));
+  await wait(() => expect(button("Create plan").disabled).toBe(false));
   expect((document.getElementById("suite-name") as HTMLInputElement).value).toBe(
     "Grok recurring smoke",
   );
-  await click("Save Plan");
+  await click("Create plan");
   await wait(() => expect(saveSuite).toHaveBeenCalledOnce());
   expect(saveSuite).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -337,7 +339,7 @@ it("creates two public prompt values inside the unsaved Plan, blocks parent subm
     button("Save prompt values").click();
   });
   await wait(() => expect(saveInputDefinition).toHaveBeenCalledOnce());
-  expect(button("Save Plan").disabled).toBe(true);
+  expect(button("Create plan").disabled).toBe(true);
   expect(fields.every((field) => field.disabled)).toBe(true);
   await act(async () =>
     document
@@ -363,7 +365,7 @@ it("creates two public prompt values inside the unsaved Plan, blocks parent subm
   expect((document.getElementById("suite-name") as HTMLInputElement).value).toBe(
     "Grok paired prompts",
   );
-  expect(document.body.textContent).toContain("Tests · 1 selected");
+  expect(document.body.textContent).toContain("1 selected");
   await click("Add Data set");
   expect(addInputDataSet).toHaveBeenCalledExactlyOnceWith({
     appMapId: "grok",
@@ -372,8 +374,8 @@ it("creates two public prompt values inside the unsaved Plan, blocks parent subm
     inputId: "public-prompts",
     name: "chat prompt",
   });
-  await wait(() => expect(button("Save Plan").disabled).toBe(false));
-  await click("Save Plan");
+  await wait(() => expect(button("Create plan").disabled).toBe(false));
+  await click("Create plan");
   await wait(() => expect(saveSuite).toHaveBeenCalledOnce());
   expect(saveSuite).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -444,7 +446,7 @@ it("disambiguates similar saved Speed Tests by canonical step count and update t
   await act(async () => choices[1]!.click());
   await fill("suite-name", "Grok paired prompt checks");
   expect(document.querySelectorAll('[role="checkbox"][aria-checked="true"]').length).toBe(1);
-  await click("Save Plan");
+  await click("Create plan");
   await wait(() => expect(saveSuite).toHaveBeenCalledOnce());
   expect(saveSuite).toHaveBeenCalledWith(
     expect.objectContaining({ name: "Grok paired prompt checks", testIds: ["speed-new"] }),

@@ -13,7 +13,7 @@ import type { RecordingSetupAdmission } from "../data/recording-setup-admission"
 import { BrowserSetup } from "./new-test-browser-setup";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { Button } from "@relay/ui-react/components/button";
-import { CircleDot, Compass, Play, RotateCcw, Smartphone } from "lucide-react";
+import { CircleDot, Compass, Play, RotateCcw, Smartphone, Plus } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import { targetLabel } from "./recording-shared";
 import type { ProductTargetOption } from "../data/target-presentation";
@@ -218,7 +218,9 @@ export function NewTestDetailedSetup({
           {!deviceOnly ? (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
+              size="sm"
+              className="-mt-2 w-fit"
               disabled={admission.busy}
               onClick={() => {
                 if (!admission.mayEdit()) return;
@@ -226,7 +228,7 @@ export function NewTestDetailedSetup({
                 onNewBrowserOpen(true);
               }}
             >
-              New browser
+              <Plus aria-hidden="true" /> New browser
             </Button>
           ) : null}
           {selectedTarget?.kind === "device" && selectedTarget.platform === "ios" ? (
@@ -260,15 +262,6 @@ export function NewTestDetailedSetup({
               }}
             />
           ) : null}
-          {!formReady ? (
-            <p
-              id="recording-readiness"
-              role="status"
-              className="text-sm leading-5 text-muted-foreground"
-            >
-              {startHint}
-            </p>
-          ) : null}
           <Button
             type="submit"
             disabled={!formReady}
@@ -278,6 +271,16 @@ export function NewTestDetailedSetup({
             <Play aria-hidden="true" />
             {admission.busy && !reconnecting ? "Starting…" : "Start recording"}
           </Button>
+          {/* The reason sits under the disabled button it explains. */}
+          {!formReady ? (
+            <p
+              id="recording-readiness"
+              role="status"
+              className="-mt-1 text-center text-xs leading-5 text-muted-foreground"
+            >
+              {startHint}
+            </p>
+          ) : null}
         </form>
       }
       stage={

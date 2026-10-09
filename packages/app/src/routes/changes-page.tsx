@@ -50,13 +50,12 @@ export function ChangesPage() {
   return (
     <LibraryPage className="mx-auto w-full max-w-5xl">
       <PageHeader
-        context="Changes"
-        title="Change verification"
-        description="What Relay verified, and what still needs attention."
+        title="Changes"
+        description="Code changes Relay checked on real devices, and what still needs you."
         actions={
           !changes.isError ? (
             <Button variant="default" onClick={() => prepare.mutate()} disabled={prepare.isPending}>
-              {prepare.isPending ? "Preparing verification…" : "Verify current Change"}
+              {prepare.isPending ? "Preparing…" : "Check current change"}
             </Button>
           ) : null
         }
@@ -110,9 +109,9 @@ export function ChangesPage() {
         <section className="mt-7" aria-labelledby="changes-result-title">
           <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 id="changes-result-title" className="text-sm font-semibold">
-              {visible.length === 1 ? "1 Change" : `${visible.length} Changes`}
+              {visible.length === 1 ? "1 change" : `${visible.length} changes`}
             </h2>
-            <span className="text-xs text-muted-foreground" aria-live="polite">
+            <span className="sr-only" aria-live="polite">
               {viewLabel(view)}
             </span>
           </div>

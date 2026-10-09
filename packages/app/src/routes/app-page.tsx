@@ -1,5 +1,4 @@
 /** @jsxImportSource react */
-import type { ReactNode } from "react";
 import {
   Dialog,
   DialogTrigger,
@@ -10,7 +9,7 @@ import {
 import { Button } from "@relay/ui-react/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { Map as MapIcon, Plus, Route, ScreenShare, TestTube2 } from "lucide-react";
+import { Map as MapIcon, Plus } from "lucide-react";
 import { MapScreenPreview } from "../components/map-screen-preview";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -83,36 +82,60 @@ export function AppPage() {
           />
 
           <div className="grid gap-10">
-            <section aria-labelledby="coverage-heading" className="grid gap-4">
-              <div className="flex flex-wrap items-end justify-between gap-3">
+            <p className="-mt-4 text-sm text-muted-foreground tabular-nums">
+              {coverageSummary(app.data.coverage)}
+            </p>
+
+            <section aria-labelledby="tests-heading" className="grid gap-4">
+              <div className="flex items-end justify-between gap-3">
                 <div>
-                  <h2 id="coverage-heading" className="mt-1 text-lg font-semibold tracking-tight">
-                    Coverage
+                  <h2 id="tests-heading" className="mt-1 text-lg font-semibold tracking-tight">
+                    Tests
                   </h2>
                 </div>
+                <Link
+                  className="text-sm font-medium text-foreground underline underline-offset-4"
+                  to="/tests"
+                  search={{ app: appId }}
+                >
+                  View all
+                </Link>
               </div>
-              <div className="grid grid-cols-2 gap-y-4 border-y border-border py-4 sm:grid-cols-4">
-                <CoverageStat
-                  icon={<ScreenShare className="size-4" />}
-                  value={app.data.coverage.screenCount}
-                  label="Screens"
+              {visibleTests?.length ? (
+                <ul className="divide-y divide-border border-y border-border">
+                  {visibleTests.slice(0, 5).map((test) => (
+                    <li
+                      key={test.id}
+                      className="flex min-h-14 items-center justify-between gap-4 px-4 py-3"
+                    >
+                      <Link
+                        className="min-w-0 truncate text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                        to="/tests/$testId"
+                        params={{ testId: test.id }}
+                      >
+                        {test.name}
+                      </Link>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {test.stepCount} step{test.stepCount === 1 ? "" : "s"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : tests.isError ? (
+                <RecordingProblem
+                  error={tests.error}
+                  onRetry={() => {
+                    void tests.refetch();
+                  }}
+                  retrying={tests.isFetching}
                 />
-                <CoverageStat
-                  icon={<Route className="size-4" />}
-                  value={app.data.coverage.pathCount}
-                  label="Connections"
-                />
-                <CoverageStat
-                  icon={<TestTube2 className="size-4" />}
-                  value={app.data.coverage.testCount}
-                  label="Tests"
-                />
-                <CoverageStat
-                  icon={<MapIcon className="size-4" />}
-                  value={app.data.coverage.coveredScreenCount}
-                  label="Screens in tests"
-                />
-              </div>
+              ) : tests.isPending ? (
+                <p className="text-sm text-muted-foreground">Loading saved tests…</p>
+              ) : (
+                <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  No tests saved for this app yet.
+                </p>
+              )}
             </section>
 
             <section aria-labelledby="screens-heading" className="grid gap-4">
@@ -179,58 +202,6 @@ export function AppPage() {
                 </p>
               )}
             </section>
-
-            <section aria-labelledby="tests-heading" className="grid gap-4">
-              <div className="flex items-end justify-between gap-3">
-                <div>
-                  <h2 id="tests-heading" className="mt-1 text-lg font-semibold tracking-tight">
-                    Tests for this app
-                  </h2>
-                </div>
-                <Link
-                  className="text-sm font-medium text-foreground underline underline-offset-4"
-                  to="/tests"
-                  search={{ app: appId }}
-                >
-                  View all
-                </Link>
-              </div>
-              {visibleTests?.length ? (
-                <ul className="divide-y divide-border border-y border-border">
-                  {visibleTests.slice(0, 5).map((test) => (
-                    <li
-                      key={test.id}
-                      className="flex min-h-14 items-center justify-between gap-4 px-4 py-3"
-                    >
-                      <Link
-                        className="min-w-0 truncate text-sm font-medium text-foreground underline-offset-4 hover:underline"
-                        to="/tests/$testId"
-                        params={{ testId: test.id }}
-                      >
-                        {test.name}
-                      </Link>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {test.stepCount} step{test.stepCount === 1 ? "" : "s"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : tests.isError ? (
-                <RecordingProblem
-                  error={tests.error}
-                  onRetry={() => {
-                    void tests.refetch();
-                  }}
-                  retrying={tests.isFetching}
-                />
-              ) : tests.isPending ? (
-                <p className="text-sm text-muted-foreground">Loading saved tests…</p>
-              ) : (
-                <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                  No tests saved for this app yet.
-                </p>
-              )}
-            </section>
           </div>
         </>
       ) : null}
@@ -238,14 +209,17 @@ export function AppPage() {
   );
 }
 
-function CoverageStat({ icon, value, label }: { icon: ReactNode; value: number; label: string }) {
-  return (
-    <div className="grid gap-2 px-4 py-4 first:pl-4 sm:px-5">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <span className="text-xs">{label}</span>
-      </div>
-      <p className="font-mono text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
-    </div>
-  );
+function coverageSummary(coverage: {
+  screenCount: number;
+  pathCount: number;
+  testCount: number;
+  coveredScreenCount: number;
+}): string {
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  if (!coverage.screenCount) return `${plural(coverage.testCount, "test")} · no screens mapped yet`;
+  return [
+    plural(coverage.testCount, "test"),
+    plural(coverage.screenCount, "screen"),
+    `${coverage.coveredScreenCount} of ${coverage.screenCount} screens covered by tests`,
+  ].join(" · ");
 }

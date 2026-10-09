@@ -94,10 +94,6 @@ export function BatchFindingsLead({
           </Link>
         }
       />
-      <p className="mt-2 text-sm leading-5 text-muted-foreground">
-        Confirm and Reject never accept a visual baseline. Review screenshots opens the Report and
-        does not accept a baseline.
-      </p>
     </div>
   );
 }
@@ -185,10 +181,9 @@ export function BatchFindingsPanel({
       </h2>
       <p className="mt-1 max-w-prose text-sm leading-6 text-muted-foreground">
         {findings.length} finding
-        {findings.length === 1 ? "" : "s"} to review. Confirm and Reject never accept a visual
-        baseline.
+        {findings.length === 1 ? "" : "s"} to review.
         {flakyCount
-          ? ` ${flakyCount} flaky ${flakyCount === 1 ? "item sits" : "items sit"} at the bottom. Hiding them does not skip the next run.`
+          ? ` ${flakyCount} flaky ${flakyCount === 1 ? "one is" : "ones are"} listed last.`
           : ""}
       </p>
       {flakyCount ? (

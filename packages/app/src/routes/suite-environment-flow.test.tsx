@@ -328,7 +328,7 @@ describe("Suite and Environment routes", () => {
     });
     expect(previewSuite).toHaveBeenCalledWith(expect.objectContaining({ profileIds: [] }));
     expect(document.body.textContent).toContain("Prompts aren’t connected");
-    expect(document.body.textContent).toContain("2 data combinations");
+    expect(document.body.textContent).toContain("Try one combination first");
     const connect = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
       (item) => item.textContent === "Connect input in Complete checkout",
     );
@@ -429,7 +429,7 @@ describe("Suite and Environment routes", () => {
     expect(dialog?.textContent).toContain("New test plan");
     expect(getSuiteEditor).toHaveBeenCalledWith("app-1");
     const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Save Plan",
+      (button) => button.textContent === "Create plan",
     )!;
     expect(save.disabled).toBe(true);
 
@@ -445,7 +445,7 @@ describe("Suite and Environment routes", () => {
     await act(async () => testChoice.closest("label")!.click());
     await settle();
     expect(testChoice.getAttribute("aria-checked")).toBe("true");
-    expect(document.body.textContent).toContain("Tests · 1 selected");
+    expect(document.body.textContent).toContain("1 selected");
     expect(save.disabled).toBe(false);
 
     await act(async () => save.click());
@@ -537,9 +537,7 @@ describe("Suite and Environment routes", () => {
       }),
     });
 
-    expect(document.body.textContent).toContain(
-      "One combination first, then 1 more when you continue",
-    );
+    expect(document.body.textContent).toContain("Check it, then continue with the other 1.");
     expect(document.body.textContent).not.toContain("2 cases ready");
     expect(document.body.textContent).toContain("Multi-environment execution is unavailable.");
   });

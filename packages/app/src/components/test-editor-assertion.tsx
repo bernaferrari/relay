@@ -46,8 +46,8 @@ function ValidationKindGroups({
 }) {
   const groups = validationKindGroupsForEditor({ hasRememberableReply, selected });
   return (
-    <label className="grid gap-1.5 text-xs font-normal text-muted-foreground">
-      Check
+    <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+      What should Relay check?
       <select
         aria-label="Checkpoint type"
         className="h-9 w-full min-w-0 rounded-lg border border-border bg-transparent px-3 text-sm font-normal text-foreground"
@@ -91,15 +91,15 @@ export function ValidationExpectationEditor({
   if (!value) {
     return (
       <div className="grid gap-3">
-        <p className="text-xs font-normal leading-normal text-muted-foreground">
-          {canAdd
-            ? "Choose what Relay should check or wait for."
-            : (bindingSummary ??
-              "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced.")}
-        </p>
+        {canAdd ? null : (
+          <p className="text-xs font-normal leading-normal text-muted-foreground">
+            {bindingSummary ??
+              "This check was set up by hand. You can see how it works under Advanced."}
+          </p>
+        )}
         {canAdd ? (
           <fieldset className="grid gap-3 text-xs font-normal" disabled={busy}>
-            <legend>Expected result</legend>
+            <legend className="sr-only">What to check</legend>
             <ValidationKindGroups
               hasRememberableReply={hasRememberableReply}
               onSelect={(kind) => onChange(emptyValidationDraft(kind))}
@@ -107,8 +107,7 @@ export function ValidationExpectationEditor({
           </fieldset>
         ) : (
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            Visual judges, reply checks, and ignore regions are a separate Checkpoint. Use Add
-            checkpoint — do not overwrite this saved wait.
+            To add a different kind of check, use Add step → Add a check.
           </p>
         )}
       </div>

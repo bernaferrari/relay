@@ -12,7 +12,11 @@ export function NewTestTargetMode({
   onChange(device: boolean): void;
 }) {
   return (
-    <div className="flex w-fit gap-1 rounded-lg bg-muted/40 p-1" aria-label="Test target">
+    <div
+      className="flex w-fit gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+      role="group"
+      aria-label="Test target"
+    >
       {[
         { device: false, label: "Website", icon: Globe },
         { device: true, label: "Phone or tablet", icon: Smartphone },
@@ -20,8 +24,8 @@ export function NewTestTargetMode({
         <Button
           key={label}
           type="button"
-          variant={device === choice ? "outline" : "ghost"}
-          size="lg"
+          variant={device === choice ? "secondary" : "ghost"}
+          size="sm"
           aria-pressed={device === choice}
           disabled={disabled}
           onClick={() => onChange(choice)}

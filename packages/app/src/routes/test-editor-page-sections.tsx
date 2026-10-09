@@ -2,6 +2,12 @@
 import { Redo2, Undo2 } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@relay/ui-react/components/dialog";
 import { RecordingProblem } from "./recording-shared";
 
 export function TestEditorSettingsPanel({
@@ -27,40 +33,47 @@ export function TestEditorSettingsPanel({
   onRetry(): void;
   onSave(): void;
 }) {
-  if (!open) return null;
   return (
-    <section
-      className="mx-4 mb-4 grid max-w-xl gap-3 rounded-lg border border-border bg-card p-4"
-      aria-label="Test settings"
-    >
-      <div>
-        <h2 className="text-sm font-semibold">Test settings</h2>
-        <p className="text-xs text-muted-foreground">
-          Update the saved Test identity and origin package.
-        </p>
-      </div>
-      <label className="grid gap-1 text-xs font-medium">
-        Name
-        <Input value={name} onChange={(event) => onNameChange(event.target.value)} />
-      </label>
-      <label className="grid gap-1 text-xs font-medium">
-        Origin application
-        <Input
-          placeholder="com.example.app"
-          value={originApplication}
-          onChange={(event) => onOriginChange(event.target.value)}
-        />
-      </label>
-      <div className="flex gap-2">
-        <Button onClick={onSave} disabled={!name.trim() || saving}>
-          Save settings
-        </Button>
-        <Button variant="ghost" onClick={() => onOpenChange(false)}>
-          Cancel
-        </Button>
-      </div>
-      <RecordingProblem error={error} onRetry={onRetry} retrying={saving} />
-    </section>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" aria-label="Test settings">
+        <div className="grid gap-1">
+          <DialogTitle>Test settings</DialogTitle>
+          <DialogDescription>Rename the test or change the app it starts in.</DialogDescription>
+        </div>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (name.trim() && !saving) onSave();
+          }}
+        >
+          <label className="grid gap-1.5 text-sm font-medium">
+            Name
+            <Input value={name} onChange={(event) => onNameChange(event.target.value)} />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium">
+            Starts in
+            <Input
+              placeholder="https://example.com or com.example.app"
+              value={originApplication}
+              onChange={(event) => onOriginChange(event.target.value)}
+            />
+            <span className="text-xs font-normal text-muted-foreground">
+              The website address or app the test opens first.
+            </span>
+          </label>
+          <RecordingProblem error={error} onRetry={onRetry} retrying={saving} />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!name.trim() || saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

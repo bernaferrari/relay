@@ -126,9 +126,9 @@ describe("Plan screenshot review", () => {
       "relay.plan-review.plan-1",
       JSON.stringify({ selectedKey: "removed-capture" }),
     );
-    const host = await render(undefined);
+    const host = await render(acceptAll());
     expect(dialogTitle()).toBeUndefined();
-    await act(async () => button(host, "Start reviewing").click());
+    await act(async () => button(host, "Review one by one").click());
     expect(dialogTitle()).toBe("Settings");
   });
 
@@ -167,15 +167,13 @@ describe("Plan screenshot review", () => {
   });
 
   it("shows review progress and accepts one step across configurations", async () => {
-    const reviewCaptures = vi.fn(async () => ({ results: [] }));
+    const reviewCaptures = acceptAll();
     const host = await render(reviewCaptures);
-    expect(host.textContent).toContain("0 of 3 reviewed");
+    expect(host.textContent).toContain("0 of 3 screenshots reviewed");
     expect(host.textContent).not.toContain("Use as baseline");
-    expect(groupLabels(host)).toEqual(["Settings2", "Home1"]);
-    expect(
-      host.querySelectorAll('[aria-label="Settings screenshots"] [role="checkbox"]'),
-    ).toHaveLength(2);
-    await act(async () => button(host, "Mark 2 as correct").click());
+    // Columns are steps in run order; rows are cases.
+    expect(columnLabels(host)).toEqual(["1Settings", "2Home"]);
+    await act(async () => labelled(host, "Mark Settings correct for all 2 cases").click());
     await settleReview();
     expect(reviewCaptures).toHaveBeenCalledExactlyOnceWith("plan-1", {
       action: "accept",
@@ -186,13 +184,10 @@ describe("Plan screenshot review", () => {
     });
   });
 
-  it("groups by configuration and shows an empty issues view", async () => {
-    const host = await render(vi.fn(async () => ({ results: [] })));
-    await chooseOption(host, "Group screenshots", "Group by device and account");
-    expect(groupLabels(host)).toEqual(["iPad · Member2", "Chrome · Admin1"]);
-    await act(async () => tab(host, "Issues").click());
-    expect(host.textContent).toContain("No issues reported.");
-    expect(host.textContent).toContain("0 of 3 reviewed");
+  it("names each case row by the device and account that set it apart", async () => {
+    const host = await render(acceptAll());
+    expect(rowLabels(host)).toEqual(["iPad · Member", "iPad · Member", "Chrome · Admin"]);
+    expect(host.textContent).toContain("0 of 3 screenshots reviewed");
   });
 
   it("keeps issues and evidence gaps visible in the progress summary", async () => {
@@ -209,7 +204,7 @@ describe("Plan screenshot review", () => {
         blocked: 1,
       },
     }));
-    expect(host.textContent).toContain("22 of 27 reviewed");
+    expect(host.textContent).toContain("22 of 27 screenshots reviewed");
     expect(host.textContent).toContain("2 with issues");
     expect(host.textContent).toContain("3 screenshots weren’t captured");
   });
@@ -246,17 +241,16 @@ describe("Plan screenshot review", () => {
         blocked: 1,
       },
     }));
-    expect(host.textContent).toContain("0 of 1 reviewed");
+    expect(host.textContent).toContain("0 of 1 screenshots reviewed");
     expect(host.textContent).toContain("1 screenshot wasn’t captured");
-    await act(async () => tab(host, "All").click());
     expect(host.textContent).toContain("Couldn’t capture");
-    expect(host.querySelectorAll('ul [role="checkbox"]')).toHaveLength(1);
+    expect(button(host, "Mark all 1 correct")).toBeTruthy();
   });
 
   it("keeps the open screenshot when a newer capture arrives", async () => {
     const client = new QueryClient();
     const host = await render(undefined, undefined, client);
-    await act(async () => openCard(host, "Open Home"));
+    await act(async () => openCard(host, "Home"));
     expect(dialogTitle()).toBe("Home");
     const key = ["run-across", "batch", "plan-1", "capture-review"];
     const queue = client.getQueryData<{ items: PlanCaptureReviewItem[]; summary: unknown }>(key)!;
@@ -274,19 +268,6 @@ describe("Plan screenshot review", () => {
     expect(document.body.textContent).toContain("Composer is empty");
   });
 
-  it("remembers the review focus and grouping", async () => {
-    let host = await render(vi.fn(async () => ({ results: [] })));
-    await act(async () => tab(host, "Issues").click());
-    await chooseOption(host, "Group screenshots", "Group by device and account");
-    act(() => roots.splice(0).forEach((root) => root.unmount()));
-    document.body.replaceChildren();
-    host = await render(vi.fn(async () => ({ results: [] })));
-    expect(tab(host, "Issues").getAttribute("aria-selected")).toBe("true");
-    expect(
-      host.querySelector('[role="combobox"][aria-label="Group screenshots"]')?.textContent,
-    ).toContain("Group by device and account");
-  });
-
   it("advances to the next unreviewed screenshot after a decision", async () => {
     const save = vi.fn(
       async (_batch: string, input: { items: Array<{ runId: string; captureId: string }> }) => ({
@@ -294,7 +275,7 @@ describe("Plan screenshot review", () => {
       }),
     );
     const host = await render(save as unknown as RunAcrossProductService["reviewCaptures"]);
-    await act(async () => button(host, "Start reviewing").click());
+    await act(async () => button(host, "Review one by one").click());
     expect(dialogTitle()).toBe("Settings");
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
@@ -305,12 +286,33 @@ describe("Plan screenshot review", () => {
   });
 });
 
+/** A review handler that saves nothing; typed as the service method. */
+function acceptAll() {
+  return vi.fn(async () => ({ results: [] })) as unknown as NonNullable<
+    RunAcrossProductService["reviewCaptures"]
+  >;
+}
+
 function dialogTitle() {
   return document.querySelector('[role="dialog"] h2')?.textContent ?? undefined;
 }
 
-function groupLabels(host: HTMLElement) {
-  return [...host.querySelectorAll("section[aria-label] h3")].map((node) => node.textContent);
+function columnLabels(host: HTMLElement) {
+  return [...host.querySelectorAll('[role="columnheader"]')]
+    .slice(1)
+    .map((node) => node.textContent);
+}
+
+function rowLabels(host: HTMLElement) {
+  return [...host.querySelectorAll('[role="rowheader"] span:first-child')].map(
+    (node) => node.textContent,
+  );
+}
+
+function labelled(host: ParentNode, label: string) {
+  const found = host.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+  if (!found) throw new Error(`Missing control: ${label}`);
+  return found;
 }
 
 function openCard(host: HTMLElement, label: string) {
@@ -319,25 +321,6 @@ function openCard(host: HTMLElement, label: string) {
   );
   if (!card) throw new Error(`Missing card: ${label}`);
   card.click();
-}
-
-function tab(host: HTMLElement, label: string) {
-  const found = [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find((node) =>
-    node.textContent?.startsWith(label),
-  );
-  if (!found) throw new Error(`Missing tab: ${label}`);
-  return found;
-}
-
-async function chooseOption(host: HTMLElement, field: string, label: string) {
-  const select = host.querySelector<HTMLElement>(`[role="combobox"][aria-label="${field}"]`);
-  if (!select) throw new Error(`Missing field: ${field}`);
-  await act(async () => select.click());
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (node) => node.textContent === label,
-  );
-  if (!option) throw new Error(`Missing option: ${label}`);
-  await act(async () => option.click());
 }
 
 async function settleReview() {
@@ -354,12 +337,8 @@ function button(host: ParentNode, label: string) {
   return found;
 }
 
-function checkboxes(host: HTMLElement) {
-  return [...host.querySelectorAll<HTMLElement>('ul [role="checkbox"]')];
-}
-
 describe("Plan review acknowledgements", () => {
-  it("bulk-reviews the current selection without silently including later screenshots", async () => {
+  it("bulk-reviews exactly the screenshots its label counts", async () => {
     const client = new QueryClient();
     const save = vi.fn(async (_batch: string, _input: { items: unknown[] }) => ({ results: [] }));
     const host = await render(
@@ -367,7 +346,7 @@ describe("Plan review acknowledgements", () => {
       undefined,
       client,
     );
-    for (const box of checkboxes(host)) await act(async () => box.click());
+    expect(button(host, "Mark all 3 correct")).toBeTruthy();
     const key = ["run-across", "batch", "plan-1", "capture-review"];
     const queue = client.getQueryData<{ items: PlanCaptureReviewItem[]; summary: unknown }>(key)!;
     await act(async () =>
@@ -380,32 +359,11 @@ describe("Plan review acknowledgements", () => {
       }),
     );
     await settleReview();
-    expect(checkboxes(host).map((box) => box.getAttribute("aria-checked") === "true")).toEqual([
-      true,
-      true,
-      true,
-      false,
-    ]);
-    await act(async () => button(host, "Looks correct for 3 selected").click());
-    expect(save.mock.calls[0]?.[1].items).toHaveLength(3);
-    expect(JSON.stringify(save.mock.calls)).not.toContain("later-run");
-  });
-
-  it("bulk Report issue asks for a note before saving", async () => {
-    const save = vi.fn(async () => ({ results: [] }));
-    const host = await render(save as unknown as RunAcrossProductService["reviewCaptures"]);
-    for (const box of checkboxes(host)) await act(async () => box.click());
-    await act(async () => button(host, "Report issue for 3 selected").click());
+    // A later arrival changes the visible count before it can be included.
+    await act(async () => button(host, "Mark all 4 correct").click());
     expect(save).not.toHaveBeenCalled();
-    await act(async () => button(host, "Save issue for 3 selected").click());
-    expect(save).toHaveBeenCalledWith(
-      "plan-1",
-      expect.objectContaining({
-        action: "report-issue",
-        items: expect.arrayContaining([expect.objectContaining({ runId: "run-member-settings" })]),
-      }),
-    );
-    expect(host.querySelector('[aria-label="More review options"]')).not.toBeNull();
+    await act(async () => button(document, "Mark 4 correct").click());
+    expect(save.mock.calls[0]?.[1].items).toHaveLength(4);
   });
 
   it("shows a load error and allows retry instead of hiding the queue", async () => {
@@ -433,7 +391,7 @@ describe("Plan review acknowledgements", () => {
     expect(get).toHaveBeenCalledTimes(2);
   });
 
-  it("clears only acknowledged selections and explains conflicts", async () => {
+  it("explains conflicts when only some decisions are saved", async () => {
     const review = vi.fn(async () => ({
       results: [
         { runId: "run-member-settings", captureId: "frames/001.png::aaa", status: "applied" },
@@ -441,29 +399,22 @@ describe("Plan review acknowledgements", () => {
       ],
     })) as unknown as NonNullable<RunAcrossProductService["reviewCaptures"]>;
     const host = await render(review);
-    const [first, second] = checkboxes(host);
-    await act(async () => first!.click());
-    await act(async () => second!.click());
-    await act(async () => button(host, "Looks correct for 2 selected").click());
+    await act(async () => labelled(host, "Mark Settings correct for all 2 cases").click());
     await settleReview();
     const alert = host.querySelector('[role="alert"]')?.textContent;
     expect(alert).toContain("1 of 2 decisions weren’t saved");
     expect(alert).toContain("Someone else reviewed these screenshots first");
     expect(alert).toContain("Settings: The screenshot or its review changed");
-    expect(first!.getAttribute("aria-checked") === "true").toBe(false);
-    expect(second!.getAttribute("aria-checked") === "true").toBe(true);
   });
 
-  it("retains selection after an unconfirmed save and exposes refresh", async () => {
+  it("explains an unconfirmed save and exposes refresh", async () => {
     const host = await render(vi.fn().mockRejectedValue(new Error("Offline")));
-    const check = checkboxes(host)[0]!;
-    await act(async () => check.click());
-    await act(async () => button(host, "Looks correct for 1 selected").click());
+    await act(async () => button(host, "Mark all 3 correct").click());
+    await act(async () => button(document, "Mark 3 correct").click());
     await settleReview();
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "Your decision wasn’t saved.",
     );
-    expect(check.getAttribute("aria-checked") === "true").toBe(true);
     expect(button(host, "Refresh screenshots")).toBeTruthy();
   });
 
@@ -501,7 +452,7 @@ describe("Plan review acknowledgements", () => {
     await act(async () => draw(false));
     await settleReview();
     expect(getCaptureReview).toHaveBeenCalledTimes(2);
-    expect(host.textContent).toContain("0 of 1 reviewed");
+    expect(host.textContent).toContain("0 of 1 screenshots reviewed");
     expect(host.textContent).not.toContain("wasn’t captured");
   });
 });

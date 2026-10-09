@@ -272,7 +272,11 @@ export const ROUTE_DEFINITIONS = [
     "variant",
     "capture",
   ]),
-  d("/batches/:batchId", "/runs", "Batch", "Report", "runs", "review-batch", ["status", "view"]),
+  d("/batches/:batchId", "/runs", "Batch", "Report", "runs", "review-batch", [
+    "status",
+    "view",
+    "returnTo",
+  ]),
   d("/changes", "/home", "Changes", "Change", "changes", "verify-change", [
     "status",
     "app",

@@ -7,25 +7,29 @@ import {
   captureReviewQueueFrameKey,
   captureReviewQueueItemKey,
   filterPlanCaptureReviewQueue,
-  groupPlanCaptureReviewItems,
-  parsePlanCaptureReviewFilter,
-  planCaptureReviewFilterOptions,
   planCaptureReviewScreenLabel,
-  type PlanCaptureReviewDecision,
 } from "@relay/protocol";
-import { SelectField } from "../components/filter-select";
 import { Button } from "@relay/ui-react/components/button";
 import { Progress } from "@relay/ui-react/components/progress";
-import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
-import { AlertTriangle, Play } from "lucide-react";
+import { AlertTriangle, CheckCheck, Play } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@relay/ui-react/components/popover";
 import { captureReviewFeedback } from "./capture-review-feedback";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import { productClientForPlatform } from "../data/product-client";
 import type { Platform } from "../platform/types";
 import type { ReportEvidenceItem } from "../data/run-report-model";
 import {
+  configurationLabel,
+  journeyLayout,
   needsReview,
-  PlanScreenshotGallery,
+  PlanScreenshotJourney,
   PlanScreenshotViewer,
   screenshotKey,
 } from "./plan-screenshot-review";
@@ -65,29 +69,12 @@ function planReviewViewKey(batchId: string): string {
   return `relay.plan-review.${batchId}`;
 }
 
-function readPlanReviewView(batchId: string): {
-  selectedKey?: string;
-  decision?: PlanCaptureReviewDecision;
-  groupBy?: "checkpoint" | "configuration";
-  place?: string;
-} {
+function readPlanReviewView(batchId: string): { selectedKey?: string } {
   try {
     const parsed = JSON.parse(sessionStorage.getItem(planReviewViewKey(batchId)) ?? "") as {
       selectedKey?: unknown;
-      decision?: unknown;
-      groupBy?: unknown;
-      place?: unknown;
     };
-    return {
-      ...(typeof parsed.selectedKey === "string" ? { selectedKey: parsed.selectedKey } : {}),
-      ...(parsed.decision === "all" || parsed.decision === "pending" || parsed.decision === "issues"
-        ? { decision: parsed.decision }
-        : {}),
-      ...(parsed.groupBy === "checkpoint" || parsed.groupBy === "configuration"
-        ? { groupBy: parsed.groupBy }
-        : {}),
-      ...(typeof parsed.place === "string" ? { place: parsed.place } : {}),
-    };
+    return typeof parsed.selectedKey === "string" ? { selectedKey: parsed.selectedKey } : {};
   } catch {
     return {};
   }
@@ -99,30 +86,24 @@ export function PlanCaptureReviewSection({
   platform,
   streaming = false,
   onInspectProblems,
+  caseLabels = {},
 }: {
   batchId: string;
   runAcrossService: RunAcrossProductService;
   platform: Platform;
   streaming?: boolean;
   onInspectProblems?: (caseId?: string) => void;
+  /** Human case names keyed by Run id or case id. */
+  caseLabels?: Readonly<Record<string, string>>;
 }) {
   const queryClient = useQueryClient();
-  const remembered = readPlanReviewView(batchId);
-  const [openKey, setOpenKey] = useState<string | undefined>(remembered.selectedKey);
+  const [openKey, setOpenKey] = useState<string | undefined>(
+    () => readPlanReviewView(batchId).selectedKey,
+  );
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [decision, setDecision] = useState<PlanCaptureReviewDecision | undefined>(
-    remembered.decision,
-  );
-  const [groupBy, setGroupBy] = useState<"checkpoint" | "configuration">(
-    remembered.groupBy ?? "checkpoint",
-  );
-  const [place, setPlace] = useState(remembered.place ?? "");
   useEffect(() => {
-    sessionStorage.setItem(
-      planReviewViewKey(batchId),
-      JSON.stringify({ selectedKey: openKey, decision, groupBy, place }),
-    );
-  }, [batchId, openKey, decision, groupBy, place]);
+    sessionStorage.setItem(planReviewViewKey(batchId), JSON.stringify({ selectedKey: openKey }));
+  }, [batchId, openKey]);
   const captures = useQuery({
     queryKey: ["run-across", "batch", batchId, "capture-review"],
     queryFn: () => {
@@ -166,75 +147,17 @@ export function PlanCaptureReviewSection({
       ]),
   });
   const queue = captures.data;
-  const placeFilter = useMemo(
-    () => ({
-      ...(place.startsWith("device:") ? { device: place.slice("device:".length) } : {}),
-      ...(place.startsWith("account:") ? { account: place.slice("account:".length) } : {}),
-    }),
-    [place],
-  );
-  const counts = useMemo(() => {
-    const count = (value: PlanCaptureReviewDecision) =>
-      queue
-        ? filterPlanCaptureReviewQueue(
-            queue,
-            parsePlanCaptureReviewFilter({ decision: value, ...placeFilter }),
-          ).items.length
-        : 0;
-    return { pending: count("pending"), issues: count("issues"), all: count("all") };
-  }, [queue, placeFilter]);
-  // Open on what needs attention; fall back to everything once review is done.
-  const focus: PlanCaptureReviewDecision =
-    decision ?? (counts.pending ? "pending" : counts.issues ? "issues" : "all");
-  const visible = useMemo(
-    () =>
-      queue
-        ? filterPlanCaptureReviewQueue(
-            queue,
-            parsePlanCaptureReviewFilter({ decision: focus, groupBy, ...placeFilter }),
-          )
-        : undefined,
-    [queue, focus, groupBy, placeFilter],
-  );
-  // Keep steps in the order the Test runs them, whatever the filter hides.
-  const groupRank = useMemo(() => {
-    const rank = new Map<string, number>();
-    if (!queue) return rank;
-    const position = new Map<string, number>();
-    const runPositions = new Map<string, number>();
-    for (const item of filterPlanCaptureReviewQueue(queue).items) {
-      const run = item.runId ?? item.executionCaseId ?? "";
-      const next = runPositions.get(run) ?? 0;
-      runPositions.set(run, next + 1);
-      position.set(captureReviewQueueItemKey(item), next);
-    }
-    groupPlanCaptureReviewItems(filterPlanCaptureReviewQueue(queue).items, groupBy).forEach(
-      (group, index) => {
-        const step = Math.min(
-          ...group.items.map((item) => position.get(captureReviewQueueItemKey(item)) ?? 0),
-        );
-        rank.set(group.id, groupBy === "checkpoint" ? step * 10_000 + index : index);
-      },
-    );
-    return rank;
-  }, [queue, groupBy]);
-  const groups = useMemo(
-    () =>
-      visible
-        ? groupPlanCaptureReviewItems(visible.items, groupBy).sort(
-            (left, right) => (groupRank.get(left.id) ?? 0) - (groupRank.get(right.id) ?? 0),
-          )
-        : [],
-    [visible, groupBy, groupRank],
-  );
-  // The viewer walks the gallery in the order people see it.
-  const ordered = useMemo(() => groups.flatMap((group) => group.items), [groups]);
-  const options = useMemo(
-    () =>
-      queue
-        ? planCaptureReviewFilterOptions(queue.items)
-        : { screens: [], devices: [], accounts: [] },
-    [queue],
+  const items = useMemo(() => (queue ? filterPlanCaptureReviewQueue(queue).items : []), [queue]);
+  const caseLabel = (item: PlanCaptureReviewItem, index?: number) =>
+    (item.runId && caseLabels[item.runId]) ||
+    (item.executionCaseId && caseLabels[item.executionCaseId]) ||
+    configurationLabel(item, items) ||
+    `Case ${(index ?? 0) + 1}`;
+  const layout = useMemo(
+    () => journeyLayout(items, caseLabel),
+    // caseLabel is derived from these inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, caseLabels],
   );
   const feedback = useMemo(
     () =>
@@ -247,11 +170,6 @@ export function PlanCaptureReviewSection({
     () => (queue ? planCaptureFrames(queue.items, platform) : []),
     [queue, platform],
   );
-  useEffect(() => {
-    if (viewerOpen && !ordered.some((item) => screenshotKey(item) === openKey)) {
-      setViewerOpen(false);
-    }
-  }, [viewerOpen, ordered, openKey]);
   if (!runAcrossService.getCaptureReview) return null;
   if (!queue)
     return (
@@ -277,13 +195,13 @@ export function PlanCaptureReviewSection({
     );
   const reviewItems = (
     action: CaptureReviewAction,
-    items: PlanCaptureReviewItem[],
+    targets: PlanCaptureReviewItem[],
     note?: string,
   ) =>
     review
       .mutateAsync({
         action,
-        items: items
+        items: targets
           .filter((item): item is PlanCaptureReviewItem & { runId: string } => Boolean(item.runId))
           .map((item) => ({
             runId: item.runId,
@@ -302,41 +220,31 @@ export function PlanCaptureReviewSection({
   const reviewable = summary.planned - summary.missing - summary.blocked;
   const reviewed = Math.max(0, reviewable - summary.pending);
   const notCaptured = summary.missing + summary.blocked;
-  const placeOptions = [
-    ...options.devices.map((value) => ({ value: `device:${value}`, label: value })),
-    ...options.accounts.map((value) => ({ value: `account:${value}`, label: value })),
-  ];
-  const multipleConfigurations = options.devices.length > 1 || options.accounts.length > 1;
+  const pending = layout.ordered.filter(needsReview);
   const open = (item: PlanCaptureReviewItem) => {
     setOpenKey(screenshotKey(item));
     setViewerOpen(true);
   };
-  const firstPending = ordered.find(needsReview);
   const failures = feedback?.failures ?? [];
   return (
     <section className="mt-6 grid gap-5" aria-labelledby="plan-screenshots-title">
-      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <div className="grid min-w-56 flex-1 gap-2">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 id="plan-screenshots-title" className="sr-only">
-              Screenshots
-            </h2>
-            <p className="text-base font-medium tabular-nums" role="status">
-              {reviewable
-                ? summary.pending
-                  ? `${reviewed} of ${reviewable} reviewed`
-                  : `All ${reviewable} reviewed`
-                : streaming
-                  ? "Waiting for the first screenshots…"
-                  : "No screenshots to review"}
-              {summary.issue ? (
-                <span className="font-normal text-muted-foreground">
-                  {" "}
-                  · {summary.issue} with issues
-                </span>
-              ) : null}
-            </p>
-          </div>
+          <h2 id="plan-screenshots-title" className="sr-only">
+            Screenshots
+          </h2>
+          <p className="text-base font-medium tabular-nums" role="status">
+            {reviewable
+              ? summary.pending
+                ? `${reviewed} of ${reviewable} screenshots reviewed`
+                : `All ${reviewable} screenshots reviewed`
+              : streaming
+                ? "Waiting for the first screenshots…"
+                : "No screenshots to review"}
+            {summary.issue ? (
+              <span className="font-normal text-destructive"> · {summary.issue} with issues</span>
+            ) : null}
+          </p>
           {reviewable ? (
             <Progress
               value={(reviewed / reviewable) * 100}
@@ -345,11 +253,18 @@ export function PlanCaptureReviewSection({
             />
           ) : null}
         </div>
-        {onReview && summary.pending && firstPending ? (
-          <Button onClick={() => open(firstPending)}>
-            <Play aria-hidden="true" />
-            {reviewed ? "Continue reviewing" : "Start reviewing"}
-          </Button>
+        {onReview && pending.length ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <ConfirmMarkAll
+              count={pending.length}
+              disabled={review.isPending}
+              onConfirm={() => void onReview("accept", pending)}
+            />
+            <Button onClick={() => open(pending[0]!)}>
+              <Play aria-hidden="true" />
+              {reviewed ? "Continue reviewing" : "Review one by one"}
+            </Button>
+          </div>
         ) : null}
       </header>
 
@@ -362,10 +277,7 @@ export function PlanCaptureReviewSection({
           <p className="min-w-0 flex-1">
             {notCaptured === 1
               ? "1 screenshot wasn’t captured because its case didn’t finish."
-              : `${notCaptured} screenshots weren’t captured because their cases didn’t finish.`}{" "}
-            <span className="text-muted-foreground">
-              Fix the case and run it again to collect it.
-            </span>
+              : `${notCaptured} screenshots weren’t captured because their cases didn’t finish.`}
           </p>
           {onInspectProblems ? (
             <Button
@@ -433,88 +345,35 @@ export function PlanCaptureReviewSection({
         </div>
       ) : null}
 
-      <div
-        className="flex flex-wrap items-center justify-between gap-3"
-        aria-label="Screenshot filters"
-      >
-        <Tabs
-          value={focus}
-          onValueChange={(value) => setDecision(value as PlanCaptureReviewDecision)}
-        >
-          <TabsList aria-label="Show">
-            <TabsTrigger value="pending">
-              To review <Count value={counts.pending} />
-            </TabsTrigger>
-            <TabsTrigger value="issues">
-              Issues <Count value={counts.issues} />
-            </TabsTrigger>
-            <TabsTrigger value="all">
-              All <Count value={counts.all} />
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        {multipleConfigurations ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <SelectField
-              compact
-              label="Device or account"
-              value={place || "__all"}
-              onValueChange={(value) => setPlace(value === "__all" ? "" : value)}
-              options={[{ value: "__all", label: "All devices and accounts" }, ...placeOptions]}
-            />
-            <SelectField
-              compact
-              label="Group screenshots"
-              value={groupBy}
-              onValueChange={(value) =>
-                setGroupBy(value === "configuration" ? "configuration" : "checkpoint")
-              }
-              options={[
-                { value: "checkpoint", label: "Group by step" },
-                { value: "configuration", label: "Group by device and account" },
-              ]}
-            />
-          </div>
-        ) : null}
-      </div>
-
-      {streaming ? (
-        <p className="text-xs text-muted-foreground">
-          New screenshots appear as each case finishes.
-        </p>
-      ) : null}
-
-      {groups.length ? (
-        <PlanScreenshotGallery
-          key={`${focus}:${groupBy}:${place}`}
-          groups={groups}
-          groupBy={groupBy}
+      {layout.rows.length ? (
+        <PlanScreenshotJourney
+          rows={layout.rows}
+          columns={layout.columns}
           frames={frames}
           busy={review.isPending}
-          savedKeys={feedback?.savedKeys}
           onReview={onReview}
           onOpen={open}
         />
       ) : (
         <p role="status" className="py-10 text-center text-sm text-muted-foreground">
-          {focus === "pending" && counts.all
-            ? "Nothing left to review."
-            : focus === "issues" && counts.all
-              ? "No issues reported."
-              : queue.items.length
-                ? "No screenshots match this filter."
-                : streaming
-                  ? "Screenshots will appear here as cases finish."
-                  : "This Plan didn’t capture any screenshots."}
+          {streaming
+            ? "Screenshots will appear here as cases finish."
+            : "This Plan didn’t capture any screenshots."}
         </p>
       )}
+      {streaming && layout.rows.length ? (
+        <p className="text-xs text-muted-foreground">
+          New screenshots appear as each case finishes.
+        </p>
+      ) : null}
 
       <PlanScreenshotViewer
-        items={ordered}
+        items={layout.ordered}
         openKey={viewerOpen ? openKey : undefined}
         frames={frames}
         busy={review.isPending}
         onReview={onReview}
+        caseLabel={(item) => caseLabel(item)}
         onNavigate={(item) => setOpenKey(screenshotKey(item))}
         onClose={() => setViewerOpen(false)}
         onInspectProblems={onInspectProblems}
@@ -523,6 +382,49 @@ export function PlanCaptureReviewSection({
   );
 }
 
-function Count({ value }: { value: number }) {
-  return <span className="text-xs tabular-nums text-muted-foreground">{value}</span>;
+/** Approving every pending screenshot is one decision per screenshot, so it
+ * asks once before saving instead of acting on a single stray click. */
+function ConfirmMarkAll({
+  count,
+  disabled,
+  onConfirm,
+}: {
+  count: number;
+  disabled: boolean;
+  onConfirm(): void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger render={<Button variant="ghost" disabled={disabled} />}>
+        <CheckCheck aria-hidden="true" />
+        Mark all {count} correct
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72">
+        <PopoverHeader>
+          <PopoverTitle>
+            Mark {count} {count === 1 ? "screenshot" : "screenshots"} correct?
+          </PopoverTitle>
+          <PopoverDescription>
+            Each one is saved as reviewed without opening it. You can still report an issue on any
+            of them later.
+          </PopoverDescription>
+        </PopoverHeader>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              setOpen(false);
+              onConfirm();
+            }}
+          >
+            Mark {count} correct
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }

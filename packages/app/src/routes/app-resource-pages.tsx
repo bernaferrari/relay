@@ -124,7 +124,7 @@ export function AppResourceFrame({
 }) {
   return (
     <LibraryPage className="max-w-5xl">
-      <PageHeader context="Workspace" title={title} description={description} actions={action} />
+      <PageHeader title={title} description={description} actions={action} />
       {children}
     </LibraryPage>
   );

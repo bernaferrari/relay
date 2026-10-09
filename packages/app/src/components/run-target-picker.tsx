@@ -53,15 +53,17 @@ export function RunTargetPicker({
         <DialogTrigger
           render={
             <Button
-              variant="outline"
+              variant={selected.length ? "ghost" : "outline"}
               disabled={disabled}
-              className="h-auto min-h-11 w-full justify-between whitespace-normal text-left"
+              className={
+                selected.length
+                  ? "order-last w-fit"
+                  : "h-auto min-h-11 w-full justify-center whitespace-normal"
+              }
             />
           }
         >
-          <span>
-            {selected.length ? "Add or change browsers and devices" : "Choose browsers or devices"}
-          </span>
+          <span>{selected.length ? "+ Add or remove" : "Choose browsers or devices"}</span>
         </DialogTrigger>
         <DialogContent className="flex max-h-[85dvh] min-w-0 flex-col gap-4 overflow-hidden">
           <div>

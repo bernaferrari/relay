@@ -27,7 +27,7 @@ import { BatchTriageControls } from "./batch-triage-controls";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
 import { BatchFindingsLead, BatchFindingsPanel, BatchStabilityPanel } from "./batch-plan-review";
 import { PageLoading, RecordingProblem } from "./recording-shared";
-import { PlanRunChecklist } from "./plan-run-checklist";
+import { PlanRunChecklist, planCaseLabels } from "./plan-run-checklist";
 import { resolvePlanFindings } from "./batch-finding-review";
 import { PlanCaptureReviewSection } from "./batch-capture-review";
 import { productLinkClassName } from "../lib/class-names";
@@ -369,6 +369,7 @@ function BatchDocument({ batchId }: { batchId: string }) {
                 runAcrossService={runAcrossService}
                 platform={platform}
                 streaming={active}
+                caseLabels={planCaseLabels(report.cases, testNames)}
                 onInspectProblems={(caseId) => {
                   setFocusedCaseId(caseId);
                   setCaseFocusRequest((request) => request + 1);
@@ -549,7 +550,7 @@ function BatchDocument({ batchId }: { batchId: string }) {
           {report.status === "cancelled" && !report.runIds.length ? (
             <EmptyState
               title="Stopped"
-              detail="No cases were started. Any representative-run evidence remains durable."
+              detail="No cases were started. Results from the first case are kept."
             />
           ) : null}
         </>

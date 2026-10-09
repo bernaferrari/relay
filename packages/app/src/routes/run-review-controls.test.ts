@@ -9,7 +9,7 @@ import {
 describe("visualIgnoreCopy", () => {
   it("warns when a missing baseline would compare the reply body", () => {
     expect(visualIgnoreCopy({ code: "VISUAL_BASELINE_MISSING", policy: { regions: [] } })).toBe(
-      "No ignore regions. Dynamic reply bodies will be compared if you approve this baseline.",
+      "Every part of the screen will be compared, including content that changes between runs.",
     );
   });
 
@@ -42,12 +42,12 @@ describe("visualIgnoreCopy", () => {
   });
 
   it("leaves a missing baseline pending and hides Keep baseline", () => {
-    expect(visualPendingCopy("VISUAL_BASELINE_MISSING")).toContain("stays pending");
-    expect(visualPendingCopy("VISUAL_BASELINE_MISSING")).toContain("Agents cannot approve");
+    expect(visualPendingCopy("VISUAL_BASELINE_MISSING")).toContain("Pick a reference");
+    expect(visualPendingCopy("VISUAL_BASELINE_MISSING")).toContain("Only a person can");
     expect(canKeepVisualBaseline("VISUAL_BASELINE_MISSING")).toBe(false);
     expect(leaveVisualPendingLabel("VISUAL_BASELINE_MISSING")).toBe("Leave pending");
     expect(canKeepVisualBaseline("VISUAL_CHANGED")).toBe(true);
     expect(leaveVisualPendingLabel("VISUAL_CHANGED")).toBe("Retry later");
-    expect(visualPendingCopy("VISUAL_CHANGED")).toContain("Agents cannot approve");
+    expect(visualPendingCopy("VISUAL_CHANGED")).toContain("Only a person can");
   });
 });

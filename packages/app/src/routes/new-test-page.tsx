@@ -12,6 +12,7 @@ import {
   NEW_TEST_DRAFT_KEY,
   friendlyPreviewIssue,
   readNewTestDraft,
+  recordingStartHint,
   websiteAccounts,
 } from "./new-test-setup-helpers";
 import { startManagedBrowser } from "./new-test-browser-setup";
@@ -452,25 +453,17 @@ export function NewTestPage() {
     if (activePointer.data) return <ReviewRecordingPage recordingId={activePointer.data} />;
   }
 
-  const startHint = !appId
-    ? "Choose an app"
-    : creatingApp
-      ? "Finish creating your app"
-      : previewInput.failure
-        ? "Check the last interaction before recording"
-        : previewIssue || previewInput.issue
-          ? "Reconnect the preview before recording"
-          : previewInput.busy
-            ? "Checking the last interaction…"
-            : reconnectPreview.isPending
-              ? "Reconnecting preview…"
-              : !selectedTarget
-                ? "Choose a Device or Browser"
-                : begin.isPending
-                  ? "Starting…"
-                  : originApplication && openedApplication !== originApplication
-                    ? "Open the selected app first"
-                    : "Start recording";
+  const startHint = recordingStartHint({
+    app: Boolean(appId),
+    creatingApp,
+    inputFailed: Boolean(previewInput.failure),
+    previewProblem: Boolean(previewIssue || previewInput.issue),
+    checkingInput: previewInput.busy,
+    reconnecting: reconnectPreview.isPending,
+    target: Boolean(selectedTarget),
+    starting: begin.isPending,
+    appNotOpened: Boolean(originApplication && openedApplication !== originApplication),
+  });
 
   function chooseTarget(nextTargetId: string) {
     if (!startup.mayEdit()) return;
@@ -515,20 +508,23 @@ export function NewTestPage() {
               Cancel
             </Button>
           }
-        >
-          {!startsFromPath && !blocksNewRecording ? (
-            <NewTestTargetMode
-              device={setupMode === "detailed" && (deviceOnly || selectedTarget?.kind === "device")}
-              disabled={begin.isPending || reconnectPreview.isPending || Boolean(quickProgress)}
-              onChange={(device) => {
-                if (!startup.mayEdit()) return;
-                setWantsDevice(device);
-                setSetupMode(device ? "detailed" : "website");
-                if (device && selectedTarget?.kind === "browser") chooseTarget("");
-              }}
-            />
-          ) : null}
-        </AuthoringHeader>
+          center={
+            !startsFromPath && !blocksNewRecording ? (
+              <NewTestTargetMode
+                device={
+                  setupMode === "detailed" && (deviceOnly || selectedTarget?.kind === "device")
+                }
+                disabled={begin.isPending || reconnectPreview.isPending || Boolean(quickProgress)}
+                onChange={(device) => {
+                  if (!startup.mayEdit()) return;
+                  setWantsDevice(device);
+                  setSetupMode(device ? "detailed" : "website");
+                  if (device && selectedTarget?.kind === "browser") chooseTarget("");
+                }}
+              />
+            ) : null
+          }
+        />
 
         {blocksNewRecording ? (
           <Alert className="max-w-3xl" variant="default">

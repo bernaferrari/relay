@@ -195,7 +195,7 @@ export function RunStoryView({
         </div>
       ) : (
         <p className="px-6 py-16 text-center text-sm text-muted-foreground">
-          {status === "running" ? "Starting…" : "No screen yet"}
+          {status === "running" ? "Starting…" : "No screenshot was saved for this step"}
         </p>
       )}
     </WorkspaceScreenshot>
