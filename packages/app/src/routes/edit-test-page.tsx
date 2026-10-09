@@ -17,9 +17,10 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
 import { type EditTransaction, type StepEntry } from "../components/test-editor-step";
-import type {
-  ProductTestEditorDocument,
-  ProductTestRepair,
+import {
+  PLAIN_ENGLISH_STEP_REASON,
+  type ProductTestEditorDocument,
+  type ProductTestRepair,
 } from "../data/test-editor-product-service";
 import type { LiveTestEditorSession } from "../data/live-test-editor-product-service";
 import { useLatestTestReport } from "../hooks/use-latest-test-report";
@@ -292,17 +293,15 @@ function TestEditorDocument({
             capture: true,
             binding: {
               status: "unresolved",
-              reason: "Choose what Relay should prove after this step.",
+              reason: PLAIN_ENGLISH_STEP_REASON,
+              fromText: true,
             },
           }
         : {
             id,
             kind: "instruction",
             intent: "Describe the next action",
-            binding: {
-              status: "unresolved",
-              reason: "Choose a saved action for this step before running the test.",
-            },
+            binding: { status: "unresolved", reason: PLAIN_ENGLISH_STEP_REASON, fromText: true },
           };
     apply(
       {

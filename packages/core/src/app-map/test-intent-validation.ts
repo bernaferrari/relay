@@ -80,8 +80,11 @@ function assertCleanup(step: AppMapScenarioTestStep, label: string): void {
 function assertBinding(step: AppMapScenarioTestStep, label: string): void {
   const binding = objectValue(step.binding, `${label}.binding`);
   if (binding.status === "unresolved") {
-    allowedKeys(binding, ["status", "reason", "candidates"], `${label}.binding`);
+    allowedKeys(binding, ["status", "reason", "candidates", "fromText"], `${label}.binding`);
     requiredText(binding.reason, `${label}.binding.reason`);
+    if (binding.fromText !== undefined && binding.fromText !== true) {
+      appMapFail("invalid-map", `${label}.binding.fromText must be true when present`);
+    }
     if (binding.candidates !== undefined) {
       if (!Array.isArray(binding.candidates)) {
         appMapFail("invalid-map", `${label}.binding.candidates must be an array`);

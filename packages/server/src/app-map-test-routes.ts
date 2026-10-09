@@ -8,6 +8,7 @@ import {
   loadFrozenRawAccessibilityEvidence,
   compileAppMapTestForTargetProfile,
   compileIntentWalk,
+  draftTestSteps,
   currentOperationContext,
   editAppMapScenarioTest,
   listDevices,
@@ -76,6 +77,27 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     if (!appMap) throw new HttpError(404, `App Map ${fromIntent.appMapId} not found`);
     const walk = compileIntentWalk(appMap, String(body.intent ?? ""));
     json(response, 200, walk);
+    return true;
+  }
+  const testDraft = matchPath(pathname, "/app-maps/:appMapId/tests/draft");
+  if (method === "POST" && testDraft) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.test.draft">,
+      "appMapId"
+    >;
+    const appMap = await readAppMap(scope.projectId, testDraft.appMapId!);
+    if (!appMap) throw new HttpError(404, `App Map ${testDraft.appMapId} not found`);
+    const goal = String(body.goal ?? "").trim();
+    if (!goal) throw new HttpError(400, "Describe what should work.");
+    json(
+      response,
+      200,
+      await draftTestSteps({
+        goal,
+        ...(typeof body.startUrl === "string" && body.startUrl ? { startUrl: body.startUrl } : {}),
+        appMap,
+      }),
+    );
     return true;
   }
   const testSave = matchPath(pathname, "/app-maps/:appMapId/tests/:testId");

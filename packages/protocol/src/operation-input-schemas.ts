@@ -510,6 +510,24 @@ export const operationInputSchemas = {
       intent: text("English coverage goal compiled onto ready App Map edges"),
     })
     .strict(),
+  "app-map.test.draft": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      goal: z
+        .string()
+        .trim()
+        .min(1)
+        .max(4_000)
+        .describe("What should work, in plain English, or one step per line"),
+      startUrl: z
+        .string()
+        .trim()
+        .max(2048)
+        .regex(/^https?:\/\//iu)
+        .optional()
+        .describe("Web address the Test opens first"),
+    })
+    .strict(),
   "app-map.proposal.submit": z
     .object({
       appMapId: identifier("App Map identifier"),

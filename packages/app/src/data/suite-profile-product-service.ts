@@ -9,6 +9,7 @@ import type {
   TargetDefinition,
   TargetPreflight,
 } from "@relay/protocol";
+import { stepNeedsSetup } from "@relay/protocol";
 import { unrecordedProductName } from "@relay/protocol";
 import { projectProductTests } from "@relay/product/catalog";
 import { scenarioTestOriginMissingEvidence } from "@relay/product/test-origin-readiness";
@@ -264,7 +265,7 @@ function text(value: unknown, fallback: string): string {
 function testStatus(map: AppMap, test: AppMap["tests"][string]): ProductSuiteTest["status"] {
   if (unrecordedProductName(test.name)) return "needs-review";
   const unresolved = (step: AppMap["tests"][string]["steps"][number]): boolean => {
-    if (step.binding.status === "unresolved" || step.execution?.status === "disabled") return true;
+    if (stepNeedsSetup(step)) return true;
     if (step.kind === "decision") {
       return step.thenSteps.some(unresolved) || (step.elseSteps?.some(unresolved) ?? false);
     }

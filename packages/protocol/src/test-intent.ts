@@ -47,6 +47,10 @@ export type UnresolvedTestBinding = {
   status: "unresolved";
   reason: string;
   candidates?: AppMapTestBindingCandidate[];
+  /** The author chose to run this Action or Check from its words: a model
+   * picks the taps for an Action and a visual judge decides a Check. Absent
+   * means the step stays blocked until it is recorded or bound. */
+  fromText?: true;
 };
 
 export type ResolvedTestBinding<T extends object> = { status: "resolved" } & T;

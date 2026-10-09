@@ -63,13 +63,30 @@ export type ProductTestEditorDocument = {
   repairs: readonly ProductTestRepair[];
 };
 
+export type ProductDraftedStep = { kind: "instruction" | "validation"; intent: string };
+
+/** Shown on steps that run from their words instead of a recording. */
+export const PLAIN_ENGLISH_STEP_REASON =
+  "Runs from its description. Record it to make it faster and exact.";
+
 export type TestEditorProductService = {
   createDraft?(input: {
     appMapId: string;
     testId: string;
     name: string;
-    instructions: readonly string[];
+    /** Plain-English Actions, one per entry. */
+    instructions?: readonly string[];
+    /** Plain-English Actions and Checks; takes precedence over instructions. */
+    steps?: readonly ProductDraftedStep[];
+    /** Web address a plain-English Test opens first. */
+    startUrl?: string;
   }): Promise<ProductTestEditorDocument>;
+  /** Turn "what should work?" into plain-English Action and Check steps. */
+  draftSteps?(input: {
+    appMapId: string;
+    goal: string;
+    startUrl?: string;
+  }): Promise<{ name: string; steps: ProductDraftedStep[]; source: "model" | "lines" }>;
   get(testId: string, appMapId?: string): Promise<ProductTestEditorDocument | undefined>;
   listTextParameters?(): Promise<import("@relay/protocol").TestData[]>;
   saveText?(input: {
@@ -82,6 +99,8 @@ export type TestEditorProductService = {
     document: ProductTestEditorDocument;
     name: string;
     originApplication?: string;
+    /** Omit to keep the current address; "" removes it. */
+    startUrl?: string;
   }): Promise<ProductTestEditorDocument>;
   edit(input: {
     document: ProductTestEditorDocument;
@@ -136,7 +155,14 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
       });
       return requireDocument(appMap, document.test.id);
     },
-    async createDraft({ appMapId, testId, name, instructions }) {
+    async draftSteps({ appMapId, goal, startUrl }) {
+      return (await client()).invoke("app-map.test.draft", {
+        appMapId,
+        goal,
+        ...(startUrl ? { startUrl } : {}),
+      });
+    },
+    async createDraft({ appMapId, testId, name, instructions = [], steps, startUrl }) {
       const relay = await client();
       const { appMap: current } = await relay.invoke("app-map.get", { appMapId });
       const { appMap } = await relay.invoke("app-map.test.save", {
@@ -148,14 +174,14 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
           name: name.trim(),
           kind: "scenario",
           intentSchemaVersion: 1,
-          steps: instructions.map((intent, index) => ({
+          ...(startUrl ? { startUrl } : {}),
+          steps: (
+            steps ?? instructions.map((intent) => ({ kind: "instruction" as const, intent }))
+          ).map((step, index) => ({
             id: `${testId}-step-${index + 1}`,
-            kind: "instruction",
-            intent: intent.trim(),
-            binding: {
-              status: "unresolved",
-              reason: "Record this action or choose a saved path before running.",
-            },
+            kind: step.kind,
+            intent: step.intent.trim(),
+            binding: { status: "unresolved", reason: PLAIN_ENGLISH_STEP_REASON, fromText: true },
           })),
         } as unknown as AppMapScenarioTest,
       });
@@ -182,7 +208,8 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
       });
       return requireDocument(appMap, document.test.id);
     },
-    async saveSettings({ document, name, originApplication }) {
+    async saveSettings({ document, name, originApplication, startUrl }) {
+      const nextStartUrl = startUrl === undefined ? document.test.startUrl : startUrl.trim();
       const {
         kind,
         intentSchemaVersion,
@@ -211,6 +238,7 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
           ...(validation ? { validation } : {}),
           name: name.trim(),
           ...(originApplication?.trim() ? { originApplication: originApplication.trim() } : {}),
+          ...(nextStartUrl ? { startUrl: nextStartUrl } : {}),
         } as unknown as AppMapScenarioTest,
       });
       return requireDocument(appMap, document.test.id);

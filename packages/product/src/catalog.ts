@@ -7,6 +7,7 @@ import type {
   RunSummary,
   RunTestStepEvidence,
 } from "@relay/protocol";
+import { stepNeedsSetup } from "@relay/protocol";
 import {
   parseOptionalRunTestStepEvidence,
   readableDeviceName,
@@ -217,7 +218,7 @@ function phase(run: Pick<RunSummary, "status" | "outcome">): ProductRunPhase {
 }
 
 function stepHasReview(step: AppMapScenarioTestStep): boolean {
-  if (step.execution?.status === "disabled" || step.binding.status === "unresolved") return true;
+  if (stepNeedsSetup(step)) return true;
   if (step.kind === "decision") {
     return step.thenSteps.some(stepHasReview) || (step.elseSteps?.some(stepHasReview) ?? false);
   }

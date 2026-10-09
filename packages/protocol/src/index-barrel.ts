@@ -34,6 +34,7 @@ export * from "./scroll-surface.js";
 export * from "./reviewed-document-origin.js";
 export * from "./screen-consolidation.js";
 export * from "./test-intent.js";
+export * from "./test-step-readiness.js";
 export * from "./case-expansion.js";
 export * from "./execution-summary.js";
 export * from "./run-review.js";

@@ -346,6 +346,7 @@ const testOperations = [
   "run.trace-pack.get",
   "run.story.get",
   "app-map.test.from-intent",
+  "app-map.test.draft",
   "run.repair.list",
   "run.repair.get",
   "run.repair.retry",
