@@ -75,6 +75,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Check layout: ${describeTarget(step.first)} does not overlap ${describeTarget(step.second)}`;
     case "evaluate-semantic":
       return `Evaluate ${step.input} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
+    case "act":
+      return step.intent;
     case "evaluate-visual":
       return `Evaluate screenshot against ${step.criteria.length} visual criterion${step.criteria.length === 1 ? "" : "s"}`;
     case "identity-ignore":
@@ -199,6 +201,8 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "evaluate-semantic":
     case "evaluate-visual":
       return ["ai", "ok"];
+    case "act":
+      return ["ai", "tap"];
     case "identity-ignore":
       return ["ok"];
     case "pause":

@@ -96,6 +96,28 @@ export function parseJudgeRecipeStep(
   index: number,
   note?: string,
 ): RecipeStep | undefined {
+  if (kind === "act") {
+    if (!isString(raw.intent) || !raw.intent.trim()) throw stepErr(index, "act.intent is required");
+    if (
+      raw.maxActions !== undefined &&
+      (typeof raw.maxActions !== "number" ||
+        !Number.isInteger(raw.maxActions) ||
+        raw.maxActions < 1 ||
+        raw.maxActions > 20)
+    ) {
+      throw stepErr(index, "act.maxActions must be an integer from 1 to 20");
+    }
+    if (raw.model !== undefined && !isString(raw.model)) {
+      throw stepErr(index, "act.model must be a string");
+    }
+    return {
+      kind: "act",
+      intent: raw.intent.trim(),
+      ...(typeof raw.maxActions === "number" ? { maxActions: raw.maxActions } : {}),
+      ...(isString(raw.model) && raw.model.trim() ? { model: raw.model.trim() } : {}),
+      ...(note ? { note } : {}),
+    };
+  }
   if (kind === "identity-ignore") {
     const region = parsePixelRegion(raw.region, index, "identity-ignore.region");
     if (raw.name !== undefined && !isString(raw.name)) {

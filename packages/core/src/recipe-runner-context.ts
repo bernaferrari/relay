@@ -256,6 +256,7 @@ export function campaignCoverageForbiddenEffect(
 }
 
 const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([
+  "act",
   "tour",
   "wait-for",
   "wait-response",

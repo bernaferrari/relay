@@ -164,3 +164,22 @@ it("keeps evidence inspection available when the saved test cannot be edited", (
   expect(container.querySelector("button")?.textContent?.trim()).toBe("See where it failed");
   expect(container.querySelector("a")).toBeNull();
 });
+
+it("states what a plain-English check expected and what Relay saw", () => {
+  const container = render({
+    id: "check",
+    kind: "check",
+    label: "The cart badge shows 1 item",
+    state: "failed",
+    expected: "The cart badge shows 1 item",
+    observed: "The cart badge still shows 0 items.",
+    detail: "visual assertion: The cart badge still shows 0 items.",
+  });
+  const rows = [...container.querySelectorAll("dt")].map(
+    (term) => `${term.textContent}: ${term.nextElementSibling?.textContent}`,
+  );
+  expect(rows).toEqual([
+    "Expected: The cart badge shows 1 item",
+    "Saw: The cart badge still shows 0 items.",
+  ]);
+});

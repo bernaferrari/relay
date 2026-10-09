@@ -49,6 +49,7 @@ import {
   preludeLaneCheckStepTitle,
   projectRunFailure,
   publicNetworkUrl,
+  recipeStepExpectation,
   sentenceCase,
   sourceTestId,
 } from "./run-report-projection-helpers";
@@ -458,12 +459,7 @@ function reportTimeline(
         })
       : undefined;
     const recipeStepRecord = record(recipeStep);
-    const expected =
-      recipeStepRecord?.kind === "assert-content"
-        ? text(recipeStepRecord.expected)
-        : recipeStepRecord?.kind === "expect-screen"
-          ? text(recipeStepRecord.screenTitle)
-          : undefined;
+    const expected = recipeStepExpectation(recipeStepRecord);
     const state: ReportTimelineItem["state"] =
       checkStatus === "blocked"
         ? "blocked"

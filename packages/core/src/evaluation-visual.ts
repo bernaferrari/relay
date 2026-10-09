@@ -8,6 +8,7 @@ function visualPrompt(input: VisualEvaluationRequest): string {
     "Evaluate the supplied screenshot against every criterion.",
     "Return only JSON with status (pass, fail, or uncertain), confidence (0..1), score (0..1), summary, and criteria.",
     "Each criteria item must contain id, description, passed, score, and optional evidence.",
+    "The summary is shown to a person as 'Saw: <summary>'. Write one plain sentence describing what the screenshot actually shows that is relevant to the criteria; do not restate the criteria.",
     `Pass threshold: ${input.threshold ?? 0.9}`,
     `Criteria: ${JSON.stringify(input.criteria)}`,
     input.region

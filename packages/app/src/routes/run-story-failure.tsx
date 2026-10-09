@@ -40,7 +40,14 @@ export function RunStoryFailure({
             Step {stepNumber}
             {action && action.label !== step.title ? ` · ${step.title}` : ""}
           </p>
-          {action?.failure?.summary || action?.detail ? (
+          {action?.expected && action.state === "failed" ? (
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              <dt className="text-muted-foreground">Expected</dt>
+              <dd>{action.expected}</dd>
+              <dt className="text-muted-foreground">Saw</dt>
+              <dd>{action.observed ?? action.detail ?? "Nothing was recorded for this check."}</dd>
+            </dl>
+          ) : action?.failure?.summary || action?.detail ? (
             <p className="mt-1 text-muted-foreground">{action.failure?.summary ?? action.detail}</p>
           ) : null}
         </div>

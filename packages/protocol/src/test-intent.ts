@@ -255,6 +255,9 @@ export type AppMapScenarioTest = AppMapEntity & {
   /** Exact package/bundle selected during recording setup for this Test. It
    * is frozen into compiled runs; runtime must never derive it from AX. */
   originApplication?: string;
+  /** Web address a plain-English Test opens before its first step. Recorded
+   * steps carry their own entrance and ignore it. */
+  startUrl?: string;
   /** Absent means an intentionally unjoined, legacy single-surface family. */
   family?: AppMapTestFamily;
   /** Honest native links. Compile on this map stays unrecorded; ios/android

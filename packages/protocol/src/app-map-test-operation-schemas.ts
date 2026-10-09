@@ -743,6 +743,12 @@ export const graphTest = z
     kind: z.literal("scenario"),
     intentSchemaVersion: z.literal(1),
     originApplication: z.string().trim().min(1).optional(),
+    startUrl: z
+      .string()
+      .trim()
+      .max(2048)
+      .regex(/^https?:\/\//iu, "Start URL must begin with http:// or https://")
+      .optional(),
     startingState: appMapTestStartingStateSchema.optional(),
     executionQueue: executionQueueSchema.optional(),
     requirementAction: requirementActionKind.optional(),

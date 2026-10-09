@@ -112,6 +112,7 @@ import {
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { rethrowInputOutcomeUnknown } from "./input-not-dispatched.js";
 import { runPauseStep } from "./recipe-runner-pause.js";
+import { runActStep } from "./recipe-runner-act.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
 async function runRequiredRecipeStep(
@@ -399,6 +400,9 @@ async function runRequiredRecipeStep(
     }
     case "evaluate-visual":
       await runEvaluateVisualStep(device, step, ctx);
+      break;
+    case "act":
+      await runActStep(device, step, ctx, (concrete) => runRecipeStep(device, concrete, ctx));
       break;
     case "identity-ignore":
       runIdentityIgnoreStep(step, ctx);

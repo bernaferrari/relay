@@ -290,6 +290,8 @@ function leafBounds(step: RecipeStep): Bounds {
     case "location":
     case "permission":
       return { maximumActions: 1 };
+    case "act":
+      return { maximumActions: (step.maxActions ?? 5) * 2 };
     case "reveal":
       return step.maxAttempts === undefined ? {} : { maximumActions: step.maxAttempts };
     case "alert":
@@ -525,6 +527,15 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
           stepId,
         });
       }
+      return;
+    case "act":
+      accumulator.addRisk({
+        level: "guarded",
+        code: EXECUTION_RISK_CODES.dynamicTour,
+        explanation:
+          "A plain-English step lets a model choose taps and typing on the current screen.",
+        stepId,
+      });
       return;
     case "tour":
       accumulator.addRisk({
