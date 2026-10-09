@@ -82,47 +82,64 @@ function TestRow({
                 {...(test.setupIssue ? { issue: test.setupIssue } : {})}
               />
             ) : state ? (
-              <StatusPill state={state} />
+              <>
+                <StatusPill state={state} />
+                {recent && state !== "running" ? (
+                  <span className="ml-1.5 w-14 tabular-nums text-muted-foreground/80">
+                    · {relativeTime(runTime(recent)).replace(/ ago$/u, "")}
+                  </span>
+                ) : null}
+              </>
             ) : null}
           </span>
         </Link>
-        <Button
-          nativeButton={false}
-          variant="ghost"
-          size="sm"
-          className="min-h-9 justify-self-end"
-          render={
-            test.status === "needs-review" || draft ? (
-              <Link
-                to="/tests/$testId/edit"
-                params={{ testId: test.id }}
-                search={test.sharedId ? { app: test.appMapId } : undefined}
-              />
-            ) : (
-              <Link
-                to="/tests/$testId"
-                params={{ testId: test.id }}
-                search={{
-                  setup: "run",
-                  ...(test.sharedId ? { app: test.appMapId } : {}),
-                  ...(plan ? { plan: plan.id, planApp: plan.appMapId } : {}),
-                }}
-              />
-            )
-          }
+        {/* Run appears on hover or focus so names lead the list (always on touch);
+            drafts keep their next step visible. */}
+        <span
+          className={`justify-self-end ${
+            test.status === "needs-review" || draft
+              ? ""
+              : "opacity-0 transition-opacity duration-150 group-hover/test-row:opacity-100 group-focus-within/test-row:opacity-100 [@media(hover:none)]:opacity-100"
+          }`}
         >
-          {test.status === "needs-review" || draft ? (
-            draft ? (
-              "Edit draft"
+          <Button
+            nativeButton={false}
+            variant="ghost"
+            size="sm"
+            className="min-h-9"
+            render={
+              test.status === "needs-review" || draft ? (
+                <Link
+                  to="/tests/$testId/edit"
+                  params={{ testId: test.id }}
+                  search={test.sharedId ? { app: test.appMapId } : undefined}
+                />
+              ) : (
+                <Link
+                  to="/tests/$testId"
+                  params={{ testId: test.id }}
+                  search={{
+                    setup: "run",
+                    ...(test.sharedId ? { app: test.appMapId } : {}),
+                    ...(plan ? { plan: plan.id, planApp: plan.appMapId } : {}),
+                  }}
+                />
+              )
+            }
+          >
+            {test.status === "needs-review" || draft ? (
+              draft ? (
+                "Edit draft"
+              ) : (
+                "Review steps"
+              )
             ) : (
-              "Review steps"
-            )
-          ) : (
-            <>
-              <Play aria-hidden="true" /> Run
-            </>
-          )}
-        </Button>
+              <>
+                <Play aria-hidden="true" /> Run
+              </>
+            )}
+          </Button>
+        </span>
       </div>
     </li>
   );

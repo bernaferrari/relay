@@ -28,7 +28,8 @@ export function ReviewCount({ appMapId }: { appMapId?: string }) {
   if (!count) return null;
   return (
     <span
-      className="ml-auto rounded-full bg-brand px-1.5 text-xs font-semibold text-brand-foreground tabular-nums"
+      // A standing queue, not an alert: quiet like an inbox count.
+      className="ml-auto rounded-full bg-muted-foreground/15 px-1.5 text-xs font-medium text-muted-foreground tabular-nums"
       aria-label={`${count} to review`}
     >
       {formatReviewCount(count)}

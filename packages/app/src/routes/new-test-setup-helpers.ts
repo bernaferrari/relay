@@ -70,3 +70,27 @@ export function websiteAccounts(
     };
   });
 }
+
+/** The one reason recording can't start yet, in the order a person resolves them. */
+export function recordingStartHint(state: {
+  app: boolean;
+  creatingApp: boolean;
+  inputFailed: boolean;
+  previewProblem: boolean;
+  checkingInput: boolean;
+  reconnecting: boolean;
+  target: boolean;
+  starting: boolean;
+  appNotOpened: boolean;
+}): string {
+  if (!state.app) return "Choose an app";
+  if (state.creatingApp) return "Finish creating your app";
+  if (state.inputFailed) return "Check the last interaction before recording";
+  if (state.previewProblem) return "Reconnect the preview before recording";
+  if (state.checkingInput) return "Checking the last interaction…";
+  if (state.reconnecting) return "Reconnecting preview…";
+  if (!state.target) return "Choose a Device or Browser";
+  if (state.starting) return "Starting…";
+  if (state.appNotOpened) return "Open the selected app first";
+  return "Start recording";
+}

@@ -156,7 +156,7 @@ it("inspects a product mismatch before offering to edit a valid saved check", as
     "test-balance",
   );
   const inspect = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent?.trim() === "Inspect evidence",
+    (button) => button.textContent?.trim() === "See where it failed",
   );
   expect(inspect).toBeDefined();
   expect(container.textContent).not.toContain("Fix this step");

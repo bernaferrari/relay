@@ -5,6 +5,7 @@ import type {
   CaptureReviewQueue,
   ReviewInboxResult,
 } from "@relay/protocol";
+import { readableDeviceName } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
@@ -64,7 +65,13 @@ export function createReviewProductService(platform: Platform): ReviewProductSer
   const run = (runId: string) => `/runs/${encodeURIComponent(runId)}`;
   return {
     async inbox(input = {}) {
-      return (await client()).invoke("review.inbox.list", input);
+      const result = await (await client()).invoke("review.inbox.list", input);
+      return {
+        ...result,
+        entries: result.entries.map((entry) =>
+          entry.targetName ? { ...entry, targetName: readableDeviceName(entry.targetName) } : entry,
+        ),
+      };
     },
     async captureImage(runId, item, signal) {
       return png(

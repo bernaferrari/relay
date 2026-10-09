@@ -7,6 +7,7 @@ export function AuthoringHeader({
   back,
   description,
   actions,
+  center,
   children,
 }: {
   title: ReactNode;
@@ -14,11 +15,13 @@ export function AuthoringHeader({
   back?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
+  /** A mode switch that belongs to the whole page, centred in the header row. */
+  center?: ReactNode;
   children?: ReactNode;
 }) {
   return (
     <header className="shrink-0">
-      <div className="flex min-h-14 items-center justify-between gap-4 px-5 py-3">
+      <div className="relative flex min-h-14 items-center justify-between gap-4 px-5 py-3">
         <div className="flex min-w-0 items-center gap-3">
           {back}
           <div className="flex min-w-0 items-center gap-3">
@@ -48,6 +51,9 @@ export function AuthoringHeader({
             ) : null}
           </div>
         </div>
+        {center ? (
+          <div className="sm:absolute sm:left-1/2 sm:-translate-x-1/2">{center}</div>
+        ) : null}
         <div className="flex shrink-0 items-center gap-2">{actions}</div>
       </div>
       {description ? (

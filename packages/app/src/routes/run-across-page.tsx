@@ -119,7 +119,7 @@ export function RunAcrossPage() {
       if (blocked.length) return { profileTargets: undefined, error: blocked.join("; ") };
       const requests = admitted.flatMap((item) => (item.status === "ready" ? [item.request] : []));
       if (!requests.length)
-        return { profileTargets: undefined, error: "Save at least one Browser and Account pair." };
+        return { profileTargets: undefined, error: "Save at least one browser sign-in first." };
       return { profileTargets: profileTargetsFromStarts(requests), error: undefined };
     } catch (error) {
       return { profileTargets: undefined, error: errorMessage(error) };
@@ -149,7 +149,7 @@ export function RunAcrossPage() {
               kind: "browser" as const,
               platform: "browser" as const,
               targetId: pairResult.profileTargets[0].target.browserTargetId,
-              label: "Saved Browser and Account pairs",
+              label: "Saved browser sign-ins",
             }
           : undefined
         : target
@@ -170,7 +170,7 @@ export function RunAcrossPage() {
     if (!setup.data.dataSet.dimensions.length && !usePairs) {
       return {
         preview: undefined,
-        error: "Choose saved Browser and Account pairs here, or run once from the Test page.",
+        error: "Choose saved browser sign-ins here, or run once from the Test page.",
       };
     }
     try {
@@ -246,9 +246,9 @@ export function RunAcrossPage() {
           { label: "Run across" },
         ]}
         title={setup.data ? `Run across · ${setup.data.testName}` : "Run across"}
-        description="Choose a device or browser, or saved Browser and Account pairs, with any saved data values. Run the selected cases together, then review their results."
+        description="Run this test once for each combination you pick, then compare the results."
       />
-      {loading ? <PageLoading label="Loading saved data and available configurations…" /> : null}
+      {loading ? <PageLoading label="Loading…" /> : null}
       <RecordingProblem
         error={
           setup.error ??
@@ -306,7 +306,7 @@ export function RunAcrossPage() {
                   ? [
                       {
                         id: "pairs",
-                        label: "Browser and Account pairs unavailable",
+                        label: "Saved sign-ins unavailable",
                         detail: pairResult.error,
                       },
                     ]
@@ -355,16 +355,17 @@ export function RunAcrossPage() {
             error={scope.error ?? configuration.error}
             onRetry={scope.error ? scope.retry : configuration.retry}
             targetGroupName="run-across-target"
-            pairedWorkspaceLabel={`Use saved Browser and Account workspace · ${paired.workspace.rows.length} ${paired.workspace.rows.length === 1 ? "pair" : "pairs"}`}
+            pairedWorkspaceLabel={`Use saved browser sign-ins (${paired.workspace.rows.length})`}
             pairedWorkspaceAction={
               <Link className={productLinkClassName} to="/environments">
-                Edit pairs
+                Manage sign-ins
               </Link>
             }
           >
             {usePairs ? (
               <p className="text-sm text-muted-foreground">
-                {paired.workspace.rows.map((row) => row.name).join(" · ") || "No saved pairs."}
+                {paired.workspace.rows.map((row) => row.name).join(" · ") ||
+                  "No saved sign-ins yet."}
               </p>
             ) : null}
             {valuesUnavailable ? (

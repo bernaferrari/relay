@@ -61,7 +61,7 @@ const STATE_PRESENTATION: Record<
   failed: { label: "Failed", icon: CircleAlert, className: "text-destructive" },
   running: { label: "Running", icon: LoaderCircle, className: "text-info-foreground" },
   "not-run": {
-    label: "No Plan run found",
+    label: "Not run yet",
     icon: CircleDashed,
     className: "text-muted-foreground",
   },
@@ -121,7 +121,7 @@ export function PlanChecklist({
 
   return (
     <section className="min-w-0" aria-labelledby="plan-checklist-title">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-1">
         <div className="grid gap-0.5">
           <h2 id="plan-checklist-title" className="text-sm font-semibold text-foreground">
             Latest Plan runs

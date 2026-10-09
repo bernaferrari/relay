@@ -74,11 +74,11 @@ function RunEvidenceExportForRun({
             ? "Try again"
             : kind === "walkthrough"
               ? "Prepare walkthrough"
-              : "Export evidence"}
+              : "Prepare download"}
       </Button>
       {href && fileName ? (
         <a className={productLinkClassName} href={href} download={fileName}>
-          {kind === "walkthrough" ? "Save walkthrough" : "Save evidence pack"}
+          {kind === "walkthrough" ? "Save walkthrough" : "Save files"}
         </a>
       ) : null}
       {exportRun.error ? (

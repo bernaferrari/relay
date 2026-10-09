@@ -102,7 +102,12 @@ export function TestWorkspaceActions({
               View live run
             </Button>
           ) : (
-            <div className="flex items-center gap-1">
+            // One split button: run now, or open the chevron to choose where it runs.
+            <div
+              className="flex items-center *:data-[slot=button]:first:rounded-e-none *:data-[slot=button]:last:rounded-s-none *:data-[slot=button]:last:border-s-primary-foreground/25"
+              role="group"
+              aria-label="Run"
+            >
               <Button
                 size="sm"
                 onClick={onRun}
@@ -113,32 +118,37 @@ export function TestWorkspaceActions({
                 <Play aria-hidden="true" />
                 {startPending ? "Starting…" : profileBlocked ? "Fix setup" : "Run"}
               </Button>
+              {testPresent ? (
+                <Popover open={settingsOpen} onOpenChange={onSettingsOpen}>
+                  <PopoverTrigger
+                    render={<Button ref={configurationTriggerRef} size="sm" />}
+                    aria-label={`Run settings: ${configurationName}`}
+                    aria-description={`Run settings: ${configurationLabel}`}
+                    title={configurationLabel}
+                  >
+                    {/* Where it runs stays visible: the target is part of the decision. */}
+                    {configurationName !== "Run settings" ? (
+                      <>
+                        <span className="sr-only">Run on</span>
+                        <span className="max-w-40 truncate font-normal opacity-90">
+                          {configurationName}
+                        </span>
+                      </>
+                    ) : null}
+                    <ChevronDown aria-hidden="true" />
+                  </PopoverTrigger>
+                  <PopoverContent
+                    finalFocus={configurationTriggerRef}
+                    align="end"
+                    className="max-h-[min(640px,80dvh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
+                    aria-label="Run settings"
+                  >
+                    {runSettings}
+                  </PopoverContent>
+                </Popover>
+              ) : null}
             </div>
           )}
-          {testPresent && !activeRun ? (
-            <Popover open={settingsOpen} onOpenChange={onSettingsOpen}>
-              <PopoverTrigger
-                render={<Button ref={configurationTriggerRef} variant="outline" size="sm" />}
-                aria-label={`Run settings: ${configurationName}`}
-                aria-description={`Run settings: ${configurationLabel}`}
-                title={configurationLabel}
-              >
-                {configurationName !== "Run settings" ? (
-                  <span className="text-muted-foreground">Run on</span>
-                ) : null}
-                <span className="max-w-80 truncate">{configurationName}</span>
-                <ChevronDown aria-hidden="true" />
-              </PopoverTrigger>
-              <PopoverContent
-                finalFocus={configurationTriggerRef}
-                align="end"
-                className="max-h-[min(640px,80dvh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
-                aria-label="Run settings"
-              >
-                {runSettings}
-              </PopoverContent>
-            </Popover>
-          ) : null}
           {testPresent || attachedRunId || hasRecentRuns ? (
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -158,7 +168,7 @@ export function TestWorkspaceActions({
                       />
                     }
                   >
-                    Run across…
+                    Run with different data or devices…
                   </DropdownMenuItem>
                 ) : null}
                 {attachedRunId ? (

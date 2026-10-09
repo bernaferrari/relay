@@ -160,7 +160,7 @@ export function BatchReviewWorkspace({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="w-full justify-start text-muted-foreground"
+                  className="w-full justify-start"
                   onClick={() => setShowPassing((value) => !value)}
                 >
                   {showPassing ? "Hide passing cases" : `Show ${passingCount} passing`}

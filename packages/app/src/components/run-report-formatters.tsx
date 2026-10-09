@@ -70,12 +70,31 @@ export function outcomeSentence(
   if (outcome === "harness-failure") return `Relay could not complete this Test on ${target}.`;
   if (outcome === "uncertain") return `Relay could not confirm the outcome on ${target}.`;
   if (outcome === "cancelled") return `This Run was cancelled on ${target}.`;
-  return `Relay has not published a terminal outcome for this Run on ${target}.`;
+  return `This Run on ${target} has no final result yet.`;
 }
 
 export function firstSentence(value: string): string {
   const line = value.split(/\r?\n/, 1)[0]?.trim() ?? "";
   return line.slice(0, 280).replace(/[.:!?]+$/u, "") + ".";
+}
+
+const KNOWN_FAILURE_CODES: Record<string, string> = {
+  "screen-inspection-unavailable": "Couldn’t read the screen’s controls",
+  "expect-screen": "The screen didn’t match",
+};
+
+/** A one-line, human reason from an engine error: drops machine codes and
+ * trailing diagnostics so rows read like sentences, not logs. */
+export function plainFailureReason(raw: string): string {
+  let text = raw.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const coded = /^([a-z]+(?:-[a-z]+)+):\s*(.*)$/u.exec(text);
+  if (coded) text = KNOWN_FAILURE_CODES[coded[1] ?? ""] ?? coded[2] ?? text;
+  text =
+    text
+      .split(/;\s/u, 1)[0]
+      ?.replace(/\s*\([^)]*\)\s*$/u, "")
+      .trim() ?? "";
+  return text ? text.charAt(0).toLocaleUpperCase() + text.slice(1) : "";
 }
 
 export function resultHeading(

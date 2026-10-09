@@ -614,6 +614,13 @@ async function settle() {
   }
 }
 
+/** The outcome pill in the full Report header. */
+function reportOutcome(): string | undefined {
+  return (
+    document.querySelector('[role="status"] [data-slot="status-pill"]')?.textContent ?? undefined
+  );
+}
+
 function button(label: string): HTMLButtonElement {
   const result = [...document.querySelectorAll("button")].find(
     (candidate) =>
@@ -1040,15 +1047,15 @@ describe("Run and Report", () => {
         await vi.waitFor(
           async () => {
             await settle();
-            expect(document.body.textContent).toContain("Browser and Account pairs unavailable");
+            expect(document.body.textContent).toContain("Saved sign-ins unavailable");
           },
           { timeout: 3_000 },
         );
       }
-      expect(document.body.textContent).toContain("Browser and Account pairs unavailable");
+      expect(document.body.textContent).toContain("Saved sign-ins unavailable");
       expect(document.body.textContent).toContain(
         problem === "empty"
-          ? "Save at least one Browser and Account pair."
+          ? "Save at least one browser sign-in first."
           : problem === "profiles-offline"
             ? "Saved Browser profiles are unavailable."
             : "Relay has no saved profile for this Browser and Account pair.",
@@ -1090,7 +1097,7 @@ describe("Run and Report", () => {
     );
     await selectOption("Device or browser", "Checkout browser");
     expect(preview).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Choose saved Browser and Account pairs here");
+    expect(document.body.textContent).toContain("Choose saved browser sign-ins here");
     expect(
       [...document.querySelectorAll<HTMLAnchorElement>("a")]
         .find((item) => item.textContent?.trim() === "Run once from Test")
@@ -1760,7 +1767,7 @@ describe("Run and Report", () => {
     if (!fullReport) throw new Error("Review result not found");
     await click(fullReport);
     expect(history.location.pathname).toBe("/runs/run-1");
-    expect(document.body.textContent).toContain("Test passed");
+    expect(reportOutcome()).toBe("Passed");
     expect(document.body.textContent).toContain("Language settings");
     expect(
       document.querySelector<HTMLImageElement>('[data-slot="evidence-image-frame"] img')?.src,
@@ -1769,7 +1776,7 @@ describe("Run and Report", () => {
 
     await click(button("More run actions"));
     const auditTrigger = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-      (item) => item.textContent?.trim() === "Audit",
+      (item) => item.textContent?.trim() === "Raw event log",
     )!;
     expect(document.querySelector('[aria-label="Raw evidence JSON"]')).toBeNull();
     await click(auditTrigger);
@@ -2126,7 +2133,7 @@ describe("Run and Report", () => {
     );
     expect(fake.calls).toContain("restore:run-1");
     expect(fake.calls).toContain("report:run-1");
-    expect(document.body.textContent).toContain("Test passed");
+    expect(reportOutcome()).toBe("Passed");
   });
 
   it("renders the saved Result when restore would throw and the pointer is empty", async () => {
@@ -2138,7 +2145,7 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
     expect(fake.calls).not.toContain("restore:run-1");
     expect(fake.calls).toContain("report:run-1");
-    expect(document.body.textContent).toContain("Test passed");
+    expect(reportOutcome()).toBe("Passed");
     expect(document.body.textContent).not.toContain("could not complete this request");
   });
 
@@ -2179,7 +2186,7 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-raw-terminal", fake.service, platformWithStorage().platform);
 
     expect(fake.calls).toContain("report:run-raw-terminal");
-    expect(document.body.textContent).toContain("Test passed");
+    expect(reportOutcome()).toBe("Passed");
   });
 
   it("shows only one centered recovery state when an in-progress Run disconnects", async () => {
@@ -2265,7 +2272,8 @@ describe("Run and Report", () => {
     await click(button("Cancel Run"));
 
     expect(fake.calls).toContain("cancel");
-    expect(document.body.textContent).toContain("This Run was cancelled on Pixel 9.");
+    expect(reportOutcome()).toBe("Cancelled");
+    expect(document.body.textContent).toContain("Pixel 9");
     expect(document.body.textContent).not.toContain("Cancel Run");
   });
 
@@ -2291,7 +2299,7 @@ describe("Run and Report", () => {
 
     expect(fake.calls).not.toContain("inspect:workflow-run-1");
     expect(fake.calls).toContain("report:run-1");
-    expect(document.body.textContent).toContain("Test passed");
+    expect(reportOutcome()).toBe("Passed");
     expect(document.body.textContent).not.toContain("Draft issue");
   });
 
@@ -2317,7 +2325,7 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-1?view=evidence", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).toContain("Language settings");
-    expect(document.body.textContent).toContain("Test passed");
+    expect(reportOutcome()).toBe("Passed");
     expect(document.querySelector('[aria-label="Run evidence"]')).not.toBeNull();
     expect(document.querySelector('[role="tablist"][aria-label="Run views"]')).not.toBeNull();
   });
@@ -2331,7 +2339,7 @@ describe("Run and Report", () => {
     await click(button("More run actions"));
     await click(
       [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-        (item) => item.textContent?.trim() === "Review run",
+        (item) => item.textContent?.trim() === "Compare with reference…",
       )!,
     );
     await click(button("Approve run"));
@@ -2383,17 +2391,17 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("2 changed · 1 added · 0 removed");
     expect(document.body.textContent).toContain("1 ignore region (reply body)");
     expect(document.body.textContent).toContain(
-      "Findings Confirm and Reject never accept a visual baseline",
+      "Only a person can change the reference screenshots",
     );
 
-    await click(button("Approve new baseline"));
+    await click(button("Use as new reference"));
     expect(approveVisualBaseline).toHaveBeenCalledWith({
       runId: "run-1",
       action: "approve-new-baseline",
       note: "Reviewed in Relay",
     });
 
-    await click(button("Keep baseline"));
+    await click(button("Keep current reference"));
     await click(button("Retry later"));
     expect(reviewVisual).toHaveBeenNthCalledWith(1, {
       runId: "run-1",
@@ -2425,10 +2433,10 @@ describe("Run and Report", () => {
 
     await click(button("Review screenshots"));
     await click(button("Compare screenshots"));
-    expect(document.body.textContent).toContain("No approved visual baseline");
-    expect(document.body.textContent).toContain("This compare stays pending");
-    expect(document.body.textContent).toContain("Agents cannot approve");
-    expect(document.body.textContent).not.toContain("Keep baseline");
+    expect(document.body.textContent).toContain("No reference screenshots yet");
+    expect(document.body.textContent).toContain("Pick a reference so future runs");
+    expect(document.body.textContent).toContain("Only a person can");
+    expect(document.body.textContent).not.toContain("Keep current reference");
     await click(button("Leave pending"));
     expect(reviewVisual).toHaveBeenCalledWith({
       runId: "run-1",
@@ -2541,7 +2549,7 @@ describe("Run and Report", () => {
     });
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("Test passed");
+    expect(reportOutcome()).toBe("Passed");
     expect(document.body.textContent).not.toContain("Draft issue");
     expect(document.body.textContent).toContain("Evidence details are temporarily unavailable");
     expect(document.body.textContent).toContain("saved outcome above is unchanged");
@@ -2651,9 +2659,9 @@ describe("Run and Report", () => {
     );
     await click(button("More run actions"));
     const setup = [...document.querySelectorAll<HTMLElement>("a,button")].find(
-      (item) => item.textContent?.trim() === "Set up another run",
+      (item) => item.textContent?.trim() === "Change run settings…",
     );
-    if (!setup) throw new Error("Set up another run action not found");
+    if (!setup) throw new Error("Change run settings action not found");
     await click(setup);
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(String(history.location.search)).toContain("setup=run");
@@ -2672,18 +2680,18 @@ describe("Run and Report", () => {
     try {
       await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
       await click(button("More run actions"));
-      expect(document.body.textContent).toContain("Export evidence");
+      expect(document.body.textContent).toContain("Download all files");
       if (!document.querySelector('[role="menu"]')) await click(button("More run actions"));
       await click(
         [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-          (item) => item.textContent?.trim() === "Export evidence",
+          (item) => item.textContent?.trim() === "Download all files",
         )!,
       );
-      await click(button("Export evidence"));
+      await click(button("Prepare download"));
       expect(fake.calls).toContain("export:run-1");
       const link = document.querySelector<HTMLAnchorElement>('a[download="relay-run-run-1.json"]');
       expect(link).not.toBeNull();
-      expect(link?.textContent).toContain("Save evidence pack");
+      expect(link?.textContent).toContain("Save files");
       expect(created).toEqual(["application/json"]);
     } finally {
       URL.createObjectURL = originalCreate;
@@ -2698,10 +2706,10 @@ describe("Run and Report", () => {
     if (!document.querySelector('[role="menu"]')) await click(button("More run actions"));
     await click(
       [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-        (item) => item.textContent?.trim() === "Export evidence",
+        (item) => item.textContent?.trim() === "Download all files",
       )!,
     );
-    await click(button("Export evidence"));
+    await click(button("Prepare download"));
     expect(document.body.textContent).toContain("TracePack evidence for a different Run");
     expect(document.querySelector("a[download]")).toBeNull();
   });

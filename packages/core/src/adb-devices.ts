@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { androidDeviceDisplayName } from "@relay/protocol";
 import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 
 const execFileAsync = promisify(execFile);
@@ -21,7 +22,50 @@ export type AdbDeviceInventory = {
 
 function readableModel(value: string | undefined): string | undefined {
   if (!value) return undefined;
-  return value.replaceAll("_", " ").trim() || undefined;
+  return androidDeviceDisplayName(value) || undefined;
+}
+
+/** Marketing names the device reports about itself, keyed by serial. The
+ * property never changes for a connected device, so ask once. */
+const marketingNames = new Map<string, string | null>();
+
+const MARKETING_NAME_PROPERTIES = [
+  "ro.product.marketname",
+  "ro.product.vendor.marketname",
+  "ro.config.marketing_name",
+] as const;
+
+/** The first non-empty line of `getprop` output for the properties above. */
+export function marketingNameFromProperties(output: string): string | undefined {
+  return (
+    output
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find(Boolean) || undefined
+  );
+}
+
+async function readMarketingName(adb: string, serial: string): Promise<string | undefined> {
+  const cached = marketingNames.get(serial);
+  if (cached !== undefined) return cached ?? undefined;
+  try {
+    const { stdout } = await execFileAsync(
+      adb,
+      [
+        "-s",
+        serial,
+        "shell",
+        MARKETING_NAME_PROPERTIES.map((property) => `getprop ${property}`).join("; "),
+      ],
+      { timeout: 2_000, maxBuffer: 16 * 1024 },
+    );
+    const name = marketingNameFromProperties(stdout);
+    marketingNames.set(serial, name ?? null);
+    return name;
+  } catch {
+    // Not cached: a phone that is still booting may answer on the next probe.
+    return undefined;
+  }
 }
 
 /** Parse `adb devices -l`, including hardware that cannot be controlled yet.
@@ -59,11 +103,20 @@ export function parseAdbDevices(output: string): AdbDeviceObservation[] {
 
 export async function probeAdbDevices(): Promise<AdbDeviceInventory> {
   try {
-    const { stdout } = await execFileAsync(await resolveAndroidSdkTool("adb"), ["devices", "-l"], {
+    const adb = await resolveAndroidSdkTool("adb");
+    const { stdout } = await execFileAsync(adb, ["devices", "-l"], {
       timeout: 4_000,
       maxBuffer: 64 * 1024,
     });
-    return { devices: parseAdbDevices(stdout), authoritative: true };
+    const devices = await Promise.all(
+      parseAdbDevices(stdout).map(async (device) => {
+        // Only a connected physical phone can be asked; emulators keep their AVD model.
+        if (device.connectionState !== "connected" || device.kind === "Emulator") return device;
+        const name = await readMarketingName(adb, device.serial);
+        return name ? { ...device, name } : device;
+      }),
+    );
+    return { devices, authoritative: true };
   } catch {
     // iOS-only machines and remote runners may not have ADB. The adapter
     // inventory remains authoritative for every target it can observe.

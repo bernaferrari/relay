@@ -11,7 +11,6 @@ import { Button } from "@relay/ui-react/components/button";
 import { X } from "lucide-react";
 import type { CaptureReferenceRegion, CaptureReviewItem } from "@relay/protocol";
 import { reviewQueryKeys, type ReviewProductService } from "../data/review-product-service";
-import { WorkspaceScreenshot } from "../components/test-workspace";
 
 export type CompareMode = "side" | "diff" | "swipe";
 
@@ -74,12 +73,20 @@ function Shot({
       </figcaption>
       <div className="flex min-h-48 items-start justify-center">
         {url ? (
-          <WorkspaceScreenshot fit="width">
-            <div className="relative">
-              <img src={url} alt={label} draggable={false} className="block h-auto w-full" />
-              {children}
-            </div>
-          </WorkspaceScreenshot>
+          // A whole screen, never a cropped strip: cap by height and let the
+          // overlay box shrink to the image so regions stay aligned.
+          <div
+            className="relative mx-auto w-fit max-w-full overflow-hidden rounded-lg border border-border bg-card"
+            style={{ "--shot-max": "calc(100dvh - 20rem)" } as CSSProperties}
+          >
+            <img
+              src={url}
+              alt={label}
+              draggable={false}
+              className="block h-auto max-h-(--shot-max) w-auto max-w-full"
+            />
+            {children}
+          </div>
         ) : (
           <p className="self-center text-sm text-muted-foreground" role="status">
             {failed ? "Screenshot couldn’t load." : loading ? "Loading screenshot…" : ""}

@@ -191,8 +191,13 @@ export function SelectedStepEditor({
           </div>
         </div>
       ) : null}
-      <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-intent">
-        <span className="sr-only">Step name</span>
+      <label
+        className="grid gap-1.5 text-xs font-medium text-muted-foreground"
+        htmlFor="selected-step-intent"
+      >
+        <span>
+          {entry.step.kind === "validation" ? "Check description" : "What this step does"}
+        </span>
         <Textarea
           rows={1}
           className="min-h-9 resize-none text-sm font-medium"
@@ -232,7 +237,7 @@ export function SelectedStepEditor({
         <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
           <AlertTriangle aria-hidden="true" />
           <div>
-            <AlertTitle>Compile blocked on the recorded route</AlertTitle>
+            <AlertTitle>This step can’t run on this device</AlertTitle>
             <AlertDescription>{platformBlocker}</AlertDescription>
           </div>
         </Alert>

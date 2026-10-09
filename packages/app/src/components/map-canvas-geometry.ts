@@ -112,9 +112,15 @@ export function fitMapToBounds(
       ),
     ),
   );
+  // Centre what fits. When the readable scale overflows an axis, start where
+  // the journey starts (top-left) instead of clipping both of its ends.
+  const align = (available: number, size: number, min: number) =>
+    size + MAP_PADDING * 2 <= available
+      ? (available - size) / 2 - min * scale
+      : MAP_PADDING / 2 - min * scale;
   return {
-    x: (viewport.width - contentWidth * scale) / 2 - bounds.minX * scale,
-    y: (viewport.height - contentHeight * scale) / 2 - bounds.minY * scale,
+    x: align(viewport.width, contentWidth * scale, bounds.minX),
+    y: align(viewport.height, contentHeight * scale, bounds.minY),
     scale,
   };
 }

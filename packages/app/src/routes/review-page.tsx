@@ -442,9 +442,10 @@ export function ReviewPage() {
                             ? selected.entry.title
                             : undefined,
                           selected.entry.targetName,
-                          selected.entry.data
-                            ? Object.values(selected.entry.data).join(", ")
-                            : undefined,
+                          // Plan titles often already name the data value; say it once.
+                          Object.values(selected.entry.data ?? {})
+                            .filter((value) => !selected.entry.title.includes(String(value)))
+                            .join(", ") || undefined,
                         ]
                           .filter(Boolean)
                           .join(" · ")}

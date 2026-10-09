@@ -27,13 +27,16 @@ export function IOSAppLaunchForm({
   onLaunch(): void;
 }) {
   return (
-    <section className="grid gap-4" aria-label="App launch">
-      <div className="grid max-w-xl gap-4">
-        <label className="grid gap-1.5 text-sm font-medium" htmlFor="device-app-identifier">
-          App name or bundle identifier
+    <section className="grid gap-3" aria-label="App launch">
+      <div className="grid max-w-xl gap-2">
+        <label className="text-sm font-medium" htmlFor="device-app-identifier">
+          App to open
+        </label>
+        {/* Field and its action share one row: type a name, press Enter or Launch. */}
+        <div className="flex gap-2">
           <input
             id="device-app-identifier"
-            className="min-h-11 rounded-md border border-input bg-background px-3 text-base font-normal focus-visible:outline-2 focus-visible:outline-ring"
+            className="min-h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm font-normal focus-visible:outline-2 focus-visible:outline-ring"
             value={identifier}
             onChange={(event) => {
               onIdentifierChange(event.target.value);
@@ -46,11 +49,20 @@ export function IOSAppLaunchForm({
             }}
             autoComplete="off"
             spellCheck={false}
-            placeholder="e.g. Grok"
+            placeholder="Name or bundle ID"
             disabled={pending || disabled}
           />
-        </label>
-        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onLaunch}
+            className="min-h-9"
+            disabled={pending || disabled || !identifier.trim()}
+          >
+            {pending ? "Launching…" : "Launch app"}
+          </Button>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={relaunch}
@@ -59,14 +71,6 @@ export function IOSAppLaunchForm({
           />
           Relaunch if the app is already open
         </label>
-        <Button
-          type="button"
-          onClick={onLaunch}
-          className="w-fit"
-          disabled={pending || disabled || !identifier.trim()}
-        >
-          {pending ? "Launching…" : "Launch app"}
-        </Button>
         {error ? (
           <p className="text-sm text-destructive" role="alert">
             {friendlyAppLaunchIssue(error)}

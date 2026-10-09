@@ -104,6 +104,7 @@ export function LiveTestEditorPane({
             issue={issue}
             busy={busy}
             targetTitle={session.authoring.title}
+            showTargetDetails={false}
             targetDetail={session.authoring.target.kind === "browser" ? "Browser" : "Device"}
             browserContext={browserContext}
             directBrowser={session.authoring.target.kind === "browser"}

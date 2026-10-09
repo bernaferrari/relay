@@ -276,8 +276,8 @@ describe("App overview", () => {
 
     await render("/apps/app-shop-internal", service, mapService);
 
-    expect(document.body.textContent).toContain("Tests for this app");
-    expect(document.body.textContent).toContain("Coverage");
+    expect(document.querySelector("#tests-heading")?.textContent).toBe("Tests");
+    expect(document.body.textContent).toContain("covered by tests");
     expect(document.body.textContent).not.toContain("Saved tests");
     expect(document.body.textContent).not.toContain("Recent results");
     expect(document.body.textContent).not.toContain("Workspace resources");
@@ -551,7 +551,7 @@ describe("Runs workspace", () => {
     );
     expect(tab?.textContent).toBe("Needs review3");
     const review = main.querySelector<HTMLAnchorElement>('a[href^="/review"]');
-    expect(review?.textContent).toBe("Review screenshots (3)");
+    expect(review?.textContent).toBe("Review screenshots3");
     expect(review?.getAttribute("href")).toBe("/review?app=app-shop-internal");
     expect(inbox.appMapIds).toContain("app-shop-internal");
   });

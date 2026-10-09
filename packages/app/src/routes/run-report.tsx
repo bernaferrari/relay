@@ -108,9 +108,8 @@ export function RunReport({
         aria-label="Technical details"
         className="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
       >
-        <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate">{heading}</span>
-        <span className="text-xs">View details</span>
+        <CircleAlert className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate">Full error message</span>
         <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
@@ -204,19 +203,6 @@ export function RunReport({
           />
         ) : null}
 
-        {firstEvidenceIsDistinct && report.firstEvidence ? (
-          <section
-            className="mt-5 rounded-xl border border-border bg-card p-5"
-            aria-labelledby="first-evidence-title"
-          >
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {report.outcome === "passed" ? "What Relay verified" : "Evidence at this point"}
-            </p>
-            <h2 id="first-evidence-title">{report.firstEvidence.label}</h2>
-            {report.firstEvidence.detail ? <p>{report.firstEvidence.detail}</p> : null}
-          </section>
-        ) : null}
-
         {report.evidenceUnavailable ? (
           <p
             className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
@@ -234,6 +220,7 @@ export function RunReport({
       <EmbeddedRunResult
         key={report.runId}
         report={report}
+        onOpenReport={() => void navigate({ to: "/runs/$runId", params: { runId: report.runId } })}
         onReviewCaptures={() =>
           void navigate({
             to: "/runs/$runId",
@@ -261,7 +248,14 @@ export function RunReport({
           <span role="status">
             <StatusPill
               size="md"
-              label={report.outcome === "passed" && captureIssues ? "Screenshot issues" : undefined}
+              label={
+                report.outcome === "passed" && captureIssues
+                  ? "Screenshot issues"
+                  : // Relay couldn't finish: not the same claim as the app failing.
+                    report.outcome === "harness-failure"
+                    ? "Could not complete"
+                    : undefined
+              }
               state={runStateOf({
                 outcome: report.outcome,
                 captureSummary: {
@@ -272,16 +266,15 @@ export function RunReport({
               })}
             />
           </span>
-          {outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))}
-          {report.durationMs !== undefined ? (
-            <span className="whitespace-nowrap tabular-nums">
-              <span aria-hidden="true" className="mx-2">
-                ·
-              </span>
-              <span className="sr-only">Duration: </span>
-              {formatDuration(report.durationMs)}
-            </span>
-          ) : null}
+          {/* The pill states the outcome; the meta line only says where and how long. */}
+          <span className="tabular-nums">
+            {[
+              target,
+              report.durationMs !== undefined ? formatDuration(report.durationMs) : undefined,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
           {captureIssues || pendingCaptures ? (
             <button
               type="button"
@@ -349,6 +342,14 @@ export function RunReport({
           notice={
             <>
               <RunReplayStatus runService={runService} />
+              {firstEvidenceIsDistinct && report.firstEvidence ? (
+                <div className="text-sm">
+                  <p className="font-medium">{report.firstEvidence.label}</p>
+                  {report.firstEvidence.detail ? (
+                    <p className="mt-0.5 text-muted-foreground">{report.firstEvidence.detail}</p>
+                  ) : null}
+                </div>
+              ) : null}
               {storyFailureOwnsCause(report) ? null : failureNotice}
               {report.evidenceUnavailable ? (
                 <p className="text-sm text-muted-foreground" role="status">

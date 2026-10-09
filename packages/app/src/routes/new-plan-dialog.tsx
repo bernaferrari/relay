@@ -20,6 +20,7 @@ import { Layers3 } from "lucide-react";
 import { SelectField } from "../components/filter-select";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
+import { relativeTime } from "./test-library-presentation";
 import { PlanInputDataSetPicker } from "./plan-input-data-set-picker";
 import type { ProductSuiteTest } from "../data/suite-profile-product-service";
 
@@ -32,9 +33,7 @@ function TestChoiceDetails({ test }: { test: ProductSuiteTest }) {
     test.stepCount !== undefined
       ? `${test.stepCount} ${test.stepCount === 1 ? "step" : "steps"}`
       : "",
-    hasUpdated
-      ? `Updated ${updated.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}`
-      : "",
+    hasUpdated ? `Updated ${relativeTime(updated.getTime())}` : "",
     test.status === "needs-review" ? productTestStatusLabel(test.status, test.name) : "",
   ]
     .filter(Boolean)
@@ -163,32 +162,11 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
       >
         <DialogTitle>New test plan</DialogTitle>
         <DialogDescription>
-          Group Tests and choose prompts to repeat. Choose devices and accounts when you run the
-          Plan.
+          Pick the tests to run together. You’ll choose devices when you run it.
         </DialogDescription>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} className="grid gap-5">
           <Field>
-            <SelectField
-              id="suite-app"
-              label="App"
-              placeholder="Choose an App"
-              value={appId}
-              disabled={addingDataSet || createSuite.isPending}
-              options={(apps.data ?? []).map((app) => ({
-                value: app.id,
-                label: app.name,
-              }))}
-              onValueChange={(value) => {
-                setAppId(value);
-                setTestIds(new Set());
-                setVariableIds(new Set());
-                setSelectedOptions({});
-                setStrategy("cartesian");
-              }}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="suite-name">Plan name</FieldLabel>
+            <FieldLabel htmlFor="suite-name">Name</FieldLabel>
             <Input
               id="suite-name"
               value={name}
@@ -197,24 +175,28 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
               autoComplete="off"
             />
           </Field>
-          <Field>
-            <SelectField
-              label="Screenshot review"
-              value={referenceReviewMode}
-              options={[
-                { value: "human", label: "Capture for human review" },
-                { value: "approved-reference", label: "Compare approved references" },
-              ]}
-              onValueChange={(value) =>
-                setReferenceReviewMode(value === "approved-reference" ? value : "human")
-              }
-            />
-            <p className="text-xs text-muted-foreground">
-              {referenceReviewMode === "approved-reference"
-                ? "Matching approved reference images are marked automatically. Accept as reference explicitly chooses the image for later Runs."
-                : "Every captured image waits for a person. Looks correct does not create a future reference."}
-            </p>
-          </Field>
+          {(apps.data?.length ?? 0) > 1 ? (
+            <Field>
+              <SelectField
+                id="suite-app"
+                label="App"
+                placeholder="Choose an App"
+                value={appId}
+                disabled={addingDataSet || createSuite.isPending}
+                options={(apps.data ?? []).map((app) => ({
+                  value: app.id,
+                  label: app.name,
+                }))}
+                onValueChange={(value) => {
+                  setAppId(value);
+                  setTestIds(new Set());
+                  setVariableIds(new Set());
+                  setSelectedOptions({});
+                  setStrategy("cartesian");
+                }}
+              />
+            </Field>
+          ) : null}
           {editor.isPending && appId ? <PageLoading label="Loading App Tests…" /> : null}
           {editor.error ? (
             <FieldError>
@@ -233,17 +215,20 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
           {editor.data ? (
             <div className="grid min-w-0 gap-5">
               <fieldset>
-                <legend className="mb-3 text-sm font-medium">
-                  Tests · {testIds.size} selected
+                <legend className="mb-2 flex w-full justify-between text-sm font-medium">
+                  Tests
+                  <span className="font-normal text-muted-foreground tabular-nums">
+                    {testIds.size} selected
+                  </span>
                 </legend>
                 <Input
                   aria-label="Search Tests for this Plan"
                   placeholder="Find a Test…"
                   value={testQuery}
                   onChange={(event) => setTestQuery(event.currentTarget.value)}
-                  className="mb-3"
+                  className="mb-2"
                 />
-                <div className="grid max-h-64 gap-2 overflow-y-auto p-1">
+                <div className="grid max-h-64 divide-y divide-border overflow-y-auto rounded-lg border border-border">
                   {!editor.data.tests.some((test) =>
                     test.name.toLocaleLowerCase().includes(testQuery.trim().toLocaleLowerCase()),
                   ) ? (
@@ -258,7 +243,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                     .map((test) => (
                       <ChoiceLabel
                         key={test.id}
-                        className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                        className="flex w-full min-w-0 cursor-pointer flex-row-reverse items-center justify-end gap-3 px-3 py-2.5 transition-colors outline-none hover:bg-muted/50 has-[:focus-visible]:bg-muted/50"
                       >
                         <span className="grid min-w-0 flex-1 gap-0.5">
                           <span className="truncate text-sm font-medium text-foreground">
@@ -279,32 +264,39 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
               </fieldset>
               {editor.data.dataSets.length || suiteProfileService.listInputDataSets ? (
                 <fieldset>
-                  <legend className="mb-3 text-sm font-medium">Data sets</legend>
+                  <legend className="mb-1 text-sm font-medium">Repeat with data</legend>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Optional. Each test runs once per value you pick.
+                  </p>
                   <div className="grid gap-2">
-                    {editor.data.dataSets.map((dataSet) => (
-                      <ChoiceLabel
-                        key={dataSet.id}
-                        className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                      >
-                        <span className="grid min-w-0 flex-1 gap-0.5">
-                          <span className="truncate text-sm font-medium text-foreground">
-                            {dataSet.name}
-                          </span>
-                          <span className="truncate text-xs leading-snug text-muted-foreground">
-                            {variableIds.has(dataSet.id) && selectedOptions[dataSet.id]
-                              ? `${selectedOptions[dataSet.id]!.length} of ${dataSet.optionCount} values selected`
-                              : `${dataSet.optionCount} saved ${dataSet.optionCount === 1 ? "value" : "values"}`}
-                          </span>
-                        </span>
-                        <Checkbox
-                          disabled={addingDataSet || createSuite.isPending}
-                          checked={variableIds.has(dataSet.id)}
-                          onCheckedChange={(checked) =>
-                            toggle(setVariableIds, dataSet.id, checked === true)
-                          }
-                        />
-                      </ChoiceLabel>
-                    ))}
+                    {editor.data.dataSets.length ? (
+                      <div className="grid divide-y divide-border rounded-lg border border-border">
+                        {editor.data.dataSets.map((dataSet) => (
+                          <ChoiceLabel
+                            key={dataSet.id}
+                            className="flex w-full min-w-0 cursor-pointer flex-row-reverse items-center justify-end gap-3 px-3 py-2.5 transition-colors outline-none hover:bg-muted/50 has-[:focus-visible]:bg-muted/50"
+                          >
+                            <span className="grid min-w-0 flex-1 gap-0.5">
+                              <span className="truncate text-sm font-medium text-foreground">
+                                {dataSet.name}
+                              </span>
+                              <span className="truncate text-xs leading-snug text-muted-foreground">
+                                {variableIds.has(dataSet.id) && selectedOptions[dataSet.id]
+                                  ? `${selectedOptions[dataSet.id]!.length} of ${dataSet.optionCount} values selected`
+                                  : `${dataSet.optionCount} saved ${dataSet.optionCount === 1 ? "value" : "values"}`}
+                              </span>
+                            </span>
+                            <Checkbox
+                              disabled={addingDataSet || createSuite.isPending}
+                              checked={variableIds.has(dataSet.id)}
+                              onCheckedChange={(checked) =>
+                                toggle(setVariableIds, dataSet.id, checked === true)
+                              }
+                            />
+                          </ChoiceLabel>
+                        ))}
+                      </div>
+                    ) : null}
                     {suiteProfileService.listInputDataSets &&
                     suiteProfileService.addInputDataSet ? (
                       <PlanInputDataSetPicker
@@ -350,6 +342,34 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
               ) : null}
             </div>
           ) : null}
+          <details className="group/more rounded-lg border border-border px-3 py-2">
+            <summary className="cursor-pointer text-sm text-muted-foreground select-none">
+              More options
+            </summary>
+            <div className="pt-3">
+              <Field>
+                <SelectField
+                  label="When screenshots are captured"
+                  value={referenceReviewMode}
+                  options={[
+                    { value: "human", label: "I’ll review every screenshot" },
+                    {
+                      value: "approved-reference",
+                      label: "Auto-approve ones that match a reference",
+                    },
+                  ]}
+                  onValueChange={(value) =>
+                    setReferenceReviewMode(value === "approved-reference" ? value : "human")
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  {referenceReviewMode === "approved-reference"
+                    ? "Screenshots identical to a saved reference are marked correct for you."
+                    : "Each screenshot waits for you to mark it correct or report an issue."}
+                </p>
+              </Field>
+            </div>
+          </details>
           {createSuite.error ? (
             <FieldError>
               {createSuite.error instanceof Error
@@ -357,7 +377,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                 : "Relay could not save this Plan."}
             </FieldError>
           ) : null}
-          <div className="sticky bottom-0 border-t border-border bg-background pt-4 flex flex-wrap items-center justify-end gap-2.5">
+          <div className="sticky bottom-0 -mb-4 border-t border-border bg-popover py-4 flex flex-wrap items-center justify-end gap-2.5">
             <DialogClose
               render={
                 <Button variant="ghost" disabled={createSuite.isPending || addingDataSet}>
@@ -376,7 +396,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
                 addingDataSet
               }
             >
-              {createSuite.isPending ? "Saving…" : "Save Plan"}
+              {createSuite.isPending ? "Creating…" : "Create plan"}
             </Button>
           </div>
         </form>

@@ -110,8 +110,7 @@ export function RunReportActions({
         <DialogContent>
           <DialogTitle>Download walkthrough</DialogTitle>
           <DialogDescription>
-            A captured-screen walkthrough you can open without Relay. Downloaded copies cannot be
-            recalled.
+            A step-by-step walkthrough of this run you can share and open without Relay.
           </DialogDescription>
           {runService.exportWalkthrough ? (
             <RunWalkthroughExport
@@ -128,8 +127,8 @@ export function RunReportActions({
         }}
       >
         <DialogContent>
-          <DialogTitle>Export evidence</DialogTitle>
-          <DialogDescription>Download the saved evidence for this run.</DialogDescription>
+          <DialogTitle>Download all files</DialogTitle>
+          <DialogDescription>Screenshots, video, and logs from this run.</DialogDescription>
           {runService.exportEvidence ? (
             <RunEvidenceExport runId={report.runId} exportEvidence={runService.exportEvidence} />
           ) : null}
@@ -152,7 +151,7 @@ export function RunReportActions({
           variant="outline"
           title="Let an agent look into what went wrong"
         >
-          Investigate
+          Debug with agent
         </Button>
       ) : null}
       {!embedded && report.outcome === "harness-failure" ? (
@@ -184,22 +183,26 @@ export function RunReportActions({
             <DropdownMenuItem
               render={<Link to="/runs/$runId/walkthrough" params={{ runId: report.runId }} />}
             >
-              Explore screens
+              Step-by-step walkthrough
             </DropdownMenuItem>
           ) : null}
           {!embedded && testId ? (
             <DropdownMenuItem
               render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
             >
-              Set up another run
+              Change run settings…
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuItem onClick={() => setRawEvidenceOpen(true)}>Audit</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setRawEvidenceOpen(true)}>
+            Raw event log
+          </DropdownMenuItem>
           {runService.review || runService.compareVisual ? (
-            <DropdownMenuItem onClick={() => setRunDialog("review")}>Review run</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setRunDialog("review")}>
+              Compare with reference…
+            </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem onClick={() => setRunDialog("configuration")}>
-            Configuration
+            Run details
           </DropdownMenuItem>
           {runService.exportWalkthrough ? (
             <DropdownMenuItem onClick={() => setRunDialog("walkthrough")}>
@@ -208,7 +211,7 @@ export function RunReportActions({
           ) : null}
           {runService.exportEvidence ? (
             <DropdownMenuItem onClick={() => setRunDialog("export")}>
-              Export evidence
+              Download all files
             </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>

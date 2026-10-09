@@ -1,18 +1,17 @@
 /** @jsxImportSource react */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, type CSSProperties } from "react";
 import {
   captureReviewQueueFrameKey,
   captureReviewQueueItemKey,
   decidedByReference,
   planCaptureReviewScreenLabel,
+  readableDeviceName,
   type CaptureReviewAction,
-  type PlanCaptureReviewGroup,
   type PlanCaptureReviewItem,
 } from "@relay/protocol";
 import { Button } from "@relay/ui-react/components/button";
-import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@relay/ui-react/components/dialog";
-import { Check, ChevronLeft, ChevronRight, ImageOff, X } from "lucide-react";
+import { Check, CheckCheck, ChevronLeft, ChevronRight, Flag, ImageOff, X } from "lucide-react";
 import { CaptureReviewDecisions } from "../components/capture-review-decisions";
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReportImage } from "../components/report-image";
@@ -79,7 +78,8 @@ function StatusLine({ item }: { item: PlanCaptureReviewItem }) {
 }
 
 function deviceOf(item: PlanCaptureReviewItem): string | undefined {
-  return item.device || item.configuration?.app || item.configuration?.browser;
+  const device = item.device || item.configuration?.app || item.configuration?.browser;
+  return device ? readableDeviceName(device) : undefined;
 }
 
 function accountOf(item: PlanCaptureReviewItem): string | undefined {
@@ -107,156 +107,197 @@ function frameFor(item: PlanCaptureReviewItem, frames: readonly ReportEvidenceIt
   return frames.find((frame) => frame.id === id);
 }
 
-/** Gallery grouped by step (or configuration), with selection and a focused viewer. */
-export function PlanScreenshotGallery({
-  groups,
-  groupBy,
+type JourneyRow = { key: string; label: string; cells: Map<string, PlanCaptureReviewItem> };
+type JourneyColumn = { key: string; label: string };
+
+/** Rows are cases, columns are steps in the order the Test runs them. */
+export function journeyLayout(
+  items: readonly PlanCaptureReviewItem[],
+  caseLabel: (item: PlanCaptureReviewItem, index: number) => string,
+): { rows: JourneyRow[]; columns: JourneyColumn[]; ordered: PlanCaptureReviewItem[] } {
+  const rows = new Map<string, JourneyRow>();
+  const columns = new Map<string, JourneyColumn & { rank: number; seen: number }>();
+  const occurrences = new Map<string, number>();
+  for (const item of items) {
+    const rowKey = item.runId ?? item.executionCaseId ?? "case";
+    let row = rows.get(rowKey);
+    if (!row) {
+      row = { key: rowKey, label: caseLabel(item, rows.size), cells: new Map() };
+      rows.set(rowKey, row);
+    }
+    const label = stepLabel(item);
+    const occurrence = occurrences.get(`${rowKey}|${label}`) ?? 0;
+    occurrences.set(`${rowKey}|${label}`, occurrence + 1);
+    const columnKey = `${label}#${occurrence}`;
+    const position = row.cells.size;
+    const existing = columns.get(columnKey);
+    if (!existing)
+      columns.set(columnKey, { key: columnKey, label, rank: position, seen: columns.size });
+    else existing.rank = Math.min(existing.rank, position);
+    row.cells.set(columnKey, item);
+  }
+  const orderedColumns = [...columns.values()].sort(
+    (left, right) => left.rank - right.rank || left.seen - right.seen,
+  );
+  const orderedRows = [...rows.values()];
+  return {
+    rows: orderedRows,
+    columns: orderedColumns,
+    ordered: orderedRows.flatMap((row) =>
+      orderedColumns.flatMap((column) => {
+        const cell = row.cells.get(column.key);
+        return cell ? [cell] : [];
+      }),
+    ),
+  };
+}
+
+function DecisionBadge({ item }: { item: PlanCaptureReviewItem }) {
+  const status = screenshotStatus(item);
+  // Uncaptured cells already read as empty; a flag would claim someone reported them.
+  if (!isReviewable(item) || item.status === "pending") return null;
+  const Icon = status.tone === "good" ? Check : Flag;
+  return (
+    <span
+      className={`absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full shadow-sm ring-2 ring-background ${status.tone === "good" ? "bg-success text-white" : "bg-destructive text-white"}`}
+      title={status.label}
+    >
+      <Icon className="size-3" strokeWidth={3} aria-hidden="true" />
+    </span>
+  );
+}
+
+/** Every screenshot on one screen: read a row to follow a case, a column to compare a step. */
+export function PlanScreenshotJourney({
+  rows,
+  columns,
   frames,
   busy,
-  savedKeys,
   onReview,
   onOpen,
 }: {
-  /** Decisions the server acknowledged; only these leave the selection. */
-  savedKeys?: readonly string[];
-  groups: readonly PlanCaptureReviewGroup[];
-  groupBy: "checkpoint" | "configuration";
+  rows: readonly JourneyRow[];
+  columns: readonly JourneyColumn[];
   frames: readonly ReportEvidenceItem[];
   busy: boolean;
   onReview?: ScreenshotReviewHandler;
   onOpen(item: PlanCaptureReviewItem): void;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const items = useMemo(() => groups.flatMap((group) => group.items), [groups]);
-  // Drop selections that left the visible set (filtered out or decided elsewhere).
-  useEffect(() => {
-    const visible = new Set(items.filter(isReviewable).map(screenshotKey));
-    setSelected((current) => {
-      const next = new Set([...current].filter((key) => visible.has(key)));
-      return next.size === current.size ? current : next;
-    });
-  }, [items]);
-  useEffect(() => {
-    if (!savedKeys?.length) return;
-    setSelected((current) => new Set([...current].filter((key) => !savedKeys.includes(key))));
-  }, [savedKeys]);
-  const selectedItems = items.filter((item) => selected.has(screenshotKey(item)));
-  const selecting = selected.size > 0;
-  const toggle = (key: string, on: boolean) =>
-    setSelected((current) => {
-      const next = new Set(current);
-      if (on) next.add(key);
-      else next.delete(key);
-      return next;
-    });
+  const columnCount = { "--journey-steps": columns.length } as CSSProperties;
   return (
-    <div className="grid gap-8">
-      {groups.map((group) => {
-        const pending = group.items.filter(needsReview);
-        return (
-          <section key={group.id} aria-label={group.label} className="grid gap-3">
-            <header className="flex min-h-8 flex-wrap items-center justify-between gap-2">
-              <h3 className="flex items-baseline gap-2 text-sm font-semibold">
-                {group.label}
-                <span className="text-xs font-normal tabular-nums text-muted-foreground">
-                  {group.items.length}
+    <div className="-mx-1 overflow-x-auto px-1 pb-2">
+      <div
+        role="table"
+        aria-label="Screenshots by case and step"
+        className="grid w-max min-w-full grid-cols-[minmax(7rem,10rem)_repeat(var(--journey-steps),minmax(6rem,8.5rem))] gap-x-3 gap-y-5"
+        style={columnCount}
+      >
+        <div role="row" className="contents">
+          <div role="columnheader" className="self-end text-xs text-muted-foreground">
+            Case
+          </div>
+          {columns.map((column, index) => {
+            const pending = rows.flatMap((row) => {
+              const cell = row.cells.get(column.key);
+              return cell && needsReview(cell) ? [cell] : [];
+            });
+            return (
+              <div
+                key={column.key}
+                role="columnheader"
+                className="group/col flex min-w-0 items-start gap-1 self-end text-xs"
+              >
+                <span className="mt-px shrink-0 tabular-nums text-muted-foreground">
+                  {index + 1}
                 </span>
-              </h3>
-              {onReview && pending.length > 1 ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => void onReview("accept", pending)}
+                <span className="line-clamp-2 min-w-0 flex-1 font-medium" title={column.label}>
+                  {column.label}
+                </span>
+                {onReview && pending.length > 1 ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="-mt-0.5 shrink-0"
+                    title={`Mark this step correct for all ${pending.length} cases`}
+                    aria-label={`Mark ${column.label} correct for all ${pending.length} cases`}
+                    disabled={busy}
+                    onClick={() => void onReview("accept", pending)}
+                  >
+                    <CheckCheck aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        {rows.map((row) => {
+          const cells = [...row.cells.values()];
+          const left = cells.filter(needsReview).length;
+          const problems = cells.filter(
+            (cell) => isReviewable(cell) && screenshotStatus(cell).tone === "bad",
+          ).length;
+          const uncaptured = cells.filter((cell) => !isReviewable(cell)).length;
+          return (
+            <div key={row.key} role="row" className="contents">
+              <div role="rowheader" className="grid content-start gap-0.5 pt-1 text-sm">
+                <span className="line-clamp-3 font-medium" title={row.label}>
+                  {row.label}
+                </span>
+                <span
+                  className={`text-xs ${problems ? "text-destructive" : "text-muted-foreground"}`}
                 >
-                  <Check aria-hidden="true" />
-                  Mark {pending.length} as correct
-                </Button>
-              ) : null}
-            </header>
-            <ul
-              className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-4 gap-y-5 p-0"
-              aria-label={`${group.label} screenshots`}
-            >
-              {group.items.map((item) => {
-                const key = screenshotKey(item);
+                  {problems
+                    ? `${problems} ${problems === 1 ? "problem" : "problems"}`
+                    : left
+                      ? `${left} to review`
+                      : uncaptured === cells.length
+                        ? "Nothing captured"
+                        : uncaptured
+                          ? `${uncaptured} not captured`
+                          : "All reviewed"}
+                </span>
+              </div>
+              {columns.map((column) => {
+                const item = row.cells.get(column.key);
+                if (!item) return <span key={column.key} role="cell" />;
                 const frame = frameFor(item, frames);
-                const checked = selected.has(key);
-                const secondary =
-                  groupBy === "checkpoint" ? configurationLabel(item, items) : stepLabel(item);
+                const status = screenshotStatus(item);
+                const empty = !frame?.media;
+                const ring = !isReviewable(item)
+                  ? "border border-dashed border-border ring-0 bg-transparent hover:border-foreground/30"
+                  : status.tone === "bad"
+                    ? "ring-1 ring-destructive/70"
+                    : "ring-1 ring-border hover:ring-foreground/30";
                 return (
-                  <li key={key} className="group/shot relative min-w-0">
+                  <div key={column.key} role="cell" className="relative min-w-0">
                     <button
                       type="button"
                       onClick={() => onOpen(item)}
-                      aria-label={`Open ${stepLabel(item)}${secondary && groupBy === "checkpoint" ? ` · ${secondary}` : ""}`}
-                      className={`flex aspect-[4/5] w-full items-center justify-center overflow-hidden rounded-xl bg-muted/40 ring-1 transition-[box-shadow,background-color] duration-150 outline-none hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring ${checked ? "ring-2 ring-primary" : "ring-border hover:ring-foreground/25"}`}
+                      aria-label={`${column.label} · ${row.label} · ${status.label}`}
+                      title={item.note ? `${status.label}: ${item.note}` : status.label}
+                      className={`block w-full overflow-hidden rounded-lg bg-muted/40 transition-[box-shadow,transform,border-color] duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring ${empty ? "" : "hover:-translate-y-0.5 hover:shadow-md motion-reduce:hover:translate-y-0"} ${ring}`}
                     >
                       {frame?.media ? (
                         <ReportImage
                           media={frame.media}
                           alt=""
-                          className="max-h-full max-w-full object-contain"
+                          className="block h-auto w-full object-contain"
                         />
                       ) : (
-                        <span className="grid justify-items-center gap-2 p-3 text-center text-xs text-muted-foreground">
-                          <ImageOff className="size-5" aria-hidden="true" />
-                          {screenshotStatus(item).label}
+                        <span className="flex aspect-[9/16] flex-col items-center justify-center gap-1.5 p-2 text-center text-xs text-muted-foreground/70">
+                          <ImageOff className="size-4" aria-hidden="true" />
+                          {status.label}
                         </span>
                       )}
                     </button>
-                    {onReview && isReviewable(item) ? (
-                      <span
-                        className={`absolute top-2 left-2 flex size-7 items-center justify-center rounded-md bg-background/85 shadow-sm backdrop-blur transition-opacity duration-150 ${selecting || checked ? "opacity-100" : "opacity-0 group-hover/shot:opacity-100 has-focus-visible:opacity-100"}`}
-                      >
-                        <Checkbox
-                          aria-label={`Select ${stepLabel(item)}${secondary ? ` · ${secondary}` : ""}`}
-                          checked={checked}
-                          disabled={busy}
-                          onCheckedChange={(on) => toggle(key, on)}
-                        />
-                      </span>
-                    ) : null}
-                    <div className="mt-2 grid gap-0.5 px-0.5 text-xs">
-                      {secondary ? (
-                        <span className="truncate font-medium text-foreground">{secondary}</span>
-                      ) : null}
-                      <span className="text-muted-foreground">
-                        <StatusLine item={item} />
-                      </span>
-                      {item.note ? (
-                        <span className="line-clamp-2 text-muted-foreground">“{item.note}”</span>
-                      ) : null}
-                    </div>
-                  </li>
+                    <DecisionBadge item={item} />
+                  </div>
                 );
               })}
-            </ul>
-          </section>
-        );
-      })}
-      {onReview && selecting ? (
-        <div
-          role="region"
-          aria-label="Selected screenshots"
-          className="sticky bottom-4 z-20 mx-auto flex w-full max-w-2xl items-center gap-2 rounded-xl bg-popover p-2 pl-3 shadow-lg ring-1 ring-foreground/10"
-        >
-          <CaptureReviewDecisions
-            busy={busy}
-            bulkCount={selectedItems.length}
-            onReview={(action, note) => onReview(action, selectedItems, note)}
-          />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Clear selection"
-            disabled={busy}
-            onClick={() => setSelected(new Set())}
-          >
-            <X aria-hidden="true" />
-          </Button>
-        </div>
-      ) : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -271,7 +312,9 @@ export function PlanScreenshotViewer({
   onNavigate,
   onClose,
   onInspectProblems,
+  caseLabel,
 }: {
+  caseLabel(item: PlanCaptureReviewItem): string;
   items: readonly PlanCaptureReviewItem[];
   openKey?: string;
   frames: readonly ReportEvidenceItem[];
@@ -332,7 +375,7 @@ export function PlanScreenshotViewer({
     return ok;
   }
 
-  const secondary = item ? configurationLabel(item, items) : "";
+  const secondary = item ? caseLabel(item) : "";
   return (
     <Dialog open={Boolean(item)} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       <DialogContent
@@ -347,7 +390,7 @@ export function PlanScreenshotViewer({
                   key={frame.id}
                   frame={frame}
                   onError={() => undefined}
-                  className="max-h-[calc(min(92dvh,56rem)-3rem)] w-auto max-w-full rounded-lg object-contain shadow-sm"
+                  className="max-h-full w-auto max-w-full rounded-lg object-contain shadow-sm"
                 />
               ) : (
                 <div className="grid max-w-xs justify-items-center gap-3 text-center text-sm text-muted-foreground">
@@ -374,7 +417,7 @@ export function PlanScreenshotViewer({
               <Button
                 variant="secondary"
                 size="icon"
-                className="absolute top-1/2 left-3 -translate-y-1/2 rounded-full shadow-sm"
+                className="absolute top-1/2 left-3 -translate-y-1/2"
                 aria-label="Previous screenshot"
                 disabled={!previous}
                 onClick={() => previous && onNavigate(previous)}
@@ -384,7 +427,7 @@ export function PlanScreenshotViewer({
               <Button
                 variant="secondary"
                 size="icon"
-                className="absolute top-1/2 right-3 -translate-y-1/2 rounded-full shadow-sm"
+                className="absolute top-1/2 right-3 -translate-y-1/2"
                 aria-label="Next screenshot"
                 disabled={!next}
                 onClick={() => next && onNavigate(next)}
@@ -462,7 +505,7 @@ export function PlanScreenshotViewer({
 
 function Kbd({ children }: { children: string }) {
   return (
-    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border bg-muted px-1 font-sans text-[0.6875rem] text-foreground">
+    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border bg-muted px-1 font-sans text-xs text-foreground">
       {children}
     </kbd>
   );

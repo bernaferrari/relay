@@ -72,7 +72,7 @@ export function TestLastRunLine({
               ...(typeof search.app === "string" ? { app: search.app } : {}),
             }}
           >
-            See what happened
+            Open report
           </Link>
         </>
       ) : null}

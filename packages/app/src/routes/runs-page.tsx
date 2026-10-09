@@ -149,10 +149,14 @@ export function RunsPage() {
             <Button
               nativeButton={false}
               size="sm"
+              variant="outline"
               render={<Link to="/review" search={app ? { app } : {}} />}
             >
               <ScanEye aria-hidden="true" />
-              Review screenshots ({formatReviewCount(reviewCount)})
+              Review screenshots
+              <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground">
+                {formatReviewCount(reviewCount)}
+              </span>
             </Button>
           ) : null
         }
@@ -468,8 +472,8 @@ function relativeTime(value: number): string {
   if (elapsed < 60_000) return "Just now";
   if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
   if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
-  if (elapsed < 604_800_000) return `${Math.floor(elapsed / 86_400_000)}d ago`;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value);
+  // Rows sit under a day heading, so older rows only need the time of day.
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(value);
 }
 
 function runTime(run: ProductRunSummary): number {

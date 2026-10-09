@@ -57,7 +57,10 @@ export function IOSStartingAppChoice({
     },
   });
   return (
-    <section className="grid gap-3" aria-label="Starting app">
+    <section className="grid gap-2 border-t border-border pt-4" aria-label="Starting app">
+      <p className="text-xs text-muted-foreground">
+        Open an app on the device first, or record from whatever is on screen.
+      </p>
       <IOSAppLaunchForm
         deviceName="this device"
         identifier={value}
@@ -88,6 +91,7 @@ export function IOSStartingAppChoice({
       <Button
         type="button"
         variant="ghost"
+        size="sm"
         className="w-fit"
         disabled={launch.isPending || admission?.busy}
         onClick={() => {

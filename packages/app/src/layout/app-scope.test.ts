@@ -175,7 +175,7 @@ describe("App scope", () => {
       "Loading app",
     );
     expect(appScopeDisplayName({ kind: "single", appId: "missing-app" }, [], true)).toBe(
-      "Unknown app",
+      "App not found",
     );
     expect(
       appScopeDisplayName(

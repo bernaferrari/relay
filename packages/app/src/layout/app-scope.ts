@@ -36,12 +36,13 @@ export function appScopeDisplayName(
 ): string {
   if (scope.kind === "single") {
     if (!appsReady) return "Loading app";
-    return apps?.find((app) => app.id === scope.appId)?.name ?? "Unknown app";
+    return apps?.find((app) => app.id === scope.appId)?.name ?? "App not found";
   }
   if (scope.kind === "multiple") return "Multiple apps";
   if (scope.kind === "workspace") return "All apps";
   if (scope.kind === "loading") return "Loading app";
-  if (scope.kind === "unavailable") return "Unknown app";
+  // The page's app couldn't be resolved; don't alarm people with "Unknown".
+  if (scope.kind === "unavailable") return "All apps";
   return "All apps";
 }
 

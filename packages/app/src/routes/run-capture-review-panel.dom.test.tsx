@@ -70,7 +70,7 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).toContain("Report issue");
     expect(host.querySelector('[aria-label="More review options"]')).not.toBeNull();
     expect(host.textContent).not.toContain("Use as baseline");
-    expect(host.textContent).not.toContain("Approve new baseline");
+    expect(host.textContent).not.toContain("Use as new reference");
   });
 
   it("shows the stored issue note on the screenshot", () => {
@@ -162,7 +162,7 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).toContain("Show review overlays");
     expect(host.textContent).not.toContain("Show comparison masks");
     expect(host.textContent).not.toContain("Use as baseline");
-    expect(host.textContent).not.toContain("Approve new baseline");
+    expect(host.textContent).not.toContain("Use as new reference");
   });
 
   it("opens inspection from the gallery without duplicating its full image", () => {
@@ -235,7 +235,7 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).toContain("Report issue");
     expect(host.querySelector('[aria-label="More review options"]')).not.toBeNull();
     expect(host.textContent).not.toContain("Use as baseline");
-    expect(host.textContent).not.toContain("Approve new baseline");
+    expect(host.textContent).not.toContain("Use as new reference");
 
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Inspect");
   });

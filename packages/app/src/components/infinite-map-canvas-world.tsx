@@ -365,11 +365,13 @@ export function MapCanvasWorld({
               } as CSSProperties
             }
           >
-            {returns.map((path) => (
+            {/* Rows are tightly packed; more than one stacked chip runs into the
+                next row's title. The inspector lists every return. */}
+            {returns.slice(0, 1).map((path) => (
               <button
                 key={path.id}
                 type="button"
-                aria-label={`Inspect ${path.label} to ${path.toTitle ?? "previous screen"}`}
+                aria-label={`Inspect ${path.label} to ${path.toTitle ?? "previous screen"}${returns.length > 1 ? ` and ${returns.length - 1} more` : ""}`}
                 aria-pressed={selectedPathId === path.id}
                 className="flex max-w-full items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent"
                 onClick={() => {
@@ -385,6 +387,9 @@ export function MapCanvasWorld({
                       ? `Back to ${path.toTitle}`
                       : path.label}
                 </span>
+                {returns.length > 1 ? (
+                  <span className="shrink-0 tabular-nums opacity-70">+{returns.length - 1}</span>
+                ) : null}
               </button>
             ))}
             {unexplored ? (

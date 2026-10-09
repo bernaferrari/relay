@@ -5,7 +5,7 @@
  * the report façade can remain small without changing its product vocabulary.
  */
 import type { EvidenceChannel } from "@relay/protocol";
-import { isCaptureReviewLeftoverCaption } from "@relay/protocol";
+import { isCaptureReviewLeftoverCaption, readableDeviceName } from "@relay/protocol";
 import type { ProductRunReportOverview } from "./run-report-model";
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -304,7 +304,7 @@ export function humanTargetName(value: unknown): string | undefined {
   const name = text(value);
   if (!name) return undefined;
   if (/^emulator-\d+$/iu.test(name) || /^[0-9a-f]{24,}$/iu.test(name)) return undefined;
-  return name;
+  return readableDeviceName(name);
 }
 export function sourceTestId(rawRun: unknown): string | undefined {
   return sourceTestIdentity(rawRun).testId;

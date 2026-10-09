@@ -645,8 +645,8 @@ describe("App routes", () => {
     for (const hidden of ["authfx:", "browser-private", "fixture", "Lane", "lane"]) {
       expect(document.body.textContent).not.toContain(hidden);
     }
-    const newTest = [...card!.querySelectorAll("a")].find(
-      (link) => link.textContent === "New test as this account",
+    const newTest = card!.querySelector<HTMLAnchorElement>(
+      'a[aria-label="New test as this account"]',
     );
     expect(newTest?.getAttribute("href")).toContain("/tests/new?");
     expect(newTest?.getAttribute("href")).toContain("account=fixture-1");
@@ -714,17 +714,17 @@ describe("App routes", () => {
       { targetId: "browser-private", name: "Staging buyer", fixtureId: "fixture-1" },
     ]);
 
-    await click(button("Check"));
+    await menuItem("More actions for Staging buyer", "Check sign-in now");
     expect(probed).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
 
-    await click(button("Revoke"));
+    await menuItem("More actions for Staging buyer", "Revoke…");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "Tests can no longer run as this account",
     );
     await click(button("Revoke account", document.querySelector('[role="dialog"]')!));
     expect(revoked).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
 
-    await click(button("Open signed in"));
+    await menuItem("More actions for Staging buyer", "Open signed in");
     expect(openedSpaces).toEqual([
       {
         spaceId: "browser-private",
@@ -902,6 +902,17 @@ async function tapAccountPreview(canvas: HTMLCanvasElement) {
     canvas.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientX: 80, clientY: 100 }));
   });
   await settle();
+}
+
+async function menuItem(trigger: string, label: string) {
+  const opener = document.querySelector<HTMLElement>(`button[aria-label="${trigger}"]`);
+  if (!opener) throw new TypeError(`Menu not found: ${trigger}`);
+  await click(opener);
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  if (!item) throw new TypeError(`Menu item not found: ${label}`);
+  await click(item);
 }
 
 async function click(target: HTMLElement) {

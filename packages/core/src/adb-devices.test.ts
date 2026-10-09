@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAdbDevices } from "./adb-devices.js";
+import { marketingNameFromProperties, parseAdbDevices } from "./adb-devices.js";
 
 test("keeps unauthorized physical Android devices visible", () => {
   assert.deepEqual(
@@ -39,4 +39,18 @@ emulator-5554 device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 transpo
       },
     ],
   );
+});
+
+test("names Samsung phones by model, not part number", () => {
+  assert.equal(
+    parseAdbDevices(`List of devices attached
+RQCY104BG8X device usb:1-1 product:pa1qxxx model:SM_S931B device:pa1q transport_id:3
+`)[0]?.name,
+    "Galaxy S25",
+  );
+});
+
+test("takes the first marketing name the device reports", () => {
+  assert.equal(marketingNameFromProperties("\nGalaxy S25\n\n"), "Galaxy S25");
+  assert.equal(marketingNameFromProperties("\n\n"), undefined);
 });
