@@ -5,6 +5,7 @@ import type {
   AppMapTestBindingCandidate,
   AppMapTestStepPlacement,
 } from "@relay/protocol";
+import { stepRunsFromText } from "@relay/protocol";
 import { BindingRepair } from "./test-editor-binding";
 import { unrecordedProductName } from "@relay/protocol";
 import { Alert, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
@@ -374,6 +375,7 @@ export function stepReadinessLabel(
   if (options?.originEvidenceMissing) {
     return `Needs origin evidence · ${options.originEvidenceMissing} has no recorded variant`;
   }
+  if (stepRunsFromText(step)) return "Ready";
   const unrecordedName = Boolean(
     options?.productName && unrecordedProductName(options.productName),
   );
@@ -393,7 +395,7 @@ export function stepReadinessLabel(
 }
 
 export function stepKindLabel(step: AppMapScenarioTestStep): string {
-  if (step.kind === "validation") return "Checkpoint";
+  if (step.kind === "validation") return "Check";
   if (step.kind === "instruction") return "Action";
   if (step.kind === "manual") return "Human check";
   if (step.kind === "extraction") return "Remember value";

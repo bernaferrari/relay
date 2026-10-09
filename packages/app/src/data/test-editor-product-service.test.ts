@@ -379,6 +379,11 @@ describe("manual test drafts", () => {
     expect(created.test.name).toBe("Video generation");
     expect(created.test.steps.map((step) => step.intent)).toEqual(["Open Imagine", "Choose 720p"]);
     expect(created.test.steps.every((step) => step.binding.status === "unresolved")).toBe(true);
+    expect(
+      created.test.steps.every(
+        (step) => step.binding.status === "unresolved" && step.binding.fromText === true,
+      ),
+    ).toBe(true);
     expect(clientRef.current.invoke).toHaveBeenLastCalledWith(
       "app-map.test.save",
       expect.objectContaining({
@@ -388,6 +393,31 @@ describe("manual test drafts", () => {
         eventId: "create-manual",
       }),
     );
+  });
+  it("saves drafted Actions and Checks with the start address", async () => {
+    clientRef.current.invoke.mockReset();
+    const current = map(3);
+    clientRef.current.invoke
+      .mockResolvedValueOnce({ appMap: current })
+      .mockImplementationOnce(async (_id, input) => ({
+        appMap: {
+          ...current,
+          revision: 4,
+          tests: { ...current.tests, [input.testId]: { ...test, ...input.test, id: input.testId } },
+        },
+      }));
+    const created = await createTestEditorProductService(platform).createDraft!({
+      appMapId: "store",
+      testId: "described",
+      name: "API keys",
+      startUrl: "https://shop.example/",
+      steps: [
+        { kind: "instruction", intent: "Create an API key" },
+        { kind: "validation", intent: "The new key is listed" },
+      ],
+    });
+    expect(created.test.startUrl).toBe("https://shop.example/");
+    expect(created.test.steps.map((step) => step.kind)).toEqual(["instruction", "validation"]);
   });
   it("edits only the addressed recorded text through a revisioned connection patch", async () => {
     const current = map(10);

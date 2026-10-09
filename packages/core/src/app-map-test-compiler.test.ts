@@ -3303,14 +3303,14 @@ test("plain-English actions and checks compile to model-driven steps", () => {
       id: "navigate",
       kind: "instruction",
       intent: "Open the cart",
-      binding: { status: "unresolved", reason: "Not recorded" },
+      binding: { status: "unresolved", reason: "Not recorded", fromText: true },
     },
     {
       id: "check",
       kind: "validation",
       intent: "The cart shows one item",
       capture: true,
-      binding: { status: "unresolved", reason: "Not recorded" },
+      binding: { status: "unresolved", reason: "Not recorded", fromText: true },
     },
   ];
   const compiled = compileAppMapTest(fixture(), work);
@@ -3333,6 +3333,28 @@ test("plain-English actions and checks compile to model-driven steps", () => {
   );
 });
 
+test("unresolved intent fails closed with a stable step-specific diagnostic", () => {
+  const work = scenario();
+  work.steps[0] = {
+    id: "navigate",
+    kind: "instruction",
+    intent: "Open the cart",
+    binding: {
+      status: "unresolved",
+      reason: "Record or choose the connection that opens the cart",
+      candidates: [{ kind: "connection", id: "open-cart", label: "Open cart" }],
+    },
+  };
+  assert.throws(
+    () => compileAppMapTest(fixture(), work),
+    (error) =>
+      error instanceof AppMapTestCompileError &&
+      error.code === "unresolved-step" &&
+      error.stepId === "navigate" &&
+      /Record or choose/.test(error.message),
+  );
+});
+
 test("unresolved steps other than actions and checks fail closed", () => {
   const work = scenario();
   work.steps = [
@@ -3340,7 +3362,7 @@ test("unresolved steps other than actions and checks fail closed", () => {
       id: "remember",
       kind: "extraction",
       intent: "Remember the total",
-      binding: { status: "unresolved", reason: "Choose the total element" },
+      binding: { status: "unresolved", reason: "Choose the total element", fromText: true },
     },
   ];
   assert.throws(

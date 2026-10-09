@@ -591,6 +591,14 @@ export type AppMapOperationMap = {
       matches: { connectionId: string; label: string; fromScreenId: string; toScreenId?: string }[];
     };
   };
+  "app-map.test.draft": {
+    input: { appMapId: string; goal: string; startUrl?: string };
+    output: {
+      name: string;
+      steps: { kind: "instruction" | "validation"; intent: string }[];
+      source: "model" | "lines";
+    };
+  };
   "app-map.test.run": {
     input: {
       appMapId: string;

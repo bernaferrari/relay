@@ -3,7 +3,8 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { Label } from "@relay/ui-react/components/label";
-import { ArrowRight, Globe, LoaderCircle, Smartphone } from "lucide-react";
+import { Textarea } from "@relay/ui-react/components/textarea";
+import { ArrowRight, Globe, LoaderCircle, Smartphone, Sparkles } from "lucide-react";
 import type { ProductBrowserSpace } from "../data/browser-spaces-product-service";
 import { SelectField } from "../components/filter-select";
 
@@ -49,15 +50,17 @@ export function recentWebsites(spaces: readonly ProductBrowserSpace[], limit = 6
   return result;
 }
 
-/**
- * The first thing a new Test asks: what to test. A website address is enough;
- * Relay opens a browser there, files the Test under that site, and starts
- * recording. Devices stay one click away.
- */
 /** A saved login people can record and run as. */
 export type WebsiteAccount = { reference: string; name: string; targetId: string };
 
+/**
+ * The first thing a new Test asks: what should work. A sentence plus a website
+ * is enough; Relay drafts plain-English steps that run without recording.
+ * Leaving the description empty records the website instead. Devices stay one
+ * click away.
+ */
 export function NewTestQuickStart({
+  onDescribe,
   recent,
   progress,
   error,
@@ -90,9 +93,13 @@ export function NewTestQuickStart({
   progress?: string;
   error?: string;
   onStart(url: string, account?: WebsiteAccount): void;
+  /** Draft plain-English steps from a description instead of recording. */
+  onDescribe?(goal: string, url: string, account?: WebsiteAccount): void;
   onUseDevice?(): void;
   manualAction?: ReactNode;
 }) {
+  const [goal, setGoal] = useState("");
+  const describing = Boolean(onDescribe && goal.trim());
   const [localValue, setValue] = useState(initialAddress ?? "");
   const value = controlledAddress ?? localValue;
   function changeAddress(value: string) {
@@ -110,18 +117,45 @@ export function NewTestQuickStart({
   const missingAccount = Boolean(selectedReference && !account);
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (address && !busy && setupStatus === "ready" && !missingAccount) onStart(address, account);
+    if (!address || busy || setupStatus !== "ready" || missingAccount) return;
+    if (describing) onDescribe!(goal.trim(), address, account);
+    else onStart(address, account);
   }
   return (
     <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-12">
       <div className="grid w-full max-w-lg gap-6">
         <div className="grid gap-2">
-          <h2 className="text-2xl font-semibold tracking-tight">Record a website</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            {onDescribe ? "What should work?" : "Record a website"}
+          </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Open your website here. Your clicks and typing become test steps.
+            {onDescribe
+              ? "Describe it in a sentence, or write one step per line. Relay writes the steps and runs them in a real browser."
+              : "Open your website here. Your clicks and typing become test steps."}
           </p>
         </div>
         <form className="grid gap-3" onSubmit={submit} aria-label="Start a test">
+          {onDescribe ? (
+            <>
+              <Label htmlFor="new-test-goal">What should work</Label>
+              <Textarea
+                id="new-test-goal"
+                className="min-h-24 text-base"
+                autoFocus
+                rows={3}
+                value={goal}
+                disabled={busy}
+                placeholder="Creating an API key shows it in the list"
+                onChange={(event) => setGoal(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+              />
+            </>
+          ) : null}
           <Label htmlFor="new-test-website">Website address</Label>
           <div className="flex flex-wrap gap-2">
             <div className="relative flex-1">
@@ -139,7 +173,7 @@ export function NewTestQuickStart({
                 autoCorrect="off"
                 spellCheck={false}
                 autoComplete="url"
-                autoFocus
+                autoFocus={!onDescribe}
                 placeholder="example.com"
                 value={value}
                 disabled={busy}
@@ -157,10 +191,12 @@ export function NewTestQuickStart({
                   className="animate-spin motion-reduce:animate-none"
                   aria-hidden="true"
                 />
+              ) : describing ? (
+                <Sparkles aria-hidden="true" />
               ) : (
                 <ArrowRight aria-hidden="true" />
               )}
-              {busy ? "Starting…" : "Start recording"}
+              {busy ? "Starting…" : describing ? "Create test" : "Start recording"}
             </Button>
           </div>
           {setupStatus === "unavailable" ? (
@@ -230,14 +266,16 @@ export function NewTestQuickStart({
             </div>
           </div>
         ) : null}
-        <div className="flex flex-wrap justify-center gap-2 border-t border-border pt-4 text-center">
-          {manualAction}
-          {onUseDevice ? (
-            <Button type="button" variant="ghost" size="sm" onClick={onUseDevice} disabled={busy}>
-              <Smartphone aria-hidden="true" /> Test a phone or tablet instead
-            </Button>
-          ) : null}
-        </div>
+        {manualAction || onUseDevice ? (
+          <div className="flex flex-wrap justify-center gap-2 border-t border-border pt-4 text-center">
+            {manualAction}
+            {onUseDevice ? (
+              <Button type="button" variant="ghost" size="sm" onClick={onUseDevice} disabled={busy}>
+                <Smartphone aria-hidden="true" /> Test a phone or tablet instead
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

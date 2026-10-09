@@ -813,6 +813,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.test.propose",
       "app-map.test.compile",
       "app-map.test.from-intent",
+      "app-map.test.draft",
       "app-map.test.run",
       "app-map.combine.preflight",
       "app-map.combine.save",

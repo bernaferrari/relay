@@ -298,6 +298,7 @@ const unresolvedTestBinding = z
     status: z.literal("unresolved"),
     reason: text("Why this Test step is not bound"),
     candidates: z.array(testBindingCandidate).max(12).optional(),
+    fromText: z.literal(true).optional(),
   })
   .strict()
   .superRefine((binding, context) => {

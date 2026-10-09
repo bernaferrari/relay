@@ -780,7 +780,27 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     if (!Array.isArray(output.matches)) fail("intent walk matches", "must be an array");
   });
 
+  const appMapTestDraftInputParser = objectParser<AppMapOperationInput<"app-map.test.draft">>(
+    "test draft",
+    (input) => {
+      string(input.appMapId, "test draft appMapId");
+      string(input.goal, "test draft goal");
+      if (input.startUrl !== undefined) string(input.startUrl, "test draft startUrl");
+    },
+  );
+
+  const appMapTestDraftOutputParser = objectParser<AppMapOperationOutput<"app-map.test.draft">>(
+    "test draft response",
+    (output) => {
+      string(output.name, "test draft name");
+      string(output.source, "test draft source");
+      if (!Array.isArray(output.steps)) fail("test draft steps", "must be an array");
+    },
+  );
+
   return {
+    appMapTestDraftInputParser,
+    appMapTestDraftOutputParser,
     appMapScreenRefreshPrepareParser,
     appMapScreenRefreshApplyParser,
     appMapScreenRefreshPrepareOutputParser,

@@ -1,4 +1,5 @@
 import type { AppMap, AppMapScenarioTest, AppMapScenarioTestStep } from "@relay/protocol";
+import { stepNeedsSetup } from "@relay/protocol";
 import { unrecordedProductName } from "@relay/protocol";
 import { frozenRawAccessibilityTargetProfiles } from "@relay/core";
 import {
@@ -26,7 +27,7 @@ type Discovery = {
 
 function firstUnbound(steps: readonly AppMapScenarioTestStep[]): string | undefined {
   for (const step of steps) {
-    if (step.binding.status === "unresolved")
+    if (step.binding.status === "unresolved" && stepNeedsSetup(step))
       return step.binding.reason || "Record or bind the action.";
     if (step.kind === "decision") {
       const reason = firstUnbound(step.thenSteps) ?? firstUnbound(step.elseSteps ?? []);

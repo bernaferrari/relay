@@ -787,7 +787,8 @@ describe("Test editor", () => {
     expect(added.step.kind).toBe("instruction");
     expect(added.step.binding).toEqual({
       status: "unresolved",
-      reason: "Choose a saved action for this step before running the test.",
+      reason: "Runs from its description. Record it to make it faster and exact.",
+      fromText: true,
     });
     expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
       "Describe the next action",

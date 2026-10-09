@@ -8,6 +8,7 @@ import type {
   AppMapTestStepProvenance,
   RecipeStep,
 } from "@relay/protocol";
+import { stepRunsFromText } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
 import {
   compileAppMapConnection,
@@ -359,9 +360,13 @@ export function compileAppMapScenarioTest(
         continue;
       }
       if (step.binding.status === "unresolved") {
-        // Plain-English actions and checks run through the model-driven `act`
-        // step and the visual judge. Other unresolved kinds still need setup.
-        if (step.kind !== "instruction" && step.kind !== "validation") {
+        // Plain-English actions and checks the author opted in to run through
+        // the model-driven `act` step and the visual judge. Every other
+        // unresolved step still fails closed until it is recorded or bound.
+        if (
+          (step.kind !== "instruction" && step.kind !== "validation") ||
+          !stepRunsFromText(step)
+        ) {
           fail("unresolved-step", test, step, `${step.intent}: ${step.binding.reason}`);
         }
         if (pendingEntryCheckpointScreenId) continue;

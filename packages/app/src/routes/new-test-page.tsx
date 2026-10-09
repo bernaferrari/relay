@@ -4,10 +4,10 @@ import { useNativeAppStartContext } from "./use-native-app-start-context";
 import { useNewTestPreviewInput } from "./use-new-test-preview-input";
 import { useNewTestSetup, useNewTestTargets } from "./use-new-test-setup";
 import { NewTestSetupProblem, useNewTestDeviceRecovery } from "./use-new-test-device-recovery";
-import { NewTestDraftDialog } from "./new-test-draft-dialog";
 import { NewTestDetailedSetup } from "./new-test-detailed-setup";
 import { NewTestTargetMode } from "./new-test-target-mode";
 import { useWebsiteAccountPreference } from "./use-website-account-preference";
+import { useDescribeWebsiteTest, useWebsiteApp } from "./use-website-test-start";
 import {
   NEW_TEST_DRAFT_KEY,
   friendlyPreviewIssue,
@@ -101,6 +101,12 @@ export function NewTestPage() {
     queryFn: () => productService.listApps(),
   });
   const app = apps.data?.find((app) => app.id === appId);
+  const appForWebsite = useWebsiteApp(apps.data, requestedAppId);
+  const describeWebsiteTest = useDescribeWebsiteTest({
+    appForWebsite,
+    setProgress: setQuickProgress,
+    setError: setQuickError,
+  });
   const draft = useQuery({
     queryKey: ["recording", "new-test-draft"],
     queryFn: () => readNewTestDraft(platform),
@@ -345,32 +351,6 @@ export function NewTestPage() {
 
   /** The app a website's Tests belong to: remembered, else where this browser's
    * runs were filed, else an app named after the site, else a new one. */
-  async function appForWebsite(host: string, browserTargetId: string): Promise<string> {
-    if (
-      requestedAppId &&
-      apps.data?.some(
-        (app) => app.id === requestedAppId && app.platform !== "android" && app.platform !== "ios",
-      )
-    )
-      return requestedAppId;
-    const key = `relay:website-app:${host}`;
-    const known = new Set((apps.data ?? []).map((app) => app.id));
-    const remembered = await Promise.resolve(platform.storage.get(key));
-    if (remembered && known.has(remembered)) return remembered;
-    const runs = await catalogService.listRuns().catch(() => []);
-    const fromRuns = runs.find(
-      (run) =>
-        run.executionIdentity?.deviceId === browserTargetId &&
-        run.executionIdentity.appMapId &&
-        known.has(run.executionIdentity.appMapId),
-    )?.executionIdentity?.appMapId;
-    const bare = host.replace(/^www\./, "").toLowerCase();
-    const named = apps.data?.find((app) => app.name.toLowerCase().includes(bare))?.id;
-    const appId = fromRuns ?? named ?? (await appResourcesService.createApp(bare)).id;
-    await Promise.resolve(platform.storage.set(key, appId));
-    return appId;
-  }
-
   async function startWebsiteTest(url: string, account?: WebsiteAccount) {
     const host = websiteHost(url);
     setQuickError(undefined);
@@ -612,7 +592,6 @@ export function NewTestPage() {
               void accounts.refetch();
               void savedBrowsers.refetch();
             }}
-            manualAction={<NewTestDraftDialog />}
             {...(quickProgress ? { progress: quickProgress } : {})}
             {...(quickError ? { error: quickError } : {})}
             accountsFor={(url) => websiteAccounts(accounts.data ?? [], url)}
@@ -630,6 +609,7 @@ export function NewTestPage() {
                 }
               : {})}
             onStart={(url, account) => void startWebsiteTest(url, account)}
+            onDescribe={(goal, url, account) => void describeWebsiteTest(goal, url, account)}
           />
         ) : null}
         {setupMode === "detailed" && setupOpen ? (

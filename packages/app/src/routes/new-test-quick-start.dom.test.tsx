@@ -148,3 +148,60 @@ describe("New test as this account", () => {
     expect(onStart).toHaveBeenCalledWith("https://shop.example/", undefined);
   });
 });
+
+describe("What should work?", () => {
+  async function renderDescribe() {
+    const onStart = vi.fn();
+    const onDescribe = vi.fn();
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root!.render(
+        <NewTestQuickStart
+          recent={[]}
+          initialAddress="shop.example"
+          onStart={onStart}
+          onDescribe={onDescribe}
+        />,
+      ),
+    );
+    const goal = host.querySelector<HTMLTextAreaElement>("#new-test-goal")!;
+    const submit = () => host.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    async function type(value: string) {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+      await act(async () => {
+        setter.call(goal, value);
+        goal.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    return { host, goal, submit, type, onStart, onDescribe };
+  }
+
+  it("creates a test from a description with one primary action", async () => {
+    const { host, submit, type, onStart, onDescribe } = await renderDescribe();
+    expect(host.querySelector("h2")?.textContent).toBe("What should work?");
+    expect(submit().textContent).toContain("Start recording");
+    await type("Creating an API key shows it in the list");
+    expect(submit().textContent).toContain("Create test");
+    await act(async () =>
+      host.querySelector<HTMLFormElement>('form[aria-label="Start a test"]')!.requestSubmit(),
+    );
+    expect(onDescribe).toHaveBeenCalledWith(
+      "Creating an API key shows it in the list",
+      "https://shop.example/",
+      undefined,
+    );
+    expect(onStart).not.toHaveBeenCalled();
+    expect(host.textContent).not.toContain("Record it instead");
+  });
+
+  it("records when the description is empty", async () => {
+    const { host, onStart, onDescribe } = await renderDescribe();
+    await act(async () =>
+      host.querySelector<HTMLFormElement>('form[aria-label="Start a test"]')!.requestSubmit(),
+    );
+    expect(onStart).toHaveBeenCalledWith("https://shop.example/", undefined);
+    expect(onDescribe).not.toHaveBeenCalled();
+  });
+});

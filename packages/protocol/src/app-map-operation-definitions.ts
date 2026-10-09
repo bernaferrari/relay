@@ -64,6 +64,8 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
     appMapTestCompileInputParser,
     appMapTestCompileOutputParser,
     appMapTestFromIntentInputParser,
+    appMapTestDraftInputParser,
+    appMapTestDraftOutputParser,
     appMapTestFromIntentOutputParser,
     appMapTestEditInputParser,
     appMapTestProposeInputParser,
@@ -569,6 +571,17 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
         category: "authoring",
         input: appMapTestFromIntentInputParser,
         output: appMapTestFromIntentOutputParser,
+      },
+    ),
+    command(
+      "app-map.test.draft",
+      "Draft plain-English Action and Check steps from what should work",
+      "POST",
+      "/app-maps/:appMapId/tests/draft",
+      {
+        category: "authoring",
+        input: appMapTestDraftInputParser,
+        output: appMapTestDraftOutputParser,
       },
     ),
     command(

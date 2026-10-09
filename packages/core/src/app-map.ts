@@ -85,6 +85,12 @@ export {
 } from "./app-map/observation-proposal.js";
 export { compileIntentWalk, type IntentWalkResult } from "./app-map/intent-walk.js";
 export {
+  draftTestSteps,
+  registerTestStepDrafter,
+  type DraftedTest,
+  type DraftedTestStep,
+} from "./test-step-drafting.js";
+export {
   connectionIdsFromProposal,
   connectionProofOutcomeUnknownDiagnostic,
   proveConnectionOnDevice,
