@@ -101,7 +101,7 @@ export function TestRecordedTextEditor({
       {action.sharedTestNames.length ? (
         <p className="text-xs text-muted-foreground" title={action.sharedTestNames.join(", ")}>
           Also updates {action.sharedTestNames.length} other{" "}
-          {action.sharedTestNames.length === 1 ? "Test" : "Tests"}.
+          {action.sharedTestNames.length === 1 ? "test" : "tests"}.
         </p>
       ) : null}
       <div>

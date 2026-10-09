@@ -712,14 +712,14 @@ describe("Run and report", () => {
         },
         { timeout: 5_000 },
       );
-      expect(document.body.textContent).toContain(
-        result === "passed"
-          ? "Passed"
-          : result === "empty"
-            ? "Not run yet"
-            : "Run history unavailable",
-      );
-      if (result !== "empty") expect(document.body.textContent).not.toContain("Not run yet");
+      // An empty history shows no status row at all rather than a placeholder verdict.
+      if (result === "empty")
+        expect(document.querySelector('[aria-label="Test views"]')).toBeNull();
+      else
+        expect(document.body.textContent).toContain(
+          result === "passed" ? "Passed" : "Run history unavailable",
+        );
+      expect(document.body.textContent).not.toContain("Not run yet");
     },
   );
 
@@ -2311,10 +2311,19 @@ describe("Run and report", () => {
     const original = markup();
     expect(header().querySelector('[data-state="passed"]')).not.toBeNull();
     for (const label of ["Steps", "Overview"]) {
+      // Steps lives under Details; Overview is a tab.
       const tab = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
         (item) => item.textContent === label,
-      )!;
-      await click(tab);
+      );
+      if (tab) await click(tab);
+      else {
+        await click(document.querySelector<HTMLElement>('[aria-label="More run details"]')!);
+        await click(
+          [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+            (item) => item.textContent?.trim() === label,
+          )!,
+        );
+      }
       expect(markup()).toBe(original);
       expect(header().querySelector('[data-state="passed"]')).not.toBeNull();
     }
@@ -2603,7 +2612,7 @@ describe("Run and report", () => {
       platformWithStorage().platform,
     );
     const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (link) => link.textContent?.trim() === "Back",
+      (link) => link.textContent?.trim() === "Review",
     )!;
     expect(back).toBeDefined();
     await click(back);
@@ -2621,8 +2630,8 @@ describe("Run and report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (link) => link.textContent?.trim() === "Back",
+    const back = [...document.querySelectorAll<HTMLAnchorElement>("main a")].find(
+      (link) => link.textContent?.trim() === "Runs",
     )!;
     await click(back);
     expect(history.location.pathname).toBe("/runs");
@@ -2640,7 +2649,7 @@ describe("Run and report", () => {
       platformWithStorage().platform,
     );
     const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (link) => link.textContent?.trim() === "Back",
+      (link) => link.textContent?.trim() === "Test",
     )!;
     await click(back);
     expect(history.location.pathname).toBe("/tests/test-1");

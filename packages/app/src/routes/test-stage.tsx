@@ -1,6 +1,14 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { Image as ImageIcon, Radio } from "lucide-react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import type { ProductTargetOption } from "../data/target-presentation";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -58,6 +66,15 @@ export function TestWorkspaceStage({
   );
 }
 
+export type StageMode = "recorded" | "live";
+
+/** On narrow windows the page's own switcher picks Screenshot or Live, so the
+ * stage drops its second row of tabs instead of nesting one inside the other. */
+export const StageModeContext = createContext<{
+  mode: StageMode;
+  setMode(mode: StageMode): void;
+} | null>(null);
+
 /** The app beside the steps: the recorded screenshot, or its live device or browser. */
 export function TestStage({
   recorded,
@@ -68,36 +85,39 @@ export function TestStage({
   live: ReactNode;
   liveLabel?: string;
 }) {
-  const [mode, setMode] = useState<"recorded" | "live">("recorded");
+  const shared = useContext(StageModeContext);
+  const [localMode, setLocalMode] = useState<StageMode>("recorded");
+  const mode = shared?.mode ?? localMode;
+  const setMode = shared?.setMode ?? setLocalMode;
   const [liveOpened, setLiveOpened] = useState(false);
+  useEffect(() => {
+    if (mode === "live") setLiveOpened(true);
+  }, [mode]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-stage">
+      {/* The screenshot by default; the live app is one deliberate click away. */}
       <div
-        className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-2"
-        role="tablist"
-        aria-label="App view"
+        className={`flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5 ${shared ? "max-[1099px]:hidden" : ""}`}
       >
-        {(
-          [
-            ["recorded", "Screenshot"],
-            ["live", liveLabel],
-          ] as const
-        ).map(([value, label]) => (
-          <Button
-            key={value}
-            role="tab"
-            size="sm"
-            variant={mode === value ? "secondary" : "ghost"}
-            aria-selected={mode === value}
-            disabled={value === "live" && !live}
-            onClick={() => {
-              setMode(value);
-              if (value === "live") setLiveOpened(true);
-            }}
-          >
-            {label}
-          </Button>
-        ))}
+        <span className="text-xs font-medium text-muted-foreground">
+          {mode === "live" ? liveLabel : "Screenshot"}
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={mode === "recorded" && !live}
+          onClick={() => setMode(mode === "live" ? "recorded" : "live")}
+        >
+          {mode === "live" ? (
+            <>
+              <ImageIcon aria-hidden="true" /> Show screenshot
+            </>
+          ) : (
+            <>
+              <Radio aria-hidden="true" /> Open {liveLabel.toLocaleLowerCase()}
+            </>
+          )}
+        </Button>
       </div>
       <div className={mode === "recorded" ? "min-h-0 flex-1 overflow-auto" : "hidden"}>
         {recorded}

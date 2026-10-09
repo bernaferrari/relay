@@ -13,6 +13,7 @@ import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { sessionQueryKeys, type ProductSessionSummary } from "../data/session-product-service";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { relativeTime } from "#lib/relative-time";
 
 const routeApi = getRouteApi("/sessions");
 type SessionView = "active" | "drafts" | "history" | "all";
@@ -328,13 +329,4 @@ function sessionVariant(
 function sessionBadgeVariant(tone: ReturnType<typeof sessionVariant>): "default" | "secondary" {
   if (tone === "success") return "default";
   return "secondary";
-}
-
-function relativeTime(value: number, now: number): string {
-  const ageMs = Math.max(0, now - value);
-  if (ageMs < 60_000) return "Just now";
-  if (ageMs < 3_600_000) return `${Math.floor(ageMs / 60_000)}m ago`;
-  if (ageMs < 86_400_000) return `${Math.floor(ageMs / 3_600_000)}h ago`;
-  if (ageMs < 604_800_000) return `${Math.floor(ageMs / 86_400_000)}d ago`;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value);
 }

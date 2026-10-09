@@ -577,7 +577,7 @@ describe("shell overlays", () => {
     await settle();
     expect(document.body.textContent).toContain("Test search is unavailable");
     expect(document.body.textContent).not.toContain("No matching commands");
-    expect(document.body.textContent).toContain("Open tests");
+    expect(document.body.textContent).toContain("Open Tests");
     expect(document.querySelector('button[type="button"]')?.textContent).not.toBeUndefined();
   });
 
@@ -665,7 +665,7 @@ describe("shell overlays", () => {
       },
     });
     const link = [...document.querySelectorAll<HTMLAnchorElement>("main a")].find(
-      (item) => item.textContent?.trim() === "Back",
+      (item) => item.textContent?.trim() === "Test",
     );
     expect(link?.getAttribute("href")).toBe("/tests/test-1?view=definition");
     await act(async () => link!.click());
@@ -685,110 +685,13 @@ describe("shell overlays", () => {
     expect(document.querySelector('[role="menu"]')?.textContent).toContain("Add an app");
   });
 
-  it("collapses stopped simulators and keeps the picker compact", async () => {
-    const stopped = Array.from({ length: 38 }, (_, index) => ({
-      ...productDevice(`sim-${index}`, `iPad ${index}`, "needs-attention", "ios"),
-      device: {
-        ...productDevice(`sim-${index}`, `iPad ${index}`, "needs-attention", "ios").device,
-        booted: false,
-      },
-      kind: "simulator",
-      osVersion: "18.5",
-    }));
+  it("keeps device choice inside the flows that use it, not the global toolbar", async () => {
     await renderShell({
-      devices: [
-        { ...productDevice("phone", "My phone", "ready", "android"), osVersion: "16" },
-        ...stopped,
-      ],
+      devices: [productDevice("ipad", "Design iPad", "ready", "ios")],
     });
-    const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]')!;
-    await act(async () => trigger.click());
-    await settle();
-    const menu = document.querySelector('[role="menu"]')!;
-    expect(menu.textContent).toContain("My phone");
-    expect(menu.textContent).toContain("Android 16");
-    expect(menu.textContent).toContain("38");
-    expect(menu.textContent).not.toContain("stopped");
-    expect(menu.textContent).not.toContain("iPad 0");
-    expect(menu.textContent).not.toContain("Needs attention");
-    expect(menu.textContent).toContain("Check again");
-    expect(menu.querySelectorAll('[role="menuitem"]').length).toBeLessThan(8);
-  });
-
-  it("keeps the run destination in the toolbar instead of the workspace sidebar", async () => {
-    const history = await renderShell({
-      devices: [
-        productDevice("ipad", "Design iPad", "ready", "ios"),
-        productDevice("browser", "Checkout browser", "virtual", "browser"),
-      ],
-    });
-
     // Devices is setup: under the everyday links, outside the Primary nav.
     expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).toBeNull();
     expect(document.querySelector('[aria-label="Setup"] a[href="/devices"]')).not.toBeNull();
-    const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]');
-    expect(trigger?.textContent).toContain("Choose device");
-    await act(async () => trigger?.click());
-    await settle();
-
-    expect(document.body.textContent).toContain("Design iPad");
-    expect(document.body.textContent).toContain("Checkout browser");
-    const deviceItem = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes("Design iPad"),
-    );
-    await act(async () => deviceItem?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    await settle();
-    expect(history.location.pathname).not.toBe("/devices/ipad");
-    expect(history.location.pathname).not.toBe("/environments/ipad");
-    await act(async () => trigger?.click());
-    await settle();
-    const manage = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes("Manage devices"),
-    );
-    expect(manage).toBeTruthy();
-    await act(async () => manage?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    await settle();
-    expect(history.location.pathname).toBe("/devices");
-  });
-
-  it("filters a long destination list and closes after selecting the exact browser", async () => {
-    const items = Array.from({ length: 9 }, (_, index) => ({
-      ...productDevice(
-        `browser-${index}`,
-        `127.0.0.1:8793 · Browser ${index + 1}`,
-        "virtual",
-        "browser",
-      ),
-      browserUrl: "http://127.0.0.1:8793/",
-    }));
-    await renderShell({ devices: items });
-    await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]')!.click(),
-    );
-    await settle();
-    const input = document.querySelector<HTMLInputElement>(
-      'input[aria-label="Find a device or browser"]',
-    )!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        input,
-        "Browser 7",
-      );
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await settle();
-    const option = document.querySelector<HTMLElement>(
-      '[role="menuitem"][aria-label="127.0.0.1:8793 · Browser 7"]',
-    )!;
-    expect(option).not.toBeNull();
-    expect(
-      document.querySelector('[role="menuitem"][aria-label="127.0.0.1:8793 · Browser 6"]'),
-    ).toBeNull();
-    await act(async () => option.click());
-    await settle();
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(document.querySelector('[aria-label^="Device or browser"]')?.textContent).toContain(
-      "Browser 7",
-    );
+    expect(document.querySelector('[aria-label^="Device or browser"]')).toBeNull();
   });
 });

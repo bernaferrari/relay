@@ -397,11 +397,12 @@ describe("Tests workspace", () => {
     expect(main.querySelector('[data-library-view="tests"]')?.textContent).toBe("Tests2");
     expect(main.querySelector('[data-library-view="plans"]')?.textContent).toBe("Plans1");
     expect(main.querySelector('a[href="/tests/new"]')?.textContent?.trim()).toBe("New test");
+    // Plans are created from the Plans tab; the Tests tab keeps one main action.
     expect(
       [...main.querySelectorAll("button")].some(
         (button) => button.textContent?.trim() === "New plan",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(main.querySelector("#plans-heading")).toBeNull();
     expect(main.textContent).not.toContain("Release smoke");
     // The collection links that used to sit on this page now live in the

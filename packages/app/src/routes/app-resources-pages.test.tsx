@@ -645,8 +645,11 @@ describe("App routes", () => {
     for (const hidden of ["authfx:", "browser-private", "fixture", "Lane", "lane"]) {
       expect(document.body.textContent).not.toContain(hidden);
     }
-    const newTest = card!.querySelector<HTMLAnchorElement>(
-      'a[aria-label="New test as this account"]',
+    // New test lives in the row's menu, keeping one visible action per account.
+    const opener = card!.querySelector<HTMLElement>('button[aria-label^="More actions for"]')!;
+    await click(opener);
+    const newTest = [...document.querySelectorAll<HTMLAnchorElement>('a[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === "New test as this account",
     );
     expect(newTest?.getAttribute("href")).toContain("/tests/new?");
     expect(newTest?.getAttribute("href")).toContain("account=fixture-1");

@@ -138,7 +138,7 @@ export function SavedRunStory({
       header={header}
       navigation={
         <Tabs value="story" onValueChange={onViewChange} className="shrink-0 gap-0">
-          <RunViewTabs report={report} />
+          <RunViewTabs report={report} value="story" onSelect={onViewChange} />
         </Tabs>
       }
       runId={report.runId}

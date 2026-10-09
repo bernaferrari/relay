@@ -277,7 +277,7 @@ function outcomePresentation(outcome: OutcomeValue): {
   }
   if (outcome === "cancelled") return { label: "Cancelled", icon: Minus, tone: "quiet" };
   if (outcome === "failed") return { label: "Failed", icon: X, tone: "danger" };
-  if (outcome === "queued") return { label: "Queued", icon: CircleDashed, tone: "quiet" };
+  if (outcome === "queued") return { label: "Waiting to start", icon: CircleDashed, tone: "quiet" };
   if (outcome === "running") return { label: "Running", icon: CircleDashed, tone: "quiet" };
   if (outcome === "completed") return { label: "Completed", icon: Check, tone: "success" };
   return { label: "Unknown result", icon: CircleHelp, tone: "notice" };

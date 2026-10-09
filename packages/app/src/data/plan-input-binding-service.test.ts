@@ -208,7 +208,7 @@ it("refuses a stale addressed text leaf before any write", async () => {
 it("preserves the binding and row draft and sends a rejected commit once", async () => {
   const { service, requests } = fixture(appMap(), true);
   const draft = structuredClone(input);
-  await expect(service.addInputDataSet(draft)).rejects.toThrow("App changed");
+  await expect(service.addInputDataSet(draft)).rejects.toThrow("app changed");
   expect(draft).toEqual(input);
   expect(requests.filter((request) => request.method !== "GET")).toHaveLength(1);
 });
@@ -264,7 +264,7 @@ it("binds an existing Data set in place and retains its real row IDs", async () 
 });
 
 it.each([
-  { change: { expectedRevision: 3 }, message: "App changed" },
+  { change: { expectedRevision: 3 }, message: "app changed" },
   { change: { catalogRevision: 1 }, message: "saved values changed" },
   { change: { selectedOptionIds: ["missing-row"] }, message: "current saved value" },
   { change: { testIds: ["other"] }, message: "text action changed" },

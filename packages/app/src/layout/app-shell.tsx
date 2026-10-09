@@ -15,7 +15,6 @@ import type { Platform } from "../platform/types";
 import { parentPathForPath, routeContractForPath } from "../router/route-contract";
 import { returnDestination } from "../router/return-destination";
 import { ActivityCenterButton } from "./active-work";
-import { DeviceDestinationButton } from "./device-destination";
 import { RouteAnnouncer } from "./route-announcer";
 import { CommandPalette } from "./command-palette";
 import { Sidebar } from "./sidebar";
@@ -128,9 +127,6 @@ export function AppShell({ platform }: { platform: Platform }) {
               </kbd>
             </button>
             <div className="ml-auto inline-flex items-center gap-0.5">
-              {!/^\/tests\/[^/]+$/.test(location.pathname) || location.pathname === "/tests/new" ? (
-                <DeviceDestinationButton />
-              ) : null}
               <ActivityCenterButton />
             </div>
           </header>
@@ -154,9 +150,6 @@ export function AppShell({ platform }: { platform: Platform }) {
           </Button>
 
           <div className="ml-auto inline-flex items-center gap-0.5">
-            {!/^\/tests\/[^/]+$/.test(location.pathname) || location.pathname === "/tests/new" ? (
-              <DeviceDestinationButton />
-            ) : null}
             <ActivityCenterButton />
           </div>
         </header>

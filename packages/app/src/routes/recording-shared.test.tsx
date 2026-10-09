@@ -254,7 +254,7 @@ it("exposes only safe HTTP diagnostics for a recording action failure", async ()
     />,
   );
   expect(host.textContent).toContain("Could not confirm the replay");
-  expect(host.textContent).toContain("Operation: run recorded steps");
+  expect(host.textContent).toContain("Operation: Run recorded steps");
   expect(host.textContent).toContain("HTTP status: 500");
   expect(host.textContent).toContain("Code: ACTION_FAILED");
   expect(host.textContent).not.toMatch(/private|stack|correlation/u);

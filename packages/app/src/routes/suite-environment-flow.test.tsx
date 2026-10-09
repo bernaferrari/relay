@@ -421,7 +421,7 @@ describe("Suite and Environment routes", () => {
       (_input: Parameters<SuiteProfileProductService["saveSuite"]>[0]) => saveReply,
     );
     const getSuiteEditor = vi.fn(async () => editor);
-    const { history } = await render("/tests?app=app-1", {
+    const { history } = await render("/tests?app=app-1&view=plans", {
       suiteService: suiteService({ saveSuite, getSuiteEditor }),
     });
     await clickButton("New plan");

@@ -549,7 +549,7 @@ function BatchDocument({ batchId }: { batchId: string }) {
           ) : null}
           {report.status === "cancelled" && !report.runIds.length ? (
             <EmptyState
-              title="Stopped"
+              title="Cancelled"
               detail="No cases were started. Results from the first case are kept."
             />
           ) : null}

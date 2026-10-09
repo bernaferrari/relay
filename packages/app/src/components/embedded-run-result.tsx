@@ -97,7 +97,7 @@ export function EmbeddedRunResult({
         ? "Screen didn’t match"
         : report.outcome === "cancelled"
           ? "Run cancelled"
-          : "Run couldn’t finish";
+          : "Run could not complete";
   const detail = inspectionUnavailable
     ? "Relay couldn’t read the device’s controls. Reconnect the device, then run the test again. This does not confirm a screen mismatch."
     : mismatch

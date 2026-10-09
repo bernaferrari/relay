@@ -375,7 +375,7 @@ describe("Plan input Data sets", () => {
         source: "list",
         values: ["Replacement"],
       }),
-    ).rejects.toThrow("App in this Project");
+    ).rejects.toThrow("app in this Project");
     expect(
       invoke.mock.calls.some(([operation]) => operation === "workspace.variables.update"),
     ).toBe(false);

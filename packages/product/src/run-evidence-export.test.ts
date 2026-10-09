@@ -72,7 +72,7 @@ test("run evidence export keeps the requested run identity on the file", () => {
 test("run evidence export rejects a TracePack from a different run", () => {
   assert.throws(
     () => runEvidenceExportDocument("run-184", exported("run-from-test-B")),
-    /different Run/u,
+    /different run/u,
   );
 });
 

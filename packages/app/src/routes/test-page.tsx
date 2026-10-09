@@ -97,6 +97,7 @@ export function TestPage() {
   }
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(search.setup === "run");
+  const [detailsRequest, setDetailsRequest] = useState(0);
   useEffect(() => {
     setSettingsOpen(search.setup === "run");
     if (search.setup === "run") setSetupAnchor(configurationTriggerRef.current);
@@ -476,15 +477,7 @@ export function TestPage() {
         activeRun={Boolean(activeRun || liveRunId)}
         attachedRunId={attachedRunId}
         liveRunId={liveRunId}
-        recordDisabled={
-          record.isPending ||
-          devicePreviewBusy ||
-          Boolean(preparedBrowser?.busy) ||
-          (!preparedBrowser && !targetReady)
-        }
-        recordPending={record.isPending}
-        recordStepSelected={Boolean(evidenceStepId)}
-        onRecord={() => record.mutate()}
+        onOpenDetails={() => setDetailsRequest((count) => count + 1)}
         startPending={start.isPending}
         configurationLabel={configurationLabel}
         configurationName={
@@ -613,23 +606,28 @@ export function TestPage() {
           onValueChange={(value) => selectSource(value === "run" ? "run" : "definition")}
           className="min-h-0 flex-1 gap-0"
         >
-          <WorkspaceToolbar
-            leading={
-              <TabsList variant="line" aria-label="Test views" className="h-11">
-                <TabsTrigger value="definition" className="px-4">
-                  Test
-                </TabsTrigger>
-                <TabsTrigger value="run" disabled={!attachedRunId} className="px-4">
-                  Result
-                </TabsTrigger>
-              </TabsList>
-            }
-            trailing={
-              showRecording ? (
-                <TestLastRunLine history={recentRuns} running={Boolean(activeRun || liveRunId)} />
-              ) : undefined
-            }
-          />
+          {/* A never-run test has no tab row: nothing to switch to or report. */}
+          {attachedRunId || activeRun || liveRunId || !recentRuns.isSuccess ? (
+            <WorkspaceToolbar
+              leading={
+                attachedRunId ? (
+                  <TabsList variant="line" aria-label="Test views" className="h-11">
+                    <TabsTrigger value="definition" className="px-4">
+                      Test
+                    </TabsTrigger>
+                    <TabsTrigger value="run" className="px-4">
+                      Result
+                    </TabsTrigger>
+                  </TabsList>
+                ) : null
+              }
+              trailing={
+                showRecording ? (
+                  <TestLastRunLine history={recentRuns} running={Boolean(activeRun || liveRunId)} />
+                ) : undefined
+              }
+            />
+          ) : null}
           {attachedRunId ? (
             <TabsContent
               value="run"
@@ -652,6 +650,16 @@ export function TestPage() {
                 void navigate({ search: (previous) => ({ ...previous, step }), replace: true })
               }
               onSelectedStepChange={(step) => setEvidenceStepId(step ?? "")}
+              detailsRequest={detailsRequest}
+              recordSteps={{
+                onRecord: () => record.mutate(),
+                pending: record.isPending,
+                disabled:
+                  record.isPending ||
+                  devicePreviewBusy ||
+                  Boolean(preparedBrowser?.busy) ||
+                  (!preparedBrowser && !targetReady),
+              }}
               stage={
                 <TestWorkspaceStage
                   key={testId}

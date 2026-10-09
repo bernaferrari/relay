@@ -10,6 +10,7 @@ import { useMemo } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem, RefreshProblem } from "./recording-shared";
 import { LibraryPage, PageHeader } from "../components/page-layout";
+import { capitalizedRelativeTime as relativeTime } from "#lib/relative-time";
 
 const routeApi = getRouteApi("/changes");
 export const changesQueryKey = ["changes"] as const;
@@ -236,7 +237,7 @@ function coverageLabel(change: ProductChange): string {
     return `${change.requiredVerificationCount} required ${change.requiredVerificationCount === 1 ? "check" : "checks"}`;
   }
   if (change.affectedTestCount) {
-    return `${change.affectedTestCount} affected ${change.affectedTestCount === 1 ? "Test" : "Tests"}`;
+    return `${change.affectedTestCount} affected ${change.affectedTestCount === 1 ? "test" : "tests"}`;
   }
   return "Plan not ready";
 }
@@ -271,12 +272,4 @@ function emptyViewTitle(view: ChangeView): string {
   if (view === "attention") return "No changes need attention";
   if (view === "history") return "No change history yet";
   return "No current changes";
-}
-
-function relativeTime(timestamp: number): string {
-  const elapsed = Math.max(0, Date.now() - timestamp);
-  if (elapsed < 60_000) return "Just now";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
-  return `${Math.floor(elapsed / 86_400_000)}d ago`;
 }

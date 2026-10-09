@@ -74,7 +74,7 @@ export function AppPage() {
                   render={<Link to="/tests/new" search={{ app: appId }} />}
                 >
                   <Plus />
-                  Record test
+                  New test
                 </Button>
               </>
             }

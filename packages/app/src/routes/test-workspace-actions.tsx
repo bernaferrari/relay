@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
 } from "@relay/ui-react/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
-import { ChevronDown, ChevronLeft, Circle, MoreHorizontal, Play } from "lucide-react";
+import { ChevronDown, ChevronLeft, MoreHorizontal, Play } from "lucide-react";
 import type { MouseEvent, ReactNode, RefObject } from "react";
 
 export function TestWorkspaceActions({
@@ -21,11 +21,8 @@ export function TestWorkspaceActions({
   activeRun,
   attachedRunId,
   liveRunId,
-  recordDisabled,
-  recordPending,
-  recordStepSelected,
-  onRecord,
   startPending,
+  onOpenDetails,
   configurationLabel,
   configurationName,
   profileBlocked,
@@ -45,11 +42,8 @@ export function TestWorkspaceActions({
   activeRun: boolean;
   attachedRunId?: string;
   liveRunId?: string;
-  recordDisabled: boolean;
-  recordPending: boolean;
-  recordStepSelected: boolean;
-  onRecord(): void;
   startPending: boolean;
+  onOpenDetails?(): void;
   configurationLabel: string;
   configurationName: string;
   profileBlocked: boolean;
@@ -77,22 +71,7 @@ export function TestWorkspaceActions({
       }
       actions={
         <>
-          {testPresent && !activeRun ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onRecord()}
-              disabled={recordDisabled}
-              title={
-                recordStepSelected
-                  ? "Record new steps after the selected step"
-                  : "Record new steps at the end"
-              }
-            >
-              <Circle className="fill-destructive text-destructive" aria-hidden="true" />
-              {recordPending ? "Starting…" : "Record steps"}
-            </Button>
-          ) : null}
+          {/* Recording more steps lives in the step list's Add step menu. */}
           {activeRun && (liveRunId || attachedRunId) ? (
             <Button
               nativeButton={false}
@@ -104,7 +83,7 @@ export function TestWorkspaceActions({
           ) : (
             // One split button: run now, or open the chevron to choose where it runs.
             <div
-              className="flex items-center *:data-[slot=button]:first:rounded-e-none *:data-[slot=button]:last:rounded-s-none *:data-[slot=button]:last:border-s-primary-foreground/25"
+              className="flex items-center *:data-[slot=button]:first:rounded-e-none *:data-[slot=button]:last:rounded-s-none"
               role="group"
               aria-label="Run"
             >
@@ -121,7 +100,8 @@ export function TestWorkspaceActions({
               {testPresent ? (
                 <Popover open={settingsOpen} onOpenChange={onSettingsOpen}>
                   <PopoverTrigger
-                    render={<Button ref={configurationTriggerRef} size="sm" />}
+                    // Outline, so Run stays the one filled action in the header.
+                    render={<Button ref={configurationTriggerRef} size="sm" variant="outline" />}
                     aria-label={`Run settings: ${configurationName}`}
                     aria-description={`Run settings: ${configurationLabel}`}
                     title={configurationLabel}
@@ -180,6 +160,11 @@ export function TestWorkspaceActions({
                 ) : null}
                 {hasRecentRuns ? (
                   <DropdownMenuItem onClick={() => onHistoryOpen()}>Run history</DropdownMenuItem>
+                ) : null}
+                {testPresent && onOpenDetails ? (
+                  <DropdownMenuItem onClick={() => onOpenDetails()}>
+                    Name and details
+                  </DropdownMenuItem>
                 ) : null}
               </DropdownMenuContent>
             </DropdownMenu>

@@ -84,18 +84,20 @@ export function SavedRecordingPreview({
   const failed = preview.isError || failedUri === frame.uri || !catalogService.getRecordingFrame;
   return (
     <section className="flex h-full min-h-0 flex-col gap-3 p-4" aria-label="Saved recording">
-      <header className="flex shrink-0 items-center justify-between gap-3">
-        <span className="text-sm font-medium">Recorded screen</span>
-        <ScreenshotMomentSwitch
-          label="Recording screenshots"
-          value={String(selectedIndex)}
-          items={frames.map((item, index) => ({
-            value: String(index),
-            label: `${item.role === "before" ? "Before" : "After"}${frames.length > 2 ? ` ${index + 1}` : ""}`,
-          }))}
-          onChange={(value) => setSelected(Number(value))}
-        />
-      </header>
+      {/* Before/After only when there is more than one moment to choose. */}
+      {frames.length > 1 ? (
+        <header className="flex shrink-0 items-center justify-end gap-3">
+          <ScreenshotMomentSwitch
+            label="Recording screenshots"
+            value={String(selectedIndex)}
+            items={frames.map((item, index) => ({
+              value: String(index),
+              label: `${item.role === "before" ? "Before" : "After"}${frames.length > 2 ? ` ${index + 1}` : ""}`,
+            }))}
+            onChange={(value) => setSelected(Number(value))}
+          />
+        </header>
+      ) : null}
       <div className="relative flex min-h-0 flex-1 items-center justify-center" aria-busy={loading}>
         {candidate && !failed && candidate.uri === frame.uri && candidate.url !== image?.url ? (
           <img

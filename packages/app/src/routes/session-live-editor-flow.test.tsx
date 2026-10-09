@@ -218,7 +218,7 @@ describe("live session to test editor", () => {
 
     await render("/sessions/missing-session", { sessionService: unavailable });
 
-    expect(document.querySelector("h1")?.textContent).toBe("Couldn’t load this Session");
+    expect(document.querySelector("h1")?.textContent).toBe("Couldn’t load this session");
     expect(document.body.textContent).not.toContain("Durable live target context");
     expect(document.body.textContent).not.toContain("HTTP 400");
     expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1);

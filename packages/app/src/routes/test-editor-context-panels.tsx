@@ -5,6 +5,7 @@ import type {
   ProductTestEditorDocument,
   ProductTestRepair,
 } from "../data/test-editor-product-service";
+import { relativeTime } from "#lib/relative-time";
 
 export function RepairSection({
   repairs,
@@ -117,12 +118,4 @@ export function HistorySection({ items }: { items: ProductTestEditorDocument["hi
       )}
     </section>
   );
-}
-
-function relativeTime(value: number): string {
-  const elapsed = Math.max(0, Date.now() - value);
-  if (elapsed < 60_000) return "Just now";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value);
 }

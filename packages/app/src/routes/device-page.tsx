@@ -379,7 +379,7 @@ export function DevicePage() {
                     />
                   }
                 >
-                  Record a test
+                  New test
                 </Button>
               ) : null}
             </>
