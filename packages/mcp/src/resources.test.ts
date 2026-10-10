@@ -357,14 +357,14 @@ test("publishes device-control gotchas as a mandatory JSON resource", async () =
       envelope.data.rules.some(
         (rule) =>
           rule.includes("unique chrome labels") &&
-          rule.includes("grok-compose") &&
+          rule.includes("Unique labels resolve") &&
           rule.includes("Do not walk conversation lists"),
       ),
     );
     assert.ok(
       envelope.data.rules.some(
         (rule) =>
-          rule.includes("laneId") && rule.includes("unsigned profile") && rule.includes("grok-com"),
+          rule.includes("laneId") && rule.includes("saved sign-in") && rule.includes("signed out"),
       ),
     );
     assert.ok(envelope.data.rules.some((rule) => rule.includes("screenshot → preview/tap")));

@@ -14,6 +14,7 @@ import {
   type RelayOperatorToolDescriptor,
 } from "./operator-tools.js";
 import { createMcpServer, type OperationInvoker } from "./server.js";
+import { relayEverydayToolsForProfile } from "./everyday-tools.js";
 
 type Call = { operationId: string; input: unknown };
 
@@ -260,7 +261,7 @@ test("plan run executionMode all stays every case", () => {
   assert.equal(planRunExecutionMode("everything"), "pilot");
 });
 
-test("operator profile registers at most 23 hand-named verbs and hides takeover", async () => {
+test("operator profile registers the everyday loop plus at most 23 hand-named verbs and hides takeover", async () => {
   const server = createMcpServer({
     invoker: { async invoke() {} },
     scope: { projectId: "default" },
@@ -300,8 +301,12 @@ test("operator profile registers at most 23 hand-named verbs and hides takeover"
   try {
     const listed = await request("tools/list", {});
     const names = (listed.result?.tools ?? []).map(({ name }) => name);
-    assert.deepEqual(names, relayOperatorToolNames);
-    assert.ok(names.length <= 23);
+    // The describe → run → verdict loop comes first, then the hand-named verbs.
+    assert.deepEqual(names, [
+      ...relayEverydayToolsForProfile("operator").map(({ name }) => name),
+      ...relayOperatorToolNames,
+    ]);
+    assert.ok(relayOperatorToolNames.length <= 23);
     assert.equal(names.includes("relay_lease_takeover"), false);
     assert.ok(names.includes("relay_screenshot"));
     assert.ok(names.includes("relay_preview"));

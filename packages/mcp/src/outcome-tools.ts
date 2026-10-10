@@ -24,6 +24,14 @@ import {
   invokeDebugBugOutcomeTool,
 } from "./debug-bug-outcome-tool.js";
 import { dispatchRelayOutcomeTool } from "./outcome-tool-dispatch.js";
+import { invokeRelayEverydayTool, isRelayEverydayTool } from "./everyday-tools.js";
+import {
+  compactRunSnapshot,
+  defaultRunWaitSeconds,
+  waitForRunVerdict,
+  withFailingStep,
+  type RunWaitContext,
+} from "./run-verdict-wait.js";
 
 type OutcomeInputSchema = z.ZodType<Record<string, unknown>>;
 
@@ -338,7 +346,7 @@ function assertRawOutcomeInputBounds(name: string, value: Record<string, unknown
     assertRawTracePackPayloads(value.tracePacks, 64);
     return;
   }
-  if (name !== "relay_proof_analyze" && name !== "relay_verify_change") return;
+  if (name !== "relay_proof_analyze") return;
   const selection = value.selection;
   if (!selection || typeof selection !== "object" || Array.isArray(selection)) return;
   const record = selection as Record<string, unknown>;
@@ -402,7 +410,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_goal",
     title: "Run a bounded goal",
     description:
-      "Interact with one target toward a stated goal using bounded OpenRouter-hosted Typesafe Jev suggestions. Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Inspect retained evidence read-only, start or resume a goal, cancel a running session, reproduce an acknowledged browser path, or promote a fresh reproduction into the existing review-only Authoring workflow. Plain (non-secret) task values may be supplied as a values map; explorations accept distinct missions — one per worker.",
+      "Interact with one target toward a stated goal using bounded model suggestions (OpenRouter). Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Inspect retained evidence read-only, start or resume a goal, cancel a running session, reproduce an acknowledged browser path, or promote a fresh reproduction into the existing review-only Authoring workflow. Plain (non-secret) task values may be supplied as a values map; explorations accept distinct missions — one per worker.",
     requiresConfirmation: true,
     inputSchema: goalSessionInputSchema,
     annotations: {
@@ -438,13 +446,21 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_run_test",
     title: "Run a Test",
     description:
-      "Compile and run one saved Test on the selected ready target. Pass the targetId returned by relay_connect_target. Safe Tests need no confirmation. If preflight reports execution risk, review it and repeat the call with transport confirm: true. Returns a server-owned workflow ID, exact version, and immutable Run evidence references.",
+      "Run one saved Test on the selected ready target and, by default, wait for its verdict: passed, failed, blocked or cancelled, with the failing step's expected vs. saw and a screenshot reference. Pass the targetId returned by relay_connect_target when several targets are ready. Safe Tests need no confirmation; if Relay reports a risk, review it and repeat the call with transport confirm: true. Set wait:false to return immediately with the workflow and runId; a wait that runs out returns status running — call relay_get_verdict later.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
         appMapId: identifier.optional(),
         testId: identifier,
         targetId,
+        wait: z.boolean().optional().describe("Wait for the verdict (default true)"),
+        timeoutSeconds: z
+          .number()
+          .int()
+          .min(5)
+          .max(1_800)
+          .optional()
+          .describe("Longest wait before returning status running (default 600)"),
       })
       .strict(),
     annotations: {
@@ -616,7 +632,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_inspect_failure",
     title: "Inspect a failure",
     description:
-      "Read one failed Run together with its immutable evidence and existing repair proposals.",
+      "Read one failed Run: its verdict's failing step (expected vs. saw, screenshot), retained evidence, and existing repair proposals.",
     requiresConfirmation: false,
     inputSchema: z.object({ runId: identifier }).strict(),
     annotations: {
@@ -688,29 +704,10 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   {
-    name: "relay_verify_change",
-    title: "Verify a change (deprecated)",
-    description:
-      "Deprecated compatibility alias for relay_proof_analyze. Analyze explicit frozen Tests, Runs, evidence packs, or source revision metadata offline; never controls a Device, creates a live Proof, or posts a check. Use relay_proof_analyze instead.",
-    requiresConfirmation: false,
-    inputSchema: z
-      .object({
-        selection: verifyChangeSelectionTransport,
-        confirmationSatisfied: z.boolean().optional(),
-      })
-      .strict(),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
     name: "relay_export_evidence",
     title: "Export evidence",
     description:
-      "Export the portable content-addressed TracePack for one persisted Run. Advanced batch export remains available in raw operation profiles.",
+      "Export one finished Run's portable evidence pack (screenshots, steps and results) for a reviewer or another agent.",
     requiresConfirmation: false,
     inputSchema: z.object({ runId: identifier }).strict(),
     annotations: {
@@ -793,12 +790,49 @@ export async function invokeRelayOutcomeTool(input: {
     },
     { actorId: input.actorId },
   );
-  return invokeRelayOutcomeToolWithJobs({
+  if (isRelayEverydayTool(input.name)) {
+    return invokeRelayEverydayTool({ ...input, name: input.name, jobs });
+  }
+  const result = await invokeRelayOutcomeToolWithJobs({
     name: input.name,
     argumentsValue: input.argumentsValue,
     confirmed: input.confirmed,
     jobs,
   });
+  return presentOutcomeForAgent(input.name, input.argumentsValue, result, {
+    invoker: input.invoker,
+    jobs,
+    signal: input.signal,
+  });
+}
+
+/** Agents get a verdict, not a workflow snapshot with a compiled plan. */
+export async function presentOutcomeForAgent(
+  name: string,
+  argumentsValue: Record<string, unknown>,
+  result: unknown,
+  context: RunWaitContext,
+): Promise<unknown> {
+  if (name === "relay_inspect_failure" && typeof argumentsValue.runId === "string") {
+    return withFailingStep(result, argumentsValue.runId, context);
+  }
+  if (name !== "relay_run_test") return result;
+  if (argumentsValue.wait === false) return compactRunSnapshot(result);
+  const seconds =
+    typeof argumentsValue.timeoutSeconds === "number"
+      ? argumentsValue.timeoutSeconds
+      : defaultRunWaitSeconds;
+  try {
+    return await waitForRunVerdict(result, context, seconds * 1_000);
+  } catch (error) {
+    if (context.signal.aborted) throw error;
+    return {
+      status: "unknown",
+      reason: error instanceof Error ? error.message.slice(0, 300) : "Verdict unavailable",
+      run: compactRunSnapshot(result),
+      next: "Call relay_inspect_workflow with workflow.workflowId, or relay_get_verdict with the runId.",
+    };
+  }
 }
 
 /**

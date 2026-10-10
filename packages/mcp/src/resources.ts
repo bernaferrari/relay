@@ -51,13 +51,8 @@ import {
   type RelayMcpToolDescriptor,
 } from "./tools.js";
 import { relayMcpPrompts, relayMcpPromptsForTools } from "./prompts.js";
-import { relayOutcomeTools } from "./outcome-tools.js";
-import {
-  relayQaOutcomeTools,
-  relayQaOperatorTools,
-  relayQaRequiredOperationIds,
-} from "./qa-tools.js";
-import { relayOperatorTools } from "./operator-tools.js";
+import { relayQaRequiredOperationIds } from "./qa-tools.js";
+import { relayRegisteredToolNames } from "./registered-tools.js";
 import { registerTaskGuideResources } from "./task-guide-resources.js";
 
 export const relayMcpResourceUris = {
@@ -138,7 +133,7 @@ export function registerRelayResources(
       rules: [
         "Happy path: screenshot → preview/tap → screenshot. Do not start with test run, survey, or recover.",
         "Take a screenshot before interacting. Prefer identifier, then label, then text, then point.",
-        "Chrome-bounded iOS snapshot queries measured unique home ids and unique chrome labels plus the requested selector. Unique labels such as grok-compose and New temporary conversation resolve the same way unique ids do. Do not walk conversation lists. A chrome-bounded miss is not a recover-kill.",
+        "Chrome-bounded iOS snapshot queries measured unique home ids and unique chrome labels plus the requested selector. Unique labels resolve the same way unique ids do. Do not walk conversation lists. A chrome-bounded miss is not a recover-kill.",
         "If a tap does not change pixels, it missed; try the label, not a cell center.",
         "A missing accessibility tree is not a failed session — screenshot plus a point tap uses CoreDevice HID pixels. Recover only for the tree. Do not retry the tap because XCTest is down.",
         "relay_recover / target.recover adopts a healthy live XCTest runner. Do not kill a ready runner, remount DDI in a loop, or reboot the iPad.",
@@ -147,7 +142,7 @@ export function registerRelayResources(
         leaseRecoveryRule,
         "On TARGET_CONTROL_RUN_RESERVED, wait or cancel the active job before sending input.",
         targetRecoveryRule,
-        "Signed-in browser snapshot needs laneId / --lane so the fixture overlay is applied. Snapshot grok-com without a Lane is the unsigned profile.",
+        "Signed-in browser snapshot needs laneId / --lane so the saved sign-in is applied; without it the browser is signed out.",
         "Do not retry snapshot in a loop. Do not fail a tour only because the tree is missing.",
       ],
     }),
@@ -163,40 +158,11 @@ export function registerRelayResources(
     async () => {
       return {
         activeProfile: profile,
-        activeToolCount:
-          profile === "qa"
-            ? 1 + relayQaOutcomeTools.length + relayQaOperatorTools.length + tools.length
-            : profile === "outcome"
-              ? relayOutcomeTools.length
-              : profile === "operator"
-                ? relayOperatorTools.length
-                : tools.length,
-        activeOperations:
-          profile === "qa"
-            ? [
-                "relay_panel",
-                ...[...relayQaOutcomeTools, ...relayQaOperatorTools, ...tools].map(
-                  ({ name }) => name,
-                ),
-              ]
-            : profile === "outcome"
-              ? relayOutcomeTools.map(({ name }) => name)
-              : profile === "operator"
-                ? relayOperatorTools.map(({ name }) => name)
-                : tools.map(({ operationId }) => operationId),
+        activeToolCount: relayRegisteredToolNames(profile, tools).length,
+        activeOperations: relayRegisteredToolNames(profile, tools),
         profiles: relayMcpProfiles.map((id) => ({
           id,
-          toolCount:
-            id === "qa"
-              ? 1 +
-                relayQaOutcomeTools.length +
-                relayQaOperatorTools.length +
-                relayMcpToolsForProfile(id).length
-              : id === "outcome"
-                ? relayOutcomeTools.length
-                : id === "operator"
-                  ? relayOperatorTools.length
-                  : relayMcpToolsForProfile(id).length,
+          toolCount: relayRegisteredToolNames(id).length,
         })),
         additionalOperations: relayMcpOperationCatalog().filter(
           ({ operationId }) =>

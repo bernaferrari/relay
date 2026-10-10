@@ -1,34 +1,30 @@
 ---
 name: relay-debug-and-record
-description: Reproduce an app issue or record a reusable Relay Test, including reviewing accidental actions and preserving a failed attempt.
+description: Record a Relay Test when steps must be exact and model-free, reproduce an app issue, review accidental actions, and preserve a failed attempt.
 ---
 
-# Record a reusable Test
+# Record an exact Test
+
+Start from a description (`relay_create_test`) when that is enough. Record
+when a step must be exact, fast, or run without a model, or to reproduce an
+issue precisely.
 
 1. Read `relay://guides/record`, `relay://guides/targets`, and
-   `relay://guides/waits`. Call `relay_panel`, then call it with the chosen
-   `appMapId` to check whether the journey already exists. Read detailed steps
-   at `relay://app-maps/<appMapId>/tests/<testId>` with the returned IDs.
-   Choose the intended ready target through `relay_connect_target` and observe
-   its starting screen.
-2. Call `relay_record_test` with the App, target and a clear title. This starts
-   the existing durable authoring workflow. Keep its returned workflow ID
-   and exact version for every subsequent decision.
-3. Send typed actions through `relay_record_action`, using the latest version
-   returned after each action. Use `relay_preview` before an uncertain tap;
-   on a native target pass its serial, on a browser pass its saved Lane.
-   Add useful named evidence through `relay_add_checkpoint`.
-4. Call `relay_stop_recording`, then inspect the workflow. Remove or rename
-   accidental actions with `relay_edit_recording`. An edit requires replay
-   of that exact revision through `relay_replay_recording` before saving.
-5. Save with `relay_approve_recording` only when the canonical workflow says
-   approval is allowed. An unchanged recording may already qualify. If replay
-   failed, retain its evidence and repair deliberately; preserve the failure.
-6. Return the saved App/Test IDs and evidence, then run the saved Test once
-   through `relay_run_test` when validating repeatability is part of the task.
+   `relay://guides/waits`. Call `relay_panel` (with the chosen `appMapId`) to
+   check whether the journey already exists. Choose the ready target through
+   `relay_connect_target` and observe its starting screen.
+2. Call `relay_record_test` with the App, target and a clear title. Keep the
+   returned workflow ID and exact version for every following call.
+3. Send actions through `relay_record_action`, using the latest version after
+   each one. Use `relay_preview` before an uncertain tap. Add an expect or
+   wait-for check for the outcome; `relay_add_checkpoint` names a screenshot.
+4. Call `relay_stop_recording`, then `relay_inspect_workflow`. Fix accidental
+   actions with `relay_edit_recording`; an edit needs a passing
+   `relay_replay_recording` of that revision before saving.
+5. Save with `relay_approve_recording` when the workflow allows approval. If
+   replay failed, keep its evidence and repair deliberately.
+6. Run the saved Test with `relay_run_test` and report its verdict.
 
-Use `relay_inspect_workflow` after an interrupted or uncertain operation;
-unknown mutation outcomes permit inspection rather than repeated input.
-A fixed wait and an unchanged screenshot cannot establish asynchronous
-completion. If this tool schema cannot express the required observable wait,
-add that condition using Relay's existing Test editor and retain the gap.
+After an interrupted or uncertain operation, inspect with
+`relay_inspect_workflow` instead of repeating input. A fixed pause or an
+unchanged screenshot cannot prove that something finished.

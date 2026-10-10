@@ -1,12 +1,14 @@
 # Relay plugin
 
-Observe an app, record a reusable Test, run it again, and inspect retained
-evidence beside your conversation. The installation identity remains
+Describe what should work, let Relay write and run the Test, and read one
+verdict beside your conversation. The installation identity remains
 `relay-proof`; its display name is **Relay**.
 
-The default `qa` preset selects existing recording, run, repeat, inspection,
-preview and recovery tools. It uses Relay's canonical service, workflows,
-leases and evidence. Recording and saved Test replay need no model. Change
+The `qa` preset (the connector's default profile) gives agents the describe →
+run → verdict loop (`relay_create_test`, `relay_run_test`, `relay_get_verdict`),
+a quick `relay_check_change` after code changes, and recording, repeat,
+inspection, preview and recovery tools. Steps written from words need a model
+key; recorded steps and saved replay need none. Gated, human-approved Change
 Proof remains a separate explicit `proof` session.
 
 ## Connect to your existing Relay service
@@ -65,19 +67,19 @@ outside its immutable plugin cache.
 
 For manual setup, invoke `relay-mcp` with `args: ["--profile", "qa"]`, matching
 the plugin descriptor. Use that same profile and connection options for doctor.
-The executable's no-flag `operator` default remains for existing integrations.
+`qa` is also the executable's default when no profile is given.
 
 ## First useful task
 
-1. Call `relay_health`, then `relay_panel` to choose an App. Pass its `appMapId`
-   to `relay_panel` to see that App's saved Tests and recent Runs. The tool
-   returns text when the host cannot display the panel.
-2. Call `relay_connect_target` and select the intended ready target. Keep its
-   returned identity for the task.
-3. Run an existing Test with `relay_run_test`, or observe the starting screen
-   and record a short journey when coverage is missing.
-4. Inspect the returned workflow through `relay_inspect_workflow`. Return the
-   App/Test/Run IDs, exact result and retained evidence.
+1. Call `relay_health`, then `relay_panel` to see existing Apps, Tests and
+   recent Runs (text when the host cannot display the panel).
+2. Call `relay_create_test` with a sentence and the `url` or `app`. It saves
+   the Test and returns the exact `relay_run_test` call.
+3. Call `relay_run_test` (add `targetId` from `relay_connect_target` when
+   several targets are ready). It waits and returns the verdict: passed or
+   failed, with the failing step's expected vs. saw and a screenshot.
+4. After a code change, `relay_check_change` reruns the App's relevant Tests.
+   Record a Test when a step must be exact or model-free.
 
 For detailed discovery without the panel, read `relay://app-maps`, then
 `relay://app-maps/<appMapId>/tests`, then the selected

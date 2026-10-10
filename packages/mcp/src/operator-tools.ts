@@ -40,9 +40,11 @@ const target = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 const laneFields = {
-  lane: identifier.optional().describe("Saved Lane id; passed through as laneId"),
-  laneId: identifier.optional().describe("Saved Lane id"),
+  lane: identifier.optional().describe("Saved sign-in/browser id; passed through as laneId"),
+  laneId: identifier.optional().describe("Saved sign-in/browser id"),
 };
+/** "model" is the public name; "jev" stays accepted for existing callers. */
+const triageMode = z.enum(["model", "jev"]);
 const ro = {
   readOnlyHint: true,
   destructiveHint: false,
@@ -234,14 +236,14 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_recover",
     "Recover the runner",
-    'When to use: the runner is down. On iOS, Reconnect repairs and adopts the live XCTest runner. Pass the same Lane used for screenshots, or a serial. Never reboot. Example: {lane:"grok-daily"}.',
+    'When to use: the runner is down. On iOS, Reconnect repairs and adopts the live XCTest runner. Pass the same serial or saved sign-in/browser used for screenshots. Never reboot. Example: {serial:"RQCY104BG8X"}.',
     z.object(controlTargetFields).strict().superRefine(requireControlTarget),
     rw,
   ),
   verb(
     "relay_teach",
     "Teach a new screen",
-    'When to use: only after identity actually changed (new fingerprint); do not teach a toggle. Example: {appMapId:"grok-ios",target:{kind:"device",platform:"ios",targetId:"ipad"},title:"Settings"}.',
+    'When to use: only after identity actually changed (new fingerprint); do not teach a toggle. Example: {appMapId:"my-ios-app",target:{kind:"device",platform:"ios",targetId:"ipad"},title:"Settings"}.',
     z
       .object({
         appMapId: identifier,
@@ -259,7 +261,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_run",
     "Run a Test",
-    'When to use: run one saved Test directly when requested; no manual interaction is needed first. Default is one case; pass executionMode all only when asked. wait-for/expect-screen can sit on an unchanged screen. Example: {appMapId:"grok-web",testId:"logged-out-home",lane:"grok-daily"}.',
+    'When to use: run one saved Test directly when requested; no manual interaction is needed first. Default is one case; pass executionMode all only when asked. wait-for/expect-screen can sit on an unchanged screen. Example: {appMapId:"my-web-app",testId:"logged-out-home",lane:"member-lane"}.',
     z
       .object({
         appMapId: identifier,
@@ -279,7 +281,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_plan_run",
     "Run a Plan",
-    'When to use: run one case of a saved Plan, optionally wait, print findings, and export the review pack. Pass executionMode all only when every selected case is requested. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. Set triage:"jev" only for additive, read-only OpenRouter sorting of saved findings. Do not start this while tsx watch would reload :8787 mid-pack. Example: {appMapId:"grok-web",combineId:"grok-hourly",lane:"grok-lab",findings:true,triage:"jev",export:true}.',
+    'When to use: run one case of a saved Plan, optionally wait, print findings, and export the review pack. Pass executionMode all only when every selected case is requested. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. Set triage:"model" only for additive, read-only model sorting of saved findings. Do not restart the Relay server while a Plan is running. Example: {appMapId:"my-web-app",combineId:"hourly",lane:"member-lane",findings:true,triage:"model",export:true}.',
     z
       .object({
         appMapId: identifier,
@@ -290,7 +292,7 @@ export const relayOperatorTools = Object.freeze([
         targetKind: z.enum(["device", "browser"]).optional(),
         executionMode: z.enum(["pilot", "all"]).optional(),
         findings: z.boolean().optional(),
-        triage: z.literal("jev").optional(),
+        triage: triageMode.optional(),
         export: z.boolean().optional(),
         wait: z
           .boolean()
@@ -369,8 +371,8 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_findings",
     "Plan findings",
-    'When to use: read durable Plan findings for Confirm/Reject (never auto-accepts visuals). Set triage:"jev" only for additive, read-only OpenRouter sorting of saved findings. Example: {batchId:"camp-1",triage:"jev"}.',
-    z.object({ batchId: identifier, triage: z.literal("jev").optional() }).strict(),
+    'When to use: read durable Plan findings for Confirm/Reject (never auto-accepts visuals). Set triage:"model" only for additive, read-only model sorting of saved findings. Example: {batchId:"camp-1",triage:"model"}.',
+    z.object({ batchId: identifier, triage: triageMode.optional() }).strict(),
     ro,
   ),
   verb(

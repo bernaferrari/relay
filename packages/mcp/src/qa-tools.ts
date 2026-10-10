@@ -75,4 +75,6 @@ export const relayQaRequiredOperationIds = Object.freeze([
   "run.repair.list",
   "run.repair.propose",
   "run.trace-pack.get",
+  "test.create-from-goal",
+  "run.verdict.get",
 ] as const satisfies readonly OperationId[]);

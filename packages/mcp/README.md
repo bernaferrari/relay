@@ -101,8 +101,8 @@ manifest for that profile. The report never prints `RELAY_AUTH_TOKEN`.
 
 ## Specialist profiles
 
-Existing integrations retain the executable's `operator` default when no profile
-is selected. New recording and Test integrations should explicitly select `qa`.
+The executable defaults to `qa` when no profile is selected. Integrations that
+relied on the old no-flag `operator` default must now pass `--profile operator`.
 Choose another profile with `--profile <name>` or `RELAY_MCP_PROFILE` when the
 task requires its specialist tools.
 Proof hosts launch `--profile proof`: it retains the ordinary `relay_prove_change` outcome and
@@ -183,29 +183,29 @@ the bridge exposes exactly the profile selected by `RELAY_MCP_PROFILE`.
 
 ## Tool profiles
 
-Use `qa` for ordinary recording, saved Tests, and evidence review. The executable
-still defaults to `operator` for existing integrations. Configure the required
+Use `qa` (the executable's default) to describe, run and check Tests and read
+verdicts. Pass `--profile operator` for the hand-named device verbs. Configure the required
 profile once when setting up the host; discover its tools before the task.
 `full` is trusted orchestration only and is the only profile that exposes
 `lease.takeover`.
 
-| Profile    | Intended use                                                                              |
-| ---------- | ----------------------------------------------------------------------------------------- |
-| `qa`       | Recommended first use: record, run, repeat, inspect, review, and export existing evidence |
-| `operator` | Executable compatibility default: ~19 verbs + `relay_advanced`; no `lease.takeover`       |
-| `outcome`  | Test workflow: connect, observe, record, replay, run, repeat, inspect, export             |
-| `control`  | Advanced direct target observation, input, recovery, and lease management                 |
-| `map`      | Discovery and observation proposals without full authoring edits                          |
-| `observe`  | Read-only project, device, App Map, proposal, run, and evidence inspection                |
-| `author`   | Default App Map editing, device recording, and proposal creation                          |
-| `test`     | Graph Test creation, review, compilation, one-pass runs, and evidence                     |
-| `run`      | Test/Combine execution, jobs, and run evidence                                            |
-| `execute`  | Alias of `run` for execution-focused agents                                               |
-| `locale`   | Language Variables, profiles, Combine campaigns, and analysis                             |
-| `review`   | Proposal/take repair, replay, approval, and run-baseline review                           |
-| `admin`    | Workspace policy, projects, targets, schedules, matrices, and retention                   |
-| `proof`    | Prove one change with the outcome tool plus explicit proof.* lifecycle/recovery controls  |
-| `full`     | Every canonical Relay operation; trusted orchestration only; includes `lease.takeover`    |
+| Profile    | Intended use                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| `qa`       | Default: describe a Test, run it for a verdict, check a change, record, inspect, export  |
+| `operator` | ~23 hand-named device verbs + `relay_advanced` + the describe/verdict loop; no takeover  |
+| `outcome`  | Test workflow: connect, observe, record, replay, run, repeat, inspect, export            |
+| `control`  | Advanced direct target observation, input, recovery, and lease management                |
+| `map`      | Discovery and observation proposals without full authoring edits                         |
+| `observe`  | Read-only project, device, App Map, proposal, run, and evidence inspection               |
+| `author`   | Default App Map editing, device recording, and proposal creation                         |
+| `test`     | Graph Test creation, review, compilation, one-pass runs, and evidence                    |
+| `run`      | Test/Combine execution, jobs, and run evidence                                           |
+| `execute`  | Alias of `run` for execution-focused agents                                              |
+| `locale`   | Language Variables, profiles, Combine campaigns, and analysis                            |
+| `review`   | Proposal/take repair, replay, approval, and run-baseline review                          |
+| `admin`    | Workspace policy, projects, targets, schedules, matrices, and retention                  |
+| `proof`    | Prove one change with the outcome tool plus explicit proof.* lifecycle/recovery controls |
+| `full`     | Every canonical Relay operation; trusted orchestration only; includes `lease.takeover`   |
 
 Outcome tools accept job-level intent and resolve the sole Test workspace, Device, current revision,
 and available control internally. Advanced profile tools advertise and take canonical operation
@@ -357,12 +357,24 @@ installation check can be run from this workspace with `pnpm build` and `pnpm te
 
 ## Ordinary QA preset
 
-`relay-mcp --profile qa` selects the existing model-free recording, run, repeat,
-inspection and export outcomes, plus health, preview and recovery operators.
-App/Test resources remain discoverable. It excludes assisted goals, raw admin
-operations and Change Proof. The `relay-proof` plugin now selects this preset;
-`proof` and `outcome` remain explicit profiles; `operator` retains the executable
-default for compatibility.
+`relay-mcp` (or `--profile qa`) is describe-first:
+
+- `relay_create_test {goal, url | app}` writes Action/Check steps from a sentence, saves the
+  Test, and returns the exact `relay_run_test` call.
+- `relay_run_test` waits for the verdict by default (`wait:false` returns at once;
+  `timeoutSeconds` bounds the wait, which returns `status: "running"` when it runs out).
+  The agent response never includes the compiled plan.
+- `relay_get_verdict {runId}` reads passed/failed/blocked/cancelled, a reason, and each failed
+  step's expected vs. saw and screenshot. `relay_inspect_failure` includes the failing step.
+- `relay_check_change {app, areas?, testIds?}` runs the App's relevant ready Tests and returns
+  their verdicts — a quick signal, not a merge decision; gated merge checks use `proof`.
+
+Steps written from words need a model key; recording (`relay_record_test` …) makes a step exact
+and model-free. `relay_panel` and the App/Test resources are the one way to browse Apps and
+Tests; raw App Map tools are not exposed. It excludes assisted goals, raw admin operations and
+Change Proof. `relay_create_test`/`relay_get_verdict` are also registered in `outcome`,
+`operator`, `author`, `test`, `run`, `execute` and `full` (`relay_check_change` in all of
+those except `author`).
 Run `relay-mcp doctor --profile qa` against the same configured service first.
 The connector requires a compatible Relay runtime and target prerequisites;
 the optional local startup described above can attach or launch the runtime.

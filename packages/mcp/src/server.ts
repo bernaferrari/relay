@@ -41,6 +41,7 @@ import { invokeRelayOperatorTool, operatorResultIsPng } from "./operator-tool-di
 import { relayOperatorTools, type RelayOperatorToolDescriptor } from "./operator-tools.js";
 import { registerRelayPanel } from "./panel-resources.js";
 import { relayQaOutcomeTools, relayQaOperatorTools } from "./qa-tools.js";
+import { relayEverydayToolsForProfile } from "./everyday-tools.js";
 import { proofOutcomeTools } from "./proof-outcome-tools.js";
 import {
   defaultRelayMcpProfile,
@@ -95,10 +96,15 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
     profile === "operator"
       ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, cancel, save, export, goal (confirm and a startUrl), findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available. relay_recover adopts a healthy live XCTest runner — do not kill it. Do not bounce :8787 (tsx watch / pnpm dev:app) while a Plan or iPad pack is live."
       : profile === "qa"
-        ? "Record, run and review with the registered QA tools. Use relay_health before connecting, relay_connect_target to choose a ready target, relay_observe_target for current evidence, and relay_inspect_workflow with the returned workflow ID. Read App/Test resources to find an existing Test before recording a duplicate. QA is model-free; assisted exploration and Change Proof are explicit specialist workflows."
+        ? "Describe first: relay_create_test turns a plain-English sentence into a saved Test; relay_run_test runs it and waits for one verdict (passed/failed, the failing step's expected vs. saw); relay_get_verdict reads a verdict later. After a code change, relay_check_change runs the App's relevant ready Tests and returns their verdicts — a quick signal, not a merge decision (the gated Proof flow in the proof profile decides merges). Call relay_health first, relay_panel to find Apps and saved Tests before writing a duplicate, and relay_connect_target to pick a ready target. Plain-English steps need a model key; record a Test (relay_record_test) when a step must be exact and model-free."
         : profile === "outcome"
-          ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, debug, repair, and export evidence."
+          ? "Prefer outcome tools: describe a Test (relay_create_test), run it for a verdict, check a change, connect, observe, record, repeat, inspect, repair, and export evidence."
           : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
+    ...(profile !== "qa" && profile !== "outcome" && relayEverydayToolsForProfile(profile).length
+      ? [
+          "To test from a description, call relay_create_test, run the Test, then read relay_get_verdict.",
+        ]
+      : []),
     profile === "outcome" || profile === "qa"
       ? "Omit appMapId when exactly one Test workspace exists. Use relay_connect_target to choose the intended target, limit mobile discovery with targetKind and phase, and keep its returned targetId through observation, recording, and replay."
       : "Supply the required fields in each tool schema. Keep the same saved Lane or explicit target throughout observation and execution.",
@@ -841,6 +847,9 @@ export function createMcpServer({
 
   const tools = relayMcpToolsForProfile(profile);
   const recoveryOptions = recoveryOptionsForProfile(profile, tools);
+  for (const descriptor of relayEverydayToolsForProfile(profile)) {
+    registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
+  }
   if (profile === "qa") {
     registerRelayPanel(server, invoker, scope);
     for (const descriptor of relayQaOutcomeTools) {
