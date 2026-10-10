@@ -11,6 +11,7 @@ import { recordAppMapRun, recordAppMapTestValidation } from "./app-map/run-opera
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import { readFrameTreeNodes } from "./run-frame-tree.js";
 import { growAppMapFromRun } from "./app-map-run-growth.js";
+import { saveActCachesFromRun } from "./app-map-act-cache.js";
 import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
 
 /** Overlay fixtures must not reuse the unsigned saved profile id. */
@@ -410,6 +411,8 @@ export async function projectPersistedAppMapRun(run: PersistedRun): Promise<bool
   // Every run grows its map, pass or fail. Additions are drafts Tests never
   // replay, so a failure here must never block the run's own projection.
   await growAppMapFromRun(run).catch(() => 0);
+  // Plain-English steps that ran remember their actions for the next run.
+  await saveActCachesFromRun(run).catch(() => 0);
   const testProvenance = compiledTestProvenance(run);
   if (testProvenance && !compiledPlan(run)) {
     const projected = await recordSuccessfulTestValidation(run, testProvenance);

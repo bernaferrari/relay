@@ -299,6 +299,16 @@ export function patchScenarioTestStep(
       ? { cleanup: structuredClone(patch.cleanup) }
       : {}),
   } as AppMapScenarioTestStep;
+  // Saved actions belong to the old words; new words run from the model.
+  if (
+    patch.intent !== undefined &&
+    patch.intent.trim() !== step.intent.trim() &&
+    replacement.binding.status === "unresolved" &&
+    replacement.binding.cache
+  ) {
+    const { cache: _cache, ...binding } = replacement.binding;
+    (replacement as { binding: typeof binding }).binding = binding;
+  }
   return validated({ ...test, steps: replaceStep(test.steps, stepId, replacement) });
 }
 

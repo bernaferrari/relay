@@ -11,6 +11,9 @@ import { captureScreenshot, cleanupScreenshot } from "./workspace-capture.js";
 import { createOpenRouterClient } from "./openrouter-ai-sdk.js";
 import { now } from "./events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
+import { isCancel } from "./recipe-runner-support.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
+import { rethrowInputOutcomeUnknown } from "./input-not-dispatched.js";
 
 export const DEFAULT_ACT_MAX_ACTIONS = 5;
 const MAX_CANDIDATES = 80;
@@ -290,12 +293,50 @@ export async function runActStep(
   const decide = registeredDecider ?? decideViaOpenRouter;
   const max = Math.max(1, Math.min(step.maxActions ?? DEFAULT_ACT_MAX_ACTIONS, 20));
   const history: string[] = [];
+  const executed: RecipeStep[] = [];
   const record = (data: Record<string, unknown>) =>
     (ctx.job?.artifacts ?? ctx.artifacts)?.push({
       kind: "act-decision",
       capturedAt: now(),
       data: { intent: step.intent, ...data },
     });
+  /** What carried out the step, so a later run can replay it without a model. */
+  const finish = (source: "cache" | "model") => {
+    (ctx.job?.artifacts ?? ctx.artifacts)?.push({
+      kind: "act-result",
+      capturedAt: now(),
+      data: {
+        intent: step.intent,
+        ...(step.id ? { recipeStepId: step.id } : {}),
+        source,
+        steps: structuredClone(executed),
+      },
+    });
+  };
+  const runAndKeep = async (concrete: RecipeStep) => {
+    await runConcrete(concrete);
+    executed.push(concrete);
+  };
+
+  // Replay what worked last time; ask the model only if the screen changed.
+  if (step.cached?.length) {
+    try {
+      for (const concrete of step.cached) await runAndKeep(structuredClone(concrete));
+      record({ action: "cached", steps: step.cached });
+      ctx.log(`act: replayed ${step.cached.length} saved action(s) for “${step.intent}”`);
+      finish("cache");
+      return;
+    } catch (error) {
+      // Never retry around a cancel, or an input whose outcome is unknown.
+      if (isCancel(error)) throw error;
+      rethrowIosMutationOutcomeUnknown(error);
+      rethrowInputOutcomeUnknown(error);
+      const message = error instanceof Error ? error.message : String(error);
+      record({ action: "cache-miss", reason: message, replayed: executed.length });
+      ctx.log(`act: saved actions no longer fit (${message}); asking the model`);
+      history.push(...executed.map(() => "Replayed a saved action"));
+    }
+  }
   for (let attempt = 0; attempt <= max; attempt += 1) {
     const { candidates, screenshot } = await observeScreen(device);
     const decision = await decide({
@@ -308,6 +349,7 @@ export async function runActStep(
     if (decision.action === "done") {
       record({ action: "done", reason: decision.reason, history });
       ctx.log(`act: done — ${decision.reason}`);
+      finish("model");
       return;
     }
     if (decision.action === "impossible") {
@@ -318,9 +360,12 @@ export async function runActStep(
     const { steps, summary } = concreteStepsForDecision(decision, candidates);
     record({ action: decision.action, summary, reason: decision.reason, steps });
     ctx.log(`act: ${summary} — ${decision.reason}`);
-    for (const concrete of steps) await runConcrete(concrete);
+    for (const concrete of steps) await runAndKeep(concrete);
     history.push(summary);
-    if ("finishesIntent" in decision && decision.finishesIntent) return;
+    if ("finishesIntent" in decision && decision.finishesIntent) {
+      finish("model");
+      return;
+    }
   }
   throw new Error(
     `Could not ${lowerFirst(step.intent)} within ${max} actions (tried: ${history.join(", ") || "nothing"})`,

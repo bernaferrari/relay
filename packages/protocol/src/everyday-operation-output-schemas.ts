@@ -1,5 +1,20 @@
 import * as z from "zod/v4";
 
+/** Actions that last carried out a plain-English step, replayed before the model. */
+export const plainEnglishStepCacheSchema = z
+  .object({
+    steps: z.array(z.record(z.string(), z.unknown())).max(40),
+    runId: z.string(),
+    savedAt: z.number(),
+  })
+  .strict();
+
+/** Fields an unresolved Test step binding adds when it runs from its words. */
+export const plainEnglishBindingFields = {
+  fromText: z.literal(true).optional(),
+  cache: plainEnglishStepCacheSchema.optional(),
+};
+
 /** Responses of the everyday loop: describe a Test, its file, a Run's verdict, the model key. */
 export const everydayOperationOutputSchemas = {
   "test.create-from-goal": z
