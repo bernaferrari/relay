@@ -7,6 +7,14 @@ import {
   relayOutcomeTools,
   type RelayOutcomeToolDescriptor,
 } from "./outcome-tools.js";
+import { invokeRelayEverydayTool } from "./everyday-tools.js";
+import type { OperationInvoker } from "./server.js";
+
+const unusedInvoker: OperationInvoker = {
+  async invoke(operationId) {
+    throw new Error(`unexpected ${operationId}`);
+  },
+};
 
 type Invocation = { method: keyof RelayOutcomeJobs; argumentsValue: unknown[] };
 
@@ -100,23 +108,6 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
         title: "Locale",
         confirmControl: true,
         targetId: "ipad",
-      },
-    },
-    {
-      name: "relay_run_test",
-      argumentsValue: {
-        appMapId: "checkout",
-        testId: "smoke",
-        targetId: "pixel-9",
-      },
-      confirmed: true,
-      method: "run",
-      expected: {
-        kind: "run-test",
-        appMapId: "checkout",
-        testId: "smoke",
-        targetId: "pixel-9",
-        confirmRisk: true,
       },
     },
     {
@@ -252,12 +243,6 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       },
     },
     {
-      name: "relay_inspect_failure",
-      argumentsValue: { runId: "run-1" },
-      method: "inspectFailure",
-      expected: { kind: "inspect-failure", runId: "run-1" },
-    },
-    {
       name: "relay_propose_repair",
       argumentsValue: {
         runId: "run-1",
@@ -272,24 +257,6 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
         checkId: "check-1",
         proposal: "accept-current",
         reason: "Approved copy change",
-      },
-    },
-    {
-      name: "relay_debug_bug",
-      argumentsValue: {
-        kind: "debug-bug",
-        action: "start",
-        title: "Checkout failure",
-        targetId: "pixel-9",
-      },
-      confirmed: true,
-      method: "debugBug",
-      expected: {
-        kind: "debug-bug",
-        action: "start",
-        title: "Checkout failure",
-        targetId: "pixel-9",
-        confirmControl: true,
       },
     },
     {
@@ -324,17 +291,6 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
         proofId: "proof-184",
         expectedVersion: 3,
         wait: true,
-      },
-    },
-    {
-      name: "relay_proof_analyze",
-      argumentsValue: {
-        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
-      },
-      method: "verifyChange",
-      expected: {
-        kind: "verify-change",
-        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
       },
     },
     {
@@ -553,27 +509,6 @@ test("relay_goal exposes read-only inspection without control confirmation", asy
   }
 });
 
-test("Agent Debug title uses the same 160 character limit as the product UI", () => {
-  const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_debug_bug");
-  assert.ok(descriptor);
-  assert.equal(
-    descriptor.inputSchema.safeParse({
-      kind: "debug-bug",
-      action: "start",
-      title: "a".repeat(160),
-    }).success,
-    true,
-  );
-  assert.equal(
-    descriptor.inputSchema.safeParse({
-      kind: "debug-bug",
-      action: "start",
-      title: "a".repeat(161),
-    }).success,
-    false,
-  );
-});
-
 test("protected outcome tools reject missing confirmation before workflow dispatch", async () => {
   for (const testCase of [
     {
@@ -587,14 +522,6 @@ test("protected outcome tools reject missing confirmation before workflow dispat
     {
       name: "relay_continue_repeat" as const,
       argumentsValue: { workflowId: "repeat-workflow", expectedVersion: 1 },
-    },
-    {
-      name: "relay_debug_bug" as const,
-      argumentsValue: {
-        kind: "debug-bug",
-        action: "start",
-        title: "Smoke",
-      },
     },
     {
       name: "relay_goal" as const,
@@ -614,40 +541,6 @@ test("protected outcome tools reject missing confirmation before workflow dispat
   }
 });
 
-test("Agent Debug exploration requires transport confirmation only when it controls a target", async () => {
-  const invocations: Invocation[] = [];
-  const create = {
-    kind: "debug-bug",
-    action: "explore",
-    create: {
-      id: "discovery-1",
-      name: "Checkout discovery",
-      targetId: "pixel-9",
-      scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
-    },
-  } as const;
-  await invokeRelayOutcomeToolWithJobs({
-    name: "relay_debug_bug",
-    argumentsValue: create,
-    confirmed: false,
-    jobs: recordingJobs(invocations),
-  });
-  assert.deepEqual(invocations, [{ method: "debugBug", argumentsValue: [create] }]);
-
-  await assert.rejects(
-    invokeRelayOutcomeToolWithJobs({
-      name: "relay_debug_bug",
-      argumentsValue: {
-        ...create,
-        start: { sessionId: "discovery-1", strategy: "surface", maxDepth: 2 },
-      },
-      confirmed: false,
-      jobs: recordingJobs([]),
-    }),
-    /requires confirm: true/u,
-  );
-});
-
 test("Run risk consent comes only from transport confirmation and preserves two-call preflight", async () => {
   const invocations: Invocation[] = [];
   const jobs = {
@@ -662,11 +555,13 @@ test("Run risk consent comes only from transport confirmation and preserves two-
     },
   } as unknown as RelayOutcomeJobs;
 
-  const preflight = await invokeRelayOutcomeToolWithJobs({
+  const preflight = await invokeRelayEverydayTool({
     name: "relay_run_test",
-    argumentsValue: { appMapId: "checkout", testId: "send-message" },
+    argumentsValue: { appMapId: "checkout", testId: "send-message", wait: false },
     confirmed: false,
+    invoker: unusedInvoker,
     jobs,
+    signal: new AbortController().signal,
   });
   assert.deepEqual(preflight, {
     phase: "needs-input",
@@ -679,11 +574,13 @@ test("Run risk consent comes only from transport confirmation and preserves two-
     },
   ]);
 
-  const confirmed = await invokeRelayOutcomeToolWithJobs({
+  const confirmed = await invokeRelayEverydayTool({
     name: "relay_run_test",
-    argumentsValue: { appMapId: "checkout", testId: "send-message" },
+    argumentsValue: { appMapId: "checkout", testId: "send-message", wait: false },
     confirmed: true,
+    invoker: unusedInvoker,
     jobs,
+    signal: new AbortController().signal,
   });
   assert.deepEqual(confirmed, { phase: "queued" });
   assert.deepEqual(invocations[1], {
@@ -700,11 +597,19 @@ test("Run risk consent comes only from transport confirmation and preserves two-
 });
 
 test("Run and Repeat reject self-asserted confirmRisk before workflow dispatch", async () => {
-  for (const testCase of [
-    {
-      name: "relay_run_test" as const,
+  const runInvocations: Invocation[] = [];
+  await assert.rejects(
+    invokeRelayEverydayTool({
+      name: "relay_run_test",
       argumentsValue: { testId: "send-message", confirmRisk: true },
-    },
+      confirmed: false,
+      invoker: unusedInvoker,
+      jobs: recordingJobs(runInvocations),
+      signal: new AbortController().signal,
+    }),
+  );
+  assert.deepEqual(runInvocations, []);
+  for (const testCase of [
     {
       name: "relay_repeat_test" as const,
       argumentsValue: {
@@ -755,11 +660,13 @@ test("Repeat transport confirmation authorizes only the frozen pilot preflight",
 test("outcome tool schemas reject adapter-only fields instead of leaking raw operations", async () => {
   const invocations: Invocation[] = [];
   await assert.rejects(
-    invokeRelayOutcomeToolWithJobs({
+    invokeRelayEverydayTool({
       name: "relay_run_test",
       argumentsValue: { testId: "smoke", leaseId: "hidden-engine-detail" },
       confirmed: false,
+      invoker: unusedInvoker,
       jobs: recordingJobs(invocations),
+      signal: new AbortController().signal,
     }),
   );
   assert.deepEqual(invocations, []);
@@ -773,68 +680,6 @@ test("default outcome tool copy keeps engine nouns behind advanced profiles", ()
       descriptor.name,
     );
   }
-});
-
-test("proof analysis is a read-only fail-closed tool with no provider posting fields", () => {
-  const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_proof_analyze")!;
-  assert.equal(descriptor.annotations.readOnlyHint, true);
-  assert.equal(descriptor.requiresConfirmation, false);
-  assert.equal(
-    descriptor.inputSchema.safeParse({
-      selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
-      github: { checkPosting: true },
-    }).success,
-    false,
-  );
-});
-
-test("verify-change returns the canonical bounded decision projection unchanged", async () => {
-  const projection = {
-    schemaVersion: 1,
-    kind: "verify-change",
-    mode: "offline",
-    summary: {
-      verdict: "insufficient",
-      affectedTests: 1,
-      passed: 0,
-      regressions: 0,
-      review: 0,
-      insufficient: 1,
-    },
-    policy: { id: "relay.verify-change", version: 1 },
-    ruleIds: ["evidence.incomplete"],
-    evidenceCompleteness: {
-      status: "partial",
-      complete: 0,
-      partial: 1,
-      missing: ["trace-pack:map-1:test-1"],
-    },
-    unresolvedUncertainty: ["missing:trace-pack:map-1:test-1"],
-    smallestRequiredLiveVerification: {
-      required: true,
-      action: "run-one-affected-test",
-      reason: "One affected Test needs complete fresh evidence before policy can decide.",
-      testId: "test-1",
-      evidenceNeeded: ["trace-pack:map-1:test-1"],
-    },
-    mutation: "none",
-    checkPosting: "none",
-  } as const;
-  const jobs = {
-    ...recordingJobs([]),
-    verifyChange: async () => projection,
-  } as unknown as RelayOutcomeJobs;
-
-  const returned = await invokeRelayOutcomeToolWithJobs({
-    name: "relay_proof_analyze",
-    argumentsValue: { selection: { kind: "runs", runIds: ["run-1"] } },
-    confirmed: false,
-    jobs,
-  });
-
-  assert.strictEqual(returned, projection);
-  assert.equal(projection.checkPosting, "none");
-  assert.equal("tracePacks" in projection, false);
 });
 
 test("Replay Lab MCP accepts only bounded explicit payloads", async () => {
@@ -886,60 +731,6 @@ test("Replay Lab MCP accepts only bounded explicit payloads", async () => {
       jobs: recordingJobs(invocations),
     }),
     /depth/u,
-  );
-  assert.deepEqual(invocations, []);
-});
-
-test("verify-change bounds ids and supplied TracePacks before invoking the façade", async () => {
-  const invocations: Invocation[] = [];
-  await assert.rejects(
-    invokeRelayOutcomeToolWithJobs({
-      name: "relay_proof_analyze",
-      argumentsValue: {
-        selection: {
-          kind: "runs",
-          runIds: Array.from({ length: 129 }, (_, index) => `run-${index}`),
-        },
-      },
-      confirmed: false,
-      jobs: recordingJobs(invocations),
-    }),
-    /128/u,
-  );
-  assert.deepEqual(invocations, []);
-
-  const falselySmall = structuredClone(tracePack("e"));
-  falselySmall.objects[0]!.content = { payload: "x".repeat(32 * 1024 * 1024) };
-  falselySmall.objects[0]!.bytes = 1;
-  await assert.rejects(
-    invokeRelayOutcomeToolWithJobs({
-      name: "relay_proof_analyze",
-      argumentsValue: {
-        selection: { kind: "trace-packs", tracePacks: [falselySmall] },
-      },
-      confirmed: false,
-      jobs: recordingJobs(invocations),
-    }),
-    /string|serialized bytes/u,
-  );
-  assert.deepEqual(invocations, []);
-
-  const tooManyObjects = structuredClone(tracePack("f"));
-  tooManyObjects.objects = Array.from({ length: 2_001 }, (_, index) => ({
-    ...tooManyObjects.objects[0]!,
-    path: index === 0 ? "run.json" : `artifacts/${index}.json`,
-    content: {},
-  }));
-  await assert.rejects(
-    invokeRelayOutcomeToolWithJobs({
-      name: "relay_proof_analyze",
-      argumentsValue: {
-        selection: { kind: "trace-packs", tracePacks: [tooManyObjects] },
-      },
-      confirmed: false,
-      jobs: recordingJobs(invocations),
-    }),
-    /2000 objects/u,
   );
   assert.deepEqual(invocations, []);
 });

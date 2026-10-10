@@ -4,7 +4,6 @@ import {
   summarizeExecutionOperationResult,
   type OperationId,
 } from "@relay/protocol";
-import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import { pngScreenshotRecord } from "./png-result.js";
 import { relayMcpExclusions, relayMcpTools } from "./tools.js";
 import { relayOperatorTools, type RelayOperatorToolDescriptor } from "./operator-tools.js";
@@ -644,21 +643,6 @@ export async function invokeRelayOperatorTool(input: {
         { signal },
       ),
     );
-  }
-  if (input.name === "relay_goal") {
-    const jobs = createRelayOutcomeJobs(
-      {
-        invoke: (operationId, operationInput) =>
-          invoker.invoke(operationId, operationInput as never, { signal }),
-      },
-      { actorId: input.actorId },
-    );
-    return jobs.goal({
-      kind: "goal-start",
-      goal: String(parsed.goal),
-      ...(typeof parsed.startUrl === "string" ? { startUrl: parsed.startUrl } : {}),
-      ...(typeof parsed.laneId === "string" ? { laneId: parsed.laneId } : {}),
-    });
   }
   if (input.name === "relay_lanes") return invoker.invoke("lane.list", {}, { signal });
   return invokeAdvanced(parsed, input.confirmed, invoker, signal, input.profile ?? "operator");

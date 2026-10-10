@@ -191,7 +191,7 @@ class RelayMcpStdioSession {
     const childEnvironment = {
       ...process.env,
       ...environment,
-      RELAY_MCP_PROFILE: environment.RELAY_MCP_PROFILE?.trim() || "proof",
+      RELAY_MCP_PROFILE: environment.RELAY_MCP_PROFILE?.trim() || "qa",
     };
     this.child = spawn(process.execPath, [config.serverPath], {
       env: childEnvironment,

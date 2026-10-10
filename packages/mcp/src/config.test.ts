@@ -23,7 +23,7 @@ test("configuration uses arguments over environment over CLI-compatible defaults
       RELAY_PROJECT_ID: "env-project",
       RELAY_ACTOR_ID: "agent:env",
       RELAY_TIMEOUT_MS: "999",
-      RELAY_MCP_PROFILE: "execute",
+      RELAY_MCP_PROFILE: "run",
     },
     42,
   );

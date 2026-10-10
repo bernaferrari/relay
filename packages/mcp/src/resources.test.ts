@@ -462,12 +462,13 @@ test("discovers excluded profile operations without eagerly exposing their tools
     );
     assert.equal(envelope.truncated, false);
     assert.equal(envelope.data.activeProfile, "map");
+    // activeOperations lists registered MCP tool names, the same in every profile.
     assert.deepEqual(
       envelope.data.activeOperations,
-      relayMcpToolsForProfile("map").map(({ operationId }) => operationId),
+      relayMcpToolsForProfile("map").map(({ name }) => name),
     );
     const discoverable = new Set([
-      ...envelope.data.activeOperations,
+      ...relayMcpToolsForProfile("map").map(({ operationId }) => operationId),
       ...envelope.data.additionalOperations.map(({ operationId }) => operationId),
     ]);
     assert.deepEqual(discoverable, new Set(relayMcpTools.map(({ operationId }) => operationId)));

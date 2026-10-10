@@ -90,27 +90,6 @@ function requireControlTarget(
     context.addIssue({ code: "custom", message: "lane and laneId must match." });
 }
 
-function requireHttpStartUrl(value: { startUrl: string }, context: z.RefinementCtx): void {
-  let parsed: URL;
-  try {
-    parsed = new URL(value.startUrl);
-  } catch {
-    context.addIssue({
-      code: "custom",
-      path: ["startUrl"],
-      message: "startUrl must be an http(s) URL",
-    });
-    return;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    context.addIssue({
-      code: "custom",
-      path: ["startUrl"],
-      message: "startUrl must be an http(s) URL",
-    });
-  }
-}
-
 const interactTarget = z
   .object({
     ...controlTargetFields,
@@ -350,21 +329,6 @@ export const relayOperatorTools = Object.freeze([
     "Save a Test",
     'When to use: save a Test on the current map without switching profiles. Pass the current expectedRevision. A conflicting revision is refused. Example: {appMapId:"checkout",testId:"smoke",expectedRevision:7,test:{name:"Checkout smoke",kind:"scenario",intentSchemaVersion:1,steps:[]}}.',
     saveTestSchema.inputSchema as OperatorInputSchema,
-    rw,
-    true,
-  ),
-  verb(
-    "relay_goal",
-    "Ask Relay to exercise a bounded goal",
-    'When to use: ask Relay to exercise one bounded browser goal without switching profiles. Pass confirm:true. A saved Test can still replay without a model. Example: {goal:"Open settings and capture language options",startUrl:"http://127.0.0.1:3000"}.',
-    z
-      .object({
-        goal: z.string().trim().min(1).max(2048),
-        startUrl: z.string().trim().min(1).max(2048),
-        laneId: identifier.optional(),
-      })
-      .strict()
-      .superRefine(requireHttpStartUrl),
     rw,
     true,
   ),

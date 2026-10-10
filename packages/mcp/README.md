@@ -192,7 +192,7 @@ profile once when setting up the host; discover its tools before the task.
 | Profile    | Intended use                                                                             |
 | ---------- | ---------------------------------------------------------------------------------------- |
 | `qa`       | Default: describe a Test, run it for a verdict, check a change, record, inspect, export  |
-| `operator` | ~23 hand-named device verbs + `relay_advanced` + the describe/verdict loop; no takeover  |
+| `operator` | ~22 hand-named device verbs + `relay_advanced` + the describe/verdict loop; no takeover  |
 | `outcome`  | Test workflow: connect, observe, record, replay, run, repeat, inspect, export            |
 | `control`  | Advanced direct target observation, input, recovery, and lease management                |
 | `map`      | Discovery and observation proposals without full authoring edits                         |
@@ -200,7 +200,6 @@ profile once when setting up the host; discover its tools before the task.
 | `author`   | Default App Map editing, device recording, and proposal creation                         |
 | `test`     | Graph Test creation, review, compilation, one-pass runs, and evidence                    |
 | `run`      | Test/Combine execution, jobs, and run evidence                                           |
-| `execute`  | Alias of `run` for execution-focused agents                                              |
 | `locale`   | Language Variables, profiles, Combine campaigns, and analysis                            |
 | `review`   | Proposal/take repair, replay, approval, and run-baseline review                          |
 | `admin`    | Workspace policy, projects, targets, schedules, matrices, and retention                  |
@@ -372,9 +371,9 @@ installation check can be run from this workspace with `pnpm build` and `pnpm te
 Steps written from words need a model key; recording (`relay_record_test` …) makes a step exact
 and model-free. `relay_panel` and the App/Test resources are the one way to browse Apps and
 Tests; raw App Map tools are not exposed. It excludes assisted goals, raw admin operations and
-Change Proof. `relay_create_test`/`relay_get_verdict` are also registered in `outcome`,
-`operator`, `author`, `test`, `run`, `execute` and `full` (`relay_check_change` in all of
-those except `author`).
+Change Proof. All five loop tools (`relay_create_test`, `relay_run_test`, `relay_get_verdict`,
+`relay_check_change`, `relay_inspect_failure`) are also registered in `outcome`, `operator`,
+`author`, `test`, `run` and `full`; `full` hides the raw operations they wrap.
 Run `relay-mcp doctor --profile qa` against the same configured service first.
 The connector requires a compatible Relay runtime and target prerequisites;
 the optional local startup described above can attach or launch the runtime.

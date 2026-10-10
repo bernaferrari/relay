@@ -327,7 +327,8 @@ async function main() {
     const outcomeTools = outcomeResponses.find((response) => response.id === 2)?.result?.tools;
     assert.ok(Array.isArray(outcomeTools));
     assert.ok(outcomeTools.some((tool) => tool.name === "relay_prove_change"));
-    assert.ok(outcomeTools.some((tool) => tool.name === "relay_proof_analyze"));
+    assert.ok(outcomeTools.some((tool) => tool.name === "relay_run_test"));
+    assert.ok(!outcomeTools.some((tool) => tool.name === "relay_proof_analyze"));
 
     const qaEnv = { ...env, RELAY_MCP_PROFILE: "qa" };
     const qaDoctor = await runAsync(

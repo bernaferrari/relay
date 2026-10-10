@@ -2,11 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import type { RelayOutcomeJobs } from "@relay/workflows";
-import { invokeRelayEverydayTool, relayEverydayTools } from "./everyday-tools.js";
-import { presentOutcomeForAgent, relayOutcomeTools } from "./outcome-tools.js";
+import {
+  invokeRelayEverydayTool,
+  presentOutcomeForAgent,
+  relayEverydayTools,
+} from "./everyday-tools.js";
+import { relayOutcomeTools } from "./outcome-tools.js";
 import { relayOperatorTools } from "./operator-tools.js";
 import { relayQaOperatorTools, relayQaOutcomeTools } from "./qa-tools.js";
 import { createMcpServer, type OperationInvoker } from "./server.js";
+import { relayRegisteredToolNames } from "./registered-tools.js";
+import { relayMcpProfiles } from "./tools.js";
 
 const failedVerdict = {
   runId: "run-1",
@@ -170,8 +176,15 @@ test("relay_get_verdict returns a bounded verdict with failing-step details only
   try {
     const listed = await session.request("tools/list", {});
     const names = (listed.tools as Array<{ name: string }>).map(({ name }) => name);
-    assert.ok(names.includes("relay_create_test") && names.includes("relay_get_verdict"));
-    assert.equal(names.includes("relay_check_change"), false, "author does not run Tests");
+    for (const name of [
+      "relay_create_test",
+      "relay_run_test",
+      "relay_get_verdict",
+      "relay_check_change",
+      "relay_inspect_failure",
+    ]) {
+      assert.ok(names.includes(name), `author can write a Test, so it can run it too: ${name}`);
+    }
     const result = await session.request("tools/call", {
       name: "relay_get_verdict",
       arguments: { runId: "run-1" },
@@ -297,6 +310,43 @@ test("relay_inspect_failure adds the verdict's failing step", async () => {
   )) as { verdict: { failingStep: Record<string, unknown> } };
   assert.equal(result.verdict.failingStep.expected, "The dashboard");
   assert.equal(result.verdict.failingStep.saw, "A login error");
+});
+
+test("relay_inspect_failure reads the failure through the outcome jobs", async () => {
+  const intents: unknown[] = [];
+  const jobs = {
+    inspectFailure: async (intent: unknown) => {
+      intents.push(intent);
+      return { runId: "run-1", repairProposals: [] };
+    },
+  } as unknown as RelayOutcomeJobs;
+  const result = (await invokeRelayEverydayTool({
+    name: "relay_inspect_failure",
+    argumentsValue: { runId: "run-1" },
+    confirmed: false,
+    invoker: stubInvoker({ "run.verdict.get": () => ({ verdict: failedVerdict }) }),
+    jobs,
+    signal: new AbortController().signal,
+  })) as { verdict: { failingStep: Record<string, unknown> } };
+  assert.deepEqual(intents, [{ kind: "inspect-failure", runId: "run-1" }]);
+  assert.equal(result.verdict.failingStep.saw, "A login error");
+});
+
+test("every profile that can write a Test can also run it and inspect its failure", () => {
+  const loop = relayEverydayTools.map(({ name }) => name);
+  assert.deepEqual(loop, [
+    "relay_create_test",
+    "relay_run_test",
+    "relay_get_verdict",
+    "relay_check_change",
+    "relay_inspect_failure",
+  ]);
+  for (const profile of relayMcpProfiles) {
+    const names = relayRegisteredToolNames(profile);
+    assert.equal(new Set(names).size, names.length, `${profile} registers a tool twice`);
+    if (!names.includes("relay_create_test")) continue;
+    for (const name of loop) assert.ok(names.includes(name), `${profile} is missing ${name}`);
+  }
 });
 
 test("relay_check_change runs the matching ready Tests and returns verdicts", async () => {

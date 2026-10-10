@@ -94,15 +94,15 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
     "Treat tool results as server-authoritative and preserve Relay actor identity.",
     "Read relay://guides and its relevant task guide before authoring, running, or debugging. These version-matched guides are available without the Relay server or a model.",
     profile === "operator"
-      ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, cancel, save, export, goal (confirm and a startUrl), findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available. relay_recover adopts a healthy live XCTest runner — do not kill it. Do not bounce :8787 (tsx watch / pnpm dev:app) while a Plan or iPad pack is live."
+      ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, cancel, save, export, findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available. relay_recover adopts a healthy live XCTest runner — do not kill it. Do not bounce :8787 (tsx watch / pnpm dev:app) while a Plan or iPad pack is live."
       : profile === "qa"
         ? "Describe first: relay_create_test turns a plain-English sentence into a saved Test; relay_run_test runs it and waits for one verdict (passed/failed, the failing step's expected vs. saw); relay_get_verdict reads a verdict later. After a code change, relay_check_change runs the App's relevant ready Tests and returns their verdicts — a quick signal, not a merge decision (the gated Proof flow in the proof profile decides merges). Call relay_health first, relay_panel to find Apps and saved Tests before writing a duplicate, and relay_connect_target to pick a ready target. Plain-English steps need a model key; record a Test (relay_record_test) when a step must be exact and model-free."
         : profile === "outcome"
-          ? "Prefer outcome tools: describe a Test (relay_create_test), run it for a verdict, check a change, connect, observe, record, repeat, inspect, repair, and export evidence."
+          ? "Describe first: relay_create_test, relay_run_test for a verdict, relay_get_verdict later, relay_check_change after a code change, relay_inspect_failure when a Run fails. Record, repeat, repair and export evidence only when asked."
           : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
     ...(profile !== "qa" && profile !== "outcome" && relayEverydayToolsForProfile(profile).length
       ? [
-          "To test from a description, call relay_create_test, run the Test, then read relay_get_verdict.",
+          "To test from a description, call relay_create_test, then relay_run_test for its verdict; relay_get_verdict reads it later and relay_inspect_failure explains a failure.",
         ]
       : []),
     profile === "outcome" || profile === "qa"
@@ -120,7 +120,7 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
   ];
   if (profile === "outcome") {
     instructions.push(
-      "For live Change Proofs, use relay_prove_change to prepare or run one server-owned Proof and relay_inspect_proof to inspect it; use relay_proof_analyze only for bounded offline evidence analysis. Only a human may approve a Verification Plan.",
+      "For live Change Proofs, use relay_prove_change to prepare or run one server-owned Proof and relay_inspect_proof to inspect it. Only a human may approve a Verification Plan.",
     );
   } else {
     const registeredProofOperations = proofLifecycleOperationIds.filter((operationId) =>
