@@ -233,59 +233,6 @@ async function render(
   return { history };
 }
 
-describe("App overview", () => {
-  it("keeps tests, reports, coverage, and the next action together", async () => {
-    const filters: string[] = [];
-    const service = catalog({
-      listTests: async (filter) => {
-        filters.push(`tests:${filter?.appMapId ?? "all"}`);
-        return tests;
-      },
-      listRuns: async (filter) => {
-        filters.push(`runs:${filter?.appMapId ?? "all"}`);
-        return runs;
-      },
-    });
-    const mapService: MapProductService = {
-      get: async () => ({
-        appMapId: "app-shop-internal",
-        appName: "Shopping",
-        revision: 3,
-        screens: [
-          {
-            id: "home",
-            title: "Home",
-            variantCount: 1,
-            variants: [],
-            coveringTests: [],
-            recentFailures: [],
-          },
-        ],
-        paths: [],
-        coverage: {
-          screenCount: 3,
-          coveredScreenCount: 2,
-          pathCount: 2,
-          coveredPathCount: 1,
-          testCount: 2,
-        },
-        pendingProposalCount: 0,
-        navigation: { route: "/apps/:appId/map", href: "/apps/app-shop-internal/map" },
-      }),
-    };
-
-    await render("/apps/app-shop-internal", service, mapService);
-
-    expect(document.querySelector("#tests-heading")?.textContent).toBe("Tests");
-    expect(document.body.textContent).toContain("covered by tests");
-    expect(document.body.textContent).not.toContain("Saved tests");
-    expect(document.body.textContent).not.toContain("Recent results");
-    expect(document.body.textContent).not.toContain("Workspace resources");
-    expect(document.querySelector('a[href="/tests?app=app-shop-internal"]')).not.toBeNull();
-    expect(document.querySelector('a[href="/apps/app-shop-internal/map"]')).not.toBeNull();
-  });
-});
-
 describe("Tests library", () => {
   it("puts the library first and does not count an older failure as failing", async () => {
     await render("/tests");

@@ -38,7 +38,6 @@ Change → relay ci / relay_check_change → Verdicts
 
 ```text
 /apps
-/apps/:appId
 /versions
 /accounts
 /apps/:appId/map

@@ -59,7 +59,7 @@ console.log("\n2/3 captured-app walkthrough (three states, two configurations)")
 execFileSync("node", ["--import", "tsx", "scripts/walkthrough-demo.mjs"], { stdio: "inherit" });
 
 console.log("\n3/3 thirty-slot reference matrix summary");
-const summary = spawnSync("./bin/relay", ["run", "list", "--json"], {
+const summary = spawnSync("./bin/relay", ["runs", "--json"], {
   env: { ...process.env, RELAY_URL: BASE },
   encoding: "utf8",
   timeout: 60_000,
@@ -69,7 +69,7 @@ try {
   const runs = envelope?.result?.runs ?? [];
   console.log(`   ${runs.length} recent runs retained on this server (all attempts kept).`);
 } catch {
-  console.log("   run list unavailable in this environment.");
+  console.log("   relay runs unavailable in this environment.");
 }
 
 console.log(`

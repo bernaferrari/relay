@@ -160,8 +160,8 @@ export function appContextDestination(input: {
 }): string {
   const appId = input.appId?.trim();
   if (input.pathname === "/versions" || input.pathname === "/accounts") return input.pathname;
-  const appRoute = /^\/apps\/[^/]+(\/map)?$/u.exec(input.pathname);
-  if (appRoute) return appId ? `/apps/${encodeURIComponent(appId)}${appRoute[1] ?? ""}` : "/apps";
+  if (/^\/apps\/[^/]+\/map$/u.test(input.pathname))
+    return appId ? `/apps/${encodeURIComponent(appId)}/map` : "/apps";
 
   if (isScopeAwareRoute(input.pathname)) {
     return withSearch(input.pathname, { ...input.search, app: appId || undefined });
@@ -169,7 +169,7 @@ export function appContextDestination(input: {
 
   const collection = collectionForDetail(input.pathname);
   if (collection) return withSearch(collection, { app: appId || undefined });
-  return appId ? `/apps/${encodeURIComponent(appId)}` : "/apps";
+  return withSearch("/tests", { app: appId || undefined });
 }
 
 function isScopeAwareRoute(pathname: string): boolean {

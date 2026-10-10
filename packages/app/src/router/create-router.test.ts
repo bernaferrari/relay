@@ -12,7 +12,6 @@ const platform: Platform = {
 
 const deepLinks = [
   "/apps",
-  "/apps/app-1",
   "/versions",
   "/accounts",
   "/apps/app-1/map",

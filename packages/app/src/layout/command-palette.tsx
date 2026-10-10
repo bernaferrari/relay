@@ -170,8 +170,8 @@ export function CommandPalette({
         id: `app:${app.id}`,
         group: "Apps",
         label: `Open ${app.name}`,
-        detail: "App overview",
-        href: `/apps/${encodeURIComponent(app.id)}`,
+        detail: "Tests for this app",
+        href: `/tests?app=${encodeURIComponent(app.id)}`,
         icon: AppWindow,
         keywords: "application",
       });

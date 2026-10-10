@@ -5,7 +5,6 @@ import { assertAllowedRouteSearch, parentPathForPath, routeContracts } from "./r
 
 const expectedPaths = {
   "/apps": "/apps",
-  "/apps/:appId": "/apps/$appId",
   "/versions": "/versions",
   "/accounts": "/accounts",
   "/apps/:appId/map": "/apps/$appId/map",
@@ -74,7 +73,7 @@ describe("React route contract", () => {
 
   it("builds semantic parent locations for direct-entry navigation", () => {
     expect(parentPathForPath("/tests/test-1")).toBe("/tests");
-    expect(parentPathForPath("/apps/app%201/map")).toBe("/apps/app%201");
+    expect(parentPathForPath("/apps/app%201/map")).toBe("/tests");
     expect(parentPathForPath("/tests")).toBeUndefined();
   });
 

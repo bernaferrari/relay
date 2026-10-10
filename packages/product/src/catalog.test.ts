@@ -234,7 +234,6 @@ test("projects run views with durable identity, human joins, phases, and filters
   assert.deepEqual(runs[0]?.links, {
     self: "/runs/run-failed",
     test: "/tests/ready",
-    app: "/apps/app-one",
   });
   assert.equal(runs[1]?.phase, "running");
   assert.equal(runs[1]?.title, "Saved test");
@@ -444,7 +443,6 @@ test("Run detail recovers test identity from the immutable execution artifact", 
   assert.deepEqual(detail.links, {
     self: "/runs/run-2",
     test: "/tests/ready",
-    app: "/apps/app-one",
   });
   assert.equal(detail.testName, "Checkout");
 });
