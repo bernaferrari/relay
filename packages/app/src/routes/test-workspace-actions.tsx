@@ -8,7 +8,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@relay/ui-react/components/dropdown-menu";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouteContext } from "@tanstack/react-router";
+import { useState } from "react";
 import { ChevronDown, ChevronLeft, MoreHorizontal, Play } from "lucide-react";
 import type { MouseEvent, ReactNode, RefObject } from "react";
 
@@ -55,6 +56,18 @@ export function TestWorkspaceActions({
   hasRecentRuns: boolean;
   onHistoryOpen(): void;
 }) {
+  const { testEditorService } = useRouteContext({ from: "__root__" });
+  const [copied, setCopied] = useState<"copied" | "failed">();
+  // A Test is also a small file people keep in their repo and agents edit.
+  async function copyFile() {
+    try {
+      const yaml = await testEditorService.getYaml!(testId, appMapId);
+      await navigator.clipboard.writeText(yaml);
+      setCopied("copied");
+    } catch {
+      setCopied("failed");
+    }
+  }
   return (
     <TestWorkspaceHeader
       title={testName ?? "Test"}
@@ -160,6 +173,15 @@ export function TestWorkspaceActions({
                 ) : null}
                 {hasRecentRuns ? (
                   <DropdownMenuItem onClick={() => onHistoryOpen()}>Run history</DropdownMenuItem>
+                ) : null}
+                {testPresent && testEditorService.getYaml ? (
+                  <DropdownMenuItem onClick={() => void copyFile()}>
+                    {copied === "copied"
+                      ? "Copied test file"
+                      : copied === "failed"
+                        ? "Couldn’t copy test file"
+                        : "Copy as test file (YAML)"}
+                  </DropdownMenuItem>
                 ) : null}
                 {testPresent && onOpenDetails ? (
                   <DropdownMenuItem onClick={() => onOpenDetails()}>
