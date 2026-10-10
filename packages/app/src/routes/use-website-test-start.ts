@@ -63,6 +63,15 @@ export function useDescribeWebsiteTest({
       if (!testEditorService.draftSteps || !testEditorService.createDraft) {
         throw new Error("This Relay version cannot write steps yet.");
       }
+      // A pasted test file is saved exactly as written.
+      if (/^\s*name:|\n\s*steps:/u.test(goal) && testEditorService.applyYaml) {
+        setProgress("Saving test…");
+        const yaml = /\n\s*(?:url|app):/u.test(`\n${goal}`) ? goal : `${goal}\nurl: ${url}\n`;
+        const applied = await testEditorService.applyYaml(yaml);
+        await queryClient.invalidateQueries({ queryKey: catalogQueryKeys.tests });
+        await navigate({ to: "/tests/$testId/edit", params: { testId: applied.testId } });
+        return;
+      }
       setProgress("Writing steps…");
       const appMapId = await appForWebsite(host);
       // The run uses the same login people chose here.

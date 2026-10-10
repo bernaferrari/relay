@@ -81,6 +81,12 @@ export type TestEditorProductService = {
     /** Web address a plain-English Test opens first. */
     startUrl?: string;
   }): Promise<ProductTestEditorDocument>;
+  /** Create or update a Test from its YAML file. */
+  applyYaml?(
+    yaml: string,
+  ): Promise<{ appId: string; testId: string; name: string; created: boolean }>;
+  /** A Test as its YAML file. */
+  getYaml?(testId: string, appId?: string): Promise<string>;
   /** Turn "what should work?" into plain-English Action and Check steps. */
   draftSteps?(input: {
     appMapId: string;
@@ -154,6 +160,18 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
         },
       });
       return requireDocument(appMap, document.test.id);
+    },
+    async applyYaml(yaml) {
+      return (await client()).invoke("test.apply-yaml", { yaml });
+    },
+    async getYaml(testId, appId) {
+      const result = await (
+        await client()
+      ).invoke("test.yaml.get", {
+        testId,
+        ...(appId ? { app: appId } : {}),
+      });
+      return result.yaml;
     },
     async draftSteps({ appMapId, goal, startUrl }) {
       return (await client()).invoke("app-map.test.draft", {
