@@ -55,6 +55,10 @@ const valueFlags = new Set([
   "--value",
   "--mission",
   "--auth-fixture",
+  "--app",
+  "--test",
+  "--junit",
+  "--name",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -73,8 +77,9 @@ const switchFlags = new Set([
   "--all",
   "--no-restore",
   "--findings",
+  "--version",
 ]);
-const repeatableValueFlags = new Set(["--in", "--each", "--value", "--mission"]);
+const repeatableValueFlags = new Set(["--in", "--each", "--value", "--mission", "--test"]);
 const reviewedOriginConfirmationOperations = new Set([
   "app-map.scroll-surface.origin.review",
   "app-map.scroll-surface.origin.revoke",

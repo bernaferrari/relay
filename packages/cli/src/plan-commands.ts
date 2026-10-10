@@ -3,7 +3,7 @@ import { commandPath as path } from "./command-descriptors.js";
 export const planListCommandPath = path("plan list", ["appMapId"], undefined, {
   summary: "List saved Plans for an App",
   argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
-  examples: ["relay plan list grok-ios --json"],
+  examples: ["relay plan list shop-ios --json"],
 });
 
 export const planGetCommandPath = path("plan get", ["appMapId", "combineId"], undefined, {
@@ -12,7 +12,7 @@ export const planGetCommandPath = path("plan get", ["appMapId", "combineId"], un
     { name: "appMapId", type: "string", description: "App Map identifier" },
     { name: "planId", type: "string", description: "Saved Plan identifier" },
   ],
-  examples: ["relay plan get grok-ios prompt-checks --json"],
+  examples: ["relay plan get shop-ios prompt-checks --json"],
   note: "Reads the exact saved Combine definition without starting a Run or checking a device.",
 });
 
@@ -38,8 +38,8 @@ export const planPreflightCommandPath = path(
       },
     ],
     examples: [
-      "relay plan preflight grok-ios prompt-checks --json",
-      'relay plan preflight grok-ios prompt-checks --input \'{"serial":"<device>","targetProfileId":"<saved-profile>"}\' --json',
+      "relay plan preflight shop-ios prompt-checks --json",
+      'relay plan preflight shop-ios prompt-checks --input \'{"serial":"<device>","targetProfileId":"<saved-profile>"}\' --json',
     ],
     note: "Uses the existing Combine preflight. Saved selection is not proof that its device or browser is ready.",
   },
@@ -56,10 +56,10 @@ export const planRunCommandPath = path(
       { name: "planId", type: "string", description: "Saved Plan identifier" },
     ],
     examples: [
-      "relay plan run grok-web grok-web-daily --lane grok-daily --budget 10m --findings",
-      "relay plan run grok-web grok-web-daily --lane grok-daily --all --budget 10m --findings",
-      "relay plan run grok-web grok-web-judged --lane grok-daily --all --budget 10m --findings",
-      "relay plan run grok-web grok-hourly --lane grok-lab --all --export /tmp/hourly --todo ./todo.json --findings",
+      "relay plan run shop-web daily-checks --lane daily --budget 10m --findings",
+      "relay plan run shop-web daily-checks --lane daily --all --budget 10m --findings",
+      "relay plan run shop-web judged-checks --lane daily --all --budget 10m --findings",
+      "relay plan run shop-web hourly --lane lab --all --export /tmp/hourly --todo ./todo.json --findings",
     ],
     inputHelp: [
       {

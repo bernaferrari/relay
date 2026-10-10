@@ -2,8 +2,13 @@ import { ApiError } from "@relay/client";
 
 export const ExitCode = {
   success: 0,
+  /** `relay run` / `relay ci`: a Test ran and the product did not do what it expects. */
+  testFailed: 1,
   usage: 2,
   connection: 3,
+  /** `relay run` / `relay ci`: Relay could not finish (device, sign-in, harness,
+   * or no runnable Test). Shares 3 with connection: neither is a product verdict. */
+  blocked: 3,
   auth: 4,
   /** Client-side input problems only: bad arguments, malformed payloads. */
   validation: 5,
@@ -18,6 +23,8 @@ export const ExitCode = {
    * (nothing left to decide) and 9 (the operation itself failed) so agents
    * and scripts cannot read collection success as acceptance. */
   verificationIncomplete: 10,
+  /** The named App, Test, Run, or Device does not exist (also HTTP 404). */
+  notFound: 11,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
@@ -65,7 +72,8 @@ export function classifyError(error: unknown): CliError {
       return new CliError(error.message, ExitCode.auth, error.body);
     }
     if (error.status === 409) return new CliError(error.message, ExitCode.conflict, error.body);
-    if ([400, 404, 405, 412, 422].includes(error.status)) {
+    if (error.status === 404) return new CliError(error.message, ExitCode.notFound, error.body);
+    if ([400, 405, 412, 422].includes(error.status)) {
       return new CliError(error.message, ExitCode.validation, error.body);
     }
     if (error.status === 408) return new CliError(error.message, ExitCode.connection, error.body);

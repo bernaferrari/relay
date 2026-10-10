@@ -24,7 +24,10 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     }),
     path("screen list", ["appMapId"]),
     path("connection list", ["appMapId"]),
-    path("connect list", ["appMapId"]),
+    path("connect list", ["appMapId"], undefined, {
+      summary:
+        "List the saved connections between an app's screens (not devices; see relay devices)",
+    }),
     path("connect get", ["appMapId", "connectionId"], undefined, {
       summary: "Show one saved connection and its actions (tap targets, reveal)",
       argumentHelp: [
@@ -40,12 +43,12 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     path("proposal list", ["appMapId"]),
     path("variable list", ["appMapId"], undefined, {
       summary: "List every saved Variable and its available values",
-      examples: ["relay variable list grok-android"],
+      examples: ["relay variable list shop-android"],
     }),
     graphTestListPath,
     path("combine list", ["appMapId"], undefined, {
       summary: "List saved Variable × Test plans",
-      examples: ["relay combine list grok-android"],
+      examples: ["relay combine list shop-android"],
     }),
     planListCommandPath,
     planGetCommandPath,
@@ -293,7 +296,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay screen capture-scroll grok settings settings-ja --input \'{"expectedRevision":12,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>","maxScrolls":6}\'',
+        'relay screen capture-scroll shop settings settings-ja --input \'{"expectedRevision":12,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>","maxScrolls":6}\'',
       ],
       note: "Explicitly opts this stable product-owned variant into full-surface coverage. Dynamic, private, imported, feed, and history content should remain viewport-only. Raw PNG/tree pairs are canonical; the composite, merged tree, and manifest are derived without storing base64 in the App Map.",
     }),
@@ -321,7 +324,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           },
         ],
         examples: [
-          "relay screen regenerate-scroll grok settings settings-ja scroll-surface-capture --input '{\"expectedRevision\":13}'",
+          "relay screen regenerate-scroll shop settings settings-ja scroll-surface-capture --input '{\"expectedRevision\":13}'",
         ],
         note: "Does not control or re-scroll the device. Raw viewport PNG/tree evidence and capture identity remain unchanged.",
       },
@@ -338,7 +341,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         { name: "captureId", type: "string", description: "Immutable scroll capture" },
       ],
       examples: [
-        "relay screen origin inspect grok settings settings-en scroll-surface-capture --json",
+        "relay screen origin inspect shop settings settings-en scroll-surface-capture --json",
       ],
       note: "Reads only persisted evidence, the reviewed-origin projection, and its local lifecycle ledger. It never connects to or controls a device.",
     }),
@@ -374,7 +377,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay screen origin review grok settings settings-en scroll-surface-capture --confirm --input \'{"expectedRevision":13,"reason":"Reviewed frozen first frame","assertion":"reviewed-document-top"}\'',
+        'relay screen origin review shop settings settings-en scroll-surface-capture --confirm --input \'{"expectedRevision":13,"reason":"Reviewed frozen first frame","assertion":"reviewed-document-top"}\'',
       ],
       note: "Requires an explicit confirmation and the fixed assertion reviewed-document-top. Creates a local, signed review overlay bound to this exact map revision/digest and raw PNG/tree pair. It does not capture, launch, scroll, or lease a device.",
     }),
@@ -420,7 +423,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           },
         ],
         examples: [
-          'relay screen origin revoke grok settings settings-en scroll-surface-capture reviewed-origin-1 --confirm --input \'{"expectedRevision":13,"reason":"Disable this origin","assertion":"revoke-reviewed-document-origin"}\'',
+          'relay screen origin revoke shop settings settings-en scroll-surface-capture reviewed-origin-1 --confirm --input \'{"expectedRevision":13,"reason":"Disable this origin","assertion":"revoke-reviewed-document-origin"}\'',
         ],
         note: "Requires an explicit confirmation and the fixed assertion revoke-reviewed-document-origin. Revocation is durable and blocks already-compiled execution plans at runtime. It never deletes the approval evidence or controls a device.",
       },
@@ -552,7 +555,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay screen consolidate grok settings --input \'{"expectedRevision":12,"sourceScreenIds":["settings-middle","settings-bottom"],"dryRun":true}\'',
+        'relay screen consolidate shop settings --input \'{"expectedRevision":12,"sourceScreenIds":["settings-middle","settings-bottom"],"dryRun":true}\'',
       ],
       note: "Use mode: same-screen to approve duplicate captures while preserving actions and identity aliases. The default scroll-surface mode adds semantic reveal-to-control actions. Evidence-backed viewport cards require a seam-honest imported surface; point-only edges block consolidation.",
     }),
@@ -707,7 +710,7 @@ export const appMapRoutineCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        'relay routine save grok start-clean --input \'{"expectedRevision":5,"routine":{"name":"Start clean","actions":[{"id":"new","kind":"tap","target":{"identifier":"grok-compose"}}]}}\'',
+        'relay routine save shop start-clean --input \'{"expectedRevision":5,"routine":{"name":"Start clean","actions":[{"id":"new","kind":"tap","target":{"identifier":"shop-browserpose"}}]}}\'',
       ],
     }),
   ),

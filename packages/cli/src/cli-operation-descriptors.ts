@@ -257,7 +257,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         },
       ],
       examples: [
-        `relay variable infer grok-android language --input '${JSON.stringify({
+        `relay variable infer shop-android language --input '${JSON.stringify({
           expectedRevision: 4,
           leaseId: "<lease>",
           target: { kind: "device", platform: "android", targetId: "<serial>" },
@@ -354,8 +354,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
       examples: [
         `relay schedule create --input '${JSON.stringify({
-          appMapId: "grok-android",
-          combineId: "grok-android-chat-prompts",
+          appMapId: "shop-android",
+          combineId: "chat-prompts",
           targetKind: "device",
           targetId: "<android-device-serial>",
           platform: "android",
@@ -475,9 +475,9 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("job combine start", [], undefined, {
       summary: "Run every selected Variable value × every selected Test",
       examples: [
-        'relay combine run grok-ios language-x-settings --cell ja --input \'{"serial":"<device>","platform":"ios"}\'',
-        'relay combine run grok-ios language-x-settings --all --input \'{"serial":"<device>","platform":"ios"}\'',
-        "relay combine run grok-web grok-hourly --lane grok-lab --all",
+        'relay combine run shop-ios language-x-settings --cell ja --input \'{"serial":"<device>","platform":"ios"}\'',
+        'relay combine run shop-ios language-x-settings --all --input \'{"serial":"<device>","platform":"ios"}\'',
+        "relay combine run shop-web hourly --lane lab --all",
       ],
       note: "Default is one cell. Pass --cell to choose a world, or --all to run every selected cell. A default serial/target fills missing cell bindings. Per-cell cellRuntimeProfiles and cellTargetBindings remain overrides. For a local multi-target campaign, pass cellTargetBindings plus the shared localAdmission object. Missing Variable, empty selection, or a Variable that cannot apply still return 409 and queue nothing.",
       behavior: "job-start-watch",
@@ -546,7 +546,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           description: "World selector such as ja. Default without --all is one cell.",
         },
       ],
-      examples: ["relay combine run grok-web grok-hourly --lane grok-lab --all"],
+      examples: ["relay combine run shop-web hourly --lane lab --all"],
       behavior: "job-start-watch",
     }),
     planRunCommandPath,
@@ -822,7 +822,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         { name: "sinceDays", type: "number", description: "Look back this many days (14)" },
         { name: "appMapId", type: "string", description: "Only this App" },
       ],
-      examples: ["relay review list", 'relay review list --input \'{"appMapId":"grok-ios"}\''],
+      examples: ["relay review list", 'relay review list --input \'{"appMapId":"shop-ios"}\''],
     }),
   ),
   mapped(

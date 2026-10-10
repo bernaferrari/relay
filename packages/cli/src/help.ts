@@ -7,6 +7,12 @@ import {
 } from "./commands.js";
 import { dbHelp } from "./db-commands.js";
 import { UsageError } from "./errors.js";
+import {
+  everydayExitCodes,
+  everydayHelpTopics,
+  projectConfigHelp,
+  renderEverydayHelp,
+} from "./everyday-help.js";
 
 const familyGroups = [
   ["Topology", ["map", "screen", "connect", "flow"]],
@@ -54,17 +60,7 @@ Screenshot, snapshot, and compile output:
   --history                        Include immutable Proof history on proof inspect
   -h, --help                       Print help for the root or the given family
 
-Exit codes:
-  0  success
-  2  usage (bad arguments; also Unknown option)
-  3  connection (server unreachable, timeout)
-  4  auth (401/403)
-  5  validation (client-side input problem: bad flags, malformed payload)
-  6  conflict (Device control unavailable, stale revision)
-  7  cancelled (SIGINT/SIGTERM)
-  8  server error (the call did not run to a verdict)
-  9  operation failed (it ran and reported failure: { ok: false } or job status error)
-  10 verification incomplete (the run finished; screenshots are awaiting review)
+${everydayExitCodes}
 
 Machine envelopes (--json / --ndjson):
   success: {"type":"result","ok":true,"operationId":"...","result":{...}}
@@ -104,6 +100,53 @@ function usages(commands: readonly string[]): string[] {
 }
 
 function renderRootHelp(): string {
+  return `Relay — check that what your app must do still works, on websites, Android, and iOS
+
+Everyday:
+  relay new "<what should work>" --url <website>   Write and save a Test from a sentence
+  relay apply <test.yaml | folder>                 Save test files (name, url, steps)
+  relay run <test> [--app <name>] [--device ios]   Run one Test and show each step's result
+  relay ci [<app>] --output result.json            Run every ready Test (for CI)
+  relay apps                                       Your apps
+  relay tests [<app>]                              An app's Tests and whether each is ready
+  relay runs [<app>]                               Recent runs
+  relay devices                                    Connected phones, simulators, and browsers
+  relay guide [topic]                              Step-by-step guides (no server needed)
+
+Also:
+  relay record "<title>" [--app <name>] --confirm  Record a Test by using the app
+  relay connect [device] | relay observe [device]  Open a device and look at it
+  relay show "<test>"                              Print a Test as its file
+  relay inspect <runId>                            What happened in a run
+  relay review [--app <name>]                      Review screenshots that changed
+  relay export <runId> --out ./review              Save a run's evidence
+  relay doctor                                     Check that Relay is set up
+  relay --version
+  relay <command> -h, --help                       Help for one command
+
+Apps, Tests, and devices can be named the way you see them ("Checkout works",
+"Shop"), by id, or for devices simply ios, android, or browser.
+
+relay run options:
+  --app <name>        Which app, when the Test name is not unique
+  --device <device>   ios, android, browser, a device name, or an id
+  --out <dir>         Write result.json, stderr.log, and the run's screenshots
+  --json              Machine output; the result includes the verdict
+  --confirm           Allow steps marked risky
+
+${projectConfigHelp}
+
+${everydayExitCodes}
+
+Machine output (--json): {"type":"result","ok":true,"operationId":"...","result":{...}}
+  failures: {"type":"error","ok":false,"error":{"message":"...","exitCode":2}}
+
+Advanced: 'relay help advanced' lists every command family (maps, screens,
+plans, proofs, sessions, devices, scheduling). 'relay <family> --help' shows one.
+`;
+}
+
+function renderAdvancedHelp(): string {
   const available = familyNames();
   const groups = familyGroups
     .map(([label, families]) => {
@@ -139,38 +182,18 @@ function renderRootHelp(): string {
     "proof list",
   ];
 
-  return `Relay — turn important journeys into repeatable, reviewable evidence
+  return `Relay advanced reference
 
-Show or tell Relay what to exercise. Run it on the accounts and devices you
-choose. Review what happened together. Reuse the path next time.
-
-Everyday tasks:
-  Find Apps and Tests     relay map list
-                          relay test list <appId>
-  Inspect saved routes    relay test compile <appId> <testId> --input '{"targetProfileId":"<saved-profile>"}'
-  Open and observe        relay connect [device]
-                          relay observe [device]
-  Record a journey        relay record <title> --confirm
-  Edit the recording      relay edit-recording <workflowId> <expectedVersion> <verb> ...
-  Run a saved Test        relay run <testId> --lane <lane>   (account + browser + profile)
-  Run across accounts     relay repeat <testId> --each <dimension>=<values|all>
-  Find saved Plans        relay plan list <appMapId>
-  Inspect a saved Plan    relay plan get <appMapId> <planId>
-  Check a saved Plan      relay plan preflight <appMapId> <planId>
-  Run a saved Plan        relay plan run <appMapId> <planId> [--lane <lane>] [--all]
-  Ask Relay to explore    relay explore --url <url> --goal <goal> --confirm
-  Ask Relay to exercise   relay goal run --url http://127.0.0.1:3000 --goal "Open settings" --confirm
-  Inspect a Run           relay inspect <runOrWorkflowId>
-  Review what changed     relay review [--app <appId>]   (a looks correct · r report · o open)
-  Export the evidence     relay export <runId> --out ./review
-  Check the local server  relay doctor
-  Read a task guide       relay guide [start|record|run|targets|waits|debug|review|maps|agents]
+These commands are for repair, migration, scripting, and trusted orchestration.
+For everyday use see 'relay help'.
 
 Choosing a saved Test:
-  test list adds discovery.status and platform context. Recorded means a saved route exists;
-  it does not mean a target is connected or every selector has passed preflight. Explicit drafts
-  say needs-recording; unbound actions say needs-binding. Choose one saved targetProfileId from
-  discovery.savedTargetProfiles when compiling, then inspect preflight.summary.blockers.
+  relay test list <appId> adds discovery.status and platform context. Recorded means a saved
+  route exists; it does not mean a target is connected or every selector has passed preflight.
+  Explicit drafts say needs-recording; unbound actions say needs-binding. Choose one saved
+  targetProfileId from discovery.savedTargetProfiles when compiling
+  (relay test compile <appId> <testId> --input '{"targetProfileId":"<saved-profile>"}'),
+  then inspect preflight.summary.blockers.
   map get is a compact overview. map export <appId> --json includes the full saved graph as YAML.
 
 Full command reference:
@@ -202,7 +225,6 @@ Full command reference:
   relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
   relay export <runId> [--out <dir>] | relay export-evidence <runId>
   relay doctor
-  relay replay-lab <compare|visual-localization|all> <oldest.tracepack.json> <newest.tracepack.json> [...]
   relay prove --base <ref> [--config-file <path>] [--confirm]
   relay prove <proof-id> [--wait | --no-wait]
   relay proof analyze run <runId...>
@@ -216,7 +238,6 @@ Full command reference:
   relay proof cancel <proof-id> --confirm --input <json>
   relay proof rerun-affected <proof-id> --input-file ./replacement-proof.json
   relay <family> <command> [arguments] [--input <json> | --input-file <path>] [global options]
-  relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
   relay <family> --help
 
 Goal exploration options:
@@ -227,7 +248,7 @@ Goal exploration options:
 Outcome commands:
   connect, observe, explore, goal, record, edit-recording, run, repeat, continue-repeat, inspect-workflow, cancel-run,
   inspect-failure, propose-repair,
-  export-evidence, doctor, replay-lab
+  export-evidence, doctor
 
 These resolve the sole connected Device and current Test workspace automatically. Use --device, or
 the advanced --map option, only when selection is ambiguous. The first Record creates its backing
@@ -238,18 +259,8 @@ Proof commands:
   prove, proof analyze, proof start, proof list, proof inspect, proof approve-plan,
   proof continue, proof cancel, proof rerun-affected
 
-Replay Lab reads only the explicitly named local TracePack JSON files. It does not start the Relay
-daemon, read a Device or workspace, contact a network service, or mutate Tests and evidence.
-
 Advanced command families:
 ${groups}
-
-Compatibility:
-  relay verify-change --base <ref> [--config-file <path>] [--confirm]
-  relay verify-change run|test|revision ...
-  verify-change is deprecated. Use prove for live Change Proofs and
-  proof analyze for offline analysis; compatibility aliases use the same
-  fail-closed implementation and emit a deprecation notice.
 
 Advanced examples:
 ${usages(workflowCommands).join("\n")}
@@ -487,7 +498,10 @@ ${globalOptions}
 }
 
 export function renderHelp(family?: string): string {
-  return family ? renderFamilyHelp(family) : renderRootHelp();
+  if (!family) return renderRootHelp();
+  if (family === "advanced") return renderAdvancedHelp();
+  if (everydayHelpTopics().includes(family)) return renderEverydayHelp(family);
+  return renderFamilyHelp(family);
 }
 
 export const HELP = renderHelp();

@@ -1,8 +1,14 @@
 import { actorKindFromId, type ServerConnection } from "@relay/protocol";
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { resolveCommand, resolveResourceCommand, type CommandBehavior } from "./commands.js";
+import {
+  familySubcommandMistake,
+  resolveCommand,
+  resolveResourceCommand,
+  type CommandBehavior,
+} from "./commands.js";
 import { UsageError } from "./errors.js";
+import { callerCwd } from "./caller-cwd.js";
 import { parseOutcomeCliIntent, type OutcomeCliIntent } from "./outcome-command.js";
 import {
   applyCombineRunFlags,
@@ -67,6 +73,8 @@ export type ParsedCli =
       config: GlobalConfig;
       command: "outcome";
       intent: OutcomeCliIntent;
+      /** `relay run --out <dir>`: result.json, stderr.log, and step screenshots. */
+      outDir?: string;
     }
   | {
       config: GlobalConfig;
@@ -189,7 +197,7 @@ function readInput(tokens: ParsedTokens, env: Environment): Record<string, unkno
     throw new UsageError("Use only one of --input or --input-file");
   }
   if (!file) return parseInput(inline);
-  const path = isAbsolute(file) ? file : resolve(env.INIT_CWD?.trim() || process.cwd(), file);
+  const path = isAbsolute(file) ? file : resolve(callerCwd(env), file);
   let contents: string;
   try {
     contents = readFileSync(path, "utf8");
@@ -421,6 +429,13 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     };
   }
 
+  for (const everydayOnly of ["--test", "--junit", "--name"] as const) {
+    if (tokens.values.has(everydayOnly)) {
+      throw new UsageError(
+        `${everydayOnly} is only valid on ${everydayOnly === "--name" ? "relay new" : "relay ci"}`,
+      );
+    }
+  }
   const rawInput = tokens.values.get("--input");
   const inputFile = tokens.values.get("--input-file");
   if (group === "operation") {
@@ -615,6 +630,9 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       laneSelected: tokens.values.has("--lane"),
     });
   } catch (error) {
+    const mistake = familySubcommandMistake(tokens.positionals);
+    if (mistake === "exact") throw error;
+    if (mistake) throw mistake;
     const intent = parseOutcomeCliIntent(tokens);
     if (!intent) throw error;
     if (rawInput !== undefined || inputFile !== undefined) {
@@ -622,7 +640,8 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         "Outcome commands use named arguments and do not accept --input or --input-file",
       );
     }
-    if (intent.kind !== "export-evidence") assertNoOutDir(tokens);
+    const outDir = intent.kind === "run-test" ? parseRunOutDir(tokens, true) : undefined;
+    if (intent.kind !== "export-evidence" && intent.kind !== "run-test") assertNoOutDir(tokens);
     return {
       config: {
         connection,
@@ -635,10 +654,11 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       },
       command: "outcome",
       intent,
+      ...(outDir ? { outDir } : {}),
     };
   }
-  if (tokens.values.has("--device") || tokens.values.has("--map")) {
-    throw new UsageError("--device and --map are only valid on outcome commands");
+  if (tokens.values.has("--device") || tokens.values.has("--map") || tokens.values.has("--app")) {
+    throw new UsageError("--device, --app, and --map are only valid on everyday commands");
   }
   for (const outcomeOnly of ["--each", "--strategy", "--pilot", "--resume"] as const) {
     if (tokens.values.has(outcomeOnly)) {

@@ -1,11 +1,8 @@
 #!/usr/bin/env tsx
 import { isInteractiveReview, runReviewCommand, type ReviewClient } from "./review-command.js";
 import { createBrowserCaptureWorkflow, type BrowserCapturePlan } from "@relay/workflows";
-import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { targetExecutionReadiness, renderPlanFindingsMarkdown } from "@relay/core";
-import { type RelayOutcomeJobs, type WorkflowSnapshot } from "@relay/workflows";
-import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import {
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
@@ -36,9 +33,9 @@ import {
 import { protocolOperationInput } from "./protocol-input.js";
 import { CliOutput, formatTestCompileResult, type OutputStreams } from "./output.js";
 import { liveTitleFromInput, watchJobsLive } from "./live-run-view.js";
-import { abortError, assertOutcomeSucceeded, waitForOutcome, waitForPoll } from "./outcome-wait.js";
+import { abortError, waitForPoll } from "./outcome-wait.js";
 export { assertOutcomeSucceeded, waitForOutcome } from "./outcome-wait.js";
-import { teeWritable, writeEvidenceReviewDir, writeRunOutDir } from "./cli-out.js";
+import { teeWritable, writeRunOutDir } from "./cli-out.js";
 import {
   exportWatchedCombinePack,
   finalizeCombineExportResult,
@@ -50,8 +47,14 @@ import { runDbCommand } from "./db-commands.js";
 import { runGuideCommand } from "./guide-command.js";
 import { runReportCommand } from "./report-commands.js";
 import { ensureLocalRelayServer, type LocalServerResult } from "./local-server.js";
-import { readReplayLabTracePacks } from "./replay-lab-files.js";
-import { inspectRunOrWorkflow } from "./inspect-command.js";
+import {
+  doctorExitCode,
+  outcomeOperationId,
+  runOutcomeCommand,
+  verdictExitCode,
+} from "./outcome-runner.js";
+import { runEverydayCommand } from "./everyday-commands.js";
+import { callerCwd, enterCallerCwd } from "./caller-cwd.js";
 import {
   runVerifyChangeCommand,
   type VerifyChangeJobPoller,
@@ -284,158 +287,6 @@ function firstPositional(argv: readonly string[]): string | undefined {
   return undefined;
 }
 
-function outcomeOperationId(kind: string): string {
-  return kind === "proof-analyze" ? "outcome.proof-analyze" : `outcome.${kind}`;
-}
-
-async function runOutcomeCommand(input: {
-  parsed: Extract<ReturnType<typeof parseCli>, { command: "outcome" }>;
-  client: OperationInvoker;
-  signal: AbortSignal;
-  output: CliOutput;
-  pollIntervalMs: number;
-}): Promise<unknown> {
-  const { parsed, client, signal } = input;
-  const jobs = createRelayOutcomeJobs(
-    {
-      invoke: (operationId, operationInput) => invoke(client, operationId, operationInput, signal),
-      events: (onEvent, options) => client.events(onEvent, options),
-    },
-    { actorId: parsed.config.connection.actorId },
-  );
-  const intent = parsed.intent;
-  if (intent.kind === "connect-target") return jobs.connect(intent);
-  if (intent.kind === "observe-target") return jobs.observe(intent);
-  if (intent.kind === "edit-recording") {
-    const edited = await jobs.editRecording(intent);
-    assertOutcomeSucceeded(edited);
-    return edited;
-  }
-  if (intent.kind === "continue-repeat") {
-    const started = await jobs.continueRepeat(intent);
-    const settled = parsed.config.wait
-      ? await waitForOutcome(
-          jobs,
-          started,
-          signal,
-          input.output,
-          outcomeOperationId(intent.kind),
-          input.pollIntervalMs,
-        )
-      : started;
-    assertOutcomeSucceeded(settled);
-    return settled;
-  }
-  if (intent.kind === "inspect-workflow") {
-    return "workflowId" in intent
-      ? jobs.inspect({ workflowId: intent.workflowId })
-      : jobs.inspect({ legacyRef: intent.legacyRef });
-  }
-  if (intent.kind === "inspect") {
-    return inspectRunOrWorkflow(client, intent.runOrWorkflowId, signal, (workflowId) =>
-      jobs.inspect({ workflowId }),
-    );
-  }
-  if (intent.kind === "cancel-run") {
-    const cancelled = await jobs.cancelRun(intent);
-    assertOutcomeSucceeded(cancelled);
-    return cancelled;
-  }
-  if (intent.kind === "inspect-failure") return jobs.inspectFailure(intent);
-  if (intent.kind === "goal-start") return jobs.goal(intent);
-  if (intent.kind === "goal-resume") return jobs.resumeGoal(intent);
-  if (intent.kind === "goal-reproduce") return jobs.reproduceGoal(intent);
-  if (intent.kind === "goal-inspect") return jobs.inspectGoal(intent);
-  if (intent.kind === "goal-cancel") return jobs.cancelGoal(intent);
-  if (intent.kind === "goal-promote") return jobs.promoteGoal(intent);
-  if (intent.kind === "goal-explore") return jobs.explore(intent);
-  if (intent.kind === "goal-explore-resume") return jobs.resumeExploration(intent);
-  if (intent.kind === "goal-explore-inspect") return jobs.inspectExploration(intent);
-  if (intent.kind === "propose-repair") return jobs.proposeRepair(intent);
-  if (intent.kind === "doctor") {
-    const cliVersion = cliPackageVersion();
-    const notAccepted = ["signing", "unfamiliar reviewer", "publication", "design partners"];
-    try {
-      const doctor = await invoke(client, "system.doctor.get", {}, signal);
-      let serverVersion: string | undefined;
-      try {
-        const health = await invoke(client, "system.health.get", {}, signal);
-        if (health && typeof health === "object" && "version" in health) {
-          const version = (health as { version?: unknown }).version;
-          if (typeof version === "string") serverVersion = version;
-        }
-      } catch {
-        serverVersion = undefined;
-      }
-      return {
-        schemaVersion: 1,
-        kind: "relay-doctor",
-        server: "reachable",
-        cliVersion,
-        ...(serverVersion ? { serverVersion } : {}),
-        versionMatch: serverVersion === undefined ? undefined : serverVersion === cliVersion,
-        doctor,
-        notAccepted,
-      };
-    } catch (error) {
-      return {
-        schemaVersion: 1,
-        kind: "relay-doctor",
-        server: "unreachable",
-        cliVersion,
-        message: error instanceof Error ? error.message : String(error),
-        notAccepted,
-      };
-    }
-  }
-  if (intent.kind === "export-evidence") {
-    const evidence = await jobs.exportEvidence({ kind: "export-evidence", runId: intent.runId });
-    if (intent.outputDir) {
-      const walkthrough = await invoke(
-        client,
-        "run.walkthrough-pack.get",
-        { runId: intent.runId },
-        signal,
-      );
-      await writeEvidenceReviewDir({
-        dir: intent.outputDir,
-        evidence,
-        walkthrough,
-        runId: intent.runId,
-      });
-    }
-    return evidence;
-  }
-  if (intent.kind === "replay-lab") {
-    return jobs.replayLab({
-      kind: "replay-lab",
-      analysis: intent.analysis,
-      tracePacks: await readReplayLabTracePacks(intent.paths),
-    });
-  }
-  if (intent.kind === "verify-change" || intent.kind === "proof-analyze") {
-    return jobs.verifyChange({ ...intent, kind: "verify-change" });
-  }
-  const started =
-    intent.kind === "record-test"
-      ? await jobs.record(intent)
-      : intent.kind === "repeat-test"
-        ? await jobs.repeat(intent)
-        : await jobs.run(intent);
-  const settled = parsed.config.wait
-    ? await waitForOutcome(
-        jobs,
-        started,
-        signal,
-        input.output,
-        outcomeOperationId(intent.kind),
-        input.pollIntervalMs,
-      )
-    : started;
-  assertOutcomeSucceeded(settled);
-  return settled;
-}
-
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new UsageError(`Malformed ${label} response`);
@@ -576,6 +427,15 @@ export async function runCli(
     if (firstPositional(argv) === "report") {
       return await runReportCommand(argv, streams, dependencies.env ?? process.env);
     }
+    const everyday = await runEverydayCommand(argv, {
+      streams,
+      env: dependencies.env ?? process.env,
+      createClient: dependencies.createClient ?? createClient,
+      ensureServer: dependencies.ensureOutcomeServer ?? ensureLocalRelayServer,
+      pollIntervalMs: dependencies.pollIntervalMs ?? 250,
+      registerSignalHandlers: dependencies.registerSignalHandlers !== false,
+    });
+    if (everyday !== undefined) return everyday;
     if (isInteractiveReview(argv)) {
       return await runReviewCommand(argv, {
         streams,
@@ -588,7 +448,7 @@ export async function runCli(
       });
     }
     const parsed = parseCli(argv, dependencies.env ?? process.env);
-    if (parsed.command === "invoke" && parsed.outDir) {
+    if ((parsed.command === "invoke" || parsed.command === "outcome") && parsed.outDir) {
       outDir = parsed.outDir;
       const tee = teeWritable(streams.stderr);
       streams = { stdout: streams.stdout, stderr: tee.writable };
@@ -653,7 +513,7 @@ export async function runCli(
           base: parsed.base,
           configFile: parsed.configFile,
           confirm: parsed.confirm,
-          cwd: dependencies.verifyChange?.cwd ?? (dependencies.env ?? process.env).INIT_CWD,
+          cwd: dependencies.verifyChange?.cwd ?? callerCwd(dependencies.env ?? process.env),
           readConfig: dependencies.verifyChange?.readConfig,
           git: dependencies.verifyChange?.git,
           actorKind: parsed.config.connection.actorKind,
@@ -678,10 +538,15 @@ export async function runCli(
           signal: abort.signal,
           output,
           pollIntervalMs: dependencies.pollIntervalMs ?? 250,
+          env: dependencies.env ?? process.env,
         });
-        output.result(operationId, result, doctorExitCode(result) !== ExitCode.operationFailure);
-        const doctorCode = doctorExitCode(result);
-        if (doctorCode !== undefined) exitCode = doctorCode;
+        const outcomeCode = verdictExitCode(result) ?? doctorExitCode(result);
+        output.result(
+          operationId,
+          result,
+          outcomeCode === undefined || outcomeCode === ExitCode.success,
+        );
+        if (outcomeCode !== undefined) exitCode = outcomeCode;
       } else if (parsed.command === "resource") {
         output.progress(operationId, "invoking");
         const result = await readResource(client, parsed.resourcePath, abort.signal);
@@ -864,34 +729,8 @@ export async function runCli(
   }
 }
 
-function doctorExitCode(result: unknown): ExitCode | undefined {
-  if (
-    !result ||
-    typeof result !== "object" ||
-    !("kind" in result) ||
-    result.kind !== "relay-doctor"
-  ) {
-    return undefined;
-  }
-  const report = result as {
-    server?: unknown;
-    versionMatch?: unknown;
-    doctor?: { ok?: unknown };
-  };
-  if (
-    report.server !== "reachable" ||
-    report.versionMatch === false ||
-    report.doctor?.ok === false
-  ) {
-    return ExitCode.operationFailure;
-  }
-  return ExitCode.success;
-}
-
-function cliPackageVersion(): string {
-  const version = createRequire(import.meta.url)("../package.json").version;
-  return typeof version === "string" && version ? version : "unknown";
-}
-
 const isEntryPoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isEntryPoint) process.exitCode = await runCli(process.argv.slice(2));
+if (isEntryPoint) {
+  enterCallerCwd();
+  process.exitCode = await runCli(process.argv.slice(2));
+}

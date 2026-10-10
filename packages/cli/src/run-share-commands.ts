@@ -5,7 +5,65 @@ import type { CliOperationDescriptor } from "./command-descriptors.js";
 export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = [
   {
     operationId: "run.list",
-    paths: [{ command: "run list" }],
+    paths: [{ command: "run list", summary: "List recent runs (everyday: relay runs)" }],
+  },
+  {
+    operationId: "app-map.observed",
+    exclusion: "ui-only",
+    reason: "The Map view's observed-screens projection; the CLI reads screens with map get.",
+  },
+  {
+    operationId: "app-map.test.draft",
+    exclusion: "internal",
+    reason: "relay new drafts and saves in one call through test.create-from-goal.",
+  },
+  {
+    operationId: "system.model-key.set",
+    exclusion: "unsafe",
+    reason: "Model keys are set in the app's Settings or the environment, never as CLI arguments.",
+  },
+  {
+    operationId: "test.apply-yaml",
+    exclusion: "internal",
+    reason: "relay apply, relay new --file, and relay ci <folder> send test files through it.",
+  },
+  {
+    operationId: "test.yaml.get",
+    exclusion: "internal",
+    reason: "relay show prints a Test as its file.",
+  },
+  {
+    operationId: "run.verdict.get",
+    paths: [
+      {
+        command: "run verdict",
+        arguments: ["runId"],
+        summary: "Did the run pass? Status, summary, and each step's expected vs. saw",
+        argumentHelp: [{ name: "runId", type: "string", description: "Run identifier" }],
+        examples: ["relay run verdict <runId> --json"],
+      },
+    ],
+  },
+  {
+    operationId: "test.create-from-goal",
+    paths: [
+      {
+        command: "test new",
+        arguments: ["goal"],
+        summary: "Describe what should work in plain English; Relay writes and saves the Test",
+        argumentHelp: [
+          { name: "goal", type: "string", description: "What should work, or one step per line" },
+        ],
+        inputHelp: [
+          { name: "url", type: "string", description: "Website the Test opens first" },
+          { name: "app", type: "string", description: "Existing app id or name" },
+        ],
+        examples: [
+          'relay new "Add a shirt to the cart and check the total" --url https://shop.example.com',
+        ],
+        note: 'Everyday spelling: relay new "<goal>" [--url <website>] [--app <name>].',
+      },
+    ],
   },
   {
     operationId: "run.get",

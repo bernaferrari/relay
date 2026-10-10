@@ -5,6 +5,7 @@ import {
   type MappedOperationDescriptor,
 } from "./command-descriptors.js";
 import { UsageError } from "./errors.js";
+import { closestMatch } from "./cli-suggest.js";
 import { cliResourceDescriptors } from "./resource-commands.js";
 import { cliOperationDescriptors } from "./cli-operation-descriptors.js";
 export { cliOperationDescriptors } from "./cli-operation-descriptors.js";
@@ -167,7 +168,80 @@ export function resolveCommand(
       `Invalid ${family} command. Expected one of: ${usages}. Run 'relay ${family} --help' for the full list.`,
     );
   }
-  throw new UsageError(`Unknown command: ${positionals.join(" ")}. Run 'relay help'.`);
+  const suggestion = family ? closestMatch(family, knownFamilies()) : undefined;
+  throw new UsageError(
+    `Unknown command: ${positionals.join(" ")}.${suggestion ? ` Did you mean 'relay ${suggestion}'?` : ""} Run 'relay help'.`,
+  );
+}
+
+/** Top-level words people type; used only for "did you mean" suggestions. */
+const everydayWords = [
+  "new",
+  "run",
+  "ci",
+  "apps",
+  "tests",
+  "runs",
+  "devices",
+  "guide",
+  "record",
+  "connect",
+  "observe",
+  "inspect",
+  "review",
+  "export",
+  "doctor",
+  "repeat",
+  "goal",
+  "explore",
+];
+
+function knownFamilies(): Set<string> {
+  return new Set([
+    ...everydayWords,
+    ...mappedCommandDescriptors.flatMap((descriptor) =>
+      descriptor.paths.map((candidate) => candidate.command.split(" ")[0]!),
+    ),
+    ...cliResourceDescriptors.map((descriptor) => descriptor.path.command.split(" ")[0]!),
+  ]);
+}
+
+/**
+ * Some words are both a command family and an everyday verb (`run`, `connect`).
+ * A family subcommand typed with the wrong arguments (`run watch`) or slightly
+ * misspelled (`run lsit`, `connect lst`) must fail here instead of falling
+ * through to the verb, which would treat the word as a Test or Device name.
+ * Returns "exact" when the subcommand exists, so the caller rethrows the
+ * registry's own usage error.
+ */
+export function familySubcommandMistake(
+  positionals: readonly string[],
+): "exact" | UsageError | undefined {
+  const [family, second] = positionals;
+  if (!family || !second) return undefined;
+  const subcommands = new Set(
+    [
+      ...mappedCommandDescriptors.flatMap((descriptor) =>
+        descriptor.paths.map((candidate) => candidate.command),
+      ),
+      ...cliResourceDescriptors.map((descriptor) => descriptor.path.command),
+    ]
+      .map((command) => command.split(" "))
+      .filter((tokens) => tokens.length > 1 && tokens[0] === family)
+      .map((tokens) => tokens[1]!),
+  );
+  if (!subcommands.size) return undefined;
+  if (subcommands.has(second)) return "exact";
+  if (!/^[a-z][a-z-]*$/u.test(second)) return undefined;
+  const suggestion = closestMatch(second, subcommands, { substring: false });
+  if (!suggestion) return undefined;
+  return new UsageError(
+    `Unknown '${family}' command: ${second}. Did you mean 'relay ${family} ${suggestion}'? ` +
+      `Run 'relay ${family} --help' for the list.` +
+      (family === "run"
+        ? ` To run a Test with this name, use 'relay test run <app> ${second}'.`
+        : ""),
+  );
 }
 
 export function resolveResourceCommand(

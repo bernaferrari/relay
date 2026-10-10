@@ -7,7 +7,7 @@ import {
 
 export const graphTestListPath: CommandPathDescriptor = path("test list", ["appMapId"], undefined, {
   summary: "List saved Tests with recorded platforms and actions still needing work",
-  examples: ["relay test list grok-android"],
+  examples: ["relay test list shop-android"],
   note: "discovery.status describes saved recordings, not live execution readiness. Choose a recorded Test, then compile it with one saved targetProfileId to inspect offline blockers. Drafts stay visible with needs-recording or needs-binding status.",
 });
 
@@ -148,13 +148,13 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           name: "targetProfileId",
           type: "string",
           description:
-            "Optional read-only raw-evidence scope. Select the runtime profile explicitly so translated labels cannot borrow proof from another locale. `ios` and `android` follow a linked native companion Test on grok-ios / grok-android.",
+            "Optional read-only raw-evidence scope. Select the runtime profile explicitly so translated labels cannot borrow proof from another locale. `ios` and `android` follow a linked native companion Test on its iOS or Android app.",
         },
       ],
       examples: [
-        'relay test compile grok-ios settings-tour --input \'{"entryCheckpointScreenId":"settings"}\'',
-        'relay test compile grok-ios settings-tour --input \'{"targetProfileId":"ipad-pt-BR"}\'',
-        'relay test compile grok-web test-grok-web-signed-in-home --input \'{"targetProfileId":"ios"}\'',
+        'relay test compile shop-ios settings-tour --input \'{"entryCheckpointScreenId":"settings"}\'',
+        'relay test compile shop-ios settings-tour --input \'{"targetProfileId":"ipad-pt-BR"}\'',
+        'relay test compile shop-web test-signed-in-home --input \'{"targetProfileId":"ios"}\'',
       ],
       note: "Human output summarizes the target, plan counts, blockers, and next action; add --full for the complete result. The returned plan always names its startup policy. This preview is offline: it does not contact a target or persist a Test edit. --json and --ndjson retain the complete result.",
     }),
@@ -202,7 +202,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           name: "targetProfileId",
           type: "string",
           description:
-            "Optional saved runtime evidence profile, or ios/android to run the linked grok-ios / grok-android companion Test on that device.",
+            "Optional saved runtime evidence profile, or ios/android to run the linked iOS or Android companion Test on that device.",
         },
         {
           name: "surfaceCapture",
@@ -263,17 +263,17 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         },
       ],
       examples: [
-        "relay test run grok-web grok-web-open --lane grok-daily",
-        "relay test run grok-android-manual-v2 supergrok-locale-tour --in language=hu,ro --lens visual --target current --revision current",
+        "relay test run shop-web open-home --lane daily",
+        "relay test run shop-android locale-tour --in language=hu,ro --lens visual --target current --revision current",
         "relay combine export <batch-id>",
         "relay test run checkout smoke --target current --revision current",
-        'relay test run grok-android chat --target current --revision current --input \'{"variables":{"chat_prompt":"Explain why sailboats need a keel."}}\'',
-        "relay test run grok-ios settings-tour --in language=ja,pt --lens visual --target current --revision current",
-        'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"startup":{"mode":"verified-checkpoint","screenId":"settings"}}\'',
+        'relay test run shop-android chat --target current --revision current --input \'{"variables":{"chat_prompt":"Explain why sailboats need a keel."}}\'',
+        "relay test run shop-ios settings-tour --in language=ja,pt --lens visual --target current --revision current",
+        'relay test run shop-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"startup":{"mode":"verified-checkpoint","screenId":"settings"}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
-        'relay test run grok-web test-grok-web-signed-in-home --revision current --input \'{"targetProfileId":"android"}\'',
-        'relay test run grok-web test-grok-web-signed-in-home --in language=en --revision current --input \'{"targetProfileId":"android"}\'',
+        'relay test run shop-web test-signed-in-home --revision current --input \'{"targetProfileId":"android"}\'',
+        'relay test run shop-web test-signed-in-home --in language=en --revision current --input \'{"targetProfileId":"android"}\'',
       ],
       note: "Not a first poke: compiled wait-for/expect-screen poll the accessibility slot while pixels stay still and freeze the glass. Poke with `relay device screenshot` + `relay device interact` first. The run always freezes an exact revision and target. Pass --lane to have the server resolve them from a saved Lane. A person with one connected local device may resolve both explicitly with --target current --revision current; Relay prints the resolved facts before execution. Without --in this is one Test run. With --in, Relay upserts the Combine, fills default target bindings, and starts one cell unless --all is set. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
       behavior: "job-start-watch",

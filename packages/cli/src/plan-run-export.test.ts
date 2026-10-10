@@ -284,5 +284,5 @@ test("human output retains separate execution and export results", async (t) => 
   assert.match(f.io.stdout(), /"jobs": \[/);
   assert.match(f.io.stdout(), /"rootDir":/);
   assert.doesNotMatch(f.io.stdout(), /"evidencePack":/);
-  assert.match(f.io.stderr(), /Invoking job.combine.start/);
+  assert.match(f.io.stderr(), /Starting the run…/);
 });

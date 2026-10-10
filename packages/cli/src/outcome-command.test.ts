@@ -209,7 +209,7 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
 });
 
 test("outcome CLI help describes its bounded implicit daemon behavior", () => {
-  const help = renderHelp();
+  const help = renderHelp("advanced");
   assert.match(help, /Outcome commands start or reuse the default loopback Relay daemon/u);
   assert.match(help, /Explicit server URLs remain caller-managed/u);
   assert.match(help, /App, Device, Test, Checkpoint, Run, and Report/u);

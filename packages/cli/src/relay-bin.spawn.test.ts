@@ -22,13 +22,18 @@ const health = {
   uptimeMs: 10,
 };
 
-function spawnRelay(args: string[]): Promise<{
+function spawnRelay(
+  args: string[],
+  cwd = repoRoot,
+): Promise<{
   status: number | null;
   stdout: string;
   stderr: string;
 }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [relayBin, ...args], { cwd: repoRoot, env: process.env });
+    const env = { ...process.env };
+    delete env.RELAY_CALLER_CWD;
+    const child = spawn(process.execPath, [relayBin, ...args], { cwd, env });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => (stdout += String(chunk)));
@@ -103,13 +108,42 @@ test("relay bin --json success is exactly one stdout JSON document", async () =>
   );
 });
 
+test("relay bin resolves user paths against the caller's directory, not the checkout", async () => {
+  const caller = await mkdtemp(join(tmpdir(), "relay-caller-"));
+  try {
+    await writeFile(join(caller, "query.json"), JSON.stringify({ limit: 3 }));
+    let seen = "";
+    await withServer(
+      (_req, url, res) => {
+        if (url.pathname !== "/runs") return false;
+        seen = url.search;
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ runs: [] }));
+        return true;
+      },
+      async (url) => {
+        const result = await spawnRelay(
+          ["run", "list", "--input-file", "query.json", "--json", "--server", url],
+          caller,
+        );
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(oneJson(result.stdout).ok, true);
+        assert.match(seen, /limit=3/u);
+      },
+    );
+  } finally {
+    await rm(caller, { recursive: true, force: true });
+  }
+});
+
 test("relay bin --json failure is exactly one stdout JSON document", async () => {
   const result = await spawnRelay(["operation", "invoke", "not.real", "--input", "{}", "--json"]);
   assert.equal(result.status, 2);
   const body = oneJson(result.stdout);
   assert.equal(body.type, "error");
   assert.equal(body.ok, false);
-  assert.match(result.stderr, /Unknown operation/);
+  assert.match(result.stdout, /Unknown operation/);
+  assert.doesNotMatch(result.stderr, /relay:/);
   assert.doesNotMatch(result.stdout, /relay:/);
 });
 

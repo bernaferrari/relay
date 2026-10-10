@@ -5,6 +5,16 @@ import type { EventEnvelope } from "@relay/protocol";
 import { formatVerifyChangeResult } from "./verify-change-output.js";
 import { formatWalkthroughPackResult } from "./walkthrough-output.js";
 import { LiveRunView } from "./live-run-view.js";
+import { formatListResult, formatVerdict, type Verdict } from "./everyday-format.js";
+
+/** `relay run` attaches the Run's verdict; people read that instead of phases. */
+function formatVerdictResult(value: unknown): string | undefined {
+  const verdict = record(value)?.verdict;
+  const candidate = record(verdict);
+  return candidate && typeof candidate.status === "string" && Array.isArray(candidate.steps)
+    ? formatVerdict(candidate as unknown as Verdict)
+    : undefined;
+}
 
 export type OutputStreams = {
   stdout: Writable;
@@ -34,20 +44,42 @@ function isSlowOperation(operationId: string): boolean {
   return SLOW_OPERATIONS.has(operationId);
 }
 
+const outcomeProgress: Record<string, string> = {
+  "outcome.run-test": "Starting the Test…",
+  "outcome.repeat-test": "Starting the runs…",
+  "outcome.continue-repeat": "Continuing the runs…",
+  "outcome.record-test": "Starting the recording…",
+  "outcome.connect-target": "Connecting to the device…",
+  "outcome.observe-target": "Looking at the device…",
+  "outcome.doctor": "Checking Relay…",
+  "outcome.goal-start": "Starting…",
+  "outcome.goal-explore": "Starting to explore…",
+};
+
+/** People see what Relay is doing, never an operation id. Fast reads stay quiet. */
 function progressMessage(
   operationId: string,
   phase: "invoking" | "following" | "watching",
-): string {
-  if (phase === "following") return `Following ${operationId}…`;
-  if (phase === "watching") return `Waiting on ${operationId}…`;
+): string | undefined {
+  if (phase === "following") return "Following live activity… (Ctrl-C to stop)";
+  if (phase === "watching") return "Waiting for the job to finish…";
   if (operationId === "target.snapshot.capture") return "Waiting on accessibility tree…";
   if (operationId === "target.screenshot.capture") return "Waiting on screenshot…";
   if (operationId.startsWith("authoring.")) return "Waiting on device recording…";
   if (operationId === "target.interact" || operationId === "target.app.launch") {
     return "Waiting on device…";
   }
-  if (operationId.includes("run") || operationId.includes("matrix")) return "Waiting on run…";
-  return `Invoking ${operationId}…`;
+  if (operationId.startsWith("outcome.")) return outcomeProgress[operationId];
+  if (
+    /\.(?:list|get|inspect)$/u.test(operationId) ||
+    /^run\.(?:evidence|story)/u.test(operationId)
+  ) {
+    return undefined;
+  }
+  if (/(?:^|\.)(?:run|start)$/u.test(operationId) || operationId.includes("matrix")) {
+    return "Starting the run…";
+  }
+  return "Working…";
 }
 
 function line(stream: Writable, value: unknown): void {
@@ -97,7 +129,7 @@ export class CliOutput {
     if (this.mode === "ndjson") {
       line(this.streams.stdout, { type: "progress", operationId, phase });
     } else if (!this.quiet && this.mode === "human") {
-      this.streams.stderr.write(`${message}\n`);
+      if (message) this.streams.stderr.write(`${message}\n`);
     } else if (!this.quiet && this.mode === "json" && isSlowOperation(operationId)) {
       this.streams.stderr.write(
         `${JSON.stringify({ type: "progress", operationId, phase, message })}\n`,
@@ -186,7 +218,9 @@ export class CliOutput {
         formatVerifyChangeResult(result) ??
         formatWalkthroughPackResult(result) ??
         formatDoctorResult(result) ??
-        formatRunTestSnapshot(result);
+        formatVerdictResult(result) ??
+        formatRunTestSnapshot(result) ??
+        formatListResult(result);
       this.streams.stdout.write(`${readable ?? JSON.stringify(result, null, 2)}\n`);
     }
   }
@@ -204,7 +238,11 @@ export class CliOutput {
       },
     } as const;
     this.terminal = terminal;
-    if (this.mode === "json" || this.mode === "ndjson") line(this.streams.stdout, terminal);
+    if (this.mode === "json" || this.mode === "ndjson") {
+      // The envelope on stdout already carries the message and recovery.
+      line(this.streams.stdout, terminal);
+      return;
+    }
     if (!this.quiet) {
       this.streams.stderr.write(`relay: ${error.message}\n`);
       const recovery = recoveryDetails(error.details);

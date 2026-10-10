@@ -1,5 +1,5 @@
 import type { AppMap, AppMapScenarioTest, AppMapScenarioTestStep } from "@relay/protocol";
-import { stepNeedsSetup } from "@relay/protocol";
+import { stepNeedsSetup, stepRunsFromText } from "@relay/protocol";
 import { unrecordedProductName } from "@relay/protocol";
 import { frozenRawAccessibilityTargetProfiles } from "@relay/core";
 import {
@@ -23,7 +23,17 @@ type Discovery = {
   reason?: string;
   platformBlockers?: Partial<Record<PlanPlatform, string>>;
   linkedTests?: Array<{ platform: PlanPlatform; appMapId: string; testId: string }>;
+  /** Every step runs from its plain-English words; no recording is needed. */
+  runsFromText?: true;
 };
+
+function runsFromWords(test: AppMapScenarioTest): boolean {
+  return (
+    test.steps.length > 0 &&
+    test.steps.some(stepRunsFromText) &&
+    test.steps.every((step) => stepRunsFromText(step) || step.binding.status !== "unresolved")
+  );
+}
 
 function firstUnbound(steps: readonly AppMapScenarioTestStep[]): string | undefined {
   for (const step of steps) {
@@ -40,7 +50,7 @@ function firstUnbound(steps: readonly AppMapScenarioTestStep[]): string | undefi
   return undefined;
 }
 
-function discoveryForTest(map: AppMap, test: AppMapScenarioTest): Discovery {
+export function discoveryForTest(map: AppMap, test: AppMapScenarioTest): Discovery {
   const recordedPlatforms = recordedPlanPlatformsFromAppMap(map, test);
   const platformBlockers = Object.fromEntries(
     PLAN_PLATFORMS.flatMap((platform) => {
@@ -79,6 +89,7 @@ function discoveryForTest(map: AppMap, test: AppMapScenarioTest): Discovery {
   if (routes.some((route) => route.status === "reviewed"))
     return { ...context, status: "recorded" };
   if (routes.some((route) => route.status === "blocked")) return { ...context, status: "blocked" };
+  if (runsFromWords(test)) return { ...context, status: "needs-recording", runsFromText: true };
   return {
     ...context,
     status: "needs-recording",
@@ -134,4 +145,31 @@ export function summarizeTestDiscovery(
         "Compile the chosen Test with a saved targetProfileId to inspect offline blockers; choose a connected target before running.",
     },
   };
+}
+
+/** Whether `relay ci` should run this Test, in the words `relay tests` shows. */
+export function testReadiness(
+  map: AppMap,
+  test: AppMapScenarioTest,
+): { ready: boolean; label: string; reason?: string } {
+  return readinessFromDiscovery(discoveryForTest(map, test));
+}
+
+export function readinessFromDiscovery(discovery: {
+  status?: unknown;
+  reason?: unknown;
+  runsFromText?: unknown;
+}): { ready: boolean; label: string; reason?: string } {
+  const reason = typeof discovery.reason === "string" ? discovery.reason : undefined;
+  if (discovery.status === "recorded") return { ready: true, label: "ready" };
+  if (discovery.runsFromText === true) return { ready: true, label: "ready (plain English)" };
+  const label =
+    discovery.status === "needs-binding"
+      ? "needs setup"
+      : discovery.status === "needs-evidence"
+        ? "needs start screen"
+        : discovery.status === "blocked"
+          ? "blocked"
+          : "needs recording";
+  return { ready: false, label, ...(reason ? { reason } : {}) };
 }

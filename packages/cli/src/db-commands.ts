@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 import { ExitCode, UsageError } from "./errors.js";
 import type { OutputStreams } from "./output.js";
 
@@ -27,7 +28,9 @@ Examples:
 `;
 }
 
-function findWorkspaceRoot(start = process.cwd()): string {
+// Anchored on this checkout, not the caller's directory: the CLI runs from
+// wherever the person typed `relay`, but the control database lives here.
+function findWorkspaceRoot(start = fileURLToPath(new URL("../../../", import.meta.url))): string {
   let directory = start;
   for (;;) {
     if (
