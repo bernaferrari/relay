@@ -5,10 +5,13 @@ import {
   createAppMap,
   draftTestSteps,
   listAppMaps,
+  parseTestYaml,
   readAppMap,
   readPersistedRun,
   runTestId,
   saveAppMapTest,
+  stepsFromYaml,
+  testToYaml,
 } from "@relay/core";
 import type { AppMap, AppMapScenarioTest, OperationInput } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
@@ -48,6 +51,35 @@ export function findApp(
   return undefined;
 }
 
+/** The App a Test belongs to: found by id, name or website, or created for a new website. */
+async function resolveApp(
+  scope: RequestContext,
+  input: { app?: string; url?: string },
+): Promise<{ app: AppMap; createdApp: boolean }> {
+  const found = findApp(await listAppMaps(scope.projectId), input);
+  if (found) return { app: found, createdApp: false };
+  if (input.app && !input.url) {
+    throw new HttpError(404, `No app named “${input.app}”. Give its website to create it.`, {
+      code: "app-not-found",
+      recovery: "Pass the website address, or list apps with `relay apps`.",
+    });
+  }
+  if (!input.url) {
+    throw new HttpError(400, "Say which app (app) or give the website (url) the test opens.", {
+      code: "app-required",
+      recovery: "Pass url for a website, or app for an existing app.",
+    });
+  }
+  const host = new URL(input.url).host.replace(/^www\./u, "");
+  const app = await createAppMap({
+    organizationId: scope.organizationId,
+    projectId: scope.projectId,
+    appMapId: slug(host),
+    name: host,
+  });
+  return { app, createdApp: true };
+}
+
 type RouteInput = {
   method: string;
   pathname: string;
@@ -66,33 +98,10 @@ export async function handleEverydayRoute(input: RouteInput): Promise<boolean> {
     const url = typeof body.url === "string" && body.url.trim() ? body.url.trim() : undefined;
     if (url && !/^https?:\/\//iu.test(url))
       throw new HttpError(400, "The website must start with http:// or https://");
-    let app = findApp(await listAppMaps(scope.projectId), {
+    const { app, createdApp } = await resolveApp(scope, {
       ...(body.app ? { app: body.app } : {}),
       ...(url ? { url } : {}),
     });
-    let createdApp = false;
-    if (!app) {
-      if (body.app && !url) {
-        throw new HttpError(404, `No app named “${body.app}”. Give its website to create it.`, {
-          code: "app-not-found",
-          recovery: "Pass the website address, or list apps with `relay apps`.",
-        });
-      }
-      if (!url) {
-        throw new HttpError(400, "Say which app (app) or give the website (url) the test opens.", {
-          code: "app-required",
-          recovery: "Pass url for a website, or app for an existing app.",
-        });
-      }
-      const host = new URL(url).host.replace(/^www\./u, "");
-      app = await createAppMap({
-        organizationId: scope.organizationId,
-        projectId: scope.projectId,
-        appMapId: slug(host),
-        name: host,
-      });
-      createdApp = true;
-    }
     const drafted = await draftTestSteps({
       goal,
       ...(url ? { startUrl: url } : {}),
@@ -136,6 +145,100 @@ export async function handleEverydayRoute(input: RouteInput): Promise<boolean> {
       })),
       source: drafted.source,
       createdApp,
+    });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/tests/apply-yaml") {
+    const body = (await parseJsonBody(request)) as OperationInput<"test.apply-yaml">;
+    let parsed;
+    try {
+      parsed = parseTestYaml(String(body.yaml ?? ""));
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : String(error), {
+        code: "invalid-test-file",
+        recovery: "Fix the reported field; a test needs name, url or app, and steps.",
+      });
+    }
+    const { app, createdApp } = await resolveApp(scope, {
+      ...(parsed.app ? { app: parsed.app } : {}),
+      ...(parsed.url ? { url: parsed.url } : {}),
+    });
+    // The file's id, else the Test already using this name, else a new id.
+    const existing =
+      (parsed.id ? app.tests[parsed.id] : undefined) ??
+      Object.values(app.tests).find(
+        (test) => !parsed.id && test.name.trim().toLowerCase() === parsed.name.toLowerCase(),
+      );
+    const testId =
+      existing?.id ?? parsed.id ?? `test-${slug(parsed.name)}-${randomUUID().slice(0, 6)}`;
+    const steps = stepsFromYaml(testId, parsed.steps, existing?.steps ?? []);
+    const keptRecorded = steps.filter((step) => step.binding.status === "resolved").length;
+    await applyAppMapMutation(
+      scope,
+      app.id,
+      app.revision,
+      `apply-yaml-${testId}-${randomUUID()}`,
+      (map, context) => {
+        const current = map.tests[testId];
+        return saveAppMapTest(
+          map,
+          {
+            ...(current ?? {}),
+            id: testId,
+            organizationId: map.organizationId,
+            projectId: map.projectId,
+            appMapId: map.id,
+            name: parsed.name,
+            kind: "scenario",
+            intentSchemaVersion: 1,
+            ...(parsed.url ? { startUrl: parsed.url } : {}),
+            steps,
+            createdAt: current?.createdAt ?? context.at,
+            updatedAt: context.at,
+          } as AppMapScenarioTest,
+          context,
+        );
+      },
+    );
+    json(response, existing ? 200 : 201, {
+      appId: app.id,
+      testId,
+      name: parsed.name,
+      created: !existing,
+      createdApp,
+      keptRecorded,
+    });
+    return true;
+  }
+
+  const yamlGet = matchPath(pathname, "/tests/:testId/yaml");
+  if (method === "GET" && yamlGet) {
+    const wanted = decodeURIComponent(yamlGet.testId!).trim().toLowerCase();
+    const appQuery =
+      new URL(request.url ?? "/", "http://relay").searchParams.get("app") ?? undefined;
+    const maps = await listAppMaps(scope.projectId);
+    const scoped = appQuery
+      ? [findApp(maps, { app: appQuery })].filter((map): map is AppMap => Boolean(map))
+      : maps;
+    const matches = scoped.flatMap((map) =>
+      Object.values(map.tests)
+        .filter(
+          (test) => test.id.toLowerCase() === wanted || test.name.trim().toLowerCase() === wanted,
+        )
+        .map((test) => ({ map, test })),
+    );
+    if (!matches.length) throw new HttpError(404, `No test named “${yamlGet.testId}”.`);
+    if (matches.length > 1)
+      throw new HttpError(
+        409,
+        `“${yamlGet.testId}” matches tests in ${matches.length} apps. Pass app.`,
+      );
+    const { map, test } = matches[0]!;
+    json(response, 200, {
+      yaml: testToYaml(test, map.name, test.id),
+      appId: map.id,
+      testId: test.id,
     });
     return true;
   }

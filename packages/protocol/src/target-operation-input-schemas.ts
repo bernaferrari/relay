@@ -67,6 +67,17 @@ export const targetOperationInputSchemas = {
       name: z.string().trim().min(1).max(200).optional(),
     })
     .strict(),
+  "test.apply-yaml": z
+    .object({
+      yaml: z.string().min(1).max(100_000).describe("The Test file"),
+    })
+    .strict(),
+  "test.yaml.get": z
+    .object({
+      testId: z.string().trim().min(1).describe("Test id or name"),
+      app: z.string().trim().min(1).optional().describe("App id or name"),
+    })
+    .strict(),
   "system.model-key.set": z
     .object({
       key: z.string().max(512).describe("OpenRouter key, or an empty string to remove it"),

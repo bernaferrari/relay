@@ -27,6 +27,16 @@ export function createEverydayOperationDefinitions() {
       "/tests/from-goal",
       { category: "authoring" },
     ),
+    command(
+      "test.apply-yaml",
+      "Create or update a Test from its YAML file (name, url or app, steps)",
+      "POST",
+      "/tests/apply-yaml",
+      { category: "authoring" },
+    ),
+    query("test.yaml.get", "A Test as its YAML file", "/tests/:testId/yaml", {
+      category: "authoring",
+    }),
     query(
       "run.verdict.get",
       "Did the Run pass? Status, reason, and each step's expected vs. saw",
