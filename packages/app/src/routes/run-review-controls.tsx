@@ -205,9 +205,5 @@ export function visualIgnoreCopy(comparison: {
       ignored.map((region) => region.name?.trim()).filter((name): name is string => Boolean(name)),
     ),
   ];
-  const sandwich = names.some((name) => /library chrome sandwich/iu.test(name));
-  const chrome = sandwich
-    ? "One viewport of top and bottom chrome stays compared. Do not survey the feed."
-    : "Chrome stays compared.";
-  return `${ignored.length} ignore region${ignored.length === 1 ? "" : "s"}${names.length ? ` (${names.join(",")})` : ""}. ${chrome}`;
+  return `${ignored.length} ignore region${ignored.length === 1 ? "" : "s"}${names.length ? ` (${names.join(",")})` : ""}. The rest of the screen stays compared.`;
 }

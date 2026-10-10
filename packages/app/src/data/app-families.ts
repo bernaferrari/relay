@@ -7,7 +7,7 @@ export type AppFamilyInfo = {
   platform?: AppPlatform;
   /** Maps whose Tests link to each other's native twins share a family. */
   familyId: string;
-  /** The product people recognize, e.g. "Grok". */
+  /** The product people recognize, e.g. "Shop". */
   familyName: string;
 };
 
@@ -22,7 +22,7 @@ function mapPlatform(map: AppMap): AppPlatform | undefined {
   return [...counts].sort((left, right) => right[1] - left[1])[0]?.[0];
 }
 
-/** "Grok.com daily" and "Grok iOS daily" are both "Grok". */
+/** "Shop web daily" and "Shop iOS daily" are both "Shop". */
 function productWord(name: string): string {
   return (
     name

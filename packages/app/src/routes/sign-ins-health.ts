@@ -25,7 +25,7 @@ export function liveSignIns(
   return accounts.filter((account) => accountHealthState(account.fixture) !== "revoked");
 }
 
-/** Ready fixtures only. Needs-relogin / expired are visible, not live SuperGrok. */
+/** Ready fixtures only. Needs-relogin / expired are visible, not live sign-ins. */
 export function readySignIns(
   accounts: readonly ProductBrowserAccount[],
 ): readonly ProductBrowserAccount[] {

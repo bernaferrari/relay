@@ -25,20 +25,7 @@ describe("visualIgnoreCopy", () => {
           ],
         },
       }),
-    ).toBe("2 ignore regions (reply body). Chrome stays compared.");
-  });
-
-  it("names Library chrome sandwich without implying a feed survey", () => {
-    expect(
-      visualIgnoreCopy({
-        code: "VISUAL_BASELINE_MISSING",
-        policy: {
-          regions: [{ mode: "ignore", name: "library chrome sandwich" }],
-        },
-      }),
-    ).toBe(
-      "1 ignore region (library chrome sandwich). One viewport of top and bottom chrome stays compared. Do not survey the feed.",
-    );
+    ).toBe("2 ignore regions (reply body). The rest of the screen stays compared.");
   });
 
   it("leaves a missing baseline pending and hides Keep baseline", () => {

@@ -4,22 +4,6 @@ import { Button } from "@relay/ui-react/components/button";
 import { useState } from "react";
 import type { ProductAccountLane } from "../data/app-resources-product-service";
 
-const AUTH_LANE_LABELS: Record<string, string> = {
-  "grok-auth-email": "Email",
-  "grok-auth-gmail": "Gmail",
-  "grok-auth-x": "X",
-  "grok-auth-x-out": "X signed out",
-  "grok-lab": "SuperGrok",
-};
-
-const AUTH_LANE_ORDER = [
-  "grok-auth-email",
-  "grok-auth-gmail",
-  "grok-auth-x",
-  "grok-auth-x-out",
-  "grok-lab",
-] as const;
-
 export type BrowserLaneTab = {
   instanceId: string;
   laneId: string;
@@ -28,16 +12,23 @@ export type BrowserLaneTab = {
   electronPartition: string;
 };
 
+/** A saved session's id as people read it: `staging-admin` → "Staging admin". */
 export function browserLaneTabLabel(laneId: string): string {
-  return AUTH_LANE_LABELS[laneId] ?? laneId;
+  const words = laneId
+    .trim()
+    .replaceAll(/[-_.:]+/gu, " ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+  return words ? words[0]!.toUpperCase() + words.slice(1) : laneId;
 }
 
 export function isolatedBrowserLanesForTarget(
   lanes: readonly ProductAccountLane[],
   targetId: string,
 ): ProductAccountLane[] {
-  const bound = lanes.filter((lane) => lane.targetId === targetId);
-  return AUTH_LANE_ORDER.flatMap((id) => bound.filter((lane) => lane.id === id));
+  return lanes
+    .filter((lane) => lane.targetId === targetId)
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function createBrowserLaneTab(lane: ProductAccountLane): BrowserLaneTab {

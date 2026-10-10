@@ -24,7 +24,7 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
   const { location, apps, scope, selectedAppId, selectedApp } = useCurrentAppScope();
   const contextName =
     selectedApp?.name ?? appScopeDisplayName(scope, apps.data, apps.isSuccess || apps.isError);
-  // One product, several platforms: "Grok" with Web / iOS / Android under it.
+  // One product, several platforms: "Shop" with Web / iOS / Android under it.
   const families = groupFamilies(apps.data ?? []);
   const selectedOption = apps.data?.find((app) => app.id === selectedAppId);
   const selectedFamily = families.find((family) =>

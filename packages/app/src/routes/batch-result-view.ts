@@ -9,21 +9,6 @@ import type {
   ProductBatchReport,
 } from "@relay/product/run-across";
 
-const KNOWN_LANES = [
-  "grok-lab",
-  "grok-auth-x-out",
-  "grok-auth-gmail",
-  "grok-auth-email",
-  "grok-auth-x",
-  "grok-daily-b",
-  "grok-daily-c",
-  "grok-daily-d",
-  "grok-daily-e",
-  "grok-daily-f",
-  "grok-daily-g",
-  "grok-daily-h",
-  "grok-daily",
-] as const;
 const ENGINE_SUMMARY = /^(causal|visual|localization|network|crash)\s+failure(?:\s+in\s+\S+)?$/iu;
 const VIEWPORT_TOKEN = /[-_:\s]*\d{3,4}\s*[x×]\s*\d{3,4}\b/giu;
 const HEX_TOKEN = /(?:[-_:.])[0-9a-f]{8,}\b/giu;
@@ -230,11 +215,15 @@ export function formatBatchEnvironmentLabel(
     targetLabel?: string;
   },
 ): string {
-  const candidates = [environmentId, hints?.environmentLabel, hints?.targetLabel];
-  for (const lane of KNOWN_LANES) {
-    if (candidates.some((value) => value?.includes(lane))) return lane;
-  }
-  const labeled = hints?.targetLabel?.trim() || hints?.environmentLabel?.trim();
+  // A saved session ("<browser>#signed-out:<session>") is named by the
+  // session itself; otherwise a human label beats a "browser:<id>" handle.
+  const session = /#[^:#]+:([A-Za-z0-9][\w-]*)$/u.exec(environmentId)?.[1];
+  if (session && !isProfileDump(session)) return session;
+  const target = hints?.targetLabel?.trim();
+  if (target && !isProfileDump(target)) return target;
+  const handle = /^browser:([A-Za-z][\w-]*)$/u.exec(environmentId)?.[1];
+  if (handle && !isProfileDump(handle)) return handle;
+  const labeled = hints?.environmentLabel?.trim();
   if (labeled && !isProfileDump(labeled)) return labeled;
   const formatted = tidyProfileId(environmentId);
   return formatted || titleCaseIdentity(environmentId);
@@ -362,11 +351,7 @@ function harnessCase(item: ProductBatchCase): boolean {
 }
 
 function tidyTestId(value: string): string {
-  return value
-    .trim()
-    .replace(/^test-/u, "")
-    .replace(/^grok-web-signed-in-/u, "")
-    .replace(/^grok-web-/u, "");
+  return value.trim().replace(/^test-/u, "");
 }
 
 function isEngineTestDump(value: string): boolean {
@@ -392,7 +377,6 @@ function tidyProfileId(value: string): string {
     .trim();
   next = next.replace(/^(browser|ios|android)\s+/iu, "");
   const compact = next.replaceAll(/\s+/gu, "-").toLowerCase();
-  if (compact === "grok-com" || compact === "grokcom") return "grok-com";
   if (!next) return "";
   return titleCaseIdentity(next);
 }

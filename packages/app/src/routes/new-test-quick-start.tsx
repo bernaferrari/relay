@@ -89,7 +89,7 @@ export function NewTestQuickStart({
   accountsFor?(url: string): readonly WebsiteAccount[];
   /** The login last used for this website, if any. */
   rememberedAccount?(url: string): string | undefined;
-  /** What Relay is doing right now ("Opening grok.com…"), while starting. */
+  /** What Relay is doing right now ("Opening shop.example.com…"), while starting. */
   progress?: string;
   error?: string;
   onStart(url: string, account?: WebsiteAccount): void;
@@ -237,7 +237,8 @@ export function NewTestQuickStart({
             />
           ) : null}
           <p className="min-h-5 text-sm text-muted-foreground" role="status">
-            {progress ?? (value && !address ? "Enter a website address, like grok.com." : "")}
+            {progress ??
+              (value && !address ? "Enter a website address, like shop.example.com." : "")}
           </p>
           {error ? (
             <p className="text-sm text-destructive" role="alert">
