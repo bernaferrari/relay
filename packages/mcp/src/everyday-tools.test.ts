@@ -9,10 +9,10 @@ import {
 } from "./everyday-tools.js";
 import { relayOutcomeTools } from "./outcome-tools.js";
 import { relayOperatorTools } from "./operator-tools.js";
-import { relayQaOperatorTools, relayQaOutcomeTools } from "./qa-tools.js";
 import { createMcpServer, type OperationInvoker } from "./server.js";
 import { relayRegisteredToolNames } from "./registered-tools.js";
-import { relayMcpProfiles } from "./tools.js";
+import { relayMcpProfiles, relayQaOperationTools, type RelayMcpProfile } from "./tools.js";
+import { relayTaskGuideCatalog } from "@relay/workflows/task-guides";
 
 const failedVerdict = {
   runId: "run-1",
@@ -51,7 +51,7 @@ function stubInvoker(
 
 const noSleep = async () => {};
 
-async function connect(invoker: OperationInvoker, profile: "qa" | "author" = "qa") {
+async function connect(invoker: OperationInvoker, profile: RelayMcpProfile = "qa") {
   const server = createMcpServer({ profile, scope: { projectId: "project" }, invoker });
   const [client, transport] = InMemoryTransport.createLinkedPair();
   const pending = new Map<number, (value: Record<string, unknown>) => void>();
@@ -171,7 +171,7 @@ test("relay_create_test applies a test file as written", async () => {
 test("relay_get_verdict returns a bounded verdict with failing-step details only", async () => {
   const session = await connect(
     stubInvoker({ "run.verdict.get": () => ({ verdict: failedVerdict }) }),
-    "author",
+    "full",
   );
   try {
     const listed = await session.request("tools/list", {});
@@ -183,7 +183,7 @@ test("relay_get_verdict returns a bounded verdict with failing-step details only
       "relay_check_change",
       "relay_inspect_failure",
     ]) {
-      assert.ok(names.includes(name), `author can write a Test, so it can run it too: ${name}`);
+      assert.ok(names.includes(name), `full keeps the whole qa loop: ${name}`);
     }
     const result = await session.request("tools/call", {
       name: "relay_get_verdict",
@@ -332,21 +332,102 @@ test("relay_inspect_failure reads the failure through the outcome jobs", async (
   assert.equal(result.verdict.failingStep.saw, "A login error");
 });
 
-test("every profile that can write a Test can also run it and inspect its failure", () => {
-  const loop = relayEverydayTools.map(({ name }) => name);
-  assert.deepEqual(loop, [
+test("every profile registers the whole qa loop and its orientation tools", () => {
+  const qa = [
+    ...relayEverydayTools.map(({ name }) => name),
+    ...relayQaOperationTools.map(({ name }) => name),
+  ];
+  assert.deepEqual(qa, [
     "relay_create_test",
     "relay_run_test",
     "relay_get_verdict",
-    "relay_check_change",
     "relay_inspect_failure",
+    "relay_check_change",
+    "relay_list_tests",
+    "relay_list_devices",
+    "relay_get_guide",
+    "relay_list_apps",
+    "relay_list_runs",
+    "relay_get_test",
+    "relay_health",
   ]);
   for (const profile of relayMcpProfiles) {
     const names = relayRegisteredToolNames(profile);
     assert.equal(new Set(names).size, names.length, `${profile} registers a tool twice`);
-    if (!names.includes("relay_create_test")) continue;
-    for (const name of loop) assert.ok(names.includes(name), `${profile} is missing ${name}`);
+    for (const name of qa) assert.ok(names.includes(name), `${profile} is missing ${name}`);
   }
+});
+
+test("relay_list_tests lists one App's Tests and whether each is ready", async () => {
+  const result = (await invokeRelayEverydayTool({
+    name: "relay_list_tests",
+    argumentsValue: {},
+    confirmed: false,
+    invoker: stubInvoker({
+      "app-map.list": () => ({ appMaps: [{ id: "shop", name: "Shop" }] }),
+      "app-map.get": () => ({
+        appMap: {
+          id: "shop",
+          tests: {
+            checkout: { name: "Checkout", steps: [{ intent: "Buy" }] },
+            draft: {
+              name: "Draft",
+              steps: [{ intent: "Tap", binding: { status: "unresolved" } }],
+            },
+          },
+        },
+      }),
+    }),
+    jobs: {} as RelayOutcomeJobs,
+    signal: new AbortController().signal,
+  })) as { appId: string; tests: Array<Record<string, unknown>> };
+  assert.equal(result.appId, "shop");
+  assert.deepEqual(result.tests, [
+    { testId: "checkout", name: "Checkout", steps: 1, ready: true },
+    { testId: "draft", name: "Draft", steps: 1, ready: false },
+  ]);
+});
+
+test("relay_list_devices returns ready targets and relay_get_guide reads bundled guides", async () => {
+  const intents: unknown[] = [];
+  const jobs = {
+    connect: async (intent: unknown) => {
+      intents.push(intent);
+      return { targets: [{ targetId: "pixel" }], current: { targetId: "pixel" } };
+    },
+  } as unknown as RelayOutcomeJobs;
+  const base = {
+    confirmed: false,
+    invoker: stubInvoker({}),
+    jobs,
+    signal: new AbortController().signal,
+  };
+  const devices = (await invokeRelayEverydayTool({
+    ...base,
+    name: "relay_list_devices",
+    argumentsValue: { phase: "android" },
+  })) as { current: { targetId: string } };
+  assert.equal(devices.current.targetId, "pixel");
+  assert.deepEqual(intents, [{ kind: "connect-target", phase: "android" }]);
+
+  const index = (await invokeRelayEverydayTool({
+    ...base,
+    name: "relay_get_guide",
+    argumentsValue: {},
+  })) as { guides: Array<{ topic: string }> };
+  assert.deepEqual(
+    index.guides.map(({ topic }) => topic),
+    relayTaskGuideCatalog.map(({ topic }) => topic),
+  );
+  const start = (await invokeRelayEverydayTool({
+    ...base,
+    name: "relay_get_guide",
+    argumentsValue: { topic: "start" },
+  })) as { markdown: string };
+  assert.match(start.markdown, /relay_create_test/u);
+  await assert.rejects(
+    invokeRelayEverydayTool({ ...base, name: "relay_get_guide", argumentsValue: { topic: "x" } }),
+  );
 });
 
 test("relay_check_change runs the matching ready Tests and returns verdicts", async () => {
@@ -427,15 +508,20 @@ test("relay_check_change runs the matching ready Tests and returns verdicts", as
 });
 
 test("agent-facing qa descriptions avoid internal names and engine jargon", () => {
-  const qa = [...relayEverydayTools, ...relayQaOutcomeTools, ...relayQaOperatorTools];
-  for (const tool of [...qa, ...relayOutcomeTools, ...relayOperatorTools]) {
+  const named = [
+    ...relayEverydayTools,
+    ...relayQaOperationTools,
+    ...relayOutcomeTools,
+    ...relayOperatorTools,
+  ];
+  for (const tool of named) {
     assert.doesNotMatch(tool.description, /grok|GQA|\bJev\b|Typesafe/iu, tool.name);
-  }
-  for (const tool of qa) {
     assert.doesNotMatch(
       `${tool.title} ${tool.description}`,
-      /\b(?:Lane|Combine|cell|lease|digest|TracePack)\b/u,
+      /\b(?:Lanes?|Combine|campaign|cells?|lease|digest|TracePack|frozen|AX|proof cell)\b/iu,
       tool.name,
     );
+    const sentences = tool.description.split(/(?<=[.!?])(?<!vs\.)\s+/u).filter(Boolean);
+    assert.ok(sentences.length <= 2, `${tool.name}: ${sentences.length} sentences`);
   }
 });

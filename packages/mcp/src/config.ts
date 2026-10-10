@@ -1,6 +1,6 @@
 import type { ServerConnection } from "@relay/protocol";
 import { isAbsolute } from "node:path";
-import { defaultRelayMcpProfile, relayMcpProfiles, type RelayMcpProfile } from "./tools.js";
+import { defaultRelayMcpProfile, resolveRelayMcpProfile, type RelayMcpProfile } from "./tools.js";
 
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
 
@@ -61,11 +61,6 @@ function parseCredentialSource(value: string): CredentialSource {
   throw new TypeError("--credential-source must be 'none' or 'env:NAME'");
 }
 
-function parseProfile(value: string): RelayMcpProfile {
-  if (relayMcpProfiles.includes(value as RelayMcpProfile)) return value as RelayMcpProfile;
-  throw new TypeError(`--profile must be one of: ${relayMcpProfiles.join(", ")}`);
-}
-
 export function parseMcpConfig(
   argv: readonly string[],
   env: Environment = process.env,
@@ -89,7 +84,7 @@ export function parseMcpConfig(
   }
 
   const actorId = choose(values.get("--actor"), env.RELAY_ACTOR_ID, "agent:cursor");
-  const profile = parseProfile(
+  const profile = resolveRelayMcpProfile(
     choose(values.get("--profile"), env.RELAY_MCP_PROFILE, defaults.profile),
   );
   const connection: ServerConnection = {

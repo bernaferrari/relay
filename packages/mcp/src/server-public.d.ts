@@ -40,21 +40,7 @@ export type OperationInvoker = {
 export type McpServerDependencies = {
   invoker: OperationInvoker;
   scope: { projectId: string };
-  profile?:
-    | "operator"
-    | "outcome"
-    | "qa"
-    | "control"
-    | "map"
-    | "observe"
-    | "author"
-    | "test"
-    | "run"
-    | "locale"
-    | "review"
-    | "admin"
-    | "proof"
-    | "full";
+  profile?: "qa" | "device" | "full";
   actorId?: string;
 };
 export declare function createRelayOperationInvoker(config: {

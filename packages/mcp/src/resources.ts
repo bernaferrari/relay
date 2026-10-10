@@ -51,8 +51,7 @@ import {
   type RelayMcpToolDescriptor,
 } from "./tools.js";
 import { relayMcpPrompts, relayMcpPromptsForTools } from "./prompts.js";
-import { relayQaRequiredOperationIds } from "./qa-tools.js";
-import { relayRegisteredToolNames } from "./registered-tools.js";
+import { relayRegisteredToolNames, relayRequiredOperationIds } from "./registered-tools.js";
 import { registerTaskGuideResources } from "./task-guide-resources.js";
 
 export const relayMcpResourceUris = {
@@ -99,17 +98,13 @@ export function registerRelayResources(
   registerTaskGuideResources(server, scope, profile, tools);
   const activeOperations = new Set(tools.map(({ operationId }) => operationId));
   const leaseRecoveryRule =
-    profile === "operator"
-      ? "On TARGET_CONTROL_LEASE_REQUIRED, operator verbs auto-create a lease for this actor. If another actor holds the device, the error names who holds it and since when."
-      : activeOperations.has("lease.create")
-        ? 'On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with poolId "local", deviceSerial, and confirm:true, then retry.'
-        : `On TARGET_CONTROL_LEASE_REQUIRED, lease.create is not exposed in selected MCP profile "${profile}". Use a profile that exposes the canonical lease.create and lease.release pair, or ask an operator to acquire the lease.`;
+    profile === "full"
+      ? 'On TARGET_CONTROL_LEASE_REQUIRED, the device tools take control automatically; raw tools need lease.create with poolId "local", deviceSerial, and confirm:true, then a retry.'
+      : "On TARGET_CONTROL_LEASE_REQUIRED, the device tools take control automatically. If another person or agent holds the device, the error names who and since when.";
   const targetRecoveryRule =
-    profile === "operator"
-      ? "Launch does not wait on XCTest. No active session is not a failed launch — use relay_recover, which adopts a healthy live runner instead of killing it."
-      : activeOperations.has("target.recover")
-        ? "Launch does not wait on XCTest. No active session is not a failed launch — recover the runner."
-        : `Launch does not wait on XCTest. No active session is not a failed launch — target.recover is not exposed in selected MCP profile "${profile}"; use an authorized operator or profile to recover the runner.`;
+    profile === "qa"
+      ? "Launch does not wait on XCTest. No active session is not a failed launch — recovering the runner needs the device profile (relay_recover)."
+      : "Launch does not wait on XCTest. No active session is not a failed launch — use relay_recover, which adopts a healthy live runner instead of killing it.";
   const readRunCollection = (signal: AbortSignal, requestedUri: URL) => {
     const cursor = cursorForUri(requestedUri, "runs", scope, profile);
     return invokeRead(
@@ -167,7 +162,8 @@ export function registerRelayResources(
         additionalOperations: relayMcpOperationCatalog().filter(
           ({ operationId }) =>
             !activeOperations.has(operationId) &&
-            (profile !== "qa" || relayQaRequiredOperationIds.some((id) => id === operationId)),
+            (profile === "full" ||
+              relayRequiredOperationIds(profile).some((id) => id === operationId)),
         ),
         excludedOperations: relayMcpExclusions,
         availablePrompts: relayMcpPrompts.map(({ name, title, description }) => ({
@@ -181,7 +177,7 @@ export function registerRelayResources(
           ),
         })),
         guidance:
-          "Choose one task profile at server startup. Use full only for deliberate low-level access.",
+          "Choose one profile at server startup: qa (default), device for live control and recording, or full for every raw operation.",
       };
     },
     scope,

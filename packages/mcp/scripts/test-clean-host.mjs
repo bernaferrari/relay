@@ -91,6 +91,10 @@ async function startFixture(operationIds) {
       );
       return;
     }
+    if (url.pathname.endsWith("/doctor")) {
+      response.end(JSON.stringify({ ok: true, checks: [] }));
+      return;
+    }
     if (url.pathname === "/meta") {
       response.end(JSON.stringify({ operations: operationIds.map((id) => ({ id })) }));
       return;
@@ -249,8 +253,15 @@ async function typecheckPublicExports(installRoot) {
 }
 
 async function main() {
-  const toolsSource = await readFile(join(packageRoot, "src/tools.ts"), "utf8");
-  const qaSource = await readFile(join(packageRoot, "src/qa-tools.ts"), "utf8");
+  // full exposes every proof.* operation, so read them from their registry.
+  const toolsSource = [
+    await readFile(join(packageRoot, "src/tools.ts"), "utf8"),
+    await readFile(
+      join(repositoryRoot, "packages/protocol/src/change-verification-operation-definitions.ts"),
+      "utf8",
+    ),
+  ].join("\n");
+  const qaSource = await readFile(join(packageRoot, "src/registered-tools.ts"), "utf8");
   const qaIds = [...qaSource.matchAll(/"([a-z][a-z.-]*\.[a-z.-]+)"/gu)].map((match) => match[1]);
   const operationIds = [...new Set([...fixtureOperationIds(toolsSource), ...qaIds])];
   const tempRoot = await mkdtemp(join(tmpdir(), "relay-mcp-clean-host-"));
@@ -294,7 +305,7 @@ async function main() {
       RELAY_PROJECT_ID: "clean-host",
       RELAY_ACTOR_ID: "agent:clean-host",
       RELAY_CREDENTIAL_SOURCE: "none",
-      RELAY_MCP_PROFILE: "proof",
+      RELAY_MCP_PROFILE: "full",
     };
 
     const doctor = await runAsync(process.execPath, [join(bin, "relay-proof-doctor"), "--json"], {
@@ -316,19 +327,22 @@ async function main() {
     );
     assert.equal(JSON.parse(npxDoctor.stdout).ok, true);
 
-    const responses = await readMcpResponses(join(bin, "relay-mcp"), ["--profile", "proof"], env);
+    const responses = await readMcpResponses(join(bin, "relay-mcp"), ["--profile", "full"], env);
     const tools = responses.find((response) => response.id === 2)?.result?.tools;
     assert.ok(Array.isArray(tools));
     assert.ok(tools.some((tool) => tool.name === "relay_proof_start"));
-    const outcomeResponses = await readMcpResponses(join(bin, "relay-mcp"), [], {
-      ...env,
-      RELAY_MCP_PROFILE: "outcome",
-    });
-    const outcomeTools = outcomeResponses.find((response) => response.id === 2)?.result?.tools;
-    assert.ok(Array.isArray(outcomeTools));
-    assert.ok(outcomeTools.some((tool) => tool.name === "relay_prove_change"));
-    assert.ok(outcomeTools.some((tool) => tool.name === "relay_run_test"));
-    assert.ok(!outcomeTools.some((tool) => tool.name === "relay_proof_analyze"));
+    assert.ok(tools.some((tool) => tool.name === "relay_prove_change"));
+    const deviceEnv = { ...env, RELAY_MCP_PROFILE: "device" };
+    const deviceResponses = await readMcpResponses(join(bin, "relay-mcp"), [], deviceEnv);
+    const deviceTools = deviceResponses.find((response) => response.id === 2)?.result?.tools;
+    assert.ok(Array.isArray(deviceTools));
+    assert.ok(deviceTools.some((tool) => tool.name === "relay_run_test"));
+    assert.ok(deviceTools.some((tool) => tool.name === "relay_tap"));
+    assert.ok(deviceTools.some((tool) => tool.name === "relay_record_test"));
+    assert.ok(!deviceTools.some((tool) => tool.name === "relay_prove_change"));
+    const fallbackPanel = deviceTools.find((tool) => tool.name === "relay_panel");
+    assert.equal(fallbackPanel.annotations.readOnlyHint, true);
+    assert.equal(fallbackPanel._meta?.ui, undefined);
 
     const qaEnv = { ...env, RELAY_MCP_PROFILE: "qa" };
     const qaDoctor = await runAsync(
@@ -338,33 +352,35 @@ async function main() {
     );
     assert.equal(JSON.parse(qaDoctor.stdout).ok, true);
     const qaResponses = await readMcpResponses(
-      join(bin, copiedConfig.mcpServers.relay.command),
-      copiedConfig.mcpServers.relay.args,
+      join(bin, "relay-mcp"),
+      ["--profile", "qa"],
       qaEnv,
       true,
     );
     const qaTools = qaResponses.find((response) => response.id === 2)?.result?.tools;
-    assert.equal(qaTools.length, 23);
-    const fallbackPanel = qaTools.find((tool) => tool.name === "relay_panel");
-    assert.equal(fallbackPanel.annotations.readOnlyHint, true);
-    assert.equal(fallbackPanel._meta?.ui, undefined);
-    assert.ok(qaTools.some((tool) => tool.name === "relay_record_test"));
+    assert.equal(qaTools.length, 12);
     assert.ok(qaTools.some((tool) => tool.name === "relay_run_test"));
-    assert.ok(qaTools.some((tool) => tool.name === "relay_inspect_workflow"));
-    assert.equal(
-      qaTools.some((tool) => tool.name === "relay_prove_change"),
-      false,
-    );
+    assert.ok(qaTools.some((tool) => tool.name === "relay_list_devices"));
+    assert.ok(qaTools.some((tool) => tool.name === "relay_get_guide"));
+    for (const absent of ["relay_panel", "relay_record_test", "relay_prove_change"]) {
+      assert.equal(
+        qaTools.some((tool) => tool.name === absent),
+        false,
+        absent,
+      );
+    }
     assert.notEqual(
       qaResponses.find((response) => response.id === 5)?.result?.isError,
       true,
       JSON.stringify(qaResponses.find((response) => response.id === 5)),
     );
 
+    // The plugin descriptor starts the device profile, which carries the panel.
+    assert.deepEqual(copiedConfig.mcpServers.relay.args, ["--profile", "device"]);
     const appResponses = await readMcpResponses(
       join(bin, copiedConfig.mcpServers.relay.command),
       copiedConfig.mcpServers.relay.args,
-      qaEnv,
+      deviceEnv,
       false,
       true,
     );

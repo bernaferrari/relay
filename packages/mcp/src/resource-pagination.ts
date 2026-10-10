@@ -801,24 +801,14 @@ export function registerStaticResource(
   }
 }
 
+/** Every profile reads Apps, Tests, Runs and evidence (qa and device through
+ * named tools), so no resource is hidden by profile. */
 export function resourceAllowed(
-  profile: RelayMcpProfile,
-  tools: readonly RelayMcpToolDescriptor[],
-  requiredOperations: readonly OperationId[],
+  _profile: RelayMcpProfile,
+  _tools: readonly RelayMcpToolDescriptor[],
+  _requiredOperations: readonly OperationId[],
 ): boolean {
-  // Outcome and operator resources stay available even though those profiles
-  // do not expose the underlying operation tools.
-  if (
-    profile === "outcome" ||
-    profile === "qa" ||
-    profile === "operator" ||
-    profile === "full" ||
-    requiredOperations.length === 0
-  ) {
-    return true;
-  }
-  const active = new Set<OperationId>(tools.map(({ operationId }) => operationId));
-  return requiredOperations.every((operationId) => active.has(operationId));
+  return true;
 }
 
 export function templateResourceAllowed(

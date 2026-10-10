@@ -15,7 +15,7 @@ test("configuration uses arguments over environment over CLI-compatible defaults
       "--timeout",
       "321",
       "--profile",
-      "review",
+      "device",
     ],
     {
       RELAY_URL: "https://env.example",
@@ -23,7 +23,7 @@ test("configuration uses arguments over environment over CLI-compatible defaults
       RELAY_PROJECT_ID: "env-project",
       RELAY_ACTOR_ID: "agent:env",
       RELAY_TIMEOUT_MS: "999",
-      RELAY_MCP_PROFILE: "run",
+      RELAY_MCP_PROFILE: "full",
     },
     42,
   );
@@ -34,7 +34,7 @@ test("configuration uses arguments over environment over CLI-compatible defaults
   assert.equal(config.connection.actorId, "agent:explicit");
   assert.equal(config.connection.actorKind, "agent");
   assert.equal(config.timeoutMs, 321);
-  assert.equal(config.profile, "review");
+  assert.equal(config.profile, "device");
 
   const defaults = parseMcpConfig([], {}, 42);
   assert.equal(defaults.connection.url, "http://127.0.0.1:8787");
@@ -98,9 +98,9 @@ test("invalid options and timeouts are rejected before stdio starts", () => {
 });
 
 test("profile selection supports environment configuration", () => {
-  assert.equal(parseMcpConfig([], { RELAY_MCP_PROFILE: "observe" }, 42).profile, "observe");
+  assert.equal(parseMcpConfig([], { RELAY_MCP_PROFILE: "device" }, 42).profile, "device");
   assert.equal(
-    parseMcpConfig(["--profile", "full"], { RELAY_MCP_PROFILE: "observe" }, 42).profile,
+    parseMcpConfig(["--profile", "full"], { RELAY_MCP_PROFILE: "device" }, 42).profile,
     "full",
   );
 });

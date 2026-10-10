@@ -44,23 +44,23 @@ test("doctor defaults to the qa profile", async () => {
   assert.equal(report.config.profile, "qa");
 });
 
-test("doctor validates the operator surface without exposing credentials", async () => {
-  const report = await runRelayMcpDoctor(["--profile", "operator"], env, fakeFetch());
+test("doctor validates the device surface without exposing credentials", async () => {
+  const report = await runRelayMcpDoctor(["--profile", "device"], env, fakeFetch());
 
   assert.equal(report.ok, true);
-  assert.equal(report.config.profile, "operator");
+  assert.equal(report.config.profile, "device");
   const profileCheck = report.checks.find(({ name }) => name === "profile");
   assert.equal(profileCheck?.ok, true);
-  assert.match(profileCheck?.message ?? "", /operator/u);
+  assert.match(profileCheck?.message ?? "", /device/u);
   const manifestCheck = report.checks.find(({ name }) => name === "proof-tools");
   assert.equal(manifestCheck?.ok, true);
-  assert.match(manifestCheck?.message ?? "", /for profile operator/u);
+  assert.match(manifestCheck?.message ?? "", /for profile device/u);
   assert.ok(report.checks.every(({ message }) => !message.includes("secret")));
   assert.match(formatRelayMcpDoctor(report), /Relay doctor: READY/u);
 });
 
-test("doctor validates the live Proof profile when explicitly selected", async () => {
-  const report = await runRelayMcpDoctor(["--profile", "proof"], env, fakeFetch());
+test("doctor validates the live Proof lifecycle under the full profile", async () => {
+  const report = await runRelayMcpDoctor(["--profile", "full"], env, fakeFetch());
 
   assert.equal(report.ok, true);
   assert.deepEqual(report.config, {
@@ -69,11 +69,11 @@ test("doctor validates the live Proof profile when explicitly selected", async (
     project: "project-test",
     actor: "agent:codex",
     actorKind: "agent",
-    profile: "proof",
+    profile: "full",
   });
   assert.deepEqual(
     report.proofTools,
-    relayMcpToolsForProfile("proof")
+    relayMcpToolsForProfile("full")
       .filter(({ operationId }) => operationId.startsWith("proof."))
       .map(({ name }) => name),
   );
@@ -82,7 +82,7 @@ test("doctor validates the live Proof profile when explicitly selected", async (
 
 test("doctor fails clearly when the server is missing a canonical Proof operation", async () => {
   const report = await runRelayMcpDoctor(
-    ["--profile", "proof"],
+    ["--profile", "full"],
     env,
     fakeFetch(["proof.rerun-affected"]),
   );
@@ -93,27 +93,27 @@ test("doctor fails clearly when the server is missing a canonical Proof operatio
   assert.match(proofCheck?.message ?? "", /proof\.rerun-affected/u);
 });
 
-test("doctor fails when the operator profile cannot cancel, save, or export", async () => {
+test("doctor fails when the device profile cannot tap, launch, or cancel", async () => {
   const report = await runRelayMcpDoctor(
-    ["--profile", "operator"],
+    ["--profile", "device"],
     env,
-    fakeFetch(["job.cancel", "app-map.test.save", "run.walkthrough-pack.get"]),
+    fakeFetch(["job.cancel", "target.interact", "target.app.launch"]),
   );
   assert.equal(report.ok, false);
   const tools = report.checks.find(({ name }) => name === "proof-tools");
   assert.equal(tools?.ok, false);
   assert.match(tools?.message ?? "", /job\.cancel/u);
-  assert.match(tools?.message ?? "", /app-map\.test\.save/u);
-  assert.match(tools?.message ?? "", /run\.walkthrough-pack\.get/u);
+  assert.match(tools?.message ?? "", /target\.interact/u);
+  assert.match(tools?.message ?? "", /target\.app\.launch/u);
 });
 
-test("doctor validates a specialist profile honestly instead of demanding Proof", async () => {
-  const report = await runRelayMcpDoctor(["--profile", "observe"], env, fakeFetch());
+test("doctor validates qa honestly instead of demanding Proof", async () => {
+  const report = await runRelayMcpDoctor(["--profile", "qa"], env, fakeFetch());
 
-  assert.equal(report.config.profile, "observe");
+  assert.equal(report.config.profile, "qa");
   const profileCheck = report.checks.find(({ name }) => name === "profile");
   assert.equal(profileCheck?.ok, true);
-  assert.match(profileCheck?.message ?? "", /--profile proof/u);
+  assert.match(profileCheck?.message ?? "", /--profile full/u);
 });
 
 test("doctor reports unreachable Relay and does not leak bearer configuration", async () => {

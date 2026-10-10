@@ -1,18 +1,4 @@
-export type RelayMcpProfile =
-  | "operator"
-  | "outcome"
-  | "qa"
-  | "control"
-  | "map"
-  | "observe"
-  | "author"
-  | "test"
-  | "run"
-  | "locale"
-  | "review"
-  | "admin"
-  | "proof"
-  | "full";
+export type RelayMcpProfile = "qa" | "device" | "full";
 
 export type RelayMcpToolAnnotations = {
   readonly readOnlyHint: boolean;

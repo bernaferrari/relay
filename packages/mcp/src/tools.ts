@@ -2,22 +2,9 @@ import { operationDefinitions, type OperationDefinition, type OperationId } from
 import * as z from "zod/v4";
 type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
-export const relayMcpProfiles = [
-  "operator",
-  "outcome",
-  "qa",
-  "control",
-  "map",
-  "observe",
-  "author",
-  "test",
-  "run",
-  "locale",
-  "review",
-  "admin",
-  "proof",
-  "full",
-] as const;
+/** qa: write, run and read Tests. device: qa plus live device control and
+ * recording. full: device plus every raw operation. */
+export const relayMcpProfiles = ["qa", "device", "full"] as const;
 
 export type RelayMcpProfile = (typeof relayMcpProfiles)[number];
 export const defaultRelayMcpProfile: RelayMcpProfile = "qa";
@@ -167,6 +154,9 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Create a replacement Proof for the affected verification scope after a change. Preserve the prior Proof and pass its exact version.",
 };
 
+/** Operations whose last word deletes, discards or stops something. */
+const destructiveVerb = /\.(?:delete|remove|discard|cancel|revoke|clear)$/u;
+
 function toolDescriptor(
   definition: OperationDefinition<Exclude<OperationId, ExcludedOperationId>>,
 ): RelayMcpToolDescriptor {
@@ -192,7 +182,9 @@ function toolDescriptor(
     annotations: Object.freeze({
       readOnlyHint: definition.mode === "query",
       destructiveHint:
-        definition.confirmation === "dangerous" || definition.transport.method === "DELETE",
+        definition.confirmation === "dangerous" ||
+        definition.transport.method === "DELETE" ||
+        destructiveVerb.test(definition.id),
       idempotentHint:
         definition.idempotency === "inherent" || definition.idempotency === "required",
       openWorldHint: false,
@@ -217,403 +209,91 @@ export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
     ),
 );
 
-const controlOperations = [
-  "target.health.get",
-  "target.input.reconcile",
-  "system.health.get",
-  "system.doctor.get",
-  "target.devices.list",
-  "target.list",
-  "target.snapshot.capture",
-  "target.screenshot.capture",
-  "target.interact",
-  "target.ground",
-  "target.do",
-  "target.recover",
-  "target.app.launch",
-  "target.ui.describe",
-  "action.run",
-  "lease.list",
-  "lease.create",
-  "lease.release",
-] as const satisfies readonly OperationId[];
+/** Read tools the qa profile names plainly. Each is one existing operation
+ * under a friendlier name; full hides the raw duplicate. */
+const qaOperationAliases = [
+  {
+    name: "relay_list_apps",
+    operationId: "app-map.list",
+    title: "List Apps",
+    description: "List the Apps in this project with their ids and names.",
+  },
+  {
+    name: "relay_list_runs",
+    operationId: "run.list",
+    title: "List Runs",
+    description: "List recent Runs, newest first, with their status and Test.",
+  },
+  {
+    name: "relay_get_test",
+    operationId: "test.yaml.get",
+    title: "Read a Test",
+    description:
+      "Read one saved Test as its test file (name, url or app, steps). Edit it and pass it back to relay_create_test to update the Test.",
+  },
+  {
+    name: "relay_health",
+    operationId: "system.doctor.get",
+    title: "Check Relay",
+    description:
+      "Check that Relay is running and ready on this computer: the server, devices, browsers and model key. Call it first when something does not work.",
+  },
+] as const satisfies readonly {
+  name: `relay_${string}`;
+  operationId: Exclude<OperationId, ExcludedOperationId>;
+  title: string;
+  description: string;
+}[];
 
-const observeOperations = [
-  "target.health.get",
-  "system.health.get",
-  "system.doctor.get",
-  "target.devices.list",
-  "target.list",
-  "target.snapshot.capture",
-  "target.screenshot.capture",
-  "lease.list",
-  "workspace.variables.get",
-  "app-map.list",
-  "app-map.get",
-  "app-map.scroll-surface.origin.inspect",
-  "authoring.session.list",
-  "authoring.session.get",
-  "job.list",
-  "job.get",
-  "run.list",
-  "run.get",
-  "run.replay.offline",
-  "run.evidence.get",
-  "run.trace-pack.get",
-  "job.combine.analysis",
-  "job.combine.capture.review",
-] as const satisfies readonly OperationId[];
+export const relayQaOperationTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
+  qaOperationAliases.map(({ name, operationId, title, description }) => {
+    const raw = relayMcpTools.find((tool) => tool.operationId === operationId)!;
+    return Object.freeze({ ...raw, name, title, description });
+  }),
+);
 
-const mapOperations = [
-  "system.health.get",
-  "system.doctor.get",
-  "target.devices.list",
-  "target.list",
-  "target.preflight",
-  "target.snapshot.capture",
-  "target.screenshot.capture",
-  "lease.list",
-  "lease.create",
-  "lease.release",
-  "app-map.list",
-  "app-map.get",
-  "app-map.scroll-surface.origin.inspect",
-  "authoring.session.list",
-  "authoring.session.get",
-  "discovery.create",
-  "discovery.get",
-  "discovery.start",
-  "discovery.cancel",
-  "discovery.here",
-  "discovery.do",
-  "discovery.suggestion",
-  "discovery.coverage",
-  "discovery.exploration-timeline",
-  "target.ground",
-  "target.do",
-  "app-map.observations.propose",
-] as const satisfies readonly OperationId[];
-
-const authorOperations = [
-  ...mapOperations,
-  "app-map.proposal.submit",
-  "app-map.test.propose",
-  "workspace.variables.update",
-  "app-map.variable.infer",
-  "authoring.session.create",
-  "authoring.session.observe",
-  "authoring.session.capture",
-  "authoring.session.start",
-  "authoring.session.interact",
-  "authoring.session.stop",
-  "authoring.take.trim",
-  "authoring.take.reorder",
-  "authoring.take.replace",
-  "authoring.take.replay",
-  "authoring.session.commit",
-  "authoring.session.discard",
-] as const satisfies readonly OperationId[];
-
-const testOperations = [
-  "system.health.get",
-  "system.doctor.get",
-  "target.devices.list",
-  "target.list",
-  "target.preflight",
-  "target.snapshot.capture",
-  "target.screenshot.capture",
-  "lease.list",
-  "lease.create",
-  "lease.release",
-  "app-map.list",
-  "app-map.get",
-  "app-map.test.save",
-  "app-map.test.edit",
-  "app-map.test.propose",
-  "app-map.test.run",
-  "target.interact",
-  "target.recover",
-  "app-map.test.compile",
-  "app-map.diff.impact",
-  "job.get",
-  "job.cancel",
-  "job.pause",
-  "job.resume",
-  "run.get",
-  "run.replay.offline",
-  "run.evidence.get",
-  "run.trace-pack.get",
-  "run.story.get",
-  "app-map.test.from-intent",
-  "app-map.test.draft",
-  "app-map.observed",
-  "run.repair.list",
-  "run.repair.get",
-  "run.repair.retry",
-  "run.repair.propose",
-] as const satisfies readonly OperationId[];
-
-const runOperations = [
-  "system.health.get",
-  "system.doctor.get",
-  "target.devices.list",
-  "target.list",
-  "target.preflight",
-  "target.screenshot.capture",
-  "target.interact",
-  "target.recover",
-  "lease.list",
-  "lease.create",
-  "lease.release",
-  "app-map.list",
-  "app-map.get",
-  "app-map.test.run",
-  "app-map.combine.preflight",
-  "app-map.combine.save",
-  "job.list",
-  "job.get",
-  "job.start",
-  "job.retry",
-  "job.cancel",
-  "job.pause",
-  "job.resume",
-  "job.combine.start",
-  "job.combine.export",
-  "job.combine.campaign.get",
-  "job.combine.campaign.resume",
-  "job.combine.campaign.cancel",
-  "job.combine.analysis",
-  "job.combine.capture.review",
-  "job.combine.capture.review.apply",
-  "run.list",
-  "run.get",
-  "run.replay.offline",
-  "run.evidence.get",
-  "run.trace-pack.get",
-  "run.story.get",
-  "run.repair.list",
-  "run.repair.get",
-  "run.repair.retry",
-  "run.repair.propose",
-] as const satisfies readonly OperationId[];
-
-/**
- * Sweep one app's screens across languages and read what broke.
- *
- * One Language Variable × one graph Test is the canonical campaign. The
- * profile keeps one App Map/Test/Variable authoring path, so an agent cannot
- * accidentally create a second source of truth.
- */
-const localeOperations = [
-  "system.health.get",
-  "system.doctor.get",
-  "target.devices.list",
-  "target.list",
-  "target.screenshot.capture",
-  "target.app.launch",
-  "target.app.locales",
-  "target.snapshot.capture",
-  "target.scroll-survey.capture",
-  "target.interact",
-  "target.recover",
-  "lease.list",
-  "lease.create",
-  "lease.release",
-  "app-map.list",
-  "app-map.get",
-  "app-map.variable.save",
-  "app-map.variable.remove",
-  "app-map.test.save",
-  "app-map.screen.alias-observe",
-  "app-map.variable.infer",
-  "app-map.test.edit",
-  "app-map.test.propose",
-  "app-map.test.compile",
-  "app-map.test.run",
-  "app-map.combine.save",
-  "app-map.combine.preflight",
-  "workspace.variables.get",
-  "workspace.variables.update",
-  "job.combine.start",
-  "job.combine.export",
-  "job.combine.campaign.get",
-  "job.combine.campaign.resume",
-  "job.combine.campaign.cancel",
-  "job.combine.analysis",
-  "job.combine.capture.review",
-  "job.combine.capture.review.apply",
-  "job.list",
-  "job.get",
-  "job.cancel",
-  "run.list",
-  "run.get",
-  "run.replay.offline",
-] as const satisfies readonly OperationId[];
-
-const reviewOperations = [
-  "system.health.get",
-  "target.devices.list",
-  "target.snapshot.capture",
-  "target.screenshot.capture",
-  "lease.list",
-  "lease.create",
-  "lease.release",
-  "app-map.list",
-  "app-map.get",
-  "app-map.scroll-surface.origin.inspect",
-  "app-map.scroll-surface.origin.review",
-  "app-map.scroll-surface.origin.revoke",
-  "app-map.screen.alias-observe",
-  "app-map.proposal.approve",
-  "app-map.proposal.reject",
-  "app-map.proposal.revert",
-  "authoring.session.list",
-  "authoring.session.get",
-  "authoring.take.trim",
-  "authoring.take.reorder",
-  "authoring.take.replace",
-  "authoring.take.replay",
-  "authoring.session.commit",
-  "authoring.session.discard",
-  "job.list",
-  "job.get",
-  "run.list",
-  "run.get",
-  "run.replay.offline",
-  "run.evidence.get",
-  "run.trace-pack.get",
-  "run.repair.list",
-  "run.repair.get",
-  "run.repair.propose",
-  "run.review",
-  "run.visual.compare",
-  "run.visual-baseline.update",
-  "run.visual.review",
-  "run.capture.review",
-  "job.combine.capture.review",
-  "job.combine.capture.review.apply",
-  "run.pin.update",
-] as const satisfies readonly OperationId[];
-
-const adminOperations = [
-  "system.health.get",
-  "system.doctor.get",
-  "system.audit.list",
-  "activity.list",
-  "workspace.privacy.get",
-  "workspace.privacy.update",
-  "workspace.evidence.get",
-  "workspace.evidence.update",
-  "project.list",
-  "project.save",
-  "target.list",
-  "target.create",
-  "target.delete",
-  "target.browser-auth.save",
-  "target.browser-auth.list",
-  "target.browser-auth.revoke",
-  "target.browser-auth.probe",
-  "build.list",
-  "build.save",
-  "build.preflight",
-  "device-pool.list",
-  "device-pool.save",
-  "device-pool.preflight",
-  "target-worker.list",
-  "schedule.list",
-  "schedule.create",
-  "schedule.delete",
-  "run.retention.apply",
-] as const satisfies readonly OperationId[];
-
-/**
- * Relay as the proof layer for AI-written code: verify one change by running
- * the affected flows on real devices, reading the proof report, and turning
- * a failure into a precise digest the coding agent can fix. Read-heavy by
- * design; normal execution goes through the server-owned proof.run
- * coordinator. Lower-level Test and job tools remain available only for
- * explicit legacy/manual Run import recovery through record-runs.
- */
-const proofOperations = [
-  "proof.prepare",
-  "proof.start",
-  "proof.list",
-  "proof.inspect",
-  "proof.plan.approve",
-  "proof.run.confirm",
-  "proof.run",
-  "proof.run.human-evidence",
-  "proof.continue",
-  "proof.cancel",
-  "proof.publication.retry",
-  "proof.rerun-affected",
-  "system.health.get",
-  "system.doctor.get",
-  "target.devices.list",
-  "target.list",
-  "target.browser-auth.list",
-  "target.browser-auth.probe",
-  "target.screenshot.capture",
-  "lease.list",
-  "workspace.change.inspect",
-  "app-map.list",
-  "app-map.get",
-  "app-map.test.run",
-  "app-map.routine.impact",
-  "app-map.diff.impact",
-  "job.list",
-  "job.get",
-  "run.list",
-  "run.get",
-  "run.replay.offline",
-  "run.evidence.get",
-  "run.trace-pack.get",
-  "run.story.get",
-  "run.repair.list",
-  "run.repair.get",
-  "run.repair.propose",
-  "run.share.create",
-  "run.share.list",
-  "run.share.revoke",
-] as const satisfies readonly OperationId[];
-
-const profileOperations: Record<
-  Exclude<RelayMcpProfile, "full" | "outcome" | "operator" | "qa">,
-  ReadonlySet<OperationId>
-> = {
-  control: new Set(controlOperations),
-  map: new Set(mapOperations),
-  observe: new Set(observeOperations),
-  author: new Set(authorOperations),
-  test: new Set(testOperations),
-  run: new Set(runOperations),
-  locale: new Set(localeOperations),
-  review: new Set(reviewOperations),
-  admin: new Set(adminOperations),
-  proof: new Set(proofOperations),
-};
-
-/** Raw operations the everyday tools already wrap (relay_create_test,
- * relay_get_verdict). Profiles that register the everyday loop never list
- * them twice under their raw names. */
-const everydayWrappedOperations = new Set<OperationId>([
+/** Raw operations a named tool already covers: create/run/verdict loop and
+ * the qa read aliases. full lists each capability once. */
+const wrappedOperations = new Set<OperationId>([
   "test.create-from-goal",
   "test.apply-yaml",
   "run.verdict.get",
+  ...qaOperationAliases.map(({ operationId }) => operationId),
 ]);
 
-function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): boolean {
-  if (profile === "full") return !everydayWrappedOperations.has(tool.operationId);
-  // qa browses Apps/Tests through relay_panel and App/Test resources, not raw
-  // App Map schemas; outcome and operator expose only their friendly verbs.
-  if (profile === "qa" || profile === "outcome" || profile === "operator") return false;
-  return profileOperations[profile].has(tool.operationId);
-}
-
+/** Raw operation tools for a profile. qa and device expose only named tools. */
 export function relayMcpToolsForProfile(
   profile: RelayMcpProfile = defaultRelayMcpProfile,
 ): readonly RelayMcpToolDescriptor[] {
-  return Object.freeze(relayMcpTools.filter((tool) => toolInProfile(tool, profile)));
+  if (profile !== "full") return Object.freeze([]);
+  return Object.freeze(relayMcpTools.filter((tool) => !wrappedOperations.has(tool.operationId)));
+}
+
+/** Old profile names keep working: live control maps to device, the rest to full. */
+const legacyProfiles: Readonly<Record<string, RelayMcpProfile>> = {
+  operator: "device",
+  outcome: "device",
+  control: "device",
+  observe: "device",
+  map: "full",
+  author: "full",
+  test: "full",
+  run: "full",
+  locale: "full",
+  review: "full",
+  admin: "full",
+  proof: "full",
+};
+
+export function resolveRelayMcpProfile(
+  value: string,
+  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
+): RelayMcpProfile {
+  if ((relayMcpProfiles as readonly string[]).includes(value)) return value as RelayMcpProfile;
+  const legacy = Object.hasOwn(legacyProfiles, value) ? legacyProfiles[value] : undefined;
+  if (!legacy) throw new TypeError(`--profile must be one of: ${relayMcpProfiles.join(", ")}`);
+  warn(`relay-mcp: profile "${value}" was removed; using "${legacy}".`);
+  return legacy;
 }
 
 export type RelayMcpOperationCatalogEntry = {
@@ -625,14 +305,11 @@ export type RelayMcpOperationCatalogEntry = {
   readonly profiles: readonly RelayMcpProfile[];
 };
 
-/** Compact discovery metadata for agents that need to move beyond their task profile. */
+/** Compact discovery metadata: which profiles can reach each operation. */
 export function relayMcpOperationCatalog(): readonly RelayMcpOperationCatalogEntry[] {
   return Object.freeze(
     relayMcpTools.map((tool) => {
       const definition = operationDefinitions.find(({ id }) => id === tool.operationId)!;
-      const profiles = relayMcpProfiles.filter(
-        (profile) => profile !== "full" && profile !== "operator" && toolInProfile(tool, profile),
-      );
       return Object.freeze({
         operationId: tool.operationId,
         task: definition.category,
@@ -641,7 +318,7 @@ export function relayMcpOperationCatalog(): readonly RelayMcpOperationCatalogEnt
         ...(definition.targetCapabilities.length
           ? { capabilities: definition.targetCapabilities }
           : {}),
-        profiles,
+        profiles: wrappedOperations.has(tool.operationId) ? relayMcpProfiles : ["full" as const],
       });
     }),
   );
@@ -680,20 +357,4 @@ export function assertRelayMcpToolParity(
   }
 }
 
-function assertBalancedLeaseLifecycle(): void {
-  for (const profile of relayMcpProfiles) {
-    const operationIds = new Set(
-      relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
-    );
-    const creates = operationIds.has("lease.create");
-    const releases = operationIds.has("lease.release");
-    if (creates !== releases) {
-      throw new Error(
-        `MCP lease lifecycle mismatch for profile ${profile}: lease.create and lease.release must be exposed together`,
-      );
-    }
-  }
-}
-
-assertBalancedLeaseLifecycle();
 assertRelayMcpToolParity();

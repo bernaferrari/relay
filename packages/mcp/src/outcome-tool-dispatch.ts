@@ -26,7 +26,7 @@ export async function dispatchRelayOutcomeTool(
   const descriptor = dependencies.descriptors.find(({ name }) => name === input.name);
   if (!descriptor) throw new TypeError(`Unknown Relay outcome tool: ${input.name}`);
   const readOnlyGoalInspection =
-    input.name === "relay_goal" &&
+    input.name === "relay_explore_goal" &&
     (typeof input.argumentsValue.inspectSessionId === "string" ||
       typeof input.argumentsValue.inspectExplorationId === "string");
   if (descriptor.requiresConfirmation && !input.confirmed && !readOnlyGoalInspection) {
@@ -51,23 +51,13 @@ export async function dispatchRelayOutcomeTool(
       ? { values: Object.fromEntries(entries) as Record<string, string> }
       : {};
   }
-  if (input.name === "relay_connect_target") {
-    return jobs.connect({
-      kind: "connect-target",
-      ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
-      ...(parsed.targetKind === "device" || parsed.targetKind === "browser"
-        ? { targetKind: parsed.targetKind }
-        : {}),
-      ...(parsed.phase === "android" || parsed.phase === "ios" ? { phase: parsed.phase } : {}),
-    });
-  }
   if (input.name === "relay_observe_target") {
     return jobs.observe({
       kind: "observe-target",
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
     });
   }
-  if (input.name === "relay_goal") {
+  if (input.name === "relay_explore_goal") {
     if (typeof parsed.cancelSessionId === "string") {
       return jobs.cancelGoal({ kind: "goal-cancel", sessionId: parsed.cancelSessionId });
     }

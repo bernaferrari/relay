@@ -2,7 +2,7 @@ import { operationDefinition } from "@relay/protocol";
 import type { RelayOutcomeJobs } from "@relay/workflows";
 import * as z from "zod/v4";
 import type { RelayOutcomeToolDescriptor } from "./outcome-tools.js";
-import type { RelayMcpProfile } from "./tools.js";
+import { formatRelayTaskGuide, relayTaskGuideCatalog } from "@relay/workflows/task-guides";
 import type { OperationInvoker } from "./server.js";
 import {
   agentVerdict,
@@ -14,11 +14,10 @@ import {
 } from "./run-verdict-wait.js";
 
 /**
- * The everyday agent loop: describe a Test in a sentence, run it, read one
- * verdict, check a change, inspect a failure. These tools compose existing
- * server operations (test.create-from-goal, the durable run workflow,
- * run.verdict.get); they add no second runtime. Every profile that can write
- * a Test also gets the tools to run it and read why it failed.
+ * The qa loop every profile registers: describe a Test, run it, read one
+ * verdict, check a change, inspect a failure, plus what an agent needs to
+ * orient (Tests, ready devices, guides). These compose existing server
+ * operations and the durable run workflow; they add no second runtime.
  */
 const identifier = z.string().trim().min(1);
 /** Either a description (Relay writes the steps) or a test file written as-is. */
@@ -30,14 +29,14 @@ const createTestInput = z
       .min(1)
       .max(4_000)
       .optional()
-      .describe("What should work, or one step per line"),
+      .describe('What should work, or one step per line, e.g. "Sign in and see the dashboard"'),
     yaml: z
       .string()
       .min(1)
       .max(100_000)
       .optional()
       .describe(
-        "A test file: name, url or app, and steps (plain text for actions, `check:` for checks)",
+        "A test file: name, url or app, and steps (plain text for actions, `check: ...` for checks). The same name updates the Test in place.",
       ),
     url: z
       .string()
@@ -73,12 +72,14 @@ const writes = {
   openWorldHint: false,
 } as const;
 
+const guideTopics = relayTaskGuideCatalog.map(({ topic }) => topic) as [string, ...string[]];
+
 export const relayEverydayTools = Object.freeze([
   {
     name: "relay_create_test",
-    title: "Write a Test from a description",
+    title: "Write a Test",
     description:
-      'Create or update a Test. Either describe what should work (goal: one sentence, or one step per line; Relay writes the Action and Check steps) or pass a test file (yaml: name, url or app, steps — plain text is an action, `check:` a check; the same name or id updates in place and keeps recorded steps whose words did not change). Finds or creates the App (url for a website, app for an existing App). Returns the Test plus the exact relay_run_test call that runs it and returns a verdict. Steps run from their words, which needs a model key (OPENROUTER_API_KEY or one saved in Settings); record a step later to make it exact and model-free. Examples: {goal:"Sign in and see the dashboard",url:"http://localhost:3000"} or {yaml:"name: Checkout\nurl: https://shop.example\nsteps:\n  - Add a shirt to the cart\n  - check: The cart shows 1 item"}.',
+      "Create or update a Test from a plain-English description (goal) or a test file (yaml), finding or creating its App. Returns the Test and the relay_run_test call that runs it.",
     requiresConfirmation: false,
     inputSchema: createTestInput as unknown as z.ZodType<Record<string, unknown>>,
     annotations: writes,
@@ -87,16 +88,19 @@ export const relayEverydayTools = Object.freeze([
     name: "relay_run_test",
     title: "Run a Test",
     description:
-      "Run one saved Test on the selected ready target and, by default, wait for its verdict: passed, failed, blocked or cancelled, with the failing step's expected vs. saw and a screenshot reference. Pass the targetId returned by relay_connect_target when several targets are ready. Safe Tests need no confirmation; if Relay reports a risk, review it and repeat the call with transport confirm: true. Set wait:false to return immediately with the workflow and runId; a wait that runs out returns status running — call relay_get_verdict later.",
+      "Run one saved Test and wait for its verdict: passed, failed, blocked or cancelled, with the failing step's expected vs. saw. If Relay reports a risk, review it and repeat the call with confirm: true.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
-        appMapId: identifier.optional(),
+        appMapId: identifier.optional().describe("App id; optional when there is one App"),
         testId: identifier,
         targetId: identifier
           .optional()
-          .describe("Selected target id; keep it through observation, recording, and replay"),
-        wait: z.boolean().optional().describe("Wait for the verdict (default true)"),
+          .describe("Device or browser from relay_list_devices; needed when several are ready"),
+        wait: z
+          .boolean()
+          .optional()
+          .describe("Wait for the verdict (default true); false returns the runId at once"),
         timeoutSeconds: z
           .number()
           .int()
@@ -110,18 +114,27 @@ export const relayEverydayTools = Object.freeze([
   },
   {
     name: "relay_get_verdict",
-    title: "Read a Run's verdict",
+    title: "Read a verdict",
     description:
-      "Did the Run pass? Returns passed, failed, blocked, cancelled or running, a one-line reason, and each step's status. Failed steps include what was expected, what Relay saw, and a screenshot reference.",
+      "Read whether a Run passed: its status, a one-line reason and each step's result. Failed steps include what was expected, what Relay saw and a screenshot.",
+    requiresConfirmation: false,
+    inputSchema: z.object({ runId: identifier }).strict(),
+    annotations: readOnly,
+  },
+  {
+    name: "relay_inspect_failure",
+    title: "Inspect a failure",
+    description:
+      "Explain one failed Run: the failing step (expected vs. saw, screenshot), the saved evidence and any suggested fixes.",
     requiresConfirmation: false,
     inputSchema: z.object({ runId: identifier }).strict(),
     annotations: readOnly,
   },
   {
     name: "relay_check_change",
-    title: "Check a code change quickly",
+    title: "Check a code change",
     description:
-      "Quick check after you change code: runs the App's ready Tests one after another on the selected target and returns each verdict plus one overall result. Narrow it with testIds, or with areas (words for what changed, matched against Test names and steps); with nothing narrower it runs every ready Test of the App, up to maxTests. Tests that still need recording are listed as skipped. This is a fast signal for you, not a merge decision: gated, human-approved merge checks use the separate Proof flow (proof profile). Tests flagged as risky need transport confirm: true, like relay_run_test.",
+      "After you change code, run the App's ready Tests (or the ones matching testIds or areas) and return each verdict plus one overall result. A quick signal for you, not a merge decision.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
@@ -132,8 +145,10 @@ export const relayEverydayTools = Object.freeze([
           .min(1)
           .max(20)
           .optional()
-          .describe('What changed, in words, e.g. ["checkout","sign in"]'),
-        targetId: identifier.optional().describe("Target from relay_connect_target"),
+          .describe(
+            'What changed, in words, matched against Test names and steps, e.g. ["checkout"]',
+          ),
+        targetId: identifier.optional().describe("Device or browser from relay_list_devices"),
         maxTests: z.number().int().min(1).max(20).optional().describe("Default 10"),
         timeoutSeconds,
       })
@@ -141,12 +156,40 @@ export const relayEverydayTools = Object.freeze([
     annotations: writes,
   },
   {
-    name: "relay_inspect_failure",
-    title: "Inspect a failure",
+    name: "relay_list_tests",
+    title: "List Tests",
     description:
-      "Read one failed Run: its verdict's failing step (expected vs. saw, screenshot), retained evidence, and existing repair proposals.",
+      "List one App's saved Tests with their ids, names, step counts and whether they are ready to run. Check here before writing a Test that may already exist.",
     requiresConfirmation: false,
-    inputSchema: z.object({ runId: identifier }).strict(),
+    inputSchema: z
+      .object({
+        app: identifier.max(200).optional().describe("App id or name; optional with one App"),
+      })
+      .strict(),
+    annotations: readOnly,
+  },
+  {
+    name: "relay_list_devices",
+    title: "List devices",
+    description:
+      "List the phones, emulators and browsers that are ready to run Tests, with the targetId to pass to other tools. When exactly one is ready it is returned as current.",
+    requiresConfirmation: false,
+    inputSchema: z
+      .object({
+        targetId: identifier.optional().describe("Check that this device or browser is ready"),
+        targetKind: z.enum(["device", "browser"]).optional(),
+        phase: z.enum(["android", "ios"]).optional().describe("Only list this phone platform"),
+      })
+      .strict(),
+    annotations: readOnly,
+  },
+  {
+    name: "relay_get_guide",
+    title: "Read a guide",
+    description:
+      "Read Relay's how-to guides, bundled with this version and available offline. Call without a topic for the list, then with a topic before a task.",
+    requiresConfirmation: false,
+    inputSchema: z.object({ topic: z.enum(guideTopics).optional() }).strict(),
     annotations: readOnly,
   },
 ] as const satisfies readonly RelayOutcomeToolDescriptor[]);
@@ -156,24 +199,6 @@ const everydayNames = new Set<string>(relayEverydayTools.map(({ name }) => name)
 
 export function isRelayEverydayTool(name: string): name is RelayEverydayToolName {
   return everydayNames.has(name);
-}
-
-const everydayProfiles = new Set<RelayMcpProfile>([
-  "qa",
-  "outcome",
-  "operator",
-  "author",
-  "test",
-  "run",
-  "full",
-]);
-
-/** Profiles that author or run Tests get the whole describe → run → verdict
- * loop, never a partial one (a Test an agent cannot run is a dead end). */
-export function relayEverydayToolsForProfile(
-  profile: RelayMcpProfile,
-): readonly RelayOutcomeToolDescriptor[] {
-  return everydayProfiles.has(profile) ? relayEverydayTools : [];
 }
 
 const object = (value: unknown): Record<string, unknown> =>
@@ -207,7 +232,7 @@ export async function invokeRelayEverydayTool(input: {
       next: {
         tool: "relay_run_test",
         arguments: { appMapId: created.appId, testId: created.testId },
-        hint: "Runs the Test and waits for its verdict. Add targetId from relay_connect_target when several targets are ready.",
+        hint: "Runs the Test and waits for its verdict. Add targetId from relay_list_devices when several are ready.",
       },
     };
   }
@@ -228,6 +253,33 @@ export async function invokeRelayEverydayTool(input: {
     });
     return presentOutcomeForAgent(input.name, parsed, inspected, context);
   }
+  if (input.name === "relay_list_tests") {
+    const appMapId = await resolveAppId(parsed.app as string | undefined, context);
+    const map = object(
+      object(await input.invoker.invoke("app-map.get", { appMapId }, { signal: input.signal }))
+        .appMap,
+    );
+    return {
+      appId: appMapId,
+      tests: testCandidates(map).map(({ id, name, steps, ready }) => ({
+        testId: id,
+        name,
+        steps,
+        ready,
+      })),
+    };
+  }
+  if (input.name === "relay_list_devices") {
+    return input.jobs.connect({
+      kind: "connect-target",
+      ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+      ...(parsed.targetKind === "device" || parsed.targetKind === "browser"
+        ? { targetKind: parsed.targetKind }
+        : {}),
+      ...(parsed.phase === "android" || parsed.phase === "ios" ? { phase: parsed.phase } : {}),
+    });
+  }
+  if (input.name === "relay_get_guide") return readGuide(parsed.topic as string | undefined);
   if (input.name === "relay_get_verdict") {
     const result = object(
       await input.invoker.invoke("run.verdict.get", parsed, { signal: input.signal }),
@@ -261,7 +313,7 @@ export async function presentOutcomeForAgent(
       status: "unknown",
       reason: error instanceof Error ? error.message.slice(0, 300) : "Verdict unavailable",
       run: compactRunSnapshot(result),
-      next: "Call relay_inspect_workflow with workflow.workflowId, or relay_get_verdict with the runId.",
+      next: "Call relay_get_verdict with the runId later.",
     };
   }
 }
@@ -279,7 +331,22 @@ async function createTest(
   return object(await invoker.invoke("test.create-from-goal", goal, { signal }));
 }
 
-type TestCandidate = { id: string; name: string; text: string; ready: boolean };
+function readGuide(topic: string | undefined): unknown {
+  if (!topic) {
+    return {
+      guides: relayTaskGuideCatalog.map(({ topic: id, title, summary }) => ({
+        topic: id,
+        title,
+        summary,
+      })),
+      next: "Call relay_get_guide with a topic before the task.",
+    };
+  }
+  const guide = relayTaskGuideCatalog.find((item) => item.topic === topic)!;
+  return { topic: guide.topic, title: guide.title, markdown: formatRelayTaskGuide(guide) };
+}
+
+type TestCandidate = { id: string; name: string; text: string; steps: number; ready: boolean };
 
 function testCandidates(appMap: Record<string, unknown>): TestCandidate[] {
   return Object.entries(object(appMap.tests)).map(([id, value]) => {
@@ -297,7 +364,7 @@ function testCandidates(appMap: Record<string, unknown>): TestCandidate[] {
     const text = [id, name, ...steps.map((step) => String(step.intent ?? ""))]
       .join(" ")
       .toLowerCase();
-    return { id, name, text, ready: steps.length > 0 && !blocked };
+    return { id, name, text, steps: steps.length, ready: steps.length > 0 && !blocked };
   });
 }
 
@@ -413,8 +480,8 @@ async function checkChange(
         : overall === "running"
           ? "Call relay_get_verdict with each running runId later."
           : !results.length
-            ? "Create a Test with relay_create_test, or record one with relay_record_test."
-            : "For a merge decision, use the gated Proof flow (proof profile).",
+            ? "Create a Test with relay_create_test."
+            : "All checked Tests passed.",
   };
 }
 

@@ -7,7 +7,7 @@ import {
   type RelayMcpProfile,
 } from "./tools.js";
 
-import { relayQaRequiredOperationIds } from "./qa-tools.js";
+import { relayRequiredOperationIds } from "./registered-tools.js";
 
 const ACTOR_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
 const ROLE_ORDER: readonly ProjectRole[] = ["viewer", "author", "runner", "admin"];
@@ -23,45 +23,9 @@ function proofToolsForProfile(profile: RelayMcpProfile) {
   );
 }
 
-/**
- * Canonical operations the default operator verbs hard-depend on. The
- * dispatch table in operator-tool-dispatch.ts is the source of truth; this
- * diagnostic list only names its non-escape-hatch dependencies. Extend it
- * when a verb gains a new hard dependency.
- */
-const operatorCoreOperationIds: readonly string[] = [
-  "system.health.get",
-  "target.devices.list",
-  "lane.list",
-  "lease.create",
-  "lease.list",
-  "target.snapshot.capture",
-  "target.screenshot.capture",
-  "target.interact",
-  "target.recover",
-  "job.get",
-  "job.cancel",
-  "job.combine.start",
-  "job.combine.export",
-  "job.combine.analysis",
-  "app-map.test.save",
-  "run.evidence.get",
-  "run.walkthrough-pack.get",
-  "run.visual.review",
-  "run.visual.compare",
-];
-
 function expectedOperationsForProfile(profile: RelayMcpProfile) {
-  if (profile === "qa") {
-    return relayQaRequiredOperationIds.map((operationId) => ({ operationId }));
-  }
-  if (profile === "operator") {
-    return operatorCoreOperationIds.map((operationId) => ({ operationId }));
-  }
-  if (profile === "proof" || profile === "full") {
-    return proofToolsForProfile(profile);
-  }
-  return relayMcpToolsForProfile(profile);
+  if (profile === "full") return proofToolsForProfile(profile);
+  return relayRequiredOperationIds(profile).map((operationId) => ({ operationId }));
 }
 
 export type RelayMcpDoctorCheck = {
@@ -159,10 +123,8 @@ function configForDoctor(
     if (argument === "--json") json = true;
     else configArgs.push(argument);
   }
-  // Doctor validates exactly the profile the client will run — the default
-  // operator surface on a clean host, or an explicitly selected specialist.
-  // No implicit profile switch: ordinary setup must not be judged by the
-  // Proof lifecycle, and a Proof host passes --profile proof explicitly.
+  // Doctor validates exactly the profile the client will run. Ordinary setup
+  // is not judged by the Proof lifecycle; a Proof host passes --profile full.
   return { config: parseMcpConfig(configArgs, env), json };
 }
 
@@ -173,7 +135,7 @@ export async function runRelayMcpDoctor(
 ): Promise<RelayMcpDoctorReport> {
   const { config } = configForDoctor(argv, env);
   const checks: RelayMcpDoctorCheck[] = [];
-  const proofLifecycle = config.profile === "proof" || config.profile === "full";
+  const proofLifecycle = config.profile === "full";
   const expectedTools = expectedOperationsForProfile(config.profile);
   const selectedTools = proofLifecycle ? proofToolsForProfile(config.profile) : expectedTools;
 
@@ -183,7 +145,7 @@ export async function runRelayMcpDoctor(
       expectedTools.length > 0,
       proofLifecycle
         ? `${config.profile} exposes the complete Proof lifecycle`
-        : `profile ${config.profile} requires ${expectedTools.length} server operations for ordinary agent work; the Proof lifecycle needs --profile proof`,
+        : `profile ${config.profile} requires ${expectedTools.length} server operations for ordinary agent work; the Proof lifecycle needs --profile full`,
     ),
   );
 
@@ -251,7 +213,7 @@ export async function runRelayMcpDoctor(
   );
 
   const approval = operationDefinitions.find(({ id }) => id === "proof.plan.approve");
-  const approvalTool = relayMcpToolsForProfile("proof").find(
+  const approvalTool = relayMcpToolsForProfile("full").find(
     ({ operationId }) => operationId === "proof.plan.approve",
   );
   const approvalOk =
@@ -304,7 +266,7 @@ export async function runRelayMcpDoctor(
       profile: config.profile,
     }),
     proofTools: Object.freeze(
-      proofToolsForProfile("proof").map(({ operationId }) => relayToolName(operationId)),
+      proofToolsForProfile("full").map(({ operationId }) => relayToolName(operationId)),
     ),
     checks: Object.freeze(checks),
   });
@@ -328,9 +290,7 @@ export function formatRelayMcpDoctor(report: RelayMcpDoctorReport): string {
     `Scope: ${report.config.organization}/${report.config.project}`,
     `Actor: ${report.config.actor} (${report.config.actorKind})`,
     `Profile: ${report.config.profile}`,
-    ...(report.config.profile === "proof" || report.config.profile === "full"
-      ? [`Proof tools: ${report.proofTools.join(", ")}`]
-      : []),
+    ...(report.config.profile === "full" ? [`Proof tools: ${report.proofTools.join(", ")}`] : []),
     "",
     ...report.checks.map(
       ({ name, ok, message }) =>
