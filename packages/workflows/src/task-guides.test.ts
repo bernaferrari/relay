@@ -32,18 +32,18 @@ test("recording examples reach a saved Test and inspectable Run through public c
   const examples = guide("record").examples;
   const index = (command: string, action?: string) =>
     examples.findIndex(([verb, next]) => verb === command && (!action || next === action));
-  assert.ok(index("record") < index("session", "interact"));
-  assert.ok(index("session", "interact") < index("session", "stop"));
-  assert.ok(index("session", "stop") < index("session", "get"));
-  assert.ok(index("session", "get") < index("session", "commit"));
-  assert.ok(index("session", "commit") < index("test", "list"));
-  assert.ok(index("test", "list") < index("connect", "get"));
-  assert.ok(index("connect", "get") < index("run"));
+  assert.ok(index("record") < index("recording", "interact"));
+  assert.ok(index("recording", "interact") < index("recording", "stop"));
+  assert.ok(index("recording", "stop") < index("recording", "get"));
+  assert.ok(index("recording", "get") < index("recording", "commit"));
+  assert.ok(index("recording", "commit") < index("test", "list"));
+  assert.ok(index("test", "list") < index("map", "connection"));
+  assert.ok(index("map", "connection") < index("run"));
   assert.ok(index("run") < index("inspect"));
   assert.ok(index("inspect") < index("export"));
   assert.ok(index("export") < index("review"));
 
-  const commit = examples.find(([verb, action]) => verb === "session" && action === "commit")!;
+  const commit = examples.find(([verb, action]) => verb === "recording" && action === "commit")!;
   const parsed = operationDefinition("authoring.session.commit").input.parse({
     sessionId: commit[2],
     ...input(commit),
@@ -59,7 +59,7 @@ test("recording examples reach a saved Test and inspectable Run through public c
 test("documented recording checks validate as executable conditions with bounded waits", () => {
   for (const topic of ["record", "waits"]) {
     const interactions = guide(topic)
-      .examples.filter(([verb, action]) => verb === "session" && action === "interact")
+      .examples.filter(([verb, action]) => verb === "recording" && action === "interact")
       .map((example) => {
         const parsed = operationDefinition("authoring.session.interact").input.parse({
           sessionId: example[2],

@@ -398,5 +398,5 @@ test("an unsaved Run Lane is refused with the save command as recovery", async (
   });
 
   assert.equal(snapshot.phase, "blocked");
-  assert.match(snapshot.problems[0]!.recovery ?? "", /relay lane save ghost/u);
+  assert.match(snapshot.problems[0]!.recovery ?? "", /relay device lane save ghost/u);
 });

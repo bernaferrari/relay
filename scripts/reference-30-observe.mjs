@@ -66,7 +66,7 @@ function relay(args, { allowFail = false } = {}) {
 }
 
 async function leases() {
-  const output = relay(["lease", "list", "--json"]);
+  const output = relay(["device", "lease", "list", "--json"]);
   const envelope = JSON.parse(output.trim());
   const byDevice = new Map();
   for (const lease of envelope?.result?.leases ?? []) byDevice.set(lease.deviceSerial, lease.id);
@@ -83,16 +83,25 @@ let revision = await appRevision();
 
 for (const config of CONFIGS) {
   // Sign in if the browser shows the sign-in page.
-  relay(["browser", "navigate", config.browser, "http://127.0.0.1:8791/"]);
-  const who = JSON.parse(relay(["browser", "snapshot", config.browser, "--json"]).trim());
+  relay(["device", "launch", config.browser, "http://127.0.0.1:8791/"]);
+  const who = JSON.parse(relay(["device", "snapshot", config.browser, "--json"]).trim());
   const labels = (who.result?.nodes ?? []).map((node) => node.label);
   if (
     labels.some((label) => typeof label === "string" && label.toLowerCase().includes("sign in"))
   ) {
-    relay(["browser", "click", config.browser, config.signIn], { allowFail: true });
+    relay(
+      [
+        "device",
+        "interact",
+        config.browser,
+        "--input",
+        JSON.stringify({ kind: "label", label: config.signIn }),
+      ],
+      { allowFail: true },
+    );
   }
   for (const page of PAGES) {
-    relay(["browser", "navigate", config.browser, `http://127.0.0.1:8791${page.path}`]);
+    relay(["device", "launch", config.browser, `http://127.0.0.1:8791${page.path}`]);
     // Refresh the lease right before each observe: navigation can mint or
     // rotate the device lease, and a stale lease id fails the observe.
     const leaseNow = (await leases()).get(config.browser);
@@ -102,7 +111,7 @@ for (const config of CONFIGS) {
       leaseId: leaseNow ?? "none",
     });
     const attempt = relay(
-      ["screen", "alias-observe", "reference-30", page.screenId, "--input", observeInput],
+      ["map", "screen", "alias-observe", "reference-30", page.screenId, "--input", observeInput],
       { allowFail: true },
     );
     let envelope;

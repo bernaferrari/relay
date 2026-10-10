@@ -196,7 +196,7 @@ test("CLI authoring commands commit a fake transition visible to another client"
 
     const createdSession = await runJsonCommand(
       [
-        "session",
+        "recording",
         "create",
         "--input",
         JSON.stringify({
@@ -212,20 +212,20 @@ test("CLI authoring commands commit a fake transition visible to another client"
     assert.match(sessionId, /^authoring-/);
     assert.equal(createdSession.session.state, "preparing");
 
-    const observed = await runJsonCommand(["session", "observe", sessionId], cliConnection);
+    const observed = await runJsonCommand(["recording", "observe", sessionId], cliConnection);
     assert.equal(observed.session.state, "ready");
-    const started = await runJsonCommand(["session", "start", sessionId], cliConnection);
+    const started = await runJsonCommand(["recording", "start", sessionId], cliConnection);
     assert.equal(started.session.state, "recording");
-    const interacted = await runJsonCommand(["session", "back", sessionId], cliConnection);
+    const interacted = await runJsonCommand(["recording", "back", sessionId], cliConnection);
     assert.equal(interacted.session.take?.actionCount, 1);
-    const stopped = await runJsonCommand(["session", "stop", sessionId], cliConnection);
+    const stopped = await runJsonCommand(["recording", "stop", sessionId], cliConnection);
     assert.equal(stopped.session.state, "reviewing");
     runtime.screen = "source";
-    const replayed = await runJsonCommand(["take", "replay", sessionId], cliConnection);
+    const replayed = await runJsonCommand(["recording", "replay", sessionId], cliConnection);
     assert.equal(replayed.session.take?.latestReplay?.outcome, "passed");
     const committed = await runJsonCommand(
       [
-        "session",
+        "recording",
         "commit",
         sessionId,
         "--input",

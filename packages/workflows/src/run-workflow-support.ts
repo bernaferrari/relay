@@ -489,7 +489,7 @@ export async function resolveRunTestLane(
         code: "invalid-intent",
         title: `Lane ${laneId} is not saved in this workspace`,
         detail: "A Run Lane must already exist; Relay never creates it implicitly.",
-        recovery: `Save the Lane first (relay lane save ${laneId}), then start the Run again.`,
+        recovery: `Save the Lane first (relay device lane save ${laneId}), then start the Run again.`,
         retryable: false,
       },
     };

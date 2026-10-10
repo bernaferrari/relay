@@ -20,7 +20,7 @@ An input Data set in a saved Plan references that Project input's stable ID:
 }
 ```
 
-Pass this object as `variable` to `relay variable save <app-id> questions`, with
+Pass this object as `variable` to `relay test var save <app-id> questions`, with
 the current `expectedRevision`. Row IDs are stable identifiers up to 128
 characters; the separate approved `value` can contain up to 20,000 characters.
 Display labels never become Test text. A mixed Chat and Imagine Plan can use
