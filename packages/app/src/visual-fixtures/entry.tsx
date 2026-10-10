@@ -342,29 +342,6 @@ const mapService: MapProductService = {
 };
 const appResourcesService: AppResourcesProductService = {
   createApp: async (name) => ({ id: "created-app", name }),
-  listVersions: async () => {
-    if (fixture === "app-versions-error") throw new Error("Relay is offline");
-    return [
-      {
-        id: "checkout-ios-340",
-        name: "Checkout 3.4.0",
-        platform: "ios",
-        status: "ready",
-        applicationId: "com.example.checkout",
-        configuration: "release",
-        sourceSha: "982aa748",
-        updatedAt: FIXTURE_TIME - 86_400_000,
-      },
-      {
-        id: "checkout-web-staging",
-        name: "Checkout web staging",
-        platform: "web",
-        status: "uploaded",
-        configuration: "staging",
-        updatedAt: FIXTURE_TIME - 172_800_000,
-      },
-    ];
-  },
   listBrowserAccounts: async () => {
     if (fixture === "app-accounts-error") throw new Error("Relay is offline");
     return [

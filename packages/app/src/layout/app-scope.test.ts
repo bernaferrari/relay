@@ -108,9 +108,6 @@ describe("App scope", () => {
         appId: "new-app",
       }),
     ).toBe("/accounts");
-    expect(appContextDestination({ pathname: "/versions", search: {}, appId: "new/app" })).toBe(
-      "/versions",
-    );
   });
 
   it("does not let workspace-only resources inherit a stale app filter", () => {

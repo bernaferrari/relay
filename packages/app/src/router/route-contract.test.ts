@@ -5,7 +5,6 @@ import { assertAllowedRouteSearch, parentPathForPath, routeContracts } from "./r
 
 const expectedPaths = {
   "/apps": "/apps",
-  "/versions": "/versions",
   "/accounts": "/accounts",
   "/apps/:appId/map": "/apps/$appId/map",
   "/tests": "/tests",

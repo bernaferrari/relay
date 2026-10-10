@@ -11,7 +11,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
   AppWindow,
-  Box,
   CircleDot,
   FlaskConical,
   History,
@@ -80,15 +79,6 @@ const workspaceCommands: readonly Command[] = [
     href: "/review",
     icon: ScanEye,
     keywords: "review approve changed diff reference",
-  },
-
-  {
-    id: "versions",
-    group: "Go to",
-    label: "Manage versions",
-    detail: "Builds you can run against",
-    href: "/versions",
-    icon: Box,
   },
 ];
 

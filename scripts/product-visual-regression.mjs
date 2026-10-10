@@ -48,8 +48,6 @@ const fixtures = [
   { id: "home-populated", heading: "Tests" },
   { id: "apps-list", heading: "Apps" },
   { id: "apps-error", heading: "Apps" },
-  { id: "app-versions", heading: "Versions" },
-  { id: "app-versions-error", heading: "Versions" },
   { id: "app-accounts", heading: "Accounts" },
   { id: "app-accounts-error", heading: "Accounts" },
   { id: "prerecord-ready", heading: "New test" },

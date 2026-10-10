@@ -91,10 +91,6 @@ function lazyNamedRoute<TModule extends Record<string, unknown>, TName extends k
 
 const NotFoundPage = lazyNamedRoute(() => import("../routes/not-found-page"), "NotFoundPage");
 const AppsPage = lazyNamedRoute(() => import("../routes/apps-page"), "AppsPage");
-const AppVersionsPage = lazyNamedRoute(
-  () => import("../routes/app-resource-pages"),
-  "AppVersionsPage",
-);
 const AppAccountsPage = lazyNamedRoute(() => import("../routes/accounts-page"), "AppAccountsPage");
 const MapPage = lazyNamedRoute(() => import("../routes/map-page"), "MapPage");
 const TestsPage = lazyNamedRoute(() => import("../routes/tests-page"), "TestsPage");
@@ -187,11 +183,6 @@ const appsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps",
   component: AppsPage,
-});
-const versionsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/versions",
-  component: AppVersionsPage,
 });
 const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -331,7 +322,6 @@ const settingsAboutRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   appsRoute,
-  versionsRoute,
   accountsRoute,
   appMapRoute,
   testsRoute,

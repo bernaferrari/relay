@@ -12,7 +12,7 @@ import {
 import { ApiError } from "@relay/client";
 import { createScriptedRelayClient } from "@relay/workflows/testing";
 test("route registry is exhaustive and exact", () => {
-  assert.equal(ROUTE_DEFINITIONS.length, 24);
+  assert.equal(ROUTE_DEFINITIONS.length, 23);
   assert.equal(routeMeta("/tests/new").id, "/tests/new");
   assert.equal(routeMeta("/tests/t-1").id, "/tests/:testId");
   assert.throws(() => routeMeta("/tests/t-1/extra"));
