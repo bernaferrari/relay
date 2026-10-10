@@ -219,8 +219,8 @@ describe("Map exploration", () => {
   it("is route-addressable, keyboard focusable, and keeps map controls restrained", async () => {
     const { history } = await render();
     expect(history.location.pathname).toBe("/apps/shop/map");
-    expect(document.querySelector('a[href="/apps/shop"]')?.getAttribute("aria-label")).toBe(
-      "Back to app",
+    expect(document.querySelector('a[href="/tests?app=shop"]')?.getAttribute("aria-label")).toBe(
+      "Tests",
     );
     expect(document.querySelector('[aria-label="Screens and verified paths"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("covered by tests");

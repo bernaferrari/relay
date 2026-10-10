@@ -1,6 +1,5 @@
 export type RoutePattern =
   | "/apps"
-  | "/apps/:appId"
   | "/versions"
   | "/accounts"
   | "/apps/:appId/map"
@@ -124,14 +123,9 @@ const d = (
 
 export const ROUTE_DEFINITIONS = [
   d("/apps", "/tests", "Apps", "App", "apps", "add-app"),
-  d("/apps/:appId", "/apps", "App", "App", "apps", "explore-app", ["view"]),
   d("/versions", "/tests", "Versions", null, "apps", null, ["status", "view"]),
   d("/accounts", "/tests", "Accounts", null, "accounts", null, ["status", "view"]),
-  d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", [
-    "view",
-    "screen",
-    "path",
-  ]),
+  d("/apps/:appId/map", "/tests", "Map", "Map", "apps", "explore-app", ["view", "screen", "path"]),
   d("/tests", null, "Tests", "Test", "tests", "record-test", [
     "status",
     "app",
@@ -295,7 +289,6 @@ function build(pattern: RoutePattern, params: Params): ConcreteRoute {
   });
 }
 export const routeUrls = {
-  app: (appId: string) => build("/apps/:appId", { appId }),
   versions: () => "/versions",
   accounts: () => "/accounts",
   appMap: (appId: string) => build("/apps/:appId/map", { appId }),

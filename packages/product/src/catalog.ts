@@ -71,7 +71,7 @@ export type ProductTestDetail = ProductTestSummary & {
   /** The screen Variant profile this Test was recorded on (browser size and
    * saved login). Runs default to it. */
   recordedProfileId?: string;
-  links: { self: string; app: string };
+  links: { self: string };
 };
 
 export type ProductRunPhase =
@@ -129,7 +129,7 @@ export type ProductRunSummary = {
   /** Safe, non-secret execution facts used to decide whether a later result
    * can supersede an earlier attention result. Missing facts stay unknown. */
   executionIdentity?: ProductRunExecutionIdentity;
-  links: { self: string; test?: string; app?: string; batch?: string };
+  links: { self: string; test?: string; batch?: string };
 };
 
 export type ProductRunExecutionIdentity = {
@@ -347,7 +347,6 @@ function projectRun(run: RunSummary, maps: readonly AppMap[]): ProductRunSummary
   const links = {
     self: routeUrls.run(run.id),
     ...(identity.testId ? { test: routeUrls.test(identity.testId) } : {}),
-    ...(identity.appMapId ? { app: routeUrls.app(identity.appMapId) } : {}),
     ...(run.batchId ? { batch: routeUrls.batch(run.batchId) } : {}),
   };
   return {
@@ -586,7 +585,6 @@ export function productTestDetail(
     steps: test.steps.map((step) => projectStep(step, app)),
     links: {
       self: routeUrls.test(test.id),
-      app: routeUrls.app(app.id),
     },
   };
 }

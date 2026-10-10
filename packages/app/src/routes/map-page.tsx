@@ -141,8 +141,8 @@ export function MapPage() {
             size="icon-sm"
             variant="ghost"
             nativeButton={false}
-            render={<Link to="/apps/$appId" params={{ appId }} />}
-            aria-label="Back to app"
+            render={<Link to="/tests" search={{ app: appId }} />}
+            aria-label="Tests"
           >
             <ChevronLeft />
           </Button>

@@ -401,7 +401,7 @@ describe("App routes", () => {
 
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("1 test · Last run");
-    expect(document.querySelector('a[href="/apps/checkout-app"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/tests?app=checkout-app"]')).not.toBeNull();
     await click(button("Add app"));
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     await fill(document.querySelector<HTMLInputElement>("#new-app-name")!, "Inventory");

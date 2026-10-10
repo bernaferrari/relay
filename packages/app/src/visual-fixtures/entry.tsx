@@ -262,10 +262,7 @@ function fixtureRun(index: number): ProductRunSummary {
 const largeRuns = Array.from({ length: 240 }, (_, index) => fixtureRun(index));
 const catalogService: CatalogProductService = {
   listTests: async () =>
-    fixture === "apps-list" ||
-    fixture === "app-overview" ||
-    fixture === "tests-library" ||
-    populatedHome
+    fixture === "apps-list" || fixture === "tests-library" || populatedHome
       ? [
           {
             id: "test-checkout",
@@ -283,10 +280,7 @@ const catalogService: CatalogProductService = {
   listRuns: async () =>
     fixture === "runs-large"
       ? largeRuns
-      : fixture === "apps-list" ||
-          fixture === "app-overview" ||
-          fixture === "tests-library" ||
-          populatedHome
+      : fixture === "apps-list" || fixture === "tests-library" || populatedHome
         ? [fixtureRun(0), fixtureRun(1), fixtureRun(2)]
         : [],
   getRun: async () => undefined,

@@ -185,8 +185,8 @@ export function AppsPage() {
             return (
               <li key={app.id}>
                 <Link
-                  to="/apps/$appId"
-                  params={{ appId: app.id }}
+                  to="/tests"
+                  search={{ app: app.id }}
                   className={`${libraryRowSurface} group flex min-h-24 items-center gap-4 rounded-xl border border-border bg-card p-5 text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring`}
                 >
                   <span

@@ -47,7 +47,6 @@ const fixtures = [
   { id: "home-empty", heading: "Tests" },
   { id: "home-populated", heading: "Tests" },
   { id: "apps-list", heading: "Apps" },
-  { id: "app-overview", heading: "Checkout" },
   { id: "apps-error", heading: "Apps" },
   { id: "app-versions", heading: "Versions" },
   { id: "app-versions-error", heading: "Versions" },

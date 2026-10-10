@@ -35,7 +35,6 @@ export type BreadcrumbItem =
       to: "/apps" | "/environments" | "/runs" | "/devices";
     }
   | { label: string; to: "/tests"; search?: { app?: string; view?: "plans" } }
-  | { label: string; to: "/apps/$appId"; params: { appId: string } }
   | { label: string; to: "/tests/$testId"; params: { testId: string }; search?: { app?: string } }
   | { label: string };
 
@@ -57,7 +56,7 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
                   aria-hidden="true"
                 />
               ) : null}
-              {"to" in item && (item.to === "/apps/$appId" || item.to === "/tests/$testId") ? (
+              {"to" in item && item.to === "/tests/$testId" ? (
                 <Link
                   className="inline-flex items-center text-muted-foreground hover:text-foreground"
                   to={item.to}

@@ -13,11 +13,6 @@ const routePresentations = {
     eyebrow: "Workspace",
     description: "Choose the software you want Relay to verify.",
   },
-  "/apps/:appId": {
-    path: "/apps/$appId",
-    eyebrow: "App",
-    description: "Review tests, runs, and verified behavior for this app.",
-  },
   "/versions": {
     path: "/versions",
     eyebrow: "Workspace",
