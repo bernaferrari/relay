@@ -3,6 +3,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { relayTaskGuideCatalog } from "@relay/workflows/task-guides";
 import { parseCli } from "./config.js";
+import { parseEverydayCommand } from "./everyday-commands.js";
 import { runCli } from "./index.js";
 import { isInteractiveReview } from "./review-command.js";
 
@@ -70,8 +71,13 @@ test("guide rejects unknown topics, extra arguments, and flags that would imply 
 test("bundled command examples use the current shipped parser", () => {
   for (const guide of relayTaskGuideCatalog) {
     for (const example of guide.examples) {
-      if (example[0] === "review") assert.ok(isInteractiveReview(example));
-      else assert.doesNotThrow(() => parseCli(example, {}), `${guide.topic}: ${example.join(" ")}`);
+      const label = `${guide.topic}: ${example.join(" ")}`;
+      if (example[0] === "review") assert.ok(isInteractiveReview(example), label);
+      // Everyday verbs (new, ci, ...) are checked by their own parser, which
+      // throws on an unknown flag; everything else goes through parseCli.
+      else if (!parseEverydayCommand(example)) {
+        assert.doesNotThrow(() => parseCli(example, {}), label);
+      }
     }
   }
 });

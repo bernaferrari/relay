@@ -81,6 +81,17 @@ function assertFlags(verb: Verb, tokens: ParsedTokens): void {
   }
 }
 
+/** Checks an everyday command line (verb and flags) without running it;
+ * undefined means the line is not an everyday command. */
+export function parseEverydayCommand(
+  argv: readonly string[],
+): { verb: Verb; args: string[] } | undefined {
+  const tokens = tokenize(argv);
+  const selected = everydayVerb(tokens);
+  if (selected) assertFlags(selected.verb, tokens);
+  return selected;
+}
+
 function globalConfig(
   argv: readonly string[],
   tokens: ParsedTokens,

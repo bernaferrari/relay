@@ -88,7 +88,9 @@ the result, and look at the Map, the same way you do in the app.
 Apps, Tests, and devices take the names you see (or ids; devices also take `ios`, `android`,
 `browser`). A `relay.json` such as `{"app": "Shop", "device": "ios"}` in your project sets the
 defaults. Add `--json` for machine output; `relay run` and `relay ci` include each step's
-expected and saw. `relay --help` lists everything.
+expected and saw. `relay --help` lists everything. Over MCP the same loop is
+`relay_create_test`, `relay_run_test`, `relay_get_verdict`, `relay_check_change` and
+`relay_inspect_failure`.
 
 | Exit code | Meaning                                                                        |
 | --------- | ------------------------------------------------------------------------------ |

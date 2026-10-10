@@ -50,8 +50,10 @@ option on one of these, never a fifth noun people must learn first.
 
 ## Next, in order
 
-1. **Agents and CLI on the same loop**: `relay test new`, `relay ci`,
-   names instead of ids, tables for people, verdicts for agents.
+1. **Agents and CLI on the same loop**: `relay new`, `relay run`, `relay ci`,
+   names instead of ids, tables for people, verdicts for agents. Every MCP
+   profile that can write a Test also has `relay_run_test`,
+   `relay_get_verdict`, `relay_check_change` and `relay_inspect_failure`.
 2. **Test accounts that sign in by themselves**: saved sign-ins per app,
    plus a connected test inbox (IMAP) so steps like "Enter the code from
    the email" work locally, without a hosted mail service.
@@ -62,4 +64,6 @@ option on one of these, never a fifth noun people must learn first.
    the verdict table and failing screenshots.
 5. **Cuts**: retire screens and commands nobody reaches from the everyday
    loop (prototype workbenches, duplicate run commands, deprecated aliases),
-   after checking their tests and callers.
+   after checking their tests and callers. Each CLI command keeps one
+   spelling: no `verify-change`, `test new`, `run list`, `proposal` or
+   `target` copies of `session` and `device` commands.
