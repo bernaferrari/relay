@@ -12,7 +12,6 @@ export const relayMcpProfiles = [
   "author",
   "test",
   "run",
-  "execute",
   "locale",
   "review",
   "admin",
@@ -588,15 +587,23 @@ const profileOperations: Record<
   author: new Set(authorOperations),
   test: new Set(testOperations),
   run: new Set(runOperations),
-  execute: new Set(runOperations),
   locale: new Set(localeOperations),
   review: new Set(reviewOperations),
   admin: new Set(adminOperations),
   proof: new Set(proofOperations),
 };
 
+/** Raw operations the everyday tools already wrap (relay_create_test,
+ * relay_get_verdict). Profiles that register the everyday loop never list
+ * them twice under their raw names. */
+const everydayWrappedOperations = new Set<OperationId>([
+  "test.create-from-goal",
+  "test.apply-yaml",
+  "run.verdict.get",
+]);
+
 function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): boolean {
-  if (profile === "full") return true;
+  if (profile === "full") return !everydayWrappedOperations.has(tool.operationId);
   // qa browses Apps/Tests through relay_panel and App/Test resources, not raw
   // App Map schemas; outcome and operator expose only their friendly verbs.
   if (profile === "qa" || profile === "outcome" || profile === "operator") return false;

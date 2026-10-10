@@ -1,4 +1,4 @@
-import type { AuthoringInteraction, RepeatSpec, SourceRevision, TracePack } from "@relay/protocol";
+import type { AuthoringInteraction, RepeatSpec } from "@relay/protocol";
 import type { RelayOutcomeJobs } from "@relay/workflows";
 import type { RelayOutcomeToolDescriptor } from "./outcome-tools.js";
 import type { WorkflowRef } from "@relay/workflows";
@@ -11,14 +11,7 @@ export type OutcomeToolDispatchDependencies = {
     name: RelayOutcomeToolDescriptor["name"],
     value: Record<string, unknown>,
   ) => void;
-  debugBugInputSchema: Parser;
   replayLabTracePacks: Parser;
-  verifyChangeSelection: Parser;
-  invokeDebugBugOutcomeTool: (input: {
-    parsed: Record<string, unknown>;
-    confirmed: boolean;
-    jobs: RelayOutcomeJobs;
-  }) => Promise<unknown>;
 };
 
 export async function dispatchRelayOutcomeTool(
@@ -41,20 +34,10 @@ export async function dispatchRelayOutcomeTool(
   }
   dependencies.assertRawOutcomeInputBounds(input.name, input.argumentsValue);
   let parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
-  if (input.name === "relay_debug_bug") {
-    parsed = dependencies.debugBugInputSchema.parse(input.argumentsValue) as Record<
-      string,
-      unknown
-    >;
-  } else if (input.name === "relay_replay_lab") {
+  if (input.name === "relay_replay_lab") {
     parsed = {
       ...parsed,
       tracePacks: dependencies.replayLabTracePacks.parse(parsed.tracePacks),
-    };
-  } else if (input.name === "relay_proof_analyze") {
-    parsed = {
-      ...parsed,
-      selection: dependencies.verifyChangeSelection.parse(parsed.selection),
     };
   }
   const { jobs } = input;
@@ -67,9 +50,6 @@ export async function dispatchRelayOutcomeTool(
     return entries.length > 0
       ? { values: Object.fromEntries(entries) as Record<string, string> }
       : {};
-  }
-  if (input.name === "relay_debug_bug") {
-    return dependencies.invokeDebugBugOutcomeTool({ parsed, confirmed: input.confirmed, jobs });
   }
   if (input.name === "relay_connect_target") {
     return jobs.connect({
@@ -171,15 +151,6 @@ export async function dispatchRelayOutcomeTool(
         : {}),
     });
   }
-  if (input.name === "relay_run_test") {
-    return jobs.run({
-      kind: "run-test",
-      ...(typeof parsed.appMapId === "string" ? { appMapId: parsed.appMapId } : {}),
-      testId: parsed.testId as string,
-      ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
-      ...(input.confirmed ? { confirmRisk: true } : {}),
-    });
-  }
   if (input.name === "relay_repeat_test") {
     return jobs.repeat({
       kind: "repeat-test",
@@ -258,26 +229,11 @@ export async function dispatchRelayOutcomeTool(
       confirmRemaining: true,
     });
   }
-  if (input.name === "relay_inspect_failure") {
-    return jobs.inspectFailure({ kind: "inspect-failure", runId: parsed.runId as string });
-  }
   if (input.name === "relay_replay_lab") {
     return jobs.replayLab({
       kind: "replay-lab",
       analysis: parsed.analysis as "compare" | "visual-localization" | "all",
       tracePacks: parsed.tracePacks as Parameters<RelayOutcomeJobs["replayLab"]>[0]["tracePacks"],
-    });
-  }
-  if (input.name === "relay_proof_analyze") {
-    const selection = parsed.selection as
-      | { kind: "runs"; runIds: string[] }
-      | { kind: "tests"; appMapId: string; testIds: string[] }
-      | { kind: "trace-packs"; tracePacks: TracePack[] }
-      | { kind: "source-revision"; sourceRevision: SourceRevision; appMapId?: string };
-    return jobs.verifyChange({
-      kind: "verify-change",
-      selection,
-      ...(parsed.confirmationSatisfied === true ? { confirmationSatisfied: true } : {}),
     });
   }
   if (input.name === "relay_prove_change") {

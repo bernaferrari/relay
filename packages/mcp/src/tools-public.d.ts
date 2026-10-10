@@ -8,7 +8,6 @@ export type RelayMcpProfile =
   | "author"
   | "test"
   | "run"
-  | "execute"
   | "locale"
   | "review"
   | "admin"

@@ -13,12 +13,10 @@ const outcomeNames = new Set([
   "relay_edit_recording",
   "relay_replay_recording",
   "relay_approve_recording",
-  "relay_run_test",
   "relay_repeat_test",
   "relay_continue_repeat",
   "relay_inspect_workflow",
   "relay_cancel_run",
-  "relay_inspect_failure",
   "relay_propose_repair",
   "relay_export_evidence",
 ]);

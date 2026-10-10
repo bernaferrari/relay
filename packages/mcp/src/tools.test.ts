@@ -517,7 +517,6 @@ test("defines deterministic advanced profiles behind the compact qa default", ()
     "author",
     "test",
     "run",
-    "execute",
     "locale",
     "review",
     "admin",
@@ -528,7 +527,15 @@ test("defines deterministic advanced profiles behind the compact qa default", ()
   assert.deepEqual(relayMcpToolsForProfile("qa"), []);
   assert.deepEqual(relayMcpToolsForProfile("operator"), []);
   assert.deepEqual(relayMcpToolsForProfile("outcome"), []);
-  assert.deepEqual(relayMcpToolsForProfile("full"), relayMcpTools);
+  assert.deepEqual(
+    relayMcpToolsForProfile("full").map(({ operationId }) => operationId),
+    relayMcpTools
+      .map(({ operationId }) => operationId)
+      .filter(
+        (id) =>
+          id !== "test.create-from-goal" && id !== "test.apply-yaml" && id !== "run.verdict.get",
+      ),
+  );
   assert.equal(
     relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),
     true,
@@ -632,10 +639,8 @@ test("defines deterministic advanced profiles behind the compact qa default", ()
     ),
     false,
   );
-  assert.ok(
-    relayMcpToolsForProfile("execute").some(({ operationId }) => operationId === "job.start"),
-  );
-  assert.deepEqual(relayMcpToolsForProfile("execute"), relayMcpToolsForProfile("run"));
+  assert.ok(relayMcpToolsForProfile("run").some(({ operationId }) => operationId === "job.start"));
+  assert.equal((relayMcpProfiles as readonly string[]).includes("execute"), false);
   assert.ok(
     relayMcpToolsForProfile("review").some(
       ({ operationId }) => operationId === "app-map.proposal.approve",
@@ -770,18 +775,7 @@ test("publishes compact discovery metadata for every eligible operation", () => 
     role: "viewer",
     confirmation: "none",
     capabilities: ["screenshot"],
-    profiles: [
-      "control",
-      "map",
-      "observe",
-      "author",
-      "test",
-      "run",
-      "execute",
-      "locale",
-      "review",
-      "proof",
-    ],
+    profiles: ["control", "map", "observe", "author", "test", "run", "locale", "review", "proof"],
   });
 });
 

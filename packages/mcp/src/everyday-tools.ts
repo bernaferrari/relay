@@ -4,12 +4,21 @@ import * as z from "zod/v4";
 import type { RelayOutcomeToolDescriptor } from "./outcome-tools.js";
 import type { RelayMcpProfile } from "./tools.js";
 import type { OperationInvoker } from "./server.js";
-import { waitForRunVerdict, agentVerdict, type RunWaitContext } from "./run-verdict-wait.js";
+import {
+  agentVerdict,
+  compactRunSnapshot,
+  defaultRunWaitSeconds,
+  waitForRunVerdict,
+  withFailingStep,
+  type RunWaitContext,
+} from "./run-verdict-wait.js";
 
 /**
  * The everyday agent loop: describe a Test in a sentence, run it, read one
- * verdict. These tools compose existing server operations (test.create-from-goal,
- * the durable run workflow, run.verdict.get); they add no second runtime.
+ * verdict, check a change, inspect a failure. These tools compose existing
+ * server operations (test.create-from-goal, the durable run workflow,
+ * run.verdict.get); they add no second runtime. Every profile that can write
+ * a Test also gets the tools to run it and read why it failed.
  */
 const identifier = z.string().trim().min(1);
 /** Either a description (Relay writes the steps) or a test file written as-is. */
@@ -75,6 +84,31 @@ export const relayEverydayTools = Object.freeze([
     annotations: writes,
   },
   {
+    name: "relay_run_test",
+    title: "Run a Test",
+    description:
+      "Run one saved Test on the selected ready target and, by default, wait for its verdict: passed, failed, blocked or cancelled, with the failing step's expected vs. saw and a screenshot reference. Pass the targetId returned by relay_connect_target when several targets are ready. Safe Tests need no confirmation; if Relay reports a risk, review it and repeat the call with transport confirm: true. Set wait:false to return immediately with the workflow and runId; a wait that runs out returns status running — call relay_get_verdict later.",
+    requiresConfirmation: false,
+    inputSchema: z
+      .object({
+        appMapId: identifier.optional(),
+        testId: identifier,
+        targetId: identifier
+          .optional()
+          .describe("Selected target id; keep it through observation, recording, and replay"),
+        wait: z.boolean().optional().describe("Wait for the verdict (default true)"),
+        timeoutSeconds: z
+          .number()
+          .int()
+          .min(5)
+          .max(1_800)
+          .optional()
+          .describe("Longest wait before returning status running (default 600)"),
+      })
+      .strict(),
+    annotations: writes,
+  },
+  {
     name: "relay_get_verdict",
     title: "Read a Run's verdict",
     description:
@@ -106,6 +140,15 @@ export const relayEverydayTools = Object.freeze([
       .strict(),
     annotations: writes,
   },
+  {
+    name: "relay_inspect_failure",
+    title: "Inspect a failure",
+    description:
+      "Read one failed Run: its verdict's failing step (expected vs. saw, screenshot), retained evidence, and existing repair proposals.",
+    requiresConfirmation: false,
+    inputSchema: z.object({ runId: identifier }).strict(),
+    annotations: readOnly,
+  },
 ] as const satisfies readonly RelayOutcomeToolDescriptor[]);
 
 export type RelayEverydayToolName = (typeof relayEverydayTools)[number]["name"];
@@ -115,23 +158,21 @@ export function isRelayEverydayTool(name: string): name is RelayEverydayToolName
   return everydayNames.has(name);
 }
 
-const authorEveryday = new Set<string>(["relay_create_test", "relay_get_verdict"]);
 const everydayProfiles = new Set<RelayMcpProfile>([
   "qa",
   "outcome",
   "operator",
+  "author",
   "test",
   "run",
-  "execute",
   "full",
 ]);
 
-/** Profiles that author or run Tests get the describe → run → verdict loop. */
+/** Profiles that author or run Tests get the whole describe → run → verdict
+ * loop, never a partial one (a Test an agent cannot run is a dead end). */
 export function relayEverydayToolsForProfile(
   profile: RelayMcpProfile,
 ): readonly RelayOutcomeToolDescriptor[] {
-  if (profile === "author")
-    return relayEverydayTools.filter(({ name }) => authorEveryday.has(name));
   return everydayProfiles.has(profile) ? relayEverydayTools : [];
 }
 
@@ -170,6 +211,23 @@ export async function invokeRelayEverydayTool(input: {
       },
     };
   }
+  if (input.name === "relay_run_test") {
+    const started = await input.jobs.run({
+      kind: "run-test",
+      ...(typeof parsed.appMapId === "string" ? { appMapId: parsed.appMapId } : {}),
+      testId: parsed.testId as string,
+      ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+      ...(input.confirmed ? { confirmRisk: true } : {}),
+    });
+    return presentOutcomeForAgent(input.name, parsed, started, context);
+  }
+  if (input.name === "relay_inspect_failure") {
+    const inspected = await input.jobs.inspectFailure({
+      kind: "inspect-failure",
+      runId: parsed.runId as string,
+    });
+    return presentOutcomeForAgent(input.name, parsed, inspected, context);
+  }
   if (input.name === "relay_get_verdict") {
     const result = object(
       await input.invoker.invoke("run.verdict.get", parsed, { signal: input.signal }),
@@ -177,6 +235,35 @@ export async function invokeRelayEverydayTool(input: {
     return agentVerdict(result.verdict);
   }
   return checkChange(parsed, input.confirmed, context);
+}
+
+/** Agents get a verdict, not a workflow snapshot with a compiled plan. */
+export async function presentOutcomeForAgent(
+  name: string,
+  argumentsValue: Record<string, unknown>,
+  result: unknown,
+  context: RunWaitContext,
+): Promise<unknown> {
+  if (name === "relay_inspect_failure" && typeof argumentsValue.runId === "string") {
+    return withFailingStep(result, argumentsValue.runId, context);
+  }
+  if (name !== "relay_run_test") return result;
+  if (argumentsValue.wait === false) return compactRunSnapshot(result);
+  const seconds =
+    typeof argumentsValue.timeoutSeconds === "number"
+      ? argumentsValue.timeoutSeconds
+      : defaultRunWaitSeconds;
+  try {
+    return await waitForRunVerdict(result, context, seconds * 1_000);
+  } catch (error) {
+    if (context.signal.aborted) throw error;
+    return {
+      status: "unknown",
+      reason: error instanceof Error ? error.message.slice(0, 300) : "Verdict unavailable",
+      run: compactRunSnapshot(result),
+      next: "Call relay_inspect_workflow with workflow.workflowId, or relay_get_verdict with the runId.",
+    };
+  }
 }
 
 /** One place picks the server operation that writes the Test: a test file

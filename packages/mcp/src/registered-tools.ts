@@ -2,6 +2,7 @@ import { relayEverydayToolsForProfile } from "./everyday-tools.js";
 import { relayOperatorTools } from "./operator-tools.js";
 import { relayOutcomeTools } from "./outcome-tools.js";
 import { relayPanelToolName } from "./panel-resources.js";
+import { proofOutcomeTools } from "./proof-outcome-tools.js";
 import { relayQaOperatorTools, relayQaOutcomeTools } from "./qa-tools.js";
 import {
   relayMcpToolsForProfile,
@@ -9,21 +10,25 @@ import {
   type RelayMcpToolDescriptor,
 } from "./tools.js";
 
-/** Names in the order createMcpServer registers them. Raw operation profiles
- * list canonical operation ids after their friendly everyday tools. */
+/** Tool names in the order createMcpServer registers them: the everyday loop
+ * first, then the profile's friendly tools, then raw operation tools. Every
+ * entry is a registered MCP tool name (never a dotted operation id). */
 export function relayRegisteredToolNames(
   profile: RelayMcpProfile,
   tools: readonly RelayMcpToolDescriptor[] = relayMcpToolsForProfile(profile),
 ): readonly string[] {
-  const everyday = relayEverydayToolsForProfile(profile).map(({ name }) => name);
+  const names = (list: readonly { readonly name: string }[]) => list.map(({ name }) => name);
+  const everyday = names(relayEverydayToolsForProfile(profile));
   if (profile === "qa") {
     return [
       ...everyday,
       relayPanelToolName,
-      ...[...relayQaOutcomeTools, ...relayQaOperatorTools, ...tools].map(({ name }) => name),
+      ...names(relayQaOutcomeTools),
+      ...names(relayQaOperatorTools),
+      ...names(tools),
     ];
   }
-  if (profile === "outcome") return [...everyday, ...relayOutcomeTools.map(({ name }) => name)];
-  if (profile === "operator") return [...everyday, ...relayOperatorTools.map(({ name }) => name)];
-  return [...everyday, ...tools.map(({ operationId }) => operationId)];
+  if (profile === "outcome") return [...everyday, ...names(relayOutcomeTools)];
+  if (profile === "operator") return [...everyday, ...names(relayOperatorTools)];
+  return [...everyday, ...(profile === "proof" ? names(proofOutcomeTools) : []), ...names(tools)];
 }

@@ -50,7 +50,6 @@ export type McpServerDependencies = {
     | "author"
     | "test"
     | "run"
-    | "execute"
     | "locale"
     | "review"
     | "admin"

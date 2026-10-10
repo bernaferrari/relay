@@ -177,20 +177,34 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     const listed = await session.request("tools/list", {});
     assert.equal(listed.error, undefined);
     const tools = listed.result?.tools as ListedTool[];
+    const fullTools = relayMcpToolsForProfile("full");
     assert.deepEqual(
       tools.map(({ name }) => name),
-      [...everydayNames("full"), ...relayMcpTools.map(({ name }) => name)],
+      [...everydayNames("full"), ...fullTools.map(({ name }) => name)],
     );
     assert.equal(
       new Set(tools.map(({ name }) => name)).size,
-      everydayNames("full").length + relayMcpTools.length,
+      everydayNames("full").length + fullTools.length,
     );
     assert.equal(
       tools.some(({ name }) => name === "relay_health"),
       false,
     );
+    // The everyday loop already wraps these; full never lists them twice.
+    for (const duplicate of [
+      "relay_test_create_from_goal",
+      "relay_test_apply_yaml",
+      "relay_run_verdict_get",
+    ]) {
+      assert.equal(
+        tools.some(({ name }) => name === duplicate),
+        false,
+        duplicate,
+      );
+    }
+    assert.equal(fullTools.length, relayMcpTools.length - 3);
 
-    for (const descriptor of relayMcpTools) {
+    for (const descriptor of fullTools) {
       const tool = tools.find(({ name }) => name === descriptor.name);
       assert.ok(tool, descriptor.name);
       assert.equal(tool.title, descriptor.title);
@@ -366,11 +380,13 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       "relay_continue_repeat",
       "relay_inspect_proof",
       "relay_prove_change",
-      "relay_proof_analyze",
       "relay_export_evidence",
     ]) {
       assert.ok(nameSet.has(name), `default outcome profile is missing ${name}`);
     }
+    assert.equal(nameSet.has("relay_proof_analyze"), false);
+    assert.equal(nameSet.has("relay_debug_bug"), false);
+    assert.equal(names.length, nameSet.size, "no tool is registered twice");
     const approve = ((listed.result?.tools as ListedTool[] | undefined) ?? []).find(
       ({ name }) => name === "relay_approve_recording",
     );
@@ -391,81 +407,6 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       current: { kind: "device", platform: "android", targetId: "pixel-9" },
     });
     assert.deepEqual(calls, [{ operationId: "target.devices.list", input: {} }]);
-  } finally {
-    await session.close();
-  }
-});
-
-test("Agent Debug MCP accepts its discriminated transport schema", async () => {
-  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
-  const session = await connectMcp(
-    {
-      async invoke(operationId, input) {
-        calls.push({ operationId, input });
-        if (operationId === "discovery.create") {
-          return {
-            session: {
-              id: "discovery-1",
-              name: "Checkout discovery",
-              targetId: "pixel-9",
-              status: "draft",
-              createdAt: 1,
-              updatedAt: 1,
-              scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
-              screens: [],
-              transitions: [],
-            },
-          };
-        }
-        throw new Error(`unexpected ${operationId}`);
-      },
-    },
-    "outcome",
-  );
-  try {
-    const response = await session.request("tools/call", {
-      name: "relay_debug_bug",
-      arguments: {
-        kind: "debug-bug",
-        action: "explore",
-        create: {
-          id: "discovery-1",
-          name: "Checkout discovery",
-          targetId: "pixel-9",
-          scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
-        },
-      },
-    });
-    assert.equal(response.error, undefined);
-    const result = callResult(response);
-    assert.equal(result.isError, undefined);
-    assert.deepEqual(result.structuredContent?.result, {
-      schemaVersion: 1,
-      kind: "debug-bug",
-      action: "explore",
-      actorId: "agent:mcp",
-      nextAction: "review-discovery",
-      session: {
-        id: "discovery-1",
-        name: "Checkout discovery",
-        targetId: "pixel-9",
-        status: "draft",
-        scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
-        screenCount: 0,
-        transitionCount: 0,
-      },
-    });
-    assert.deepEqual(calls, [
-      {
-        operationId: "discovery.create",
-        input: {
-          id: "discovery-1",
-          name: "Checkout discovery",
-          targetId: "pixel-9",
-          scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
-        },
-      },
-    ]);
   } finally {
     await session.close();
   }
@@ -1326,7 +1267,6 @@ test("profile selection exposes deterministic least-privilege tool sets", async 
     "observe",
     "author",
     "run",
-    "execute",
     "review",
     "admin",
     "full",
@@ -2507,8 +2447,10 @@ test("QA preset exposes one existing recording/run path and accurate discovery",
     const names = tools.map(({ name }) => name);
     assert.deepEqual(names, [
       "relay_create_test",
+      "relay_run_test",
       "relay_get_verdict",
       "relay_check_change",
+      "relay_inspect_failure",
       "relay_panel",
       ...[...relayQaOutcomeTools, ...relayQaOperatorTools].map(({ name }) => name),
     ]);

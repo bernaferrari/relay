@@ -76,61 +76,6 @@ test("recover uses the Lane target instead of asking for a separate serial", asy
   assert.deepEqual(result, { ok: true, invoked: "target.recover" });
 });
 
-test("a bounded goal is refused until the caller confirms it", async () => {
-  await assert.rejects(
-    invokeRelayOperatorTool({
-      name: "relay_goal",
-      argumentsValue: example("relay_goal"),
-      confirmed: false,
-      actorId: "agent:cursor",
-      signal: AbortSignal.timeout(1000),
-      invoker: { async invoke() {} },
-    }),
-    /requires confirm: true/u,
-  );
-});
-
-test("a confirmed goal is handed to the existing goal runner", async () => {
-  await assert.rejects(
-    invokeRelayOperatorTool({
-      name: "relay_goal",
-      argumentsValue: example("relay_goal"),
-      confirmed: true,
-      actorId: "agent:cursor",
-      signal: AbortSignal.timeout(2000),
-      invoker: {
-        async invoke() {
-          throw new Error("goal-start-observed");
-        },
-      },
-    }),
-    /goal-start-observed/u,
-  );
-});
-
-test("a bounded goal requires a page to open", () => {
-  const goal = relayOperatorTools.find((tool) => tool.name === "relay_goal");
-  assert.ok(goal);
-  assert.equal(goal.inputSchema.safeParse({ goal: "Open settings" }).success, false);
-  assert.equal(goal.inputSchema.safeParse(example("relay_goal")).success, true);
-  assert.equal(
-    goal.inputSchema.safeParse({
-      goal: "Open settings",
-      startUrl: "https://app.test",
-      laneId: "grok-daily",
-    }).success,
-    true,
-  );
-  assert.equal(
-    goal.inputSchema.safeParse({ goal: "Open settings", startUrl: "javascript:alert(1)" }).success,
-    false,
-  );
-  assert.equal(
-    goal.inputSchema.safeParse({ goal: "Open settings", startUrl: "file:///etc/passwd" }).success,
-    false,
-  );
-});
-
 const examples: Record<RelayOperatorToolDescriptor["name"], Record<string, unknown>> = {
   relay_health: {},
   relay_devices: {},
@@ -168,10 +113,6 @@ const examples: Record<RelayOperatorToolDescriptor["name"], Record<string, unkno
       steps: [],
     },
   },
-  relay_goal: {
-    goal: "Open settings and capture language options",
-    startUrl: "http://127.0.0.1:3000",
-  },
   relay_findings: { batchId: "camp-1" },
   relay_evidence: { runId: "run-1" },
   relay_visual_compare: { runId: "run-1" },
@@ -192,7 +133,7 @@ function example(name: RelayOperatorToolDescriptor["name"]): Record<string, unkn
 
 test("every operator verb has a schema and a description with a worked example", () => {
   assert.equal(relayOperatorTools.length, relayOperatorToolNames.length);
-  assert.ok(relayOperatorTools.length <= 23);
+  assert.ok(relayOperatorTools.length <= 22);
   assert.deepEqual(relayOperatorToolNames, [
     "relay_health",
     "relay_devices",
@@ -210,7 +151,6 @@ test("every operator verb has a schema and a description with a worked example",
     "relay_cancel",
     "relay_export",
     "relay_save",
-    "relay_goal",
     "relay_findings",
     "relay_evidence",
     "relay_visual_compare",

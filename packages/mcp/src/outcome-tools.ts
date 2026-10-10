@@ -4,11 +4,8 @@ import {
   measureTracePackJson,
   TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
   tracePackSchema,
-  VERIFY_CHANGE_MAX_IDS,
-  VERIFY_CHANGE_MAX_TRACE_PACKS,
   type AuthoringInteraction,
   type RepeatSpec,
-  type SourceRevision,
   type TracePack,
   browserAuthenticationFixtureReferenceSchema,
   operationDefinition,
@@ -18,20 +15,8 @@ import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import * as z from "zod/v4";
 import type { OperationInvoker } from "./server.js";
 import { proofOutcomeTools } from "./proof-outcome-tools.js";
-import {
-  createDebugBugInputSchema,
-  createDebugBugOutcomeTool,
-  invokeDebugBugOutcomeTool,
-} from "./debug-bug-outcome-tool.js";
 import { dispatchRelayOutcomeTool } from "./outcome-tool-dispatch.js";
 import { invokeRelayEverydayTool, isRelayEverydayTool } from "./everyday-tools.js";
-import {
-  compactRunSnapshot,
-  defaultRunWaitSeconds,
-  waitForRunVerdict,
-  withFailingStep,
-  type RunWaitContext,
-} from "./run-verdict-wait.js";
 
 type OutcomeInputSchema = z.ZodType<Record<string, unknown>>;
 
@@ -64,15 +49,6 @@ const workflowDecision = {
   workflowId: identifier,
   expectedVersion: z.number().int().positive(),
 } as const;
-const sourceRevision = z
-  .object({
-    vcs: z.literal("git"),
-    sha: z.string().regex(/^[0-9a-f]{7,40}$/u),
-    prNumber: z.number().int().positive().optional(),
-    branch: identifier.optional(),
-    artifactDigest: identifier.optional(),
-  })
-  .strict();
 const replayLabMaxPayloadBytes = 128 * 1024 * 1024;
 const tracePackMaxObjects = 2_000;
 function tracePackObjectCount(value: unknown): number | undefined {
@@ -153,59 +129,6 @@ const replayLabTracePacks = z
   });
 
 const replayLabTracePackTransport = boundedTracePackArray(boundedTracePackTransport).min(2);
-const verifyChangeSelection = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("runs"),
-      runIds: z.array(identifier).min(1).max(VERIFY_CHANGE_MAX_IDS),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("tests"),
-      appMapId: identifier,
-      testIds: z.array(identifier).min(1).max(VERIFY_CHANGE_MAX_IDS),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("trace-packs"),
-      tracePacks: z.array(boundedOfflineTracePack).min(1).max(VERIFY_CHANGE_MAX_TRACE_PACKS),
-    })
-    .strict(),
-  z
-    .object({ kind: z.literal("source-revision"), sourceRevision, appMapId: identifier.optional() })
-    .strict(),
-]);
-const verifyChangeSelectionTransport = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("runs"),
-      runIds: z.array(identifier).min(1).max(VERIFY_CHANGE_MAX_IDS),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("tests"),
-      appMapId: identifier,
-      testIds: z.array(identifier).min(1).max(VERIFY_CHANGE_MAX_IDS),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("trace-packs"),
-      tracePacks: boundedTracePackArray(boundedTracePackTransport).max(
-        VERIFY_CHANGE_MAX_TRACE_PACKS,
-      ),
-    })
-    .strict(),
-  z
-    .object({ kind: z.literal("source-revision"), sourceRevision, appMapId: identifier.optional() })
-    .strict(),
-]);
-
-const debugBugInputSchema = createDebugBugInputSchema(verifyChangeSelectionTransport);
-
 function goalValues(raw: unknown): { values?: Record<string, string> } {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const entries = Object.entries(raw as Record<string, unknown>).filter(
@@ -342,31 +265,7 @@ function assertRawTracePackPayloads(value: unknown, maxPacks: number): void {
 }
 
 function assertRawOutcomeInputBounds(name: string, value: Record<string, unknown>): void {
-  if (name === "relay_replay_lab") {
-    assertRawTracePackPayloads(value.tracePacks, 64);
-    return;
-  }
-  if (name !== "relay_proof_analyze") return;
-  const selection = value.selection;
-  if (!selection || typeof selection !== "object" || Array.isArray(selection)) return;
-  const record = selection as Record<string, unknown>;
-  if (
-    record.kind === "runs" &&
-    Array.isArray(record.runIds) &&
-    record.runIds.length > VERIFY_CHANGE_MAX_IDS
-  ) {
-    throw new TypeError(`Run selection exceeds ${VERIFY_CHANGE_MAX_IDS}`);
-  }
-  if (
-    record.kind === "tests" &&
-    Array.isArray(record.testIds) &&
-    record.testIds.length > VERIFY_CHANGE_MAX_IDS
-  ) {
-    throw new TypeError(`Test selection exceeds ${VERIFY_CHANGE_MAX_IDS}`);
-  }
-  if (record.kind === "trace-packs") {
-    assertRawTracePackPayloads(record.tracePacks, VERIFY_CHANGE_MAX_TRACE_PACKS);
-  }
+  if (name === "relay_replay_lab") assertRawTracePackPayloads(value.tracePacks, 64);
 }
 // Recording uses the same interaction and edit contracts as CLI, HTTP, and
 // Product. This includes executable expect/wait-for steps and insertion edits.
@@ -433,34 +332,6 @@ export const relayOutcomeTools = Object.freeze([
         targetId,
         targetKind,
         originApplication: identifier.optional(),
-      })
-      .strict(),
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "relay_run_test",
-    title: "Run a Test",
-    description:
-      "Run one saved Test on the selected ready target and, by default, wait for its verdict: passed, failed, blocked or cancelled, with the failing step's expected vs. saw and a screenshot reference. Pass the targetId returned by relay_connect_target when several targets are ready. Safe Tests need no confirmation; if Relay reports a risk, review it and repeat the call with transport confirm: true. Set wait:false to return immediately with the workflow and runId; a wait that runs out returns status running — call relay_get_verdict later.",
-    requiresConfirmation: false,
-    inputSchema: z
-      .object({
-        appMapId: identifier.optional(),
-        testId: identifier,
-        targetId,
-        wait: z.boolean().optional().describe("Wait for the verdict (default true)"),
-        timeoutSeconds: z
-          .number()
-          .int()
-          .min(5)
-          .max(1_800)
-          .optional()
-          .describe("Longest wait before returning status running (default 600)"),
       })
       .strict(),
     annotations: {
@@ -629,20 +500,6 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   {
-    name: "relay_inspect_failure",
-    title: "Inspect a failure",
-    description:
-      "Read one failed Run: its verdict's failing step (expected vs. saw, screenshot), retained evidence, and existing repair proposals.",
-    requiresConfirmation: false,
-    inputSchema: z.object({ runId: identifier }).strict(),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
     name: "relay_propose_repair",
     title: "Propose a repair",
     description:
@@ -663,7 +520,6 @@ export const relayOutcomeTools = Object.freeze([
       openWorldHint: false,
     },
   },
-  createDebugBugOutcomeTool(debugBugInputSchema),
   {
     name: "relay_replay_lab",
     title: "Compare TracePacks offline",
@@ -684,25 +540,6 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   ...proofOutcomeTools,
-  {
-    name: "relay_proof_analyze",
-    title: "Analyze a Proof",
-    description:
-      "Analyze explicit frozen Tests, Runs, evidence packs, or source revision metadata offline. Returns one bounded pass, regression, review, or insufficient summary with exact policy rules, evidence completeness, first causal failure, unresolved uncertainty, and the smallest required live verification. Never changes Tests, controls a Device, creates a live Proof, or posts a check.",
-    requiresConfirmation: false,
-    inputSchema: z
-      .object({
-        selection: verifyChangeSelectionTransport,
-        confirmationSatisfied: z.boolean().optional(),
-      })
-      .strict(),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
   {
     name: "relay_export_evidence",
     title: "Export evidence",
@@ -793,46 +630,12 @@ export async function invokeRelayOutcomeTool(input: {
   if (isRelayEverydayTool(input.name)) {
     return invokeRelayEverydayTool({ ...input, name: input.name, jobs });
   }
-  const result = await invokeRelayOutcomeToolWithJobs({
+  return invokeRelayOutcomeToolWithJobs({
     name: input.name,
     argumentsValue: input.argumentsValue,
     confirmed: input.confirmed,
     jobs,
   });
-  return presentOutcomeForAgent(input.name, input.argumentsValue, result, {
-    invoker: input.invoker,
-    jobs,
-    signal: input.signal,
-  });
-}
-
-/** Agents get a verdict, not a workflow snapshot with a compiled plan. */
-export async function presentOutcomeForAgent(
-  name: string,
-  argumentsValue: Record<string, unknown>,
-  result: unknown,
-  context: RunWaitContext,
-): Promise<unknown> {
-  if (name === "relay_inspect_failure" && typeof argumentsValue.runId === "string") {
-    return withFailingStep(result, argumentsValue.runId, context);
-  }
-  if (name !== "relay_run_test") return result;
-  if (argumentsValue.wait === false) return compactRunSnapshot(result);
-  const seconds =
-    typeof argumentsValue.timeoutSeconds === "number"
-      ? argumentsValue.timeoutSeconds
-      : defaultRunWaitSeconds;
-  try {
-    return await waitForRunVerdict(result, context, seconds * 1_000);
-  } catch (error) {
-    if (context.signal.aborted) throw error;
-    return {
-      status: "unknown",
-      reason: error instanceof Error ? error.message.slice(0, 300) : "Verdict unavailable",
-      run: compactRunSnapshot(result),
-      next: "Call relay_inspect_workflow with workflow.workflowId, or relay_get_verdict with the runId.",
-    };
-  }
 }
 
 /**
@@ -849,9 +652,6 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
   return dispatchRelayOutcomeTool(input, {
     descriptors: relayOutcomeTools,
     assertRawOutcomeInputBounds,
-    debugBugInputSchema,
     replayLabTracePacks,
-    verifyChangeSelection,
-    invokeDebugBugOutcomeTool,
   });
 }
