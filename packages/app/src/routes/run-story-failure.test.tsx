@@ -124,8 +124,8 @@ it.each([
   ["product-failure", "visual-assertion", "See where it failed"],
   ["product-failure", "locator", "See where it failed"],
   ["harness-failure", "locator", "Edit step"],
-  ["harness-failure", "environment", "Repair setup"],
-  ["harness-failure", "target-state", "Repair setup"],
+  ["harness-failure", "environment", "Check run setup"],
+  ["harness-failure", "target-state", "Check run setup"],
   ["harness-failure", "action", "See where it failed"],
   ["harness-failure", "harness-defect", "See where it failed"],
   ["harness-failure", "unknown-category", "See where it failed"],
@@ -145,7 +145,7 @@ it.each([
     (link) => link.textContent === "Edit step",
   );
   expect(edit?.getAttribute("href")).toBe("/tests/test-settings?step=settings");
-  if (primary === "Repair setup")
+  if (primary === "Check run setup")
     expect(container.querySelector("a")?.getAttribute("href")).toBe(
       "/tests/test-settings?setup=run",
     );

@@ -134,7 +134,7 @@ export function screenshotReviewLabel(
   if (!summary || summary.captured + summary.missing === 0) return undefined;
   const parts: string[] = [];
   if (summary.pending) parts.push(`${summary.pending} to review`);
-  if (summary.missing) parts.push(`${summary.missing} missing`);
+  if (summary.missing) parts.push(`${summary.missing} not captured`);
   if (summary.issue) parts.push(`${summary.issue} ${summary.issue === 1 ? "issue" : "issues"}`);
   if (summary.needMoreEvidence) parts.push(`${summary.needMoreEvidence} need more evidence`);
   return parts.length ? parts.join(" · ") : `${summary.accepted} approved`;

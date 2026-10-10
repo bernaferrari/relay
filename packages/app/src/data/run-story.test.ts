@@ -269,3 +269,41 @@ describe("plainObservation", () => {
     );
   });
 });
+
+describe("engine internals", () => {
+  it("never shows device plumbing or raw coordinates as steps", () => {
+    expect(describeTraceTitle("Wait for identifier com.touchtype.swiftkey:id/keyboard")).toEqual({
+      kind: "verify",
+      label: "Keyboard opens",
+    });
+    expect(
+      describeTraceTitle("Reach identifier com.android.systemui:id/status_bar"),
+    ).toBeUndefined();
+    expect(describeTraceTitle("Tap point (351, 1437)")).toEqual({
+      kind: "tap",
+      label: "Tap the recorded spot",
+    });
+  });
+
+  it("keeps nested taps with the step in progress instead of a separate group", () => {
+    const steps = storyFromReport({
+      timeline: [
+        { id: "a", index: 0, title: "Reach Home", state: "passed", evidenceCount: 0 },
+        { id: "b", index: 1, title: "Tap point (10, 20)", state: "passed", evidenceCount: 0 },
+        { id: "c", index: 2, title: 'Tap label "Menu"', state: "passed", evidenceCount: 0 },
+      ],
+      stepEvidence: [0].map((traceStepIndex) => ({
+        schemaVersion: 1 as const,
+        testStepId: "open-menu",
+        recipeId: "r",
+        recipeStepId: "s",
+        traceStepId: "t0",
+        traceStepIndex,
+        occurrence: 1,
+        evidence: { framePaths: [], eventSequences: [], artifactKinds: [] },
+      })),
+      stepTitles: { "open-menu": "Open the menu" },
+    });
+    expect(steps.map((step) => [step.title, step.actions.length])).toEqual([["Open the menu", 3]]);
+  });
+});

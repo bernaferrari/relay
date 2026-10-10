@@ -299,7 +299,13 @@ export function documentFromMap(
   const test = appMap.tests[testId];
   if (!test || test.kind !== "scenario") return undefined;
   const history = Object.values(appMap.activity)
-    .filter((event) => event.subject.kind === "test" && event.subject.id === testId)
+    // A passing run records validation; that is a result, not an edit.
+    .filter(
+      (event) =>
+        event.subject.kind === "test" &&
+        event.subject.id === testId &&
+        event.eventType !== "test.validated",
+    )
     .sort((left, right) => right.at - left.at)
     .map((event) => ({
       id: event.id,
