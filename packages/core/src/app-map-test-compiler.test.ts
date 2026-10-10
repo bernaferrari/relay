@@ -3333,6 +3333,27 @@ test("plain-English actions and checks compile to model-driven steps", () => {
   );
 });
 
+test("a plain-English action carries its saved actions into the run", () => {
+  const work = scenario();
+  const tap = { kind: "tap", target: { label: "Cart" } } as const;
+  work.steps = [
+    {
+      id: "navigate",
+      kind: "instruction",
+      intent: "Open the cart",
+      binding: {
+        status: "unresolved",
+        reason: "Runs from text",
+        fromText: true,
+        cache: { steps: [tap], runId: "run-1", savedAt: 1 },
+      },
+    },
+  ];
+  const compiled = compileAppMapTest(fixture(), work);
+  const act = compiled.root.steps.find((step) => step.kind === "act");
+  assert.deepEqual(act && act.kind === "act" ? act.cached : undefined, [tap]);
+});
+
 test("unresolved intent fails closed with a stable step-specific diagnostic", () => {
   const work = scenario();
   work.steps[0] = {

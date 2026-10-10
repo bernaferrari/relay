@@ -80,7 +80,16 @@ function assertCleanup(step: AppMapScenarioTestStep, label: string): void {
 function assertBinding(step: AppMapScenarioTestStep, label: string): void {
   const binding = objectValue(step.binding, `${label}.binding`);
   if (binding.status === "unresolved") {
-    allowedKeys(binding, ["status", "reason", "candidates", "fromText"], `${label}.binding`);
+    allowedKeys(
+      binding,
+      ["status", "reason", "candidates", "fromText", "cache"],
+      `${label}.binding`,
+    );
+    if (binding.cache !== undefined) {
+      const cache = objectValue(binding.cache, `${label}.binding.cache`);
+      if (!Array.isArray(cache.steps) || cache.steps.length > 40)
+        appMapFail("invalid-map", `${label}.binding.cache.steps must list at most 40 actions`);
+    }
     requiredText(binding.reason, `${label}.binding.reason`);
     if (binding.fromText !== undefined && binding.fromText !== true) {
       appMapFail("invalid-map", `${label}.binding.fromText must be true when present`);

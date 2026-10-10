@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { plainEnglishBindingFields } from "./everyday-operation-output-schemas.js";
 import {
   authoringTarget,
   identifier,
@@ -298,7 +299,7 @@ const unresolvedTestBinding = z
     status: z.literal("unresolved"),
     reason: text("Why this Test step is not bound"),
     candidates: z.array(testBindingCandidate).max(12).optional(),
-    fromText: z.literal(true).optional(),
+    ...plainEnglishBindingFields,
   })
   .strict()
   .superRefine((binding, context) => {

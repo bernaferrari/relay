@@ -298,3 +298,23 @@ test("reports precise placement, identity, and index failures", () => {
     "invalid-branch",
   );
 });
+
+test("new words drop the actions saved for the old words", () => {
+  const cached = {
+    status: "unresolved" as const,
+    reason: "Runs from text",
+    fromText: true as const,
+    cache: {
+      steps: [{ kind: "tap" as const, target: { label: "Cart" } }],
+      runId: "run-1",
+      savedAt: 1,
+    },
+  };
+  const test = scenario();
+  test.steps = [{ id: "open", kind: "instruction", intent: "Open the cart", binding: cached }];
+  const same = patchScenarioTestStep(test, "open", { note: "Kept" });
+  assert.ok((same.steps[0]!.binding as { cache?: unknown }).cache);
+  const renamed = patchScenarioTestStep(test, "open", { intent: "Open the basket" });
+  assert.equal((renamed.steps[0]!.binding as { cache?: unknown }).cache, undefined);
+  assert.equal((renamed.steps[0]!.binding as { fromText?: boolean }).fromText, true);
+});

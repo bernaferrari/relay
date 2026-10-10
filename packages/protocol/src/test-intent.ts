@@ -47,10 +47,10 @@ export type UnresolvedTestBinding = {
   status: "unresolved";
   reason: string;
   candidates?: AppMapTestBindingCandidate[];
-  /** The author chose to run this Action or Check from its words: a model
-   * picks the taps for an Action and a visual judge decides a Check. Absent
-   * means the step stays blocked until it is recorded or bound. */
+  /** Run from its words (model taps an Action, a judge decides a Check). */
   fromText?: true;
+  /** Actions that last carried out these words; replayed before the model. */
+  cache?: { steps: RecipeStep[]; runId: string; savedAt: number };
 };
 
 export type ResolvedTestBinding<T extends object> = { status: "resolved" } & T;

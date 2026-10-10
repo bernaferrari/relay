@@ -109,7 +109,9 @@ test("act executes chosen steps until the model reports done", async () => {
   ]);
   assert.deepEqual(result.seenHistory, [[], ["Tap Settings"]]);
   assert.deepEqual(
-    result.artifacts.map((item) => (item.data as { action: string }).action),
+    result.artifacts
+      .filter((item) => item.kind === "act-decision")
+      .map((item) => (item.data as { action: string }).action),
     ["tap", "done"],
   );
 });
@@ -139,4 +141,81 @@ test("act stops after the action budget", async () => {
   );
   assert.match(result.error?.message ?? "", /within 2 actions \(tried: Scroll down, Scroll down\)/);
   assert.equal(result.executed.length, 2);
+});
+
+test("saved actions replay without asking the model", async () => {
+  let asked = 0;
+  const unregister = registerActDecider(async () => {
+    asked += 1;
+    return { action: "done", reason: "unused" };
+  });
+  const executed: RecipeStep[] = [];
+  const { ctx, artifacts } = context();
+  try {
+    await runActStep(
+      device,
+      {
+        kind: "act",
+        id: "act-1",
+        intent: "Open Settings",
+        cached: [{ kind: "tap", target: { label: "Settings" } }],
+      },
+      ctx,
+      async (step) => {
+        executed.push(step);
+      },
+      async () => screen,
+    );
+  } finally {
+    unregister();
+  }
+  assert.equal(asked, 0);
+  assert.equal(executed.length, 1);
+  const result = artifacts.find((item) => item.kind === "act-result")?.data as {
+    source: string;
+    recipeStepId: string;
+  };
+  assert.deepEqual([result.source, result.recipeStepId], ["cache", "act-1"]);
+});
+
+test("when saved actions no longer fit, the model takes over and its actions are kept", async () => {
+  const unregister = registerActDecider(async () => ({
+    action: "tap",
+    candidateId: "c1",
+    reason: "Settings is visible",
+    finishesIntent: true,
+  }));
+  const { ctx, artifacts } = context();
+  try {
+    await runActStep(
+      device,
+      {
+        kind: "act",
+        id: "act-1",
+        intent: "Open Settings",
+        cached: [{ kind: "tap", target: { label: "Gone" } }],
+      },
+      ctx,
+      async (step) => {
+        if (step.kind === "tap" && step.target.label === "Gone") throw new Error("Gone not found");
+      },
+      async () => screen,
+    );
+  } finally {
+    unregister();
+  }
+  const kinds = artifacts.map(
+    (item) =>
+      (item.data as { action?: string; source?: string }).action ??
+      (item.data as { source?: string }).source,
+  );
+  assert.ok(kinds.includes("cache-miss"));
+  const result = artifacts.find((item) => item.kind === "act-result")?.data as {
+    source: string;
+    steps: RecipeStep[];
+  };
+  assert.equal(result.source, "model");
+  assert.deepEqual(result.steps, [
+    { kind: "tap", target: { label: "Settings", point: { x: 10, y: 5 } } },
+  ]);
 });

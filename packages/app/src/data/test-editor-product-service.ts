@@ -322,7 +322,8 @@ export function documentFromMap(
       (event) =>
         event.subject.kind === "test" &&
         event.subject.id === testId &&
-        event.eventType !== "test.validated",
+        event.eventType !== "test.validated" &&
+        event.eventType !== "test.actions-saved",
     )
     .sort((left, right) => right.at - left.at)
     .map((event) => ({

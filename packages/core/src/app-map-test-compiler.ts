@@ -380,7 +380,13 @@ export function compileAppMapScenarioTest(
         }
         recipeSteps.push(
           step.kind === "instruction"
-            ? { kind: "act", intent: step.intent }
+            ? {
+                kind: "act",
+                intent: step.intent,
+                ...(step.binding.cache?.steps.length
+                  ? { cached: structuredClone(step.binding.cache.steps) }
+                  : {}),
+              }
             : { kind: "evaluate-visual", criteria: [step.intent] },
         );
         if (step.capture) {
