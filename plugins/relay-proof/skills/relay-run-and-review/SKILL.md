@@ -5,21 +5,21 @@ description: Write a Relay Test from a description, run it and read the verdict,
 
 # Describe, run, read the verdict
 
-1. Read `relay://guides/describe`; for a failure read `relay://guides/debug`.
-   Call `relay_health`, then `relay_panel` (with an `appMapId` for that App's
-   Tests) so you reuse an existing Test instead of writing a duplicate.
+1. Call `relay_get_guide` for `describe` (for a failure, `debug`). Call
+   `relay_health`, then `relay_list_apps` and `relay_list_tests` so you reuse
+   an existing Test instead of writing a duplicate.
 2. New coverage: call `relay_create_test` with one sentence (or one step per
    line) and the `url` or `app`. It saves the Test and returns the exact
    `relay_run_test` call. Steps written from words need a model key.
 3. Call `relay_run_test`. It waits and returns one verdict: passed, failed,
    blocked or cancelled, with the failing step's expected vs. saw and a
-   screenshot. Pass `targetId` from `relay_connect_target` when several
+   screenshot. Pass `targetId` from `relay_list_devices` when several
    targets are ready. If it returns `running`, call `relay_get_verdict` later.
    A risk report needs a deliberate repeat with transport `confirm: true`.
 4. After changing code, call `relay_check_change` with the App and, when known,
    the changed `areas` or `testIds`. It runs the relevant ready Tests and
    returns their verdicts. This is a quick signal, not a merge decision; gated
-   merge checks use the Proof flow (`relay-proof` skill, proof profile).
+   merge checks use the Proof flow (`relay-proof` skill, full profile).
 5. For a failure, call `relay_inspect_failure` for evidence and repair options.
    Propose a repair only when asked; the original attempt is kept.
    Export a Run with `relay_export_evidence` for a reviewer.

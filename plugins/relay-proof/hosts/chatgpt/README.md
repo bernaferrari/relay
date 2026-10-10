@@ -21,7 +21,7 @@ export RELAY_URL=https://relay.example
 export RELAY_ORGANIZATION_ID=acme
 export RELAY_PROJECT_ID=checkout
 export RELAY_ACTOR_ID=agent:chatgpt
-export RELAY_MCP_PROFILE=qa
+export RELAY_MCP_PROFILE=device
 export RELAY_AUTH_TOKEN=…                  # Relay credential, process environment only
 export RELAY_MCP_BRIDGE_AUTH_TOKEN=…       # separate bridge credential, host secret/reference
 relay-mcp-bridge --host 127.0.0.1 --port 8788 --auth-env RELAY_MCP_BRIDGE_AUTH_TOKEN
@@ -44,9 +44,9 @@ Use the same package directly when the host launches local MCP commands:
   "mcpServers": {
     "relay": {
       "command": "npx",
-      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "qa"],
+      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "device"],
       "env": {
-        "RELAY_MCP_PROFILE": "qa"
+        "RELAY_MCP_PROFILE": "device"
       }
     }
   }
@@ -55,7 +55,7 @@ Use the same package directly when the host launches local MCP commands:
 
 Configure `RELAY_URL`, `RELAY_ORGANIZATION_ID`, `RELAY_PROJECT_ID`,
 `RELAY_ACTOR_ID`, and (when required) `RELAY_AUTH_TOKEN` in the process
-environment. Before the first task, run `relay-mcp doctor --profile qa
+environment. Before the first task, run `relay-mcp doctor --profile device
 --json` in that same environment and require `ok: true`. A host that cannot
 run stdio locally must use the reviewed bridge and keep its endpoint
 authenticated and project-scoped.
@@ -64,7 +64,7 @@ The ChatGPT host does not get a custom schema or a second Proof workflow. The
 same canonical MCP tools, resources, confirmation rules, and human approval
 boundary apply everywhere.
 
-The QA profile includes the read-only `relay_panel` tool. A host that
+The device profile includes the read-only `relay_panel` tool. A host that
 advertises `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app` gets
 the bundled Tests and results view. Other hosts get its state as text.
 Transport and capability checks do not establish rendered host compatibility.

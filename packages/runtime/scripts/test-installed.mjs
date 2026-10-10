@@ -140,7 +140,7 @@ async function inspectInstalledMcp(args, credential = "") {
     [
       resolve(installation, "node_modules/@relay/mcp/dist/relay-mcp.js"),
       "--profile",
-      "qa",
+      "device",
       ...args,
     ],
     {

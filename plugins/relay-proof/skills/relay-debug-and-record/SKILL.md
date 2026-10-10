@@ -9,10 +9,12 @@ Start from a description (`relay_create_test`) when that is enough. Record
 when a step must be exact, fast, or run without a model, or to reproduce an
 issue precisely.
 
-1. Read `relay://guides/record`, `relay://guides/targets`, and
-   `relay://guides/waits`. Call `relay_panel` (with the chosen `appMapId`) to
-   check whether the journey already exists. Choose the ready target through
-   `relay_connect_target` and observe its starting screen.
+Recording needs the `device` profile (the plugin's default).
+
+1. Call `relay_get_guide` for `record`, `targets` and `waits`. Call
+   `relay_list_tests` for the chosen App to check whether the journey already
+   exists. Choose the ready target through `relay_list_devices` and look at its
+   starting screen with `relay_observe_target`.
 2. Call `relay_record_test` with the App, target and a clear title. Keep the
    returned workflow ID and exact version for every following call.
 3. Send actions through `relay_record_action`, using the latest version after

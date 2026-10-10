@@ -20,7 +20,7 @@ what it saw, and a screenshot.
 
 1. Describe what should work, e.g. "Sign in and see the dashboard", with the
    website address or the App. Relay writes Action and Check steps and saves
-   the Test (read relay guide describe; MCP: relay://guides/describe).
+   the Test (read relay guide describe; MCP: relay_get_guide describe).
 2. Run it. The result is one verdict: passed, failed, blocked or cancelled.
 3. When a step must be exact, or must run without a model, record it (relay
    guide record). Recorded steps, saved replay, screenshots and human review
@@ -36,8 +36,7 @@ install the desktop or native device prerequisites. For an agent, configure
 relay-mcp (qa is the default profile) with the intended service or workspace,
 and check it with relay-mcp doctor --profile qa. Then call relay_health,
 relay_create_test, and relay_run_test, which waits for the verdict.
-relay_panel lists existing Apps and Tests; it returns text when the host
-cannot render it.`,
+relay_list_apps and relay_list_tests show existing Apps and Tests.`,
     examples: [
       ["new", "Sign in and see the dashboard", "--url", "http://localhost:3000"],
       ["run", "Sign in and see the dashboard", "--device", "browser"],
@@ -116,8 +115,8 @@ these are selector examples, not a prebuilt Test or known screen identity.
    that exact revision before saving:
 
    \`\`\`bash
-   relay session replay <session-id> --json
-   relay session get <session-id> --json
+   relay recording replay <session-id> --json
+   relay recording get <session-id> --json
    \`\`\`
 
    Inspect the replay result in the session. Commit only when the replay passed;
@@ -138,14 +137,14 @@ The saved Test needs an executable startup: set the origin application in
 desktop (MCP: originApplication) when it must reopen the app; approved mapped
 paths prepare nested starting screens. A blocker needs deliberate repair.
 
-MCP with profile qa follows the same sequence: relay_connect_target with
+MCP with profile device follows the same sequence: relay_list_devices with
 targetKind: device, relay_observe_target, then relay_record_test with title and
 the chosen targetId (appMapId is optional under the same selection rules).
 Record sends control only with transport confirm: true. Copy workflowId and
 numeric expectedVersion from the returned workflow into each following call,
 and refresh them after every mutation. relay_record_action accepts the same
-interaction objects shown in session interact --input below. Use relay_preview
-with serial and the observed label to preview a selector; relay_add_checkpoint
+interaction objects shown in recording interact --input below. Use relay_preview
+with targetId and the observed label to preview a selector; relay_add_checkpoint
 names a screenshot.
 
 Call relay_stop_recording and inspect through relay_inspect_workflow. For an
@@ -162,7 +161,7 @@ relay_inspect_workflow with \`{"workflowId":"recording-workflow-id"}\` to inspec
 the replay result. Call relay_approve_recording with transport confirm: true
 only after the replay passed and \`approve\` is in \`allowedNextActions\`. For an
 unchanged recording, follow the allowed next action without an extra replay.
-Read the saved Test resource returned by relay_panel for the App, then run it
+Find the saved Test with relay_list_tests for the App, then run it
 with relay_run_test, which waits and returns its verdict with \`runId\` and
 \`workflow\`. Pass \`workflow.workflowId\` to relay_inspect_workflow and the
 \`runId\` to relay_get_verdict or relay_export_evidence. These IDs serve
@@ -184,7 +183,7 @@ uncertain mutation outcome requires inspection before more input.`,
       ],
       ["record", "home-settings", "--device", "<serial>", "--confirm", "--json"],
       [
-        "session",
+        "recording",
         "interact",
         "<session-id>",
         "--input",
@@ -203,7 +202,7 @@ uncertain mutation outcome requires inspection before more input.`,
         '{"kind":"label","label":"Settings"}',
       ],
       [
-        "session",
+        "recording",
         "interact",
         "<session-id>",
         "--input",
@@ -211,7 +210,7 @@ uncertain mutation outcome requires inspection before more input.`,
         "--json",
       ],
       [
-        "session",
+        "recording",
         "interact",
         "<session-id>",
         "--input",
@@ -219,17 +218,17 @@ uncertain mutation outcome requires inspection before more input.`,
         "--json",
       ],
       [
-        "session",
+        "recording",
         "screenshot",
         "<session-id>",
         "--input",
         '{"interaction":{"label":"Settings result"}}',
         "--json",
       ],
-      ["session", "stop", "<session-id>", "--json"],
-      ["session", "get", "<session-id>", "--json"],
+      ["recording", "stop", "<session-id>", "--json"],
+      ["recording", "get", "<session-id>", "--json"],
       [
-        "session",
+        "recording",
         "commit",
         "<session-id>",
         "--input",
@@ -238,7 +237,7 @@ uncertain mutation outcome requires inspection before more input.`,
         "--json",
       ],
       ["test", "list", "<app-id>", "--json"],
-      ["connect", "get", "<app-id>", "<connection-id>", "--json"],
+      ["map", "connection", "get", "<app-id>", "<connection-id>", "--json"],
       ["run", "<test-id>", "--app", "<app-id>", "--device", "<serial>", "--json"],
       ["inspect", "<workflow-id>", "--json"],
       ["export", "<run-id>", "--out", "./review", "--json"],
@@ -330,13 +329,13 @@ A timeout is the maximum wait, not a sleep. Reaching it fails the condition.
 Check the meaningful result after readiness; a ready button alone cannot prove
 an image's quality, a video's resolution, or a download's persistence.
 
-While recording, use the session interact command below (MCP:
+While recording, use the recording interact command below (MCP:
 relay_record_action with the same interaction). Replace both labels from the
 current operation: the result label must identify its new result. Read relay
 guide record for obtaining the session ID and for stop, save, repeat, and review.`,
     examples: [
       [
-        "session",
+        "recording",
         "interact",
         "<session-id>",
         "--input",
@@ -409,7 +408,7 @@ tap; it must not automatically create a new navigation destination.
 Use the map to inspect reachability and approved routes. Do not invent a path
 from labels or a screenshot when the app's navigation has not been recorded.`,
     examples: [
-      ["map", "list", "--json"],
+      ["apps", "--json"],
       ["map", "get", "<app-id>", "--json"],
     ],
   },
@@ -418,33 +417,34 @@ from labels or a screenshot when the app's navigation has not been recorded.`,
     title: "Complete a task with an agent",
     summary: "Discover local contracts, act on one target, and return evidence.",
     markdown: `Read the relevant task guide before composing operation input.
-CLI: relay guide <topic>. MCP: read relay://guides, then the listed guide URI.
+CLI: relay guide <topic>. MCP: call relay_get_guide, then with the topic.
 These documents ship with this version and can be read without Relay running.
 
 For a new MCP connection, configure relay-mcp (qa is the default profile) and
 the intended service or workspace. Run relay-mcp doctor --profile qa with the
-same connection options. Specialist profiles keep their own tools.
+same connection options. The device profile adds live device control and
+recording; full adds every raw operation.
 
-Describe first. Call relay_health, then relay_panel to see existing Apps and
-Tests so you do not write a duplicate. To cover something new, call
-relay_create_test with a sentence and the url or app; it saves the Test and
-returns the exact relay_run_test call. relay_run_test waits and returns one
-verdict: passed or failed, the failing step's expected vs. saw, a screenshot.
-Use relay_connect_target first when several targets are ready, and pass its
-targetId. A wait that runs out returns status running; read it later with
-relay_get_verdict. On a failure, relay_inspect_failure adds evidence.
+Describe first. Call relay_health, then relay_list_apps and relay_list_tests
+to see existing Apps and Tests so you do not write a duplicate. To cover
+something new, call relay_create_test with a sentence and the url or app; it
+saves the Test and returns the exact relay_run_test call. relay_run_test waits
+and returns one verdict: passed or failed, the failing step's expected vs. saw,
+a screenshot. Use relay_list_devices first when several targets are ready, and
+pass its targetId. A wait that runs out returns status running; read it later
+with relay_get_verdict. On a failure, relay_inspect_failure adds evidence.
 
 After changing code, call relay_check_change with the App (and the changed
 areas or Test ids when you know them). It runs the relevant ready Tests and
 returns their verdicts — a quick signal for you, not a merge decision; gated,
-human-approved merge checks use the Proof flow in the proof profile.
+human-approved merge checks use the Proof flow in the full profile.
 
 Steps written from words need a model key. When a step must be exact or
-model-free, record it: read relay://guides/record for the action, check, stop,
-save, and repeat sequence. Each recording mutation uses workflowId and numeric
-expectedVersion from the latest returned workflow, subject to
-allowedNextActions. Use relay_connect_target with targetKind: device to select
-only phones; phase: android or ios further narrows that choice.
+model-free, record it with the device profile: relay_get_guide record covers
+the action, check, stop, save, and repeat sequence. Each recording mutation
+uses workflowId and numeric expectedVersion from the latest returned workflow,
+subject to allowedNextActions. Use relay_list_devices with targetKind: device
+to select only phones; phase: android or ios further narrows that choice.
 
 Finish with the saved Test or Run identity, result, evidence, and concrete
 remaining blocker. Unit tests and accepted requests do not prove that the

@@ -6,20 +6,22 @@ description: Connect Relay for app testing, diagnose an unreachable service or i
 # Connect Relay
 
 If the host exposes no Relay tools, follow the plugin README to configure the
-installed connector executable (`qa` is its default profile; the plugin passes
-`--profile qa` explicitly) with the intended service or workspace. Its
+installed connector executable (the plugin passes `--profile device`; without
+a profile it uses `qa`, which cannot drive devices or record) with the intended
+service or workspace. Its
 `--help` works offline.
 
-1. Read `relay://guides/start` and `relay://guides/agents`. They ship with the
+1. Call `relay_get_guide` for `start` and `agents`. Guides ship with the
    connector and stay readable while the service is offline.
 2. Call `relay_health`. If the service is unavailable, run
-   `relay-mcp doctor --profile qa` in the host's environment and follow its
+   `relay-mcp doctor --profile device` in the host's environment and follow its
    failed check's next action. With the matching `@relay/runtime` installed,
    an explicit absolute `--workspace` attaches to or launches the local
    service (`--runtime-port` when the default is taken). An explicit
    `--server` or `RELAY_URL` keeps that endpoint. Doctor never launches.
-3. Call `relay_panel` to list Apps, Tests and recent Runs.
-4. Call `relay_connect_target`; pick a ready target explicitly when several
+3. Call `relay_list_apps`, `relay_list_tests` and `relay_list_runs` (or
+   `relay_panel`) to see Apps, Tests and recent Runs.
+4. Call `relay_list_devices`; pick a ready target explicitly when several
    exist and keep its `targetId`.
 5. First verdict: `relay_create_test` with a sentence and the `url` or `app`,
    then the returned `relay_run_test` call. Running steps written from words

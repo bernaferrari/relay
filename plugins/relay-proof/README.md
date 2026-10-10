@@ -4,12 +4,12 @@ Describe what should work, let Relay write and run the Test, and read one
 verdict beside your conversation. The installation identity remains
 `relay-proof`; its display name is **Relay**.
 
-The `qa` preset (the connector's default profile) gives agents the describe →
+The plugin starts the connector with the `device` profile: the `qa` describe →
 run → verdict loop (`relay_create_test`, `relay_run_test`, `relay_get_verdict`,
 `relay_inspect_failure`), a quick `relay_check_change` after code changes, and
-recording, repeat, inspection, preview and recovery tools. Steps written from words need a model
-key; recorded steps and saved replay need none. Gated, human-approved Change
-Proof remains a separate explicit `proof` session.
+the tools to drive a device, record, repeat, preview and recover. Steps written
+from words need a model key; recorded steps and saved replay need none. Gated,
+human-approved Change Proof remains a separate explicit `full` session.
 
 ## Connect to your existing Relay service
 
@@ -26,7 +26,7 @@ installation directory. This path also works without a contributor checkout:
 
 ```bash
 npm install --prefix /absolute/installation /absolute/path/relay-mcp-0.1.0.tgz /absolute/path/relay-runtime-0.1.0.tgz
-node /absolute/installation/node_modules/@relay/mcp/dist/relay-mcp.js --profile qa --workspace /absolute/path/my-project
+node /absolute/installation/node_modules/@relay/mcp/dist/relay-mcp.js --profile device --workspace /absolute/path/my-project
 ```
 
 Use that installed executable and those arguments in your host's supported
@@ -50,11 +50,11 @@ export RELAY_ORGANIZATION_ID=local
 export RELAY_PROJECT_ID=default
 export RELAY_ACTOR_ID=agent:codex
 # Set RELAY_AUTH_TOKEN in the host secret environment when the service requires it.
-relay-mcp doctor --profile qa
+relay-mcp doctor --profile device
 ```
 
 The doctor checks reachability, exact scope, actor, required role and the
-canonical operations needed by QA. Failed checks include the next setup
+canonical operations the device profile needs. Failed checks include the next setup
 step. It makes read-only requests and never prints credentials. A READY
 report establishes connection compatibility, not device readiness or a pass.
 
@@ -65,17 +65,18 @@ its `mcpServers.relay` entry into that host's MCP configuration. Use portable
 through the host's supported flow after updates; keep mutable Relay state
 outside its immutable plugin cache.
 
-For manual setup, invoke `relay-mcp` with `args: ["--profile", "qa"]`, matching
-the plugin descriptor. Use that same profile and connection options for doctor.
-`qa` is also the executable's default when no profile is given.
+For manual setup, invoke `relay-mcp` with `args: ["--profile", "device"]`,
+matching the plugin descriptor. Use that same profile and connection options for
+doctor. Without a profile the executable uses `qa`, which leaves out device
+control and recording.
 
 ## First useful task
 
-1. Call `relay_health`, then `relay_panel` to see existing Apps, Tests and
-   recent Runs (text when the host cannot display the panel).
+1. Call `relay_health`, then `relay_list_apps` and `relay_list_tests` (or
+   `relay_panel`, which shows Tests and recent Runs in hosts with MCP Apps).
 2. Call `relay_create_test` with a sentence and the `url` or `app`. It saves
    the Test and returns the exact `relay_run_test` call.
-3. Call `relay_run_test` (add `targetId` from `relay_connect_target` when
+3. Call `relay_run_test` (add `targetId` from `relay_list_devices` when
    several targets are ready). It waits and returns the verdict: passed or
    failed, with the failing step's expected vs. saw and a screenshot.
 4. After a code change, `relay_check_change` reruns the App's relevant Tests.
@@ -88,7 +89,7 @@ resources support pagination; follow the returned next-page URI when needed.
 Use `relay-mcp --help` for offline connection options.
 
 The bundled setup, recording and run/review skills load version-matched
-`relay://guides` resources. Guides remain available while Relay is offline.
+guides through `relay_get_guide`. Guides remain available while Relay is offline.
 An edited recording needs a successful replay of its exact revision. An
 unchanged recording can save when its canonical workflow allows it. A
 functional pass and a human screenshot decision remain separate outcomes.
@@ -99,11 +100,11 @@ functional pass and a human screenshot decision remain separate outcomes.
   hosts that negotiate MCP Apps. In other hosts it returns the same read-only
   state in chat. See [panel compatibility and qualification](./hosts/panel.md).
 - [Claude Code](./hosts/claude-code/README.md): the same installed command and
-  QA configuration; no separate tool schemas.
+  device configuration; no separate tool schemas.
 - [ChatGPT-compatible MCP transports](./hosts/chatgpt/README.md): use local
   stdio only where the host supports it; use the authenticated bridge where
   required. Saving a plugin does not make local tools available on web/mobile.
-- Change verification: start a deliberately configured `--profile proof`
+- Change verification: start a deliberately configured `--profile full`
   session and use [Relay Proof](./skills/relay-proof/SKILL.md). Human plan
   approval and immutable Proof versions remain canonical service boundaries.
 

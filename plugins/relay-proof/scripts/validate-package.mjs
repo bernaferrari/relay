@@ -27,8 +27,8 @@ assert.equal(type, "stdio");
 assert.deepEqual(entry, legacy.mcpServers.relay);
 assert.deepEqual(entry, claude.mcpServers.relay);
 assert.equal(entry.command, "relay-mcp");
-assert.deepEqual(entry.args, ["--profile", "qa"]);
-assert.equal(entry.env.RELAY_MCP_PROFILE, "qa");
+assert.deepEqual(entry.args, ["--profile", "device"]);
+assert.equal(entry.env.RELAY_MCP_PROFILE, "device");
 assert.equal(Object.hasOwn(entry.env, "RELAY_AUTH_TOKEN"), false);
 for (const name of await readdir(join(root, "skills"))) {
   const source = await readFile(join(root, "skills", name, "SKILL.md"), "utf8");
@@ -45,5 +45,5 @@ async function checkFiles(directory) {
 }
 await checkFiles(root);
 console.log(
-  `Relay ${portable.version}: portable and compatibility manifests, QA transport and skills valid`,
+  `Relay ${portable.version}: portable and compatibility manifests, device transport and skills valid`,
 );
