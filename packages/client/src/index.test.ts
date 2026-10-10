@@ -602,7 +602,7 @@ test("HTTP errors prefer doctor check text over 503 Service Unavailable", async 
                 id: "devices",
                 ok: false,
                 message:
-                  "No device is visible. Connect an Android phone or an iPhone/iPad, then run relay device list.",
+                  "No device is visible. Connect an Android phone or an iPhone/iPad, then run relay devices.",
               },
             ],
           }),

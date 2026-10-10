@@ -5,7 +5,7 @@
  * authoring surface or an example for product users.
  *
  * Models docs/LANGUAGE_SWEEP_LOOP.md but for the PROOF loop:
- * health -> lease (if needed) -> `test run … --wait` -> `report emit`
+ * health -> lease (if needed) -> `test run … --wait` -> `proof report`
  * -> proof-out artifacts -> signed share -> summary.
  *
  * Real execution drives the workspace CLI exactly the way AGENTS.md mandates:
@@ -197,7 +197,7 @@ export function extractRunId(payload) {
   return runId;
 }
 
-/** `report emit --json` prints the bare ProofReport (no envelope). */
+/** `proof report --json` prints the bare ProofReport (no envelope). */
 export function parseProofReport(stdout) {
   for (const line of String(stdout).split("\n")) {
     const trimmed = line.trim();
@@ -209,7 +209,7 @@ export function parseProofReport(stdout) {
       // Not the report line yet.
     }
   }
-  throw new DogfoodError("No ProofReport found on report emit stdout");
+  throw new DogfoodError("No ProofReport found on proof report stdout");
 }
 
 /* ── Live side effects ────────────────────────────────────────────────── */
@@ -271,7 +271,7 @@ export async function assertServerReachable({ relayUrl, fetchImpl }) {
 
 /** Reuse an active lease we own; otherwise mint one with the same actor. */
 export async function ensureLease({ serial, actor, cli }) {
-  const listed = await invokeCli(cli, ["lease", "list", "--json"], "lease list");
+  const listed = await invokeCli(cli, ["device", "lease", "list", "--json"], "lease list");
   const leases = Array.isArray(listed?.leases) ? listed.leases : [];
   const existing = leases.find(
     (lease) =>
@@ -285,7 +285,7 @@ export async function ensureLease({ serial, actor, cli }) {
   }
   const created = await invokeCli(
     cli,
-    ["lease", "create", serial, "--actor", actor, "--json"],
+    ["device", "lease", "create", serial, "--actor", actor, "--json"],
     "lease create",
   );
   const lease = created?.lease ?? created;
@@ -297,8 +297,8 @@ export async function ensureLease({ serial, actor, cli }) {
 
 export async function emitProofReportArtifacts({ runId, cli, outDir }) {
   const reportOutcome = await cli([
+    "proof",
     "report",
-    "emit",
     "--run",
     runId,
     "--format",
@@ -308,7 +308,7 @@ export async function emitProofReportArtifacts({ runId, cli, outDir }) {
   if (reportOutcome.code !== 0) {
     const detail = reportOutcome.stderr.trim().split("\n").at(-1) ?? "";
     throw new DogfoodError(
-      `report emit exited ${reportOutcome.code}${detail ? `: ${detail}` : ""}`,
+      `proof report exited ${reportOutcome.code}${detail ? `: ${detail}` : ""}`,
       {
         cliExitCode: reportOutcome.code,
       },
@@ -318,7 +318,14 @@ export async function emitProofReportArtifacts({ runId, cli, outDir }) {
   const reportJsonPath = join(outDir, "proof-report.json");
   await writeFile(reportJsonPath, `${JSON.stringify(report, null, 2)}\n`);
 
-  const markdownOutcome = await cli(["report", "emit", "--run", runId, "--format", "github-check"]);
+  const markdownOutcome = await cli([
+    "proof",
+    "report",
+    "--run",
+    runId,
+    "--format",
+    "github-check",
+  ]);
   const markdown =
     markdownOutcome.code === 0 && markdownOutcome.stdout.trim()
       ? markdownOutcome.stdout

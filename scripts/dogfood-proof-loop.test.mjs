@@ -191,7 +191,7 @@ test("assertServerReachable fails closed on transport errors and unhealthy paylo
 test("ensureLease reuses an owned active lease before minting a new one", async () => {
   const reuse = cliScript([
     {
-      matches: (key) => key.startsWith("lease list"),
+      matches: (key) => key.startsWith("device lease list"),
       stdout: {
         leases: [
           { id: "lease-1", deviceSerial: "ipad-1", ownerId: "agent:x", status: "leased" },
@@ -207,28 +207,36 @@ test("ensureLease reuses an owned active lease before minting a new one", async 
   assert.equal(reuse.calls.length, 1);
 
   const mint = cliScript([
-    { matches: (key) => key.startsWith("lease list"), stdout: { leases: [] } },
+    { matches: (key) => key.startsWith("device lease list"), stdout: { leases: [] } },
     {
-      matches: (key) => key.startsWith("lease create ipad-1"),
+      matches: (key) => key.startsWith("device lease create ipad-1"),
       stdout: { lease: { id: "lease-9", deviceSerial: "ipad-1", ownerId: "agent:x" } },
     },
   ]);
   const created = await ensureLease({ serial: "ipad-1", actor: "agent:x", cli: mint.cli });
   assert.deepEqual(created, { leaseId: "lease-9", created: true });
-  assert.deepEqual(mint.calls[1], ["lease", "create", "ipad-1", "--actor", "agent:x", "--json"]);
+  assert.deepEqual(mint.calls[1], [
+    "device",
+    "lease",
+    "create",
+    "ipad-1",
+    "--actor",
+    "agent:x",
+    "--json",
+  ]);
 });
 
-test("emitProofReportArtifacts writes json + markdown evidence from report emit", async (t) => {
+test("emitProofReportArtifacts writes json + markdown evidence from proof report", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "relay-dogfood-test-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const markdown = "# Proof report\n\nVerdict: pass\n";
   const { cli, calls } = cliScript([
     {
-      matches: (key) => key.includes("report emit") && key.includes("--json"),
-      // report emit prints the bare ProofReport, not an operation envelope.
+      matches: (key) => key.includes("proof report") && key.includes("--json"),
+      // proof report prints the bare ProofReport, not an operation envelope.
       stdout: `${JSON.stringify(PROOF_REPORT)}\n`,
     },
-    { matches: (key) => key.includes("report emit"), stdout: markdown },
+    { matches: (key) => key.includes("proof report"), stdout: markdown },
   ]);
   const emitted = await emitProofReportArtifacts({
     runId: "run-1",
@@ -242,8 +250,8 @@ test("emitProofReportArtifacts writes json + markdown evidence from report emit"
   assert.equal(bare.verdict, "pass");
   const writtenMarkdown = await readFile(join(root, "proof-report.md"), "utf8");
   assert.match(writtenMarkdown, /# Proof report/u);
-  const emitCalls = calls.filter((args) => args[0] === "report");
-  assert.deepEqual(emitCalls[0].slice(0, 5), ["report", "emit", "--run", "run-1", "--format"]);
+  const emitCalls = calls.filter((args) => args[0] === "proof" && args[1] === "report");
+  assert.deepEqual(emitCalls[0].slice(0, 5), ["proof", "report", "--run", "run-1", "--format"]);
 
   assert.equal(parseProofReport(`${JSON.stringify(PROOF_REPORT)}\n`).verdict, "pass");
   assert.throws(() => parseProofReport("nothing here"), /No ProofReport/);
@@ -274,8 +282,11 @@ test("runProofLoop end-to-end pass writes evidence, shares, and maps the verdict
   const root = await mkdtemp(join(tmpdir(), "relay-dogfood-loop-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const { cli, calls } = cliScript([
-    { matches: (key) => key.startsWith("lease list"), stdout: { leases: [] } },
-    { matches: (key) => key.startsWith("lease create"), stdout: { lease: { id: "lease-1" } } },
+    { matches: (key) => key.startsWith("device lease list"), stdout: { leases: [] } },
+    {
+      matches: (key) => key.startsWith("device lease create"),
+      stdout: { lease: { id: "lease-1" } },
+    },
     {
       matches: (key) => key.startsWith("test run grok-ios settings-tour"),
       stdout: {
@@ -284,10 +295,10 @@ test("runProofLoop end-to-end pass writes evidence, shares, and maps the verdict
       },
     },
     {
-      matches: (key) => key.includes("report emit") && key.includes("--json"),
+      matches: (key) => key.includes("proof report") && key.includes("--json"),
       stdout: `${JSON.stringify(PROOF_REPORT)}\n`,
     },
-    { matches: (key) => key.includes("report emit"), stdout: "# Proof report\n" },
+    { matches: (key) => key.includes("proof report"), stdout: "# Proof report\n" },
     {
       matches: (key) => key.startsWith("run share create"),
       stdout: {
@@ -335,8 +346,11 @@ test("a failed watched run exits 9; unreachable server and missing run id exit 8
   const rootA = await mkdtemp(join(tmpdir(), "relay-dogfood-fail-"));
   t.after(() => rm(rootA, { recursive: true, force: true }));
   const failing = cliScript([
-    { matches: (key) => key.startsWith("lease list"), stdout: { leases: [] } },
-    { matches: (key) => key.startsWith("lease create"), stdout: { lease: { id: "lease-1" } } },
+    { matches: (key) => key.startsWith("device lease list"), stdout: { leases: [] } },
+    {
+      matches: (key) => key.startsWith("device lease create"),
+      stdout: { lease: { id: "lease-1" } },
+    },
     {
       matches: (key) => key.startsWith("test run m t"),
       code: 9,
@@ -368,8 +382,11 @@ test("a failed watched run exits 9; unreachable server and missing run id exit 8
   );
 
   const noJobId = cliScript([
-    { matches: (key) => key.startsWith("lease list"), stdout: { leases: [] } },
-    { matches: (key) => key.startsWith("lease create"), stdout: { lease: { id: "lease-1" } } },
+    { matches: (key) => key.startsWith("device lease list"), stdout: { leases: [] } },
+    {
+      matches: (key) => key.startsWith("device lease create"),
+      stdout: { lease: { id: "lease-1" } },
+    },
     { matches: (key) => key.startsWith("test run m t"), stdout: { unexpected: true } },
   ]);
   const unproven = await runProofLoop({

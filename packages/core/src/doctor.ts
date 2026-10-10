@@ -98,7 +98,7 @@ export function devicesDoctorCheck(
       ok: false,
       message:
         `Android device detected but authorization is pending (${unauthorized.map((device) => device.name).join(", ")}). ` +
-        "Unlock the phone and approve the USB debugging dialog, then run relay device list.",
+        "Unlock the phone and approve the USB debugging dialog, then run relay devices.",
     };
   }
 
@@ -108,7 +108,7 @@ export function devicesDoctorCheck(
       ok: false,
       message:
         `Android device is offline (${offline.map((device) => device.name).join(", ")}). ` +
-        "Reconnect the phone or restart wireless debugging, then run relay device list.",
+        "Reconnect the phone or restart wireless debugging, then run relay devices.",
     };
   }
 
@@ -118,7 +118,7 @@ export function devicesDoctorCheck(
       ok: false,
       message:
         "No device is visible. Connect an Android phone (USB debugging) or an iPhone/iPad " +
-        "(trusted, unlocked, Developer Mode), then run relay device list.",
+        "(trusted, unlocked, Developer Mode), then run relay devices.",
     };
   }
   const summary = devices

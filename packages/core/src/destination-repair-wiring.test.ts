@@ -442,7 +442,7 @@ it(
 
       assert.equal(
         hintData.recovery,
-        "relay screen alias-observe destination-repair-wiring-job home",
+        "relay map screen alias-observe destination-repair-wiring-job home",
         "hint names the exact one-command recovery once the expected screen exists",
       );
 

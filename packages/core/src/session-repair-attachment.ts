@@ -76,7 +76,7 @@ export async function attachDestinationRepairProposals(
     hintArtifact.data.observedFingerprint &&
     hintArtifact.data.observedFingerprint !== hintArtifact.data.expectedFingerprint
   ) {
-    hintArtifact.data.recovery = `relay screen alias-observe ${appMapId} ${hintArtifact.data.expectedScreenId}`;
+    hintArtifact.data.recovery = `relay map screen alias-observe ${appMapId} ${hintArtifact.data.expectedScreenId}`;
   }
   const checkpoint = currentVerifiedScreen(runtime);
   const result = await proposeRepair({

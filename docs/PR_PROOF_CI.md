@@ -77,10 +77,10 @@ the run id from the result envelope (`result`, not `data`):
 relay test run <app-id> <test-id> --target current --revision current \
   --commit "$GITHUB_SHA" --json --wait > run-result.json
 RUN_ID=$(node -e 'const r=require("./run-result.json");const d=r.result??{};console.log(d.job?.runId??d.runId??"")')
-relay report emit --run "$RUN_ID" --format github-check
+relay proof report --run "$RUN_ID" --format github-check
 ```
 
-`relay report emit` exits 0 pass, 9 fail, 8 unproven (Relay could not execute).
+`relay proof report` exits 0 pass, 9 fail, 8 unproven (Relay could not execute).
 
 ## Notes
 
@@ -89,7 +89,7 @@ relay report emit --run "$RUN_ID" --format github-check
   (`scripts/ensure-server.mjs`). Give each concurrent worker its own `RELAY_STATE_DIR`.
 - Device input uses exclusive server-owned control; a second actor fails closed with exit `6`
   rather than displacing whoever holds control.
-- `report emit` reads persisted runs from local disk and does not require a running
+- `proof report` reads persisted runs from local disk and does not require a running
   Relay process, so it works even after the service stops.
 - The workflow above can write the report itself, or a long-running Relay server can publish Proof
   lifecycle Checks directly when
