@@ -245,3 +245,11 @@ export {
   type RunVerdict,
   type RunVerdictStep,
 } from "./run-verdict.js";
+export {
+  parseTestYaml,
+  stepsFromYaml,
+  testToYaml,
+  TestYamlError,
+  type TestYaml,
+  type TestYamlStep,
+} from "./test-yaml.js";

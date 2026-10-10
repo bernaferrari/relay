@@ -152,3 +152,27 @@ test("a goal becomes a saved plain-English Test, creating the App for a new webs
     else process.env.OPENROUTER_API_KEY = previousKey;
   }
 });
+
+test("a test file creates a Test, updates it in place, and exports again", async () => {
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = clientFor(server.port);
+    const file = (step: string) =>
+      `name: Pricing\nurl: https://docs.example/\nsteps:\n  - Open pricing\n  - check: ${step}\n`;
+    const first = await client.invoke("test.apply-yaml", { yaml: file("Pro is listed") });
+    assert.equal(first.created, true);
+    assert.equal(first.createdApp, true);
+    const second = await client.invoke("test.apply-yaml", { yaml: file("Team is listed") });
+    assert.equal(second.created, false);
+    assert.equal(second.testId, first.testId);
+    const exported = await client.invoke("test.yaml.get", { testId: "Pricing" });
+    assert.match(exported.yaml, /check: Team is listed/);
+    assert.match(exported.yaml, /url: https:\/\/docs\.example\//);
+    await assert.rejects(
+      () => client.invoke("test.apply-yaml", { yaml: "name: x\nsteps: [a]" }),
+      /app.*url/,
+    );
+  } finally {
+    await server.close();
+  }
+});
