@@ -2194,10 +2194,10 @@ test("qa exposes the describe, run, verdict loop and accurate discovery", async 
       "relay_list_runs",
       "relay_get_test",
       "relay_health",
+      "relay_panel",
     ]);
     for (const absent of [
       "relay_app_map_get",
-      "relay_panel",
       "relay_tap",
       "relay_record_test",
       "relay_prove_change",

@@ -750,6 +750,7 @@ export function createMcpServer({
   for (const descriptor of relayQaOperationTools) {
     registerRelayTool(server, descriptor, invoker, recoveryOptions);
   }
+  registerRelayPanel(server, invoker, scope);
   if (profile !== "qa") {
     for (const descriptor of relayOperatorTools) {
       registerRelayOperatorTool(server, descriptor, invoker, recoveryOptions);
@@ -757,7 +758,6 @@ export function createMcpServer({
     for (const descriptor of relayOutcomeTools) {
       registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
     }
-    registerRelayPanel(server, invoker, scope);
   }
   if (profile === "full") {
     for (const descriptor of relayFullOutcomeTools) {
