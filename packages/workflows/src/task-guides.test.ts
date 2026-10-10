@@ -78,3 +78,23 @@ test("documented recording checks validate as executable conditions with bounded
     }
   }
 });
+
+test("the run guide teaches names and the real exit codes, not engine jargon", () => {
+  const run = guide("run");
+  assert.ok(
+    run.examples.some(
+      (example) =>
+        example[0] === "run" && example.includes("--app") && example.includes("--device"),
+    ),
+  );
+  assert.ok(
+    run.examples.every((example) => !example.includes("--map") && !example.includes("--lane")),
+  );
+  assert.match(run.markdown, /1 a Test failed/u);
+  assert.doesNotMatch(run.markdown, /\b9 means\b|\bLane\b|Run Across/u);
+  const start = guide("start");
+  assert.deepEqual(
+    start.examples.map(([verb]) => verb),
+    ["new", "run", "ci"],
+  );
+});

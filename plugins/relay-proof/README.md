@@ -5,9 +5,9 @@ verdict beside your conversation. The installation identity remains
 `relay-proof`; its display name is **Relay**.
 
 The `qa` preset (the connector's default profile) gives agents the describe →
-run → verdict loop (`relay_create_test`, `relay_run_test`, `relay_get_verdict`),
-a quick `relay_check_change` after code changes, and recording, repeat,
-inspection, preview and recovery tools. Steps written from words need a model
+run → verdict loop (`relay_create_test`, `relay_run_test`, `relay_get_verdict`,
+`relay_inspect_failure`), a quick `relay_check_change` after code changes, and
+recording, repeat, inspection, preview and recovery tools. Steps written from words need a model
 key; recorded steps and saved replay need none. Gated, human-approved Change
 Proof remains a separate explicit `proof` session.
 

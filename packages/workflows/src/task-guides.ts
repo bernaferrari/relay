@@ -27,21 +27,21 @@ what it saw, and a screenshot.
    need no model; steps written from words need a model key (OPENROUTER_API_KEY
    or one saved in Settings).
 
-From a checkout, use ./bin/relay for the commands below. The MCP distribution
-is a connector to a Relay server; installing it does not install the desktop
-or native device prerequisites. For an agent, configure relay-mcp (qa is the
-default profile) with the intended service or workspace, and check it with
-relay-mcp doctor --profile qa. Then call relay_health, relay_create_test, and
-relay_run_test, which waits for the verdict. relay_panel lists existing Apps
-and Tests; it returns text when the host cannot render it.
+From a checkout, use ./bin/relay for the commands below: describe a Test,
+run it on a browser (or ios, android, a device name), then run every ready
+Test of the app the way CI does. relay ci writes result.json for your pipeline.
 
-For an existing server, list its available devices, then replace <serial> with
-the device you chose and save its current screen. This captures evidence;
-it does not assert that the app works.`,
+The MCP distribution is a connector to a Relay server; installing it does not
+install the desktop or native device prerequisites. For an agent, configure
+relay-mcp (qa is the default profile) with the intended service or workspace,
+and check it with relay-mcp doctor --profile qa. Then call relay_health,
+relay_create_test, and relay_run_test, which waits for the verdict.
+relay_panel lists existing Apps and Tests; it returns text when the host
+cannot render it.`,
     examples: [
-      ["doctor"],
-      ["device", "list", "--json"],
-      ["device", "screenshot", "<serial>", "--file", "first-screen.png"],
+      ["new", "Sign in and see the dashboard", "--url", "http://localhost:3000"],
+      ["run", "Sign in and see the dashboard", "--device", "browser"],
+      ["ci", "--output", "result.json"],
     ],
   },
   {
@@ -239,7 +239,7 @@ uncertain mutation outcome requires inspection before more input.`,
       ],
       ["test", "list", "<app-id>", "--json"],
       ["connect", "get", "<app-id>", "<connection-id>", "--json"],
-      ["run", "<test-id>", "--map", "<app-id>", "--device", "<serial>", "--json"],
+      ["run", "<test-id>", "--app", "<app-id>", "--device", "<serial>", "--json"],
       ["inspect", "<workflow-id>", "--json"],
       ["export", "<run-id>", "--out", "./review", "--json"],
       ["review", "--app", "<app-id>"],
@@ -247,39 +247,37 @@ uncertain mutation outcome requires inspection before more input.`,
   },
   {
     topic: "run",
-    title: "Run saved coverage",
-    summary: "Repeat the exact Test and configuration you selected.",
-    markdown: `Run a saved Test directly. Choose its App and the intended device,
-or a saved Lane for a browser/account configuration. Keep that configuration
-through observation, execution, and review.
+    title: "Run saved Tests",
+    summary: "Run a Test by name on the device you choose and read its verdict.",
+    markdown: `Run a saved Test by its name. Say which app when the name is not
+unique, and which device: ios, android, browser, a device name, or an id. A
+relay.json in your project can supply both defaults.
 
-Use Run Across for explicitly selected data values and Browser/Account pairs.
-An unavailable pair blocks the request; choosing a different device is a
-separate decision. Do not infer that cookies isolate shared backend data.
+Relay prints each step's result and one verdict: passed, failed, or blocked.
+A failed step shows what it expected, what Relay saw, and a screenshot. Keep
+the same device while you run and review; trying another device is a separate
+run, not a retry.
 
-For different prompts, save public list/static Project inputs and bind a Plan
-Data set with apply: {kind: "input", inputId: "<stable-project-input-id>"}.
-Each row has a bounded stable id and a separate approved value (up to 20,000
-characters); labels never supply Test text. The Test uses {{chat_prompt}} or
-another named input. Mixed Chat and Imagine Plans can pair their equally sized
-prompt lists with strategy: "zip". Each Test consumes only its own references,
-without extra picker actions. Admitted values remain frozen during resume,
-even if the Project input changes later.
+To run every ready Test of an app, after a change or in CI, use relay ci. It
+prints one verdict per Test and writes --output result.json (and --junit) for
+your pipeline.
 
-Qualify the saved Plan and its target, then prepare an intervalMinutes: 30
-schedule with enabled: false before enabling repetition. A list without
-selected rows uses its first value; a new schedule seed does not rotate prompts.
+Recorded steps replay exactly; steps written in words are carried out by a
+model reading the screen. A missing control never silently turns into a
+guess: inspect the failure, fix the app or the Test deliberately, and run
+again with fresh evidence.
 
-Saved actions replay through Relay's existing runner. They do not silently
-change into an assisted repair when a control disappears. Inspect a failure,
-repair the Test deliberately, and rerun with fresh evidence.
+Exit codes: 0 passed; 1 a Test failed (the app did not do what the Test
+expects); 3 Relay could not run it (device, sign-in, or setup, not an app
+defect); 10 passed, with screenshots waiting for review. Other nonzero codes
+describe usage, authorization, or conflicts; relay help lists them.
 
-Exit 0 means successful completion; 9 means the operation ran and failed;
-10 means verification is incomplete and captures still need review. Other
-nonzero exits describe setup, connection, authorization, or conflicts.`,
+Data values, several devices or accounts, and schedules are Plan options; see
+relay help advanced.`,
     examples: [
-      ["run", "<test-id>", "--map", "<app-id>", "--device", "<serial>", "--json"],
-      ["run", "<test-id>", "--map", "<app-id>", "--lane", "<lane-id>", "--json"],
+      ["run", "<test>", "--app", "<app>", "--device", "<device>"],
+      ["run", "<test>", "--app", "<app>", "--device", "<device>", "--out", "./evidence"],
+      ["ci", "<app>", "--output", "result.json"],
     ],
   },
   {
