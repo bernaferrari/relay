@@ -1,21 +1,18 @@
 import {
   commandPath as path,
   mappedOperation as mapped,
-  type MappedOperationDescriptor,
+  type CliOperationDescriptor,
 } from "./command-descriptors.js";
 
-/** Device discovery, observation, recovery, and direct-control commands.
- * Device control has one spelling (`relay device …`); `target` keeps only
- * target records (list, create, delete, preflight, open). */
-export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
-  mapped("target.actions.list", path("action list")),
-  mapped(
-    "target.devices.list",
-    path("device list", [], undefined, {
-      summary: "List connected devices",
-      examples: ["relay device list", "relay device list --json"],
-    }),
-  ),
+/** Device observation, recovery, and direct control (`relay device …`), plus
+ * managed target records under `relay device target …`. */
+export const targetCommandDescriptors: readonly CliOperationDescriptor[] = [
+  mapped("target.actions.list", path("map action list")),
+  {
+    operationId: "target.devices.list",
+    exclusion: "internal",
+    reason: "relay devices lists connected phones, simulators, and browsers through it.",
+  },
   mapped(
     "target.avds.list",
     path("device avd list", [], undefined, {
@@ -33,14 +30,12 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       note: "Read-only. Pixels, semantics, input, and overall health are reported independently; pixel-only does not mean disconnected.",
     }),
   ),
-  mapped(
-    "target.input.receipt.get",
-    path("device input-receipt", ["serial"], undefined, {
-      summary: "Read a durable reconciliation receipt without sending input",
-      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
-      examples: ["relay device input-receipt 00008110 --mutationId ios-input-123 --json"],
-    }),
-  ),
+  {
+    operationId: "target.input.receipt.get",
+    exclusion: "internal",
+    reason:
+      "The app's recording recovery reads input receipts; device health shows the pending mutation.",
+  },
   mapped(
     "target.input.reconcile",
     path("device reconcile-input", ["serial", "mutationId", "outcome"], undefined, {
@@ -58,15 +53,15 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       note: "Relay captures fresh immutable pixels and semantics before releasing the exact-once fence. Ambiguous keeps the target stopped for human review.",
     }),
   ),
-  mapped("target.list", path("target list")),
+  mapped("target.list", path("device target list")),
   mapped("target.app.list", path("device apps", ["serial"])),
-  mapped("target.create", path("target create")),
-  mapped("target.delete", path("target delete", ["targetId"])),
-  mapped("target.preflight", path("target preflight", ["targetId"])),
-  mapped("target.open", path("target open", ["targetId"]), path("browser open", ["targetId"])),
+  mapped("target.create", path("device target create")),
+  mapped("target.delete", path("device target delete", ["targetId"])),
+  mapped("target.preflight", path("device target preflight", ["targetId"])),
+  mapped("target.open", path("device target open", ["targetId"])),
   mapped(
     "target.browser-auth.save",
-    path("browser auth save", ["targetId"], undefined, {
+    path("device account save", ["targetId"], undefined, {
       summary: "Encrypt and freeze the current reviewed browser sign-in state",
       argumentHelp: [
         { name: "targetId", type: "string", description: "Managed browser target identifier" },
@@ -80,31 +75,31 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         },
       ],
       examples: [
-        'relay browser auth save staging-web --input \'{"name":"Reviewed staging account"}\' --confirm --json',
+        'relay device account save staging-web --input \'{"name":"Reviewed staging account"}\' --confirm --json',
       ],
       note: "Human-only. Open the Browser Device and complete sign-in first. Relay stores encrypted browser state and returns a non-secret exact reference.",
     }),
   ),
   mapped(
     "target.browser-auth.list",
-    path("browser auth list", ["targetId"], undefined, {
+    path("device account list", ["targetId"], undefined, {
       summary: "List non-secret browser sign-in fixture metadata",
-      examples: ["relay browser auth list staging-web --json"],
+      examples: ["relay device account list staging-web --json"],
     }),
   ),
   mapped(
     "target.browser-auth.revoke",
-    path("browser auth revoke", ["targetId", "reference"], undefined, {
+    path("device account revoke", ["targetId", "reference"], undefined, {
       summary: "Revoke one exact browser sign-in fixture revision",
       examples: [
-        "relay browser auth revoke staging-web authfx:00000000-0000-4000-8000-000000000000:1 --confirm --json",
+        "relay device account revoke staging-web authfx:00000000-0000-4000-8000-000000000000:1 --confirm --json",
       ],
       note: "Human-only. A revoked fixture fails closed in every future Proof.",
     }),
   ),
   mapped(
     "target.browser-auth.probe",
-    path("browser auth probe", ["targetId", "reference"], undefined, {
+    path("device account probe", ["targetId", "reference"], undefined, {
       summary: "Check whether a saved browser sign-in is still signed in",
       argumentHelp: [
         { name: "targetId", type: "string", description: "Managed browser target identifier" },
@@ -115,14 +110,14 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         },
       ],
       examples: [
-        "relay browser auth probe staging-web authfx:00000000-0000-4000-8000-000000000000:1 --json",
+        "relay device account probe staging-web authfx:00000000-0000-4000-8000-000000000000:1 --json",
       ],
       note: "Opens a fresh headed-off proof context with the encrypted cookies. Signed-out or expired fixtures fail closed before the next Plan.",
     }),
   ),
   mapped(
     "target.browser-auth.health",
-    path("browser auth health", ["targetId"], undefined, {
+    path("device account health", ["targetId"], undefined, {
       summary: "Check live sign-ins and which Lanes they bind",
       argumentHelp: [
         { name: "targetId", type: "string", description: "Managed browser target identifier" },
@@ -135,7 +130,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
             "Open a proof browser for each live sign-in. Defaults to true. Revoked fixtures are not opened.",
         },
       ],
-      examples: ["relay browser auth health grok-com --json"],
+      examples: ["relay device account health grok-com --json"],
       note: "Does not write authenticationFixtureId onto the saved browser environment. Concurrent N-account is unmeasured until more than one live fixture exists. Revoked lab A/B/C are not accounts. Electron persist:lane:grok-lab is a separate store from Playwright grok-lab; absent is blocked, not a SuperGrok pass.",
     }),
   ),
@@ -168,41 +163,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.snapshot.capture",
-    path("browser snapshot", ["serial"], { visual: true }),
-    path(
-      "device observe",
-      ["serial"],
-      { visual: true },
-      {
-        summary:
-          "Read the current screen. --json prints the raw tree (nodes); human output is a digest unless --full prints the raw tree; --file writes a review tree",
-        argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
-        inputHelp: [
-          {
-            name: "full",
-            type: "boolean",
-            description:
-              "Force the raw snapshot tree (nodes) in human output; --json/--ndjson already include it; set by --full",
-          },
-        ],
-        examples: [
-          "relay device observe 00008110 --json",
-          "relay device observe 00008110 --json --full",
-          "relay device observe 00008110 --file tree.json",
-        ],
-        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable. --lane applies the saved browser fixture overlay; snapshot grok-com without a Lane is the unsigned profile.",
-      },
-    ),
-    path(
-      "device observe",
-      [],
-      { visual: true },
-      {
-        summary: "Read the current screen using --lane instead of a positional serial",
-        examples: ["relay device observe --lane grok-lab --json --full"],
-        note: "--lane or --input serial is required when the positional serial is omitted.",
-      },
-    ),
     path(
       "device snapshot",
       ["serial"],
@@ -226,16 +186,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           "relay device snapshot --lane grok-lab --json --full",
         ],
         note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable. --lane applies the saved browser fixture overlay; snapshot grok-com without a Lane is the unsigned profile.",
-      },
-    ),
-    path(
-      "device snapshot",
-      [],
-      { visual: true },
-      {
-        summary: "Read the current screen using --lane instead of a positional serial",
-        examples: ["relay device snapshot --lane grok-lab --json --full"],
-        note: "--lane or --input serial is required when the positional serial is omitted.",
       },
     ),
   ),
@@ -320,7 +270,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         { name: "package", type: "string", description: "Android package name" },
       ],
       examples: ["relay device app-locales emulator-5554 com.example.app --json"],
-      note: "List only. Apply one tag directly with `relay device locale <serial> <package> <tag>`, or teach an appLocale Variable (`relay variable save`) and run it as a Combine. Combine export writes screenshots plus accessibility JSON.",
+      note: "List only. Apply one tag directly with `relay device locale <serial> <package> <tag>`, or teach an appLocale Variable (`relay test var save`) and run it as a Combine. Combine export writes screenshots plus accessibility JSON.",
     }),
   ),
   mapped(
@@ -336,7 +286,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         "relay device locale emulator-5554 com.example.app de --json",
         "relay device locale RQCY104BG8X ai.x.grok he",
       ],
-      note: "Applies Android's per-app locale (he/iw and id/in aliases retried), reads the locale back, and fails when the app still reports another language. Requires an exclusive lease owned by the same --actor. For saved coverage teach an appLocale Variable (`relay variable save`) and run it with `relay test run <map> <test> --in language=<tag>`. Combine export writes screenshots plus accessibility JSON.",
+      note: "Applies Android's per-app locale (he/iw and id/in aliases retried), reads the locale back, and fails when the app still reports another language. Requires an exclusive lease owned by the same --actor. For saved coverage teach an appLocale Variable (`relay test var save`) and run it with `relay test run <map> <test> --in language=<tag>`. Combine export writes screenshots plus accessibility JSON.",
     }),
   ),
   mapped(
@@ -363,9 +313,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         "relay device recover --lane grok-daily",
       ],
       note: "Pass a serial or --lane, not both. --lane uses the saved Lane's device serial or managed browser target. iPad: first proves the existing XCTest session; only a failed proof gets one bounded runner repair. It never resets the app or restarts the iPad. A dead go-ios userspace tunnel is restored on this same recover — do not spawn `ios tunnel start` as a sidecar and do not reboot. Android: wake the screen and retry labels. Unlock still needs a person. Supplying recoveryFenceAssignmentId is local-host-only and records a new pixel/semantic/pixel proof before any durable fence is released.",
-    }),
-    path("device recover", [], undefined, {
-      summary: "Repair the target named by --lane",
     }),
   ),
   mapped(
@@ -395,7 +342,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.interact",
-    path("browser click", ["serial", "label"], { kind: "label" }),
     path("device interact", ["serial"], undefined, {
       summary: "Perform a semantic device interaction",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -408,20 +354,13 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         },
       ],
       examples: [
-        "relay lease create 00008110 --actor agent:mapper",
+        "relay device lease create 00008110 --actor agent:mapper",
         'relay device interact 00008110 --actor agent:mapper --input \'{"kind":"label","label":"Continue"}\'',
         'relay device interact 00008110 --preview --file preview.png --input \'{"kind":"label","label":"Back"}\'',
         'relay device interact --preview --lane grok-lab --file preview.png --input \'{"kind":"label","label":"Imagine"}\'',
         'relay device interact emulator-5554 --input \'{"kind":"swipe","from":{"x":540,"y":1800},"to":{"x":540,"y":650},"durationMs":300}\'',
       ],
       note: "Happy path 2/3 after screenshot. Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap. --lane fills the target (and browser fixture overlay) so --input-file is not needed.",
-    }),
-    path("device interact", [], undefined, {
-      summary: "Interact using --lane instead of a positional serial",
-      examples: [
-        'relay device interact --preview --lane grok-lab --file preview.png --input \'{"kind":"label","label":"Back"}\'',
-      ],
-      note: "--lane or --input serial is required when the positional serial is omitted.",
     }),
   ),
   mapped(
@@ -478,7 +417,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         { name: "x", type: "number", required: true, description: "Normalized x coordinate" },
         { name: "y", type: "number", required: true, description: "Normalized y coordinate" },
       ],
-      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay lease create <serial> --actor <id>.",
+      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay device lease create <serial> --actor <id>.",
     }),
   ),
   mapped(
@@ -496,7 +435,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         { name: "text", type: "string", description: "Required when kind is text" },
         { name: "key", type: "enter | backspace", description: "Required when kind is key" },
       ],
-      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay lease create <serial> --actor <id>.",
+      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay device lease create <serial> --actor <id>.",
     }),
   ),
   mapped(
@@ -510,7 +449,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         { name: "scrollX", type: "number", required: true, description: "Horizontal delta" },
         { name: "scrollY", type: "number", required: true, description: "Vertical delta" },
       ],
-      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay lease create <serial> --actor <id>.",
+      note: "Requires an active exclusive lease owned by the same --actor. Create one with relay device lease create <serial> --actor <id>.",
     }),
   ),
   mapped(

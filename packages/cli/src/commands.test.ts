@@ -13,6 +13,8 @@ import {
   resolveResourceCommand,
 } from "./commands.js";
 import { renderHelp } from "./help.js";
+import { renamedCommand, renamedCommands } from "./cli-renames.js";
+import { parseCli } from "./config.js";
 
 test("every registry operation is mapped or excluded exactly once", () => {
   const coverage = new Map<string, number>();
@@ -44,11 +46,6 @@ test("friendly command signatures are unique", () => {
 });
 
 test("Proof lifecycle commands resolve to canonical operations", () => {
-  assert.deepEqual(resolveCommand(["prove"], { baseRef: "origin/main" }), {
-    operationId: "proof.prepare",
-    commandPath: "prove",
-    input: { baseRef: "origin/main" },
-  });
   assert.deepEqual(resolveCommand(["proof", "prepare"]), {
     operationId: "proof.prepare",
     commandPath: "proof prepare",
@@ -74,12 +71,12 @@ test("Proof lifecycle commands resolve to canonical operations", () => {
     commandPath: "proof approve-plan",
     input: { proofId: "proof-1", expectedVersion: 3 },
   });
-  assert.deepEqual(resolveCommand(["prove", "proof-1"], { wait: true }), {
+  assert.deepEqual(resolveCommand(["proof", "run", "proof-1"], { wait: true }), {
     operationId: "proof.run",
-    commandPath: "prove",
+    commandPath: "proof run",
     input: { proofId: "proof-1", wait: true },
   });
-  assert.throws(() => resolveCommand(["proof", "run", "proof-1"]), /Invalid proof command/u);
+  assert.throws(() => resolveCommand(["prove", "proof-1"]), /Unknown command/u);
   assert.deepEqual(resolveCommand(["proof", "continue", "proof-1"], { expectedVersion: 3 }), {
     operationId: "proof.continue",
     commandPath: "proof continue",
@@ -111,6 +108,81 @@ test("Proof lifecycle commands resolve to canonical operations", () => {
   });
 });
 
+test("the advanced surface is nine nouns with one spelling per operation", () => {
+  const nouns = new Set([
+    "test",
+    "run",
+    "plan",
+    "device",
+    "recording",
+    "map",
+    "proof",
+    "build",
+    "system",
+  ]);
+  const families = new Set(
+    [
+      ...mappedCommandDescriptors.flatMap(({ paths }) => paths.map(({ command }) => command)),
+      ...cliResourceDescriptors.map(({ path }) => path.command),
+    ].map((command) => command.split(" ")[0]!),
+  );
+  assert.deepEqual(
+    [...families].filter((family) => !nouns.has(family)),
+    ["review"],
+  );
+  // Several paths for one operation only where each path is a different verb:
+  // app-map.get views (map, Tests, Variables, Plans, one connection), the
+  // recording gestures (tap, type, swipe, back, screenshot), and leasing from
+  // a named pool. Every other operation has exactly one spelling.
+  assert.deepEqual(
+    mappedCommandDescriptors
+      .filter(({ paths }) => paths.length > 1)
+      .map(({ operationId }) => operationId)
+      .sort(),
+    ["app-map.get", "authoring.session.interact", "lease.create"],
+  );
+});
+
+test("every old spelling points at a current command and none still runs", () => {
+  const current = new Set([
+    ...mappedCommandDescriptors.flatMap(({ paths }) => paths.map(({ command }) => command)),
+    ...cliResourceDescriptors.map(({ path }) => path.command),
+  ]);
+  const everyday = new Set(["apps", "devices", "doctor"]);
+  const special = new Set(["test capture-plan", "proof report", "proof verify", "system db"]);
+  for (const [old, replacement] of renamedCommands) {
+    assert.ok(
+      ![...current].some((command) => `${command} `.startsWith(`${old} `)),
+      `${old} must not prefix a current command`,
+    );
+    for (const choice of replacement.split(" | ")) {
+      const words = choice.split(" ").filter((word) => /^[a-z]/u.test(word));
+      const known =
+        everyday.has(words[0]!) ||
+        special.has(words.slice(0, 2).join(" ")) ||
+        [...current].some(
+          (command) =>
+            `${command} `.startsWith(`${words.join(" ")} `) ||
+            `${words.join(" ")} `.startsWith(`${command} `),
+        );
+      assert.ok(known, `${old} → ${choice} must name a current command`);
+    }
+  }
+  assert.equal(renamedCommand(["combine", "run", "shop", "daily"]), "plan run shop daily");
+  assert.equal(renamedCommand(["job", "get", "j1"]), "run watch j1");
+  assert.equal(renamedCommand(["plan", "run", "shop", "daily"]), undefined);
+  assert.throws(
+    () => parseCli(["combine", "run", "shop", "daily"], {}),
+    /'relay combine' moved\. Use 'relay plan run shop daily'/u,
+  );
+  assert.throws(
+    () => parseCli(["connect", "create", "shop"], {}),
+    /Use 'relay map connection create shop'/u,
+  );
+  assert.throws(() => parseCli(["prove", "--base", "main"], {}), /relay proof verify --base/u);
+  assert.throws(() => renderHelp("session"), /moved to relay recording/u);
+});
+
 test("compiled Recipe storage has no public CLI namespace", () => {
   assert.deepEqual(
     cliOperationDescriptors.filter(({ operationId }) => operationId.startsWith("recipe.")),
@@ -138,31 +210,31 @@ test("device health exposes the bounded read-only supervisor projection", () => 
 
 test("browser authentication commands expose only exact reviewed fixture inputs", () => {
   assert.deepEqual(
-    resolveCommand(["browser", "auth", "save", "browser-1"], {
+    resolveCommand(["device", "account", "save", "browser-1"], {
       name: "Reviewed staging account",
     }),
     {
       operationId: "target.browser-auth.save",
-      commandPath: "browser auth save",
+      commandPath: "device account save",
       input: { targetId: "browser-1", name: "Reviewed staging account" },
     },
   );
-  assert.deepEqual(resolveCommand(["browser", "auth", "list", "browser-1"]), {
+  assert.deepEqual(resolveCommand(["device", "account", "list", "browser-1"]), {
     operationId: "target.browser-auth.list",
-    commandPath: "browser auth list",
+    commandPath: "device account list",
     input: { targetId: "browser-1" },
   });
   assert.deepEqual(
     resolveCommand([
-      "browser",
-      "auth",
+      "device",
+      "account",
       "revoke",
       "browser-1",
       "authfx:8bb4854a-182c-4df2-825f-bbc3c2a2dfac:2",
     ]),
     {
       operationId: "target.browser-auth.revoke",
-      commandPath: "browser auth revoke",
+      commandPath: "device account revoke",
       input: {
         targetId: "browser-1",
         reference: "authfx:8bb4854a-182c-4df2-825f-bbc3c2a2dfac:2",
@@ -171,24 +243,24 @@ test("browser authentication commands expose only exact reviewed fixture inputs"
   );
   assert.deepEqual(
     resolveCommand([
-      "browser",
-      "auth",
+      "device",
+      "account",
       "probe",
       "browser-1",
       "authfx:8bb4854a-182c-4df2-825f-bbc3c2a2dfac:2",
     ]),
     {
       operationId: "target.browser-auth.probe",
-      commandPath: "browser auth probe",
+      commandPath: "device account probe",
       input: {
         targetId: "browser-1",
         reference: "authfx:8bb4854a-182c-4df2-825f-bbc3c2a2dfac:2",
       },
     },
   );
-  assert.deepEqual(resolveCommand(["browser", "auth", "health", "grok-com"]), {
+  assert.deepEqual(resolveCommand(["device", "account", "health", "grok-com"]), {
     operationId: "target.browser-auth.health",
-    commandPath: "browser auth health",
+    commandPath: "device account health",
     input: { targetId: "grok-com" },
   });
 });
@@ -225,13 +297,13 @@ test("all plan-035 authoring operations have friendly command paths", () => {
 
 test("path arguments merge into full operation input without hiding revision metadata", () => {
   assert.deepEqual(
-    resolveCommand(["screen", "update", "checkout", "home"], {
+    resolveCommand(["map", "screen", "update", "checkout", "home"], {
       expectedRevision: 7,
       patch: { title: "Home" },
     }),
     {
       operationId: "app-map.screen.update",
-      commandPath: "screen update",
+      commandPath: "map screen update",
       input: {
         appMapId: "checkout",
         screenId: "home",
@@ -242,29 +314,29 @@ test("path arguments merge into full operation input without hiding revision met
   );
 });
 
-test("screen and connection commands use granular App Map operations", () => {
+test("map screen and connection commands use granular App Map operations", () => {
   assert.deepEqual(resolveCommand(["map", "duplicate", "map-1", "map-2"]), {
     operationId: "app-map.duplicate",
     commandPath: "map duplicate",
     input: { sourceAppMapId: "map-1", appMapId: "map-2" },
   });
-  assert.equal(resolveCommand(["screen", "list", "map-1"]).operationId, "app-map.get");
+  assert.equal(resolveCommand(["map", "get", "map-1"]).operationId, "app-map.get");
   assert.equal(
-    resolveCommand(["connect", "update", "map-1", "connection-1"], {
+    resolveCommand(["map", "connection", "update", "map-1", "connection-1"], {
       expectedRevision: 3,
       patch: { label: "Continue" },
     }).operationId,
     "app-map.connection.update",
   );
   assert.deepEqual(
-    resolveCommand(["screen", "consolidate", "map-1", "settings"], {
+    resolveCommand(["map", "screen", "consolidate", "map-1", "settings"], {
       expectedRevision: 8,
       sourceScreenIds: ["settings-middle", "settings-bottom"],
       dryRun: true,
     }),
     {
       operationId: "app-map.screen.consolidate",
-      commandPath: "screen consolidate",
+      commandPath: "map screen consolidate",
       input: {
         appMapId: "map-1",
         targetScreenId: "settings",
@@ -276,38 +348,38 @@ test("screen and connection commands use granular App Map operations", () => {
   );
 });
 
-test("variable help says appLocale stays when the Test can name a screen", () => {
-  const help = renderHelp("variable");
+test("test var help says appLocale stays when the Test can name a screen", () => {
+  const help = renderHelp("test");
   assert.match(
     help,
     /appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved/u,
   );
   assert.match(help, /apply\.relaunch: true still relaunches/u);
-  assert.match(help, /variable infer <appMapId> <variableId>/u);
+  assert.match(help, /test var infer <appMapId> <variableId>/u);
   assert.match(help, /Infer remaining Variable rows from 1-8 taught examples/u);
   assert.match(help, /taughtRows/u);
 });
 
 test("device and Combine help name the Test-run apply path and evidence folder", () => {
   const device = renderHelp("device");
-  assert.match(device, /relay variable save/u);
+  assert.match(device, /relay test var save/u);
   assert.match(device, /relay test run <map> <test> --in language=<tag>/u);
 
-  const combine = renderHelp("combine");
+  const combine = renderHelp("plan");
   assert.match(combine, /portable review folder/u);
   assert.match(combine, /Test checklist/u);
   assert.match(combine, /--lane lab/u);
 });
 
 test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => {
-  for (const command of ["variable list", "test list", "combine list"]) {
+  for (const command of ["test var list", "test list", "plan list"]) {
     const resolved = resolveCommand([...command.split(" "), "grok-android"]);
     assert.equal(resolved.operationId, "app-map.get", command);
     assert.deepEqual(resolved.input, { appMapId: "grok-android" }, command);
   }
-  assert.deepEqual(resolveCommand(["combine", "preflight", "grok-android", "locale-x-tour"]), {
+  assert.deepEqual(resolveCommand(["plan", "preflight", "grok-android", "locale-x-tour"]), {
     operationId: "app-map.combine.preflight",
-    commandPath: "combine preflight",
+    commandPath: "plan preflight",
     input: { appMapId: "grok-android", combineId: "locale-x-tour" },
   });
 });
@@ -324,14 +396,14 @@ test("device locale maps to a verified per-app locale set", () => {
   assert.match(help, /fails when the app still reports another language/u);
 });
 
-test("connect get is a CLI projection of app-map.get", () => {
-  assert.deepEqual(resolveCommand(["connect", "get", "checkout", "continue"]), {
+test("map connection get is a CLI projection of app-map.get", () => {
+  assert.deepEqual(resolveCommand(["map", "connection", "get", "checkout", "continue"]), {
     operationId: "app-map.get",
-    commandPath: "connect get",
+    commandPath: "map connection get",
     input: { appMapId: "checkout", connectionId: "continue" },
   });
-  const help = renderHelp("connect");
-  assert.match(help, /connect get <appMapId> <connectionId>/u);
+  const help = renderHelp("map");
+  assert.match(help, /map connection get <appMapId> <connectionId>/u);
   assert.match(help, /tap targets, reveal/u);
   assert.match(help, /CLI projection of app-map.get/u);
 });
@@ -350,10 +422,10 @@ test("Test help exposes graph creation, semantic edits, and the required run tar
   assert.match(help, /relay test run checkout smoke/);
 });
 
-test("session replay is an alias of take replay", () => {
-  assert.deepEqual(resolveCommand(["session", "replay", "authoring-1"]), {
+test("recording replay is the one replay spelling for a take", () => {
+  assert.deepEqual(resolveCommand(["recording", "replay", "authoring-1"]), {
     operationId: "authoring.take.replay",
-    commandPath: "session replay",
+    commandPath: "recording replay",
     input: { sessionId: "authoring-1" },
   });
 });
@@ -384,7 +456,7 @@ test("iPad observation and recovery help exposes the proof-first lifecycle", () 
   const snapshot = mappedCommandDescriptors.find(
     (descriptor) => descriptor.operationId === "target.snapshot.capture",
   );
-  const observe = snapshot?.paths.find((candidate) => candidate.command === "device observe");
+  const observe = snapshot?.paths.find((candidate) => candidate.command === "device snapshot");
   const deviceSnapshot = snapshot?.paths.find(
     (candidate) => candidate.command === "device snapshot",
   );
@@ -416,9 +488,9 @@ test("iPad observation and recovery help exposes the proof-first lifecycle", () 
   assert.doesNotMatch(recover?.note ?? "", /restart the XCTest runner/i);
 });
 
-test("screen capture-scroll targets one durable Screen Variant", () => {
+test("map screen capture-scroll targets one durable Screen Variant", () => {
   assert.deepEqual(
-    resolveCommand(["screen", "capture-scroll", "map-1", "settings", "settings-ja"], {
+    resolveCommand(["map", "screen", "capture-scroll", "map-1", "settings", "settings-ja"], {
       expectedRevision: 12,
       target: { kind: "device", platform: "ios", targetId: "ipad-1" },
       leaseId: "lease-1",
@@ -426,7 +498,7 @@ test("screen capture-scroll targets one durable Screen Variant", () => {
     }),
     {
       operationId: "app-map.scroll-surface.capture",
-      commandPath: "screen capture-scroll",
+      commandPath: "map screen capture-scroll",
       input: {
         appMapId: "map-1",
         screenId: "settings",
@@ -441,20 +513,22 @@ test("screen capture-scroll targets one durable Screen Variant", () => {
   const descriptor = mappedCommandDescriptors.find(
     (candidate) => candidate.operationId === "app-map.scroll-surface.capture",
   );
-  const help = descriptor?.paths.find((candidate) => candidate.command === "screen capture-scroll");
+  const help = descriptor?.paths.find(
+    (candidate) => candidate.command === "map screen capture-scroll",
+  );
   assert.match(help?.note ?? "", /Explicitly opts/u);
   assert.match(help?.note ?? "", /should remain viewport-only/u);
 });
 
-test("screen regenerate-scroll rebuilds derived views without device input", () => {
+test("map screen regenerate-scroll rebuilds derived views without device input", () => {
   assert.deepEqual(
     resolveCommand(
-      ["screen", "regenerate-scroll", "map-1", "settings", "settings-ja", "capture-1"],
+      ["map", "screen", "regenerate-scroll", "map-1", "settings", "settings-ja", "capture-1"],
       { expectedRevision: 13 },
     ),
     {
       operationId: "app-map.scroll-surface.regenerate",
-      commandPath: "screen regenerate-scroll",
+      commandPath: "map screen regenerate-scroll",
       input: {
         appMapId: "map-1",
         screenId: "settings",
@@ -466,11 +540,11 @@ test("screen regenerate-scroll rebuilds derived views without device input", () 
   );
 });
 
-test("screen origin review commands are evidence-only and do not request a lease", () => {
+test("map screen origin review commands are evidence-only and do not request a lease", () => {
   const scope = ["map-1", "settings", "settings-ja", "capture-1"];
-  assert.deepEqual(resolveCommand(["screen", "origin", "inspect", ...scope]), {
+  assert.deepEqual(resolveCommand(["map", "screen", "origin", "inspect", ...scope]), {
     operationId: "app-map.scroll-surface.origin.inspect",
-    commandPath: "screen origin inspect",
+    commandPath: "map screen origin inspect",
     input: {
       appMapId: "map-1",
       screenId: "settings",
@@ -483,9 +557,9 @@ test("screen origin review commands are evidence-only and do not request a lease
     reason: "Reviewed immutable first viewport.",
     assertion: REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
   };
-  assert.deepEqual(resolveCommand(["screen", "origin", "review", ...scope], decision), {
+  assert.deepEqual(resolveCommand(["map", "screen", "origin", "review", ...scope], decision), {
     operationId: "app-map.scroll-surface.origin.review",
-    commandPath: "screen origin review",
+    commandPath: "map screen origin review",
     input: {
       appMapId: "map-1",
       screenId: "settings",
@@ -500,10 +574,13 @@ test("screen origin review commands are evidence-only and do not request a lease
     assertion: REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
   };
   assert.deepEqual(
-    resolveCommand(["screen", "origin", "revoke", ...scope, "reviewed-origin-1"], revocation),
+    resolveCommand(
+      ["map", "screen", "origin", "revoke", ...scope, "reviewed-origin-1"],
+      revocation,
+    ),
     {
       operationId: "app-map.scroll-surface.origin.revoke",
-      commandPath: "screen origin revoke",
+      commandPath: "map screen origin revoke",
       input: {
         appMapId: "map-1",
         screenId: "settings",
@@ -613,50 +690,51 @@ test("plan capture review lists and bulk-accepts exact Plan screenshots", () => 
 });
 
 test("one failed check is inspectable and selectively retryable", () => {
-  assert.deepEqual(resolveCommand(["repair", "retry", "run-1", "usage"]), {
+  assert.deepEqual(resolveCommand(["run", "repair", "retry", "run-1", "usage"]), {
     operationId: "run.repair.retry",
-    commandPath: "repair retry",
+    commandPath: "run repair retry",
     input: { runId: "run-1", checkId: "usage" },
     behavior: "job-start-watch",
   });
-  assert.deepEqual(resolveCommand(["repair", "get", "run-1", "usage"]), {
+  assert.deepEqual(resolveCommand(["run", "repair", "get", "run-1", "usage"]), {
     operationId: "run.repair.get",
-    commandPath: "repair get",
+    commandPath: "run repair get",
     input: { runId: "run-1", checkId: "usage" },
   });
 });
 
-test("unknown session verbs point at family help instead of four arbitrary commands", () => {
+test("unknown recording verbs point at family help instead of four arbitrary commands", () => {
   assert.throws(
-    () => resolveCommand(["session", "reploy", "authoring-1"]),
+    () => resolveCommand(["recording", "reploy", "authoring-1"]),
     (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       return (
-        /relay session --help/.test(message) &&
-        /session begin/.test(message) &&
-        /session tap/.test(message) &&
-        /session replay/.test(message) &&
-        /session commit/.test(message)
+        /relay recording --help/.test(message) &&
+        /recording begin/.test(message) &&
+        /recording tap/.test(message) &&
+        /recording replay/.test(message) &&
+        /recording commit/.test(message)
       );
     },
   );
 });
 
 test("authoring interaction aliases construct explicit session inputs", () => {
-  assert.deepEqual(resolveCommand(["session", "back", "session-1"]), {
+  assert.deepEqual(resolveCommand(["recording", "back", "session-1"]), {
     operationId: "authoring.session.interact",
-    commandPath: "session back",
+    commandPath: "recording back",
     input: { sessionId: "session-1", interaction: { kind: "key", key: "back" } },
   });
   assert.deepEqual(
-    resolveCommand(["session", "tap", "session-1"], {
+    resolveCommand(["recording", "tap", "session-1"], {
       interaction: { kind: "swipe", target: { x: 0.25, y: 0.75 } },
     }).input,
     { sessionId: "session-1", interaction: { kind: "tap", target: { x: 0.25, y: 0.75 } } },
   );
   assert.deepEqual(
-    resolveCommand(["session", "batch", "proposal-1"], {
+    resolveCommand(["recording", "interact", "proposal-1"], {
       interaction: {
+        kind: "steps",
         steps: [
           { kind: "tap", target: { identifier: "send" } },
           { kind: "sleep", ms: 1_000 },
@@ -681,49 +759,49 @@ test("authoring interaction aliases construct explicit session inputs", () => {
 });
 
 test("Combine analysis has one direct public command", () => {
-  assert.equal(
-    resolveCommand(["combine", "analyze", "batch-1"]).operationId,
-    "job.combine.analysis",
-  );
+  assert.equal(resolveCommand(["plan", "findings", "batch-1"]).operationId, "job.combine.analysis");
   const optionStart = mappedCommandDescriptors.find(
     (descriptor) => descriptor.operationId === "job.combine.start",
   );
   assert.ok(optionStart && !("exclusion" in optionStart));
-  assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /combine run|variableIds|combineId/);
-  assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /platform/);
-  assert.match(optionStart.paths[0]?.note ?? "", /--cell|--all|one cell/u);
+  assert.equal(optionStart.paths.length, 1);
+  assert.match(optionStart.paths[0]?.examples?.[0] ?? "", /relay plan run/);
+  assert.match(optionStart.paths[0]?.note ?? "", /--cell|--all|One case/u);
   assert.match(optionStart.paths[0]?.note ?? "", /default serial|fills missing/u);
   assert.match(optionStart.paths[0]?.note ?? "", /localAdmission/u);
-  const combineRun = optionStart.paths.find((path) => path.command === "combine run");
+  const combineRun = optionStart.paths.find((path) => path.command === "plan run");
   assert.ok(combineRun?.inputHelp?.some((item) => item.name === "cellTargetBindings"));
   assert.ok(combineRun?.inputHelp?.some((item) => item.name === "localAdmission"));
 });
 
 test("App Map vocabulary resolves to canonical granular operations", () => {
   const cases = [
-    [["map", "list"], "app-map.list", {}],
     [["map", "get", "checkout"], "app-map.get", { appMapId: "checkout" }],
     [["map", "update", "checkout"], "app-map.update", { appMapId: "checkout" }],
     [
-      ["connect", "update", "checkout", "continue"],
+      ["map", "connection", "update", "checkout", "continue"],
       "app-map.connection.update",
       { appMapId: "checkout", connectionId: "continue" },
     ],
     [
-      ["connect", "run", "checkout", "continue"],
+      ["map", "connection", "run", "checkout", "continue"],
       "app-map.connection.run",
       { appMapId: "checkout", connectionId: "continue" },
     ],
     [
-      ["flow", "run", "checkout", "main"],
+      ["map", "flow", "run", "checkout", "main"],
       "app-map.flow.run",
       { appMapId: "checkout", flowId: "main" },
     ],
-    [["action", "run", "login", "pixel-9"], "action.run", { actionId: "login", serial: "pixel-9" }],
+    [
+      ["map", "action", "run", "login", "pixel-9"],
+      "action.run",
+      { actionId: "login", serial: "pixel-9" },
+    ],
     [["device", "screenshot", "pixel-9"], "target.screenshot.capture", { serial: "pixel-9" }],
     [["device", "survey", "pixel-9"], "target.scroll-survey.capture", { serial: "pixel-9" }],
     [
-      ["connect", "get", "checkout", "continue"],
+      ["map", "connection", "get", "checkout", "continue"],
       "app-map.get",
       { appMapId: "checkout", connectionId: "continue" },
     ],
@@ -739,15 +817,15 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { serial: "ipad-1", app: "Settings" },
     ],
     [["device", "recover", "ipad-1"], "target.recover", { serial: "ipad-1" }],
-    [["session", "start", "session-1"], "authoring.session.start", { sessionId: "session-1" }],
+    [["recording", "start", "session-1"], "authoring.session.start", { sessionId: "session-1" }],
     [
-      ["take", "optimize", "session-1"],
+      ["recording", "optimize", "session-1"],
       "authoring.take.optimization.get",
       { sessionId: "session-1" },
     ],
-    [["session", "commit", "session-1"], "authoring.session.commit", { sessionId: "session-1" }],
-    [["job", "watch", "job-1"], "job.get", { jobId: "job-1" }],
-    [["activity", "follow"], "event.stream", {}],
+    [["recording", "commit", "session-1"], "authoring.session.commit", { sessionId: "session-1" }],
+    [["run", "watch", "job-1"], "job.get", { jobId: "job-1" }],
+    [["system", "activity", "follow"], "event.stream", {}],
     [
       ["test", "run", "grok-ios", "settings-tour"],
       "app-map.test.run",
@@ -774,13 +852,13 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { appMapId: "grok-ios", testId: "checkout" },
     ],
     [
-      ["combine", "run", "grok-ios", "language-x-settings"],
+      ["plan", "run", "grok-ios", "language-x-settings"],
       "job.combine.start",
-      { appMapId: "grok-ios", combineId: "language-x-settings" },
+      { appMapId: "grok-ios", combineId: "language-x-settings", executionMode: "pilot" },
     ],
-    [["lane", "list"], "lane.list", {}],
-    [["lane", "save", "grok-daily"], "lane.save", { id: "grok-daily" }],
-    [["lane", "remove", "grok-lab"], "lane.remove", { laneId: "grok-lab" }],
+    [["device", "lane", "list"], "lane.list", {}],
+    [["device", "lane", "save", "grok-daily"], "lane.save", { id: "grok-daily" }],
+    [["device", "lane", "remove", "grok-lab"], "lane.remove", { laneId: "grok-lab" }],
   ] as const;
 
   for (const [argv, operationId, input] of cases) {
@@ -789,8 +867,8 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
     assert.deepEqual(resolved.input, input, argv.join(" "));
   }
   assert.equal(resolveCommand(["device", "screenshot", "pixel-9"]).behavior, "screenshot");
-  assert.equal(resolveCommand(["job", "watch", "job-1"]).behavior, "job-watch");
-  assert.equal(resolveCommand(["activity", "follow"]).behavior, "event-stream");
+  assert.equal(resolveCommand(["run", "watch", "job-1"]).behavior, "job-watch");
+  assert.equal(resolveCommand(["system", "activity", "follow"]).behavior, "event-stream");
   assert.equal(
     resolveCommand(["test", "run", "grok-ios", "settings-tour"]).behavior,
     "job-start-watch",
@@ -825,15 +903,15 @@ test("declared read-only resources build encoded paths", () => {
     },
   );
   assert.deepEqual(
-    resolveResourceCommand(["activity", "list"], { limit: 20, cursor: "next/value" }),
+    resolveResourceCommand(["system", "activity", "list"], { limit: 20, cursor: "next/value" }),
     {
       resourceId: "activity.list",
-      commandPath: "activity list",
+      commandPath: "system activity list",
       resourcePath: "/activity?limit=20&cursor=next%2Fvalue",
     },
   );
   assert.throws(
-    () => resolveResourceCommand(["activity", "list"], { limit: 0 }),
+    () => resolveResourceCommand(["system", "activity", "list"], { limit: 0 }),
     /positive integer/,
   );
 });
@@ -882,35 +960,46 @@ test("root help documents exit codes, --confirm, and the machine envelopes", () 
   assert.doesNotMatch(help, /verify-change/u);
   assert.match(help, /Everyday:[\s\S]*relay show "<test>"[\s\S]*\nAlso:/u);
   const advanced = renderHelp("advanced");
-  assert.match(advanced, /Proof commands:/u);
+  for (const noun of [
+    "test",
+    "run",
+    "plan",
+    "device",
+    "recording",
+    "map",
+    "proof",
+    "build",
+    "system",
+  ]) {
+    assert.match(advanced, new RegExp(`^${noun} — `, "mu"), noun);
+  }
+  assert.match(advanced, /relay proof verify --base <ref>/u);
   assert.doesNotMatch(advanced, /replay-lab|operation invoke/u);
 });
 
-test("browser commands reuse canonical navigation, capture, and semantic input", () => {
-  assert.equal(resolveCommand(["browser", "open", "web"]).operationId, "target.open");
+test("browser targets use the device commands: one spelling each", () => {
+  assert.equal(resolveCommand(["device", "target", "open", "web"]).operationId, "target.open");
   assert.deepEqual(resolveCommand(["device", "launch", "web", "https://example.com"]).input, {
     serial: "web",
     app: "https://example.com",
   });
-  assert.deepEqual(resolveCommand(["browser", "click", "web", "Business"]).input, {
-    serial: "web",
-    label: "Business",
-    kind: "label",
-  });
+  assert.deepEqual(
+    resolveCommand(["device", "interact", "web"], { kind: "label", label: "Business" }).input,
+    { serial: "web", label: "Business", kind: "label" },
+  );
   assert.equal(
-    resolveCommand(["browser", "snapshot", "web"]).operationId,
+    resolveCommand(["device", "snapshot", "web"]).operationId,
     "target.snapshot.capture",
   );
   assert.equal(
     resolveCommand(["device", "screenshot", "web"]).operationId,
     "target.screenshot.capture",
   );
-  // Pure aliases of device commands are gone: one spelling each.
   for (const retired of [
-    ["browser", "screenshot", "web"],
-    ["browser", "navigate", "web", "https://example.com"],
-    ["target", "screenshot", "web"],
+    ["browser", "open", "web"],
+    ["browser", "snapshot", "web"],
+    ["target", "list"],
   ]) {
-    assert.throws(() => resolveCommand(retired), /Invalid (browser|target) command/u);
+    assert.throws(() => resolveCommand(retired), /Unknown command/u);
   }
 });

@@ -81,7 +81,7 @@ test("plan run --export invokes combine export with the campaign id", async () =
   }
 });
 
-test("combine export --export/--todo leave other operations unchanged", async () => {
+test("plan export --export/--todo leave other operations unchanged", async () => {
   const summarized = await finalizeCombineExportResult({
     operationId: "job.get",
     result: { rootDir: "/tmp/pack" },

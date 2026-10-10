@@ -77,7 +77,7 @@ test("export and todo flags stay on Plan and combine export", () => {
   assert.doesNotThrow(() => assertPlanCliFlags("job.combine.export", tokens));
   assert.throws(
     () => assertPlanCliFlags("job.get", tokens),
-    /--export is only valid on plan run, combine run, or combine export/,
+    /--export is only valid on plan run or plan export/,
   );
 });
 

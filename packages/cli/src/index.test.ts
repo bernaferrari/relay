@@ -302,13 +302,14 @@ test("friendly command families invoke through the operation client", async () =
     input: Record<string, unknown>;
   }> = [
     {
-      argv: ["screen", "list", "onboarding"],
+      argv: ["map", "get", "onboarding"],
       operationId: "app-map.get",
       input: { appMapId: "onboarding" },
     },
     {
       argv: [
-        "connect",
+        "map",
+        "connection",
         "update",
         "onboarding",
         "continue",
@@ -329,17 +330,17 @@ test("friendly command families invoke through the operation client", async () =
       input: { serial: "pixel-9" },
     },
     {
-      argv: ["session", "back", "session-1"],
+      argv: ["recording", "back", "session-1"],
       operationId: "authoring.session.interact",
       input: { sessionId: "session-1", interaction: { kind: "key", key: "back" } },
     },
     {
-      argv: ["take", "replay", "session-1"],
+      argv: ["recording", "replay", "session-1"],
       operationId: "authoring.take.replay",
       input: { sessionId: "session-1" },
     },
     {
-      argv: ["run", "visual-baseline", "update", "run-7"],
+      argv: ["run", "visual", "approve", "run-7"],
       operationId: "run.visual-baseline.update",
       input: { runId: "run-7", action: "approve-new-baseline" },
     },
@@ -356,17 +357,17 @@ test("friendly command families invoke through the operation client", async () =
       input: { runId: "run-7", comparisonId: "cmp-1", action: "approve-new-baseline" },
     },
     {
-      argv: ["discovery", "capture", "discovery-1", "pixel-9"],
+      argv: ["map", "explore", "capture", "discovery-1", "pixel-9"],
       operationId: "discovery.capture",
       input: { sessionId: "discovery-1" },
     },
     {
-      argv: ["policy", "privacy", "update", "--input", '{"enabled":true}'],
+      argv: ["proof", "privacy", "update", "--input", '{"enabled":true}'],
       operationId: "workspace.privacy.update",
       input: { enabled: true },
     },
     {
-      argv: ["lease", "create", "ipad-1"],
+      argv: ["device", "lease", "create", "ipad-1"],
       operationId: "lease.create",
       input: { poolId: "local", deviceSerial: "ipad-1" },
     },
@@ -422,7 +423,7 @@ test("App Map resource commands use declared read-only routes", async () => {
   const cases = [
     [["run", "signals", "run-1"], "/runs/run-1/signals"],
     [["run", "compare", "run-1"], "/runs/run-1/visual-baseline"],
-    [["activity", "list", "--input", '{"limit":10}'], "/activity?limit=10"],
+    [["system", "activity", "list", "--input", '{"limit":10}'], "/activity?limit=10"],
   ] as const;
 
   for (const [argv, expectedPath] of cases) {
@@ -660,9 +661,9 @@ test("run visual compare --json dest identity is dest wait-for 003, not leftover
   );
 });
 
-test("run visual-baseline update --json never accepts leftover Close 004 as dest", async () => {
+test("run visual approve --json never accepts leftover Close 004 as dest", async () => {
   const io = capture();
-  const code = await runCli(["run", "visual-baseline", "update", leftoverDestEndRun.id, "--json"], {
+  const code = await runCli(["run", "visual", "approve", leftoverDestEndRun.id, "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -1044,7 +1045,7 @@ test("device snapshot --file writes the full snapshot JSON", async () => {
   }
 });
 
-test("variable list stdout is the catalog only; map get still includes topology", async () => {
+test("test var list stdout is the catalog only; map get still includes topology", async () => {
   const scope = {
     organizationId: "local",
     projectId: "project-1",
@@ -1099,7 +1100,7 @@ test("variable list stdout is the catalog only; map get still includes topology"
   };
 
   const listIo = capture();
-  const listCode = await runCli(["variable", "list", "grok-android", "--json"], {
+  const listCode = await runCli(["test", "var", "list", "grok-android", "--json"], {
     streams: listIo.streams,
     createClient: () => ({ invoke: async () => ({ appMap }), events: async () => {} }),
     registerSignalHandlers: false,
@@ -1130,7 +1131,7 @@ test("variable list stdout is the catalog only; map get still includes topology"
   assert.ok((got.appMap?.connections?.length ?? 0) > 0);
 });
 
-test("connect get --json returns saved connection actions", async () => {
+test("map connection get --json returns saved connection actions", async () => {
   const appMap = {
     id: "checkout",
     name: "Checkout",
@@ -1152,7 +1153,7 @@ test("connect get --json returns saved connection actions", async () => {
   };
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];
-  const code = await runCli(["connect", "get", "checkout", "continue", "--json"], {
+  const code = await runCli(["map", "connection", "get", "checkout", "continue", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId, input) {
@@ -1184,7 +1185,7 @@ test("connect get --json returns saved connection actions", async () => {
   });
 
   const missing = capture();
-  const missingCode = await runCli(["connect", "get", "checkout", "missing", "--json"], {
+  const missingCode = await runCli(["map", "connection", "get", "checkout", "missing", "--json"], {
     streams: missing.streams,
     createClient: () => ({ invoke: async () => ({ appMap }), events: async () => {} }),
     registerSignalHandlers: false,
@@ -1456,9 +1457,8 @@ test("root and family help are useful without creating a client", async () => {
     {
       argv: ["help", "advanced"],
       matches: [
-        /Start with App, Device, Test, Checkpoint, Run, and Report/,
-        /Topology\s+map, screen, connect, flow/,
-        /Authoring\s+variable, test, plan, combine, proposal, session/,
+        /^map — The App Map/mu,
+        /^recording — /mu,
         /device screenshot <serial>/,
         /--binary/,
         /--timeout <ms>.*default 180s/,
@@ -1470,36 +1470,36 @@ test("root and family help are useful without creating a client", async () => {
       matches: [/--junit junit\.xml/, /0 every Test passed, 1 at least one failed, 3/],
     },
     {
-      argv: ["session", "--help"],
+      argv: ["recording", "--help"],
       matches: [
-        /session start <sessionId>/,
-        /session commit <sessionId>/,
-        /session replay <sessionId>/,
+        /recording start <sessionId>/,
+        /recording commit <sessionId>/,
+        /recording replay <sessionId>/,
         /--actor/,
       ],
     },
     {
-      argv: ["take", "--help"],
-      matches: [/take trim <sessionId>/, /take replay <sessionId>/, /--project/],
+      argv: ["recording", "--help"],
+      matches: [/recording trim <sessionId>/, /recording replay <sessionId>/, /--project/],
     },
     {
-      argv: ["screen", "--help"],
+      argv: ["map", "screen", "--help"],
       matches: [
-        /screen list <appMapId>/,
+        /map get <appMapId>/,
         /granular, revision-safe App Map operations/,
-        /screen update <appMapId> <screenId>/,
+        /map screen update <appMapId> <screenId>/,
       ],
     },
     {
-      argv: ["proposal", "--help"],
+      argv: ["map", "proposal", "--help"],
       matches: [/proposal approve <appMapId> <proposalId>/, /proposal reject/],
     },
     {
-      argv: ["session", "--help"],
-      matches: [/session start <sessionId>/, /target \(object, required\)/, /session commit/],
+      argv: ["recording", "--help"],
+      matches: [/recording start <sessionId>/, /target \(object, required\)/, /recording commit/],
     },
     {
-      argv: ["activity", "--help"],
+      argv: ["system", "activity", "--help"],
       matches: [/activity list/, /limit \(number, optional\)/, /activity follow/],
     },
     {
@@ -1507,7 +1507,7 @@ test("root and family help are useful without creating a client", async () => {
       matches: [
         /device interact <serial>/,
         /active exclusive lease owned by the same --actor/,
-        /relay lease create 00008110 --actor agent:mapper/,
+        /relay device lease create 00008110 --actor agent:mapper/,
         /digest/,
         /--full/,
         /device survey <serial>/,
@@ -1516,7 +1516,7 @@ test("root and family help are useful without creating a client", async () => {
       ],
     },
     {
-      argv: ["lease", "--help"],
+      argv: ["device", "lease", "--help"],
       matches: [
         /lease create <serial>/,
         /defaults to 2 hours from now/,
@@ -1548,7 +1548,7 @@ test("root and family help are useful without creating a client", async () => {
 test("friendly commands reject missing target and session identities before creating a client", async () => {
   for (const [argv, message] of [
     [["device", "screenshot"], /device screenshot requires <serial>/],
-    [["session", "tap"], /session tap requires <sessionId>/],
+    [["recording", "tap"], /recording tap requires <sessionId>/],
   ] as const) {
     const io = capture();
     let created = false;
@@ -1598,7 +1598,7 @@ test("NDJSON contains typed progress followed by one terminal result", async () 
   assert.equal(hasTerminalControl(io.stdout()), false);
 });
 
-test("job watch polls running jobs through the same invoker until ok", async () => {
+test("run watch polls running jobs through the same invoker until ok", async () => {
   const io = capture();
   const responses = [
     { job: { id: "abc", status: "running" } },
@@ -1613,7 +1613,7 @@ test("job watch polls running jobs through the same invoker until ok", async () 
     events: async () => {},
   };
 
-  const code = await runCli(["job", "watch", "abc", "--ndjson"], {
+  const code = await runCli(["run", "watch", "abc", "--ndjson"], {
     streams: io.streams,
     createClient: () => client,
     registerSignalHandlers: false,
@@ -1648,14 +1648,14 @@ test("job watch polls running jobs through the same invoker until ok", async () 
   );
 });
 
-test("job watch prints an unchanged heartbeat only once", async () => {
+test("run watch prints an unchanged heartbeat only once", async () => {
   const io = capture();
   const responses = [
     { job: { id: "abc", status: "running", lastLogs: ["recipe: Wi-Fi"] } },
     { job: { id: "abc", status: "running", lastLogs: ["recipe: Wi-Fi"] } },
     { job: { id: "abc", status: "ok", lastLogs: ["recipe: Wi-Fi"] } },
   ];
-  const code = await runCli(["job", "watch", "abc"], {
+  const code = await runCli(["run", "watch", "abc"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -1672,7 +1672,7 @@ test("job watch prints an unchanged heartbeat only once", async () => {
   assert.equal(io.stderr().match(/recipe: Wi-Fi/g)?.length, 1);
 });
 
-test("job watch emits a one-time paused hint naming job resume and backs off polling", async () => {
+test("run watch emits a one-time paused hint naming job resume and backs off polling", async () => {
   const io = capture();
   const responses = [
     { job: { id: "abc", status: "running" } },
@@ -1681,7 +1681,7 @@ test("job watch emits a one-time paused hint naming job resume and backs off pol
     { job: { id: "abc", status: "paused" } },
     { job: { id: "abc", status: "ok" } },
   ];
-  const code = await runCli(["job", "watch", "abc", "--json"], {
+  const code = await runCli(["run", "watch", "abc", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -1696,7 +1696,7 @@ test("job watch emits a one-time paused hint naming job resume and backs off pol
 
   assert.equal(code, ExitCode.success);
   // One hint per stream surface, despite three paused polls.
-  assert.equal(io.stderr().match(/job resume abc/g)?.length, 1);
+  assert.equal(io.stderr().match(/run resume abc/g)?.length, 1);
   assert.match(io.stderr(), /relay_job_resume/);
   const progressEvents = io
     .stderr()
@@ -1705,11 +1705,11 @@ test("job watch emits a one-time paused hint naming job resume and backs off pol
   assert.equal(progressEvents.length, 1);
 });
 
-test("job watch --no-wait gets the job exactly once", async () => {
+test("run watch --no-wait gets the job exactly once", async () => {
   const io = capture();
   let calls = 0;
   const running = { job: { id: "abc", status: "running" } };
-  const code = await runCli(["job", "watch", "abc", "--no-wait", "--json"], {
+  const code = await runCli(["run", "watch", "abc", "--no-wait", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -1829,10 +1829,10 @@ test("test run --help names Variable, Test, Combine, lens, and --all", async () 
   assert.match(help, /wait-for\/expect-screen/u);
 });
 
-test("combine run --lens maps onto the Combine capture policy", async () => {
+test("plan run --lens maps onto the Combine capture policy", async () => {
   const parsed = parseCli(
     [
-      "combine",
+      "plan",
       "run",
       "map",
       "languages",
@@ -2064,9 +2064,9 @@ test("plan run --export and --todo stay on the invoke command", () => {
   assert.equal(parsed.todoFile, "todo.json");
 });
 
-test("combine export accepts --export and --todo", () => {
+test("plan export accepts --export and --todo", () => {
   const parsed = parseCli(
-    ["combine", "export", "batch-1", "--export", "./review", "--todo", "./todo.json"],
+    ["plan", "export", "batch-1", "--export", "./review", "--todo", "./todo.json"],
     {},
   );
   assert.equal(parsed.command, "invoke");
@@ -2079,7 +2079,7 @@ test("combine export accepts --export and --todo", () => {
 test("--export is rejected on test run", () => {
   assert.throws(
     () => parseCli(["device", "screenshot", "phone", "--export", "/tmp/pack"], {}),
-    /--export is only valid on plan run, combine run, or combine export/,
+    /--export is only valid on plan run or plan export/,
   );
 });
 
@@ -2098,18 +2098,18 @@ test("test run --lens --cell --all without --in are usage errors", async () => {
   );
 });
 
-test("combine run --cell selects one world and --all is explicit", async () => {
+test("plan run --cell selects one world and --all is explicit", async () => {
   const cell = parseCli(
-    ["combine", "run", "map", "languages", "--cell", "ja", "--input", '{"serial":"phone"}'],
+    ["plan", "run", "map", "languages", "--cell", "ja", "--input", '{"serial":"phone"}'],
     {},
   );
   assert.equal(cell.command, "invoke");
   if (cell.command !== "invoke") throw new Error("expected invoke");
   assert.equal(cell.operationId, "job.combine.start");
   assert.equal(cell.input.cell, "ja");
-  assert.equal(cell.input.executionMode, undefined);
+  assert.equal(cell.input.executionMode, "pilot");
   const all = parseCli(
-    ["combine", "run", "map", "languages", "--all", "--input", '{"serial":"phone"}'],
+    ["plan", "run", "map", "languages", "--all", "--input", '{"serial":"phone"}'],
     {},
   );
   assert.equal(all.command, "invoke");
@@ -2351,7 +2351,7 @@ test("test run resolves one connected target and current revision before invokin
   assert.match(io.stderr(), /Resolved Test run revision 12 on pixel/);
 });
 
-test("flow run starts once, then watches that execution job", async () => {
+test("map flow run starts once, then watches that execution job", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];
   let polls = 0;
@@ -2371,7 +2371,7 @@ test("flow run starts once, then watches that execution job", async () => {
     events: async () => {},
   };
 
-  const code = await runCli(["flow", "run", "map", "flow", "--ndjson"], {
+  const code = await runCli(["map", "flow", "run", "map", "flow", "--ndjson"], {
     streams: io.streams,
     createClient: () => client,
     registerSignalHandlers: false,
@@ -2394,7 +2394,7 @@ test("flow run starts once, then watches that execution job", async () => {
   assert.deepEqual(records.at(-1).result, { job: { id: "flow-job", status: "ok" } });
 });
 
-test("combine run waits for every locale case before succeeding", async () => {
+test("plan run waits for every locale case before succeeding", async () => {
   const io = capture();
   const polled: string[] = [];
   const client: OperationInvoker = {
@@ -2416,7 +2416,7 @@ test("combine run waits for every locale case before succeeding", async () => {
   };
 
   const code = await runCli(
-    ["combine", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
+    ["plan", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
     {
       streams: io.streams,
       createClient: () => client,
@@ -2434,7 +2434,7 @@ test("combine run waits for every locale case before succeeding", async () => {
   );
 });
 
-test("combine run --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("plan run --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {
     id: "4b93702b",
@@ -2459,7 +2459,7 @@ test("combine run --json dest identity is dest wait-for, not leftover Close 004 
   };
 
   const code = await runCli(
-    ["combine", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
+    ["plan", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
     {
       streams: io.streams,
       createClient: () => client,
@@ -2493,9 +2493,9 @@ test("combine run --json dest identity is dest wait-for, not leftover Close 004 
   assert.equal(result.result?.jobs?.[0]?.frames, undefined);
 });
 
-test("combine campaign get --json keeps campaign; leftover Close 004 cannot fill dest", async () => {
+test("plan status --json keeps campaign; leftover Close 004 cannot fill dest", async () => {
   const io = capture();
-  const code = await runCli(["combine", "campaign", "get", "camp-1", "--json"], {
+  const code = await runCli(["plan", "status", "camp-1", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -2515,9 +2515,9 @@ test("combine campaign get --json keeps campaign; leftover Close 004 cannot fill
   assert.equal(result.result?.destIdentity, undefined);
 });
 
-test("combine campaign get --json top-level destIdentity drops leftover Close 004", async () => {
+test("plan status --json top-level destIdentity drops leftover Close 004", async () => {
   const io = capture();
-  const code = await runCli(["combine", "campaign", "get", "camp-1", "--json"], {
+  const code = await runCli(["plan", "status", "camp-1", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -2582,7 +2582,7 @@ test("combine campaign get --json top-level destIdentity drops leftover Close 00
   );
 });
 
-test("combine campaign resume --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("plan resume --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {
     id: leftoverDestEndRun.id,
@@ -2604,7 +2604,7 @@ test("combine campaign resume --json dest identity is dest wait-for, not leftove
     },
     events: async () => {},
   };
-  const code = await runCli(["combine", "campaign", "resume", "camp-1", "--json"], {
+  const code = await runCli(["plan", "resume", "camp-1", "--json"], {
     streams: io.streams,
     createClient: () => client,
     registerSignalHandlers: false,
@@ -2642,9 +2642,9 @@ test("combine campaign resume --json dest identity is dest wait-for, not leftove
   );
 });
 
-test("combine campaign failures --json keeps clusters; leftover Close 004 cannot fill dest", async () => {
+test("plan failures --json keeps clusters; leftover Close 004 cannot fill dest", async () => {
   const io = capture();
-  const code = await runCli(["combine", "campaign", "failures", "camp-1", "--json"], {
+  const code = await runCli(["plan", "failures", "camp-1", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -2676,9 +2676,9 @@ test("combine campaign failures --json keeps clusters; leftover Close 004 cannot
   assert.deepEqual(result.result?.clusters?.[0]?.cases?.[0]?.evidenceRefs, ["run:4b93702b"]);
 });
 
-test("combine export --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+test("plan export --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
   const io = capture();
-  const code = await runCli(["combine", "export", "dest-004", "--json"], {
+  const code = await runCli(["plan", "export", "dest-004", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -2747,7 +2747,7 @@ test("combine export --json dest identity is dest wait-for 003, not leftover Clo
   );
 });
 
-test("job retry --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("run retry --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {
     id: leftoverDestEndRun.id,
@@ -2755,7 +2755,7 @@ test("job retry --json dest identity is dest wait-for, not leftover Close 004 la
     frames: leftoverDestEndRun.frames,
     artifacts: leftoverDestEndRun.artifacts,
   };
-  const code = await runCli(["job", "retry", leftoverDestEndRun.id, "--json"], {
+  const code = await runCli(["run", "retry", leftoverDestEndRun.id, "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -2786,7 +2786,7 @@ test("job retry --json dest identity is dest wait-for, not leftover Close 004 la
   );
 });
 
-test("job start/pause/resume/cancel --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("run start/pause/resume/cancel --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const leftoverJob = {
     id: leftoverDestEndRun.id,
     status: "ok",
@@ -2794,11 +2794,11 @@ test("job start/pause/resume/cancel --json dest identity is dest wait-for, not l
     artifacts: leftoverDestEndRun.artifacts,
   };
   for (const argv of [
-    ["job", "start", "--input", '{"recipe":"smoke"}'],
-    ["job", "pause", leftoverDestEndRun.id],
-    ["job", "resume", leftoverDestEndRun.id],
-    ["job", "cancel", leftoverDestEndRun.id],
-    ["job", "active", "cancel"],
+    ["run", "start", "--input", '{"recipe":"smoke"}'],
+    ["run", "pause", leftoverDestEndRun.id],
+    ["run", "resume", leftoverDestEndRun.id],
+    ["run", "cancel", leftoverDestEndRun.id],
+    ["run", "cancel-all"],
   ] as const) {
     const io = capture();
     const code = await runCli([...argv, "--json"], {
@@ -2833,7 +2833,7 @@ test("job start/pause/resume/cancel --json dest identity is dest wait-for, not l
   }
 });
 
-test("repair retry --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("run repair retry --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {
     id: leftoverDestEndRun.id,
@@ -2842,7 +2842,7 @@ test("repair retry --no-wait --json dest identity is dest wait-for, not leftover
     artifacts: leftoverDestEndRun.artifacts,
   };
   const code = await runCli(
-    ["repair", "retry", leftoverDestEndRun.id, "check-language", "--no-wait", "--json"],
+    ["run", "repair", "retry", leftoverDestEndRun.id, "check-language", "--no-wait", "--json"],
     {
       streams: io.streams,
       createClient: () => ({
@@ -2933,7 +2933,7 @@ test("run review --json dest identity is dest wait-for 003, not leftover Close 0
   );
 });
 
-test("job list --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("run list --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {
     id: leftoverDestEndRun.id,
@@ -2941,7 +2941,7 @@ test("job list --json dest identity is dest wait-for, not leftover Close 004 las
     frames: leftoverDestEndRun.frames,
     artifacts: leftoverDestEndRun.artifacts,
   };
-  const code = await runCli(["job", "list", "--json"], {
+  const code = await runCli(["run", "list", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -3050,7 +3050,7 @@ test("run.list --json dest identity is dest wait-for, not leftover Close 004 las
   assert.equal(result.result?.runs?.[0]?.captureReview?.[0]?.observed?.laneId, "grok-lab");
 });
 
-test("flow run --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("map flow run --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {
     id: leftoverDestEndRun.id,
@@ -3058,7 +3058,7 @@ test("flow run --no-wait --json dest identity is dest wait-for, not leftover Clo
     frames: leftoverDestEndRun.frames,
     artifacts: leftoverDestEndRun.artifacts,
   };
-  const code = await runCli(["flow", "run", "map", "flow", "--no-wait", "--json"], {
+  const code = await runCli(["map", "flow", "run", "map", "flow", "--no-wait", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -3099,7 +3099,7 @@ test("flow run --no-wait --json dest identity is dest wait-for, not leftover Clo
   );
 });
 
-test("combine campaign cancel/triage --json keep campaign; leftover Close 004 cannot fill dest", async () => {
+test("plan cancel/triage --json keep campaign; leftover Close 004 cannot fill dest", async () => {
   const leftoverJob = {
     id: leftoverDestEndRun.id,
     status: "ok",
@@ -3107,16 +3107,9 @@ test("combine campaign cancel/triage --json keep campaign; leftover Close 004 ca
     artifacts: leftoverDestEndRun.artifacts,
   };
   for (const [argv, operationId] of [
-    [["combine", "campaign", "cancel", "camp-1"], "job.combine.campaign.cancel"],
+    [["plan", "cancel", "camp-1"], "job.combine.campaign.cancel"],
     [
-      [
-        "combine",
-        "campaign",
-        "triage",
-        "camp-1",
-        "--input",
-        '{"caseIds":["cell-1"],"triageStatus":"resolved"}',
-      ],
+      ["plan", "triage", "camp-1", "--input", '{"caseIds":["cell-1"],"triageStatus":"resolved"}'],
       "job.combine.campaign.triage",
     ],
   ] as const) {
@@ -3209,7 +3202,7 @@ test("run replay-offline --json dest identity is dest wait-for 003, not leftover
   );
 });
 
-test("combine run carries the shared explicit local-admission contract unchanged", async () => {
+test("plan run carries the shared explicit local-admission contract unchanged", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];
   const localAdmission = {
@@ -3273,7 +3266,7 @@ test("combine run carries the shared explicit local-admission contract unchanged
   };
 
   const code = await runCli(
-    ["combine", "run", "map", "languages", "--input", JSON.stringify(input), "--json"],
+    ["plan", "run", "map", "languages", "--input", JSON.stringify(input), "--json"],
     {
       streams: io.streams,
       createClient: () => client,
@@ -3292,7 +3285,7 @@ test("combine run carries the shared explicit local-admission contract unchanged
   assert.equal(started?.input.combineId, "languages");
 });
 
-test("combine run waits for later cases and fails when any locale fails", async () => {
+test("plan run waits for later cases and fails when any locale fails", async () => {
   const io = capture();
   const polled: string[] = [];
   const client: OperationInvoker = {
@@ -3319,7 +3312,7 @@ test("combine run waits for later cases and fails when any locale fails", async 
   };
 
   const code = await runCli(
-    ["combine", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
+    ["plan", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
     {
       streams: io.streams,
       createClient: () => client,
@@ -3334,11 +3327,11 @@ test("combine run waits for later cases and fails when any locale fails", async 
   assert.equal(JSON.parse(io.stdout()).error.message, "Japanese case failed");
 });
 
-test("job watch --no-wait reads the job once", async () => {
+test("run watch --no-wait reads the job once", async () => {
   const io = capture();
   let calls = 0;
   const running = { job: { id: "abc", status: "running" } };
-  const code = await runCli(["job", "watch", "abc", "--no-wait", "--json"], {
+  const code = await runCli(["run", "watch", "abc", "--no-wait", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -3356,11 +3349,11 @@ test("job watch --no-wait reads the job once", async () => {
   assert.equal(JSON.parse(io.stdout()).operationId, "job.get");
 });
 
-test("job watch polling is cancelled through the existing signal path", async () => {
+test("run watch polling is cancelled through the existing signal path", async () => {
   const io = capture();
   const listenersBefore = process.listenerCount("SIGINT");
   let calls = 0;
-  const code = await runCli(["job", "watch", "abc", "--ndjson"], {
+  const code = await runCli(["run", "watch", "abc", "--ndjson"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -3390,10 +3383,10 @@ test("job watch polling is cancelled through the existing signal path", async ()
   assert.equal(process.listenerCount("SIGINT"), listenersBefore);
 });
 
-test("job watch rejects malformed job.get responses", async () => {
+test("run watch rejects malformed job.get responses", async () => {
   const io = capture();
   let calls = 0;
-  const code = await runCli(["job", "watch", "abc", "--json"], {
+  const code = await runCli(["run", "watch", "abc", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -3414,10 +3407,10 @@ test("job watch rejects malformed job.get responses", async () => {
   assert.match(JSON.parse(records[0]!).error.message, /Malformed job\.get response/);
 });
 
-test("activity follow emits typed NDJSON without invoking event.stream or client focus", async () => {
+test("system activity follow emits typed NDJSON without invoking event.stream or client focus", async () => {
   const io = capture();
   let invoked = false;
-  const code = await runCli(["activity", "follow", "--ndjson"], {
+  const code = await runCli(["system", "activity", "follow", "--ndjson"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -3457,7 +3450,7 @@ test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", as
   };
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     const io = capture();
-    const code = await runCli(["activity", "follow", "--ndjson"], {
+    const code = await runCli(["system", "activity", "follow", "--ndjson"], {
       streams: io.streams,
       createClient: () => ({
         invoke: async () => ({}),
@@ -3498,7 +3491,7 @@ test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", as
 test("JSON event follow is a usage error before creating a client", async () => {
   const io = capture();
   let created = false;
-  const code = await runCli(["activity", "follow", "--json"], {
+  const code = await runCli(["system", "activity", "follow", "--json"], {
     streams: io.streams,
     createClient: () => {
       created = true;
@@ -3622,7 +3615,7 @@ test("structured recovery is machine-readable and useful in the human CLI", asyn
     recoveryAction: {
       operationId: "lease.create",
       input: { poolId: "local", deviceSerial: "ipad-1" },
-      cli: { argv: ["lease", "create", "ipad-1", "--actor", "agent:mapper"] },
+      cli: { argv: ["device", "lease", "create", "ipad-1", "--actor", "agent:mapper"] },
     },
   };
   const code = await runCli(
@@ -3648,7 +3641,7 @@ test("structured recovery is machine-readable and useful in the human CLI", asyn
 
 test("failed watched jobs use a non-zero exit", async () => {
   const io = capture();
-  const code = await runCli(["job", "watch", "failed-job", "--json"], {
+  const code = await runCli(["run", "watch", "failed-job", "--json"], {
     streams: io.streams,
     createClient: () => ({
       invoke: async () => ({
@@ -3669,7 +3662,7 @@ test("failed watched jobs emit a bounded summary with durable evidence pointers"
   const io = capture();
   const huge = "aggregated failure ".repeat(50_000);
   const evidenceHuge = "raw accessibility evidence ".repeat(50_000);
-  const code = await runCli(["job", "watch", "failed-large", "--json"], {
+  const code = await runCli(["run", "watch", "failed-large", "--json"], {
     streams: io.streams,
     createClient: () => ({
       invoke: async () => ({
@@ -3685,7 +3678,7 @@ test("failed watched jobs emit a bounded summary with durable evidence pointers"
                 id: "privacy",
                 title: "Privacy",
                 status: "failed",
-                error: "screen differed",
+                error: "map screen differed",
                 startedAt: 1,
                 finishedAt: 2,
               },

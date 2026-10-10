@@ -5,7 +5,7 @@ import {
   operationLabel,
   type CommandPathDescriptor,
 } from "./commands.js";
-import { dbHelp } from "./db-commands.js";
+import { renamedFamily } from "./cli-renames.js";
 import { UsageError } from "./errors.js";
 import {
   everydayExitCodes,
@@ -14,21 +14,47 @@ import {
   renderEverydayHelp,
 } from "./everyday-help.js";
 
-const familyGroups = [
-  ["Topology", ["map", "screen", "connect", "flow"]],
-  [
-    "Authoring",
-    ["variable", "test", "plan", "combine", "proposal", "session", "routine", "case-stack"],
-  ],
-  ["Explore", ["discovery"]],
-  ["Proof", ["proof", "prove"]],
-  ["Operate", ["device", "run", "report", "activity"]],
-  ["Automation", ["schedule", "matrix"]],
-  [
-    "Workspace",
-    ["policy", "data", "workspace", "project", "build", "device-pool", "lane", "lease"],
-  ],
+/** The advanced surface: `relay <noun> <verb>`, one spelling per operation. */
+const nouns = [
+  ["test", "Saved Tests, their Variables, Data sets, and case stacks"],
+  ["run", "Runs and execution jobs: watch, retry, review, share, repair"],
+  ["plan", "Saved Plans (Variables × Tests), their campaigns, matrices, and schedules"],
+  ["device", "Devices and browsers, leases, Lanes, pools, saved accounts, targets"],
+  ["recording", "Record a Test step by step, then edit and commit the take"],
+  ["map", "The App Map: screens, connections, flows, routines, proposals, Explore"],
+  ["proof", "Change Proof lifecycle, evidence and privacy policy, PR reports"],
+  ["build", "App builds: save, preflight, install, launch"],
+  ["system", "Activity log, projects, and the local control database"],
 ] as const;
+
+/** Commands parsed outside the operation registry, listed with their noun. */
+const extraUsages: Readonly<Record<string, readonly (readonly [string, string])[]>> = {
+  test: [
+    [
+      "test capture-plan <map-id> <test-id> --input-file <plan.json>",
+      "Save a browser capture plan as a Test and its language Variable",
+    ],
+  ],
+  proof: [
+    [
+      "proof verify --base <ref> [--config-file <path>] [--confirm]",
+      "Prove the current Git change: plan, approve, and run one durable Proof",
+    ],
+    ["proof analyze run <runId...>", "Offline analysis of frozen Runs (never controls a device)"],
+    ["proof analyze test <appMapId> <testId...>", "Offline analysis of saved Tests"],
+    ["proof analyze revision <gitSha>", "Offline analysis of one source revision"],
+    [
+      "proof report --run <runId> [--format github-check]",
+      "Pass / fail / unproven report for a pull request (exit 0, 9, 8)",
+    ],
+  ],
+  system: [
+    ["system db path", "Print the local control database path"],
+    ["system db query <sql>", "Query the local control database"],
+    ["system db events [--after <seq>]", "Print durable events"],
+    ["system db shell", "Open sqlite3 on the local control database"],
+  ],
+};
 
 const globalOptions = `Global options:
   --server <url>                    Relay server (env RELAY_URL)
@@ -40,14 +66,14 @@ const globalOptions = `Global options:
   --input-file <path>              Read the same JSON object from a file
   --json | --ndjson                Machine-readable output
   --quiet                          Suppress stderr diagnostics
-  --timeout <ms>                   Request timeout (default 180s; env RELAY_TIMEOUT_MS). --budget on plan/combine run overrides watch unless --timeout is set
+  --timeout <ms>                   Request timeout (default 180s; env RELAY_TIMEOUT_MS). --budget on plan run overrides watch unless --timeout is set
   --out <dir>                      On run verbs: write result.json, stderr.log, checkpoint.png (dest wait-for, not leftover Close last-frame), and per-job dest PNGs
   --wait | --no-wait               Wait policy (env RELAY_WAIT)
   --target current                 Resolve the only connected Device for an advanced Test run
   --revision current               Resolve the latest saved topology revision for an advanced run
   --device <id>                    Choose a connected Device for an outcome command
   --map <id>                       Choose backing topology when more than one exists (advanced)
-  --lane <id>                      Saved who+where on test run, combine/plan run, interact, snapshot, or screenshot. Server resolves revision and overlay; --input-file is not needed
+  --lane <id>                      Saved who+where on test run, plan run, interact, snapshot, or screenshot. Server resolves revision and overlay; --input-file is not needed
 
 Screenshot, snapshot, and compile output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file
@@ -80,20 +106,48 @@ function friendlyPaths(): FriendlyPath[] {
   ];
 }
 
-function familyNames(): Set<string> {
-  return new Set([
-    ...friendlyPaths().map(({ descriptor }) => descriptor.command.split(" ")[0]!),
-    "db",
-    "report",
-    "prove",
-  ]);
-}
+const familyNotes: Readonly<Record<string, string>> = {
+  run: `relay run <test> runs one saved Test (see 'relay help'). The verbs above act on runs
+and execution jobs; a Test named like a verb runs with 'relay test run <app> <test>'.`,
+  map: "Screen, connection, and flow edits are granular, revision-safe App Map operations.",
+  test: `Capture plans contain name, expectedRevision, language (observed options and reviewed
+picker navigation), and views (id, name, steps). Each view ends with a screenshot.`,
+  proof: `proof verify is the ordinary live Change Proof entry point. It reads the reviewed
+.relay/change-proof.json (or --config-file, alias --config), resolves exact local Git
+base/HEAD SHAs and changed files, compiles an explained Verification Plan, and creates
+one durable Proof only with --confirm. proof run <proof-id> runs or resumes an approved
+Proof; human approval remains required at the frozen plan boundary. proof analyze is
+read-only offline analysis; it never controls a Device or creates a live Proof.
+proof report reads persisted runs from disk and needs no server.`,
+  system: `system db reads the local control-plane SQLite file (leases, maps, durable events)
+directly, without the HTTP server.`,
+};
 
-function usages(commands: readonly string[]): string[] {
-  const selected = new Set(commands);
-  return friendlyPaths()
-    .filter(({ descriptor }) => selected.has(descriptor.command))
-    .map(({ descriptor }) => `  relay ${formatCommandUsage(descriptor)}`);
+/** One line per verb: plain verbs first, then each sub-noun (`map screen …`)
+ * grouped together, keeping registry order inside a group. */
+function nounLines(noun: string): string[] {
+  const rows: (readonly [string, string])[] = [
+    ...friendlyPaths()
+      .filter(({ descriptor }) => descriptor.command.split(" ")[0] === noun)
+      .map(
+        ({ descriptor, label }) =>
+          [formatCommandUsage(descriptor), descriptor.summary ?? label] as const,
+      ),
+    ...(extraUsages[noun] ?? []),
+  ];
+  const words = (usage: string) => usage.split(" ").filter((word) => /^[a-z]/u.test(word));
+  const group = (usage: string) => (words(usage).length > 2 ? words(usage)[1]! : "");
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort(
+      (left, right) =>
+        group(left.row[0]).localeCompare(group(right.row[0])) || left.index - right.index,
+    )
+    .map(({ row: [usage, summary] }) => {
+      const command = `  relay ${usage}`;
+      const short = summary.split(/\. (?=[A-Z-])|; /u)[0]!;
+      return command.length < 56 ? `${command.padEnd(56)}${short}` : `${command}  ${short}`;
+    });
 }
 
 function renderRootHelp(): string {
@@ -138,51 +192,20 @@ ${everydayExitCodes}
 Machine output (--json): {"type":"result","ok":true,"operationId":"...","result":{...}}
   failures: {"type":"error","ok":false,"error":{"message":"...","exitCode":2}}
 
-Advanced: 'relay help advanced' lists every command family (maps, screens,
-plans, proofs, sessions, devices, scheduling). 'relay <family> --help' shows one.
+Advanced: 'relay help advanced' lists relay <noun> <verb> for test, run, plan,
+device, recording, map, proof, build, and system. 'relay <noun> --help' shows one.
 `;
 }
 
 function renderAdvancedHelp(): string {
-  const available = familyNames();
-  const groups = familyGroups
-    .map(([label, families]) => {
-      const present = families.filter((family) => available.has(family));
-      return present.length ? `  ${label.padEnd(11)} ${present.join(", ")}` : undefined;
-    })
-    .filter((line): line is string => line !== undefined)
-    .join("\n");
-  const workflowCommands = [
-    "map list",
-    "map get",
-    "map teach",
-    "screen list",
-    "connect list",
-    "device list",
-    "device screenshot",
-    "test run",
-    "variable save",
-    "combine run",
-    "plan list",
-    "plan get",
-    "plan preflight",
-    "plan run",
-    "plan findings",
-    "plan capture review",
-    "plan capture review apply",
-    "session create",
-    "session start",
-    "session replay",
-    "session commit",
-    "job watch",
-    "activity follow",
-    "proof list",
-  ];
+  const sections = nouns
+    .map(([noun, about]) => `${noun} — ${about}\n${nounLines(noun).join("\n")}`)
+    .join("\n\n");
+  return `Relay advanced commands
 
-  return `Relay advanced reference
-
-These commands are for repair, migration, scripting, and trusted orchestration.
-For everyday use see 'relay help'.
+For everyday use see 'relay help'. Advanced commands read relay <noun> <verb>.
+'relay <noun> --help' shows each verb's arguments, --input fields, and examples.
+Friendly commands default --input to '{}'; path arguments such as <serial> are required.
 
 Choosing a saved Test:
   relay test list <appId> adds discovery.status and platform context. Recorded means a saved
@@ -193,83 +216,30 @@ Choosing a saved Test:
   then inspect preflight.summary.blockers.
   map get is a compact overview. map export <appId> --json includes the full saved graph as YAML.
 
-Full command reference:
-  relay review [--app <appId>]
-  relay review list [--input '{"appMapId":"<appId>"}']
-  relay connect [device]
-  relay observe [device]
-  relay explore --url <url> --goal <goal> --confirm [--agents <1-4>] [--max-steps <n>] [--max-ms <n>]
-    [--judge jev] [--model <openrouter-model>]
-  relay explore --resume <explorationId> --confirm
-  relay explore --inspect <explorationId>
-  relay goal resume <sessionId> --confirm
-  relay goal inspect <sessionId>
-  relay goal cancel <sessionId> --confirm
-  relay goal run --url https://app.test --goal "Open settings" --value name=Ada --confirm
-  relay explore --url https://app.test --goal "Explore" --mission "Member permissions" --mission "Signed-out recovery" --confirm
-  relay goal reproduce <sessionId> --confirm
-  relay goal promote <sessionId> --confirm [--map <id>] [--title <name>]
-  relay record <title> [--map <id>] [--device <id>] --confirm
-  relay edit-recording <workflowId> <expectedVersion> <remove|reorder|replace|merge|split|rename> ...
-  relay run <testId> [--map <id>] [--lane <lane> | --device <id>] [--confirm]
+${sections}
+
+Durable workflows (start from one client, inspect or cancel from another):
   relay repeat <testId> --each <dimension>=<values|supported|all> [--each ...]
     [--strategy <cartesian|zip|pairwise>] [--pilot <representative|first|dimension=value,...>]
     [--resume <untouched|failed|all>] [--map <id>] [--device <id>] [--confirm]
   relay continue-repeat <workflowId> <expectedVersion> --confirm
-  relay inspect <runId|workflowId|legacyV1Ref>
   relay cancel-run <workflowId> <expectedVersion> --confirm
   relay inspect-failure <runId>
   relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
-  relay export <runId> [--out <dir>]
-  relay doctor
-  relay prove --base <ref> [--config-file <path>] [--confirm]
-  relay prove <proof-id> [--wait | --no-wait]
-  relay proof analyze run <runId...>
-  relay proof analyze test <appMapId> <testId...>
-  relay proof analyze revision <gitSha>
-  relay proof start --input-file ./proof.json
-  relay proof list
-  relay proof inspect <proof-id> [--history]
-  relay proof approve-plan <proof-id> --confirm --input <json>
-  relay proof continue <proof-id> --input <json>
-  relay proof cancel <proof-id> --confirm --input <json>
-  relay proof rerun-affected <proof-id> --input-file ./replacement-proof.json
-  relay <family> <command> [arguments] [--input <json> | --input-file <path>] [global options]
-  relay <family> --help
+  relay edit-recording <workflowId> <expectedVersion> <remove|reorder|replace|merge|split|rename> ...
+  relay goal run --url <url> --goal <task> [--value <key=value>] --confirm
+  relay goal inspect|resume|cancel|reproduce|promote <sessionId> [--confirm]
+  relay explore --url <url> --goal <task> [--mission <mission>...] --confirm [--agents <1-4>]
+    [--judge jev] [--model <openrouter-model>] [--auth-fixture <reference>]
+  relay explore --resume <explorationId> --confirm | relay explore --inspect <explorationId>
 
-Goal exploration options:
-  --judge jev                    Use the OpenRouter-hosted Typesafe Jev decision model
-  --model <id>                   Override the OpenRouter model alias or pinned model id
-  --auth-fixture <reference>     Bind one existing managed browser fixture (single worker only)
-
-Outcome commands:
-  connect, observe, explore, goal, record, edit-recording, run, repeat, continue-repeat, inspect,
-  cancel-run, inspect-failure, propose-repair, export, doctor
-
-These resolve the sole connected Device and current Test workspace automatically. Use --device, or
-the advanced --map option, only when selection is ambiguous. The first Record creates its backing
-topology automatically. Record acquires control only after --confirm and never displaces another
-person or agent. The current command is Control and record: interactions pass through Relay.
-
-Proof commands:
-  prove, proof analyze, proof start, proof list, proof inspect, proof approve-plan,
-  proof continue, proof cancel, proof rerun-affected
-
-Advanced command families:
-${groups}
-
-Advanced examples:
-${usages(workflowCommands).join("\n")}
-
-Start with App, Device, Test, Checkpoint, Run, and Report. Record, Repeat, Explore, and Verify are
-actions. Topology, scheduling, and Device-control commands below are advanced operations for repair,
-migration, and trusted orchestration.
+These resolve the sole connected Device and current Test workspace automatically. Use
+--device, or the advanced --map option, only when selection is ambiguous.
 
 ${globalOptions}
 
-Friendly commands default --input to '{}'. Explicit path arguments such as <serial> and <sessionId>
-are required where shown. Outcome commands start or reuse the default loopback Relay daemon when
-RELAY_URL and --server are unset. Explicit server URLs remain caller-managed.
+Outcome commands start or reuse the default loopback Relay daemon when RELAY_URL and
+--server are unset. Explicit server URLs remain caller-managed.
 `;
 }
 
@@ -316,39 +286,6 @@ action IDs. Replacement retains the action ID and captured source evidence;
 the edited Take needs replay before it can be saved.
 
 ${globalOptions}`;
-  if (family === "browser")
-    return `Relay browser commands
-
-  relay browser open <target-id>
-  relay device launch <target-id> <url>
-  relay browser snapshot <target-id> --json
-  relay browser click <target-id> <accessible-name>
-  relay device screenshot <target-id> --file <image.png>
-  relay browser capture-plan <map-id> <test-id> --input-file <plan.json>
-
-Capture plans contain name, expectedRevision, language (observed options and
-reviewed picker navigation), and views (id, name, steps). Each view ends with
-a screenshot. Run the saved Test with --in <test-id>-language=en,fr, then use
-combine export <batch-id> for screenshots, trees and side-by-side comparison.
-
-${globalOptions}`;
-  if (family === "db") return dbHelp();
-  if (family === "report") {
-    return `Relay report commands
-
-Turn a completed run into a proof report for a pull request: a machine
-verdict (pass / fail / unproven) plus a compact markdown summary suitable
-for GitHub check-run output. \`unproven\` means Relay could not execute
-(no device, no build); it is deliberately distinct from fail.
-
-Usage:
-  relay report emit --run <runId> [--format github-check] [--json]
-
-Exit codes follow operation semantics: 0 pass, 9 fail, 8 unproven.
-
-${globalOptions}
-`;
-  }
   if (family === "operation") {
     return `Relay operation commands
 
@@ -356,54 +293,6 @@ Usage:
   relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
 
 Unlike friendly commands, operation invoke always requires --input or --input-file.
-
-${globalOptions}
-`;
-  }
-  if (family === "prove") {
-    return `Relay prove commands
-
-Usage:
-  relay prove --base <ref> [--config-file <path>] [--confirm]
-  relay prove <proof-id> [--wait | --no-wait]
-
-The --base form is the ordinary live Change Proof entry point. It reads the
-reviewed .relay/change-proof.json (or --config-file), resolves exact local
-Git base/HEAD SHAs and changed files, compiles an explained Verification Plan,
-and creates one durable Proof only with --confirm. A proof id runs or resumes
-the already approved server-owned Proof. Human approval remains required at
-the frozen plan boundary.
-
-Options:
-  --base <ref>                     Exact local Git base ref
-  --config-file <path>             Reviewed JSON config (default .relay/change-proof.json)
-  --config <path>                  Alias for --config-file
-  --confirm                        Authorize Proof creation and its live local lifecycle
-
-${globalOptions}
-`;
-  }
-  if (family === "proof") {
-    return `Relay proof commands
-
-Usage:
-  relay prove --base <ref> [--config-file <path>] [--confirm]
-  relay proof prepare [--input <json>]
-  relay proof analyze run <runId...>
-  relay proof analyze test <appMapId> <testId...>
-  relay proof analyze revision <gitSha>
-  relay proof start --input-file ./proof.json
-  relay proof list
-  relay proof inspect <proof-id> [--history]
-  relay proof approve-plan <proof-id> --confirm --input <json>
-  relay proof continue <proof-id> --input <json>
-  relay proof cancel <proof-id> --confirm --input <json>
-  relay proof rerun-affected <proof-id> --input-file ./replacement-proof.json
-
-proof analyze is read-only offline analysis of explicitly selected frozen
-Runs, Tests, or source metadata. It never controls a Device or creates a live
-Proof. Low-level lifecycle operations stay under proof; ordinary live work
-uses prove.
 
 ${globalOptions}
 `;
@@ -436,18 +325,21 @@ See 'relay help' for the full command list.
 ${globalOptions}
 `;
     }
-    throw new UsageError(`Unknown command family: ${family}. Run 'relay help'.`);
+    const moved = renamedFamily(family);
+    throw new UsageError(
+      moved.length
+        ? `relay ${family} is gone; its commands moved to ${moved.map((noun) => `relay ${noun}`).join(", ")}. Run 'relay ${moved[0]} --help'.`
+        : `Unknown command family: ${family}. Run 'relay help advanced'.`,
+    );
   }
-  const commands = paths
-    .map(
+  const commands = [
+    ...paths.map(
       ({ descriptor, label }) =>
         `  relay ${formatCommandUsage(descriptor)}\n      ${descriptor.summary ?? label}${renderDetails(descriptor)}`,
-    )
-    .join("\n");
-  const aliasNote =
-    family === "screen" || family === "connect" || family === "flow"
-      ? "\nScreen, connection, and flow edits are granular, revision-safe App Map operations.\n"
-      : "";
+    ),
+    ...(extraUsages[family] ?? []).map(([usage, summary]) => `  relay ${usage}\n      ${summary}`),
+  ].join("\n");
+  const note = familyNotes[family] ? `\n${familyNotes[family]}\n` : "";
 
   return `Relay ${family} commands
 
@@ -456,7 +348,7 @@ Usage:
 
 Commands:
 ${commands}
-${aliasNote}
+${note}
 Path arguments override the same fields in --input. Friendly commands default --input to '{}'.
 
 ${globalOptions}

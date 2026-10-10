@@ -57,17 +57,8 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
   },
   {
     operationId: "run.panel-manifest.get",
-    paths: [
-      {
-        command: "run panel-manifest get",
-        arguments: ["runId"],
-        summary: "Read bounded retained Run metadata",
-        inputHelp: [
-          { name: "offset", type: "number", description: "First retained step to include" },
-          { name: "limit", type: "number", description: "Maximum retained steps to include" },
-        ],
-      },
-    ],
+    exclusion: "internal",
+    reason: "The Run panel's retained-step pager; relay inspect and run get read runs.",
   },
   {
     operationId: "run.replay.offline",
@@ -88,7 +79,7 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
     operationId: "run.walkthrough-pack.get",
     paths: [
       {
-        command: "run walkthrough-pack get",
+        command: "run walkthrough",
         arguments: ["runId"],
         summary: "Export a captured-app walkthrough for one run and any joined runs",
         note: "Each joined run keeps its own captures. A changed or missing review frame refuses the export and names that frame. Human output is a passive HTML page. --out writes that page as walkthrough.html beside result.json. --json keeps the structured pack. A downloaded copy cannot be recalled.",
@@ -100,9 +91,9 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
           },
         ],
         examples: [
-          "relay run walkthrough-pack get <run-id>",
-          "relay --out ./review run walkthrough-pack get <run-id>",
-          'relay run walkthrough-pack get <run-id> --input \'{"with":["admin-run"]}\'',
+          "relay run walkthrough <run-id>",
+          "relay run walkthrough <run-id> --out ./review",
+          'relay run walkthrough <run-id> --input \'{"with":["admin-run"]}\'',
         ],
       },
     ],

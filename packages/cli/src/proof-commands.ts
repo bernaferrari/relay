@@ -112,18 +112,6 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
       ],
       note: "The server resolves Git, reviewed journey mappings, registered builds, App Map revisions, and Verification Cells. Callers cannot supply a head SHA, cells, or a verdict.",
     }),
-    path("prove", [], undefined, {
-      summary: "Prepare or resume the current repository change Proof",
-      inputHelp: [
-        {
-          name: "baseRef",
-          type: "git ref",
-          description: "Optional reviewed comparison ref when the workspace has no default",
-        },
-      ],
-      examples: ["relay prove --json", 'relay prove --input \'{"baseRef":"origin/main"}\' --json'],
-      note: "Returns the exact Proof and next required action. Use relay prove <proof-id> to run an approved Proof.",
-    }),
   ),
   mapped(
     "proof.start",
@@ -252,7 +240,7 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "proof.run",
-    path("prove", ["proofId"], undefined, {
+    path("proof run", ["proofId"], undefined, {
       summary: "Run or resume one approved Proof",
       argumentHelp: [{ name: "proofId", type: "string", description: "Proof identifier" }],
       inputHelp: [
@@ -267,7 +255,10 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
           description: "Wait for the coordinator to reach a terminal outcome",
         },
       ],
-      examples: ["relay prove <proof-id> --json", "relay prove <proof-id> --wait --json"],
+      examples: [
+        "relay proof run <proof-id> --json",
+        "relay proof run <proof-id> --no-wait --json",
+      ],
       note: "One server-owned operation selects, runs, resumes, and records the required cases. Reopening Relay or disconnecting this CLI does not lose execution progress.",
     }),
   ),
@@ -416,7 +407,7 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
       examples: [
         'relay proof continue <proof-id> --input \'{"expectedVersion":2,"action":"request-plan-review","reason":"A new affected journey needs review."}\'',
       ],
-      note: "Continue is CAS-bound to expectedVersion. revise-plan requires exact replacement builds and selection. Live execution normally uses relay prove --base; record-runs accepts only durable Run IDs and never a client verdict.",
+      note: "Continue is CAS-bound to expectedVersion. revise-plan requires exact replacement builds and selection. Live execution normally uses relay proof verify --base; record-runs accepts only durable Run IDs and never a client verdict.",
     }),
   ),
   mapped(

@@ -74,16 +74,16 @@ export function applyCombineRunFlags(
       : undefined;
   const hasIn = usesWorlds || Boolean(inputIn && Object.keys(inputIn).length);
   if (lens && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
-    throw new UsageError("--lens is only valid on test run or combine run");
+    throw new UsageError("--lens is only valid on test run or plan run");
   }
   if (usesWorlds && operationId !== "app-map.test.run") {
     throw new UsageError("--in is only valid on test run");
   }
   if (cell && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
-    throw new UsageError("--cell is only valid on test run or combine run");
+    throw new UsageError("--cell is only valid on test run or plan run");
   }
   if (all && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
-    throw new UsageError("--all is only valid on test run or combine run");
+    throw new UsageError("--all is only valid on test run or plan run");
   }
   if (operationId === "app-map.test.run" && !hasIn) {
     if (lens) throw new UsageError("--lens requires --in variableId=value[,value]");
@@ -129,7 +129,7 @@ export function applyLaneFlag(
   if (!laneId) throw new UsageError("--lane requires a Lane identifier");
   if (!LANE_OPERATIONS.has(operationId)) {
     throw new UsageError(
-      "--lane is only valid on test run, combine run, plan run, device interact, snapshot, screenshot, or recover",
+      "--lane is only valid on test run, plan run, device interact, snapshot, screenshot, or recover",
     );
   }
   if (tokens.values.has("--target") || tokens.values.has("--revision")) {
@@ -189,20 +189,20 @@ export function assertPlanCliFlags(operationId: string, tokens: CliFlagBag): voi
     throw new UsageError("--triage on plan run requires --findings");
   }
   if (tokens.values.has("--budget") && operationId !== "job.combine.start") {
-    throw new UsageError("--budget is only valid on plan run or combine run");
+    throw new UsageError("--budget is only valid on plan run");
   }
   if (
     tokens.switches.has("--findings") &&
     operationId !== "job.combine.start" &&
     operationId !== "job.combine.analysis"
   ) {
-    throw new UsageError("--findings is only valid on plan run, combine run, or plan findings");
+    throw new UsageError("--findings is only valid on plan run or plan findings");
   }
   if (tokens.values.has("--export") && !EVIDENCE_PACK_OPERATIONS.has(operationId)) {
-    throw new UsageError("--export is only valid on plan run, combine run, or combine export");
+    throw new UsageError("--export is only valid on plan run or plan export");
   }
   if (tokens.values.has("--todo") && !EVIDENCE_PACK_OPERATIONS.has(operationId)) {
-    throw new UsageError("--todo is only valid on plan run, combine run, or combine export");
+    throw new UsageError("--todo is only valid on plan run or plan export");
   }
 }
 
@@ -236,7 +236,7 @@ export function parseRunOutDir(tokens: CliFlagBag, isRunVerb: boolean): string |
   if (dir === undefined) return undefined;
   if (!isRunVerb) {
     throw new UsageError(
-      "--out is only valid on run verbs (test run, combine run, plan run, flow run, job watch)",
+      "--out is only valid on run verbs (test run, plan run, map flow run, run watch)",
     );
   }
   const trimmed = dir.trim();

@@ -104,7 +104,7 @@ function globalConfig(
   }
   for (const flag of ["--json", "--ndjson", "--quiet"])
     if (argv.includes(flag)) passthrough.push(flag);
-  return parseCli(["system", "health", ...passthrough], env).config;
+  return parseCli(["help", ...passthrough], env).config;
 }
 
 function onlyArgument(verb: Verb, args: readonly string[], name: string): string | undefined {

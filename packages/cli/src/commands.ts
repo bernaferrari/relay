@@ -146,18 +146,18 @@ export function resolveCommand(
     descriptor.paths.filter((candidate) => candidate.command.split(" ")[0] === family),
   );
   if (familyPaths.length) {
-    const sessionLoop = new Set([
-      "session begin",
-      "session tap",
-      "session stop",
-      "session replay",
-      "session commit",
+    const recordingLoop = new Set([
+      "recording begin",
+      "recording tap",
+      "recording stop",
+      "recording replay",
+      "recording commit",
     ]);
     const ordered =
-      family === "session"
+      family === "recording"
         ? [
-            ...familyPaths.filter((candidate) => sessionLoop.has(candidate.command)),
-            ...familyPaths.filter((candidate) => !sessionLoop.has(candidate.command)),
+            ...familyPaths.filter((candidate) => recordingLoop.has(candidate.command)),
+            ...familyPaths.filter((candidate) => !recordingLoop.has(candidate.command)),
           ]
         : familyPaths;
     const usages = ordered
@@ -174,8 +174,8 @@ export function resolveCommand(
   );
 }
 
-/** Top-level words people type (the everyday verbs, then the extras root
- * help lists under "Also"); used only for "did you mean" suggestions. */
+/** Top-level words people type (the everyday verbs, the extras root help
+ * lists under "Also", and the advanced nouns); used only for "did you mean". */
 const everydayWords = [
   "new",
   "apply",

@@ -1,54 +1,40 @@
 import {
   commandPath as path,
   mappedOperation as mapped,
-  type MappedOperationDescriptor,
+  type CliOperationDescriptor,
 } from "./command-descriptors.js";
 import { graphTestListPath } from "./test-commands.js";
 import { planGetCommandPath, planListCommandPath } from "./plan-commands.js";
 
 /** App Map metadata, screens, connections, flows, and reusable graph assets. */
-export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescriptor[] = [
-  mapped(
-    "app-map.list",
-    path("map list", [], undefined, {
-      summary: "List App Maps",
-      examples: ["relay map list"],
-    }),
-  ),
+export const appMapAuthoringCommandDescriptors: readonly CliOperationDescriptor[] = [
+  {
+    operationId: "app-map.list",
+    exclusion: "internal",
+    reason: "relay apps lists every app through it.",
+  },
   mapped(
     "app-map.get",
     path("map get", ["appMapId"], undefined, {
-      summary: "Inspect an App Map",
+      summary: "Inspect an App Map: screens, connections, flows, routines, and proposals",
       argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
       examples: ["relay map get checkout"],
     }),
-    path("screen list", ["appMapId"]),
-    path("connect list", ["appMapId"], undefined, {
-      summary:
-        "List the saved connections between an app's screens (not devices; see relay devices)",
-    }),
-    path("connect get", ["appMapId", "connectionId"], undefined, {
+    path("map connection get", ["appMapId", "connectionId"], undefined, {
       summary: "Show one saved connection and its actions (tap targets, reveal)",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
         { name: "connectionId", type: "string", description: "Saved connection identifier" },
       ],
-      examples: ["relay connect get checkout continue --json"],
+      examples: ["relay map connection get checkout continue --json"],
       note: "CLI projection of app-map.get. Returns the saved connection's actions (tap targets, reveal) without a separate operation.",
     }),
 
-    path("flow list", ["appMapId"]),
-    path("routine list", ["appMapId"]),
-    path("proposal list", ["appMapId"]),
-    path("variable list", ["appMapId"], undefined, {
+    path("test var list", ["appMapId"], undefined, {
       summary: "List every saved Variable and its available values",
-      examples: ["relay variable list shop-android"],
+      examples: ["relay test var list shop-android"],
     }),
     graphTestListPath,
-    path("combine list", ["appMapId"], undefined, {
-      summary: "List saved Variable × Test plans",
-      examples: ["relay combine list shop-android"],
-    }),
     planListCommandPath,
     planGetCommandPath,
   ),
@@ -154,7 +140,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
   ),
   mapped(
     "app-map.screen.add",
-    path("screen add", ["appMapId"], undefined, {
+    path("map screen add", ["appMapId"], undefined, {
       summary: "Add a named screen without persistence metadata",
       argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
       inputHelp: [
@@ -179,13 +165,13 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         { name: "screen.position", type: "{x,y}", description: "Optional canvas position" },
       ],
       examples: [
-        'relay screen add checkout --input \'{"expectedRevision":2,"screen":{"id":"confirmation","title":"Confirmation","position":{"x":640,"y":240}}}\'',
+        'relay map screen add checkout --input \'{"expectedRevision":2,"screen":{"id":"confirmation","title":"Confirmation","position":{"x":640,"y":240}}}\'',
       ],
     }),
   ),
   mapped(
     "app-map.screen.capture",
-    path("screen capture", ["appMapId"], undefined, {
+    path("map screen capture", ["appMapId"], undefined, {
       summary: "Save the current target screen to an App Map",
       argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
       inputHelp: [
@@ -217,18 +203,21 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay screen capture onboarding --input \'{"expectedRevision":0,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>"}\'',
+        'relay map screen capture onboarding --input \'{"expectedRevision":0,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>"}\'',
       ],
     }),
   ),
   mapped(
     "app-map.screen.refresh.prepare",
-    path("screen refresh prepare", ["appMapId", "screenId"]),
+    path("map screen refresh prepare", ["appMapId", "screenId"]),
   ),
-  mapped("app-map.screen.refresh.apply", path("screen refresh apply", ["appMapId", "screenId"])),
+  mapped(
+    "app-map.screen.refresh.apply",
+    path("map screen refresh apply", ["appMapId", "screenId"]),
+  ),
   mapped(
     "app-map.screen.alias-observe",
-    path("screen alias-observe", ["appMapId", "screenId"], undefined, {
+    path("map screen alias-observe", ["appMapId", "screenId"], undefined, {
       summary: "Approve the current target screen as the same mapped screen",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -255,14 +244,14 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay screen alias-observe checkout home --input \'{"expectedRevision":3,"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>"}\'',
+        'relay map screen alias-observe checkout home --input \'{"expectedRevision":3,"target":{"kind":"device","platform":"android","targetId":"<serial>"},"leaseId":"<lease>"}\'',
       ],
       note: "One-command fix when a first run in a new locale reports every screen as unknown: navigate the target to the screen first, then approve its observed fingerprint as an alias of the mapped screen. The primary fingerprint is never replaced; repeats deduplicate; an empty observation fails closed.",
     }),
   ),
   mapped(
     "app-map.scroll-surface.capture",
-    path("screen capture-scroll", ["appMapId", "screenId", "variantId"], undefined, {
+    path("map screen capture-scroll", ["appMapId", "screenId", "variantId"], undefined, {
       summary: "Capture one durable, decomposable full scrollable screen",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -295,7 +284,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay screen capture-scroll shop settings settings-ja --input \'{"expectedRevision":12,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>","maxScrolls":6}\'',
+        'relay map screen capture-scroll shop settings settings-ja --input \'{"expectedRevision":12,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>","maxScrolls":6}\'',
       ],
       note: "Explicitly opts this stable product-owned variant into full-surface coverage. Dynamic, private, imported, feed, and history content should remain viewport-only. Raw PNG/tree pairs are canonical; the composite, merged tree, and manifest are derived without storing base64 in the App Map.",
     }),
@@ -303,7 +292,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
   mapped(
     "app-map.scroll-surface.regenerate",
     path(
-      "screen regenerate-scroll",
+      "map screen regenerate-scroll",
       ["appMapId", "screenId", "variantId", "captureId"],
       undefined,
       {
@@ -323,7 +312,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           },
         ],
         examples: [
-          "relay screen regenerate-scroll shop settings settings-ja scroll-surface-capture --input '{\"expectedRevision\":13}'",
+          "relay map screen regenerate-scroll shop settings settings-ja scroll-surface-capture --input '{\"expectedRevision\":13}'",
         ],
         note: "Does not control or re-scroll the device. Raw viewport PNG/tree evidence and capture identity remain unchanged.",
       },
@@ -331,60 +320,70 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
   ),
   mapped(
     "app-map.scroll-surface.origin.inspect",
-    path("screen origin inspect", ["appMapId", "screenId", "variantId", "captureId"], undefined, {
-      summary: "Inspect the immutable review and revocation lineage for one scroll origin",
-      argumentHelp: [
-        { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "screenId", type: "string", description: "Logical screen identifier" },
-        { name: "variantId", type: "string", description: "Target/locale-specific variant" },
-        { name: "captureId", type: "string", description: "Immutable scroll capture" },
-      ],
-      examples: [
-        "relay screen origin inspect shop settings settings-en scroll-surface-capture --json",
-      ],
-      note: "Reads only persisted evidence, the reviewed-origin projection, and its local lifecycle ledger. It never connects to or controls a device.",
-    }),
+    path(
+      "map screen origin inspect",
+      ["appMapId", "screenId", "variantId", "captureId"],
+      undefined,
+      {
+        summary: "Inspect the immutable review and revocation lineage for one scroll origin",
+        argumentHelp: [
+          { name: "appMapId", type: "string", description: "App Map identifier" },
+          { name: "screenId", type: "string", description: "Logical screen identifier" },
+          { name: "variantId", type: "string", description: "Target/locale-specific variant" },
+          { name: "captureId", type: "string", description: "Immutable scroll capture" },
+        ],
+        examples: [
+          "relay map screen origin inspect shop settings settings-en scroll-surface-capture --json",
+        ],
+        note: "Reads only persisted evidence, the reviewed-origin projection, and its local lifecycle ledger. It never connects to or controls a device.",
+      },
+    ),
   ),
   mapped(
     "app-map.scroll-surface.origin.review",
-    path("screen origin review", ["appMapId", "screenId", "variantId", "captureId"], undefined, {
-      summary: "Deliberately approve a verified Android document-top origin",
-      argumentHelp: [
-        { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "screenId", type: "string", description: "Logical screen identifier" },
-        { name: "variantId", type: "string", description: "Android target/locale variant" },
-        { name: "captureId", type: "string", description: "Immutable scroll capture to review" },
-      ],
-      inputHelp: [
-        {
-          name: "expectedRevision",
-          type: "number",
-          required: true,
-          description: "Current App Map revision",
-        },
-        {
-          name: "reason",
-          type: "string",
-          required: true,
-          description: "Why the first raw viewport is known to be document top",
-        },
-        {
-          name: "assertion",
-          type: 'literal "reviewed-document-top"',
-          required: true,
-          description: "Fixed deliberate approval statement; arbitrary prose cannot authorize",
-        },
-      ],
-      examples: [
-        'relay screen origin review shop settings settings-en scroll-surface-capture --confirm --input \'{"expectedRevision":13,"reason":"Reviewed frozen first frame","assertion":"reviewed-document-top"}\'',
-      ],
-      note: "Requires an explicit confirmation and the fixed assertion reviewed-document-top. Creates a local, signed review overlay bound to this exact map revision/digest and raw PNG/tree pair. It does not capture, launch, scroll, or lease a device.",
-    }),
+    path(
+      "map screen origin review",
+      ["appMapId", "screenId", "variantId", "captureId"],
+      undefined,
+      {
+        summary: "Deliberately approve a verified Android document-top origin",
+        argumentHelp: [
+          { name: "appMapId", type: "string", description: "App Map identifier" },
+          { name: "screenId", type: "string", description: "Logical screen identifier" },
+          { name: "variantId", type: "string", description: "Android target/locale variant" },
+          { name: "captureId", type: "string", description: "Immutable scroll capture to review" },
+        ],
+        inputHelp: [
+          {
+            name: "expectedRevision",
+            type: "number",
+            required: true,
+            description: "Current App Map revision",
+          },
+          {
+            name: "reason",
+            type: "string",
+            required: true,
+            description: "Why the first raw viewport is known to be document top",
+          },
+          {
+            name: "assertion",
+            type: 'literal "reviewed-document-top"',
+            required: true,
+            description: "Fixed deliberate approval statement; arbitrary prose cannot authorize",
+          },
+        ],
+        examples: [
+          'relay map screen origin review shop settings settings-en scroll-surface-capture --confirm --input \'{"expectedRevision":13,"reason":"Reviewed frozen first frame","assertion":"reviewed-document-top"}\'',
+        ],
+        note: "Requires an explicit confirmation and the fixed assertion reviewed-document-top. Creates a local, signed review overlay bound to this exact map revision/digest and raw PNG/tree pair. It does not capture, launch, scroll, or lease a device.",
+      },
+    ),
   ),
   mapped(
     "app-map.scroll-surface.origin.revoke",
     path(
-      "screen origin revoke",
+      "map screen origin revoke",
       ["appMapId", "screenId", "variantId", "captureId", "projectionId"],
       undefined,
       {
@@ -422,7 +421,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           },
         ],
         examples: [
-          'relay screen origin revoke shop settings settings-en scroll-surface-capture reviewed-origin-1 --confirm --input \'{"expectedRevision":13,"reason":"Disable this origin","assertion":"revoke-reviewed-document-origin"}\'',
+          'relay map screen origin revoke shop settings settings-en scroll-surface-capture reviewed-origin-1 --confirm --input \'{"expectedRevision":13,"reason":"Disable this origin","assertion":"revoke-reviewed-document-origin"}\'',
         ],
         note: "Requires an explicit confirmation and the fixed assertion revoke-reviewed-document-origin. Revocation is durable and blocks already-compiled execution plans at runtime. It never deletes the approval evidence or controls a device.",
       },
@@ -486,7 +485,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
   ),
   mapped(
     "app-map.screen.update",
-    path("screen update", ["appMapId", "screenId"], undefined, {
+    path("map screen update", ["appMapId", "screenId"], undefined, {
       summary: "Patch one screen's title, identity, position, or variants",
       inputHelp: [
         {
@@ -504,15 +503,15 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay screen update checkout home --input \'{"expectedRevision":7,"input":{"patch":{"title":"Home feed"}}}\'',
+        'relay map screen update checkout home --input \'{"expectedRevision":7,"input":{"patch":{"title":"Home feed"}}}\'',
       ],
       note: "Like test save (test) and variable save (variable), the mutation nests under one key — here input.patch beside the top-level expectedRevision.",
     }),
   ),
-  mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),
+  mapped("app-map.screen.remove", path("map screen remove", ["appMapId", "screenId"])),
   mapped(
     "app-map.screen.consolidate",
-    path("screen consolidate", ["appMapId", "targetScreenId"], undefined, {
+    path("map screen consolidate", ["appMapId", "targetScreenId"], undefined, {
       summary: "Merge captures of one screen or consolidate scroll viewports",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -554,14 +553,14 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay screen consolidate shop settings --input \'{"expectedRevision":12,"sourceScreenIds":["settings-middle","settings-bottom"],"dryRun":true}\'',
+        'relay map screen consolidate shop settings --input \'{"expectedRevision":12,"sourceScreenIds":["settings-middle","settings-bottom"],"dryRun":true}\'',
       ],
       note: "Use mode: same-screen to approve duplicate captures while preserving actions and identity aliases. The default scroll-surface mode adds semantic reveal-to-control actions. Evidence-backed viewport cards require a seam-honest imported surface; point-only edges block consolidation.",
     }),
   ),
   mapped(
     "app-map.connection.create",
-    path("connect create", ["appMapId"], undefined, {
+    path("map connection create", ["appMapId"], undefined, {
       summary: "Connect two screens with optional replayable actions",
       argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
       inputHelp: [
@@ -597,15 +596,15 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay connect create checkout --input \'{"expectedRevision":3,"connection":{"id":"submit-order","fromScreenId":"cart","destination":{"kind":"screen","screenId":"confirmation"},"label":"Submit order"}}\'',
+        'relay map connection create checkout --input \'{"expectedRevision":3,"connection":{"id":"submit-order","fromScreenId":"cart","destination":{"kind":"screen","screenId":"confirmation"},"label":"Submit order"}}\'',
       ],
     }),
   ),
-  mapped("app-map.connection.update", path("connect update", ["appMapId", "connectionId"])),
-  mapped("app-map.connection.remove", path("connect remove", ["appMapId", "connectionId"])),
+  mapped("app-map.connection.update", path("map connection update", ["appMapId", "connectionId"])),
+  mapped("app-map.connection.remove", path("map connection remove", ["appMapId", "connectionId"])),
   mapped(
     "app-map.connection.run",
-    path("connect run", ["appMapId", "connectionId"], undefined, {
+    path("map connection run", ["appMapId", "connectionId"], undefined, {
       summary: "Replay one saved connection and verify its destination",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -615,15 +614,17 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         { name: "serial", type: "string", description: "Device serial" },
         { name: "platform", type: "android | ios", description: "Device platform" },
       ],
-      examples: ['relay connect run settings open-connections --input \'{"serial":"device-id"}\''],
+      examples: [
+        'relay map connection run settings open-connections --input \'{"serial":"device-id"}\'',
+      ],
       behavior: "job-start-watch",
     }),
   ),
-  mapped("app-map.group.save", path("group save", ["appMapId", "groupId"])),
-  mapped("app-map.group.remove", path("group remove", ["appMapId", "groupId"])),
+  mapped("app-map.group.save", path("map group save", ["appMapId", "groupId"])),
+  mapped("app-map.group.remove", path("map group remove", ["appMapId", "groupId"])),
   mapped(
     "app-map.flow.save",
-    path("flow save", ["appMapId", "flowId"], undefined, {
+    path("map flow save", ["appMapId", "flowId"], undefined, {
       summary: "Save a reusable path; Relay owns scope and timestamps",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -661,24 +662,24 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
       ],
       examples: [
-        'relay flow save checkout purchase --input \'{"expectedRevision":4,"flow":{"name":"Purchase","startScreenId":"cart","connectionIds":["submit-order"]}}\'',
+        'relay map flow save checkout purchase --input \'{"expectedRevision":4,"flow":{"name":"Purchase","startScreenId":"cart","connectionIds":["submit-order"]}}\'',
       ],
     }),
   ),
-  mapped("app-map.flow.remove", path("flow remove", ["appMapId", "flowId"])),
-  mapped("app-map.case-stack.save", path("case-stack save", ["appMapId", "caseStackId"])),
+  mapped("app-map.flow.remove", path("map flow remove", ["appMapId", "flowId"])),
+  mapped("app-map.case-stack.save", path("test case-stack save", ["appMapId", "caseStackId"])),
   mapped(
     "app-map.case-stack.attach",
-    path("case-stack apply", ["appMapId", "connectionId", "caseStackId"]),
+    path("test case-stack apply", ["appMapId", "connectionId", "caseStackId"]),
   ),
-  mapped("app-map.case-stack.remove", path("case-stack remove", ["appMapId", "caseStackId"])),
+  mapped("app-map.case-stack.remove", path("test case-stack remove", ["appMapId", "caseStackId"])),
 ];
 
 /** Reusable routines and reviewable App Map proposals. */
-export const appMapRoutineCommandDescriptors: readonly MappedOperationDescriptor[] = [
+export const appMapRoutineCommandDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "app-map.routine.save",
-    path("routine save", ["appMapId", "routineId"], undefined, {
+    path("map routine save", ["appMapId", "routineId"], undefined, {
       summary: "Save reusable actions without persistence metadata",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -705,14 +706,14 @@ export const appMapRoutineCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        'relay routine save shop start-clean --input \'{"expectedRevision":5,"routine":{"name":"Start clean","actions":[{"id":"new","kind":"tap","target":{"identifier":"shop-browserpose"}}]}}\'',
+        'relay map routine save shop start-clean --input \'{"expectedRevision":5,"routine":{"name":"Start clean","actions":[{"id":"new","kind":"tap","target":{"identifier":"shop-browserpose"}}]}}\'',
       ],
     }),
   ),
-  mapped("app-map.routine.remove", path("routine remove", ["appMapId", "routineId"])),
+  mapped("app-map.routine.remove", path("map routine remove", ["appMapId", "routineId"])),
   mapped(
     "app-map.routine.impact",
-    path("routine impact", ["appMapId", "routineId"], undefined, {
+    path("map routine impact", ["appMapId", "routineId"], undefined, {
       summary: "Show which connections, flows, and tests use a routine",
     }),
   ),
@@ -730,16 +731,16 @@ export const appMapRoutineCommandDescriptors: readonly MappedOperationDescriptor
       ],
     }),
   ),
-  mapped("app-map.proposal.submit", path("proposal submit", ["appMapId"])),
+  mapped("app-map.proposal.submit", path("map proposal submit", ["appMapId"])),
   mapped(
     "app-map.observations.propose",
-    path("proposal from-observations", ["appMapId", "sessionId"], undefined, {
+    path("map proposal from-observations", ["appMapId", "sessionId"], undefined, {
       summary: "Turn observed device paths into a reviewable proposal",
     }),
   ),
   mapped(
     "app-map.proposal.approve",
-    path("proposal approve", ["appMapId", "proposalId"], undefined, {
+    path("map proposal approve", ["appMapId", "proposalId"], undefined, {
       summary: "Keep a reviewable App Map edge",
       inputHelp: [
         {
@@ -755,10 +756,10 @@ export const appMapRoutineCommandDescriptors: readonly MappedOperationDescriptor
       ],
     }),
   ),
-  mapped("app-map.proposal.reject", path("proposal reject", ["appMapId", "proposalId"])),
+  mapped("app-map.proposal.reject", path("map proposal reject", ["appMapId", "proposalId"])),
   mapped(
     "app-map.proposal.revert",
-    path("proposal revert", ["appMapId", "proposalId"], undefined, {
+    path("map proposal revert", ["appMapId", "proposalId"], undefined, {
       summary: "Revert an approved repair proposal from its frozen inverse",
     }),
   ),

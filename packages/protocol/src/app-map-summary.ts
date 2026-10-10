@@ -10,9 +10,8 @@ export type AppMapSummaryPresentation = {
 };
 
 const commandPathLists: Record<string, AppMapGetList> = {
-  "variable list": "variables",
+  "test var list": "variables",
   "test list": "tests",
-  "combine list": "combines",
 };
 
 export function appMapGetListForCommandPath(
@@ -38,20 +37,20 @@ export function resolveAppMapGetList(
 }
 
 function connectGetId(presentation?: AppMapSummaryPresentation): string | undefined {
-  if (presentation?.commandPath !== "connect get") return undefined;
+  if (presentation?.commandPath !== "map connection get") return undefined;
   if (
     !presentation.input ||
     typeof presentation.input !== "object" ||
     Array.isArray(presentation.input)
   ) {
-    throw new Error("connect get requires a connectionId");
+    throw new Error("map connection get requires a connectionId");
   }
   if (!("connectionId" in presentation.input)) {
-    throw new Error("connect get requires a connectionId");
+    throw new Error("map connection get requires a connectionId");
   }
   const connectionId = presentation.input.connectionId;
   if (typeof connectionId !== "string" || !connectionId.trim()) {
-    throw new Error("connect get requires a connectionId");
+    throw new Error("map connection get requires a connectionId");
   }
   return connectionId;
 }

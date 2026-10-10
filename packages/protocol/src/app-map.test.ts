@@ -300,7 +300,7 @@ test("App Map list presentations return only the requested catalog", () => {
     "app-map.get",
     { appMap },
     {
-      commandPath: "variable list",
+      commandPath: "test var list",
     },
   ) as Record<string, unknown>;
   assert.deepEqual(Object.keys(variables).sort(), ["counts", "variables"]);
@@ -332,7 +332,7 @@ test("App Map list presentations return only the requested catalog", () => {
   assert.ok(full.appMap.connections.length > 0);
 });
 
-test("connect get presents saved connection actions instead of the map summary", () => {
+test("map connection get presents saved connection actions instead of the map summary", () => {
   const scope = {
     organizationId: "local",
     projectId: "project-1",
@@ -394,7 +394,10 @@ test("connect get presents saved connection actions instead of the map summary",
   const result = summarizeAppMapOperationResult(
     "app-map.get",
     { appMap },
-    { commandPath: "connect get", input: { appMapId: "checkout", connectionId: "continue" } },
+    {
+      commandPath: "map connection get",
+      input: { appMapId: "checkout", connectionId: "continue" },
+    },
   ) as { connection?: { id?: string; actions?: unknown[] }; appMap?: unknown };
   assert.equal(result.appMap, undefined);
   assert.deepEqual(result.connection, {
@@ -411,7 +414,10 @@ test("connect get presents saved connection actions instead of the map summary",
       summarizeAppMapOperationResult(
         "app-map.get",
         { appMap },
-        { commandPath: "connect get", input: { appMapId: "checkout", connectionId: "missing" } },
+        {
+          commandPath: "map connection get",
+          input: { appMapId: "checkout", connectionId: "missing" },
+        },
       ),
     /Unknown connection: missing/u,
   );

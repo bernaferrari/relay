@@ -9,22 +9,22 @@ import type { OutputStreams } from "./output.js";
 const CONTROL_DB_NAME = "control.sqlite";
 
 export function dbHelp(): string {
-  return `Relay db commands
+  return `Relay system db commands
 
 Inspect the local control plane SQLite file (leases, maps, durable events).
 This does not go through the HTTP server. Presence and cursors are not stored here.
 
 Usage:
-  relay db path
-  relay db query <sql>
-  relay db events [--after <seq>]
-  relay db shell
+  relay system db path
+  relay system db query <sql>
+  relay system db events [--after <seq>]
+  relay system db shell
 
 Examples:
-  relay db path
-  relay db query "SELECT id, status, device_serial FROM leases"
-  relay db events --json --after 0
-  relay db shell
+  relay system db path
+  relay system db query "SELECT id, status, device_serial FROM leases"
+  relay system db events --json --after 0
+  relay system db shell
 `;
 }
 
@@ -117,7 +117,8 @@ export async function runDbCommand(
   const { positionals, values, switches } = parseDbArgs(argv);
   const machine = switches.has("--json") || switches.has("--ndjson");
   const quiet = switches.has("--quiet");
-  const args = positionals.slice(1);
+  // positionals[0..1] are `system db`.
+  const args = positionals.slice(2);
   const action = args[0] ?? "path";
   const path = controlDatabasePath(env);
 
@@ -141,7 +142,7 @@ export async function runDbCommand(
   }
   if (action === "query") {
     const sql = args.slice(1).join(" ").trim();
-    if (!sql) throw new UsageError("Expected: relay db query <sql>");
+    if (!sql) throw new UsageError("Expected: relay system db query <sql>");
     const db = openExisting(path);
     try {
       const rows = db.prepare(sql).all();
@@ -169,5 +170,5 @@ export async function runDbCommand(
       db.close();
     }
   }
-  throw new UsageError("Expected: relay db path | query <sql> | events | shell");
+  throw new UsageError("Expected: relay system db path | query <sql> | events | shell");
 }
