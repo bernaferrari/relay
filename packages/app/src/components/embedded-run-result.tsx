@@ -222,7 +222,7 @@ export function EmbeddedRunResult({
                   {report.captureReview.summary?.pending
                     ? `${report.captureReview.summary.pending} to review`
                     : report.captureReview.summary?.missing
-                      ? `${report.captureReview.summary.missing} missing`
+                      ? `${report.captureReview.summary.missing} not captured`
                       : "View"}
                 </span>
               </Button>

@@ -60,6 +60,8 @@ export type ProductTestSummary = {
   /** Why the Test cannot run yet ("A step needs fixing"), when it cannot. */
   setupIssue?: string;
   recentRun?: ProductRunSummary;
+  /** Recent runs keep flipping between passing and not passing. */
+  flaky?: boolean;
 };
 
 export type ProductTestDetail = ProductTestSummary & {
@@ -505,12 +507,14 @@ function projectTestSummary(
   test: AppMapScenarioTest,
   projectedRuns: readonly ProductRunSummary[] = [],
 ): ProductTestSummary {
-  const recentRun = projectedRuns
+  const history = projectedRuns
     .filter((run) => run.appMapId === map.id && run.testId === test.id)
     .sort(
       (a, b) =>
         (b.finishedAt ?? b.startedAt ?? b.queuedAt) - (a.finishedAt ?? a.startedAt ?? a.queuedAt),
-    )[0];
+    );
+  const recentRun = history[0];
+  const flaky = isFlaky(history);
   return {
     id: test.id,
     name: test.name,
@@ -522,7 +526,20 @@ function projectTestSummary(
     updatedAt: test.updatedAt,
     href: routeUrls.test(test.id),
     ...(recentRun ? { recentRun } : {}),
+    ...(flaky ? { flaky } : {}),
   };
+}
+
+/** At least two flips between passing and not passing in the last six finished runs. */
+export function isFlaky(newestFirst: readonly Pick<ProductRunSummary, "outcome">[]): boolean {
+  const results = newestFirst
+    .filter((run) => run.outcome && run.outcome !== "cancelled")
+    .slice(0, 6)
+    .map((run) => run.outcome === "passed");
+  let flips = 0;
+  for (let index = 1; index < results.length; index += 1)
+    if (results[index] !== results[index - 1]) flips += 1;
+  return flips >= 2;
 }
 
 export function projectProductRuns(

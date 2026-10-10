@@ -84,6 +84,14 @@ function TestRow({
               />
             ) : state ? (
               <>
+                {test.flaky && state !== "running" ? (
+                  <span
+                    className="mr-2 rounded-full border border-warning/40 px-1.5 py-0.5 text-xs text-warning-foreground"
+                    title="Recent runs keep flipping between passing and failing"
+                  >
+                    Flaky
+                  </span>
+                ) : null}
                 <StatusPill state={state} />
                 {recent && state !== "running" ? (
                   <span className="ml-1.5 w-14 tabular-nums text-muted-foreground/80">

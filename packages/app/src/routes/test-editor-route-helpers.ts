@@ -113,3 +113,12 @@ export function branchLabel(placement: AppMapTestStepPlacement): string {
   if (placement.branch === "steps") return "Repeated steps";
   return "Main path";
 }
+
+/** Phone and tablet Tests show a live device, not a live browser. */
+export function isDeviceTest(
+  selectedKind: string | undefined,
+  recordedPlatforms: readonly (string | undefined)[],
+): boolean {
+  if (selectedKind) return selectedKind === "device";
+  return recordedPlatforms.some((platform) => platform === "android" || platform === "ios");
+}

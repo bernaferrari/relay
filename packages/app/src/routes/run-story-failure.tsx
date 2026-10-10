@@ -5,6 +5,7 @@ import { CircleX, Eye, Settings, Wrench } from "lucide-react";
 import type { StoryAction, StoryStep } from "../data/run-story";
 import type { ProductRunReportOverview } from "../data/run-report-model";
 import { storyFailureNextAction } from "../data/run-story-failure-cause";
+import { plainRunReason } from "@relay/protocol";
 
 export function RunStoryFailure({
   step,
@@ -19,10 +20,13 @@ export function RunStoryFailure({
   stepNumber: number;
   /** Present only when the failed step belongs to this editable saved Test. */
   testId?: string;
-  report: Pick<ProductRunReportOverview, "outcome" | "failureCategory">;
+  report: Pick<ProductRunReportOverview, "outcome" | "failureCategory" | "cause">;
   onInspectEvidence(): void;
 }) {
   const nextAction = storyFailureNextAction(report);
+  // Say why in a sentence, right here; the raw message stays one click away.
+  const reason =
+    action?.failure?.summary ?? plainRunReason(action?.detail) ?? plainRunReason(report.cause);
   const inspect = nextAction === "inspect" || !testId;
   const productOverlap = inspect && action?.failure?.kind === "layout-overlap";
   return (
@@ -47,8 +51,8 @@ export function RunStoryFailure({
               <dt className="text-muted-foreground">Saw</dt>
               <dd>{action.observed ?? action.detail ?? "Nothing was recorded for this check."}</dd>
             </dl>
-          ) : action?.failure?.summary || action?.detail ? (
-            <p className="mt-1 text-muted-foreground">{action.failure?.summary ?? action.detail}</p>
+          ) : reason ? (
+            <p className="mt-1 text-foreground/80">{reason}</p>
           ) : null}
         </div>
       </div>
@@ -73,7 +77,7 @@ export function RunStoryFailure({
             size="sm"
             render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
           >
-            <Settings aria-hidden="true" /> Repair setup
+            <Settings aria-hidden="true" /> Check run setup
           </Button>
         ) : null}
         {testId ? (

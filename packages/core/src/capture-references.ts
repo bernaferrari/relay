@@ -488,6 +488,11 @@ async function compareItem(
  * Compare every capture of a completed run with its reference, persist the
  * comparisons on the run, and approve unchanged captures that nobody decided
  * yet. A person's decision is never replaced.
+ *
+ * People review only what changed: unless a Plan explicitly asks for human
+ * review of every capture, a capture that matches its approved reference is
+ * accepted, a first capture on a passing run is accepted, and only a capture
+ * that differs from its reference waits for a person.
  */
 export async function applyCaptureReferences(
   root: string,
@@ -496,7 +501,8 @@ export async function applyCaptureReferences(
   return withRunWriteLock(run.dir, async () => {
     const latest = (await readCompletedPersistedRun(run.dir)) ?? run;
     latest.dir = run.dir;
-    if (latest.referenceReviewMode !== "approved-reference") return latest;
+    if ((latest.referenceReviewMode ?? "approved-reference") !== "approved-reference")
+      return latest;
     const queue = captureReviewQueueForRun(latest);
     if (!queue.items.length) return latest;
     const references = await readReferences(root);
@@ -521,14 +527,23 @@ export async function applyCaptureReferences(
           decision.captureId === item.captureId && decidedByReference(decision.decidedBy),
       );
       if (human) continue;
-      if (comparison?.state === "match") {
+      const firstOnPass = comparison?.state === "new" && latest.outcome === "passed";
+      // The first passing capture becomes the baseline, so later changes are caught.
+      if (firstOnPass) {
+        await setCaptureReference(root, latest, item, { ...CAPTURE_REFERENCE_ACTOR }, null).catch(
+          () => undefined,
+        );
+      }
+      if (comparison?.state === "match" || firstOnPass) {
         const decision: CaptureReviewDecision = {
           captureId: item.captureId,
           action: "accept",
           decidedAt: comparison.comparedAt,
           decidedBy: { ...CAPTURE_REFERENCE_ACTOR },
           ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
-          note: "Matches the approved reference.",
+          note: firstOnPass
+            ? "No reference yet; accepted with a passing run."
+            : "Matches the approved reference.",
           reviewVersion: 0,
         };
         if (index >= 0) decisions[index] = decision;

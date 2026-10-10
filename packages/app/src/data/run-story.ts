@@ -90,6 +90,12 @@ export function describeTraceTitle(
   if (reach) {
     const target = reach[1]!;
     const id = /^identifier\s+(.+)$/iu.exec(target);
+    // Android system resources (keyboards, system UI) are device plumbing.
+    const system = id && /^[a-z][\w]*(?:\.[\w]+)+:id\//iu.test(id[1]!);
+    if (system)
+      return /keyboard|ime/iu.test(id[1]!)
+        ? { kind: "verify", label: "Keyboard opens" }
+        : undefined;
     const labelled = /^(?:label|text)\s+["“](.+?)["”]$/iu.exec(target);
     return {
       kind: "verify",
@@ -100,6 +106,11 @@ export function describeTraceTitle(
           : `On ${target}`,
     };
   }
+  if (/^(?:Tap|Click|Press|Long press) point \(/iu.test(text))
+    return {
+      kind: "tap",
+      label: /^Long press/iu.test(text) ? "Long press the recorded spot" : "Tap the recorded spot",
+    };
   if (/^(?:Tap|Click|Press|Long press)\b/iu.test(text)) {
     const target = quoted(text);
     const verb = /^Long press/iu.test(text) ? "Long press" : "Tap";
@@ -158,18 +169,29 @@ export function storyFromReport(input: {
   }
   const groups = new Map<string, StoryStep>();
   const order: string[] = [];
+  // Engine actions nested under a step (taps, waits) carry no step join of
+  // their own; they belong to the step in progress, not a separate group.
+  let current: string | undefined;
   for (const item of input.timeline) {
     if (item.phase === "setup") continue;
+    const mapped = byTraceIndex.get(item.index);
+    if (mapped) current = mapped;
     const described = describeTraceTitle(item.title);
     if (!described) continue;
-    const groupId = byTraceIndex.get(item.index) ?? "run";
+    // The Test's final screenshot closes the run rather than the last step.
+    const groupId =
+      mapped ?? (/^Screenshot · final:/iu.test(item.title) ? "finish" : (current ?? "run"));
     let group = groups.get(groupId);
     if (!group) {
       group = {
         id: groupId,
         title:
           input.stepTitles?.[groupId] ??
-          (groupId === "run" ? "Finish" : humanizeIdentifier(groupId)),
+          (groupId === "run"
+            ? "Getting ready"
+            : groupId === "finish"
+              ? "Finish"
+              : humanizeIdentifier(groupId)),
         state: "pending",
         actions: [],
       };

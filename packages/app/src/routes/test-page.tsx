@@ -49,6 +49,7 @@ import { TestWorkspaceStage } from "./test-stage";
 import { productLinkClassName } from "../lib/class-names";
 import { testRunDestinationCopy } from "../data/test-run-targets";
 import { useTestTextInputs } from "../data/use-test-text-inputs";
+import { isDeviceTest } from "./test-editor-route-helpers";
 
 const routeApi = getRouteApi("/tests/$testId");
 const staleTestMessage = "The saved test changed.";
@@ -289,14 +290,10 @@ export function TestPage() {
       }
     },
   });
-  const recordedPlatform =
-    profiles.data?.find((profile) => profile.id === test.data?.recordedProfileId)?.platform ??
-    (editorDocument.data?.recordedPlatforms?.length === 1
-      ? editorDocument.data.recordedPlatforms[0]
-      : undefined);
-  const deviceTest =
-    selectedTarget?.kind === "device" ||
-    (!selectedTarget && (recordedPlatform === "android" || recordedPlatform === "ios"));
+  const deviceTest = isDeviceTest(selectedTarget?.kind, [
+    profiles.data?.find((profile) => profile.id === test.data?.recordedProfileId)?.platform,
+    ...(editorDocument.data?.recordedPlatforms ?? []),
+  ]);
   // Record more steps into this Test, after the selected step, as its login.
   const record = useMutation({
     mutationFn: async () => {

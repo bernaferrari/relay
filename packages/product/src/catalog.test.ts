@@ -8,6 +8,7 @@ import {
   productTestStatusLabel,
   projectProductRuns,
   projectProductTests,
+  isFlaky,
 } from "./catalog.js";
 
 function app(id: string, name: string, tests: Record<string, AppMapScenarioTest>): AppMap {
@@ -518,4 +519,12 @@ test("Run detail exposes stable authored-step evidence and keeps legacy runs emp
       .stepEvidence,
     [],
   );
+});
+
+test("a test is flaky when recent runs keep flipping between passing and failing", () => {
+  const runs = (...outcomes: string[]) => outcomes.map((outcome) => ({ outcome })) as never;
+  assert.equal(isFlaky(runs("passed", "product-failure", "passed")), true);
+  assert.equal(isFlaky(runs("passed", "passed", "passed", "product-failure")), false);
+  assert.equal(isFlaky(runs("product-failure", "harness-failure", "passed", "passed")), false);
+  assert.equal(isFlaky(runs("passed", "cancelled", "passed")), false);
 });

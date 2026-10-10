@@ -45,7 +45,8 @@ async function captureRun(
   id: string,
   bytes: Buffer,
   lookFor?: string,
-  referenceReviewMode: "human" | "approved-reference" = "approved-reference",
+  referenceReviewMode: "human" | "approved-reference" | undefined = "approved-reference",
+  extra: Record<string, unknown> = {},
 ) {
   const sha = createHash("sha256").update(bytes).digest("hex");
   const run = await persistRun({
@@ -53,7 +54,8 @@ async function captureRun(
     id,
     projectId: "default",
     action: "app-map:shop:test:checkout:root:r3",
-    referenceReviewMode,
+    ...(referenceReviewMode ? { referenceReviewMode } : {}),
+    ...extra,
     platform: "browser",
     serial: "chrome-admin",
     status: "ok",
@@ -395,6 +397,30 @@ test("a failed promotion retry cannot replace a newer Run's reference", async ()
     });
     assert.equal(stale.referenceUpdate.status, "unchanged");
     assert.equal((await findCaptureReference(root, oldRun, oldItem))?.id, currentId);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("passing runs need no review unless a screenshot changed from its baseline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-reference-baseline-"));
+  try {
+    const passing = async (id: string, bytes: Buffer) =>
+      applyCaptureReferences(
+        root,
+        await captureRun(root, id, bytes, undefined, undefined, { outcome: "passed" }),
+      );
+    const first = await passing("run-first", png());
+    const item = captureReviewQueueForRun(first).items[0]!;
+    assert.equal(item.status, "accepted");
+    assert.ok(
+      await findCaptureReference(root, first, item),
+      "the first passing capture is the baseline",
+    );
+    const same = await passing("run-same", png());
+    assert.equal(captureReviewQueueForRun(same).items[0]?.status, "accepted");
+    const changed = await passing("run-changed", png({ x: 10, y: 10 }));
+    assert.equal(captureReviewQueueForRun(changed).items[0]?.status, "pending");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
