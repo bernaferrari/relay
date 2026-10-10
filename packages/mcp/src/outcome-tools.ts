@@ -42,7 +42,7 @@ const legacyWorkflowRef = z
   .startsWith("relay-workflow.v1.");
 const targetId = identifier
   .optional()
-  .describe("Selected target id; keep it through observation, recording, and replay");
+  .describe("Device or browser from relay_list_devices; keep it for the whole recording");
 const targetKind = z.enum(["device", "browser"]).optional();
 const phase = z.enum(["android", "ios"]).optional();
 const workflowDecision = {
@@ -278,24 +278,10 @@ if (!recordedInteraction || !recordingEdit) {
 
 export const relayOutcomeTools = Object.freeze([
   {
-    name: "relay_connect_target",
-    title: "Connect to a target",
-    description:
-      "Discover ready local Devices or managed Browsers and select the sole ready target. Set targetKind and phase to limit mobile discovery. Keep the returned targetId through observation, recording, and replay; choose an exact targetId when several are ready. If the selected phone is disconnected, reconnect it and call relay_connect_target after it is ready with the same targetId, targetKind, and phase.",
-    requiresConfirmation: false,
-    inputSchema: z.object({ targetId, targetKind, phase }).strict(),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
     name: "relay_observe_target",
     title: "Observe a target",
     description:
-      "Capture one bounded pixel and semantic observation without taking control. Pixels remain available when accessibility is stale or unavailable.",
+      "Look at a device or browser without touching it: a screenshot plus the controls on screen. Works even when the control list is unavailable.",
     requiresConfirmation: false,
     inputSchema: z.object({ targetId }).strict(),
     annotations: {
@@ -306,10 +292,10 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   {
-    name: "relay_goal",
-    title: "Run a bounded goal",
+    name: "relay_explore_goal",
+    title: "Explore toward a goal",
     description:
-      "Interact with one target toward a stated goal using bounded model suggestions (OpenRouter). Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Inspect retained evidence read-only, start or resume a goal, cancel a running session, reproduce an acknowledged browser path, or promote a fresh reproduction into the existing review-only Authoring workflow. Plain (non-secret) task values may be supplied as a values map; explorations accept distinct missions — one per worker.",
+      "Let a model drive one device or browser toward a stated goal in a limited number of steps; it never types secrets and stops to ask when unsure. The same tool inspects, resumes, cancels, replays or saves a past exploration as a Test to review.",
     requiresConfirmation: true,
     inputSchema: goalSessionInputSchema,
     annotations: {
@@ -323,7 +309,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_record_test",
     title: "Record a Test",
     description:
-      "Start a control-and-record session in the current Test workspace on the selected ready target. Set originApplication to the native package/bundle the saved Test must reopen. Interactions and explicit checks are sent through Relay. Relay may reserve available control but never displaces another person or agent.",
+      "Start recording a new Test on a device or browser: every tap and check you send is saved as a step. Set originApplication to the app the Test must reopen.",
     requiresConfirmation: true,
     inputSchema: z
       .object({
@@ -345,7 +331,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_record_action",
     title: "Record one action",
     description:
-      'Append one canonical interaction using its durable workflow id and optimistic version. Use interaction:{kind:"steps",steps:[{kind:"wait-for",target:{label:"Done"},timeoutMs:10000}]} or an expect condition to check the goal outcome; a checkpoint captures evidence without an authored condition.',
+      "Record one tap, typing or check step into the active recording. Pass the workflowId and expectedVersion from the last recording result.",
     requiresConfirmation: false,
     inputSchema: z.object({ ...workflowDecision, interaction: recordedInteraction }).strict(),
     annotations: {
@@ -359,7 +345,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_add_checkpoint",
     title: "Add a recording checkpoint",
     description:
-      "Capture an immutable named checkpoint in the active recording. Use relay_record_action with expect/wait-for steps for an executable outcome check.",
+      "Save a named screenshot checkpoint in the active recording. For a step that must pass, record a check with relay_record_action instead.",
     requiresConfirmation: false,
     inputSchema: z.object({ ...workflowDecision, label: identifier.optional() }).strict(),
     annotations: {
@@ -372,7 +358,7 @@ export const relayOutcomeTools = Object.freeze([
   {
     name: "relay_stop_recording",
     title: "Stop and compile a recording",
-    description: "Stop raw capture and prepare the recorded Test for review.",
+    description: "Stop recording and prepare the recorded Test for review.",
     requiresConfirmation: false,
     inputSchema: z.object(workflowDecision).strict(),
     annotations: {
@@ -386,7 +372,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_edit_recording",
     title: "Edit a recording",
     description:
-      "Transform the reviewed recording with one canonical edit, including insert-before for an explicit outcome check. Every successful edit creates a new revision that must replay before approval.",
+      "Change a stopped recording: remove, reorder, replace or insert steps. Replay it again before saving.",
     requiresConfirmation: false,
     inputSchema: z.object({ ...workflowDecision, edit: recordingEdit }).strict(),
     annotations: {
@@ -399,7 +385,8 @@ export const relayOutcomeTools = Object.freeze([
   {
     name: "relay_replay_recording",
     title: "Replay a recording",
-    description: "Replay the exact reviewed recording revision and return its proof state.",
+    description:
+      "Replay the stopped recording exactly as it stands and report whether each step passed.",
     requiresConfirmation: false,
     inputSchema: z.object(workflowDecision).strict(),
     annotations: {
@@ -413,7 +400,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_approve_recording",
     title: "Save a recorded Test",
     description:
-      "Save the exact reviewed recording as the named Test when the canonical workflow allows approval. An unchanged recording may already qualify; edited actions require a passing replay of that revision.",
+      "Save the reviewed recording as a Test. An edited recording must pass a replay first.",
     requiresConfirmation: true,
     inputSchema: z.object(workflowDecision).strict(),
     annotations: {
@@ -427,7 +414,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_repeat_test",
     title: "Repeat a Test",
     description:
-      "Run one representative pilot over selected values. Safe Tests need no confirmation. If preflight reports execution risk, review it and repeat the call with transport confirm: true. Inspect the returned workflow, then explicitly call relay_continue_repeat for the remaining values.",
+      "Run one Test over a list of values (for example several languages), starting with one value so you can check it. Then call relay_continue_repeat for the rest.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
@@ -449,7 +436,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_inspect_workflow",
     title: "Inspect a workflow",
     description:
-      "Read a server-owned Run by workflow ID, or inspect one bounded legacy v1 continuation reference read-only.",
+      "Read the current state of a recording, repeat or Run by its workflowId, including its latest version.",
     requiresConfirmation: false,
     inputSchema: z
       .object({ workflowId: identifier.optional(), legacyRef: legacyWorkflowRef.optional() })
@@ -473,7 +460,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_cancel_run",
     title: "Cancel a Run",
     description:
-      "Cancel one server-owned Run using its workflow ID and exact numeric version. Uncertain outcomes are inspection-only and are never retried automatically.",
+      "Stop a running Run, recording or repeat. Pass its workflowId and expectedVersion; results so far are kept.",
     requiresConfirmation: true,
     inputSchema: z
       .object({ workflowId: identifier, expectedVersion: z.number().int().positive() })
@@ -488,8 +475,7 @@ export const relayOutcomeTools = Object.freeze([
   {
     name: "relay_continue_repeat",
     title: "Continue a Repeat",
-    description:
-      "After reviewing a successful representative pilot, explicitly run the untouched selected values. Uses optimistic workflow versioning.",
+    description: "After the first value of a repeat looks right, run the remaining values.",
     requiresConfirmation: true,
     inputSchema: z.object(workflowDecision).strict(),
     annotations: {
@@ -503,7 +489,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_propose_repair",
     title: "Propose a repair",
     description:
-      "Create a reviewable accept-current or disable proposal for one failed check. This never approves or rewrites a Test.",
+      "Suggest a fix for one failed check (accept what the screen shows now, or turn the check off) for a person to review. It never changes the Test by itself.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
@@ -521,10 +507,28 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   {
+    name: "relay_export_evidence",
+    title: "Export evidence",
+    description:
+      "Export one finished Run's evidence (screenshots, steps and results) to hand to a reviewer or another agent.",
+    requiresConfirmation: false,
+    inputSchema: z.object({ runId: identifier }).strict(),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+] as const satisfies readonly RelayOutcomeToolDescriptor[]);
+
+/** Offline comparison and change-level Proof: full profile only. */
+export const relayFullOutcomeTools = Object.freeze([
+  {
     name: "relay_replay_lab",
     title: "Compare TracePacks offline",
     description:
-      "Compare 2-64 ordered TracePack payloads and optionally recompute visual/localization findings. This read-only tool does not read local files, contact the Relay server, inspect a Device, or mutate evidence.",
+      "Compare 2 to 64 saved run recordings offline and list likely causes of the difference. Reads only the data you pass.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
@@ -540,20 +544,6 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   ...proofOutcomeTools,
-  {
-    name: "relay_export_evidence",
-    title: "Export evidence",
-    description:
-      "Export one finished Run's portable evidence pack (screenshots, steps and results) for a reviewer or another agent.",
-    requiresConfirmation: false,
-    inputSchema: z.object({ runId: identifier }).strict(),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
 ] as const satisfies readonly RelayOutcomeToolDescriptor[]);
 
 function short(value: string): string {
@@ -650,7 +640,7 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
   jobs: RelayOutcomeJobs;
 }): Promise<unknown> {
   return dispatchRelayOutcomeTool(input, {
-    descriptors: relayOutcomeTools,
+    descriptors: [...relayOutcomeTools, ...relayFullOutcomeTools],
     assertRawOutcomeInputBounds,
     replayLabTracePacks,
   });

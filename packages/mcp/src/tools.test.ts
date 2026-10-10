@@ -13,8 +13,11 @@ import {
   relayMcpProfiles,
   relayMcpTools,
   relayMcpToolsForProfile,
+  relayQaOperationTools,
   relayToolName,
+  resolveRelayMcpProfile,
 } from "./tools.js";
+import { relayRegisteredToolNames } from "./registered-tools.js";
 
 const eligibleOperations = operationDefinitions.filter(
   ({ id }) => !relayMcpExclusions.some(({ operationId }) => operationId === id),
@@ -206,7 +209,7 @@ test("lets agents tap by accessibility identifier", () => {
   );
 });
 
-test("advertises serial on recover and list tools in the control profile", () => {
+test("advertises serial on recover and list tools", () => {
   assert.match(tool("target.recover").description, /Adopt a healthy live XCTest runner/u);
   assert.doesNotMatch(tool("target.recover").description, /Repair the runner/u);
   assert.deepEqual(tool("target.devices.list").inputSchema.parse({}), {});
@@ -360,29 +363,10 @@ test("exposes reviewed-origin authority only through exact offline contracts", (
       confirm: true,
     }),
   );
-  for (const profile of ["map", "author", "review"] as const) {
-    const operations = new Set(
-      relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
-    );
-    assert.ok(operations.has("app-map.scroll-surface.origin.inspect"), profile);
-  }
-  const reviewerOperations = new Set(
-    relayMcpToolsForProfile("review").map(({ operationId }) => operationId),
-  );
-  assert.ok(reviewerOperations.has("app-map.scroll-surface.origin.review"));
-  assert.ok(reviewerOperations.has("app-map.scroll-surface.origin.revoke"));
-  assert.equal(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "app-map.scroll-surface.origin.review",
-    ),
-    false,
-  );
-  assert.equal(
-    relayMcpToolsForProfile("control").some(({ operationId }) =>
-      operationId.startsWith("app-map.scroll-surface.origin."),
-    ),
-    false,
-  );
+  const full = new Set(relayMcpToolsForProfile("full").map(({ operationId }) => operationId));
+  assert.ok(full.has("app-map.scroll-surface.origin.inspect"));
+  assert.ok(full.has("app-map.scroll-surface.origin.review"));
+  assert.ok(full.has("app-map.scroll-surface.origin.revoke"));
 });
 
 test("gives run agents one revision-pinned graph Test operation", () => {
@@ -449,7 +433,7 @@ test("gives run agents one revision-pinned graph Test operation", () => {
     },
   );
   assert.ok(
-    relayMcpToolsForProfile("run").some(({ operationId }) => operationId === "app-map.test.run"),
+    relayMcpToolsForProfile("full").some(({ operationId }) => operationId === "app-map.test.run"),
   );
   assert.throws(() =>
     tool("app-map.test.run").inputSchema.parse({
@@ -498,189 +482,72 @@ test("app-map.test.run guidance explains the one-Test versus Combine split", () 
   assert.match(guidance, /executionMode:'all'/u);
 });
 
-test("control profile includes reusable actions; locale profile reads app-declared locales", () => {
-  const control = new Set(relayMcpToolsForProfile("control").map(({ operationId }) => operationId));
-  assert.ok(control.has("action.run"), "control profile is missing action.run");
-  const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
-  assert.ok(locale.has("target.app.locales"), "locale profile is missing target.app.locales");
-  assert.ok(locale.has("target.interact"), "locale profile is missing target.interact");
-});
-
-test("defines deterministic advanced profiles behind the compact qa default", () => {
-  assert.deepEqual(relayMcpProfiles, [
-    "operator",
-    "outcome",
-    "qa",
-    "control",
-    "map",
-    "observe",
-    "author",
-    "test",
-    "run",
-    "locale",
-    "review",
-    "admin",
-    "proof",
-    "full",
-  ]);
+test("defines three nested profiles behind the compact qa default", () => {
+  assert.deepEqual(relayMcpProfiles, ["qa", "device", "full"]);
   assert.equal(defaultRelayMcpProfile, "qa");
   assert.deepEqual(relayMcpToolsForProfile("qa"), []);
-  assert.deepEqual(relayMcpToolsForProfile("operator"), []);
-  assert.deepEqual(relayMcpToolsForProfile("outcome"), []);
+  assert.deepEqual(relayMcpToolsForProfile("device"), []);
+  const hidden = new Set([
+    "test.create-from-goal",
+    "test.apply-yaml",
+    "run.verdict.get",
+    ...relayQaOperationTools.map(({ operationId }) => operationId),
+  ]);
   assert.deepEqual(
     relayMcpToolsForProfile("full").map(({ operationId }) => operationId),
-    relayMcpTools
-      .map(({ operationId }) => operationId)
-      .filter(
-        (id) =>
-          id !== "test.create-from-goal" && id !== "test.apply-yaml" && id !== "run.verdict.get",
-      ),
+    relayMcpTools.map(({ operationId }) => operationId).filter((id) => !hidden.has(id)),
   );
-  assert.equal(
-    relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),
-    true,
-  );
-  assert.ok(
-    relayMcpToolsForProfile("control").some(({ operationId }) => operationId === "target.interact"),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("control").some(({ operationId }) => operationId === "target.recover"),
-  );
-  assert.equal(
-    relayMcpToolsForProfile("control").some(({ operationId }) =>
-      operationId.startsWith("app-map."),
-    ),
-    false,
-  );
-  assert.ok(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "app-map.proposal.submit",
-    ),
-  );
-  const observed = new Set(
-    relayMcpToolsForProfile("observe").map(({ operationId }) => operationId),
-  );
-  assert.equal(observed.has("target.health.get"), true);
-  assert.ok(
-    relayMcpToolsForProfile("author").some(({ operationId }) => operationId === "discovery.start"),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("map").some(({ operationId }) => operationId === "discovery.cancel"),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "authoring.session.create",
-    ),
-  );
-  assert.equal(
-    relayMcpToolsForProfile("author").some(({ operationId }) => operationId === "run.get"),
-    false,
-  );
-  assert.ok(observed.has("run.get"));
-  assert.deepEqual(
-    relayMcpToolsForProfile("test")
-      .map(({ operationId }) => operationId)
-      .filter((operationId) =>
-        [
-          "app-map.test.save",
-          "app-map.test.edit",
-          "app-map.test.propose",
-          "app-map.test.compile",
-          "app-map.test.run",
-          "job.get",
-          "job.cancel",
-          "run.get",
-          "run.replay.offline",
-          "run.evidence.get",
-        ].includes(operationId),
-      ),
-    [
-      "app-map.test.save",
-      "app-map.test.edit",
-      "app-map.test.propose",
-      "app-map.test.compile",
-      "app-map.test.run",
-      "job.get",
-      "job.cancel",
-      "run.get",
-      "run.replay.offline",
-      "run.evidence.get",
-    ],
-  );
-  assert.ok(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "workspace.variables.update",
-    ),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "app-map.variable.infer",
-    ),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "authoring.session.observe",
-    ),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("author").some(({ operationId }) =>
-      operationId.startsWith("discovery."),
-    ),
-  );
-  assert.equal(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "app-map.proposal.approve",
-    ),
-    false,
-  );
-  assert.equal(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "app-map.connection.create",
-    ),
-    false,
-  );
-  assert.ok(relayMcpToolsForProfile("run").some(({ operationId }) => operationId === "job.start"));
-  assert.equal((relayMcpProfiles as readonly string[]).includes("execute"), false);
-  assert.ok(
-    relayMcpToolsForProfile("review").some(
-      ({ operationId }) => operationId === "app-map.proposal.approve",
-    ),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("admin").some(
-      ({ operationId }) => operationId === "workspace.privacy.update",
-    ),
-  );
-  for (const profile of relayMcpProfiles) {
-    const selected = relayMcpToolsForProfile(profile);
-    assert.equal(new Set(selected.map(({ operationId }) => operationId)).size, selected.length);
-    if (profile !== "full") assert.ok(selected.length <= 43, `${profile}: ${selected.length}`);
+  for (const operationId of ["action.run", "target.app.locales", "proof.run", "lease.takeover"]) {
+    assert.ok(
+      relayMcpToolsForProfile("full").some((tool) => tool.operationId === operationId),
+      operationId,
+    );
   }
 });
 
-test("profiles expose a balanced lease lifecycle", () => {
-  for (const profile of relayMcpProfiles) {
-    const operations = new Set(
-      relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
-    );
-    assert.equal(
-      operations.has("lease.create"),
-      operations.has("lease.release"),
-      `${profile} must expose lease.create and lease.release together`,
-    );
-  }
-
-  // Taking over another actor's lease remains a dangerous full-profile
-  // operation. Profiles that can acquire/release their own lease retain the
-  // least-privilege boundary and receive operator guidance on conflicts.
-  assert.equal(
-    relayMcpToolsForProfile("control").some(({ operationId }) => operationId === "lease.takeover"),
-    false,
-  );
+test("each profile contains the one before it, with one name per tool", () => {
+  const qa = relayRegisteredToolNames("qa");
+  const device = relayRegisteredToolNames("device");
+  const full = relayRegisteredToolNames("full");
+  for (const names of [qa, device, full]) assert.equal(new Set(names).size, names.length);
+  assert.ok(qa.every((name) => device.includes(name)));
+  assert.ok(device.every((name) => full.includes(name)));
+  assert.ok(qa.every((name) => full.includes(name)));
+  assert.ok(qa.length <= 12, `qa: ${qa.length}`);
+  assert.ok(device.length > qa.length && full.length > device.length);
+  assert.ok([...qa, ...device].every((name) => /^relay_[a-z]+(?:_[a-z]+)*$/u.test(name)));
 });
 
-test("the proof profile composes the durable verify-change loop and recovery tools", () => {
-  const proof = new Set(relayMcpToolsForProfile("proof").map(({ operationId }) => operationId));
+test("removed profile names map to device or full with one warning", () => {
+  const warnings: string[] = [];
+  const warn = (message: string) => warnings.push(message);
+  for (const name of ["operator", "outcome", "control", "observe"]) {
+    assert.equal(resolveRelayMcpProfile(name, warn), "device");
+  }
+  for (const name of ["map", "author", "test", "run", "locale", "review", "admin", "proof"]) {
+    assert.equal(resolveRelayMcpProfile(name, warn), "full");
+  }
+  assert.equal(warnings.length, 12);
+  assert.equal(resolveRelayMcpProfile("qa", warn), "qa");
+  assert.equal(warnings.length, 12);
+  assert.throws(() => resolveRelayMcpProfile("execute", warn), /qa, device, full/u);
+});
+
+test("marks deleting, discarding and cancelling operations as destructive", () => {
+  for (const operationId of [
+    "app-map.test.remove",
+    "authoring.session.discard",
+    "job.cancel",
+    "run.share.revoke",
+    "proof.cancel",
+  ] as const) {
+    assert.equal(tool(operationId).annotations.destructiveHint, true, operationId);
+  }
+  assert.equal(tool("app-map.test.save").annotations.destructiveHint, false);
+});
+
+test("full composes the durable verify-change loop and recovery tools", () => {
+  const proof = new Set(relayMcpToolsForProfile("full").map(({ operationId }) => operationId));
   for (const operationId of [
     "proof.start",
     "proof.list",
@@ -703,18 +570,8 @@ test("the proof profile composes the durable verify-change loop and recovery too
     "run.share.list",
     "run.share.revoke",
   ] as const) {
-    assert.ok(proof.has(operationId), `proof profile is missing ${operationId}`);
+    assert.ok(proof.has(operationId), `full profile is missing ${operationId}`);
   }
-  // app-map.routine.impact is owned by a peer wedge; the profile composes it
-  // only once its descriptor lands in the canonical registry.
-  const routineImpactId: string = "app-map.routine.impact";
-  const routineImpactRegistered = operationDefinitions.some(({ id }) => id === routineImpactId);
-  assert.equal((proof as ReadonlySet<string>).has(routineImpactId), routineImpactRegistered);
-  // The Proof profile exposes the lifecycle's explicit plan authority while
-  // retaining lower-level Test/job tools only for explicit record-runs
-  // recovery; normal execution is the durable proof.run coordinator.
-  assert.equal(proof.has("app-map.test.save"), false);
-  assert.equal(proof.has("app-map.proposal.approve"), false);
   assert.match(
     relayMcpTools.find(({ operationId }) => operationId === "proof.run")!.description,
     /server-owned coordinator.*persists progress.*job choreography/u,
@@ -775,12 +632,12 @@ test("publishes compact discovery metadata for every eligible operation", () => 
     role: "viewer",
     confirmation: "none",
     capabilities: ["screenshot"],
-    profiles: ["control", "map", "observe", "author", "test", "run", "locale", "review", "proof"],
+    profiles: ["full"],
   });
 });
 
 test("a language Variable exposes one canonical Variable × Test Combine", () => {
-  const locale = new Set(relayMcpToolsForProfile("locale").map(({ operationId }) => operationId));
+  const locale = new Set(relayMcpToolsForProfile("full").map(({ operationId }) => operationId));
   for (const operationId of [
     "app-map.variable.save",
     "app-map.variable.infer",
@@ -793,16 +650,13 @@ test("a language Variable exposes one canonical Variable × Test Combine", () =>
     "target.scroll-survey.capture",
     "app-map.test.run",
   ] as const) {
-    assert.ok(locale.has(operationId), `locale profile is missing ${operationId}`);
+    assert.ok(locale.has(operationId), `full profile is missing ${operationId}`);
   }
   assert.match(tool("target.scroll-survey.capture").description, /Pass dir/u);
   assert.match(tool("target.scroll-survey.capture").description, /Plan export/u);
   assert.match(tool("target.scroll-survey.capture").description, /portable review folder/u);
   assert.match(tool("target.scroll-survey.capture").description, /digest without base64/u);
   assert.doesNotMatch(tool("target.scroll-survey.capture").description, /Then compare the folder/u);
-  // A sweep drives a real device; authoring the App Map is a different task.
-  assert.equal(locale.has("app-map.proposal.submit"), false);
-  assert.equal(locale.has("authoring.session.create"), false);
 });
 
 test("marks App Map Combine execution as a per-cell runtime profile contract", () => {
@@ -821,12 +675,6 @@ test("Plan capture review is a human screenshot queue, not a baseline", () => {
   assert.match(listed.description, /Accept as reference explicitly governs later Runs/u);
   assert.match(applied.description, /exact selected Plan items/u);
   assert.match(applied.description, /confirm: true/u);
-  assert.equal(
-    relayMcpToolsForProfile("observe").some(
-      (item) => item.operationId === "job.combine.capture.review.apply",
-    ),
-    false,
-  );
 });
 
 test("publishes exact graph Test and one-pass run schemas", () => {

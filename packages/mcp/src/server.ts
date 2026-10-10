@@ -34,19 +34,21 @@ import { pngScreenshotRecord } from "./png-result.js";
 import {
   compactReplayLabOutcome,
   invokeRelayOutcomeTool,
+  relayFullOutcomeTools,
   relayOutcomeTools,
   type RelayOutcomeToolDescriptor,
 } from "./outcome-tools.js";
 import { invokeRelayOperatorTool, operatorResultIsPng } from "./operator-tool-dispatch.js";
 import { relayOperatorTools, type RelayOperatorToolDescriptor } from "./operator-tools.js";
 import { registerRelayPanel } from "./panel-resources.js";
-import { relayQaOutcomeTools, relayQaOperatorTools } from "./qa-tools.js";
-import { relayEverydayToolsForProfile } from "./everyday-tools.js";
-import { proofOutcomeTools } from "./proof-outcome-tools.js";
+import { relayEverydayTools } from "./everyday-tools.js";
+import { relayRequiredOperationIds } from "./registered-tools.js";
 import {
   defaultRelayMcpProfile,
   relayMcpProfiles,
+  relayMcpTools,
   relayMcpToolsForProfile,
+  relayQaOperationTools,
   type RelayMcpProfile,
   type RelayMcpToolDescriptor,
 } from "./tools.js";
@@ -58,90 +60,33 @@ export const relayMcpServerInfo = {
   description: "Scoped access to Relay operations for MCP agents.",
 } as const;
 
-const proofLifecycleOperationIds = [
-  "proof.prepare",
-  "proof.start",
-  "proof.list",
-  "proof.inspect",
-  "proof.plan.approve",
-  "proof.run.confirm",
-  "proof.run",
-  "proof.run.human-evidence",
-  "proof.continue",
-  "proof.cancel",
-  "proof.publication.retry",
-  "proof.rerun-affected",
-] as const satisfies readonly OperationId[];
-
 /**
- * Keep the server's system guidance aligned with the tools actually
- * registered for the selected least-privilege profile. In particular, the
- * compact outcome profile exposes the friendly outcome façade and must not
- * tell an agent to call raw proof.* operations it cannot see.
+ * System guidance names only tools the selected profile registers. Each
+ * profile adds to the one before it, so the guidance does too.
  */
 export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string {
-  const registered = new Set<OperationId>(
-    profile === "outcome" || profile === "qa"
-      ? (profile === "qa" ? relayQaOutcomeTools : relayOutcomeTools).map(
-          ({ name }) => name as OperationId,
-        )
-      : profile === "operator"
-        ? []
-        : relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
-  );
   const instructions = [
-    "Use Relay tools only within the configured organization and project scope.",
-    "Treat tool results as server-authoritative and preserve Relay actor identity.",
-    "Read relay://guides and its relevant task guide before authoring, running, or debugging. These version-matched guides are available without the Relay server or a model.",
-    profile === "operator"
-      ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, cancel, save, export, findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available. relay_recover adopts a healthy live XCTest runner — do not kill it. Do not bounce :8787 (tsx watch / pnpm dev:app) while a Plan or iPad pack is live."
-      : profile === "qa"
-        ? "Describe first: relay_create_test turns a plain-English sentence into a saved Test; relay_run_test runs it and waits for one verdict (passed/failed, the failing step's expected vs. saw); relay_get_verdict reads a verdict later. After a code change, relay_check_change runs the App's relevant ready Tests and returns their verdicts — a quick signal, not a merge decision (the gated Proof flow in the proof profile decides merges). Call relay_health first, relay_panel to find Apps and saved Tests before writing a duplicate, and relay_connect_target to pick a ready target. Plain-English steps need a model key; record a Test (relay_record_test) when a step must be exact and model-free."
-        : profile === "outcome"
-          ? "Describe first: relay_create_test, relay_run_test for a verdict, relay_get_verdict later, relay_check_change after a code change, relay_inspect_failure when a Run fails. Record, repeat, repair and export evidence only when asked."
-          : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
-    ...(profile !== "qa" && profile !== "outcome" && relayEverydayToolsForProfile(profile).length
-      ? [
-          "To test from a description, call relay_create_test, then relay_run_test for its verdict; relay_get_verdict reads it later and relay_inspect_failure explains a failure.",
-        ]
-      : []),
-    profile === "outcome" || profile === "qa"
-      ? "Omit appMapId when exactly one Test workspace exists. Use relay_connect_target to choose the intended target, limit mobile discovery with targetKind and phase, and keep its returned targetId through observation, recording, and replay."
-      : "Supply the required fields in each tool schema. Keep the same saved Lane or explicit target throughout observation and execution.",
-    "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
-    "Repeat runs one representative case first and requires explicit confirmation before remaining values.",
-    "Replay Lab accepts only explicit bounded TracePack payloads and always keeps future target behavior unknown.",
-    "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
-    "For a requested saved Test, run it directly. For exploration or manual control, observe → preview/act → observe. Recover only when target readiness requires it.",
-    "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
-    "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
-    "Never displace another actor's Device control implicitly, and wait or cancel an active reserved Run before sending input.",
-    "Read relay://control/gotchas before advanced interact, recover, snapshot, or launch operations.",
+    "Use Relay tools only within the configured organization and project scope, and treat their results as the source of truth.",
+    "Call relay_get_guide for a how-to guide before a task; guides ship with this version and need no server or model.",
+    "Describe first: relay_create_test saves a Test from a plain-English sentence, relay_run_test runs it and waits for one verdict (passed or failed, with the failing step's expected vs. saw), and relay_get_verdict reads a verdict later.",
+    "Call relay_health first. Use relay_list_apps and relay_list_tests before writing a Test that may already exist, relay_get_test to read one, and relay_list_devices to pick a device or browser (pass its targetId when several are ready). Omit appMapId when exactly one App exists.",
+    "For a requested saved Test, run it directly with relay_run_test. After a code change, relay_check_change runs the relevant ready Tests: a quick signal, not a merge decision. relay_inspect_failure explains a failed Run.",
+    "Plain-English steps need a model key; record a Test when a step must be exact and model-free.",
+    "Never retry a call whose result says the outcome is unknown; read its state first.",
   ];
-  if (profile === "outcome") {
-    instructions.push(
-      "For live Change Proofs, use relay_prove_change to prepare or run one server-owned Proof and relay_inspect_proof to inspect it. Only a human may approve a Verification Plan.",
-    );
-  } else {
-    const registeredProofOperations = proofLifecycleOperationIds.filter((operationId) =>
-      registered.has(operationId),
-    );
-    if (registeredProofOperations.length > 0) {
-      instructions.push(
-        `For change verification, use the registered ${registeredProofOperations.join(", ")} lifecycle operations with the returned Proof id and exact version; only a human may approve a Verification Plan.`,
-      );
-      if (registeredProofOperations.includes("proof.publication.retry")) {
-        instructions.push(
-          "Proof publication recovery is bounded: inspect first, retry one exact exhausted publication at most once with its immutable Proof version, inspect again, and stop on a new exhaustion or conflict; never create a replacement provider check identity.",
-        );
-      }
-    }
-    if (profile === "proof") {
-      instructions.push(
-        "For ordinary live Change Proofs, prefer relay_prove_change to prepare or run one server-owned Proof and relay_inspect_proof to inspect it. Use the proof.* lifecycle tools only for explicit plan review, recovery, cancellation, publication, or selective rerun.",
-      );
-    }
-  }
+  if (profile === "qa") return instructions.join(" ");
+  instructions.push(
+    "To drive a device or browser by hand: relay_screenshot, then one relay_tap, relay_type, relay_swipe or relay_press_key, then relay_screenshot again. Prefer identifier, then label, text and point; relay_preview shows a tap without doing it.",
+    "A missing control list is not a failure; screenshots and point taps still work. Use relay_recover only when the device stops responding, and never take a device another person or agent is using.",
+    "To record an exact Test: relay_record_test, relay_record_action for each step, relay_stop_recording, relay_replay_recording, then relay_approve_recording. relay_repeat_test runs one value first and needs relay_continue_repeat for the rest.",
+    "relay_propose_repair suggests a fix for a person to review; it never changes a Test by itself.",
+  );
+  if (profile === "device") return instructions.join(" ");
+  instructions.push(
+    "relay_<operation> tools expose every other Relay operation. Prefer the named tools and use these only for what the named tools cannot do; pass confirm: true where a tool requires it.",
+    "For a gated, human-reviewed check of a code change, use relay_prove_change and relay_inspect_proof; the proof.* operations cover plan review, recovery, cancellation, publication and reruns with the returned Proof id and exact version. Only a person may approve a Proof plan.",
+    "Proof publication recovery is bounded: inspect first, retry one exhausted publication at most once with its exact Proof version, inspect again, and stop on a new failure.",
+  );
   return instructions.join(" ");
 }
 
@@ -172,34 +117,11 @@ const canonicalConfirmOperationIds = new Set<OperationId>(
     .map(({ id }) => id),
 );
 
-function recoveryOptionsForProfile(
-  profile: RelayMcpProfile,
-  tools: readonly RelayMcpToolDescriptor[],
-): RelayMcpErrorOptions {
-  const availableOperationIds = new Set(
-    profile === "outcome" || profile === "qa"
-      ? tools.map(({ operationId }) => operationId)
-      : profile === "operator"
-        ? [
-            "system.health.get",
-            "target.devices.list",
-            "target.screenshot.capture",
-            "target.snapshot.capture",
-            "target.interact",
-            "target.recover",
-            "app-map.teach",
-            "app-map.test.run",
-            "job.combine.start",
-            "job.get",
-            "job.combine.analysis",
-            "job.combine.export",
-            "run.evidence.get",
-            "run.visual.compare",
-            "run.visual.review",
-            "lane.list",
-            "lease.create",
-          ]
-        : tools.map(({ operationId }) => operationId),
+function recoveryOptionsForProfile(profile: RelayMcpProfile): RelayMcpErrorOptions {
+  const availableOperationIds = new Set<string>(
+    profile === "full"
+      ? relayMcpTools.map(({ operationId }) => operationId)
+      : relayRequiredOperationIds(profile),
   );
   return {
     availableOperationIds,
@@ -207,13 +129,12 @@ function recoveryOptionsForProfile(
     availableProfilesForOperation: (operationId) =>
       relayMcpProfiles.filter(
         (candidate) =>
-          candidate !== "outcome" &&
-          candidate !== "operator" &&
-          relayMcpToolsForProfile(candidate).some((tool) => tool.operationId === operationId),
+          candidate === "full" ||
+          relayRequiredOperationIds(candidate).some((id) => id === operationId),
       ),
-    // The selected raw tool or outcome façade is always registered. This
-    // keeps the generic refresh-and-retry action valid while canonical
-    // recoveryAction operations are filtered against availableOperationIds.
+    // The selected tool is always registered. This keeps the generic
+    // refresh-and-retry action valid while canonical recoveryAction
+    // operations are filtered against availableOperationIds.
     currentOperationAvailable: true,
   };
 }
@@ -394,19 +315,6 @@ function compactExecutionDestIdentityOperation(operationId: string): boolean {
     operationId === "app-map.test.run" ||
     operationId === "app-map.connection.run" ||
     operationId.startsWith("workflow.")
-  );
-}
-
-function operatorDestIdentityFallbackName(name: string): boolean {
-  return (
-    name === "relay_wait" ||
-    name === "relay_run" ||
-    name === "relay_plan_run" ||
-    name === "relay_evidence" ||
-    name === "relay_findings" ||
-    name === "relay_visual_compare" ||
-    name === "relay_visual_review" ||
-    name === "relay_advanced"
   );
 }
 
@@ -782,14 +690,10 @@ function registerRelayOperatorTool(
   server: McpServer,
   descriptor: RelayOperatorToolDescriptor,
   invoker: OperationInvoker,
-  actorId: string,
   recoveryOptions: RelayMcpErrorOptions,
-  profile: RelayMcpProfile,
 ): void {
   const schema = descriptor.inputSchema;
-  const confirmation = descriptor.requiresConfirmation
-    ? z.literal(true).describe("Explicit approval for this protected operator verb")
-    : z.literal(true).optional().describe("Optional explicit approval");
+  const confirmation = z.literal(true).optional().describe("Optional explicit approval");
   const inputSchema =
     typeof (schema as { safeExtend?: unknown }).safeExtend === "function"
       ? (schema as z.ZodObject).safeExtend({ confirm: confirmation })
@@ -807,7 +711,7 @@ function registerRelayOperatorTool(
       argumentsValue: Record<string, unknown>,
       context: { mcpReq: { signal: AbortSignal } },
     ) => {
-      const { confirm, ...argumentsWithoutConfirmation } = argumentsValue as Record<
+      const { confirm: _confirm, ...argumentsWithoutConfirmation } = argumentsValue as Record<
         string,
         unknown
       >;
@@ -815,19 +719,11 @@ function registerRelayOperatorTool(
         const result = await invokeRelayOperatorTool({
           name: descriptor.name,
           argumentsValue: argumentsWithoutConfirmation,
-          confirmed: confirm === true,
           invoker,
-          actorId,
           signal: context.mcpReq.signal,
-          profile,
         });
         if (operatorResultIsPng(descriptor.name, result)) return screenshotResult(result);
-        return normalResult(
-          result,
-          operatorDestIdentityFallbackName(descriptor.name)
-            ? compactExecutionDestIdentityFallback(result)
-            : undefined,
-        );
+        return normalResult(result);
       } catch (error) {
         return errorResult(relayMcpError(descriptor.name, error, recoveryOptions));
       }
@@ -846,34 +742,26 @@ export function createMcpServer({
   });
 
   const tools = relayMcpToolsForProfile(profile);
-  const recoveryOptions = recoveryOptionsForProfile(profile, tools);
-  for (const descriptor of relayEverydayToolsForProfile(profile)) {
+  const recoveryOptions = recoveryOptionsForProfile(profile);
+  // Order matches relayRegisteredToolNames: qa, then device, then full.
+  for (const descriptor of relayEverydayTools) {
     registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
   }
-  if (profile === "qa") {
-    registerRelayPanel(server, invoker, scope);
-    for (const descriptor of relayQaOutcomeTools) {
-      registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
+  for (const descriptor of relayQaOperationTools) {
+    registerRelayTool(server, descriptor, invoker, recoveryOptions);
+  }
+  if (profile !== "qa") {
+    for (const descriptor of relayOperatorTools) {
+      registerRelayOperatorTool(server, descriptor, invoker, recoveryOptions);
     }
-    for (const descriptor of relayQaOperatorTools) {
-      registerRelayOperatorTool(server, descriptor, invoker, actorId, recoveryOptions, profile);
-    }
-    for (const descriptor of tools) {
-      registerRelayTool(server, descriptor, invoker, recoveryOptions);
-    }
-  } else if (profile === "outcome") {
     for (const descriptor of relayOutcomeTools) {
       registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
     }
-  } else if (profile === "operator") {
-    for (const descriptor of relayOperatorTools) {
-      registerRelayOperatorTool(server, descriptor, invoker, actorId, recoveryOptions, profile);
-    }
-  } else {
-    if (profile === "proof") {
-      for (const descriptor of proofOutcomeTools) {
-        registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
-      }
+    registerRelayPanel(server, invoker, scope);
+  }
+  if (profile === "full") {
+    for (const descriptor of relayFullOutcomeTools) {
+      registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
     }
     for (const descriptor of tools) {
       registerRelayTool(server, descriptor, invoker, recoveryOptions);

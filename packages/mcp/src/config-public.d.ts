@@ -2,21 +2,7 @@ import type { ServerConnection } from "./server.js";
 
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
 
-export type RelayMcpProfile =
-  | "operator"
-  | "outcome"
-  | "qa"
-  | "control"
-  | "map"
-  | "observe"
-  | "author"
-  | "test"
-  | "run"
-  | "locale"
-  | "review"
-  | "admin"
-  | "proof"
-  | "full";
+export type RelayMcpProfile = "qa" | "device" | "full";
 
 export type McpConfig = {
   connection: ServerConnection;

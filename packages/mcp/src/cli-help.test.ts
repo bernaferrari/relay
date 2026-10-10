@@ -24,7 +24,7 @@ for (const argv of [["--help"], ["-h"], ["help"], ["doctor", "--help"]]) {
     assert.match(output, /relay-mcp guide/u);
     assert.match(output, /--workspace/u);
     assert.match(output, /--server/u);
-    assert.match(output, /relay_panel/u);
+    assert.match(output, /relay_list_tests/u);
     assert.doesNotMatch(output, /UNSET_HELP_CREDENTIAL/u);
   });
 }

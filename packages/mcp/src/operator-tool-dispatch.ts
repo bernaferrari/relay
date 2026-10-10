@@ -1,11 +1,6 @@
 import { ApiError } from "@relay/client";
-import {
-  operationDefinition,
-  summarizeExecutionOperationResult,
-  type OperationId,
-} from "@relay/protocol";
+import type { OperationId } from "@relay/protocol";
 import { pngScreenshotRecord } from "./png-result.js";
-import { relayMcpExclusions, relayMcpTools } from "./tools.js";
 import { relayOperatorTools, type RelayOperatorToolDescriptor } from "./operator-tools.js";
 
 type OperationInvoker = {
@@ -16,9 +11,6 @@ type OperationInvoker = {
   ): Promise<unknown>;
 };
 
-const terminalJobStatuses = new Set(["ok", "error", "healed", "cancelled"]);
-const excludedAdvanced = new Set<string>(relayMcpExclusions.map(({ operationId }) => operationId));
-
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -26,17 +18,16 @@ function object(value: unknown): Record<string, unknown> | undefined {
 }
 
 function laneIdFrom(parsed: Record<string, unknown>): string | undefined {
-  if (typeof parsed.laneId === "string" && parsed.laneId.trim()) return parsed.laneId;
-  if (typeof parsed.lane === "string" && parsed.lane.trim()) return parsed.lane;
-  return undefined;
+  return typeof parsed.laneId === "string" && parsed.laneId.trim() ? parsed.laneId : undefined;
 }
 
-function withLane(
-  input: Record<string, unknown>,
-  parsed: Record<string, unknown>,
-): Record<string, unknown> {
+/** Public verbs say targetId; target operations call the same id serial. */
+function controlTarget(parsed: Record<string, unknown>): Record<string, unknown> {
   const laneId = laneIdFrom(parsed);
-  return laneId ? { ...input, laneId } : input;
+  return {
+    ...(typeof parsed.targetId === "string" ? { serial: parsed.targetId } : {}),
+    ...(laneId ? { laneId } : {}),
+  };
 }
 
 /** The serial `target.recover` already accepts. A browser Lane uses its managed target id. */
@@ -61,13 +52,7 @@ function serialFrom(input: Record<string, unknown>): string | undefined {
 }
 
 function interactKind(parsed: Record<string, unknown>, preview = false): Record<string, unknown> {
-  const base = withLane(
-    {
-      ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
-      ...(preview ? { preview: true } : {}),
-    },
-    parsed,
-  );
+  const base = { ...controlTarget(parsed), ...(preview ? { preview: true } : {}) };
   if (object(parsed.from) && object(parsed.to)) {
     return {
       ...base,
@@ -193,91 +178,6 @@ async function invokeWithAutoLease(
   }
 }
 
-function jobStatus(result: unknown): string {
-  const job = object(object(result)?.job);
-  const status = job?.status;
-  if (typeof status !== "string") {
-    throw new TypeError("Malformed job.get response: expected { job: { status: string } }");
-  }
-  return status;
-}
-
-function startedJobIds(response: unknown): string[] {
-  const record = object(response);
-  const ids: string[] = [];
-  const direct = object(record?.job);
-  if (typeof direct?.id === "string") ids.push(direct.id);
-  const jobs = record?.jobs;
-  if (Array.isArray(jobs)) {
-    for (const item of jobs) {
-      const job = object(item);
-      if (typeof job?.id === "string") ids.push(job.id);
-    }
-  }
-  return [...new Set(ids)];
-}
-
-function planBatchId(response: unknown): string | undefined {
-  const record = object(response);
-  const campaign = object(record?.campaign);
-  if (typeof campaign?.id === "string") return campaign.id;
-  const batch = object(record?.batch);
-  return typeof batch?.id === "string" ? batch.id : undefined;
-}
-
-function waitEnvelope(result: unknown): Record<string, unknown> {
-  const status = jobStatus(result);
-  return {
-    type: "result",
-    ok: status === "ok" || status === "healed",
-    operationId: "job.get",
-    result: summarizeExecutionOperationResult("job.get", result),
-  };
-}
-
-async function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (ms <= 0) {
-    if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("aborted");
-    return;
-  }
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
-    };
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-async function waitForJob(
-  invoker: OperationInvoker,
-  jobId: string,
-  signal: AbortSignal,
-  pollIntervalMs: number,
-  timeoutMs?: number,
-): Promise<unknown> {
-  const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
-  while (true) {
-    if (signal.aborted) {
-      throw signal.reason instanceof Error ? signal.reason : new Error("aborted");
-    }
-    if (deadline !== undefined && Date.now() > deadline) {
-      throw new TypeError(`relay_wait timed out after ${timeoutMs}ms waiting for ${jobId}`);
-    }
-    const result = await invoker.invoke("job.get", { jobId }, { signal });
-    if (terminalJobStatuses.has(jobStatus(result))) return result;
-    await sleep(pollIntervalMs, signal);
-  }
-}
-
 function pngResult(result: unknown): boolean {
   return pngScreenshotRecord(result) !== undefined;
 }
@@ -286,364 +186,79 @@ export function operatorResultIsPng(name: string, result: unknown): boolean {
   return (name === "relay_screenshot" || name === "relay_preview") && pngResult(result);
 }
 
-async function invokeAdvanced(
-  parsed: Record<string, unknown>,
-  confirmed: boolean,
-  invoker: OperationInvoker,
-  signal: AbortSignal,
-  profile: string,
-): Promise<unknown> {
-  const operationId = parsed.operationId as string;
-  if (operationId === "lease.takeover" && profile !== "full") {
-    throw new TypeError(
-      "relay_advanced cannot invoke lease.takeover unless MCP starts with --profile full.",
-    );
-  }
-  if (excludedAdvanced.has(operationId)) {
-    const reason =
-      relayMcpExclusions.find((item) => item.operationId === operationId)?.reason ??
-      "excluded from MCP tools";
-    throw new TypeError(`relay_advanced cannot invoke ${operationId}: ${reason}`);
-  }
-  const descriptor = relayMcpTools.find((tool) => tool.operationId === operationId);
-  if (!descriptor) {
-    try {
-      operationDefinition(operationId as OperationId);
-    } catch {
-      throw new TypeError(`Unknown Relay operation: ${operationId}`);
-    }
-    throw new TypeError(`relay_advanced cannot invoke ${operationId}: not an MCP tool`);
-  }
-  if (descriptor.requiresConfirmation && !confirmed) {
-    throw new TypeError(`relay_advanced ${operationId} requires confirm: true.`);
-  }
-  const input = object(parsed.input) ?? {};
-  const validated = descriptor.inputSchema.parse(
-    descriptor.requiresConfirmation ? { ...input, confirm: true } : input,
-  ) as Record<string, unknown>;
-  const { confirm: _confirm, ...operationInput } = validated;
-  return summarizeExecutionOperationResult(
-    descriptor.operationId,
-    await invokeWithAutoLease(invoker, descriptor.operationId, operationInput, signal),
-  );
-}
-
 /**
- * Validate and dispatch an operator verb. Auto-creates a lease on
+ * Validate and dispatch one device verb. Auto-creates a lease on
  * TARGET_CONTROL_LEASE_REQUIRED and rewrites lease-conflict 403s to held-by copy.
  */
-/** One case unless the caller explicitly asks for every selected case. */
-export function planRunExecutionMode(mode: unknown): "pilot" | "all" {
-  return mode === "all" ? "all" : "pilot";
-}
-
 export async function invokeRelayOperatorTool(input: {
   name: RelayOperatorToolDescriptor["name"];
   argumentsValue: Record<string, unknown>;
-  confirmed: boolean;
   invoker: OperationInvoker;
-  actorId: string;
   signal: AbortSignal;
-  profile?: string;
-  pollIntervalMs?: number;
 }): Promise<unknown> {
   const descriptor = relayOperatorTools.find(({ name }) => name === input.name);
-  if (!descriptor) throw new TypeError(`Unknown Relay operator tool: ${input.name}`);
-  if (descriptor.requiresConfirmation && !input.confirmed) {
-    throw new TypeError(`${descriptor.name} requires confirm: true.`);
-  }
+  if (!descriptor) throw new TypeError(`Unknown Relay device tool: ${input.name}`);
   const parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
   const { invoker, signal } = input;
-  const pollIntervalMs = input.pollIntervalMs ?? 250;
   const call = (operationId: OperationId, payload: Record<string, unknown>) =>
     invokeWithAutoLease(invoker, operationId, payload, signal);
 
-  if (input.name === "relay_health") return call("system.health.get", {});
-  if (input.name === "relay_devices") return call("target.devices.list", {});
-  if (input.name === "relay_screenshot") {
-    return call(
-      "target.screenshot.capture",
-      withLane(
-        {
-          ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
-          ...(typeof parsed.previewX === "number" ? { previewX: parsed.previewX } : {}),
-          ...(typeof parsed.previewY === "number" ? { previewY: parsed.previewY } : {}),
-        },
-        parsed,
-      ),
-    );
-  }
-  if (input.name === "relay_snapshot") {
-    return call(
-      "target.snapshot.capture",
-      withLane(
-        {
-          ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
-          ...(parsed.full === true ? { full: true } : {}),
-        },
-        parsed,
-      ),
-    );
-  }
-  if (input.name === "relay_preview") return call("target.interact", interactKind(parsed, true));
-  if (input.name === "relay_tap") return call("target.interact", interactKind(parsed));
-  if (input.name === "relay_type") {
-    return call("target.interact", {
-      ...withLane(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}, parsed),
-      kind: "type",
-      text: parsed.text,
-      ...(typeof parsed.identifier === "string" || typeof parsed.label === "string"
-        ? {
-            target: {
-              ...(typeof parsed.identifier === "string" ? { identifier: parsed.identifier } : {}),
-              ...(typeof parsed.label === "string" ? { label: parsed.label } : {}),
-            },
-          }
-        : {}),
-    });
-  }
-  if (input.name === "relay_swipe") {
-    return call("target.interact", {
-      ...withLane(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}, parsed),
-      kind: "swipe",
-      from: parsed.from,
-      to: parsed.to,
-      ...(typeof parsed.durationMs === "number" ? { durationMs: parsed.durationMs } : {}),
-    });
-  }
-  if (input.name === "relay_recover") {
-    if (typeof parsed.serial === "string") return call("target.recover", { serial: parsed.serial });
-    const laneId = laneIdFrom(parsed);
-    if (!laneId) throw new Error("Provide serial or lane.");
-    const listed = (await invoker.invoke("lane.list", {}, { signal })) as {
-      lanes?: Array<{
-        id: string;
-        target?: { kind?: string; serial?: string; browserTargetId?: string };
-      }>;
-    };
-    const lane = listed.lanes?.find((item) => item.id === laneId);
-    return call("target.recover", { serial: recoverSerialFromLane(lane, laneId) });
-  }
-  if (input.name === "relay_teach") {
-    const teachTarget = parsed.target as { kind: string; targetId: string };
-    let leaseId = typeof parsed.leaseId === "string" ? parsed.leaseId : undefined;
-    if (!leaseId && teachTarget.kind === "device") {
-      const created = await invoker.invoke(
-        "lease.create",
-        { poolId: "local", deviceSerial: teachTarget.targetId },
-        { signal },
-      );
-      leaseId = leaseIdFrom(created);
-    }
-    if (!leaseId) throw new TypeError("relay_teach needs leaseId or a device target to auto-lease");
-    return call("app-map.teach", {
-      appMapId: parsed.appMapId,
-      target: parsed.target,
-      ...(typeof parsed.expectedRevision === "number"
-        ? { expectedRevision: parsed.expectedRevision }
-        : {}),
-      ...(typeof parsed.fromScreenId === "string" ? { fromScreenId: parsed.fromScreenId } : {}),
-      ...(typeof parsed.title === "string" ? { title: parsed.title } : {}),
-      ...(typeof parsed.label === "string" ? { label: parsed.label } : {}),
-      ...(parsed.interaction !== undefined ? { interaction: parsed.interaction } : {}),
-      leaseId,
-    });
-  }
-  if (input.name === "relay_run") {
-    return summarizeExecutionOperationResult(
-      "app-map.test.run",
-      await call(
-        "app-map.test.run",
-        withLane(
-          {
-            appMapId: parsed.appMapId,
-            testId: parsed.testId,
-            ...(typeof parsed.expectedRevision === "number"
-              ? { expectedRevision: parsed.expectedRevision }
-              : {}),
-            ...(parsed.target ? { target: parsed.target } : {}),
-            ...(parsed.in ? { in: parsed.in } : {}),
-            ...(typeof parsed.lens === "string" ? { lens: parsed.lens } : {}),
-            ...(typeof parsed.executionMode === "string"
-              ? { executionMode: parsed.executionMode }
-              : {}),
-          },
-          parsed,
-        ),
-      ),
-    );
-  }
-
-  if (input.name === "relay_plan_run") {
-    const started = await call(
-      "job.combine.start",
-      withLane(
-        {
-          appMapId: parsed.appMapId,
-          combineId: parsed.combineId,
-          executionMode: planRunExecutionMode(parsed.executionMode),
-          ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
-          ...(typeof parsed.browserTargetId === "string"
-            ? { browserTargetId: parsed.browserTargetId }
-            : {}),
-          ...(typeof parsed.targetKind === "string" ? { targetKind: parsed.targetKind } : {}),
-        },
-        parsed,
-      ),
-    );
-    if (parsed.wait === false) {
-      return {
-        operationId: "job.combine.start",
-        status: "started",
-        batchId: planBatchId(started),
-        jobIds: startedJobIds(started),
-        result: summarizeExecutionOperationResult("job.combine.start", started),
-        next: "Call relay_wait for each jobId, then relay_findings with batchId. Do not start the Plan again to check progress.",
-      };
-    }
-    const waited: unknown[] = [];
-    for (const jobId of startedJobIds(started)) {
-      waited.push(await waitForJob(invoker, jobId, signal, pollIntervalMs));
-    }
-    const batchId = planBatchId(started);
-    const findings =
-      parsed.findings === true && batchId
-        ? await invoker.invoke(
-            "job.combine.analysis",
-            {
-              batchId,
-              ...(parsed.triage === "jev" || parsed.triage === "model" ? { triage: "jev" } : {}),
-            },
-            { signal },
-          )
-        : undefined;
-    const exported =
-      parsed.export && batchId
-        ? await invoker.invoke("job.combine.export", { batchId }, { signal })
-        : undefined;
-    const waitedProjected = waited.map((item) =>
-      summarizeExecutionOperationResult("job.get", item),
-    );
-    const lastProjected = waitedProjected.at(-1);
-    const lastJob = object(object(lastProjected)?.job) ?? lastProjected;
-    const jobs = waitedProjected.flatMap((item) => {
-      const job = object(object(item)?.job);
-      return job ? [job] : [];
-    });
-    return {
-      type: "result",
-      ok: waited.length
-        ? waited.every((item) => {
-            try {
-              const status = jobStatus(item);
-              return status === "ok" || status === "healed";
-            } catch {
-              return false;
+  switch (input.name) {
+    case "relay_screenshot":
+      return call("target.screenshot.capture", {
+        ...controlTarget(parsed),
+        ...(typeof parsed.previewX === "number" ? { previewX: parsed.previewX } : {}),
+        ...(typeof parsed.previewY === "number" ? { previewY: parsed.previewY } : {}),
+      });
+    case "relay_preview":
+      return call("target.interact", interactKind(parsed, true));
+    case "relay_tap":
+      return call("target.interact", interactKind(parsed));
+    case "relay_type":
+      return call("target.interact", {
+        ...controlTarget(parsed),
+        kind: "type",
+        text: parsed.text,
+        ...(typeof parsed.identifier === "string" || typeof parsed.label === "string"
+          ? {
+              target: {
+                ...(typeof parsed.identifier === "string" ? { identifier: parsed.identifier } : {}),
+                ...(typeof parsed.label === "string" ? { label: parsed.label } : {}),
+              },
             }
-          })
-        : true,
-      operationId: "job.combine.start",
-      result: summarizeExecutionOperationResult("job.combine.start", started),
-      ...(jobs.length ? { jobs } : {}),
-      ...(lastJob ? { job: lastJob } : {}),
-      ...(findings !== undefined
-        ? { findings: summarizeExecutionOperationResult("job.combine.analysis", findings) }
-        : {}),
-      ...(exported !== undefined
-        ? { export: summarizeExecutionOperationResult("job.combine.export", exported) }
-        : {}),
-    };
-  }
-  if (input.name === "relay_wait") {
-    if (parsed.wait === false) {
-      const result = await invoker.invoke("job.get", { jobId: parsed.jobId }, { signal });
-      const status = jobStatus(result);
-      if (terminalJobStatuses.has(status)) return waitEnvelope(result);
-      return {
-        operationId: "job.get",
-        jobId: parsed.jobId,
-        status,
-        terminal: false,
-        result: summarizeExecutionOperationResult("job.get", result),
-        next: "Inspect this job again with relay_wait; do not start another run.",
+          : {}),
+      });
+    case "relay_swipe":
+      return call("target.interact", {
+        ...controlTarget(parsed),
+        kind: "swipe",
+        from: parsed.from,
+        to: parsed.to,
+        ...(typeof parsed.durationMs === "number" ? { durationMs: parsed.durationMs } : {}),
+      });
+    case "relay_press_key":
+      return call("target.interact", { ...controlTarget(parsed), kind: "key", key: parsed.key });
+    case "relay_launch_app":
+      return call("target.app.launch", {
+        serial: parsed.targetId,
+        app: parsed.app,
+        ...(typeof parsed.relaunch === "boolean" ? { relaunch: parsed.relaunch } : {}),
+      });
+    case "relay_recover": {
+      if (typeof parsed.targetId === "string") {
+        return call("target.recover", { serial: parsed.targetId });
+      }
+      const laneId = laneIdFrom(parsed)!;
+      const listed = (await invoker.invoke("lane.list", {}, { signal })) as {
+        lanes?: Array<{
+          id: string;
+          target?: { kind?: string; serial?: string; browserTargetId?: string };
+        }>;
       };
+      const lane = listed.lanes?.find((item) => item.id === laneId);
+      return call("target.recover", { serial: recoverSerialFromLane(lane, laneId) });
     }
-    const result = await waitForJob(
-      invoker,
-      parsed.jobId as string,
-      signal,
-      pollIntervalMs,
-      typeof parsed.timeoutMs === "number" ? parsed.timeoutMs : undefined,
-    );
-    return waitEnvelope(result);
+    default:
+      throw new TypeError(`Unknown Relay device tool: ${input.name}`);
   }
-  if (input.name === "relay_cancel") {
-    return invoker.invoke("job.cancel", { jobId: parsed.jobId }, { signal });
-  }
-  if (input.name === "relay_export") {
-    const joined = Array.isArray(parsed.with)
-      ? parsed.with.filter((id): id is string => typeof id === "string" && id !== parsed.runId)
-      : [];
-    return summarizeExecutionOperationResult(
-      "run.walkthrough-pack.get",
-      await invoker.invoke(
-        "run.walkthrough-pack.get",
-        { runId: parsed.runId, ...(joined.length ? { with: joined } : {}) },
-        { signal },
-      ),
-    );
-  }
-  if (input.name === "relay_save") {
-    return summarizeExecutionOperationResult(
-      "app-map.test.save",
-      await call("app-map.test.save", parsed),
-    );
-  }
-  if (input.name === "relay_findings") {
-    return summarizeExecutionOperationResult(
-      "job.combine.analysis",
-      await invoker.invoke(
-        "job.combine.analysis",
-        {
-          batchId: parsed.batchId,
-          ...(parsed.triage === "jev" || parsed.triage === "model" ? { triage: "jev" } : {}),
-        },
-        { signal },
-      ),
-    );
-  }
-  if (input.name === "relay_evidence") {
-    return summarizeExecutionOperationResult(
-      "run.evidence.get",
-      await invoker.invoke("run.evidence.get", { runId: parsed.runId }, { signal }),
-    );
-  }
-  if (input.name === "relay_visual_compare") {
-    return summarizeExecutionOperationResult(
-      "run.visual.compare",
-      await invoker.invoke("run.visual.compare", { runId: parsed.runId }, { signal }),
-    );
-  }
-  if (input.name === "relay_visual_review") {
-    if (input.actorId.startsWith("agent:")) {
-      throw new TypeError(
-        "relay_visual_review requires a human actor; agent:* cannot approve or reject visual comparisons.",
-      );
-    }
-    return summarizeExecutionOperationResult(
-      "run.visual.review",
-      await invoker.invoke(
-        "run.visual.review",
-        {
-          runId: parsed.runId,
-          comparisonId: parsed.comparisonId,
-          action: parsed.action,
-          ...(typeof parsed.note === "string" ? { note: parsed.note } : {}),
-        },
-        { signal },
-      ),
-    );
-  }
-  if (input.name === "relay_lanes") return invoker.invoke("lane.list", {}, { signal });
-  return invokeAdvanced(parsed, input.confirmed, invoker, signal, input.profile ?? "operator");
 }

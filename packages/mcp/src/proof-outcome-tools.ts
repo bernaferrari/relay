@@ -8,7 +8,7 @@ export const proofOutcomeTools = Object.freeze([
     name: "relay_inspect_proof",
     title: "Inspect a Proof",
     description:
-      "Read one durable Change Proof, its server-owned execution progress, publication state, and optional bounded history. Use this after preparation, human plan review, reconnect, or execution; never infer a verdict from a prior response.",
+      "Read one change check (Proof): its progress, result and where it was published. Read it again after any wait instead of guessing the result.",
     requiresConfirmation: false,
     inputSchema: z.object({ proofId: identifier, includeHistory: z.boolean().optional() }).strict(),
     annotations: {
@@ -22,7 +22,7 @@ export const proofOutcomeTools = Object.freeze([
     name: "relay_prove_change",
     title: "Prove a change",
     description:
-      "Prepare the current repository change when proofId is omitted, or run/resume one approved server-owned Proof when proofId is supplied. Returns durable progress or the exact next required action. Repeating the same call never selects another case or retries an uncertain outcome.",
+      "Prepare a human-reviewed check of the current code change, or run an approved one when proofId is given. Returns its progress or the next step a person must take.",
     requiresConfirmation: false,
     inputSchema: z
       .object({

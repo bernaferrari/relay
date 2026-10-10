@@ -18,12 +18,8 @@ import {
   relayMcpToolsForProfile,
   type RelayMcpProfile,
 } from "./tools.js";
-import { relayQaOutcomeTools, relayQaOperatorTools } from "./qa-tools.js";
 import { relayOutcomeTools } from "./outcome-tools.js";
-import { relayEverydayToolsForProfile } from "./everyday-tools.js";
-
-const everydayNames = (profile: RelayMcpProfile) =>
-  relayEverydayToolsForProfile(profile).map(({ name }) => name);
+import { relayRegisteredToolNames } from "./registered-tools.js";
 
 type RpcResponse = {
   id: number;
@@ -180,21 +176,18 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     const fullTools = relayMcpToolsForProfile("full");
     assert.deepEqual(
       tools.map(({ name }) => name),
-      [...everydayNames("full"), ...fullTools.map(({ name }) => name)],
+      relayRegisteredToolNames("full"),
     );
-    assert.equal(
-      new Set(tools.map(({ name }) => name)).size,
-      everydayNames("full").length + fullTools.length,
-    );
-    assert.equal(
-      tools.some(({ name }) => name === "relay_health"),
-      false,
-    );
-    // The everyday loop already wraps these; full never lists them twice.
+    assert.equal(new Set(tools.map(({ name }) => name)).size, tools.length);
+    // Named qa tools already wrap these; full never lists them twice.
     for (const duplicate of [
       "relay_test_create_from_goal",
       "relay_test_apply_yaml",
       "relay_run_verdict_get",
+      "relay_app_map_list",
+      "relay_run_list",
+      "relay_test_yaml_get",
+      "relay_system_doctor_get",
     ]) {
       assert.equal(
         tools.some(({ name }) => name === duplicate),
@@ -202,7 +195,7 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
         duplicate,
       );
     }
-    assert.equal(fullTools.length, relayMcpTools.length - 3);
+    assert.equal(fullTools.length, relayMcpTools.length - 7);
 
     for (const descriptor of fullTools) {
       const tool = tools.find(({ name }) => name === descriptor.name);
@@ -265,44 +258,24 @@ test("tools/list JSON schema for app-map.test.edit includes requirementAction", 
   }
 });
 
-test("server instructions only name Proof surfaces registered by the selected profile", async () => {
-  const outcome = await connectMcp({ async invoke() {} }, "outcome");
-  try {
-    assert.equal(
-      outcome.initialized.result?.instructions,
-      relayMcpInstructionsForProfile("outcome"),
-    );
-    assert.match(String(outcome.initialized.result?.instructions), /relay_prove_change/);
-    assert.match(String(outcome.initialized.result?.instructions), /relay_inspect_proof/);
-    assert.doesNotMatch(String(outcome.initialized.result?.instructions), /proof\./);
-  } finally {
-    await outcome.close();
+test("server instructions only name tools registered by the selected profile", async () => {
+  for (const profile of ["qa", "device", "full"] as const) {
+    const session = await connectMcp({ async invoke() {} }, profile);
+    try {
+      const instructions = String(session.initialized.result?.instructions);
+      assert.equal(instructions, relayMcpInstructionsForProfile(profile));
+      const registered = new Set(relayRegisteredToolNames(profile));
+      for (const named of instructions.match(/\brelay_[a-z_]+\b/gu) ?? []) {
+        if (named === "relay_") continue;
+        assert.ok(registered.has(named), `${profile} instructions name ${named}`);
+      }
+      assert.equal(/relay_prove_change|proof\./u.test(instructions), profile === "full");
+      assert.equal(/relay_tap/u.test(instructions), profile !== "qa");
+    } finally {
+      await session.close();
+    }
   }
-
-  const observe = await connectMcp({ async invoke() {} }, "observe");
-  try {
-    assert.equal(
-      observe.initialized.result?.instructions,
-      relayMcpInstructionsForProfile("observe"),
-    );
-    assert.doesNotMatch(String(observe.initialized.result?.instructions), /relay_prove_change/);
-    assert.doesNotMatch(String(observe.initialized.result?.instructions), /proof\./);
-    assert.doesNotMatch(String(observe.initialized.result?.instructions), /Prefer outcome tools/);
-  } finally {
-    await observe.close();
-  }
-
-  const proof = await connectMcp({ async invoke() {} }, "proof");
-  try {
-    assert.equal(proof.initialized.result?.instructions, relayMcpInstructionsForProfile("proof"));
-    assert.match(String(proof.initialized.result?.instructions), /proof\.prepare/);
-    assert.match(
-      String(proof.initialized.result?.instructions),
-      /bounded.*retry one exact exhausted publication/i,
-    );
-  } finally {
-    await proof.close();
-  }
+  assert.match(relayMcpInstructionsForProfile("full"), /bounded.*retry one exhausted publication/i);
 });
 
 test("every canonical confirmation contract is surfaced as MCP confirm consent", () => {
@@ -328,7 +301,7 @@ test("every canonical confirmation contract is surfaced as MCP confirm consent",
   }
 });
 
-test("default outcome profile registers only the small jobs-to-be-done surface", async () => {
+test("device profile registers the qa loop plus live control and recording", async () => {
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];
   const session = await connectMcp(
     {
@@ -353,7 +326,7 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
         throw new Error(`unexpected ${operationId}`);
       },
     },
-    "outcome",
+    "device",
   );
   try {
     const listed = await session.request("tools/list", {});
@@ -361,10 +334,7 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       ({ name }) => name,
     );
     const nameSet = new Set<string>(names);
-    assert.deepEqual(names, [
-      ...everydayNames("outcome"),
-      ...relayOutcomeTools.map(({ name }) => name),
-    ]);
+    assert.deepEqual(names, relayRegisteredToolNames("device"));
     assert.equal(nameSet.has("relay_lease_create"), false);
     assert.equal(nameSet.has("relay_app_map_test_run"), false);
     for (const name of [
@@ -378,12 +348,13 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       "relay_run_test",
       "relay_repeat_test",
       "relay_continue_repeat",
-      "relay_inspect_proof",
-      "relay_prove_change",
       "relay_export_evidence",
+      "relay_tap",
+      "relay_panel",
     ]) {
-      assert.ok(nameSet.has(name), `default outcome profile is missing ${name}`);
+      assert.ok(nameSet.has(name), `device profile is missing ${name}`);
     }
+    assert.equal(nameSet.has("relay_prove_change"), false);
     assert.equal(nameSet.has("relay_proof_analyze"), false);
     assert.equal(nameSet.has("relay_debug_bug"), false);
     assert.equal(names.length, nameSet.size, "no tool is registered twice");
@@ -398,7 +369,7 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
 
     const connected = callResult(
       await session.request("tools/call", {
-        name: "relay_connect_target",
+        name: "relay_list_devices",
         arguments: {},
       }),
     );
@@ -489,7 +460,7 @@ test("outcome observation returns native pixels and bounded structured semantics
         throw new Error(`unexpected ${operationId}`);
       },
     },
-    "outcome",
+    "device",
   );
   try {
     const observed = callResult(
@@ -534,12 +505,12 @@ test("outcome errors hand off canonical recovery operations outside the public f
         });
       },
     },
-    "outcome",
+    "qa",
   );
   try {
     const result = callResult(
       await session.request("tools/call", {
-        name: "relay_connect_target",
+        name: "relay_list_devices",
         arguments: {},
       }),
     );
@@ -547,7 +518,7 @@ test("outcome errors hand off canonical recovery operations outside the public f
     const error = result.structuredContent?.error as Record<string, unknown>;
     assert.equal(error.recoveryAction, undefined);
     assert.match(String(error.recoveryGuidance), /target\.recover/u);
-    assert.match(String(error.recoveryGuidance), /selected MCP profile "outcome"/u);
+    assert.match(String(error.recoveryGuidance), /selected MCP profile "qa"/u);
   } finally {
     await session.close();
   }
@@ -1026,7 +997,7 @@ test("preserves confirmed Proof lifecycle consent for canonical protocol operati
         return {};
       },
     },
-    "proof",
+    "full",
   );
   try {
     const approve = callResult(
@@ -1112,7 +1083,7 @@ test("preserves confirmed guarded Proof execution consent for canonical operatio
         return {};
       },
     },
-    "proof",
+    "full",
   );
   const previewDigest = `sha256:${"a".repeat(64)}`;
   const evidenceDigest = `sha256:${"b".repeat(64)}`;
@@ -1224,7 +1195,7 @@ test("translates confirmed reviewed-origin MCP consent into the signed protocol 
         return {};
       },
     },
-    "review",
+    "full",
   );
   try {
     await session.request("tools/call", {
@@ -1260,56 +1231,31 @@ test("translates confirmed reviewed-origin MCP consent into the signed protocol 
   }
 });
 
-test("profile selection exposes deterministic least-privilege tool sets", async () => {
-  for (const profile of [
-    "control",
-    "map",
-    "observe",
-    "author",
-    "run",
-    "review",
-    "admin",
-    "full",
-  ] as const) {
+test("profile selection exposes three nested tool sets", async () => {
+  for (const profile of ["qa", "device", "full"] as const) {
     const session = await connectMcp({ async invoke() {} }, profile);
     try {
       const listed = await session.request("tools/list", {});
       assert.equal(listed.error, undefined);
-      const names = ((listed.result?.tools as ListedTool[] | undefined) ?? []).map(
-        ({ name }) => name,
-      );
-      assert.deepEqual(names, [
-        ...everydayNames(profile),
-        ...relayMcpToolsForProfile(profile).map(({ name }) => name),
-      ]);
+      const tools = (listed.result?.tools as ListedTool[] | undefined) ?? [];
+      const names = tools.map(({ name }) => name);
+      assert.deepEqual(names, relayRegisteredToolNames(profile));
       assert.equal(new Set(names).size, names.length);
+      for (const tool of tools) {
+        if (/^relay_(?:list|get|inspect)_/u.test(tool.name)) {
+          assert.equal(tool.annotations?.readOnlyHint, true, tool.name);
+        }
+      }
+      if (profile !== "qa") {
+        const cancel = tools.find(({ name }) => name === "relay_cancel_run");
+        assert.equal(cancel?.annotations?.destructiveHint, true);
+      }
     } finally {
       await session.close();
     }
   }
-
-  const compact = relayMcpToolsForProfile(defaultRelayMcpProfile);
-  assert.deepEqual(compact, []);
+  assert.deepEqual(relayMcpToolsForProfile(defaultRelayMcpProfile), []);
   assert.ok(relayOutcomeTools.length < relayMcpTools.length / 2);
-  assert.ok(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "app-map.proposal.submit",
-    ),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "workspace.variables.update",
-    ),
-  );
-  assert.ok(
-    relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "authoring.session.commit",
-    ),
-  );
-  assert.equal(
-    relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),
-    true,
-  );
 });
 
 test("returns sanitized structured ApiError recovery without losing revision state", async () => {
@@ -1373,20 +1319,20 @@ test("does not emit a hidden recovery command from a least-privilege profile", a
         });
       },
     },
-    "control",
+    "device",
   );
   try {
     const result = callResult(
       await session.request("tools/call", {
-        name: "relay_target_interact",
-        arguments: { serial: "ipad-1", kind: "label", label: "Settings" },
+        name: "relay_tap",
+        arguments: { targetId: "ipad-1", label: "Settings" },
       }),
     );
     assert.equal(result.isError, true);
     const error = result.structuredContent?.error as Record<string, unknown>;
     assert.equal(error.recoveryAction, undefined);
     assert.match(String(error.recoveryGuidance), /lease\.takeover/u);
-    assert.match(String(error.recoveryGuidance), /selected MCP profile "control"/u);
+    assert.match(String(error.recoveryGuidance), /selected MCP profile "device"/u);
   } finally {
     await session.close();
   }
@@ -1529,7 +1475,7 @@ test("large evidence exports return a stable TracePack resource and bounded mani
         return { tracePack, analysis };
       },
     },
-    "outcome",
+    "device",
   );
   try {
     const result = callResult(
@@ -1613,7 +1559,7 @@ test("bounds normal text and errors without exposing truncated paths or credenti
   try {
     const success = callResult(
       await session.request("tools/call", {
-        name: "relay_system_doctor_get",
+        name: "relay_health",
         arguments: {},
       }),
     );
@@ -1829,39 +1775,6 @@ test("compact job.get dest identity is dest wait-for 003, not leftover Close 004
   }
 });
 
-test("compact operator wait dest identity is dest wait-for 003, not leftover Close 004", async () => {
-  const logs = Array.from({ length: 24 }, () => "x".repeat(500));
-  const session = await connectMcp(
-    {
-      async invoke(operationId) {
-        assert.equal(operationId, "job.get");
-        return { job: { ...leftoverDestEndJob, logs } };
-      },
-    },
-    "operator",
-  );
-  try {
-    const result = callResult(
-      await session.request("tools/call", {
-        name: "relay_wait",
-        arguments: { jobId: leftoverDestEndJob.id },
-      }),
-    );
-    const compact = result.structuredContent?.result as {
-      truncated?: boolean;
-      destIdentity?: Array<{ path?: string; caption?: string }>;
-      job?: { destIdentity?: Array<{ path?: string }> };
-    };
-    assert.equal(compact.truncated, true);
-    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
-    assert.deepEqual(compact.job?.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
-    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
-  } finally {
-    await session.close();
-  }
-});
-
 const leftoverVisualComparison = {
   padding: "x".repeat(relayMcpTextLimit),
   comparison: {
@@ -1955,178 +1868,6 @@ test("compact visual-baseline update leftover Close 004 cannot fill dest", async
     };
     assert.equal(compact.truncated, true);
     assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
-    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
-  } finally {
-    await session.close();
-  }
-});
-
-test("compact operator visual compare dest identity is dest wait-for 003, not leftover Close 004", async () => {
-  const session = await connectMcp(
-    {
-      async invoke(operationId) {
-        assert.equal(operationId, "run.visual.compare");
-        return leftoverVisualComparison;
-      },
-    },
-    "operator",
-  );
-  try {
-    const result = callResult(
-      await session.request("tools/call", {
-        name: "relay_visual_compare",
-        arguments: { runId: leftoverDestEndJob.id },
-      }),
-    );
-    const compact = result.structuredContent?.result as {
-      truncated?: boolean;
-      destIdentity?: Array<{ path?: string; caption?: string }>;
-    };
-    assert.equal(compact.truncated, true);
-    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
-    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
-  } finally {
-    await session.close();
-  }
-});
-
-test("compact operator findings leftover Close 004 cannot fill dest", async () => {
-  const session = await connectMcp(
-    {
-      async invoke(operationId) {
-        assert.equal(operationId, "job.combine.analysis");
-        return {
-          batchId: leftoverDestEndJob.id,
-          locales: ["en"],
-          coverage: { frames: 2, inspectedFrames: 2 },
-          cases: [
-            {
-              jobId: leftoverDestEndJob.id,
-              locale: "en",
-              status: "ok",
-              frames: [
-                {
-                  framePath: "frames/003.png",
-                  caption: "Observe",
-                  canonicalKey: "frame-001",
-                  inspected: true,
-                },
-                {
-                  framePath: "frames/004.png",
-                  caption: "after · Run saved Test",
-                  canonicalKey: "frame-002",
-                  inspected: true,
-                },
-              ],
-            },
-          ],
-          analysis: {
-            baselineLocale: "en",
-            critical: 0,
-            warnings: 40,
-            affectedScreens: 1,
-            findings: Array.from({ length: 40 }, (_, index) => ({
-              id: `finding-${index}`,
-              code: "POSSIBLE_TEXT_CLIPPED",
-              locale: "en",
-              canonicalKey: index === 1 ? "frame-002" : "frame-001",
-              detail: "x".repeat(300),
-            })),
-          },
-        };
-      },
-    },
-    "operator",
-  );
-  try {
-    const result = callResult(
-      await session.request("tools/call", {
-        name: "relay_findings",
-        arguments: { batchId: leftoverDestEndJob.id },
-      }),
-    );
-    const compact = result.structuredContent?.result as {
-      truncated?: boolean;
-      destIdentity?: Array<{ path?: string; caption?: string }>;
-    };
-    assert.equal(compact.truncated, true);
-    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
-    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
-  } finally {
-    await session.close();
-  }
-});
-
-test("compact operator plan_run nested findings leftover Close 004 cannot fill dest", async () => {
-  const session = await connectMcp(
-    {
-      async invoke(operationId) {
-        if (operationId === "job.combine.start") {
-          return {
-            job: { id: leftoverDestEndJob.id, status: "ok" },
-            campaign: { id: leftoverDestEndJob.id },
-          };
-        }
-        if (operationId === "job.get") {
-          return { job: { id: leftoverDestEndJob.id, status: "ok" } };
-        }
-        if (operationId === "job.combine.analysis") {
-          return {
-            padding: "x".repeat(relayMcpTextLimit),
-            batchId: leftoverDestEndJob.id,
-            locales: ["en"],
-            coverage: { frames: 2, inspectedFrames: 2 },
-            cases: [
-              {
-                jobId: leftoverDestEndJob.id,
-                locale: "en",
-                status: "ok",
-                frames: [
-                  { framePath: "frames/003.png", caption: "Observe" },
-                  { framePath: "frames/004.png", caption: "after · Run saved Test" },
-                ],
-              },
-            ],
-          };
-        }
-        if (operationId === "job.combine.export") {
-          return {
-            padding: "x".repeat(relayMcpTextLimit),
-            destIdentity: leftoverDestEndJob.frames,
-            cases: [{ frames: leftoverDestEndJob.frames }],
-          };
-        }
-        throw new Error(`unexpected ${operationId}`);
-      },
-    },
-    "operator",
-  );
-  try {
-    const result = callResult(
-      await session.request("tools/call", {
-        name: "relay_plan_run",
-        arguments: {
-          appMapId: "grok-web",
-          combineId: "grok-hourly",
-          findings: true,
-          export: true,
-        },
-      }),
-    );
-    const compact = result.structuredContent?.result as {
-      truncated?: boolean;
-      destIdentity?: Array<{ path?: string; caption?: string }>;
-      findings?: { destIdentity?: Array<{ path?: string }> };
-    };
-    assert.equal(compact.truncated, true);
-    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
-    assert.deepEqual(
-      compact.findings?.destIdentity?.map((frame) => frame.path),
-      ["frames/003.png"],
-    );
     assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
     assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
   } finally {
@@ -2415,27 +2156,22 @@ function pngSignatureBase64(): string {
 }
 
 test("profile instructions distinguish saved Test execution from manual exploration", () => {
-  for (const profile of ["operator", "outcome", "qa", "full"] as const) {
+  for (const profile of ["qa", "device", "full"] as const) {
     const instructions = relayMcpInstructionsForProfile(profile);
     assert.match(instructions, /For a requested saved Test, run it directly/);
+    assert.match(instructions, /Omit appMapId when exactly one App exists/);
+    assert.match(instructions, /relay_list_devices/);
     assert.doesNotMatch(instructions, /Do not start with test run/);
-    if (profile === "outcome" || profile === "qa") {
-      assert.match(instructions, /Omit appMapId when exactly one Test workspace exists/);
-      assert.match(
-        instructions,
-        /keep its returned targetId through observation, recording, and replay/,
-      );
-    } else assert.doesNotMatch(instructions, /Omit.*appMapId/);
   }
 });
 
-test("QA preset exposes one existing recording/run path and accurate discovery", async () => {
+test("qa exposes the describe, run, verdict loop and accurate discovery", async () => {
   const invoked: string[] = [];
   const session = await connectMcp(
     {
       async invoke(operationId) {
         invoked.push(operationId);
-        if (operationId === "system.health.get") return { ok: true };
+        if (operationId === "system.doctor.get") return { ok: true, checks: [] };
         throw new Error(`unexpected ${operationId}`);
       },
     },
@@ -2449,33 +2185,36 @@ test("QA preset exposes one existing recording/run path and accurate discovery",
       "relay_create_test",
       "relay_run_test",
       "relay_get_verdict",
-      "relay_check_change",
       "relay_inspect_failure",
-      "relay_panel",
-      ...[...relayQaOutcomeTools, ...relayQaOperatorTools].map(({ name }) => name),
+      "relay_check_change",
+      "relay_list_tests",
+      "relay_list_devices",
+      "relay_get_guide",
+      "relay_list_apps",
+      "relay_list_runs",
+      "relay_get_test",
+      "relay_health",
     ]);
-    // One way to browse Apps/Tests (relay_panel); no raw App Map schemas.
-    assert.equal(names.includes("relay_app_map_get"), false);
-    assert.equal(names.includes("relay_app_map_test_edit"), false);
-    assert.equal(new Set(names).size, names.length);
     for (const absent of [
-      "relay_goal",
-      "relay_advanced",
+      "relay_app_map_get",
+      "relay_panel",
+      "relay_tap",
+      "relay_record_test",
       "relay_prove_change",
-      "relay_project_save",
       "relay_proof_plan_approve",
     ]) {
-      assert.equal(new Set<string>(names).has(absent), false, absent);
+      assert.equal(names.includes(absent), false, absent);
     }
-    assert.ok(names.includes("relay_record_test"));
-    assert.ok(names.includes("relay_inspect_workflow"));
-    const record = tools.find(({ name }) => name === "relay_record_test")!;
-    assert.ok(record.inputSchema.required?.includes("confirm"));
+    for (const name of ["relay_list_apps", "relay_list_runs", "relay_get_test", "relay_health"]) {
+      const tool = tools.find((item) => item.name === name)!;
+      assert.equal(tool.annotations?.readOnlyHint, true, name);
+      assert.equal(tool.inputSchema.required?.includes("confirm") ?? false, false, name);
+    }
     const health = callResult(
       await session.request("tools/call", { name: "relay_health", arguments: {} }),
     );
     assert.notEqual(health.isError, true);
-    assert.deepEqual(invoked, ["system.health.get"]);
+    assert.deepEqual(invoked, ["system.doctor.get"]);
     const discovery = callResult(
       await session.request("resources/read", { uri: "relay://operations" }),
     );
@@ -2485,7 +2224,7 @@ test("QA preset exposes one existing recording/run path and accurate discovery",
     assert.equal(data.activeToolCount, names.length);
     assert.deepEqual(data.activeOperations, names);
     assert.match(relayMcpInstructionsForProfile("qa"), /model-free/u);
-    assert.doesNotMatch(relayMcpInstructionsForProfile("qa"), /use relay_prove_change/u);
+    assert.doesNotMatch(relayMcpInstructionsForProfile("qa"), /relay_prove_change/u);
   } finally {
     await session.close();
   }

@@ -8,6 +8,7 @@ import {
 } from "./resources.js";
 import { createMcpServer, type OperationInvoker } from "./server.js";
 import { relayTaskGuideCatalog, formatRelayTaskGuide } from "@relay/workflows/task-guides";
+import { relayRegisteredToolNames, relayRequiredOperationIds } from "./registered-tools.js";
 import {
   defaultRelayMcpProfile,
   relayMcpTools,
@@ -314,7 +315,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
 });
 
 test("all MCP profiles expose the same bundled task guides without contacting Relay", async () => {
-  for (const profile of ["operator", "outcome", "proof", "full"] as const) {
+  for (const profile of ["qa", "device", "full"] as const) {
     const session = await connectMcp(
       {
         async invoke() {
@@ -342,7 +343,7 @@ test("all MCP profiles expose the same bundled task guides without contacting Re
 });
 
 test("publishes device-control gotchas as a mandatory JSON resource", async () => {
-  const session = await connectMcp(fixtureInvoker(), "outcome");
+  const session = await connectMcp(fixtureInvoker(), "qa");
   try {
     const content = resourceContent(
       await session.request("resources/read", { uri: relayMcpResourceUris.controlGotchas }),
@@ -370,17 +371,11 @@ test("publishes device-control gotchas as a mandatory JSON resource", async () =
     assert.ok(envelope.data.rules.some((rule) => rule.includes("screenshot → preview/tap")));
     assert.ok(envelope.data.rules.some((rule) => rule.includes("wait-for/expect-screen")));
     assert.ok(
-      envelope.data.rules.some(
-        (rule) =>
-          rule.includes('lease.create is not exposed in selected MCP profile "outcome"') &&
-          rule.includes("operator"),
-      ),
+      envelope.data.rules.some((rule) => rule.includes("device tools take control automatically")),
     );
     assert.ok(
       envelope.data.rules.some(
-        (rule) =>
-          rule.includes('target.recover is not exposed in selected MCP profile "outcome"') &&
-          rule.includes("operator"),
+        (rule) => rule.includes("needs the device profile") && rule.includes("relay_recover"),
       ),
     );
   } finally {
@@ -388,8 +383,8 @@ test("publishes device-control gotchas as a mandatory JSON resource", async () =
   }
 });
 
-test("operator profile publishes relay://lanes from lane.list", async () => {
-  const session = await connectMcp(fixtureInvoker(), "operator");
+test("device profile publishes relay://lanes from lane.list", async () => {
+  const session = await connectMcp(fixtureInvoker(), "device");
   try {
     const listed = await session.request("resources/list", {});
     const uris = ((listed.result?.resources as Array<{ uri: string }>) ?? []).map(({ uri }) => uri);
@@ -404,7 +399,7 @@ test("operator profile publishes relay://lanes from lane.list", async () => {
         await session.request("resources/read", { uri: relayMcpResourceUris.controlGotchas }),
       ).text,
     ) as { data: { rules: string[] } };
-    assert.ok(gotchas.data.rules.some((rule) => rule.includes("auto-create a lease")));
+    assert.ok(gotchas.data.rules.some((rule) => rule.includes("take control automatically")));
     assert.ok(gotchas.data.rules.some((rule) => rule.includes("relay_recover")));
     assert.ok(
       gotchas.data.rules.some((rule) => rule.includes("adopts a healthy live XCTest runner")),
@@ -416,7 +411,7 @@ test("operator profile publishes relay://lanes from lane.list", async () => {
 });
 
 test("discovers excluded profile operations without eagerly exposing their tools", async () => {
-  const session = await connectMcp(fixtureInvoker(), "map");
+  const session = await connectMcp(fixtureInvoker(), "qa");
   try {
     const content = resourceContent(
       await session.request("resources/read", { uri: relayMcpResourceUris.operations }),
@@ -454,28 +449,20 @@ test("discovers excluded profile operations without eagerly exposing their tools
         `${available.name} unlocks under the full profile`,
       );
     }
-    assert.ok(
-      envelope.data.availablePrompts.some(({ unlockedByProfiles }) =>
-        unlockedByProfiles.includes("map"),
-      ),
-      "at least one prompt is reachable from the map profile",
-    );
     assert.equal(envelope.truncated, false);
-    assert.equal(envelope.data.activeProfile, "map");
-    // activeOperations lists registered MCP tool names, the same in every profile.
-    assert.deepEqual(
-      envelope.data.activeOperations,
-      relayMcpToolsForProfile("map").map(({ name }) => name),
+    assert.equal(envelope.data.activeProfile, "qa");
+    // activeOperations lists registered MCP tool names.
+    assert.deepEqual(envelope.data.activeOperations, relayRegisteredToolNames("qa"));
+    assert.equal(relayMcpToolsForProfile("qa").length, 0);
+    assert.ok(
+      envelope.data.additionalOperations.every(({ operationId }) =>
+        relayRequiredOperationIds("qa").some((id) => id === operationId),
+      ),
     );
-    const discoverable = new Set([
-      ...relayMcpToolsForProfile("map").map(({ operationId }) => operationId),
-      ...envelope.data.additionalOperations.map(({ operationId }) => operationId),
-    ]);
-    assert.deepEqual(discoverable, new Set(relayMcpTools.map(({ operationId }) => operationId)));
     assert.ok(
       envelope.data.additionalOperations.some(
-        ({ operationId, task, role }) =>
-          operationId === "schedule.create" && task === "workspace" && role === "admin",
+        ({ operationId, profiles }) =>
+          operationId === "workflow.transition" && profiles.includes("full"),
       ),
     );
   } finally {
@@ -865,7 +852,7 @@ test("paginates a Test outline beyond 200 steps and follows its continuation URI
         appMap: { id: "map-1", revision: 3, tests: { huge: { id: "huge", steps } } },
       },
     }),
-    "test",
+    "full",
   );
   try {
     const ids: string[] = [];
@@ -902,46 +889,26 @@ test("paginates a Test outline beyond 200 steps and follows its continuation URI
   }
 });
 
-test("registers resources only when the selected profile exposes their reads", async () => {
-  const control = await connectMcp(fixtureInvoker(), "control");
-  try {
-    const listed = await control.request("resources/list", {});
-    const resources = listed.result?.resources;
-    assert.ok(Array.isArray(resources));
-    const uris = (resources as Array<{ uri: string }>).map(({ uri }) => uri);
-    assert.ok(uris.includes(relayMcpResourceUris.targets));
-    assert.ok(!uris.includes(relayMcpResourceUris.appMaps));
-    assert.ok(!uris.includes(relayMcpResourceUris.runs));
-    assert.ok(!uris.includes(relayMcpResourceUris.authoringSessions));
-    const templates = await control.request("resources/templates/list", {});
-    const resourceTemplates = templates.result?.resourceTemplates;
-    assert.ok(Array.isArray(resourceTemplates));
-    const templateUris = (resourceTemplates as Array<{ uriTemplate: string }>).map(
-      ({ uriTemplate }) => uriTemplate,
-    );
-    assert.equal(templateUris.length, 0);
-  } finally {
-    await control.close();
-  }
-
-  const map = await connectMcp(fixtureInvoker(), "map");
-  try {
-    const listed = await map.request("resources/list", {});
-    const resources = listed.result?.resources;
-    assert.ok(Array.isArray(resources));
-    const uris = (resources as Array<{ uri: string }>).map(({ uri }) => uri);
-    assert.ok(uris.includes(relayMcpResourceUris.appMaps));
-    assert.ok(!uris.includes(relayMcpResourceUris.runs));
-    const templates = await map.request("resources/templates/list", {});
-    const resourceTemplates = templates.result?.resourceTemplates;
-    assert.ok(Array.isArray(resourceTemplates));
-    const templateUris = (resourceTemplates as Array<{ uriTemplate: string }>).map(
-      ({ uriTemplate }) => uriTemplate,
-    );
-    assert.ok(templateUris.includes(relayMcpResourceUris.appMap));
-    assert.ok(!templateUris.includes(relayMcpResourceUris.run));
-  } finally {
-    await map.close();
+test("every profile registers the same read resources", async () => {
+  for (const profile of ["qa", "device"] as const) {
+    const session = await connectMcp(fixtureInvoker(), profile);
+    try {
+      const listed = await session.request("resources/list", {});
+      const uris = ((listed.result?.resources as Array<{ uri: string }>) ?? []).map(
+        ({ uri }) => uri,
+      );
+      assert.ok(uris.includes(relayMcpResourceUris.targets));
+      assert.ok(uris.includes(relayMcpResourceUris.appMaps));
+      assert.ok(uris.includes(relayMcpResourceUris.runs));
+      const templates = await session.request("resources/templates/list", {});
+      const templateUris = (
+        (templates.result?.resourceTemplates as Array<{ uriTemplate: string }>) ?? []
+      ).map(({ uriTemplate }) => uriTemplate);
+      assert.ok(templateUris.includes(relayMcpResourceUris.appMap));
+      assert.ok(templateUris.includes(relayMcpResourceUris.run));
+    } finally {
+      await session.close();
+    }
   }
 });
 
@@ -1095,7 +1062,7 @@ test("reads compact Test lists, details, and stable-ID outlines", async () => {
         appMap: { id: "map-1", revision: 7, tests: { smoke: graphTest } },
       },
     }),
-    "test",
+    "full",
   );
   try {
     const list = JSON.parse(
@@ -1167,7 +1134,7 @@ test("oversized Test details retain a bounded outline instead of null data", asy
     fixtureInvoker({
       "app-map.get": { appMap: { id: "map-1", revision: 9, tests: { huge: hugeTest } } },
     }),
-    "test",
+    "full",
   );
   try {
     const content = resourceContent(

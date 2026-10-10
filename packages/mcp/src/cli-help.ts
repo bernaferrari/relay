@@ -23,9 +23,9 @@ Connection options:
 First agent task:
   Configure --profile qa and your explicit server or workspace.
   Run relay-mcp doctor --profile qa with the same connection options.
-  In your MCP host, call relay_health, then relay_panel to choose an App.
-  Call relay_panel with that appMapId to find saved Tests before recording.
-  Read relay://guides/agents and use relay_connect_target to choose the target.
+  In your MCP host, call relay_health, then relay_list_apps and relay_list_tests.
+  Call relay_get_guide for how-to guides and relay_list_devices to pick a target.
+  Use --profile device to drive a device and record; full adds every raw operation.
 
 RELAY_URL keeps attachment to an existing service; it overrides workspace startup.
 RELAY_WORKSPACE_ROOT and RELAY_RUNTIME_PORT configure workspace startup.

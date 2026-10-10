@@ -115,7 +115,7 @@ export async function waitForRunVerdict(
       next: needsConsent
         ? "Review the reported risk, then repeat the call with confirm: true."
         : activePhases.has(String(snapshot.phase))
-          ? "Still starting; call relay_inspect_workflow with workflow.workflowId later."
+          ? "Still starting; find its runId with relay_list_runs later, then call relay_get_verdict."
           : "Fix the reported problem, then run again.",
     };
   }

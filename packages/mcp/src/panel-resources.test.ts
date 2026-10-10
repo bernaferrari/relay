@@ -6,7 +6,7 @@ import { relayPanelMetadata, relayPanelResourceUri } from "./panel-resources.js"
 
 async function connect(apps: boolean) {
   const server = createMcpServer({
-    profile: "qa",
+    profile: "device",
     scope: { projectId: "project" },
     invoker: {
       async invoke(id) {

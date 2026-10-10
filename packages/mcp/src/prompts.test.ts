@@ -203,13 +203,13 @@ test("every profile advertises only prompts whose required tools it exposes", as
     "job.combine.export",
   ]);
   assert.equal(
-    relayMcpPromptsForTools(relayMcpToolsForProfile("author")).some(
+    relayMcpPromptsForTools(relayMcpToolsForProfile("qa")).some(
       ({ name }) => name === relayMcpPromptNames.planCombine,
     ),
     false,
   );
   assert.equal(
-    relayMcpPromptsForTools(relayMcpToolsForProfile("test")).some(
+    relayMcpPromptsForTools(relayMcpToolsForProfile("full")).some(
       ({ name }) => name === relayMcpPromptNames.authorGraphTest,
     ),
     true,
@@ -477,7 +477,7 @@ test("matrix prompt keeps App Map Combine execution behind the per-cell profile 
 });
 
 test("graph Test prompt keeps authoring, compilation, execution, and evidence in one profile", async () => {
-  const session = await connectMcp("test");
+  const session = await connectMcp("full");
   try {
     const { text } = promptText(
       await session.request("prompts/get", {
@@ -509,7 +509,7 @@ test("graph Test prompt keeps authoring, compilation, execution, and evidence in
 });
 
 test("verify-change prompt renders the proof loop with commit and file scope", async () => {
-  const session = await connectMcp("proof");
+  const session = await connectMcp("full");
   try {
     const { description, text } = promptText(
       await session.request("prompts/get", {
@@ -566,7 +566,7 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
 });
 
 test("verify-change prompt renders without optional scope arguments", async () => {
-  const session = await connectMcp("proof");
+  const session = await connectMcp("full");
   try {
     const { text } = promptText(
       await session.request("prompts/get", {

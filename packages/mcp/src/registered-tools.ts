@@ -1,34 +1,85 @@
-import { relayEverydayToolsForProfile } from "./everyday-tools.js";
+import type { OperationId } from "@relay/protocol";
+import { relayEverydayTools } from "./everyday-tools.js";
 import { relayOperatorTools } from "./operator-tools.js";
-import { relayOutcomeTools } from "./outcome-tools.js";
+import { relayFullOutcomeTools, relayOutcomeTools } from "./outcome-tools.js";
 import { relayPanelToolName } from "./panel-resources.js";
-import { proofOutcomeTools } from "./proof-outcome-tools.js";
-import { relayQaOperatorTools, relayQaOutcomeTools } from "./qa-tools.js";
 import {
   relayMcpToolsForProfile,
+  relayQaOperationTools,
   type RelayMcpProfile,
   type RelayMcpToolDescriptor,
 } from "./tools.js";
 
-/** Tool names in the order createMcpServer registers them: the everyday loop
- * first, then the profile's friendly tools, then raw operation tools. Every
- * entry is a registered MCP tool name (never a dotted operation id). */
+const names = (list: readonly { readonly name: string }[]) => list.map(({ name }) => name);
+
+/** Tool names in the order createMcpServer registers them. Each profile is
+ * the previous one plus more: qa ⊂ device ⊂ full. */
 export function relayRegisteredToolNames(
   profile: RelayMcpProfile,
   tools: readonly RelayMcpToolDescriptor[] = relayMcpToolsForProfile(profile),
 ): readonly string[] {
-  const names = (list: readonly { readonly name: string }[]) => list.map(({ name }) => name);
-  const everyday = names(relayEverydayToolsForProfile(profile));
-  if (profile === "qa") {
-    return [
-      ...everyday,
-      relayPanelToolName,
-      ...names(relayQaOutcomeTools),
-      ...names(relayQaOperatorTools),
-      ...names(tools),
-    ];
-  }
-  if (profile === "outcome") return [...everyday, ...names(relayOutcomeTools)];
-  if (profile === "operator") return [...everyday, ...names(relayOperatorTools)];
-  return [...everyday, ...(profile === "proof" ? names(proofOutcomeTools) : []), ...names(tools)];
+  const qa = [...names(relayEverydayTools), ...names(relayQaOperationTools)];
+  if (profile === "qa") return qa;
+  const device = [
+    ...qa,
+    ...names(relayOperatorTools),
+    ...names(relayOutcomeTools),
+    relayPanelToolName,
+  ];
+  if (profile === "device") return device;
+  return [...device, ...names(relayFullOutcomeTools), ...names(tools)];
+}
+
+/** Server operations the qa tools call (directly or through the run workflow). */
+const qaRequiredOperationIds = [
+  "system.doctor.get",
+  "target.devices.list",
+  "target.list",
+  "target.preflight",
+  "app-map.list",
+  "app-map.get",
+  "app-map.create",
+  "app-map.test.compile",
+  "app-map.test.run",
+  "test.create-from-goal",
+  "test.apply-yaml",
+  "test.yaml.get",
+  "workflow.create",
+  "workflow.get",
+  "workflow.transition",
+  "lease.list",
+  "lease.create",
+  "job.get",
+  "run.get",
+  "run.list",
+  "run.verdict.get",
+  "run.evidence.get",
+  "run.repair.list",
+  "run.trace-pack.get",
+] as const satisfies readonly OperationId[];
+
+/** Plus what live control, recording, repeats and the panel call. */
+const deviceRequiredOperationIds = [
+  ...qaRequiredOperationIds,
+  "target.screenshot.capture",
+  "target.observation.capture",
+  "target.interact",
+  "target.app.launch",
+  "target.recover",
+  "lane.list",
+  "job.list",
+  "job.cancel",
+  "job.combine.campaign.repeat.active",
+  "job.combine.campaign.get",
+  "job.combine.campaign.resume",
+  "job.combine.campaign.cancel",
+  "run.panel-manifest.get",
+  "run.repair.propose",
+] as const satisfies readonly OperationId[];
+
+/** Operations a server must expose for the named qa or device tools to work. */
+export function relayRequiredOperationIds(
+  profile: Exclude<RelayMcpProfile, "full">,
+): readonly OperationId[] {
+  return profile === "qa" ? qaRequiredOperationIds : deviceRequiredOperationIds;
 }

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   invokeRelayOutcomeToolWithJobs,
+  relayFullOutcomeTools,
   relayOutcomeTools,
   type RelayOutcomeToolDescriptor,
 } from "./outcome-tools.js";
@@ -75,19 +76,13 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
     expected: unknown;
   }> = [
     {
-      name: "relay_connect_target",
-      argumentsValue: { targetId: "pixel-9" },
-      method: "connect",
-      expected: { kind: "connect-target", targetId: "pixel-9" },
-    },
-    {
       name: "relay_observe_target",
       argumentsValue: { targetId: "pixel-9" },
       method: "observe",
       expected: { kind: "observe-target", targetId: "pixel-9" },
     },
     {
-      name: "relay_goal",
+      name: "relay_explore_goal",
       argumentsValue: { startUrl: "https://example.test", goal: "Reach settings" },
       confirmed: true,
       method: "goal",
@@ -260,6 +255,12 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       },
     },
     {
+      name: "relay_export_evidence",
+      argumentsValue: { runId: "run-1" },
+      method: "exportEvidence",
+      expected: { kind: "export-evidence", runId: "run-1" },
+    },
+    {
       name: "relay_replay_lab",
       argumentsValue: {
         analysis: "compare",
@@ -293,18 +294,12 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
         wait: true,
       },
     },
-    {
-      name: "relay_export_evidence",
-      argumentsValue: { runId: "run-1" },
-      method: "exportEvidence",
-      expected: { kind: "export-evidence", runId: "run-1" },
-    },
   ];
 
   assert.deepEqual(
     cases.map(({ name }) => name),
-    relayOutcomeTools.map(({ name }) => name),
-    "the contract table must cover every default outcome tool in public order",
+    [...relayOutcomeTools, ...relayFullOutcomeTools].map(({ name }) => name),
+    "the contract table must cover every outcome tool in public order",
   );
 
   for (const testCase of cases) {
@@ -322,15 +317,8 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
   }
 });
 
-test("mobile target scope and recording origin reach the existing facade", async () => {
+test("recording origin reaches the existing facade", async () => {
   const invocations: Invocation[] = [];
-  const jobs = recordingJobs(invocations);
-  await invokeRelayOutcomeToolWithJobs({
-    name: "relay_connect_target",
-    argumentsValue: { targetKind: "device", phase: "android" },
-    confirmed: false,
-    jobs,
-  });
   await invokeRelayOutcomeToolWithJobs({
     name: "relay_record_test",
     argumentsValue: {
@@ -340,13 +328,9 @@ test("mobile target scope and recording origin reach the existing facade", async
       originApplication: "ai.x.grok",
     },
     confirmed: true,
-    jobs,
+    jobs: recordingJobs(invocations),
   });
   assert.deepEqual(invocations, [
-    {
-      method: "connect",
-      argumentsValue: [{ kind: "connect-target", targetKind: "device", phase: "android" }],
-    },
     {
       method: "record",
       argumentsValue: [
@@ -361,17 +345,6 @@ test("mobile target scope and recording origin reach the existing facade", async
       ],
     },
   ]);
-  for (const argumentsValue of [{ phase: "browser" }, { targetKind: "android" }]) {
-    await assert.rejects(
-      invokeRelayOutcomeToolWithJobs({
-        name: "relay_connect_target",
-        argumentsValue,
-        confirmed: false,
-        jobs,
-      }),
-    );
-  }
-  assert.equal(invocations.length, 2, "invalid target filters never invoke the facade");
 });
 
 test("recorded outcome checks and insertion edits share canonical authoring schemas", async () => {
@@ -443,7 +416,7 @@ test("recorded outcome checks and insertion edits share canonical authoring sche
   assert.equal(invocations.length, 2, "malformed check interactions never invoke the facade");
 });
 
-test("relay_goal exposes explicit reproduction and review-only promotion", async () => {
+test("relay_explore_goal exposes explicit reproduction and review-only promotion", async () => {
   const cases = [
     {
       argumentsValue: { reproduceSessionId: "goal-123" },
@@ -469,7 +442,7 @@ test("relay_goal exposes explicit reproduction and review-only promotion", async
   for (const testCase of cases) {
     const invocations: Invocation[] = [];
     const result = await invokeRelayOutcomeToolWithJobs({
-      name: "relay_goal",
+      name: "relay_explore_goal",
       argumentsValue: testCase.argumentsValue,
       confirmed: true,
       jobs: recordingJobs(invocations),
@@ -481,7 +454,7 @@ test("relay_goal exposes explicit reproduction and review-only promotion", async
   }
 });
 
-test("relay_goal exposes read-only inspection without control confirmation", async () => {
+test("relay_explore_goal exposes read-only inspection without control confirmation", async () => {
   const cases = [
     {
       argumentsValue: { inspectSessionId: "goal-123" },
@@ -497,7 +470,7 @@ test("relay_goal exposes read-only inspection without control confirmation", asy
   for (const testCase of cases) {
     const invocations: Invocation[] = [];
     const result = await invokeRelayOutcomeToolWithJobs({
-      name: "relay_goal",
+      name: "relay_explore_goal",
       argumentsValue: testCase.argumentsValue,
       confirmed: false,
       jobs: recordingJobs(invocations),
@@ -524,7 +497,7 @@ test("protected outcome tools reject missing confirmation before workflow dispat
       argumentsValue: { workflowId: "repeat-workflow", expectedVersion: 1 },
     },
     {
-      name: "relay_goal" as const,
+      name: "relay_explore_goal" as const,
       argumentsValue: { startUrl: "https://example.test", goal: "Reach settings" },
     },
   ]) {
@@ -683,7 +656,7 @@ test("default outcome tool copy keeps engine nouns behind advanced profiles", ()
 });
 
 test("Replay Lab MCP accepts only bounded explicit payloads", async () => {
-  const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_replay_lab")!;
+  const descriptor = relayFullOutcomeTools.find(({ name }) => name === "relay_replay_lab")!;
   assert.equal(descriptor.annotations.readOnlyHint, true);
   assert.equal(
     descriptor.inputSchema.safeParse({ analysis: "compare", tracePacks: [tracePack("a")] }).success,
