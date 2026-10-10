@@ -36,10 +36,6 @@ import {
   type SettingsProductService,
 } from "./data/settings-product-service";
 import {
-  createSessionProductService,
-  type SessionProductService,
-} from "./data/session-product-service";
-import {
   createSuiteProfileProductService,
   type SuiteProfileProductService,
 } from "./data/suite-profile-product-service";
@@ -47,10 +43,6 @@ import {
   createBrowserSpacesProductService,
   type BrowserSpacesProductService,
 } from "./data/browser-spaces-product-service";
-import {
-  createLiveTestEditorProductService,
-  type LiveTestEditorProductService,
-} from "./data/live-test-editor-product-service";
 import {
   createTestEditorProductService,
   type TestEditorProductService,
@@ -99,10 +91,8 @@ export function RelayApp({
   runAcrossService,
   mapService,
   testEditorService,
-  sessionService,
   suiteProfileService,
   browserSpacesService,
-  liveTestEditorService,
 }: {
   platform: Platform;
   history?: RouterHistory;
@@ -115,10 +105,8 @@ export function RelayApp({
   runAcrossService?: RunAcrossProductService;
   mapService?: MapProductService;
   testEditorService?: TestEditorProductService;
-  sessionService?: SessionProductService;
   suiteProfileService?: SuiteProfileProductService;
   browserSpacesService?: BrowserSpacesProductService;
-  liveTestEditorService?: LiveTestEditorProductService;
 }) {
   const [queryClient] = useState(createRelayQueryClient);
   const [service] = useState(() => productService ?? createRecordingProductService(platform));
@@ -134,17 +122,11 @@ export function RelayApp({
   const [testEditor] = useState(
     () => testEditorService ?? createTestEditorProductService(platform),
   );
-  const [sessions] = useState(() => sessionService ?? createSessionProductService(platform));
   const [suiteProfiles] = useState(
     () => suiteProfileService ?? createSuiteProfileProductService(platform),
   );
   const [browserSpaces] = useState(
     () => browserSpacesService ?? createBrowserSpacesProductService(platform),
-  );
-  const [liveTestEditor] = useState(
-    () =>
-      liveTestEditorService ??
-      createLiveTestEditorProductService({ editor: testEditor, sessions, recording: service }),
   );
   const [router] = useState(() =>
     createAppRouter({
@@ -158,10 +140,8 @@ export function RelayApp({
       deviceService: devices,
       settingsService: settings,
       testEditorService: testEditor,
-      sessionService: sessions,
       suiteProfileService: suiteProfiles,
       browserSpacesService: browserSpaces,
-      liveTestEditorService: liveTestEditor,
       queryClient,
       history,
     }),

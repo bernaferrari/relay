@@ -564,7 +564,7 @@ export function NewTestPage() {
                           to: "/recordings/$recordingId",
                           params: { recordingId: activePointer.data },
                         }
-                      : { to: "/sessions" },
+                      : { to: "/tests" },
                   )
                 }
               >

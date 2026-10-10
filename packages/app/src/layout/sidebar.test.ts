@@ -3,15 +3,14 @@ import { isSidebarItemActive } from "./sidebar";
 
 describe("sidebar route ownership", () => {
   it("gives apps an explicit stable destination", () => {
-    const primaryItems = ["/tests", "/runs", "/accounts", "/devices", "/sessions"] as const;
+    const primaryItems = ["/tests", "/runs", "/accounts", "/devices"] as const;
     const activeItems = primaryItems.filter((item) => isSidebarItemActive("/apps/app-1", item));
 
     expect(activeItems).toEqual([]);
   });
 
   it("keeps each primary product area active for nested routes", () => {
-    expect(isSidebarItemActive("/tests/test-1/edit", "/tests")).toBe(true);
-    expect(isSidebarItemActive("/sessions/session-1", "/sessions")).toBe(true);
+    expect(isSidebarItemActive("/tests/test-1", "/tests")).toBe(true);
     expect(isSidebarItemActive("/runs/run-1", "/runs")).toBe(true);
     expect(isSidebarItemActive("/devices/device-1", "/devices")).toBe(true);
     expect(isSidebarItemActive("/environments/profile-1", "/devices")).toBe(true);

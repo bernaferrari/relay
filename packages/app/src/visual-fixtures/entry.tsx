@@ -11,7 +11,6 @@ import type { AppResourcesProductService } from "../data/app-resources-product-s
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { DeviceProductService } from "../data/device-product-service";
 import type { MapProductService } from "../data/map-product-service";
-import type { LiveTestEditorProductService } from "../data/live-test-editor-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunProductService } from "../data/run-product-service";
 import { definitions, type FixtureName } from "./fixture-routes";
@@ -22,11 +21,9 @@ import { createWorkflowFixture } from "./workflow-fixture";
 import type { LiveTargetSnapshot } from "../data/live-target-session";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import { emptyPlanFindings } from "./empty-findings";
-import type { SessionProductService } from "../data/session-product-service";
 import type { SuiteProfileProductService } from "../data/suite-profile-product-service";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
 import type { Platform } from "../platform/types";
-import { createFixtureLiveTarget } from "./live-target-fixture";
 import { planCaptureQueue, planCaptureSvg, reviewPlanCaptures } from "./plan-capture-fixture";
 import "../styles/globals.css";
 
@@ -37,7 +34,6 @@ try {
 }
 
 const FIXTURE_TIME = Date.UTC(2026, 8, 4, 12, 0, 0);
-const VISUAL_NOW = 1_788_390_000_000;
 const fixture = new URLSearchParams(window.location.search).get("fixture") as FixtureName | null;
 if (!fixture || !definitions[fixture]) throw new TypeError(`Unknown visual fixture: ${fixture}`);
 
@@ -679,103 +675,42 @@ const browserSpacesService = {
     url: "https://checkout.example",
   }),
 } as unknown as BrowserSpacesProductService;
-const fixtureSession = {
-  id: "session-checkout",
-  title: "Complete checkout and confirm the order",
-  state: "recording" as const,
-  target: previewTarget,
+const fixtureTestDocument = {
   appMapId: "checkout-app",
   appName: "Checkout",
-  actorId: "human:fixture",
-  actorKind: "human" as const,
-  captureProvenance: "" as const,
-  createdAt: VISUAL_NOW - 720_000,
-  updatedAt: VISUAL_NOW - 30_000,
-  lease: {
-    id: "lease-checkout",
+  revision: 4,
+  test: {
+    id: "test-checkout",
+    organizationId: "local",
     projectId: "default",
-    poolId: "browser",
-    deviceSerial: "checkout-browser",
-    ownerId: "human:fixture",
-    status: "leased" as const,
-    leasedAt: VISUAL_NOW - 720_000,
-    expiresAt: VISUAL_NOW + 3_600_000,
-  },
-  take: {
-    id: "take-checkout",
-    state: "recording" as const,
-    revision: 3,
-    actionCount: 4,
-    evidenceCount: 8,
-  },
-  committedTestId: "test-checkout",
-  hasError: false,
-  archived: false,
-};
-const sessionProductService = {
-  list: async () => [fixtureSession],
-  get: async () => ({
-    ...fixtureSession,
-    projectId: "default",
-    testName: fixtureSession.title,
-    activity: [
+    appMapId: "checkout-app",
+    name: "Complete checkout and confirm the order",
+    kind: "scenario" as const,
+    intentSchemaVersion: 1 as const,
+    steps: [
       {
-        activityId: "activity-1",
-        actorId: "human:fixture",
-        actorKind: "human" as const,
-        operationId: "authoring.session.interact",
-        requestId: "request-1",
-        timestamp: VISUAL_NOW - 30_000,
-        eventType: "operation.succeeded" as const,
-        summary: "Captured the checkout confirmation",
+        id: "open-cart",
+        kind: "instruction" as const,
+        intent: "Open the cart",
+        binding: {
+          status: "resolved" as const,
+          kind: "connections" as const,
+          connectionIds: ["open-cart"],
+        },
+      },
+      {
+        id: "place-order",
+        kind: "validation" as const,
+        intent: "Order confirmation is visible",
+        binding: { status: "unresolved" as const, reason: "Review this checkpoint" },
       },
     ],
-  }),
-  live: async () => createFixtureLiveTarget(previewTarget, VISUAL_NOW),
-} as unknown as SessionProductService;
-const liveTestEditorService = {
-  open: async () => ({
-    test: {
-      appMapId: "checkout-app",
-      appName: "Checkout",
-      revision: 4,
-      test: {
-        id: "test-checkout",
-        organizationId: "local",
-        projectId: "default",
-        appMapId: "checkout-app",
-        name: "Complete checkout and confirm the order",
-        kind: "scenario" as const,
-        intentSchemaVersion: 1 as const,
-        steps: [
-          {
-            id: "open-cart",
-            kind: "instruction" as const,
-            intent: "Open the cart",
-            binding: {
-              status: "resolved" as const,
-              kind: "connections" as const,
-              connectionIds: ["open-cart"],
-            },
-          },
-          {
-            id: "place-order",
-            kind: "validation" as const,
-            intent: "Order confirmation is visible",
-            binding: { status: "unresolved" as const, reason: "Review this checkpoint" },
-          },
-        ],
-        updatedAt: FIXTURE_TIME,
-        originApplication: "https://checkout.example",
-      },
-      history: [],
-      repairs: [],
-    },
-    authoring: await sessionProductService.get("session-checkout"),
-    liveTarget: createFixtureLiveTarget(previewTarget, VISUAL_NOW),
-    capabilities: { edit: true as const, observe: true as const, record: false },
-  }),
-} as unknown as LiveTestEditorProductService;
+    updatedAt: FIXTURE_TIME,
+    originApplication: "https://checkout.example",
+  },
+  history: [],
+  repairs: [],
+};
 
 const debugDevice = {
   id: "checkout-pixel",
@@ -843,19 +778,11 @@ createRoot(root).render(
       runAcrossService={runAcrossService}
       suiteProfileService={suiteProfileService}
       browserSpacesService={browserSpacesService}
-      sessionService={sessionProductService}
-      liveTestEditorService={liveTestEditorService}
       deviceService={deviceService}
       settingsService={fixtureSettingsService}
       testEditorService={
         (workflowFixture?.testEditorService ?? {
-          get: async () =>
-            (
-              await liveTestEditorService.open({
-                testId: "test-checkout",
-                sessionId: "session-checkout",
-              })
-            ).test,
+          get: async () => fixtureTestDocument,
           edit: async ({ document }: { document: unknown }) => document,
           decideRepair: async ({ document }: { document: unknown }) => document,
         }) as never

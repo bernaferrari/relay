@@ -23,7 +23,7 @@ describe("App scope", () => {
     expect(appScopeForLocation({ pathname: "/tests", search: { app: "app-1" } })).toBe("app-1");
     expect(
       appScopeForLocation({
-        pathname: "/tests/test-1/edit",
+        pathname: "/tests/test-1",
         search: {},
         tests: [{ id: "test-1", appMapId: "app-2" }],
       }),
@@ -49,7 +49,7 @@ describe("App scope", () => {
   it("prefers canonical detail ownership over a stale collection filter", () => {
     expect(
       appScopeForLocation({
-        pathname: "/tests/test-1/edit",
+        pathname: "/tests/test-1",
         search: { app: "stale-app" },
         tests: [{ id: "test-1", appMapId: "owned-app" }],
       }),
@@ -96,7 +96,7 @@ describe("App scope", () => {
     ).toBe("/runs?view=failed&app=new-app");
     expect(
       appContextDestination({
-        pathname: "/tests/test-1/edit",
+        pathname: "/tests/test-1",
         search: { app: "old-app" },
         appId: "new-app",
       }),
@@ -123,27 +123,7 @@ describe("App scope", () => {
     });
   });
 
-  it("resolves session ownership and never labels unresolved ownership as All apps", () => {
-    expect(
-      appScopeDetailsForLocation({
-        pathname: "/sessions/session-1",
-        search: {},
-        sessions: [{ id: "session-1", appMapId: "app-9" }],
-      }),
-    ).toEqual({ kind: "single", appId: "app-9" });
-    expect(
-      appScopeDetailsForLocation({
-        pathname: "/sessions/session-1",
-        search: {},
-      }),
-    ).toEqual({ kind: "loading" });
-    expect(
-      appScopeDetailsForLocation({
-        pathname: "/sessions/session-1",
-        search: {},
-        sessions: [],
-      }),
-    ).toEqual({ kind: "unavailable" });
+  it("never labels unresolved ownership as All apps", () => {
     expect(appScopeDetailsForLocation({ pathname: "/devices", search: {} })).toEqual({
       kind: "workspace",
     });

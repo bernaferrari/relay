@@ -22,9 +22,7 @@ import {
   type ProductTestEditorDocument,
   type ProductTestRepair,
 } from "../data/test-editor-product-service";
-import type { LiveTestEditorSession } from "../data/live-test-editor-product-service";
 import { useLatestTestReport } from "../hooks/use-latest-test-report";
-import { LiveTestEditorPane } from "./live-test-editor-pane";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import {
   collectStepEntries,
@@ -35,13 +33,10 @@ import { useTestStepDrafts } from "./use-test-step-drafts";
 import { useTestTextChanges } from "./use-test-text-changes";
 import { productLinkClassName } from "../lib/class-names";
 
-export { EditTestPage } from "./edit-test-route";
-
 type TestEditorProps = {
   testId: string;
   appMapId?: string;
   stepId?: string;
-  sessionId?: string;
   onStepChange(stepId: string | undefined): void;
   /** Embedded in the Test page: no page header; `stage` fills the right side. */
   stage?: ReactNode;
@@ -61,7 +56,6 @@ function TestEditorDocument({
   testId,
   appMapId,
   stepId: requestedStepIdProp,
-  sessionId,
   onStepChange,
   stage,
   onSelectedStepChange,
@@ -69,31 +63,19 @@ function TestEditorDocument({
   recordSteps,
   detailsRequest,
 }: TestEditorProps) {
-  const { testEditorService, liveTestEditorService, runService, queryClient, platform } =
-    useRouteContext({
-      from: "__root__",
-    });
+  const { testEditorService, runService, queryClient, platform } = useRouteContext({
+    from: "__root__",
+  });
   const embedded = stage !== undefined;
-  const [editorExpanded, setEditorExpanded] = useState(Boolean(requestedStepIdProp || sessionId));
+  const [editorExpanded, setEditorExpanded] = useState(Boolean(requestedStepIdProp));
   const navigate = useNavigate();
   const queryKey = useMemo(() => ["test-editor", testId, appMapId] as const, [testId, appMapId]);
-  const liveQueryKey = useMemo(
-    () => ["live-test-editor", testId, sessionId] as const,
-    [sessionId, testId],
-  );
   const document = useQuery({
     queryKey,
     queryFn: () => testEditorService.get(testId, appMapId),
     staleTime: 5_000,
-    enabled: !sessionId,
   });
-  const liveEditor = useQuery({
-    queryKey: liveQueryKey,
-    queryFn: () => liveTestEditorService.open({ testId, sessionId: sessionId! }),
-    staleTime: Number.POSITIVE_INFINITY,
-    enabled: Boolean(sessionId),
-  });
-  const editorDocument = liveEditor.data?.test ?? document.data;
+  const editorDocument = document.data;
   const [pendingCheckpoint, setPendingCheckpoint] = useState<PendingCheckpointDraft | null>(null);
   const entries = useMemo(() => {
     const saved = editorDocument?.test.steps ?? [];
@@ -130,22 +112,16 @@ function TestEditorDocument({
   const draggedStepId = useRef<string | undefined>(undefined);
   const selectAfterSave = useRef<string | null | undefined>(undefined);
 
-  function currentLiveEditor(): LiveTestEditorSession | undefined {
-    return queryClient.getQueryData<LiveTestEditorSession | undefined>(liveQueryKey);
-  }
-
   function currentDocument(): ProductTestEditorDocument | undefined {
-    return currentLiveEditor()?.test ?? queryClient.getQueryData(queryKey);
+    return queryClient.getQueryData(queryKey);
   }
 
-  function saveDocument(next: ProductTestEditorDocument | LiveTestEditorSession) {
-    if ("liveTarget" in next) queryClient.setQueryData(liveQueryKey, next);
-    else queryClient.setQueryData(queryKey, next);
+  function saveDocument(next: ProductTestEditorDocument) {
+    queryClient.setQueryData(queryKey, next);
   }
 
   const textChange = useTestTextChanges({
     currentDocument,
-    currentLiveEditor,
     saveDocument,
     setSaveNotice,
     acknowledgeTextDraft,
@@ -153,8 +129,6 @@ function TestEditorDocument({
 
   const edit = useMutation({
     mutationFn: async (transaction: EditTransaction) => {
-      const live = currentLiveEditor();
-      if (live) return liveTestEditorService.edit({ current: live, edits: transaction.forward });
       const current = currentDocument();
       if (!current) throw new TypeError("Reload this test before saving more changes.");
       return testEditorService.edit({ document: current, edits: transaction.forward });
@@ -190,7 +164,7 @@ function TestEditorDocument({
           ? "Conflict — your changes are preserved"
           : "Could not save",
       );
-      void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey });
+      void queryClient.invalidateQueries({ queryKey });
     },
   });
   const settings = useMutation({
@@ -215,8 +189,6 @@ function TestEditorDocument({
 
   const historyAction = useMutation({
     mutationFn: async (direction: "undo" | "redo") => {
-      const live = currentLiveEditor();
-      if (live) return liveTestEditorService[direction]({ current: live });
       const current = currentDocument();
       if (!current) throw new TypeError("Reload this test before changing its history.");
       const operation = testEditorService[direction];
@@ -230,7 +202,7 @@ function TestEditorDocument({
     },
     onError: () => {
       setSaveNotice("Could not save");
-      void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey });
+      void queryClient.invalidateQueries({ queryKey });
     },
   });
 
@@ -242,14 +214,6 @@ function TestEditorDocument({
       proposal: ProductTestRepair;
       decision: "approve" | "reject" | "revert";
     }) => {
-      const live = currentLiveEditor();
-      if (live) {
-        return liveTestEditorService.decideRepair({
-          current: live,
-          proposalId: proposal.id,
-          decision,
-        });
-      }
       const current = currentDocument();
       if (!current) throw new TypeError("Reload this test before reviewing a repair.");
       return testEditorService.decideRepair({
@@ -262,8 +226,7 @@ function TestEditorDocument({
       saveDocument(next);
       setSaveNotice("Saved");
     },
-    onError: () =>
-      void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey }),
+    onError: () => void queryClient.invalidateQueries({ queryKey }),
   });
 
   function selectStep(stepId: string) {
@@ -461,9 +424,7 @@ function TestEditorDocument({
         settings.isPending ||
         repair.isPending
         ? "saving"
-        : document.isError ||
-            liveEditor.isError ||
-            /Conflict|Could not|failed|unavailable/iu.test(saveNotice)
+        : document.isError || /Conflict|Could not|failed|unavailable/iu.test(saveNotice)
           ? "failed"
           : hasUnsavedDrafts ||
               settingsName !== (editorDocument?.test.name ?? "") ||
@@ -480,7 +441,6 @@ function TestEditorDocument({
     editorDocument,
     hasUnsavedDrafts,
     historyAction.isPending,
-    liveEditor.isError,
     onEditingStateChange,
     repair.isPending,
     saveNotice,
@@ -552,7 +512,6 @@ function TestEditorDocument({
     >
       <TestEditorChrome
         embedded={embedded}
-        sessionId={sessionId}
         editorDocument={editorDocument}
         saveState={saveState}
         saving={
@@ -586,25 +545,16 @@ function TestEditorDocument({
         onSaveSettings={() => settings.mutate()}
       />
 
-      {(sessionId ? liveEditor.isPending : document.isPending) ? (
-        <PageLoading label="Loading test steps…" />
-      ) : null}
+      {document.isPending ? <PageLoading label="Loading test steps…" /> : null}
       <RecordingProblem
         className="mx-4 mb-4"
         error={
-          liveEditor.error ??
-          document.error ??
-          edit.error ??
-          textChange.error ??
-          historyAction.error ??
-          repair.error
+          document.error ?? edit.error ?? textChange.error ?? historyAction.error ?? repair.error
         }
-        onRetry={() => void (sessionId ? liveEditor.refetch() : document.refetch())}
-        retrying={sessionId ? liveEditor.isFetching : document.isFetching}
+        onRetry={() => void document.refetch()}
+        retrying={document.isFetching}
       />
-      {!(sessionId ? liveEditor.isPending : document.isPending) &&
-      !editorDocument &&
-      !(sessionId ? liveEditor.isError : document.isError) ? (
+      {!document.isPending && !editorDocument && !document.isError ? (
         <EmptyState
           title="This test is not available"
           detail="It may have been removed or may belong to another app. Choose a saved test to continue."
@@ -648,16 +598,9 @@ function TestEditorDocument({
           undo={undo}
           redo={redo}
           testId={testId}
-          inspectorKind={liveEditor.data ? "device" : "browser"}
           browserPane={
             embedded ? (
               stage
-            ) : sessionId ? (
-              <LiveTestEditorPane
-                session={liveEditor.data}
-                loading={liveEditor.isPending}
-                error={liveEditor.error}
-              />
             ) : (
               <TestEditorBrowserPane
                 appMapId={editorDocument.appMapId}
@@ -668,7 +611,7 @@ function TestEditorDocument({
             )
           }
           latestEvidence={
-            !embedded && !sessionId && recentRuns.data?.length ? (
+            !embedded && recentRuns.data?.length ? (
               <details className="mt-4 text-sm text-muted-foreground">
                 <summary className="cursor-pointer py-2">Latest result</summary>
                 <TestEditorEvidencePanel

@@ -559,10 +559,13 @@ export function TestPage() {
             </Button>
           ) : start.data?.recovery?.sourceCode === "raw-evidence-variant-recapture-required" ? (
             <Button
-              nativeButton={false}
               variant="outline"
               size="sm"
-              render={<Link to="/tests/$testId/edit" params={{ testId }} />}
+              onClick={() => {
+                start.reset();
+                setSettingsOpen(false);
+                selectSource("definition");
+              }}
             >
               Review steps
             </Button>

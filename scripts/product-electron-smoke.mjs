@@ -265,13 +265,6 @@ async function run() {
       await clickNav(page, name, route);
       await check();
     }
-    if (await page.getByRole("link", { name: "Live", exact: true }).count()) {
-      await clickNav(page, "Live", "/sessions");
-    } else {
-      await openRoute(page, "/sessions");
-    }
-    await check();
-
     await clickNav(page, "Devices", "/devices");
     await check();
     await clickNav(page, "Runs", "/runs");

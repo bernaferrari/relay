@@ -867,9 +867,9 @@ describe("Run and report", () => {
     await click(button("Run"));
     expect(document.body.textContent).toContain("Saved controls need review");
     expect(document.body.textContent).not.toContain("restore this work");
-    const review = [
-      ...document.querySelectorAll<HTMLAnchorElement>('a[href="/tests/test-1/edit"]'),
-    ].find((link) => link.textContent === "Review steps");
+    const review = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent === "Review steps",
+    );
     expect(review).toBeDefined();
   });
 

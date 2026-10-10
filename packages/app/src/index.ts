@@ -49,19 +49,6 @@ export {
   type RecordingProductService,
 } from "./data/recording-product-service";
 export {
-  createSessionProductService,
-  projectSessionDetail,
-  projectSessionSummary,
-  sessionQueryKeys,
-  type ProductSessionActivity,
-  type ProductSessionDetail,
-  type ProductSessionLease,
-  type ProductSessionSummary,
-  type ProductSessionTakeSummary,
-  type SessionListOptions,
-  type SessionProductService,
-} from "./data/session-product-service";
-export {
   createRunProductService,
   type ProductRunReportOverview,
   type ProductRunReview,
@@ -106,12 +93,6 @@ export {
   type ProductTestRepair,
   type TestEditorProductService,
 } from "./data/test-editor-product-service";
-export {
-  createLiveTestEditorProductService,
-  type LiveTestEditorCapabilities,
-  type LiveTestEditorProductService,
-  type LiveTestEditorSession,
-} from "./data/live-test-editor-product-service";
 export {
   createBrowserSpacesProductService,
   projectProductBrowserAuthFixture,

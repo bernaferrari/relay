@@ -7,12 +7,9 @@ export type RoutePattern =
   | "/tests"
   | "/tests/new"
   | "/tests/:testId"
-  | "/tests/:testId/edit"
   | "/apps/:appId/suites/:suiteId"
   | "/environments"
   | "/environments/:profileId"
-  | "/sessions"
-  | "/sessions/:sessionId"
   | "/recordings/:recordingId"
   | "/recordings/:recordingId/review"
   | "/review"
@@ -42,7 +39,6 @@ export type ContextualAction =
   | "review-run"
   | "inspect-run"
   | "review-recording"
-  | "inspect-session"
   | "create-suite"
   | "run-suite"
   | "add-environment"
@@ -51,7 +47,7 @@ export type ContextualAction =
   | "connect-device"
   | "inspect-device"
   | "save-settings";
-export type Sidebar = "apps" | "accounts" | "tests" | "sessions" | "runs" | "devices" | "settings";
+export type Sidebar = "apps" | "accounts" | "tests" | "runs" | "devices" | "settings";
 export type RouteDefinition = {
   id: RoutePattern;
   pattern: RoutePattern;
@@ -62,7 +58,6 @@ export type RouteDefinition = {
     | "Test"
     | "Run"
     | "Device"
-    | "Session"
     | "Plan"
     | "Environment"
     | "Recording"
@@ -90,7 +85,6 @@ export type RouteDefinition = {
     | "targetKind"
     | "originApplication"
     | "runId"
-    | "session"
     | "section"
     | "replayJob"
     | "reportView"
@@ -168,12 +162,6 @@ export const ROUTE_DEFINITIONS = [
     "screen",
     "run",
   ]),
-  d("/tests/:testId/edit", "/tests/:testId", "Edit test", "Test", "tests", "record-test", [
-    "app",
-    "step",
-    "screen",
-    "session",
-  ]),
   d("/apps/:appId/suites/:suiteId", "/tests", "Plan", "Plan", "tests", "run-suite", [
     "view",
     "target",
@@ -192,14 +180,6 @@ export const ROUTE_DEFINITIONS = [
     "inspect-environment",
     ["view", "returnTo"],
   ),
-  d("/sessions", "/tests", "Activity", "Session", "sessions", "inspect-session", [
-    "status",
-    "target",
-    "q",
-  ]),
-  d("/sessions/:sessionId", "/sessions", "Session", "Session", "sessions", "inspect-session", [
-    "view",
-  ]),
   d("/recordings/:recordingId", "/tests", "Recording", "Recording", "tests", "continue-recording", [
     "view",
     "screen",
@@ -303,7 +283,6 @@ type Params = {
   suiteId?: string;
   profileId?: string;
   recordingId?: string;
-  sessionId?: string;
   runId?: string;
   batchId?: string;
   deviceId?: string;
@@ -321,13 +300,10 @@ export const routeUrls = {
   accounts: () => "/accounts",
   appMap: (appId: string) => build("/apps/:appId/map", { appId }),
   test: (testId: string) => build("/tests/:testId", { testId }),
-  testEdit: (testId: string) => build("/tests/:testId/edit", { testId }),
   suite: (appId: string, suiteId: string) =>
     build("/apps/:appId/suites/:suiteId", { appId, suiteId }),
   environments: () => "/environments",
   environment: (profileId: string) => build("/environments/:profileId", { profileId }),
-  sessions: () => "/sessions",
-  session: (sessionId: string) => build("/sessions/:sessionId", { sessionId }),
   recording: (recordingId: string) => build("/recordings/:recordingId", { recordingId }),
   recordingReview: (recordingId: string) =>
     build("/recordings/:recordingId/review", { recordingId }),

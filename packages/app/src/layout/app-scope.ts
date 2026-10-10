@@ -3,7 +3,6 @@ import { routeContractForPath } from "../router/route-contract";
 export type AppScopeTest = { id: string; appMapId: string };
 export type AppScopeRun = { id: string; appMapId?: string; batchId?: string };
 export type AppScopeRecording = { id: string; appMapId?: string };
-export type AppScopeSession = { id: string; appMapId?: string };
 export type AppScopeBatch = { id: string; appMapId?: string };
 
 export type AppScope =
@@ -20,7 +19,6 @@ export function appScopeForLocation(input: {
   tests?: readonly AppScopeTest[];
   runs?: readonly AppScopeRun[];
   recordings?: readonly AppScopeRecording[];
-  sessions?: readonly AppScopeSession[];
   batches?: readonly AppScopeBatch[];
 }): string | undefined {
   const scope = appScopeDetailsForLocation(input);
@@ -45,14 +43,13 @@ export function appScopeDisplayName(
 }
 
 /** Resolve App ownership from the resource first and collection filters second.
- * A stale `?app=` value must never relabel a Test, Run, Recording, or Session. */
+ * A stale `?app=` value must never relabel a Test, Run, or Recording. */
 export function appScopeDetailsForLocation(input: {
   pathname: string;
   search: Readonly<Record<string, unknown>>;
   tests?: readonly AppScopeTest[];
   runs?: readonly AppScopeRun[];
   recordings?: readonly AppScopeRecording[];
-  sessions?: readonly AppScopeSession[];
   batches?: readonly AppScopeBatch[];
 }): AppScope {
   const route = routeContractForPath(input.pathname);
@@ -110,15 +107,6 @@ export function appScopeDetailsForLocation(input: {
     );
   }
 
-  const sessionId = /^\/sessions\/([^/]+)$/u.exec(input.pathname)?.[1];
-  if (sessionId) {
-    return owned(
-      input.sessions,
-      (session) => session.id === decode(sessionId),
-      (session) => session.appMapId,
-    );
-  }
-
   if (isWorkspaceRoute(input.pathname)) return { kind: "workspace" };
   return route?.allowedSearchKeys.includes("app")
     ? fromSearchApp(input.search)
@@ -161,7 +149,6 @@ function isWorkspaceRoute(pathname: string): boolean {
     pathname === "/versions" ||
     pathname === "/environments" ||
     pathname.startsWith("/environments/") ||
-    pathname === "/sessions" ||
     pathname.startsWith("/settings/")
   );
 }

@@ -329,15 +329,8 @@ async function runSmoke(options) {
     await assertKeyboardFocus(page);
     await checkAccessibility();
 
-    trace("checking Tests, Live, Devices, Runs and Settings routes");
+    trace("checking Tests, Devices, Runs and Settings routes");
     await clickNav(page, "Tests", "/tests");
-    await checkAccessibility();
-    if (await page.getByRole("link", { name: "Live", exact: true }).count()) {
-      await clickNav(page, "Live", "/sessions");
-    } else {
-      trace("Live is reached through Devices; opening its route directly");
-      await openRoute(page, "/sessions");
-    }
     await checkAccessibility();
     await clickNav(page, "Devices", "/devices");
     await checkAccessibility();

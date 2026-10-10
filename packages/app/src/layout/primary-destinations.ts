@@ -1,4 +1,4 @@
-import { Activity, FlaskConical, History, KeyRound, MonitorSmartphone } from "lucide-react";
+import { FlaskConical, History, KeyRound, MonitorSmartphone } from "lucide-react";
 
 /**
  * One destination vocabulary for the sidebar and command palette, per the
@@ -46,20 +46,4 @@ export const utilityDestinations = [
   },
 ] as const;
 
-/** Reachable from search (⌘K) and links, not the sidebar. */
-export const moreDestinations = [
-  {
-    to: "/sessions",
-    label: "Activity",
-    shortLabel: "Activity",
-    icon: Activity,
-    detail: "Recordings and live sessions",
-    keywords: "sessions activity live recordings",
-  },
-] as const;
-
-export const primaryDestinations = [
-  ...everydayDestinations,
-  ...utilityDestinations,
-  ...moreDestinations,
-];
+export const primaryDestinations = [...everydayDestinations, ...utilityDestinations];

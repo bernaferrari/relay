@@ -236,10 +236,10 @@ function ActivityCenter({
             nativeButton={false}
             variant="ghost"
             size="sm"
-            render={<Link to="/sessions" />}
+            render={<Link to="/runs" />}
             onClick={() => onOpenChange(false)}
           >
-            View all activity
+            View all runs
           </Button>
         </footer>
       </DialogContent>

@@ -40,10 +40,6 @@ import {
   type SettingsProductService,
 } from "../data/settings-product-service";
 import {
-  createSessionProductService,
-  type SessionProductService,
-} from "../data/session-product-service";
-import {
   createSuiteProfileProductService,
   type SuiteProfileProductService,
 } from "../data/suite-profile-product-service";
@@ -51,10 +47,6 @@ import {
   createBrowserSpacesProductService,
   type BrowserSpacesProductService,
 } from "../data/browser-spaces-product-service";
-import {
-  createLiveTestEditorProductService,
-  type LiveTestEditorProductService,
-} from "../data/live-test-editor-product-service";
 import {
   createTestEditorProductService,
   type TestEditorProductService,
@@ -109,7 +101,6 @@ const MapPage = lazyNamedRoute(() => import("../routes/map-page"), "MapPage");
 const TestsPage = lazyNamedRoute(() => import("../routes/tests-page"), "TestsPage");
 const NewTestPage = lazyNamedRoute(() => import("../routes/new-test-page"), "NewTestPage");
 const TestPage = lazyNamedRoute(() => import("../routes/test-page"), "TestPage");
-const EditTestPage = lazyNamedRoute(() => import("../routes/edit-test-page"), "EditTestPage");
 const RecordingPage = lazyNamedRoute(() => import("../routes/record-test-page"), "RecordingPage");
 const SuitePage = lazyNamedRoute(() => import("../routes/suite-page"), "SuitePage");
 const EnvironmentsPage = lazyNamedRoute(
@@ -124,8 +115,6 @@ const ReviewRecordingPage = lazyNamedRoute(
   () => import("../routes/review-recording-page"),
   "ReviewRecordingPage",
 );
-const SessionsPage = lazyNamedRoute(() => import("../routes/sessions-page"), "SessionsPage");
-const SessionPage = lazyNamedRoute(() => import("../routes/session-page"), "SessionPage");
 const RunsPage = lazyNamedRoute(() => import("../routes/runs-page"), "RunsPage");
 const RunPage = lazyNamedRoute(() => import("../routes/run-page"), "RunPage");
 const BatchPage = lazyNamedRoute(() => import("../routes/batch-page"), "BatchPage");
@@ -151,10 +140,8 @@ export type AppRouterContext = {
   deviceService: DeviceProductService;
   settingsService: SettingsProductService;
   testEditorService: TestEditorProductService;
-  sessionService: SessionProductService;
   suiteProfileService: SuiteProfileProductService;
   browserSpacesService: BrowserSpacesProductService;
-  liveTestEditorService: LiveTestEditorProductService;
   queryClient: QueryClient;
 };
 
@@ -244,11 +231,6 @@ const testRoute = createRoute({
   path: "/tests/$testId",
   component: TestPage,
 });
-const editTestRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tests/$testId/edit",
-  component: EditTestPage,
-});
 const recordingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/recordings/$recordingId",
@@ -279,16 +261,6 @@ const reviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/review",
   component: ReviewPage,
-});
-const sessionsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/sessions",
-  component: SessionsPage,
-});
-const sessionRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/sessions/$sessionId",
-  component: SessionPage,
 });
 const runsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -372,14 +344,11 @@ const routeTree = rootRoute.addChildren([
   testsRoute,
   newTestRoute,
   testRoute,
-  editTestRoute,
   recordingRoute,
   suiteRoute,
   environmentsRoute,
   environmentRoute,
   recordingReviewRoute,
-  sessionsRoute,
-  sessionRoute,
   reviewRoute,
   runsRoute,
   runRoute,
@@ -407,17 +376,11 @@ export function createAppRouter(options: {
   deviceService?: DeviceProductService;
   settingsService?: SettingsProductService;
   testEditorService?: TestEditorProductService;
-  sessionService?: SessionProductService;
   suiteProfileService?: SuiteProfileProductService;
   browserSpacesService?: BrowserSpacesProductService;
-  liveTestEditorService?: LiveTestEditorProductService;
   queryClient: QueryClient;
   history?: RouterHistory;
 }) {
-  const productService = options.productService ?? createRecordingProductService(options.platform);
-  const testEditorService =
-    options.testEditorService ?? createTestEditorProductService(options.platform);
-  const sessionService = options.sessionService ?? createSessionProductService(options.platform);
   return createRouter({
     routeTree,
     history: options.history ?? createHashHistory(),
@@ -425,26 +388,19 @@ export function createAppRouter(options: {
       platform: options.platform,
       appResourcesService:
         options.appResourcesService ?? createAppResourcesProductService(options.platform),
-      productService,
+      productService: options.productService ?? createRecordingProductService(options.platform),
       runService: options.runService ?? createRunProductService(options.platform),
       runAcrossService: options.runAcrossService ?? createRunAcrossProductService(options.platform),
       mapService: options.mapService ?? createMapProductService(options.platform),
       catalogService: options.catalogService ?? createCatalogProductService(options.platform),
       deviceService: options.deviceService ?? createDeviceProductService(options.platform),
       settingsService: options.settingsService ?? createSettingsProductService(options.platform),
-      testEditorService,
-      sessionService,
+      testEditorService:
+        options.testEditorService ?? createTestEditorProductService(options.platform),
       suiteProfileService:
         options.suiteProfileService ?? createSuiteProfileProductService(options.platform),
       browserSpacesService:
         options.browserSpacesService ?? createBrowserSpacesProductService(options.platform),
-      liveTestEditorService:
-        options.liveTestEditorService ??
-        createLiveTestEditorProductService({
-          editor: testEditorService,
-          sessions: sessionService,
-          recording: productService,
-        }),
       queryClient: options.queryClient,
     },
     defaultPreload: "intent",

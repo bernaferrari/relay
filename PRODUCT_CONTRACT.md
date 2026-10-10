@@ -45,12 +45,9 @@ Change → relay ci / relay_check_change → Verdicts
 /tests
 /tests/new
 /tests/:testId
-/tests/:testId/edit
 /apps/:appId/suites/:suiteId
 /environments
 /environments/:profileId
-/sessions
-/sessions/:sessionId
 /recordings/:recordingId
 /recordings/:recordingId/review
 /review

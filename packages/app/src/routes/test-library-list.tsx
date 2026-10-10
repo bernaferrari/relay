@@ -119,7 +119,7 @@ function TestRow({
             render={
               test.status === "needs-review" || draft ? (
                 <Link
-                  to="/tests/$testId/edit"
+                  to="/tests/$testId"
                   params={{ testId: test.id }}
                   search={test.sharedId ? { app: test.appMapId } : undefined}
                 />

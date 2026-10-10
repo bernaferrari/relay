@@ -468,8 +468,8 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Saved");
   });
 
-  it("redirects the legacy editor URL to in-place editing on the test page", async () => {
-    const history = await render(service().editor, "/tests/test-checkout/edit?step=step-pay");
+  it("opens a step for in-place editing on the test page", async () => {
+    const history = await render(service().editor, "/tests/test-checkout?step=step-pay");
     expect(history.location.pathname).toBe("/tests/test-checkout");
     expect(history.location.search).toContain("step=step-pay");
     await vi.waitFor(async () => {

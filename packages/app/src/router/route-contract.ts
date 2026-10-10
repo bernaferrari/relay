@@ -49,11 +49,6 @@ const routePresentations = {
     eyebrow: "Test",
     description: "Review this test before running or editing it.",
   },
-  "/tests/:testId/edit": {
-    path: "/tests/$testId/edit",
-    eyebrow: "Test",
-    description: "Refine the reviewed steps and expected checkpoints.",
-  },
   "/apps/:appId/suites/:suiteId": {
     path: "/apps/$appId/suites/$suiteId",
     eyebrow: "Plan",
@@ -68,16 +63,6 @@ const routePresentations = {
     path: "/environments/$profileId",
     eyebrow: "Browser",
     description: "Open this browser, check readiness, and save a sign-in.",
-  },
-  "/sessions": {
-    path: "/sessions",
-    eyebrow: "Workspace",
-    description: "Reopen durable browser and device Sessions for recording or debugging.",
-  },
-  "/sessions/:sessionId": {
-    path: "/sessions/$sessionId",
-    eyebrow: "Session",
-    description: "Inspect one durable target Session and its operation context.",
   },
   "/recordings/:recordingId": {
     path: "/recordings/$recordingId",

@@ -280,9 +280,11 @@ describe("Tests home", () => {
     expect(main().querySelector('a[href="/tests/test-login"]')).toBeNull();
     expect(main().querySelector('a[href="/tests/draft-checkout"]')).not.toBeNull();
     expect(main().textContent).not.toContain("UNRECORDED");
-    expect(main().querySelector('a[href="/tests/draft-checkout/edit"]')?.textContent).toBe(
-      "Edit draft",
-    );
+    expect(
+      [...main().querySelectorAll('a[href="/tests/draft-checkout"]')].some(
+        (link) => link.textContent === "Edit draft",
+      ),
+    ).toBe(true);
   });
   it("preserves the app on an Edit draft link when two apps share a test id", async () => {
     const drafts = [
@@ -290,7 +292,9 @@ describe("Tests home", () => {
       test({ id: "shared-draft", name: "DRAFT — Billing", appMapId: "app-bank", stepCount: 0 }),
     ];
     await render("/tests?app=app-shop&view=drafts", { tests: drafts });
-    const edit = main().querySelector<HTMLAnchorElement>('a[href^="/tests/shared-draft/edit"]')!;
+    const edit = [
+      ...main().querySelectorAll<HTMLAnchorElement>('a[href^="/tests/shared-draft"]'),
+    ].find((link) => link.textContent === "Edit draft")!;
     expect(new URL(edit.href).searchParams.get("app")).toBe("app-shop");
     expect(main().textContent).not.toContain("Billing");
   });

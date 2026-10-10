@@ -46,7 +46,6 @@ export function TestEditorWorkspace({
   undo,
   redo,
   testId,
-  inspectorKind,
   browserPane,
   latestEvidence,
 }: {
@@ -80,7 +79,6 @@ export function TestEditorWorkspace({
   undo(): void;
   redo(): void;
   testId: string;
-  inspectorKind: "device" | "browser";
   browserPane: ReactNode;
   latestEvidence: ReactNode;
 }) {
@@ -91,7 +89,7 @@ export function TestEditorWorkspace({
     { id: "recorded", label: "Screenshot", view: "browser", mode: "recorded" },
     {
       id: "live",
-      label: inspectorKind === "device" ? "Live device" : "Live browser",
+      label: "Live browser",
       view: "browser",
       mode: "live",
     },
@@ -204,7 +202,7 @@ export function TestEditorWorkspace({
         </div>
         <div
           className={`${workspaceView === "browser" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto min-[1100px]:flex`}
-          data-inspector-kind={inspectorKind}
+          data-inspector-kind="browser"
         >
           {browserPane}
           {latestEvidence}

@@ -34,6 +34,4 @@ test("canonical route metadata uses only public Product vocabulary", () => {
     );
   }
   assert.equal(PRODUCT_ADVANCED_TERMS.includes("Lease"), true);
-  assert.equal(routeUrls.sessions(), "/sessions");
-  assert.equal(routeUrls.session("session/one"), "/sessions/session%2Fone");
 });
