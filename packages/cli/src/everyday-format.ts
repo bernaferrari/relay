@@ -321,3 +321,58 @@ export function formatListResult(result: unknown, now = Date.now()): string | un
   }
   return undefined;
 }
+
+function md(value: unknown): string {
+  return String(value ?? "")
+    .replace(/\|/gu, "\\|")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+/** The same verdicts as a GitHub job summary: one table, then each failure's expected vs. saw. */
+export function ciMarkdown(input: {
+  app: string;
+  verdicts: readonly Verdict[];
+  skipped: readonly CiSkipped[];
+  totals: CiTotals;
+}): string {
+  const icon = {
+    passed: "✅",
+    failed: "❌",
+    blocked: "⚠️",
+    cancelled: "⏹️",
+    running: "⏳",
+  } as const;
+  const { totals } = input;
+  const lines = [
+    `### Relay · ${md(input.app)}`,
+    "",
+    `${totals.passed} passed · ${totals.failed} failed · ${totals.blocked} could not run${totals.skipped ? ` · ${totals.skipped} skipped` : ""}`,
+    "",
+    "| | Test | Result |",
+    "|---|---|---|",
+    ...input.verdicts.map(
+      (verdict) => `| ${icon[verdict.status]} | ${md(verdict.title)} | ${md(verdict.summary)} |`,
+    ),
+  ];
+  const failures = input.verdicts.filter(
+    (verdict) => verdict.status === "failed" || verdict.status === "blocked",
+  );
+  for (const verdict of failures) {
+    const step = verdict.steps.find((item) => item.status === "failed");
+    lines.push("", `<details><summary>${md(verdict.title)}</summary>`, "");
+    if (step) {
+      lines.push(`**Step:** ${md(step.title)}  `);
+      if (step.expected) lines.push(`**Expected:** ${md(step.expected)}  `);
+      if (step.saw) lines.push(`**Saw:** ${md(step.saw)}  `);
+    } else if (verdict.reason) lines.push(md(verdict.reason));
+    if (verdict.runId) lines.push("", `Run: \`${verdict.runId}\``);
+    lines.push("", "</details>");
+  }
+  if (input.skipped.length)
+    lines.push(
+      "",
+      `Skipped: ${input.skipped.map((item) => `${md(item.name)} (${md(item.reason)})`).join(", ")}`,
+    );
+  return `${lines.join("\n")}\n`;
+}
