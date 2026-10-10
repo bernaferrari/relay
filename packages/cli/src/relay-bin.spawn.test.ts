@@ -123,7 +123,16 @@ test("relay bin resolves user paths against the caller's directory, not the chec
       },
       async (url) => {
         const result = await spawnRelay(
-          ["run", "list", "--input-file", "query.json", "--json", "--server", url],
+          [
+            "operation",
+            "invoke",
+            "run.list",
+            "--input-file",
+            "query.json",
+            "--json",
+            "--server",
+            url,
+          ],
           caller,
         );
         assert.equal(result.status, 0, result.stderr);

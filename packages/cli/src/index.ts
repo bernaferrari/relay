@@ -479,7 +479,7 @@ export async function runCli(
         ? parsed.operationId
         : parsed.command === "resource"
           ? parsed.resourceId
-          : parsed.command === "verify-change" || parsed.command === "prove"
+          : parsed.command === "prove"
             ? "proof.start"
             : outcomeOperationId(parsed.intent.kind);
     const commandPath = "commandPath" in parsed ? parsed.commandPath : undefined;
@@ -494,7 +494,7 @@ export async function runCli(
       if (parsed.command === "invoke") validateOperationId(operationId);
       if (
         ((parsed.command === "outcome" && parsed.intent.kind !== "replay-lab") ||
-          ((parsed.command === "verify-change" || parsed.command === "prove") && parsed.confirm)) &&
+          (parsed.command === "prove" && parsed.confirm)) &&
         parsed.config.ensureLocalServer
       ) {
         output.heartbeat("Ensuring the local Relay server is ready");
@@ -503,12 +503,7 @@ export async function runCli(
         );
       }
       const client = (dependencies.createClient ?? createClient)(parsed.config);
-      if (parsed.command === "verify-change" || parsed.command === "prove") {
-        if (parsed.command === "verify-change" && !parsed.config.quiet) {
-          output.deprecation(
-            "relay verify-change --base is deprecated; use relay prove --base instead.",
-          );
-        }
+      if (parsed.command === "prove") {
         const result = await runVerifyChangeCommand({
           base: parsed.base,
           configFile: parsed.configFile,
@@ -526,11 +521,6 @@ export async function runCli(
         });
         output.result(operationId, result);
       } else if (parsed.command === "outcome") {
-        if (firstPositional(argv) === "verify-change") {
-          output.deprecation(
-            "relay verify-change is deprecated; use relay proof analyze for offline analysis or relay prove for live Change Proofs.",
-          );
-        }
         output.progress(operationId, "invoking");
         const result = await runOutcomeCommand({
           parsed,

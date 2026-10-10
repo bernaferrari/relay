@@ -158,11 +158,11 @@ function settled(testId: string): RunTestSnapshot {
 }
 
 test("misspelled family subcommands suggest instead of running a Test or Device", () => {
-  assert.throws(() => parseCli(["run", "lsit"], {}), /Did you mean 'relay run list'/u);
+  assert.throws(() => parseCli(["run", "verdcit"], {}), /Did you mean 'relay run verdict'/u);
   assert.throws(() => parseCli(["connect", "lst"], {}), /Did you mean 'relay connect list'/u);
-  // An exact subcommand with missing arguments is a usage error, never a Test named "watch".
+  // An exact subcommand with missing arguments is a usage error, never a Test named "verdict".
   assert.throws(
-    () => parseCli(["run", "watch"], {}),
+    () => parseCli(["run", "verdict"], {}),
     (error: unknown) => {
       assert.ok(error instanceof UsageError);
       assert.doesNotMatch(error.message, /Did you mean/u);
@@ -170,6 +170,8 @@ test("misspelled family subcommands suggest instead of running a Test or Device"
     },
   );
   assert.throws(() => parseCli(["rnu", "smoke"], {}), /Did you mean 'relay run'/u);
+  assert.throws(() => parseCli(["aply", "tests"], {}), /Did you mean 'relay apply'/u);
+  assert.throws(() => parseCli(["shwo", "Checkout"], {}), /Did you mean 'relay show'/u);
   const run = parseCli(["run", "Checkout works", "--app", "Shop", "--device", "ios"], {});
   assert.equal(run.command, "outcome");
   if (run.command === "outcome") {
@@ -241,7 +243,7 @@ test("relay.json in the caller's directory supplies app and device defaults", as
       /unknown field "ap"/u,
     );
     await writeFile(join(dir, "input.json"), '{"limit":1}');
-    const parsed = parseCli(["run", "list", "--input-file", "input.json"], {
+    const parsed = parseCli(["job", "list", "--input-file", "input.json"], {
       RELAY_CALLER_CWD: dir,
     });
     assert.deepEqual(parsed.command === "invoke" && parsed.input, { limit: 1 });
@@ -363,11 +365,11 @@ async function everyday(argv: string[], env: Record<string, string> = {}) {
   return { code, calls, stdout: io.stdout(), stderr: io.stderr() };
 }
 
-test("relay apps, tests, and devices print tables; app list is an alias", async () => {
+test("relay apps, tests, and devices print tables", async () => {
   const apps = await everyday(["apps"]);
   assert.equal(apps.code, ExitCode.success);
   assert.match(apps.stdout, /^NAME +TESTS +UPDATED +ID\nShop +3 +1h ago +shop-web/mu);
-  assert.equal((await everyday(["app", "list"])).stdout, apps.stdout);
+  assert.notEqual((await everyday(["app", "list"])).code, ExitCode.success, "one spelling: apps");
   const tests = await everyday(["tests", "shop"]);
   assert.match(tests.stdout, /Checkout works +ready \(plain English\) +2/u);
   assert.match(tests.stdout, /Refunds +needs recording +0/u);
@@ -394,8 +396,10 @@ test("relay new drafts a Test and says how to run it; relay.json supplies the ur
     assert.match(result.stdout, /Saved “Cart total” in shop-web/u);
     assert.match(result.stdout, /2\. check {3}The total is \$20/u);
     assert.match(result.stdout, /Run it: {3}relay run "Cart total" --app shop-web/u);
-    const alias = await everyday(["test", "new", "Check out", "--app", "Shop", "--json"]);
-    assert.equal(JSON.parse(alias.stdout).result.testId, "test-new");
+    const json = await everyday(["new", "Check out", "--app", "Shop", "--json"]);
+    assert.equal(JSON.parse(json.stdout).result.testId, "test-new");
+    const retired = await everyday(["test", "new", "Check out", "--app", "Shop"]);
+    assert.notEqual(retired.code, ExitCode.success, "one spelling: relay new");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -26,14 +26,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("system.doctor.get", path("system doctor")),
   mapped(
     "system.audit.list",
-    path("system audit list"),
     path("activity audit", [], undefined, {
       summary: "List operation audit records",
     }),
   ),
   mapped(
     "event.stream",
-    path("system events follow", [], undefined, { behavior: "event-stream" }),
     path("activity follow", [], undefined, {
       summary: "Follow live project activity",
       examples: ["relay activity follow --ndjson"],
@@ -399,8 +397,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "job.get",
     path("job get", ["jobId"]),
-    path("job watch", ["jobId"], undefined, { behavior: "job-watch" }),
-    path("run watch", ["jobId"], undefined, {
+    path("job watch", ["jobId"], undefined, {
       summary: "Watch an execution job until it finishes",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
       behavior: "job-watch",
@@ -408,60 +405,37 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "job.start",
-    path("job start"),
-    path("run start", ["recipe"], undefined, {
-      summary: "Run a compiled job (prefer relay flow run for map paths)",
-      argumentHelp: [
-        {
-          name: "recipe",
-          type: "string",
-          description: "Compiled job identifier when not starting from a map flow",
-        },
-      ],
-      inputHelp: [
-        { name: "serial", type: "string", description: "Optional target device serial" },
-        { name: "platform", type: "ios | android", description: "Target platform" },
-        { name: "targetKind", type: "device | browser", description: "Execution target kind" },
-        {
-          name: "variables",
-          type: "object",
-          description: "Per-run variable overrides; private values stay out of tracked files",
-        },
-      ],
+    path("job start", [], undefined, {
+      summary: "Start a compiled job (prefer relay flow run for map paths)",
       examples: [
         'relay flow run checkout main --input \'{"serial":"<phone-serial>","platform":"ios"}\'',
-        'relay run start <compiled-job-id> --input \'{"serial":"<phone-serial>","platform":"android"}\'',
       ],
     }),
   ),
   mapped(
     "job.retry",
-    path("job retry", ["jobId"]),
-    path("run retry", ["jobId"], undefined, {
+    path("job retry", ["jobId"], undefined, {
       summary: "Retry an execution job",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
   ),
   mapped(
     "job.cancel",
-    path("job cancel", ["jobId"]),
-    path("run cancel", ["jobId"], undefined, {
+    path("job cancel", ["jobId"], undefined, {
       summary: "Cancel an execution job",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
   ),
   mapped(
     "job.pause",
-    path("job pause", ["jobId"]),
-    path("run pause", ["jobId"], undefined, {
+    path("job pause", ["jobId"], undefined, {
       summary: "Pause an execution job",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
   ),
   mapped(
     "job.resume",
-    path("job resume", ["jobId"]),
-    path("run resume", ["jobId"], undefined, {
+    path("job resume", ["jobId"], undefined, {
       summary: "Resume an execution job",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
@@ -638,9 +612,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
       note: "Writes a portable review folder. index.html opens with a Test checklist (passed | check failed | could not run | todo), before/after PNGs, visual-comparison ids, and `relay run visual review <job>`. Confirm/Reject never accept a visual baseline. Optional --export copies the pack; --todo merges unbound/gated rows.",
     }),
-    path("job combine export", ["batchId"], undefined, {
-      summary: "Export a Combine screenshot pack",
-    }),
   ),
   mapped(
     "job.combine.analysis",
@@ -665,14 +636,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("repair list", [], undefined, {
       summary: "List addressable failed-check repair targets",
     }),
-    path("run repair list"),
   ),
   mapped(
     "run.repair.get",
     path("repair get", ["runId", "checkId"], undefined, {
       summary: "Inspect one complete failed-check repair package",
     }),
-    path("run repair get", ["runId", "checkId"]),
   ),
   mapped(
     "run.repair.retry",
@@ -680,9 +649,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       summary: "Retry only one failed check from immutable run evidence",
       behavior: "job-start-watch",
       note: "Proves the live origin, then runs only the warm failed check. No setup or app launch is replayed; the original run and saved Test remain unchanged.",
-    }),
-    path("run repair retry", ["runId", "checkId"], undefined, {
-      behavior: "job-start-watch",
     }),
   ),
   mapped(
@@ -852,7 +818,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("run.visual-policy.update", path("run visual-policy update", ["runId"])),
   mapped(
     "run.pin.update",
-    path("run pin update", ["runId"]),
     path("run pin", ["runId"], undefined, {
       summary: "Pin or unpin a run",
       argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
@@ -863,14 +828,13 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("generation.create", path("generation create")),
   mapped(
     "action.run",
-    path("action run", ["actionId", "serial"]),
-    path("routine run", ["actionId", "serial"], undefined, {
+    path("action run", ["actionId", "serial"], undefined, {
       summary: "Run a reusable routine on a device",
       argumentHelp: [
-        { name: "routineId", type: "string", description: "Reusable action identifier" },
+        { name: "actionId", type: "string", description: "Reusable action identifier" },
         { name: "serial", type: "string", description: "Connected device serial" },
       ],
-      examples: ["relay routine run login emulator-5554"],
+      examples: ["relay action run login emulator-5554"],
     }),
   ),
 ];

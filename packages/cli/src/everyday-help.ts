@@ -25,7 +25,7 @@ relay new --file <test.yaml>
 
 Describe what should work in plain English; Relay writes the steps and saves
 the Test. Give --url for a website (the app is created on first use) or --app
-for an existing app. --file saves a test file as written. Also spelled: relay test new.
+for an existing app. --file saves a test file as written.
 
 Examples:
   relay new "Add a shirt to the cart and check the total" --url https://shop.example.com
@@ -71,7 +71,7 @@ Test in place and keeps recorded steps whose words did not change.`,
 Prints a Test as its file, ready to save in your repo.`,
   apps: `relay apps
 
-Lists your apps with their number of Tests. Also spelled: relay app list.`,
+Lists your apps with their number of Tests.`,
   tests: `relay tests [<app>]
 
 Lists the app's Tests and whether each is ready to run.`,

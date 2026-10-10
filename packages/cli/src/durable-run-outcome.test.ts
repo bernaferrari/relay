@@ -12,17 +12,15 @@ function tokens(positionals: string[], confirm = false) {
 }
 
 test("CLI inspects durable Run IDs and recognizes bounded legacy v1 reads", () => {
-  assert.deepEqual(parseOutcomeCliIntent(tokens(["inspect-workflow", "workflow-123"])), {
-    kind: "inspect-workflow",
-    workflowId: "workflow-123",
+  assert.deepEqual(parseOutcomeCliIntent(tokens(["inspect", "workflow-123"])), {
+    kind: "inspect",
+    runOrWorkflowId: "workflow-123",
   });
-  assert.deepEqual(
-    parseOutcomeCliIntent(tokens(["inspect-workflow", "relay-workflow.v1.bGVnYWN5"])),
-    {
-      kind: "inspect-workflow",
-      legacyRef: "relay-workflow.v1.bGVnYWN5",
-    },
-  );
+  assert.equal(parseOutcomeCliIntent(tokens(["inspect-workflow", "workflow-123"])), undefined);
+  assert.deepEqual(parseOutcomeCliIntent(tokens(["inspect", "relay-workflow.v1.bGVnYWN5"])), {
+    kind: "inspect-workflow",
+    legacyRef: "relay-workflow.v1.bGVnYWN5",
+  });
 });
 
 test("CLI cancellation requires confirmation and one numeric CAS version", () => {

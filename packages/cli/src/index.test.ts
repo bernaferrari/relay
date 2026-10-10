@@ -308,7 +308,7 @@ test("friendly command families invoke through the operation client", async () =
     },
     {
       argv: [
-        "connection",
+        "connect",
         "update",
         "onboarding",
         "continue",
@@ -324,7 +324,7 @@ test("friendly command families invoke through the operation client", async () =
       },
     },
     {
-      argv: ["target", "screenshot", "pixel-9"],
+      argv: ["device", "screenshot", "pixel-9"],
       operationId: "target.screenshot.capture",
       input: { serial: "pixel-9" },
     },
@@ -402,7 +402,7 @@ test("friendly screenshot output preserves the PNG base64 payload", async () => 
     mime: "image/png",
     base64: "iVBORw0KGgoAAAANSUhEUg==",
   };
-  const code = await runCli(["target", "screenshot", "pixel-9", "--json"], {
+  const code = await runCli(["device", "screenshot", "pixel-9", "--json"], {
     streams: io.streams,
     createClient: () => ({ invoke: async () => screenshot, events: async () => {} }),
     registerSignalHandlers: false,
@@ -1257,7 +1257,7 @@ test("screenshot output writes validated PNG files without leaking base64", asyn
 test("screenshot binary mode keeps stdout byte-clean", async () => {
   const io = capture();
   const png = Buffer.from(pngBase64, "base64");
-  const code = await runCli(["target", "screenshot", "pixel-9", "--binary", "--quiet"], {
+  const code = await runCli(["device", "screenshot", "pixel-9", "--binary", "--quiet"], {
     streams: io.streams,
     createClient: () => ({
       invoke: async () => ({
@@ -1492,7 +1492,11 @@ test("root and family help are useful without creating a client", async () => {
     },
     {
       argv: ["proposal", "--help"],
-      matches: [/proposal record <proposalId>/, /target \(object, required\)/, /proposal accept/],
+      matches: [/proposal approve <appMapId> <proposalId>/, /proposal reject/],
+    },
+    {
+      argv: ["session", "--help"],
+      matches: [/session start <sessionId>/, /target \(object, required\)/, /session commit/],
     },
     {
       argv: ["activity", "--help"],
@@ -1543,7 +1547,7 @@ test("root and family help are useful without creating a client", async () => {
 
 test("friendly commands reject missing target and session identities before creating a client", async () => {
   for (const [argv, message] of [
-    [["target", "screenshot"], /target screenshot requires <serial>/],
+    [["device", "screenshot"], /device screenshot requires <serial>/],
     [["session", "tap"], /session tap requires <sessionId>/],
   ] as const) {
     const io = capture();
@@ -2968,9 +2972,9 @@ test("job list --json dest identity is dest wait-for, not leftover Close 004 las
   );
 });
 
-test("run list --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("run.list --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
-  const code = await runCli(["run", "list", "--json"], {
+  const code = await runCli(["operation", "invoke", "run.list", "--input", "{}", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke(operationId) {
@@ -3330,11 +3334,11 @@ test("combine run waits for later cases and fails when any locale fails", async 
   assert.equal(JSON.parse(io.stdout()).error.message, "Japanese case failed");
 });
 
-test("run watch alias shares job polling behavior", async () => {
+test("job watch --no-wait reads the job once", async () => {
   const io = capture();
   let calls = 0;
   const running = { job: { id: "abc", status: "running" } };
-  const code = await runCli(["run", "watch", "abc", "--no-wait", "--json"], {
+  const code = await runCli(["job", "watch", "abc", "--no-wait", "--json"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -3410,10 +3414,10 @@ test("job watch rejects malformed job.get responses", async () => {
   assert.match(JSON.parse(records[0]!).error.message, /Malformed job\.get response/);
 });
 
-test("system events follow emits typed NDJSON without invoking event.stream or client focus", async () => {
+test("activity follow emits typed NDJSON without invoking event.stream or client focus", async () => {
   const io = capture();
   let invoked = false;
-  const code = await runCli(["system", "events", "follow", "--ndjson"], {
+  const code = await runCli(["activity", "follow", "--ndjson"], {
     streams: io.streams,
     createClient: () => ({
       async invoke() {
@@ -3446,37 +3450,6 @@ test("system events follow emits typed NDJSON without invoking event.stream or c
   assert.equal(hasTerminalControl(io.stdout()), false);
 });
 
-test("activity follow alias subscribes to the shared event stream", async () => {
-  const io = capture();
-  let invoked = false;
-  const code = await runCli(["activity", "follow", "--ndjson"], {
-    streams: io.streams,
-    createClient: () => ({
-      async invoke() {
-        invoked = true;
-        return {};
-      },
-      async events(callback) {
-        callback(relayEvent);
-      },
-    }),
-    registerSignalHandlers: false,
-    env: {},
-  });
-
-  assert.equal(code, ExitCode.success);
-  assert.equal(invoked, false);
-  const records = io
-    .stdout()
-    .trim()
-    .split("\n")
-    .map((value) => JSON.parse(value));
-  assert.deepEqual(
-    records.map(({ type }) => type),
-    ["progress", "event", "result"],
-  );
-});
-
 test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", async () => {
   const listenersBefore = {
     sigint: process.listenerCount("SIGINT"),
@@ -3484,7 +3457,7 @@ test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", as
   };
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     const io = capture();
-    const code = await runCli(["system", "events", "follow", "--ndjson"], {
+    const code = await runCli(["activity", "follow", "--ndjson"], {
       streams: io.streams,
       createClient: () => ({
         invoke: async () => ({}),
@@ -3525,7 +3498,7 @@ test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", as
 test("JSON event follow is a usage error before creating a client", async () => {
   const io = capture();
   let created = false;
-  const code = await runCli(["system", "events", "follow", "--json"], {
+  const code = await runCli(["activity", "follow", "--json"], {
     streams: io.streams,
     createClient: () => {
       created = true;

@@ -248,7 +248,7 @@ export async function runOutcomeCommand(input: {
       tracePacks: await readReplayLabTracePacks(intent.paths),
     });
   }
-  if (intent.kind === "verify-change" || intent.kind === "proof-analyze") {
+  if (intent.kind === "proof-analyze") {
     return jobs.verifyChange({ ...intent, kind: "verify-change" });
   }
   const started =

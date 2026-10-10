@@ -29,7 +29,7 @@ async function previewFile(metadata: Record<string, unknown>) {
   try {
     const code = await runCli(
       [
-        "target",
+        "device",
         "interact",
         "ipad",
         "--preview",

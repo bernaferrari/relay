@@ -174,9 +174,12 @@ export function resolveCommand(
   );
 }
 
-/** Top-level words people type; used only for "did you mean" suggestions. */
+/** Top-level words people type (the everyday verbs, then the extras root
+ * help lists under "Also"); used only for "did you mean" suggestions. */
 const everydayWords = [
   "new",
+  "apply",
+  "show",
   "run",
   "ci",
   "apps",
@@ -191,9 +194,6 @@ const everydayWords = [
   "review",
   "export",
   "doctor",
-  "repeat",
-  "goal",
-  "explore",
 ];
 
 function knownFamilies(): Set<string> {

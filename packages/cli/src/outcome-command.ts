@@ -50,7 +50,6 @@ export type OutcomeCliIntent =
   | EditRecordingOutcomeIntent
   | DoctorIntent
   | ReplayLabFileIntent
-  | VerifyChangeOutcomeIntent
   | GoalSessionStartIntent
   | GoalSessionResumeIntent
   | GoalSessionReproduceIntent
@@ -515,11 +514,8 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       confirmRemaining: true,
     };
   }
-  // The everyday inspect accepts canonical Runs and workflows; the explicit
-  // inspect-workflow spelling and bounded legacy references keep their scope.
-  const normalizedVerb =
-    verb === "inspect" ? "inspect-workflow" : verb === "export" ? "export-evidence" : verb;
-  if (normalizedVerb === "inspect-workflow" && args.length === 1) {
+  // inspect accepts canonical Runs and workflows plus bounded legacy references.
+  if (verb === "inspect" && args.length === 1) {
     if (args[0]!.startsWith("relay-workflow.v1.") && args[0]!.length > 96 * 1024) {
       throw new UsageError("legacy workflow reference exceeds the bounded input limit");
     }
@@ -531,9 +527,7 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
             { legacyRef: unknown }
           >["legacyRef"],
         }
-      : verb === "inspect"
-        ? { kind: "inspect", runOrWorkflowId: args[0]! }
-        : { kind: "inspect-workflow", workflowId: args[0]! };
+      : { kind: "inspect", runOrWorkflowId: args[0]! };
   }
   if (verb === "cancel-run" && args.length === 2) {
     if (!tokens.switches.has("--confirm")) {
@@ -576,7 +570,7 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     }
     return { kind: "doctor" };
   }
-  if (normalizedVerb === "export-evidence" && args.length === 1) {
+  if (verb === "export" && args.length === 1) {
     const outputDir = tokens.values.get("--output") ?? tokens.values.get("--out");
     return {
       kind: "export-evidence",
@@ -594,36 +588,27 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     }
     return { kind: "replay-lab", analysis, paths };
   }
-  // Offline analysis belongs under the proof namespace. Keep the historic
-  // `verify-change` spelling as a deliberately narrow compatibility alias;
-  // both paths still use the same bounded VerifyChange facade below.
-  if (verb === "verify-change" || (verb === "proof" && args[0] === "analyze")) {
-    const analysisArgs = verb === "proof" ? args.slice(1) : args;
-    const [scope, ...subjects] = analysisArgs;
+  // Offline analysis lives under the proof namespace (`relay proof analyze`).
+  if (verb === "proof" && args[0] === "analyze") {
+    const [scope, ...subjects] = args.slice(1);
     const confirmationSatisfied = tokens.switches.has("--confirm") || undefined;
-    if (scope === "run" && subjects.length > 0) {
-      return {
-        kind: verb === "proof" ? "proof-analyze" : "verify-change",
-        selection: { kind: "runs", runIds: subjects },
-        ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
-      };
-    }
+    const analyze = (selection: ProofAnalyzeCliIntent["selection"]): ProofAnalyzeCliIntent => ({
+      kind: "proof-analyze",
+      selection,
+      ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
+    });
+    if (scope === "run" && subjects.length > 0) return analyze({ kind: "runs", runIds: subjects });
     if (scope === "test" && subjects.length > 1) {
-      return {
-        kind: verb === "proof" ? "proof-analyze" : "verify-change",
-        selection: { kind: "tests", appMapId: subjects[0]!, testIds: subjects.slice(1) },
-        ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
-      };
+      return analyze({ kind: "tests", appMapId: subjects[0]!, testIds: subjects.slice(1) });
     }
     if (scope === "revision" && subjects.length === 1 && /^[0-9a-f]{7,40}$/u.test(subjects[0]!)) {
-      return {
-        kind: verb === "proof" ? "proof-analyze" : "verify-change",
-        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: subjects[0]! } },
-        ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
-      };
+      return analyze({
+        kind: "source-revision",
+        sourceRevision: { vcs: "git", sha: subjects[0]! },
+      });
     }
     throw new UsageError(
-      `${verb === "proof" ? "proof analyze" : "verify-change"} requires run <runId...>, test <appMapId> <testId...>, or revision <gitSha>`,
+      "proof analyze requires run <runId...>, test <appMapId> <testId...>, or revision <gitSha>",
     );
   }
   return undefined;

@@ -176,7 +176,7 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
       },
     },
     {
-      input: tokens(["export-evidence", "run-1"]),
+      input: tokens(["export", "run-1"]),
       expected: { kind: "export-evidence", runId: "run-1" },
     },
     {
@@ -188,16 +188,16 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
       },
     },
     {
-      input: tokens(["verify-change", "run", "run-1", "run-2"]),
+      input: tokens(["proof", "analyze", "run", "run-1", "run-2"]),
       expected: {
-        kind: "verify-change",
+        kind: "proof-analyze",
         selection: { kind: "runs", runIds: ["run-1", "run-2"] },
       },
     },
     {
-      input: tokens(["verify-change", "revision", "abcdef0"]),
+      input: tokens(["proof", "analyze", "revision", "abcdef0"]),
       expected: {
-        kind: "verify-change",
+        kind: "proof-analyze",
         selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
       },
     },
@@ -205,6 +205,14 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
 
   for (const testCase of cases) {
     assert.deepEqual(parseOutcomeCliIntent(testCase.input), testCase.expected);
+  }
+  // Retired spellings no longer parse as outcome commands.
+  for (const retired of [
+    ["export-evidence", "run-1"],
+    ["inspect-workflow", "workflow-1"],
+    ["verify-change", "run", "run-1"],
+  ]) {
+    assert.equal(parseOutcomeCliIntent(tokens(retired)), undefined, retired.join(" "));
   }
 });
 

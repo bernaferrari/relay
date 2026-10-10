@@ -82,32 +82,28 @@ function workflowOutput() {
   };
 }
 
-for (const command of ["inspect", "inspect-workflow"]) {
-  test(`${command} retains durable workflow inspection without recursive lookup`, async () => {
-    const calls: unknown[] = [];
-    const result = await inspect([command, "workflow-1"], {
-      async invoke(operationId, input) {
-        calls.push({ operationId, input });
-        if (operationId === "run.get") throw new ApiError(404, "Run not found");
-        assert.equal(operationId, "workflow.get");
-        return workflowOutput();
-      },
-      events: async () => {},
-    });
-    assert.equal(result.code, ExitCode.success);
-    assert.deepEqual(calls, [
-      ...(command === "inspect"
-        ? [{ operationId: "run.get", input: { runId: "workflow-1" } }]
-        : []),
-      { operationId: "workflow.get", input: { workflowId: "workflow-1" } },
-    ]);
-    assert.equal(result.envelope.result.phase, "running");
-    assert.deepEqual(result.envelope.result.workflow, {
-      workflowId: "workflow-1",
-      expectedVersion: 3,
-    });
+test("inspect falls back to durable workflow inspection without recursive lookup", async () => {
+  const calls: unknown[] = [];
+  const result = await inspect(["inspect", "workflow-1"], {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      if (operationId === "run.get") throw new ApiError(404, "Run not found");
+      assert.equal(operationId, "workflow.get");
+      return workflowOutput();
+    },
+    events: async () => {},
   });
-}
+  assert.equal(result.code, ExitCode.success);
+  assert.deepEqual(calls, [
+    { operationId: "run.get", input: { runId: "workflow-1" } },
+    { operationId: "workflow.get", input: { workflowId: "workflow-1" } },
+  ]);
+  assert.equal(result.envelope.result.phase, "running");
+  assert.deepEqual(result.envelope.result.workflow, {
+    workflowId: "workflow-1",
+    expectedVersion: 3,
+  });
+});
 
 for (const [status, exitCode] of [
   [403, ExitCode.auth],

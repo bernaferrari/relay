@@ -79,11 +79,7 @@ test("Proof lifecycle commands resolve to canonical operations", () => {
     commandPath: "prove",
     input: { proofId: "proof-1", wait: true },
   });
-  assert.deepEqual(resolveCommand(["proof", "run", "proof-1"], { expectedVersion: 3 }), {
-    operationId: "proof.run",
-    commandPath: "proof run",
-    input: { proofId: "proof-1", expectedVersion: 3 },
-  });
+  assert.throws(() => resolveCommand(["proof", "run", "proof-1"]), /Invalid proof command/u);
   assert.deepEqual(resolveCommand(["proof", "continue", "proof-1"], { expectedVersion: 3 }), {
     operationId: "proof.continue",
     commandPath: "proof continue",
@@ -254,7 +250,7 @@ test("screen and connection commands use granular App Map operations", () => {
   });
   assert.equal(resolveCommand(["screen", "list", "map-1"]).operationId, "app-map.get");
   assert.equal(
-    resolveCommand(["connection", "update", "map-1", "connection-1"], {
+    resolveCommand(["connect", "update", "map-1", "connection-1"], {
       expectedRevision: 3,
       patch: { label: "Continue" },
     }).operationId,
@@ -659,7 +655,7 @@ test("authoring interaction aliases construct explicit session inputs", () => {
     { sessionId: "session-1", interaction: { kind: "tap", target: { x: 0.25, y: 0.75 } } },
   );
   assert.deepEqual(
-    resolveCommand(["proposal", "batch", "proposal-1"], {
+    resolveCommand(["session", "batch", "proposal-1"], {
       interaction: {
         steps: [
           { kind: "tap", target: { identifier: "send" } },
@@ -723,13 +719,8 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       "app-map.flow.run",
       { appMapId: "checkout", flowId: "main" },
     ],
-    [
-      ["routine", "run", "login", "pixel-9"],
-      "action.run",
-      { actionId: "login", serial: "pixel-9" },
-    ],
+    [["action", "run", "login", "pixel-9"], "action.run", { actionId: "login", serial: "pixel-9" }],
     [["device", "screenshot", "pixel-9"], "target.screenshot.capture", { serial: "pixel-9" }],
-    [["target", "devices"], "target.devices.list", {}],
     [["device", "survey", "pixel-9"], "target.scroll-survey.capture", { serial: "pixel-9" }],
     [
       ["connect", "get", "checkout", "continue"],
@@ -748,14 +739,14 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { serial: "ipad-1", app: "Settings" },
     ],
     [["device", "recover", "ipad-1"], "target.recover", { serial: "ipad-1" }],
-    [["proposal", "record", "proposal-1"], "authoring.session.start", { sessionId: "proposal-1" }],
+    [["session", "start", "session-1"], "authoring.session.start", { sessionId: "session-1" }],
     [
-      ["proposal", "optimize", "proposal-1"],
+      ["take", "optimize", "session-1"],
       "authoring.take.optimization.get",
-      { sessionId: "proposal-1" },
+      { sessionId: "session-1" },
     ],
-    [["proposal", "accept", "proposal-1"], "authoring.session.commit", { sessionId: "proposal-1" }],
-    [["run", "watch", "job-1"], "job.get", { jobId: "job-1" }],
+    [["session", "commit", "session-1"], "authoring.session.commit", { sessionId: "session-1" }],
+    [["job", "watch", "job-1"], "job.get", { jobId: "job-1" }],
     [["activity", "follow"], "event.stream", {}],
     [
       ["test", "run", "grok-ios", "settings-tour"],
@@ -798,7 +789,7 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
     assert.deepEqual(resolved.input, input, argv.join(" "));
   }
   assert.equal(resolveCommand(["device", "screenshot", "pixel-9"]).behavior, "screenshot");
-  assert.equal(resolveCommand(["run", "watch", "job-1"]).behavior, "job-watch");
+  assert.equal(resolveCommand(["job", "watch", "job-1"]).behavior, "job-watch");
   assert.equal(resolveCommand(["activity", "follow"]).behavior, "event-stream");
   assert.equal(
     resolveCommand(["test", "run", "grok-ios", "settings-tour"]).behavior,
@@ -889,6 +880,7 @@ test("root help documents exit codes, --confirm, and the machine envelopes", () 
   }
   assert.doesNotMatch(help, /operation invoke/u);
   assert.doesNotMatch(help, /verify-change/u);
+  assert.match(help, /Everyday:[\s\S]*relay show "<test>"[\s\S]*\nAlso:/u);
   const advanced = renderHelp("advanced");
   assert.match(advanced, /Proof commands:/u);
   assert.doesNotMatch(advanced, /replay-lab|operation invoke/u);
@@ -896,7 +888,7 @@ test("root help documents exit codes, --confirm, and the machine envelopes", () 
 
 test("browser commands reuse canonical navigation, capture, and semantic input", () => {
   assert.equal(resolveCommand(["browser", "open", "web"]).operationId, "target.open");
-  assert.deepEqual(resolveCommand(["browser", "navigate", "web", "https://example.com"]).input, {
+  assert.deepEqual(resolveCommand(["device", "launch", "web", "https://example.com"]).input, {
     serial: "web",
     app: "https://example.com",
   });
@@ -910,7 +902,15 @@ test("browser commands reuse canonical navigation, capture, and semantic input",
     "target.snapshot.capture",
   );
   assert.equal(
-    resolveCommand(["browser", "screenshot", "web"]).operationId,
+    resolveCommand(["device", "screenshot", "web"]).operationId,
     "target.screenshot.capture",
   );
+  // Pure aliases of device commands are gone: one spelling each.
+  for (const retired of [
+    ["browser", "screenshot", "web"],
+    ["browser", "navigate", "web", "https://example.com"],
+    ["target", "screenshot", "web"],
+  ]) {
+    assert.throws(() => resolveCommand(retired), /Invalid (browser|target) command/u);
+  }
 });
