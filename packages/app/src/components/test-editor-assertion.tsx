@@ -171,9 +171,8 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            Browser attaches this file. iOS compile-blocks until a Files-app path is recorded. An
-            Android primitive push is not a Grok Files pass. Confirm/Reject and a passing attach do
-            not accept a visual baseline.
+            Relay attaches this file in a browser. On iOS and Android, record picking the file once
+            so Relay can repeat it.
           </p>
         </>
       ) : null}
@@ -298,8 +297,8 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            YAML is not required. Wait for a reply, remember it, then add a semantic judge. Name
-            this the same as Judge this text, usually <code>reply</code>.
+            Wait for the reply, save it under a name, then check it with “Judge this text” using the
+            same name.
           </p>
         </>
       ) : null}
@@ -311,7 +310,7 @@ export function ValidationExpectationEditor({
               id="selected-step-expected-identity-name"
               value={value.name}
               onChange={(event) => onChange({ ...value, name: event.currentTarget.value })}
-              placeholder="reply body"
+              placeholder="main content"
             />
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -342,13 +341,8 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            Identity and visual compare skip this rectangle so only chrome is compared. Pixels or
-            0–1 fractions. On logged-out grok.com, ignore the cookie banner, rotating composer
-            placeholder, and heading caret. On a logged-out paywall, ignore the user bubble — a full
-            reply-body ignore can strip the Continue card. On Library, Imagine, or Conversations,
-            ignore the feed with Library chrome sandwich so one viewport of top and bottom chrome is
-            compared. Do not survey the infinite feed. Ignore Enjoying Grok? chrome with a named
-            region — do not bake that prompt into a baseline.
+            Screenshots and screen matching skip this area; the rest of the screen is still
+            compared. Use pixels or 0–1 fractions.
           </p>
           <RegionFrame region={value.region} />
         </>

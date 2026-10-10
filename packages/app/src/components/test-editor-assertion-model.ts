@@ -405,48 +405,32 @@ export function validationBindingFromDraft(
 
 export const IDENTITY_IGNORE_PRESETS = [
   {
-    id: "reply-body",
-    name: "reply body",
-    region: "0.08,0.30,0.84,0.55",
-    label: "Reply body",
-    detail: "Chrome stays compared. Do not use this on a logged-out paywall.",
+    id: "header",
+    name: "header",
+    region: "0,0,1,0.1",
+    label: "Header",
+    detail: "A top bar with a clock, badge, or greeting that changes between runs.",
   },
   {
-    id: "user-bubble",
-    name: "user bubble",
-    region: "0.70,0.08,0.28,0.10",
-    label: "User bubble",
-    detail: "Paywall card stays compared.",
+    id: "main-content",
+    name: "main content",
+    region: "0.05,0.15,0.9,0.7",
+    label: "Main content",
+    detail: "A feed, chat, or list that changes every run. The header and footer stay compared.",
   },
   {
     id: "cookie-banner",
     name: "cookie banner",
-    region: "0.57,0.80,0.43,0.20",
+    region: "0,0.8,1,0.2",
     label: "Cookie banner",
-    detail: "Essential cookies dialog. Do not bake the banner into a visual baseline.",
+    detail: "A consent banner that may or may not appear.",
   },
   {
-    id: "composer-placeholder",
-    name: "composer placeholder",
-    region: "0.21,0.29,0.57,0.06",
-    label: "Composer placeholder",
-    detail:
-      "Rotating Build Mode / Ask anything text. Do not cover Imagine gallery, paywall, or SuperGrok upsell.",
-  },
-  {
-    id: "heading-caret",
-    name: "heading caret",
-    region: "0.53,0.25,0.08,0.01",
-    label: "Heading caret",
-    detail: "Blinking underline under explore?. Does not cover the Grok heading text.",
-  },
-  {
-    id: "library-chrome-sandwich",
-    name: "library chrome sandwich",
-    region: "0.06,0.14,0.88,0.60",
-    label: "Library chrome sandwich",
-    detail:
-      "Infinite Library / Imagine / Conversations feed. One viewport. Top and bottom chrome stay compared. Do not survey the feed.",
+    id: "footer",
+    name: "footer",
+    region: "0,0.9,1,0.1",
+    label: "Footer",
+    detail: "A bottom bar with changing content.",
   },
 ] as const;
 
@@ -461,8 +445,7 @@ export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationD
     return { kind: "semantic", input: "reply", criteria: "", requireAgreement: true };
   if (kind === "wait-response") return { kind: "wait-response", label: "", maxMs: "" };
   if (kind === "extract") return { kind: "extract", as: "reply", label: "", role: "assistant" };
-  if (kind === "identity-ignore")
-    return { kind: "identity-ignore", name: "reply body", region: "" };
+  if (kind === "identity-ignore") return { kind: "identity-ignore", name: "", region: "" };
   if (kind === "upload") return { kind: "upload", file: "tests/fixtures/sample.pdf", label: "" };
   return { kind: "content", input: "", expected: "", match: "contains" };
 }

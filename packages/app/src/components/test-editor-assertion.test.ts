@@ -187,34 +187,24 @@ describe("test editor assertions", () => {
   });
 
   it("fills a named ignore-region preset that compiles without YAML", () => {
-    const preset = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "user-bubble");
+    const preset = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "main-content");
     expect(preset).toBeDefined();
-    expect(parseRegion(preset!.region)).toEqual({ x: 0.7, y: 0.08, width: 0.28, height: 0.1 });
-    const cookie = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "cookie-banner");
-    expect(cookie).toBeDefined();
-    expect(parseRegion(cookie!.region)).toEqual({ x: 0.57, y: 0.8, width: 0.43, height: 0.2 });
-    const composer = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "composer-placeholder");
-    expect(composer).toBeDefined();
-    expect(parseRegion(composer!.region)).toEqual({ x: 0.21, y: 0.29, width: 0.57, height: 0.06 });
-    const caret = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "heading-caret");
-    expect(caret).toBeDefined();
-    expect(parseRegion(caret!.region)).toEqual({ x: 0.53, y: 0.25, width: 0.08, height: 0.01 });
-    const sandwich = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "library-chrome-sandwich");
-    expect(sandwich).toBeDefined();
-    expect(parseRegion(sandwich!.region)).toEqual({ x: 0.06, y: 0.14, width: 0.88, height: 0.6 });
+    expect(parseRegion(preset!.region)).toEqual({ x: 0.05, y: 0.15, width: 0.9, height: 0.7 });
+    const header = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "header");
+    expect(parseRegion(header!.region)).toEqual({ x: 0, y: 0, width: 1, height: 0.1 });
     expect(
       validationBindingFromDraft({
         kind: "identity-ignore",
-        name: sandwich!.name,
-        region: sandwich!.region,
+        name: preset!.name,
+        region: preset!.region,
       }),
     ).toEqual({
       status: "resolved",
       kind: "recipe-step",
       step: {
         kind: "identity-ignore",
-        region: { x: 0.06, y: 0.14, width: 0.88, height: 0.6 },
-        name: "library chrome sandwich",
+        region: { x: 0.05, y: 0.15, width: 0.9, height: 0.7 },
+        name: "main content",
       },
     });
     expect(
@@ -224,21 +214,6 @@ describe("test editor assertions", () => {
         region: preset!.region,
       }),
     ).toBe(true);
-    expect(
-      validationBindingFromDraft({
-        kind: "identity-ignore",
-        name: cookie!.name,
-        region: cookie!.region,
-      }),
-    ).toEqual({
-      status: "resolved",
-      kind: "recipe-step",
-      step: {
-        kind: "identity-ignore",
-        region: { x: 0.57, y: 0.8, width: 0.43, height: 0.2 },
-        name: "cookie banner",
-      },
-    });
   });
 
   it("names a saved wait-for checkpoint instead of dumping it as Advanced JSON", () => {

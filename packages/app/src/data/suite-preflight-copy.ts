@@ -1,5 +1,5 @@
 /** Plan preview blockers must name the missing profile or target. Do not hide
- * a two-profile grok.com ambiguity behind a generic saved-profile sentence. */
+ * a two-profile ambiguity behind a generic saved-profile sentence. */
 export function friendlySuiteIssue(
   message: string,
   targets: readonly { id: string; name: string }[] = [],

@@ -106,8 +106,8 @@ describe("Batch result presentation", () => {
     expect(batchResultContext(batch)).toBe("Login · Default");
   });
 
-  it("formats known Lanes and strips profile uuid dumps", () => {
-    expect(formatBatchEnvironmentLabel("browser:grok-com-1280x800-339a5a430a41")).toBe("grok-com");
+  it("names saved sessions and strips profile uuid dumps", () => {
+    expect(formatBatchEnvironmentLabel("browser:grok-com-1280x800-339a5a430a41")).toBe("Grok com");
     expect(formatBatchEnvironmentLabel("browser:grok-lab")).toBe("grok-lab");
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-b")).toBe("grok-daily-b");
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-c")).toBe("grok-daily-c");
@@ -144,7 +144,7 @@ describe("Batch result presentation", () => {
     expect(batchClusterCopy(cluster({ id: "c1" }))).toEqual({
       lane: "Product",
       title: "Product behavior",
-      meta: "2 cases · grok-com",
+      meta: "2 cases · Grok com",
     });
     expect(
       batchClusterCopy(
@@ -163,7 +163,7 @@ describe("Batch result presentation", () => {
     ).toEqual({
       lane: "Needs review",
       title: "Visual difference",
-      meta: "2 cases · grok-com",
+      meta: "2 cases · Grok com",
     });
   });
 
@@ -188,8 +188,8 @@ describe("Batch result presentation", () => {
       "Test",
     );
     expect(formatBatchTestLabel("login", "Open home")).toBe("Open home");
-    expect(formatBatchTestLabel("test-grok-web-signed-in-toolbar-existing")).toBe(
-      "Toolbar existing",
+    expect(formatBatchTestLabel("test-signed-in-toolbar-existing")).toBe(
+      "Signed in toolbar existing",
     );
     expect(formatBatchFindingCode("HARNESS_FAILURE")).toBe("Harness");
     expect(formatBatchFindingCode("PRODUCT_ASSERTION")).toBe("Product check");
@@ -346,7 +346,7 @@ describe("Batch result presentation", () => {
     ).toEqual({
       lane: "Infra",
       title: "Cancelled",
-      meta: "2 cases · grok-com",
+      meta: "2 cases · Grok com",
     });
   });
 });

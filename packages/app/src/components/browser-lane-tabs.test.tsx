@@ -37,16 +37,17 @@ describe("browser Lane tabs", () => {
     expect(gmail.electronPartition).toBe(again.electronPartition);
     expect(gmail.tabSessionKey).not.toBe(email.tabSessionKey);
     expect(gmail.electronPartition).toBe("persist:lane:grok-auth-gmail");
-    expect(browserLaneTabLabel("grok-auth-x-out")).toBe("X signed out");
+    expect(browserLaneTabLabel("staging-admin_eu")).toBe("Staging admin eu");
     expect(
       browserLaneHostIdentity({ laneId: "grok-lab", targetId: "grok-com" }).tabSessionKey,
     ).toBe("lane:grok-lab");
   });
 
-  it("lists only isolated auth Lanes for this browser", () => {
+  it("lists every saved session bound to this browser, in a stable order", () => {
     expect(isolatedBrowserLanesForTarget(lanes, "grok-com").map((lane) => lane.id)).toEqual([
       "grok-auth-email",
       "grok-auth-x",
+      "grok-daily",
       "grok-lab",
     ]);
   });
