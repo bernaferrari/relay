@@ -10,7 +10,7 @@ import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Button } from "@relay/ui-react/components/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter, useRouteContext } from "@tanstack/react-router";
-import { CircleDot, GitCompareArrows, Layers3, Play, X, type LucideIcon } from "lucide-react";
+import { CircleDot, Layers3, Play, X, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { collectActiveWork, type ActiveWorkItem, type ActiveWorkKind } from "../data/active-work";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -23,7 +23,6 @@ const iconForKind: Record<ActiveWorkKind, LucideIcon> = {
   recording: CircleDot,
   run: Play,
   batch: Layers3,
-  change: GitCompareArrows,
 };
 
 function useActiveWorkItems(): {
@@ -32,7 +31,7 @@ function useActiveWorkItems(): {
   retry(): Promise<void>;
 } {
   const queryClient = useQueryClient();
-  const { platform, productService, catalogService, changeService } = useRouteContext({
+  const { platform, productService, catalogService } = useRouteContext({
     from: "__root__",
   });
   const recordingPointer = useQuery({
@@ -59,12 +58,6 @@ function useActiveWorkItems(): {
     queryFn: async () => (await readRunPointer(platform)) ?? null,
     staleTime: 1_000,
   });
-  const changes = useQuery({
-    queryKey: ["changes", "active-work"],
-    queryFn: () => changeService.list(),
-    staleTime: 2_000,
-    refetchInterval: 3_000,
-  });
 
   const items = useMemo(
     () =>
@@ -73,19 +66,15 @@ function useActiveWorkItems(): {
         recording: recording.data,
         runs: runs.data,
         runPointer: runPointer.data,
-        changes: changes.data,
       }),
-    [changes.data, recording.data, recordingPointer.data, runPointer.data, runs.data],
+    [recording.data, recordingPointer.data, runPointer.data, runs.data],
   );
-  const unavailable = Boolean(
-    recordingPointer.error || recording.error || runs.error || changes.error,
-  );
+  const unavailable = Boolean(recordingPointer.error || recording.error || runs.error);
   async function retry() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["recording"] }),
       queryClient.invalidateQueries({ queryKey: ["run"] }),
       queryClient.invalidateQueries({ queryKey: catalogQueryKeys.runs }),
-      queryClient.invalidateQueries({ queryKey: ["changes", "active-work"] }),
     ]);
   }
   return { items, unavailable, retry };

@@ -57,7 +57,7 @@ describe("integration and issue handoff product service", () => {
     expect(draft.body).toContain("[redacted]");
   });
 
-  it("supports Batch and change handoff sources without exposing raw evidence", () => {
+  it("supports Batch handoff sources without exposing raw evidence", () => {
     const batch = composeProductIssue({
       kind: "batch",
       report: {
@@ -93,44 +93,7 @@ describe("integration and issue handoff product service", () => {
         },
       },
     });
-    const change = composeProductIssue({
-      kind: "change",
-      details: {
-        change: {
-          id: "change-1",
-          version: 1,
-          status: "needs-review",
-          repository: "acme/app",
-          title: "Change verification",
-          baseRevision: "a".repeat(40),
-          requestedRevision: "b".repeat(40),
-          runs: ["run-1"],
-          evidenceCount: 1,
-          coverageGaps: [],
-          residualRisk: [],
-          affectedTestCount: 1,
-          requiredVerificationCount: 1,
-          advisoryVerificationCount: 0,
-          updatedAt: 2,
-        },
-        history: [],
-        publications: [],
-        affectedTests: [],
-        verificationPlan: [],
-        planApproved: false,
-        audit: {
-          policy: "default@1",
-          policyId: "default",
-          policyVersion: 1,
-          requestedBy: "human:test",
-          updatedBy: "human:test",
-          buildIds: [],
-          proofVersion: 1,
-        },
-      },
-    });
     expect(batch.source).toEqual({ kind: "batch", id: "batch-1" });
-    expect(change.source).toEqual({ kind: "change", id: "change-1" });
     expect(batch.body).not.toMatch(/rootDir|jobIds/iu);
   });
 });

@@ -9,7 +9,6 @@ import { RelayApp } from "../app";
 import { applyColorScheme, validColorScheme } from "../data/appearance-preference";
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
 import type { CatalogProductService } from "../data/catalog-product-service";
-import type { ChangeProductService } from "../data/change-product-service";
 import type { DeviceProductService } from "../data/device-product-service";
 import type { MapProductService } from "../data/map-product-service";
 import type { LiveTestEditorProductService } from "../data/live-test-editor-product-service";
@@ -17,7 +16,6 @@ import type { RecordingProductService } from "../data/recording-product-service"
 import type { RunProductService } from "../data/run-product-service";
 import { definitions, type FixtureName } from "./fixture-routes";
 import { fixtureSettingsService } from "./settings-fixture";
-import { fixtureChangeService } from "./change-fixture";
 import { failedReport, videoReport } from "./report-fixture";
 import { activeRecordingState, createActiveRecordingTarget } from "./active-recording-fixture";
 import { createWorkflowFixture } from "./workflow-fixture";
@@ -27,7 +25,6 @@ import { emptyPlanFindings } from "./empty-findings";
 import type { SessionProductService } from "../data/session-product-service";
 import type { SuiteProfileProductService } from "../data/suite-profile-product-service";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
-import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import type { Platform } from "../platform/types";
 import { createFixtureLiveTarget } from "./live-target-fixture";
 import { planCaptureQueue, planCaptureSvg, reviewPlanCaptures } from "./plan-capture-fixture";
@@ -400,9 +397,6 @@ const appResourcesService: AppResourcesProductService = {
     ];
   },
 };
-const changeService: ChangeProductService = fixture.startsWith("change")
-  ? fixtureChangeService
-  : { ...fixtureChangeService, list: async () => [] };
 
 const fixtureTest = {
   id: "test-checkout",
@@ -832,11 +826,6 @@ const deviceService = {
     throw new TypeError("Recovery is not available in the visual fixture.");
   },
 } as unknown as DeviceProductService;
-const agentDebugService = {
-  debugBug: async () => {
-    throw new TypeError("Starting Agent Debug is not available in the visual fixture.");
-  },
-} as unknown as AgentDebugProductService;
 
 document.documentElement.dataset.visualFixture = fixture;
 const root = document.getElementById("root");
@@ -850,7 +839,6 @@ createRoot(root).render(
       appResourcesService={appResourcesService}
       catalogService={catalogService}
       mapService={mapService}
-      changeService={changeService}
       runService={runService}
       runAcrossService={runAcrossService}
       suiteProfileService={suiteProfileService}
@@ -858,7 +846,6 @@ createRoot(root).render(
       sessionService={sessionProductService}
       liveTestEditorService={liveTestEditorService}
       deviceService={deviceService}
-      agentDebugService={agentDebugService}
       settingsService={fixtureSettingsService}
       testEditorService={
         (workflowFixture?.testEditorService ?? {

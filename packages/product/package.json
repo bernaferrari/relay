@@ -16,11 +16,8 @@
     "./test-route-platforms": "./src/test-route-platforms.ts",
     "./test-origin-readiness": "./src/test-origin-readiness.ts",
     "./map-exploration": "./src/map-exploration.ts",
-    "./change-journey": "./src/change-journey.ts",
     "./catalog": "./src/catalog.ts",
-    "./run-evidence-export": "./src/run-evidence-export.ts",
-    "./agent-debug": "./src/agent-debug.ts",
-    "./agent-debug-recording": "./src/agent-debug-recording.ts"
+    "./run-evidence-export": "./src/run-evidence-export.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

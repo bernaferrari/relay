@@ -428,7 +428,7 @@ describe("App routes", () => {
 
   it("shows real workspace builds without inventing an app association", async () => {
     await render(
-      "/apps/checkout-app/versions",
+      "/versions",
       resources({
         listVersions: async () => [
           {
@@ -457,7 +457,7 @@ describe("App routes", () => {
     const created: unknown[] = [];
     const updated: unknown[] = [];
     await render(
-      "/apps/checkout-app/versions",
+      "/versions",
       resources({
         listVersions: async () => [
           {
@@ -508,7 +508,7 @@ describe("App routes", () => {
 
   it("keeps the version dialog open and reports canonical save failures", async () => {
     await render(
-      "/apps/checkout-app/versions",
+      "/versions",
       resources({
         createVersion: async () => Promise.reject(new Error("revision conflict")),
       }),
@@ -527,7 +527,7 @@ describe("App routes", () => {
     const opened: unknown[] = [];
     const saved: unknown[] = [];
     await render(
-      "/apps/checkout-app/accounts",
+      "/accounts",
       resources({
         listBrowserTargets: async () => [
           { id: "first-browser", name: "Checkout browser", startUrl: "https://checkout.example/" },
@@ -613,7 +613,7 @@ describe("App routes", () => {
 
   it("shows each account by name, website, sign-in method, status, and last use", async () => {
     await render(
-      "/apps/checkout-app/accounts",
+      "/accounts",
       resources({
         listBrowserAccounts: async () => [
           {
@@ -741,7 +741,7 @@ describe("App routes", () => {
   it("hides revoked accounts and uses the probed identity as the name", async () => {
     const probed: unknown[] = [];
     await render(
-      "/apps/checkout-app/accounts",
+      "/accounts",
       resources({
         listBrowserAccounts: async () => [
           {
@@ -803,7 +803,7 @@ describe("App routes", () => {
 
   it("does not show account mutations when the adapter is read-only", async () => {
     await render(
-      "/apps/checkout-app/accounts",
+      "/accounts",
       resources({
         listBrowserAccounts: async () => [
           {
@@ -834,8 +834,8 @@ describe("App routes", () => {
   });
 
   it.each([
-    ["/apps/checkout-app/versions", "registered versions", "listVersions"],
-    ["/apps/checkout-app/accounts", "saved accounts", "listBrowserAccounts"],
+    ["/versions", "registered versions", "listVersions"],
+    ["/accounts", "saved accounts", "listBrowserAccounts"],
   ] as const)("uses the centered recovery pattern on %s", async (path, subject, method) => {
     await render(path, resources({ [method]: async () => Promise.reject(new Error("offline")) }));
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));

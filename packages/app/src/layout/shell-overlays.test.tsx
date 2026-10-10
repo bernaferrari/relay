@@ -1,5 +1,4 @@
 /** @jsxImportSource react */
-import type { ProductChange } from "@relay/product/change-journey";
 import type {
   ProductRunDetail,
   ProductRunSummary,
@@ -12,7 +11,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { CatalogProductService } from "../data/catalog-product-service";
-import type { ChangeProductService } from "../data/change-product-service";
 import type { DeviceProductService, ProductDevice } from "../data/device-product-service";
 import type {
   ProductRecordingState,
@@ -87,24 +85,6 @@ function catalog(
   };
 }
 
-function changes(items: readonly ProductChange[]): ChangeProductService {
-  const unsupported = async (): Promise<never> => {
-    throw new Error("not used in shell overlay tests");
-  };
-  return {
-    list: async () => items,
-    open: unsupported,
-    prepare: unsupported,
-    approve: unsupported,
-    run: unsupported,
-    watch: unsupported,
-    cancel: unsupported,
-    rerunAffected: unsupported,
-    resumeHumanEvidence: unsupported,
-    retryPublication: unsupported,
-  };
-}
-
 function productDevice(
   id: string,
   name: string,
@@ -147,7 +127,6 @@ async function renderShell(input: {
   tests?: readonly ProductTestSummary[];
   runsUnavailable?: boolean;
   testsUnavailable?: boolean;
-  changes?: readonly ProductChange[];
   devices?: readonly ProductDevice[];
   onRunsRead?: () => void;
   runDetail?: Promise<ProductRunDetail | undefined>;
@@ -157,7 +136,7 @@ async function renderShell(input: {
 }) {
   const host = document.createElement("div");
   document.body.append(host);
-  const history = createMemoryHistory({ initialEntries: input.initialEntries ?? ["/home"] });
+  const history = createMemoryHistory({ initialEntries: input.initialEntries ?? ["/tests"] });
   const root = createRoot(host);
   roots.push(root);
   const hostPlatform = platform();
@@ -196,7 +175,6 @@ async function renderShell(input: {
           ),
           getRun: async () => input.runDetail,
         }}
-        changeService={changes(input.changes ?? [])}
         deviceService={devices(input.devices ?? [])}
       />,
     );
@@ -331,19 +309,19 @@ describe("shell overlays", () => {
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]')!;
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(input, "Changes");
+      setter?.call(input, "Accounts");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await settle();
-    const changesCommand = [
+    const accountsCommand = [
       ...document.querySelectorAll<HTMLElement>(
         '[role="listbox"][aria-label="Commands"] [role="option"]',
       ),
-    ].find((option) => option.textContent?.includes("Changes"));
-    expect(changesCommand).toBeTruthy();
-    await act(async () => changesCommand!.click());
+    ].find((option) => option.textContent?.includes("Accounts"));
+    expect(accountsCommand).toBeTruthy();
+    await act(async () => accountsCommand!.click());
     await settle();
-    expect(history.location.pathname).toBe("/changes");
+    expect(history.location.pathname).toBe("/accounts");
   });
 
   it("shows running work and links to full Activity", async () => {
@@ -359,24 +337,7 @@ describe("shell overlays", () => {
       identity: { runId: "run-server" },
       links: { self: "/runs/run-server" },
     };
-    const change: ProductChange = {
-      id: "change-server",
-      version: 1,
-      status: "running",
-      repository: "relay",
-      title: "Verify checkout change",
-      baseRevision: "base",
-      requestedRevision: "head",
-      runs: [],
-      evidenceCount: 0,
-      coverageGaps: [],
-      residualRisk: [],
-      affectedTestCount: 1,
-      requiredVerificationCount: 1,
-      advisoryVerificationCount: 0,
-      updatedAt: Date.now(),
-    };
-    const history = await renderShell({ runs: [run], changes: [change] });
+    const history = await renderShell({ runs: [run] });
 
     const trigger = document.querySelector<HTMLButtonElement>(
       'button[aria-label^="Open activity"]',
@@ -384,14 +345,12 @@ describe("shell overlays", () => {
     expect(trigger).toBeTruthy();
     // The global badge is live before opening the center, so closed Activity
     // still communicates work that needs attention.
-    expect(trigger?.getAttribute("aria-label")).toMatch(/2 running/);
-    expect(trigger?.textContent).toBe("2 running");
+    expect(trigger?.getAttribute("aria-label")).toMatch(/1 running/);
+    expect(trigger?.textContent).toBe("1 running");
     await act(async () => trigger?.click());
     await settle();
 
     expect(document.body.textContent).toContain("Checkout");
-    expect(document.body.textContent).toContain("Verify checkout change");
-    expect(document.body.textContent).toContain("Verifying");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Activity");
     const activityLink = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
       (link) => link.textContent === "View all activity",

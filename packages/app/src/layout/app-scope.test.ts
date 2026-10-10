@@ -56,7 +56,7 @@ describe("App scope", () => {
     ).toBe("owned-app");
   });
 
-  it("resolves recordings and changes from their resource ownership", () => {
+  it("resolves recordings from their resource ownership", () => {
     expect(
       appScopeForLocation({
         pathname: "/recordings/recording-1/review",
@@ -64,16 +64,9 @@ describe("App scope", () => {
         recordings: [{ id: "recording-1", appMapId: "app-4" }],
       }),
     ).toBe("app-4");
-    expect(
-      appScopeForLocation({
-        pathname: "/changes/change-1",
-        search: {},
-        changes: [{ id: "change-1", appIds: ["app-5"] }],
-      }),
-    ).toBe("app-5");
   });
 
-  it("represents multi-App batches and changes honestly", () => {
+  it("represents multi-App batches honestly", () => {
     expect(
       appScopeDetailsForLocation({
         pathname: "/batches/batch-1",
@@ -91,13 +84,6 @@ describe("App scope", () => {
         ],
       }),
     ).toEqual({ kind: "multiple", appIds: ["app-1", "app-2"] });
-    expect(
-      appScopeDetailsForLocation({
-        pathname: "/changes/change-1",
-        search: {},
-        changes: [{ id: "change-1", appIds: ["app-2", "app-1", "app-2"] }],
-      }),
-    ).toEqual({ kind: "multiple", appIds: ["app-2", "app-1"] });
   });
 
   it("preserves the active workspace and its supported filters", () => {
@@ -110,7 +96,7 @@ describe("App scope", () => {
     ).toBe("/runs?view=failed&app=new-app");
     expect(
       appContextDestination({
-        pathname: "/tests/test-1/run-across",
+        pathname: "/tests/test-1/edit",
         search: { app: "old-app" },
         appId: "new-app",
       }),
@@ -122,16 +108,16 @@ describe("App scope", () => {
         appId: "new-app",
       }),
     ).toBe("/accounts");
-    expect(
-      appContextDestination({ pathname: "/apps/old-app/versions", search: {}, appId: "new/app" }),
-    ).toBe("/versions");
+    expect(appContextDestination({ pathname: "/versions", search: {}, appId: "new/app" })).toBe(
+      "/versions",
+    );
   });
 
   it("does not let workspace-only resources inherit a stale app filter", () => {
     expect(appScopeDetailsForLocation({ pathname: "/accounts", search: { app: "app-1" } })).toEqual(
       { kind: "workspace" },
     );
-    expect(appScopeDetailsForLocation({ pathname: "/suites", search: { app: "app-1" } })).toEqual({
+    expect(appScopeDetailsForLocation({ pathname: "/tests", search: { app: "app-1" } })).toEqual({
       kind: "single",
       appId: "app-1",
     });
@@ -201,8 +187,8 @@ describe("App scope", () => {
   });
 });
 
-it("preserves a run's owning app in its walkthrough, including direct links", () => {
-  const location = { pathname: "/runs/run-1/walkthrough", search: { app: "wrong-app" } };
+it("preserves a run's owning app, including direct links", () => {
+  const location = { pathname: "/runs/run-1", search: { app: "wrong-app" } };
   expect(appScopeDetailsForLocation(location)).toEqual({ kind: "loading" });
   expect(
     appScopeDetailsForLocation({ ...location, runs: [{ id: "run-1", appMapId: "owned-app" }] }),

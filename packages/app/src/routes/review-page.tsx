@@ -334,7 +334,12 @@ export function ReviewPage() {
               : "Run your tests; changed or new screenshots show up here."}
           </p>
           <div className="flex gap-2">
-            <Button nativeButton={false} variant="outline" size="sm" render={<Link to="/suites" />}>
+            <Button
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              render={<Link to="/tests" search={{ view: "plans" }} />}
+            >
               Run a test plan
             </Button>
             <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/runs" />}>

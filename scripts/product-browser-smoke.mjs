@@ -329,7 +329,7 @@ async function runSmoke(options) {
     await assertKeyboardFocus(page);
     await checkAccessibility();
 
-    trace("checking Tests, Live, Agent Debug, Devices, Changes, Runs and Settings routes");
+    trace("checking Tests, Live, Devices, Runs and Settings routes");
     await clickNav(page, "Tests", "/tests");
     await checkAccessibility();
     if (await page.getByRole("link", { name: "Live", exact: true }).count()) {
@@ -339,21 +339,7 @@ async function runSmoke(options) {
       await openRoute(page, "/sessions");
     }
     await checkAccessibility();
-    const debugLink = page.getByRole("link", { name: "Agent Debug", exact: true });
-    if (await debugLink.count()) {
-      await debugLink.first().click();
-      await waitForRoute(page, "/debug");
-    } else {
-      // Agent Debug is contextual to an active Live target, so keep the route
-      // coverage even when this fixture has no target that can expose its link.
-      trace("Agent Debug is not exposed by the current Live fixture; opening its route directly");
-      await openRoute(page, "/debug");
-    }
-    await checkAccessibility();
     await clickNav(page, "Devices", "/devices");
-    await checkAccessibility();
-    trace("Changes is reached through search; opening its route directly");
-    await openRoute(page, "/changes");
     await checkAccessibility();
     await clickNav(page, "Runs", "/runs");
     await checkAccessibility();

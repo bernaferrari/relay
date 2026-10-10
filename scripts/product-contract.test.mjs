@@ -28,10 +28,10 @@ test("a missing product contract fails instead of skipping verification", async 
 
 test("a stale route or advanced term fails the contract", async () => {
   const document = await loadProductContract();
-  const staleRoute = document.replace("/runs/:runId/walkthrough\n", "");
+  const staleRoute = document.replace("/batches/:batchId\n", "");
   assert.ok(
     evaluateProductContract({ document: staleRoute }).includes(
-      "documented route missing: /runs/:runId/walkthrough",
+      "documented route missing: /batches/:batchId",
     ),
   );
   const staleTerm = document.replace("publication receipt, ", "");

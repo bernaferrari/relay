@@ -144,16 +144,6 @@ export function RunReportActions({
           Review result
         </Button>
       ) : null}
-      {canInvestigate ? (
-        <Button
-          nativeButton={false}
-          render={<Link to="/debug" search={{ runId: report.runId }} />}
-          variant="outline"
-          title="Let an agent look into what went wrong"
-        >
-          Debug with agent
-        </Button>
-      ) : null}
       {!embedded && report.outcome === "harness-failure" ? (
         <RunReplayAction
           report={report}
@@ -179,13 +169,6 @@ export function RunReportActions({
           <MoreHorizontal className="size-4" aria-hidden="true" /> More
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          {!embedded ? (
-            <DropdownMenuItem
-              render={<Link to="/runs/$runId/walkthrough" params={{ runId: report.runId }} />}
-            >
-              Step-by-step walkthrough
-            </DropdownMenuItem>
-          ) : null}
           {!embedded && testId ? (
             <DropdownMenuItem
               render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}

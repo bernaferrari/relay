@@ -1,9 +1,6 @@
 export type RoutePattern =
-  | "/home"
   | "/apps"
   | "/apps/:appId"
-  | "/apps/:appId/versions"
-  | "/apps/:appId/accounts"
   | "/versions"
   | "/accounts"
   | "/apps/:appId/map"
@@ -11,9 +8,6 @@ export type RoutePattern =
   | "/tests/new"
   | "/tests/:testId"
   | "/tests/:testId/edit"
-  | "/tests/:testId/record"
-  | "/tests/:testId/run-across"
-  | "/suites"
   | "/apps/:appId/suites/:suiteId"
   | "/environments"
   | "/environments/:profileId"
@@ -24,14 +18,9 @@ export type RoutePattern =
   | "/review"
   | "/runs"
   | "/runs/:runId"
-  | "/runs/:runId/walkthrough"
   | "/batches/:batchId"
-  | "/changes"
-  | "/changes/:changeId"
   | "/devices"
   | "/devices/:deviceId"
-  | "/goals"
-  | "/debug"
   | "/settings/general"
   | "/settings/evidence"
   | "/settings/integrations"
@@ -59,21 +48,10 @@ export type ContextualAction =
   | "add-environment"
   | "inspect-environment"
   | "review-batch"
-  | "verify-change"
-  | "inspect-change"
   | "connect-device"
   | "inspect-device"
   | "save-settings";
-export type Sidebar =
-  | "home"
-  | "apps"
-  | "accounts"
-  | "tests"
-  | "sessions"
-  | "runs"
-  | "changes"
-  | "devices"
-  | "settings";
+export type Sidebar = "apps" | "accounts" | "tests" | "sessions" | "runs" | "devices" | "settings";
 export type RouteDefinition = {
   id: RoutePattern;
   pattern: RoutePattern;
@@ -83,7 +61,6 @@ export type RouteDefinition = {
     | "App"
     | "Test"
     | "Run"
-    | "Change"
     | "Device"
     | "Session"
     | "Plan"
@@ -152,22 +129,16 @@ const d = (
 });
 
 export const ROUTE_DEFINITIONS = [
-  d("/home", null, "Home", null, "home", null, ["status", "app", "view"]),
-  d("/apps", "/home", "Apps", "App", "apps", "add-app"),
+  d("/apps", "/tests", "Apps", "App", "apps", "add-app"),
   d("/apps/:appId", "/apps", "App", "App", "apps", "explore-app", ["view"]),
-  d("/apps/:appId/versions", "/apps/:appId", "Versions", "App", "apps", null, ["status", "view"]),
-  d("/apps/:appId/accounts", "/apps/:appId", "Accounts", "App", "accounts", null, [
-    "status",
-    "view",
-  ]),
-  d("/versions", "/home", "Versions", null, "apps", null, ["status", "view"]),
-  d("/accounts", "/home", "Accounts", null, "accounts", null, ["status", "view"]),
+  d("/versions", "/tests", "Versions", null, "apps", null, ["status", "view"]),
+  d("/accounts", "/tests", "Accounts", null, "accounts", null, ["status", "view"]),
   d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", [
     "view",
     "screen",
     "path",
   ]),
-  d("/tests", "/home", "Tests", "Test", "tests", "record-test", [
+  d("/tests", null, "Tests", "Test", "tests", "record-test", [
     "status",
     "app",
     "view",
@@ -203,19 +174,11 @@ export const ROUTE_DEFINITIONS = [
     "screen",
     "session",
   ]),
-  d("/tests/:testId/record", "/tests/:testId", "Record test", "Test", "tests", "record-test", [
-    "screen",
-  ]),
-  d("/tests/:testId/run-across", "/tests/:testId", "Run Across", "Test", "tests", "run-test", [
-    "app",
-    "view",
-  ]),
-  d("/suites", "/home", "Plans", "Plan", "tests", "create-suite", ["app", "status", "q"]),
-  d("/apps/:appId/suites/:suiteId", "/suites", "Plan", "Plan", "tests", "run-suite", [
+  d("/apps/:appId/suites/:suiteId", "/tests", "Plan", "Plan", "tests", "run-suite", [
     "view",
     "target",
   ]),
-  d("/environments", "/home", "Environments", "Environment", "devices", "add-environment", [
+  d("/environments", "/tests", "Environments", "Environment", "devices", "add-environment", [
     "status",
     "view",
     "returnTo",
@@ -229,7 +192,7 @@ export const ROUTE_DEFINITIONS = [
     "inspect-environment",
     ["view", "returnTo"],
   ),
-  d("/sessions", "/home", "Activity", "Session", "sessions", "inspect-session", [
+  d("/sessions", "/tests", "Activity", "Session", "sessions", "inspect-session", [
     "status",
     "target",
     "q",
@@ -251,7 +214,7 @@ export const ROUTE_DEFINITIONS = [
     ["view", "step", "screen"],
   ),
   d("/review", "/runs", "Review", "Run", "runs", "review-run", ["app", "view", "item", "filter"]),
-  d("/runs", "/home", "Runs", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
+  d("/runs", "/tests", "Runs", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
   d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", [
     "returnTo",
     "plan",
@@ -266,23 +229,12 @@ export const ROUTE_DEFINITIONS = [
     "reportView",
     "capture",
   ]),
-  d("/runs/:runId/walkthrough", "/runs/:runId", "Walk through", "Run", "runs", "inspect-run", [
-    "state",
-    "variant",
-    "capture",
-  ]),
   d("/batches/:batchId", "/runs", "Batch", "Report", "runs", "review-batch", [
     "status",
     "view",
     "returnTo",
   ]),
-  d("/changes", "/home", "Changes", "Change", "changes", "verify-change", [
-    "status",
-    "app",
-    "view",
-  ]),
-  d("/changes/:changeId", "/changes", "Change", "Change", "changes", "inspect-change", ["view"]),
-  d("/devices", "/home", "Devices", "Device", "devices", "connect-device", [
+  d("/devices", "/tests", "Devices", "Device", "devices", "connect-device", [
     "status",
     "type",
     "view",
@@ -290,13 +242,11 @@ export const ROUTE_DEFINITIONS = [
     "q",
   ]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
-  d("/goals", "/home", "Explore", null, "tests", null, ["url"]),
-  d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target", "runId"]),
   ...(["general", "evidence", "integrations", "appearance", "advanced", "about"] as const).map(
     (name) =>
       d(
         `/settings/${name}` as RoutePattern,
-        "/home",
+        "/tests",
         name[0]!.toUpperCase() + name.slice(1),
         null,
         "settings",
@@ -356,7 +306,6 @@ type Params = {
   sessionId?: string;
   runId?: string;
   batchId?: string;
-  changeId?: string;
   deviceId?: string;
 };
 function build(pattern: RoutePattern, params: Params): ConcreteRoute {
@@ -367,18 +316,12 @@ function build(pattern: RoutePattern, params: Params): ConcreteRoute {
   });
 }
 export const routeUrls = {
-  goals: () => "/goals",
   app: (appId: string) => build("/apps/:appId", { appId }),
-  appVersions: (appId: string) => build("/apps/:appId/versions", { appId }),
-  appAccounts: (appId: string) => build("/apps/:appId/accounts", { appId }),
   versions: () => "/versions",
   accounts: () => "/accounts",
   appMap: (appId: string) => build("/apps/:appId/map", { appId }),
   test: (testId: string) => build("/tests/:testId", { testId }),
   testEdit: (testId: string) => build("/tests/:testId/edit", { testId }),
-  testRecord: (testId: string) => build("/tests/:testId/record", { testId }),
-  testRunAcross: (testId: string) => build("/tests/:testId/run-across", { testId }),
-  suites: () => "/suites",
   suite: (appId: string, suiteId: string) =>
     build("/apps/:appId/suites/:suiteId", { appId, suiteId }),
   environments: () => "/environments",
@@ -390,7 +333,6 @@ export const routeUrls = {
     build("/recordings/:recordingId/review", { recordingId }),
   run: (runId: string) => build("/runs/:runId", { runId }),
   batch: (batchId: string) => build("/batches/:batchId", { batchId }),
-  change: (changeId: string) => build("/changes/:changeId", { changeId }),
   device: (deviceId: string) => build("/devices/:deviceId", { deviceId }),
 };
 export type RouteLoadIntent = {

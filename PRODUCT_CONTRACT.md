@@ -30,18 +30,15 @@ they do not approve each screen. Creating a Map is never an opening toll.
 The normal user-facing flow is:
 
 ```text
-Coverage: App → Describe (or Record) → Test → Run → Report → Map grows
-Verification: Change → Verification plan → Runs → Evidence → merge decision
+Describe (or Record) → Test → Run → Verdict → Map grows
+Change → relay ci / relay_check_change → Verdicts
 ```
 
 ## Canonical routes
 
 ```text
-/home
 /apps
 /apps/:appId
-/apps/:appId/versions
-/apps/:appId/accounts
 /versions
 /accounts
 /apps/:appId/map
@@ -49,9 +46,6 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 /tests/new
 /tests/:testId
 /tests/:testId/edit
-/tests/:testId/record
-/tests/:testId/run-across
-/suites
 /apps/:appId/suites/:suiteId
 /environments
 /environments/:profileId
@@ -62,14 +56,9 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 /review
 /runs
 /runs/:runId
-/runs/:runId/walkthrough
 /batches/:batchId
-/changes
-/changes/:changeId
 /devices
 /devices/:deviceId
-/goals
-/debug
 /settings/general
 /settings/evidence
 /settings/integrations
@@ -78,10 +67,11 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 /settings/about
 ```
 
-Versions and Accounts are workspace resources. Their former app-specific URLs redirect to
-`/versions` and `/accounts`; an app selection does not imply ownership of those resources.
-Primary navigation is Tests, Plans, Results, Devices, and Changes, with Settings
-for workspace setup. Plans are a first-class library, and app management belongs in the app selector.
+Versions and Accounts are workspace resources; an app selection does not imply ownership of
+those resources. Primary navigation is Tests and Runs, with the Map following the chosen App, and
+Accounts and Devices as setup. Plans are groups in the Tests library, and app management belongs
+in the app selector. Checking a code change is a CLI and agent loop (`relay ci`,
+`relay_check_change`), not a screen.
 
 Selected entities and useful substate belong in the URL. Query state may include `status`, `app`,
 `view`, `step`, `screen`, `session`, `test`, `result`, and `section`. Every route has one parent, title, primary object, primary
@@ -93,14 +83,12 @@ action, sidebar selection, Back behavior, restorable view state, and explicit lo
    use router history; feature-specific return memories are not allowed.
 2. Escape closes exactly one topmost transient layer, in this order: menu, popover, inline editor,
    dialog, sheet, temporary inspector, canvas selection. Escape never cancels a Run or navigates.
-3. Each page has one dominant action: contextual Home (Prove current change, Add missing Test,
-   Record first Test, Review failure, Continue recording, or Add an App), Tests/New Test, Test/Run,
-   Recording/Stop, Review/Replay, passing Replay/Save Test, failed Run/Fix Test, Change/Verify
-   Change, and Map/Explore App.
+3. Each page has one dominant action: Tests/New Test, Test/Run, Recording/Stop, Review/Replay,
+   passing Replay/Save Test, failed Run/Fix Test, and Map/Explore App.
 4. Only one contextual side surface is open at a time.
 5. Save state is always visible: Saved, Saving, Offline — saved locally, Could not save, or
    Unsaved changes. Route changes preserve or flush recoverable drafts.
-6. Sessions, Recording, Runs, Repeat, and Change verification persist in the Activity Center
+6. Sessions, Recording, Runs, and Plan runs persist in the Activity Center
    across routes.
    UI state may project server state but cannot decide completion, mutation, pass, or approval.
 

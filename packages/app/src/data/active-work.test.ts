@@ -53,28 +53,9 @@ describe("active work projection", () => {
           status: "passed",
         },
       ],
-      changes: [
-        {
-          id: "change-1",
-          version: 1,
-          status: "running",
-          repository: "relay",
-          title: "Fix checkout",
-          baseRevision: "base",
-          requestedRevision: "head",
-          runs: [],
-          evidenceCount: 0,
-          coverageGaps: [],
-          residualRisk: [],
-          affectedTestCount: 1,
-          requiredVerificationCount: 1,
-          advisoryVerificationCount: 0,
-          updatedAt: 1,
-        },
-      ],
     });
 
-    expect(items.map((item) => item.kind)).toEqual(["run", "batch", "change"]);
+    expect(items.map((item) => item.kind)).toEqual(["run", "batch"]);
     expect(items[1]).toMatchObject({ href: "/batches/batch-1", detail: "1 of 3 cases finished" });
   });
 

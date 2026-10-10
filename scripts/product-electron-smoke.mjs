@@ -272,20 +272,7 @@ async function run() {
     }
     await check();
 
-    const debugLink = page.getByRole("link", { name: "Agent Debug", exact: true });
-    if (await debugLink.count()) {
-      await debugLink.first().click();
-      await waitForRoute(page, "/debug");
-    } else {
-      // Agent Debug is contextual to an active Live target. Keep route and
-      // accessibility coverage when this smoke profile has no such target.
-      await openRoute(page, "/debug");
-    }
-    await check();
-
     await clickNav(page, "Devices", "/devices");
-    await check();
-    await openRoute(page, "/changes");
     await check();
     await clickNav(page, "Runs", "/runs");
     await check();

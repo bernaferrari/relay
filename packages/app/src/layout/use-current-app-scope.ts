@@ -8,16 +8,10 @@ import { appScopeDetailsForLocation, safeDecodeURIComponent } from "./app-scope"
 /** One resource-owned App context for the selector and primary destinations. */
 export function useCurrentAppScope() {
   const location = useLocation();
-  const {
-    productService,
-    catalogService,
-    changeService,
-    sessionService,
-    runService,
-    runAcrossService,
-  } = useRouteContext({
-    from: "__root__",
-  });
+  const { productService, catalogService, sessionService, runService, runAcrossService } =
+    useRouteContext({
+      from: "__root__",
+    });
   const canListApps = typeof productService.listApps === "function";
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -34,9 +28,7 @@ export function useCurrentAppScope() {
     queryFn: () => runService.getTest(testId!),
     enabled: Boolean(testId),
   });
-  const runId = safeDecodeURIComponent(
-    /^\/runs\/([^/]+)(?:\/walkthrough)?$/u.exec(location.pathname)?.[1] ?? "",
-  );
+  const runId = safeDecodeURIComponent(/^\/runs\/([^/]+)$/u.exec(location.pathname)?.[1] ?? "");
   const run = useQuery({
     queryKey: ["catalog", "run", runId ?? "unselected"],
     queryFn: async () => (await catalogService.getRun(runId!)) ?? null,
@@ -65,15 +57,6 @@ export function useCurrentAppScope() {
     queryFn: () => runAcrossService.getReport(batchId!),
     enabled: Boolean(batchId),
     staleTime: 30_000,
-  });
-  const changeId = safeDecodeURIComponent(
-    /^\/changes\/([^/]+)$/u.exec(location.pathname)?.[1] ?? "",
-  );
-  const change = useQuery({
-    queryKey: ["change", changeId ?? "unselected"],
-    queryFn: () => changeService.open(changeId!),
-    enabled: Boolean(changeId),
-    staleTime: 15_000,
   });
   const recordingId = safeDecodeURIComponent(
     /^\/recordings\/([^/]+)(?:\/review)?$/u.exec(location.pathname)?.[1] ?? "",
@@ -117,7 +100,6 @@ export function useCurrentAppScope() {
           ? []
           : undefined
         : undefined,
-    changes: change.data?.state.change ? [change.data.state.change] : undefined,
     recordings: recording.data?.snapshot?.frozen
       ? [
           {

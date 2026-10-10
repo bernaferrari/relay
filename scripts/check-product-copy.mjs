@@ -6,7 +6,6 @@ import { findProductAdvancedVocabulary } from "./product-contract.mjs";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const sourceRoot = join(root, "packages/app/src");
 const advancedFiles = new Set([
-  "components/change-publication-details.tsx",
   "components/test-editor-step.tsx",
   "components/test-editor-assertion.tsx",
   "components/run-report-formatters.tsx",

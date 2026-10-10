@@ -1,9 +1,8 @@
-import type { ProductChange } from "@relay/product/change-journey";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import type { ProductRecordingState } from "./recording-product-service";
 import type { RunPointer } from "./run-pointer";
 
-export type ActiveWorkKind = "recording" | "run" | "batch" | "change";
+export type ActiveWorkKind = "recording" | "run" | "batch";
 
 export type ActiveWorkItem = {
   id: string;
@@ -16,14 +15,11 @@ export type ActiveWorkItem = {
   href: string;
 };
 
-const activeChangeStates = new Set(["running-pilot", "running"]);
-
 export function collectActiveWork(input: {
   recordingId?: string | null;
   recording?: ProductRecordingState;
   runs?: readonly ProductRunSummary[];
   runPointer?: RunPointer | null;
-  changes?: readonly ProductChange[];
 }): readonly ActiveWorkItem[] {
   const items: ActiveWorkItem[] = [];
   const snapshot = input.recording?.snapshot;
@@ -82,22 +78,6 @@ export function collectActiveWork(input: {
       status: "Status needs checking",
       activity: "unknown",
       href: `/runs/${encodeURIComponent(input.runPointer.runId)}`,
-    });
-  }
-
-  for (const change of input.changes ?? []) {
-    if (!activeChangeStates.has(change.status)) continue;
-    items.push({
-      id: `change:${change.id}`,
-      kind: "change",
-      title: change.title,
-      detail:
-        change.status === "running-pilot"
-          ? "Representative verification is running"
-          : "Required verification is running",
-      status: change.status === "running-pilot" ? "Pilot" : "Verifying",
-      activity: "running",
-      href: `/changes/${encodeURIComponent(change.id)}`,
     });
   }
 

@@ -378,9 +378,8 @@ describe("Suite and Environment routes", () => {
     expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).toBeNull();
   });
 
-  it("redirects the old plans list to tests and opens a plan's canonical detail route", async () => {
-    const { history } = await render("/suites");
-    expect(history.location.pathname).toBe("/tests");
+  it("lists plans in tests and opens a plan's canonical detail route", async () => {
+    const { history } = await render("/tests?view=plans");
     expect(document.querySelector("h1")?.textContent).toBe("Tests");
     const plans = document.querySelector('section[aria-labelledby="plans-heading"]')!;
     expect(plans.querySelector("h2")?.textContent).toBe("Test plans");

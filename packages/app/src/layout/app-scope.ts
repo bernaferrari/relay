@@ -2,7 +2,6 @@ import { routeContractForPath } from "../router/route-contract";
 
 export type AppScopeTest = { id: string; appMapId: string };
 export type AppScopeRun = { id: string; appMapId?: string; batchId?: string };
-export type AppScopeChange = { id: string; appIds?: readonly string[] };
 export type AppScopeRecording = { id: string; appMapId?: string };
 export type AppScopeSession = { id: string; appMapId?: string };
 export type AppScopeBatch = { id: string; appMapId?: string };
@@ -20,7 +19,6 @@ export function appScopeForLocation(input: {
   search: Readonly<Record<string, unknown>>;
   tests?: readonly AppScopeTest[];
   runs?: readonly AppScopeRun[];
-  changes?: readonly AppScopeChange[];
   recordings?: readonly AppScopeRecording[];
   sessions?: readonly AppScopeSession[];
   batches?: readonly AppScopeBatch[];
@@ -47,13 +45,12 @@ export function appScopeDisplayName(
 }
 
 /** Resolve App ownership from the resource first and collection filters second.
- * A stale `?app=` value must never relabel a Test, Run, Recording, Change, or Session. */
+ * A stale `?app=` value must never relabel a Test, Run, Recording, or Session. */
 export function appScopeDetailsForLocation(input: {
   pathname: string;
   search: Readonly<Record<string, unknown>>;
   tests?: readonly AppScopeTest[];
   runs?: readonly AppScopeRun[];
-  changes?: readonly AppScopeChange[];
   recordings?: readonly AppScopeRecording[];
   sessions?: readonly AppScopeSession[];
   batches?: readonly AppScopeBatch[];
@@ -81,7 +78,7 @@ export function appScopeDetailsForLocation(input: {
     );
   }
 
-  const runId = /^\/runs\/([^/]+)(?:\/walkthrough)?$/u.exec(input.pathname)?.[1];
+  const runId = /^\/runs\/([^/]+)$/u.exec(input.pathname)?.[1];
   if (runId) {
     return owned(
       input.runs,
@@ -102,14 +99,6 @@ export function appScopeDetailsForLocation(input: {
     );
     if (appIds.length) return fromAppIds(appIds);
     return input.batches === undefined ? { kind: "loading" } : { kind: "unavailable" };
-  }
-
-  const changeId = /^\/changes\/([^/]+)$/u.exec(input.pathname)?.[1];
-  if (changeId) {
-    if (input.changes === undefined) return { kind: "loading" };
-    const change = input.changes.find((item) => item.id === decode(changeId));
-    if (!change) return { kind: "unavailable" };
-    return fromAppIds(uniqueAppIds(change.appIds));
   }
 
   const recordingId = /^\/recordings\/([^/]+)(?:\/review)?$/u.exec(input.pathname)?.[1];
@@ -173,7 +162,6 @@ function isWorkspaceRoute(pathname: string): boolean {
     pathname === "/environments" ||
     pathname.startsWith("/environments/") ||
     pathname === "/sessions" ||
-    pathname === "/debug" ||
     pathname.startsWith("/settings/")
   );
 }
@@ -184,8 +172,6 @@ export function appContextDestination(input: {
   appId?: string;
 }): string {
   const appId = input.appId?.trim();
-  if (/^\/apps\/[^/]+\/versions$/u.test(input.pathname)) return "/versions";
-  if (/^\/apps\/[^/]+\/accounts$/u.test(input.pathname)) return "/accounts";
   if (input.pathname === "/versions" || input.pathname === "/accounts") return input.pathname;
   const appRoute = /^\/apps\/[^/]+(\/map)?$/u.exec(input.pathname);
   if (appRoute) return appId ? `/apps/${encodeURIComponent(appId)}${appRoute[1] ?? ""}` : "/apps";
@@ -200,20 +186,12 @@ export function appContextDestination(input: {
 }
 
 function isScopeAwareRoute(pathname: string): boolean {
-  return (
-    pathname === "/home" ||
-    pathname === "/tests" ||
-    pathname === "/tests/new" ||
-    pathname === "/suites" ||
-    pathname === "/runs" ||
-    pathname === "/changes"
-  );
+  return pathname === "/tests" || pathname === "/tests/new" || pathname === "/runs";
 }
 
-function collectionForDetail(pathname: string): "/tests" | "/runs" | "/changes" | undefined {
+function collectionForDetail(pathname: string): "/tests" | "/runs" | undefined {
   if (/^\/(?:tests|recordings)\//u.test(pathname)) return "/tests";
   if (/^\/(?:runs|batches)\//u.test(pathname)) return "/runs";
-  if (pathname.startsWith("/changes/")) return "/changes";
   return undefined;
 }
 

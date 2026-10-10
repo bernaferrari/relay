@@ -105,5 +105,5 @@ if (missing.length !== 1 || missing[0] !== "screen-language") {
 }
 if (m.findings.length !== 1) fail("manifest", "expected exactly one finding");
 
-console.log(`\nWalk through: #/runs/${memberRunId}/walkthrough in the Relay app`);
+console.log(`\nOpen the run: #/runs/${memberRunId} in the Relay app`);
 console.log(`Manifest: GET /runs/${memberRunId}/player-manifest?with=${adminRunId}`);
