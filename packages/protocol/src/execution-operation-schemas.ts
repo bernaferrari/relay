@@ -167,6 +167,7 @@ export const executionOperationSchemas = {
     })
     .strict(),
   "run.story.get": runRef,
+  "run.verdict.get": runRef,
   "run.share.list": runRef,
   "run.share.create": z
     .object({

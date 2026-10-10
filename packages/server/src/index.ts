@@ -35,6 +35,7 @@ export { publishChangeProofToGitHub } from "./change-proof-github-publisher.js";
 export * from "./github-proof-intake.js";
 import { githubProofWebhookConfigurationFromEnvironment as githubWebhookFromEnv } from "./github-proof-intake.js";
 import { growAppMapsFromPastRuns, loadSavedModelKey, saveModelKey } from "@relay/core";
+import { handleEverydayRoute } from "./everyday-routes.js";
 import {
   captureScreenshot,
   currentOperationContext,
@@ -592,6 +593,7 @@ async function handleRequest(
     )
       return;
 
+    if (await handleEverydayRoute({ method, pathname, request: req, response: res, scope })) return;
     if (await handleLiveRunRoute({ method, pathname, response: res, scope })) return;
 
     if (

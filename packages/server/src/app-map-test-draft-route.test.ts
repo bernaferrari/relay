@@ -110,3 +110,45 @@ test("the model key can be saved and removed but is never read back", async () =
     else process.env.OPENROUTER_API_KEY = previousKey;
   }
 });
+
+test("a goal becomes a saved plain-English Test, creating the App for a new website", async () => {
+  const previousKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = clientFor(server.port);
+    const created = await client.invoke("test.create-from-goal", {
+      goal: "Open pricing\nVerify the Pro plan is listed",
+      url: "https://www.shop.example/",
+    });
+    assert.equal(created.createdApp, true);
+    assert.equal(created.appId, "shop-example");
+    assert.deepEqual(created.steps, [
+      { kind: "action", text: "Open pricing" },
+      { kind: "check", text: "Verify the Pro plan is listed" },
+    ]);
+    const again = await client.invoke("test.create-from-goal", {
+      goal: "Open the blog",
+      app: "shop.example",
+    });
+    assert.equal(again.createdApp, false);
+    assert.equal(again.appId, "shop-example");
+    const compiled = await client.invoke("app-map.test.compile", {
+      appMapId: created.appId,
+      testId: created.testId,
+    });
+    const root = compiled.plan.recipes[compiled.plan.rootRecipeId]!;
+    assert.deepEqual(
+      root.steps.map((step) => step.kind),
+      ["app", "act", "evaluate-visual"],
+    );
+    await assert.rejects(
+      () => client.invoke("test.create-from-goal", { goal: "Open it", app: "nope" }),
+      /No app named/,
+    );
+  } finally {
+    await server.close();
+    if (previousKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = previousKey;
+  }
+});

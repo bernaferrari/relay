@@ -238,3 +238,10 @@ export { requirePublicInputDataSet } from "./input-data-set.js";
 export * from "./app-map-combine-cell-inputs.js";
 
 export { loadSavedModelKey, saveModelKey, validModelKey } from "./model-key.js";
+export {
+  buildRunVerdict,
+  plainReason,
+  runTestId,
+  type RunVerdict,
+  type RunVerdictStep,
+} from "./run-verdict.js";

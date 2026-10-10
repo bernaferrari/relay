@@ -686,6 +686,44 @@ export const workspaceTargetOperationOutputSchemas = {
   "system.doctor.get": z
     .object({ ok: z.boolean(), checks: z.array(diagnostic), error: z.string().optional() })
     .strict(),
+  "test.create-from-goal": z
+    .object({
+      appId: z.string(),
+      testId: z.string(),
+      name: z.string(),
+      steps: z.array(z.object({ kind: z.enum(["action", "check"]), text: z.string() }).strict()),
+      source: z.enum(["model", "lines"]),
+      createdApp: z.boolean(),
+    })
+    .strict(),
+  "run.verdict.get": z
+    .object({
+      verdict: z
+        .object({
+          runId: z.string(),
+          title: z.string(),
+          status: z.enum(["passed", "failed", "blocked", "cancelled", "running"]),
+          summary: z.string(),
+          reason: z.string().optional(),
+          durationMs: z.number().optional(),
+          device: z.string().optional(),
+          steps: z.array(
+            z
+              .object({
+                id: z.string(),
+                title: z.string(),
+                kind: z.enum(["action", "check"]).optional(),
+                status: z.enum(["passed", "failed", "not-run"]),
+                expected: z.string().optional(),
+                saw: z.string().optional(),
+                screenshot: z.string().optional(),
+              })
+              .strict(),
+          ),
+        })
+        .strict(),
+    })
+    .strict(),
   "system.model-key.set": z
     .object({
       configured: z.boolean(),
