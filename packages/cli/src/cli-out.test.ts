@@ -123,7 +123,7 @@ test("the walkthrough command preserves frame bytes in its saved HTML and JSON",
     },
   };
   try {
-    const code = await runCli(["run", "walkthrough-pack", "get", "run-1", "--out", dir, "--json"], {
+    const code = await runCli(["run", "walkthrough", "run-1", "--out", dir, "--json"], {
       streams: io.streams,
       createClient: () => ({
         async invoke() {
@@ -592,7 +592,7 @@ test("writeEvidenceReviewDir refuses a capture digest that disagrees with the fr
   await rm(dir, { recursive: true, force: true });
 });
 
-test("job watch --out captures stderr progress and copies runDir PNGs", async () => {
+test("run watch --out captures stderr progress and copies runDir PNGs", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cli-out-run-"));
   const runDir = join(root, "job-run");
   const outDir = join(root, "out");
@@ -622,7 +622,7 @@ test("job watch --out captures stderr progress and copies runDir PNGs", async ()
     },
   ];
   try {
-    const code = await runCli(["job", "watch", "abc", "--json", "--out", outDir], {
+    const code = await runCli(["run", "watch", "abc", "--json", "--out", outDir], {
       streams: io.streams,
       createClient: () => ({
         async invoke() {

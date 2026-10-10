@@ -4,7 +4,6 @@ import {
 } from "./app-map-commands.js";
 import { appMapRunPlanCommandDescriptors } from "./app-map-run-plan-commands.js";
 import { authoringSessionCommandDescriptors } from "./authoring-session-commands.js";
-import { campaignCapacityCommandDescriptors } from "./campaign-capacity-commands.js";
 import {
   commandPath as path,
   mappedOperation as mapped,
@@ -22,27 +21,35 @@ import { targetCommandDescriptors } from "./target-commands.js";
 import { laneCommandDescriptors } from "./lane-commands.js";
 
 export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
-  mapped("system.health.get", path("system health")),
-  mapped("system.doctor.get", path("system doctor")),
+  {
+    operationId: "system.health.get",
+    exclusion: "internal",
+    reason: "relay doctor reads server health and version through it.",
+  },
+  {
+    operationId: "system.doctor.get",
+    exclusion: "internal",
+    reason: "relay doctor reports prerequisites through it.",
+  },
   mapped(
     "system.audit.list",
-    path("activity audit", [], undefined, {
+    path("system activity audit", [], undefined, {
       summary: "List operation audit records",
     }),
   ),
   mapped(
     "event.stream",
-    path("activity follow", [], undefined, {
+    path("system activity follow", [], undefined, {
       summary: "Follow live project activity",
-      examples: ["relay activity follow --ndjson"],
+      examples: ["relay system activity follow --ndjson"],
       behavior: "event-stream",
     }),
   ),
   mapped(
     "activity.export",
-    path("activity export", [], undefined, {
+    path("system activity export", [], undefined, {
       summary: "Export the complete attributed project activity log",
-      examples: ["relay activity export --json > relay-activity.json"],
+      examples: ["relay system activity export --json > relay-activity.json"],
     }),
   ),
   {
@@ -103,54 +110,58 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   },
   ...laneCommandDescriptors,
 
-  mapped("workspace.privacy.get", path("policy privacy get")),
-  mapped("workspace.privacy.update", path("policy privacy update")),
-  mapped("workspace.evidence.get", path("policy evidence get")),
-  mapped("workspace.evidence.update", path("policy evidence update")),
-  mapped("workspace.change.inspect", path("change inspect")),
-  mapped("workspace.apple-device.update", path("workspace apple-device update")),
-  mapped("workspace.apple-live-preview.update", path("workspace apple-live-preview update")),
-  mapped("workspace.variables.get", path("data variables get")),
-  mapped("workspace.variables.update", path("data variables update")),
+  mapped("workspace.privacy.get", path("proof privacy get")),
+  mapped("workspace.privacy.update", path("proof privacy update")),
+  mapped("workspace.evidence.get", path("proof evidence get")),
+  mapped("workspace.evidence.update", path("proof evidence update")),
+  mapped("workspace.change.inspect", path("proof change")),
+  mapped("workspace.apple-device.update", path("device apple update")),
+  {
+    operationId: "workspace.apple-live-preview.update",
+    exclusion: "internal",
+    reason: "The app's Apple live-preview backend switch; no script or guide sets it.",
+  },
+  mapped("workspace.variables.get", path("test data get")),
+  mapped("workspace.variables.update", path("test data update")),
 
   ...targetCommandDescriptors,
 
-  mapped("project.list", path("project list")),
-  mapped("project.save", path("project save")),
+  mapped("project.list", path("system project list")),
+  mapped("project.save", path("system project save")),
   mapped("build.list", path("build list")),
   mapped("build.save", path("build save")),
   mapped("build.preflight", path("build preflight", ["buildId"])),
   mapped("build.install", path("build install", ["buildId", "serial"])),
   mapped("build.launch", path("build launch", ["buildId", "serial"])),
-  mapped("device-pool.list", path("device-pool list")),
-  mapped("device-pool.save", path("device-pool save")),
-  mapped("device-pool.preflight", path("device-pool preflight", ["poolId"])),
-  mapped("target-worker.list", path("target worker list")),
-  ...campaignCapacityCommandDescriptors,
+  mapped("device-pool.list", path("device pool list")),
+  mapped("device-pool.save", path("device pool save")),
+  mapped("device-pool.preflight", path("device pool preflight", ["poolId"])),
+  mapped("target-worker.list", path("device workers")),
+  ...(
+    [
+      "campaign.capacity.preflight",
+      "campaign.duration.cohorts.estimate",
+      "campaign.local-admission.preflight",
+    ] as const
+  ).map((operationId) => ({
+    operationId,
+    exclusion: "internal" as const,
+    reason: "plan run computes local campaign admission from its localAdmission input.",
+  })),
   ...proofCommandDescriptors,
   mapped(
     "lease.list",
-    path(
-      "lease list",
-      [],
-      { status: "active" },
-      {
-        summary: "List active target leases",
-      },
-    ),
-    path(
-      "lease history",
-      [],
-      { status: "all" },
-      {
-        summary: "List active and historical target leases",
-      },
-    ),
+    path("device lease list", [], undefined, {
+      summary: "List active target leases",
+      inputHelp: [
+        { name: "status", type: '"active" | "all"', description: "all includes released leases" },
+      ],
+    }),
   ),
   mapped(
     "lease.create",
     path(
-      "lease create",
+      "device lease create",
       ["deviceSerial"],
       { poolId: "local" },
       {
@@ -164,13 +175,13 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           },
         ],
         examples: [
-          "relay lease create 00008110 --actor human:bernardo",
-          "relay lease create emulator-5554 --actor agent:mapper --json",
+          "relay device lease create 00008110 --actor human:bernardo",
+          "relay device lease create emulator-5554 --actor agent:mapper --json",
         ],
         note: "Use the same --actor for subsequent device input. Read-only observation and screenshots do not require a lease.",
       },
     ),
-    path("lease create-in-pool", ["poolId", "deviceSerial"], undefined, {
+    path("device lease create-in-pool", ["poolId", "deviceSerial"], undefined, {
       summary: "Take exclusive control of a device from a named pool for 2 hours",
       argumentHelp: [
         { name: "pool", type: "string", description: "Device-pool identifier" },
@@ -183,12 +194,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           description: "Optional Unix time in milliseconds; defaults to 2 hours from now",
         },
       ],
-      examples: ["relay lease create-in-pool cloud-ios iphone-16 --actor agent:mapper"],
+      examples: ["relay device lease create-in-pool cloud-ios iphone-16 --actor agent:mapper"],
     }),
   ),
   mapped(
     "lease.takeover",
-    path("lease takeover", ["leaseId"], undefined, {
+    path("device lease takeover", ["leaseId"], undefined, {
       summary: "Explicitly take control from an observed active lease",
       argumentHelp: [
         { name: "leaseId", type: "string", description: "Exact active lease to replace" },
@@ -204,12 +215,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
     }),
   ),
-  mapped("lease.release", path("lease release", ["leaseId"])),
+  mapped("lease.release", path("device lease release", ["leaseId"])),
 
   ...appMapAuthoringCommandDescriptors,
   mapped(
     "app-map.variable.infer",
-    path("variable infer", ["appMapId", "variableId"], undefined, {
+    path("test var infer", ["appMapId", "variableId"], undefined, {
       summary: "Infer remaining Variable rows from 1-8 taught examples",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -255,7 +266,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         },
       ],
       examples: [
-        `relay variable infer shop-android language --input '${JSON.stringify({
+        `relay test var infer shop-android language --input '${JSON.stringify({
           expectedRevision: 4,
           leaseId: "<lease>",
           target: { kind: "device", platform: "android", targetId: "<serial>" },
@@ -278,10 +289,10 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     reason: "The Test-first edit-recording outcome owns this canonical typed mutation.",
   },
 
-  mapped("schedule.list", path("schedule list")),
+  mapped("schedule.list", path("plan schedule list")),
   mapped(
     "schedule.create",
-    path("schedule create", [], undefined, {
+    path("plan schedule create", [], undefined, {
       summary: "Schedule a saved Plan/Combine or compiled recipe",
       inputHelp: [
         {
@@ -351,7 +362,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         },
       ],
       examples: [
-        `relay schedule create --input '${JSON.stringify({
+        `relay plan schedule create --input '${JSON.stringify({
           appMapId: "shop-android",
           combineId: "chat-prompts",
           targetKind: "device",
@@ -364,170 +375,111 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       note: "A saved native Test is scheduled through Run Across: include it in a saved Plan/Combine first, then schedule that combineId with appMapId. Qualify the Plan manually before enabling its paused schedule. Selected input Data set rows freeze approved Project values for each case. An unselected list defaults to its first value; a changing schedule seed does not rotate its prompts. Schedules accept recipeId or combineId, not a testId or per-schedule runtime variables.",
     }),
   ),
-  mapped("schedule.delete", path("schedule delete", ["scheduleId"])),
-  mapped("matrix.list", path("matrix list")),
-  mapped("matrix.create", path("matrix create")),
-  mapped("matrix.update", path("matrix update", ["matrixId"])),
-  mapped("matrix.delete", path("matrix delete", ["matrixId"])),
-  mapped("matrix.import", path("matrix import")),
-  mapped("matrix.resolve", path("matrix resolve", ["matrixId"])),
+  mapped("schedule.delete", path("plan schedule delete", ["scheduleId"])),
+  mapped("matrix.list", path("plan matrix list")),
+  mapped("matrix.create", path("plan matrix create")),
+  mapped("matrix.update", path("plan matrix update", ["matrixId"])),
+  mapped("matrix.delete", path("plan matrix delete", ["matrixId"])),
+  mapped("matrix.import", path("plan matrix import")),
+  mapped("matrix.resolve", path("plan matrix resolve", ["matrixId"])),
 
-  mapped("presence.list", path("presence list")),
-  mapped("presence.upsert", path("presence upsert")),
-  mapped("presence.clear", path("presence clear", ["actorId"])),
+  ...(["presence.list", "presence.upsert", "presence.clear"] as const).map((operationId) => ({
+    operationId,
+    exclusion: "internal" as const,
+    reason: "The app publishes who is looking at a project; people never set presence by hand.",
+  })),
 
-  mapped("discovery.list", path("discovery list")),
-  mapped("discovery.create", path("discovery create")),
-  mapped("discovery.get", path("discovery get", ["sessionId"])),
-  mapped("discovery.rename", path("discovery rename", ["sessionId"])),
-  mapped("discovery.status.update", path("discovery status update", ["sessionId"])),
-  mapped("discovery.capture", path("discovery capture", ["sessionId", "serial"])),
-  mapped("discovery.interact", path("discovery interact", ["sessionId", "serial"])),
-  mapped("discovery.here", path("discovery here", ["sessionId"])),
-  mapped("discovery.do", path("discovery do", ["sessionId", "serial"])),
-  mapped("discovery.suggestion", path("discovery suggestion", ["sessionId"])),
-  mapped("discovery.coverage", path("discovery coverage", ["sessionId"])),
-  mapped("discovery.exploration-timeline", path("discovery exploration-timeline", ["sessionId"])),
-  mapped("discovery.export", path("discovery export", ["sessionId"])),
-  mapped("discovery.start", path("discovery start", ["sessionId"])),
-  mapped("discovery.cancel", path("discovery cancel", ["sessionId"])),
-  mapped("discovery.promote", path("discovery promote", ["sessionId"])),
+  mapped("discovery.list", path("map explore list")),
+  mapped("discovery.create", path("map explore create")),
+  mapped("discovery.get", path("map explore get", ["sessionId"])),
+  mapped("discovery.rename", path("map explore rename", ["sessionId"])),
+  mapped("discovery.status.update", path("map explore set-status", ["sessionId"])),
+  mapped("discovery.capture", path("map explore capture", ["sessionId", "serial"])),
+  mapped("discovery.interact", path("map explore interact", ["sessionId", "serial"])),
+  mapped("discovery.here", path("map explore here", ["sessionId"])),
+  mapped("discovery.do", path("map explore do", ["sessionId", "serial"])),
+  mapped("discovery.suggestion", path("map explore suggestion", ["sessionId"])),
+  mapped("discovery.coverage", path("map explore coverage", ["sessionId"])),
+  {
+    operationId: "discovery.exploration-timeline",
+    exclusion: "internal",
+    reason: "The Explore panel's timeline feed; map explore get and coverage are the CLI reads.",
+  },
+  mapped("discovery.export", path("map explore export", ["sessionId"])),
+  mapped("discovery.start", path("map explore start", ["sessionId"])),
+  mapped("discovery.cancel", path("map explore cancel", ["sessionId"])),
+  mapped("discovery.promote", path("map explore promote", ["sessionId"])),
 
-  mapped("job.list", path("job list")),
+  mapped("job.list", path("run list", [], undefined, { summary: "List execution jobs" })),
   mapped(
     "job.get",
-    path("job get", ["jobId"]),
-    path("job watch", ["jobId"], undefined, {
-      summary: "Watch an execution job until it finishes",
+    path("run watch", ["jobId"], undefined, {
+      summary: "Watch an execution job until it finishes (--no-wait reads it once)",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
       behavior: "job-watch",
     }),
   ),
   mapped(
     "job.start",
-    path("job start", [], undefined, {
-      summary: "Start a compiled job (prefer relay flow run for map paths)",
+    path("run start", [], undefined, {
+      summary: "Start a compiled job (prefer relay map flow run for map paths)",
       examples: [
-        'relay flow run checkout main --input \'{"serial":"<phone-serial>","platform":"ios"}\'',
+        'relay map flow run checkout main --input \'{"serial":"<phone-serial>","platform":"ios"}\'',
       ],
     }),
   ),
   mapped(
     "job.retry",
-    path("job retry", ["jobId"], undefined, {
+    path("run retry", ["jobId"], undefined, {
       summary: "Retry an execution job",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
   ),
   mapped(
     "job.cancel",
-    path("job cancel", ["jobId"], undefined, {
+    path("run cancel", ["jobId"], undefined, {
       summary: "Cancel an execution job",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
   ),
   mapped(
     "job.pause",
-    path("job pause", ["jobId"], undefined, {
+    path("run pause", ["jobId"], undefined, {
       summary: "Pause an execution job",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
   ),
   mapped(
     "job.resume",
-    path("job resume", ["jobId"], undefined, {
+    path("run resume", ["jobId"], undefined, {
       summary: "Resume an execution job",
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
   ),
-  mapped("job.active.cancel", path("job active cancel")),
-  mapped("job.matrix.start", path("job matrix start")),
-  mapped("job.compatibility-matrix.start", path("job compatibility-matrix start")),
-  mapped("job.soak.start", path("job soak start")),
   mapped(
-    "job.combine.start",
-    path("job combine start", [], undefined, {
-      summary: "Run every selected Variable value × every selected Test",
-      examples: [
-        'relay combine run shop-ios language-x-settings --cell ja --input \'{"serial":"<device>","platform":"ios"}\'',
-        'relay combine run shop-ios language-x-settings --all --input \'{"serial":"<device>","platform":"ios"}\'',
-        "relay combine run shop-web hourly --lane lab --all",
-      ],
-      note: "Default is one cell. Pass --cell to choose a world, or --all to run every selected cell. A default serial/target fills missing cell bindings. Per-cell cellRuntimeProfiles and cellTargetBindings remain overrides. For a local multi-target campaign, pass cellTargetBindings plus the shared localAdmission object. Missing Variable, empty selection, or a Variable that cannot apply still return 409 and queue nothing.",
-      behavior: "job-start-watch",
-    }),
-    path("combine run", ["appMapId", "combineId"], undefined, {
-      summary: "Run one cell of a saved Combine (Variables × Tests)",
-      argumentHelp: [
-        { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "combineId", type: "string", description: "Saved Combine" },
-      ],
-      inputHelp: [
-        {
-          name: "serial",
-          type: "string",
-          description:
-            "Legacy one-target device serial. Omit it when cellTargetBindings is supplied; Relay will not infer a local target.",
-        },
-        {
-          name: "platform",
-          type: "android | ios",
-          description:
-            "Required with the legacy serial path. Each explicit local target binding carries its own platform.",
-        },
-        {
-          name: "selected",
-          type: "object",
-          description:
-            'Optional value ids selected per Variable, for example {"language":["it"]} to run Italian only',
-        },
-        {
-          name: "strategy",
-          type: "zip | cartesian | pairwise",
-          description: "Value coverage strategy",
-        },
-        {
-          name: "executionMode",
-          type: "pilot | all",
-          description: "Pilot is the default. Pass --all to run every selected world.",
-        },
-        {
-          name: "cellRuntimeProfiles",
-          type: "array",
-          description:
-            "Explicit {testId, values, targetProfileId} bindings for every selected Test × world cell",
-        },
-        {
-          name: "cellTargetBindings",
-          type: "array",
-          description:
-            "Explicit [{testId, values, target}] local execution targets for every selected cell. A target is a versioned local-device Android/iOS reference; provider sessions are not capacity.",
-        },
-        {
-          name: "localAdmission",
-          type: "object",
-          description:
-            "Shared LocalCampaignAdmissionRequest: {deadlineMs, durationEvidence, setupHeadroomMs?, recoveryHeadroomMs?}. Evidence must be fresh observed p50/p95 data for every bound target × Test/action cohort.",
-        },
-        {
-          name: "selectedCellIds",
-          type: "array",
-          description: "Optional subset of cell IDs to queue after offline preparation",
-        },
-        {
-          name: "cell",
-          type: "string",
-          description: "World selector such as ja. Default without --all is one cell.",
-        },
-      ],
-      examples: ["relay combine run shop-web hourly --lane lab --all"],
-      behavior: "job-start-watch",
-    }),
-    planRunCommandPath,
+    "job.active.cancel",
+    path("run cancel-all", [], undefined, { summary: "Cancel every active job" }),
   ),
   mapped(
+    "job.matrix.start",
+    path("run matrix", [], undefined, { summary: "Run one action across explicit matrix cases" }),
+  ),
+  mapped(
+    "job.compatibility-matrix.start",
+    path("plan matrix run", [], undefined, {
+      summary: "Run one action across a saved compatibility matrix",
+    }),
+  ),
+  mapped(
+    "job.soak.start",
+    path("run soak", [], undefined, {
+      summary: "Soak-run a compiled plan across a compatibility matrix",
+    }),
+  ),
+  mapped("job.combine.start", planRunCommandPath),
+  mapped(
     "job.combine.campaign.get",
-    path("combine campaign get", ["batchId"], undefined, {
+    path("plan status", ["batchId"], undefined, {
       summary: "Inspect pilot, pending cases, problems, and resume state",
       argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
     }),
@@ -539,7 +491,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   },
   mapped(
     "job.combine.campaign.repeat.clusters",
-    path("combine campaign failures", ["batchId"], undefined, {
+    path("plan failures", ["batchId"], undefined, {
       summary: "Review equivalent Repeat failure clusters before a selective rerun",
       argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
       inputHelp: [
@@ -558,7 +510,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "job.combine.campaign.resume",
-    path("combine campaign resume", ["batchId"], undefined, {
+    path("plan resume", ["batchId"], undefined, {
       summary: "Resume only untouched cases from current App Map truth",
       argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
       inputHelp: [
@@ -573,14 +525,14 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "job.combine.campaign.cancel",
-    path("combine campaign cancel", ["batchId"], undefined, {
+    path("plan cancel", ["batchId"], undefined, {
       summary: "Cancel active work and leave untouched cases unscheduled",
       argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
     }),
   ),
   mapped(
     "job.combine.campaign.triage",
-    path("combine campaign triage", ["batchId"], undefined, {
+    path("plan triage", ["batchId"], undefined, {
       summary: "Assign or mark Combine campaign cases without changing execution status",
       argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
       inputHelp: [
@@ -604,48 +556,41 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "job.combine.export",
-    path("combine export", ["batchId"], undefined, {
+    path("plan export", ["batchId"], undefined, {
       summary: "Export a Combine screenshot pack",
       examples: [
-        "relay combine export <batch-id>",
-        "relay combine export <batch-id> --export ./review --todo ./todo.json",
+        "relay plan export <batch-id>",
+        "relay plan export <batch-id> --export ./review --todo ./todo.json",
       ],
       note: "Writes a portable review folder. index.html opens with a Test checklist (passed | check failed | could not run | todo), before/after PNGs, visual-comparison ids, and `relay run visual review <job>`. Confirm/Reject never accept a visual baseline. Optional --export copies the pack; --todo merges unbound/gated rows.",
     }),
   ),
-  mapped(
-    "job.combine.analysis",
-    path("combine analyze", ["batchId"], undefined, {
-      summary: "Read durable findings from a Variable × Test Combine",
-      note: "Reads the current Combine evidence without writing a pack.",
-    }),
-    planFindingsCommandPath,
-  ),
+  mapped("job.combine.analysis", planFindingsCommandPath),
   mapped("job.combine.capture.review", planCaptureReviewCommandPath),
   mapped("job.combine.capture.review.apply", planCaptureReviewApplyCommandPath),
 
   ...runEvidenceCommandDescriptors,
   mapped(
     "run.trace-pack.get",
-    path("run trace-pack get", ["runId"], undefined, {
+    path("run trace-pack", ["runId"], undefined, {
       summary: "Export one content-addressed Run TracePack for offline analysis",
     }),
   ),
   mapped(
     "run.repair.list",
-    path("repair list", [], undefined, {
+    path("run repair list", [], undefined, {
       summary: "List addressable failed-check repair targets",
     }),
   ),
   mapped(
     "run.repair.get",
-    path("repair get", ["runId", "checkId"], undefined, {
+    path("run repair get", ["runId", "checkId"], undefined, {
       summary: "Inspect one complete failed-check repair package",
     }),
   ),
   mapped(
     "run.repair.retry",
-    path("repair retry", ["runId", "checkId"], undefined, {
+    path("run repair retry", ["runId", "checkId"], undefined, {
       summary: "Retry only one failed check from immutable run evidence",
       behavior: "job-start-watch",
       note: "Proves the live origin, then runs only the warm failed check. No setup or app launch is replayed; the original run and saved Test remain unchanged.",
@@ -653,7 +598,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "run.repair.propose",
-    path("repair propose", ["runId", "checkId"], undefined, {
+    path("run repair propose", ["runId", "checkId"], undefined, {
       summary: "Create a reversible review branch from one failed check",
       inputHelp: [
         {
@@ -675,7 +620,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         },
       ],
       examples: [
-        'relay repair propose <run-id> <check-id> --input \'{"kind":"retarget","reason":"Reviewed current accessibility id","selector":{"identifier":"settings-row"}}\'',
+        'relay run repair propose <run-id> <check-id> --input \'{"kind":"retarget","reason":"Reviewed current accessibility id","selector":{"identifier":"settings-row"}}\'',
       ],
     }),
   ),
@@ -710,9 +655,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "run.visual-baseline.update",
-    path("run visual-baseline update", ["runId"], { action: "approve-new-baseline" }),
     path(
-      "run approve",
+      "run visual approve",
       ["runId"],
       { action: "approve-new-baseline" },
       {
@@ -814,8 +758,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
     }),
   ),
-  mapped("run.visual-policy.get", path("run visual-policy get", ["runId"])),
-  mapped("run.visual-policy.update", path("run visual-policy update", ["runId"])),
+  mapped("run.visual-policy.get", path("run visual policy get", ["runId"])),
+  mapped("run.visual-policy.update", path("run visual policy update", ["runId"])),
   mapped(
     "run.pin.update",
     path("run pin", ["runId"], undefined, {
@@ -825,16 +769,21 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped("step.run", path("run step", ["serial"])),
-  mapped("generation.create", path("generation create")),
+  {
+    operationId: "generation.create",
+    exclusion: "internal",
+    reason:
+      "Test-data generation runs inside the app's authoring flow; no script or guide calls it.",
+  },
   mapped(
     "action.run",
-    path("action run", ["actionId", "serial"], undefined, {
+    path("map action run", ["actionId", "serial"], undefined, {
       summary: "Run a reusable routine on a device",
       argumentHelp: [
         { name: "actionId", type: "string", description: "Reusable action identifier" },
         { name: "serial", type: "string", description: "Connected device serial" },
       ],
-      examples: ["relay action run login emulator-5554"],
+      examples: ["relay map action run login emulator-5554"],
     }),
   ),
 ];

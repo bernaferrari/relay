@@ -54,6 +54,7 @@ import {
   verdictExitCode,
 } from "./outcome-runner.js";
 import { runEverydayCommand } from "./everyday-commands.js";
+import { renamedCommandError } from "./cli-renames.js";
 import { callerCwd, enterCallerCwd } from "./caller-cwd.js";
 import {
   runVerifyChangeCommand,
@@ -287,6 +288,12 @@ function firstPositional(argv: readonly string[]): string | undefined {
   return undefined;
 }
 
+/** The first two words, skipping flags (the local `system db` and
+ * `proof report` commands take no flag values before them). */
+function leadingPositionals(argv: readonly string[]): string[] {
+  return argv.filter((token) => !token.startsWith("-") || token === "-").slice(0, 2);
+}
+
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new UsageError(`Malformed ${label} response`);
@@ -421,10 +428,17 @@ export async function runCli(
       operationId = "local.guide";
       return runGuideCommand(argv, streams);
     }
-    if (firstPositional(argv) === "db") {
+    // Old spellings fail before any flag parsing so `relay proof report --run x`
+    // points at its new path instead of rejecting a flag the new path accepts.
+    const firstFlag = argv.findIndex((token) => token.startsWith("-"));
+    const leadingWords = firstFlag < 0 ? argv : argv.slice(0, firstFlag);
+    const renamed = renamedCommandError(leadingWords);
+    if (renamed) throw renamed;
+    const [first, second] = leadingPositionals(argv);
+    if (first === "system" && second === "db") {
       return await runDbCommand(argv, streams, dependencies.env ?? process.env);
     }
-    if (firstPositional(argv) === "report") {
+    if (first === "proof" && second === "report") {
       return await runReportCommand(argv, streams, dependencies.env ?? process.env);
     }
     const everyday = await runEverydayCommand(argv, {

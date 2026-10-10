@@ -84,30 +84,37 @@ test("test compile accepts --full as an output choice without changing the reque
     testId: "settings",
     targetProfileId: "android",
   });
-  assert.throws(() => parseCli(["activity", "list", "--full"], {}), /snapshot and test compile/);
+  assert.throws(
+    () => parseCli(["system", "activity", "list", "--full"], {}),
+    /snapshot and test compile/,
+  );
 });
 
-test("prove --base accepts --config and rejects the retired verify-change spelling", () => {
-  const confirmed = parseCli(["prove", "--base=main", "--config", "proof.json", "--confirm"], {});
+test("proof verify --base accepts --config and rejects the retired verify-change spelling", () => {
+  const confirmed = parseCli(
+    ["proof", "verify", "--base=main", "--config", "proof.json", "--confirm"],
+    {},
+  );
   assert.equal(confirmed.command, "prove");
   if (confirmed.command === "prove") {
     assert.equal(confirmed.confirm, true);
     assert.equal(confirmed.configFile, "proof.json");
   }
   assert.throws(
-    () => parseCli(["prove", "--base", "main", "--config", "a", "--config-file", "b"], {}),
+    () =>
+      parseCli(["proof", "verify", "--base", "main", "--config", "a", "--config-file", "b"], {}),
     /only one/u,
   );
   assert.throws(
     () => parseCli(["verify-change", "--base", "main"], {}),
-    /only valid on prove --base/u,
+    /only valid on proof verify/u,
   );
   assert.throws(() => parseCli(["verify-change", "run", "run-1"], {}), /Unknown command/u);
 });
 
-test("prove --base is the canonical local live Proof entry point", () => {
+test("proof verify --base is the canonical local live Proof entry point", () => {
   const parsed = parseCli(
-    ["prove", "--base", "main", "--config-file", "./reviewed.json", "--json"],
+    ["proof", "verify", "--base", "main", "--config-file", "./reviewed.json", "--json"],
     {},
   );
   assert.equal(parsed.command, "prove");
@@ -118,7 +125,7 @@ test("prove --base is the canonical local live Proof entry point", () => {
     );
   }
   assert.throws(
-    () => parseCli(["prove", "--base", "main", "--input", "{}"], {}),
+    () => parseCli(["proof", "verify", "--base", "main", "--input", "{}"], {}),
     /reviewed config file.*--config-file/u,
   );
 });
@@ -199,7 +206,7 @@ test("--help and -h are accepted as global switches", () => {
     [["operation", "--help"], "operation"],
     [["operation", "-h"], "operation"],
     [["help", "target"], "target"],
-    [["session", "--help"], "session"],
+    [["recording", "--help"], "recording"],
   ] as const) {
     const parsed = parseCli(argv, {});
     assert.equal(parsed.command, "help");
@@ -241,6 +248,7 @@ test("reviewed-origin commands require a CLI confirmation separate from their as
     () =>
       parseCli(
         [
+          "map",
           "screen",
           "origin",
           "review",
@@ -257,6 +265,7 @@ test("reviewed-origin commands require a CLI confirmation separate from their as
   );
   const parsed = parseCli(
     [
+      "map",
       "screen",
       "origin",
       "review",
@@ -279,7 +288,7 @@ test("reviewed-origin commands require a CLI confirmation separate from their as
 });
 
 test("friendly inputs default to an object and path arguments override JSON fields", () => {
-  const list = parseCli(["map", "list"], {});
+  const list = parseCli(["build", "list"], {});
   assert.equal(list.command, "invoke");
   if (list.command === "invoke") assert.deepEqual(list.input, {});
 
@@ -369,15 +378,15 @@ test("Proof CLI flags preserve exact lifecycle inputs and explicit safety contro
   assert.throws(() => parseCli(["proof", "list", "--history"], {}), /only valid on proof inspect/u);
 });
 
-test("prove waits for one server-owned outcome unless explicitly detached", () => {
-  const waiting = parseCli(["prove", "proof-1", "--json"], {});
+test("proof run waits for one server-owned outcome unless explicitly detached", () => {
+  const waiting = parseCli(["proof", "run", "proof-1", "--json"], {});
   assert.equal(waiting.command, "invoke");
   if (waiting.command === "invoke") {
     assert.equal(waiting.operationId, "proof.run");
     assert.deepEqual(waiting.input, { proofId: "proof-1", wait: true });
   }
 
-  const detached = parseCli(["prove", "proof-1", "--no-wait", "--json"], {});
+  const detached = parseCli(["proof", "run", "proof-1", "--no-wait", "--json"], {});
   assert.equal(detached.command, "invoke");
   if (detached.command === "invoke") {
     assert.equal(detached.operationId, "proof.run");
@@ -386,14 +395,14 @@ test("prove waits for one server-owned outcome unless explicitly detached", () =
 });
 
 test("event follow retains its command path and rejects single-object JSON output", () => {
-  const parsed = parseCli(["activity", "follow", "--ndjson"], {});
+  const parsed = parseCli(["system", "activity", "follow", "--ndjson"], {});
   assert.equal(parsed.command, "invoke");
   if (parsed.command === "invoke") {
-    assert.equal(parsed.commandPath, "activity follow");
+    assert.equal(parsed.commandPath, "system activity follow");
     assert.equal(parsed.operationId, "event.stream");
   }
   assert.throws(
-    () => parseCli(["activity", "follow", "--json"], {}),
+    () => parseCli(["system", "activity", "follow", "--json"], {}),
     /stream; use --ndjson.*instead of --json/,
   );
 });
@@ -411,7 +420,7 @@ test("Test run accepts explicit current target and revision shortcuts", () => {
   assert.deepEqual(parsed.input, { appMapId: "checkout", testId: "smoke" });
 
   assert.throws(
-    () => parseCli(["map", "list", "--target", "current"], {}),
+    () => parseCli(["build", "list", "--target", "current"], {}),
     /only valid on test run/,
   );
   const plan = parseCli(
@@ -454,7 +463,7 @@ test("--lane maps to laneId and does not require --input-file", () => {
   assert.equal(planAll.input.executionMode, "all");
 
   const combine = parseCli(
-    ["combine", "run", "grok-web", "grok-hourly", "--lane", "grok-lab", "--all"],
+    ["plan", "run", "grok-web", "grok-hourly", "--lane", "grok-lab", "--all"],
     {},
   );
   assert.equal(combine.command, "invoke");
@@ -510,16 +519,17 @@ test("--lane maps to laneId and does not require --input-file", () => {
     /omit --target and --revision/,
   );
   assert.throws(
-    () => parseCli(["map", "list", "--lane", "grok-daily"], {}),
+    () => parseCli(["build", "list", "--lane", "grok-daily"], {}),
     /only valid on test run/,
   );
 });
 
 test("friendly aliases and lifecycle commands construct operation inputs", () => {
   const cases = [
-    [["screen", "list", "map-1"], "app-map.get", { appMapId: "map-1" }],
+    [["map", "get", "map-1"], "app-map.get", { appMapId: "map-1" }],
     [
       [
+        "map",
         "screen",
         "alias-observe",
         "map-1",
@@ -538,7 +548,8 @@ test("friendly aliases and lifecycle commands construct operation inputs", () =>
     ],
     [
       [
-        "connect",
+        "map",
+        "connection",
         "update",
         "map-1",
         "continue",
@@ -554,23 +565,23 @@ test("friendly aliases and lifecycle commands construct operation inputs", () =>
       },
     ],
     [
-      ["session", "tap", "session-1", "--input", '{"interaction":{"target":{"x":4,"y":8}}}'],
+      ["recording", "tap", "session-1", "--input", '{"interaction":{"target":{"x":4,"y":8}}}'],
       "authoring.session.interact",
       { sessionId: "session-1", interaction: { kind: "tap", target: { x: 4, y: 8 } } },
     ],
     [
-      ["take", "replace", "session-1", "action-2"],
+      ["recording", "replace", "session-1", "action-2"],
       "authoring.take.replace",
       { sessionId: "session-1", actionId: "action-2" },
     ],
     [["run", "pin", "run-1"], "run.pin.update", { runId: "run-1" }],
     [
-      ["discovery", "capture", "discovery-1", "pixel-9"],
+      ["map", "explore", "capture", "discovery-1", "pixel-9"],
       "discovery.capture",
       { sessionId: "discovery-1", serial: "pixel-9" },
     ],
     [
-      ["policy", "privacy", "update", "--input", '{"enabled":true}'],
+      ["proof", "privacy", "update", "--input", '{"enabled":true}'],
       "workspace.privacy.update",
       { enabled: true },
     ],
@@ -632,9 +643,12 @@ test("input files resolve from the caller directory under package-manager wrappe
   const path = join(root, "input.json");
   writeFileSync(path, '{"expectedRevision":39}', "utf8");
   try {
-    const parsed = parseCli(["connect", "update", "map", "edge", "--input-file", "input.json"], {
-      INIT_CWD: root,
-    });
+    const parsed = parseCli(
+      ["map", "connection", "update", "map", "edge", "--input-file", "input.json"],
+      {
+        INIT_CWD: root,
+      },
+    );
     assert.equal(parsed.command, "invoke");
     if (parsed.command === "invoke") assert.equal(parsed.input.expectedRevision, 39);
   } finally {
@@ -642,21 +656,21 @@ test("input files resolve from the caller directory under package-manager wrappe
   }
 });
 
-test("target and session mutations report missing explicit identities", () => {
+test("device target and session mutations report missing explicit identities", () => {
   assert.throws(
     () => parseCli(["device", "screenshot"], {}),
     /device screenshot requires <serial>/,
   );
-  assert.throws(() => parseCli(["session", "tap"], {}), /session tap requires <sessionId>/);
+  assert.throws(() => parseCli(["recording", "tap"], {}), /recording tap requires <sessionId>/);
   assert.throws(
-    () => parseCli(["take", "replace", "session-1"], {}),
-    /take replace requires <actionId>/,
+    () => parseCli(["recording", "replace", "session-1"], {}),
+    /recording replace requires <actionId>/,
   );
 });
 
 test("resource commands and App Map aliases parse with explicit behavior", () => {
   const resource = parseCli(
-    ["activity", "list", "--input", '{"limit":25,"cursor":"next/value"}'],
+    ["system", "activity", "list", "--input", '{"limit":25,"cursor":"next/value"}'],
     {},
   );
   assert.deepEqual(resource, {
@@ -664,20 +678,23 @@ test("resource commands and App Map aliases parse with explicit behavior", () =>
     command: "resource",
     resourceId: "activity.list",
     resourcePath: "/activity?limit=25&cursor=next%2Fvalue",
-    commandPath: "activity list",
+    commandPath: "system activity list",
   });
 
-  const flow = parseCli(["flow", "run", "checkout", "main"], {});
+  const flow = parseCli(["map", "flow", "run", "checkout", "main"], {});
   assert.equal(flow.command, "invoke");
   if (flow.command === "invoke") {
     assert.equal(flow.operationId, "app-map.flow.run");
     assert.deepEqual(flow.input, { appMapId: "checkout", flowId: "main" });
   }
 
-  const follow = parseCli(["activity", "follow", "--ndjson"], {});
+  const follow = parseCli(["system", "activity", "follow", "--ndjson"], {});
   assert.equal(follow.command, "invoke");
   if (follow.command === "invoke") assert.equal(follow.behavior, "event-stream");
-  assert.throws(() => parseCli(["activity", "follow", "--json"], {}), /stream; use --ndjson/);
+  assert.throws(
+    () => parseCli(["system", "activity", "follow", "--json"], {}),
+    /stream; use --ndjson/,
+  );
 });
 
 test("device survey --dir maps onto the scroll-survey operation input", () => {
@@ -713,7 +730,7 @@ test("device survey --dir maps onto the scroll-survey operation input", () => {
     /only valid on device survey/,
   );
   assert.throws(
-    () => parseCli(["activity", "list", "--dir", "/tmp/survey"], {}),
+    () => parseCli(["system", "activity", "list", "--dir", "/tmp/survey"], {}),
     /only valid on device survey/,
   );
 
@@ -776,7 +793,7 @@ test("screenshot output flags reject ambiguous or unrelated use", () => {
     () => parseCli(["device", "screenshot", "pixel-9", "--file", "a.png", "--binary"], {}),
     /only one/,
   );
-  assert.throws(() => parseCli(["map", "list", "--file", "a.png"], {}), /only valid/);
+  assert.throws(() => parseCli(["build", "list", "--file", "a.png"], {}), /only valid/);
   assert.throws(
     () => parseCli(["device", "screenshot", "pixel-9", "--force"], {}),
     /requires --file/,
@@ -820,8 +837,11 @@ test("screenshot output flags reject ambiguous or unrelated use", () => {
     });
   }
   assert.throws(() => parseCli(["device", "screenshot", "pixel-9", "--full"], {}), /only valid/);
-  assert.throws(() => parseCli(["activity", "list", "--full"], {}), /only valid/);
-  assert.throws(() => parseCli(["variable", "list", "grok-android", "--full"], {}), /only valid/);
+  assert.throws(() => parseCli(["system", "activity", "list", "--full"], {}), /only valid/);
+  assert.throws(
+    () => parseCli(["test", "var", "list", "grok-android", "--full"], {}),
+    /only valid/,
+  );
   assert.throws(() => parseCli(["device", "snapshot", "pixel-9", "--binary"], {}), /only valid/);
   const teach = parseCli(
     [
@@ -1011,7 +1031,7 @@ test("generic CI variables also feed sourceRevision auto-detection", () => {
 
 test("sourceRevision flags are rejected off test run and on malformed values", () => {
   assert.throws(
-    () => parseCli(["device", "list", "--commit=abc1234"], {}),
+    () => parseCli(["build", "list", "--commit=abc1234"], {}),
     /only valid on test run/u,
   );
   assert.throws(
@@ -1133,10 +1153,10 @@ test("export accepts --out and --output as the review directory", () => {
   }
 });
 
-test("browser capture-plan uses shared connection and JSON input parsing", () => {
+test("test capture-plan uses shared connection and JSON input parsing", () => {
   const parsed = parseCli(
     [
-      "browser",
+      "test",
       "capture-plan",
       "plans",
       "capture",
@@ -1154,10 +1174,7 @@ test("browser capture-plan uses shared connection and JSON input parsing", () =>
 });
 
 test("the advertised walkthrough export accepts --out", () => {
-  const parsed = parseCli(
-    ["--out", "/tmp/relay-review", "run", "walkthrough-pack", "get", "run-1"],
-    {},
-  );
+  const parsed = parseCli(["--out", "/tmp/relay-review", "run", "walkthrough", "run-1"], {});
   assert.equal(parsed.command, "invoke");
   if (parsed.command !== "invoke") return;
   assert.equal(parsed.operationId, "run.walkthrough-pack.get");
@@ -1172,12 +1189,12 @@ test("--out is accepted on run verbs and rejected elsewhere", () => {
   assert.equal(run.command, "invoke");
   if (run.command !== "invoke") throw new Error("expected invoke");
   assert.equal(run.outDir, "/tmp/relay-out");
-  const watch = parseCli(["job", "watch", "job-1", "--out", "/tmp/relay-out"], {});
+  const watch = parseCli(["run", "watch", "job-1", "--out", "/tmp/relay-out"], {});
   assert.equal(watch.command, "invoke");
   if (watch.command !== "invoke") throw new Error("expected invoke");
   assert.equal(watch.outDir, "/tmp/relay-out");
   assert.throws(
-    () => parseCli(["map", "list", "--out", "/tmp/relay-out"], {}),
+    () => parseCli(["build", "list", "--out", "/tmp/relay-out"], {}),
     /only valid on run verbs/,
   );
   assert.throws(

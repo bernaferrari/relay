@@ -98,7 +98,7 @@ test("Plan list uses canonical Combine discovery without target or job calls", a
   const listed = await command(["plan", "list", "grok", "--input", '{"list":"tests"}', "--json"]);
   assert.equal(listed.code, ExitCode.success, listed.output);
   assert.deepEqual(listed.calls, [{ operationId: "app-map.get", input: { appMapId: "grok" } }]);
-  const existing = await command(["combine", "list", "grok", "--json"]);
+  const existing = await command(["plan", "list", "grok", "--json"]);
   assert.deepEqual(receipt(listed.output), receipt(existing.output));
   assert.deepEqual(
     receipt(listed.output).result.combines.map((plan: { id: string }) => plan.id),
@@ -194,7 +194,7 @@ test("Plan preflight keeps canonical device/profile input and blockers without s
     },
   ]);
   const existing = await command(
-    ["combine", "preflight", "grok", "prompt-checks", "--input", input, "--json"],
+    ["plan", "preflight", "grok", "prompt-checks", "--input", input, "--json"],
     response,
   );
   assert.deepEqual(receipt(preview.output), receipt(existing.output));

@@ -6,10 +6,10 @@ import {
 
 /** Live recording, Take editing, replay, and commit commands. */
 export const authoringSessionCommandDescriptors: readonly MappedOperationDescriptor[] = [
-  mapped("authoring.session.list", path("session list")),
+  mapped("authoring.session.list", path("recording list")),
   mapped(
     "authoring.session.get",
-    path("session get", ["sessionId"], undefined, {
+    path("recording get", ["sessionId"], undefined, {
       summary: "Get a recording session",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -18,7 +18,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.create",
-    path("session create", [], undefined, {
+    path("recording create", [], undefined, {
       summary: "Start a Relay-controlled recording session on an App Map and device",
       inputHelp: [
         { name: "appMapId", type: "string", required: true, description: "App Map identifier" },
@@ -55,7 +55,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.begin",
-    path("session begin", [], undefined, {
+    path("recording begin", [], undefined, {
       summary: "Create a session, observe the target, and start Relay-controlled recording",
       inputHelp: [
         {
@@ -68,7 +68,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.observe",
-    path("session observe", ["sessionId"], undefined, {
+    path("recording observe", ["sessionId"], undefined, {
       summary: "Capture the recording's current device state",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -77,7 +77,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.capture",
-    path("session capture", ["sessionId"], undefined, {
+    path("recording capture", ["sessionId"], undefined, {
       summary: "Capture one durable screen without starting video recording",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -86,7 +86,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.start",
-    path("session start", ["sessionId"], undefined, {
+    path("recording start", ["sessionId"], undefined, {
       summary: "Start recording",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -95,19 +95,20 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.interact",
-    path("session interact", ["sessionId"], undefined, {
+    path("recording interact", ["sessionId"], undefined, {
       summary: "Perform an explicit interaction while recording",
       inputHelp: [
         {
           name: "interaction",
           type: "object",
           required: true,
-          description: "Tap, type, swipe, key, wait, or screenshot interaction",
+          description:
+            'Tap, type, swipe, key, wait ({"kind":"wait","ms":500}), screenshot, or steps ({"kind":"steps","steps":[...]}: timing-sensitive steps as one recorded interaction)',
         },
       ],
     }),
     path(
-      "session tap",
+      "recording tap",
       ["sessionId"],
       { interaction: { kind: "tap" } },
       {
@@ -127,7 +128,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
       },
     ),
     path(
-      "session type",
+      "recording type",
       ["sessionId"],
       { interaction: { kind: "type" } },
       {
@@ -146,7 +147,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
       },
     ),
     path(
-      "session swipe",
+      "recording swipe",
       ["sessionId"],
       { interaction: { kind: "swipe" } },
       {
@@ -166,7 +167,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
       },
     ),
     path(
-      "session back",
+      "recording back",
       ["sessionId"],
       { interaction: { kind: "key", key: "back" } },
       {
@@ -177,26 +178,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
       },
     ),
     path(
-      "session wait",
-      ["sessionId"],
-      { interaction: { kind: "wait" } },
-      {
-        summary: "Wait while recording",
-        argumentHelp: [
-          { name: "sessionId", type: "string", description: "Authoring session identifier" },
-        ],
-        inputHelp: [
-          {
-            name: "interaction.ms",
-            type: "number",
-            required: true,
-            description: "Wait duration in milliseconds",
-          },
-        ],
-      },
-    ),
-    path(
-      "session screenshot",
+      "recording screenshot",
       ["sessionId"],
       { interaction: { kind: "screenshot" } },
       {
@@ -206,34 +188,10 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
         ],
       },
     ),
-    path(
-      "session batch",
-      ["sessionId"],
-      { interaction: { kind: "steps" } },
-      {
-        summary: "Perform timing-sensitive steps as one recorded interaction",
-        argumentHelp: [
-          { name: "sessionId", type: "string", description: "Authoring session identifier" },
-        ],
-        inputHelp: [
-          {
-            name: "interaction.steps",
-            type: "object[]",
-            required: true,
-            description: "Execution steps performed in order without CLI round trips",
-          },
-          {
-            name: "interaction.label",
-            type: "string",
-            description: "Human-readable task boundary for the recorded batch",
-          },
-        ],
-      },
-    ),
   ),
   mapped(
     "authoring.session.stop",
-    path("session stop", ["sessionId"], undefined, {
+    path("recording stop", ["sessionId"], undefined, {
       summary: "Stop recording and open the Take for review",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -242,7 +200,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.take.optimization.get",
-    path("take optimize", ["sessionId"], undefined, {
+    path("recording optimize", ["sessionId"], undefined, {
       summary: "Review non-destructive raw-recording optimization suggestions",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -252,7 +210,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.take.trim",
-    path("take trim", ["sessionId"], undefined, {
+    path("recording trim", ["sessionId"], undefined, {
       summary: "Trim recorded actions or video",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -266,7 +224,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.take.reorder",
-    path("take reorder", ["sessionId"], undefined, {
+    path("recording reorder", ["sessionId"], undefined, {
       summary: "Reorder recording actions",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -283,7 +241,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.take.replace",
-    path("take replace", ["sessionId", "actionId"], undefined, {
+    path("recording replace", ["sessionId", "actionId"], undefined, {
       summary: "Replace one recording action",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -301,24 +259,18 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.take.replay",
-    path("take replay", ["sessionId"], undefined, {
-      summary: "Replay a recording on its device",
-      argumentHelp: [
-        { name: "sessionId", type: "string", description: "Authoring session identifier" },
-      ],
-    }),
-    path("session replay", ["sessionId"], undefined, {
+    path("recording replay", ["sessionId"], undefined, {
       summary: "Replay the current Take on its device before committing",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
       ],
-      examples: ["relay session replay authoring-123"],
+      examples: ["relay recording replay authoring-123"],
       note: "Return the device to the recorded source screen first. An unedited live recording that landed on the expected screen can be committed without a second pass. Editing the Take still requires a passing replay.",
     }),
   ),
   mapped(
     "authoring.session.commit",
-    path("session commit", ["sessionId"], undefined, {
+    path("recording commit", ["sessionId"], undefined, {
       summary: "Commit a demonstrated Take to the App Map",
       inputHelp: [
         {
@@ -336,7 +288,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.discard",
-    path("session discard", ["sessionId"], undefined, {
+    path("recording discard", ["sessionId"], undefined, {
       summary: "Discard the current recording take",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -345,7 +297,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.cancel",
-    path("session cancel", ["sessionId"], undefined, {
+    path("recording cancel", ["sessionId"], undefined, {
       summary: "Cancel a recording",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },
@@ -354,7 +306,7 @@ export const authoringSessionCommandDescriptors: readonly MappedOperationDescrip
   ),
   mapped(
     "authoring.session.cleanup",
-    path("session cleanup", ["sessionId"], undefined, {
+    path("recording cleanup", ["sessionId"], undefined, {
       summary: "Remove a finished recording session",
       argumentHelp: [
         { name: "sessionId", type: "string", description: "Authoring session identifier" },

@@ -220,7 +220,6 @@ test("outcome CLI help describes its bounded implicit daemon behavior", () => {
   const help = renderHelp("advanced");
   assert.match(help, /Outcome commands start or reuse the default loopback Relay daemon/u);
   assert.match(help, /Explicit server URLs remain caller-managed/u);
-  assert.match(help, /App, Device, Test, Checkpoint, Run, and Report/u);
   assert.doesNotMatch(help, /An App Map is screens and paths/u);
   assert.doesNotMatch(help, /does not start a server automatically/u);
 });
@@ -285,14 +284,14 @@ test("Repeat CLI rejects ambiguous or malformed dimension policies", () => {
   );
 });
 
-test("report emit accepts only its documented github-check format", async () => {
+test("proof report accepts only its documented github-check format", async () => {
   const streams = { stdout: new PassThrough(), stderr: new PassThrough() };
   await assert.rejects(
-    runReportCommand(["report", "emit", "--format", "github-check"], streams, {}),
+    runReportCommand(["proof", "report", "--format", "github-check"], streams, {}),
     /requires --run/u,
   );
   await assert.rejects(
-    runReportCommand(["report", "emit", "--format=yaml", "--run", "missing"], streams, {}),
+    runReportCommand(["proof", "report", "--format=yaml", "--run", "missing"], streams, {}),
     /only "github-check"/u,
   );
 });

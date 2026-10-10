@@ -10,7 +10,7 @@ import { planPreflightCommandPath } from "./plan-commands.js";
 export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped(
     "app-map.variable.save",
-    path("variable save", ["appMapId", "variableId"], undefined, {
+    path("test var save", ["appMapId", "variableId"], undefined, {
       summary: "Save a reusable Variable for Test inputs or app settings",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -26,7 +26,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        `relay variable save shop-android questions --input '${JSON.stringify({
+        `relay test var save shop-android questions --input '${JSON.stringify({
           expectedRevision: 4,
           variable: {
             name: "Chat prompts",
@@ -38,7 +38,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
             ],
           },
         })}'`,
-        `relay variable save settings language --input '${JSON.stringify({
+        `relay test var save settings language --input '${JSON.stringify({
           expectedRevision: 4,
           variable: {
             name: "Language",
@@ -53,7 +53,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
             ],
           },
         })}'`,
-        `relay variable save shop-android language --input '${JSON.stringify({
+        `relay test var save shop-android language --input '${JSON.stringify({
           expectedRevision: 4,
           variable: {
             name: "Language",
@@ -69,43 +69,12 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
       note: "An input Variable references a stable Project Data set ID. Its rows carry approved shared, non-sensitive list/static values in value, separately from bounded row IDs and display labels. Each Test consumes only its referenced inputs, without picker actions. Values are frozen when admitted and retained during resume. A Combine selects Variables and Tests; zip pairs rows in order. appLocale Variables stay when the compiled Test has an expect-screen; they relaunch if stay cannot be proved. apply.relaunch: true still relaunches.",
     }),
   ),
-  mapped("app-map.variable.remove", path("variable remove", ["appMapId", "variableId"])),
+  mapped("app-map.variable.remove", path("test var remove", ["appMapId", "variableId"])),
   ...graphTestCommandDescriptors,
-  mapped(
-    "app-map.combine.preflight",
-    path("combine preflight", ["appMapId", "combineId"], undefined, {
-      summary: "Preview expansion, evidence, duration, and blockers without starting",
-      argumentHelp: [
-        { name: "appMapId", type: "string", description: "App Map identifier" },
-        { name: "combineId", type: "string", description: "Saved Combine" },
-      ],
-      inputHelp: [
-        { name: "serial", type: "string", description: "Optional connected device to verify" },
-        {
-          name: "targetProfileId",
-          type: "string",
-          description:
-            "Saved evidence profile, or ios/android to follow a linked iOS or Android companion Test",
-        },
-        {
-          name: "profileTargets",
-          type: "array",
-          description:
-            "Optional browser account lanes. Parallel wall-clock is quoted from observed pack duration when these are fixture-keyed.",
-        },
-      ],
-      examples: [
-        "relay combine preflight shop-android language-x-settings",
-        'relay combine preflight shop-android language-x-settings --input \'{"serial":"DEVICE"}\'',
-        'relay combine preflight shop-web daily-checks --input \'{"browserTargetId":"shop-browser","targetKind":"browser"}\'',
-        'relay combine preflight shop-web daily-checks --input \'{"browserTargetId":"shop-browser","targetProfileId":"android"}\'',
-      ],
-    }),
-    planPreflightCommandPath,
-  ),
+  mapped("app-map.combine.preflight", planPreflightCommandPath),
   mapped(
     "app-map.combine.save",
-    path("combine save", ["appMapId", "combineId"], undefined, {
+    path("plan save", ["appMapId", "combineId"], undefined, {
       summary: "Save selected Variables × selected Tests",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -120,7 +89,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        `relay combine save settings language-x-coverage --input '${JSON.stringify({
+        `relay plan save settings language-x-coverage --input '${JSON.stringify({
           expectedRevision: 5,
           combine: {
             name: "Language × Settings coverage",
@@ -133,10 +102,10 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
       note: "Each cell applies one value from every Variable, then runs every selected Test. Use strategy: zip to pair equally sized prompt lists in order; input dimensions that a Test does not reference remain in its case identity without changing its actions.",
     }),
   ),
-  mapped("app-map.combine.remove", path("combine remove", ["appMapId", "combineId"])),
+  mapped("app-map.combine.remove", path("plan remove", ["appMapId", "combineId"])),
   mapped(
     "app-map.flow.run",
-    path("flow run", ["appMapId", "flowId"], undefined, {
+    path("map flow run", ["appMapId", "flowId"], undefined, {
       summary: "Run a saved App Map flow",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
@@ -162,8 +131,8 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        'relay flow run checkout main --input \'{"serial":"<phone-serial>","platform":"android"}\'',
-        'relay flow run checkout main --input \'{"serial":"<phone-serial>","variables":{"model":["low","medium","high"]}}\'',
+        'relay map flow run checkout main --input \'{"serial":"<phone-serial>","platform":"android"}\'',
+        'relay map flow run checkout main --input \'{"serial":"<phone-serial>","variables":{"model":["low","medium","high"]}}\'',
       ],
       behavior: "job-start-watch",
     }),

@@ -14,14 +14,6 @@ const pngBytes = Buffer.from(
   "base64",
 );
 
-const health = {
-  ok: true,
-  product: "relay",
-  version: "0.1.0",
-  at: 1,
-  uptimeMs: 10,
-};
-
 function spawnRelay(
   args: string[],
   cwd = repoRoot,
@@ -83,15 +75,16 @@ async function withServer(
 test("relay bin --json success is exactly one stdout JSON document", async () => {
   await withServer(
     (_req, url, res) => {
-      if (url.pathname !== "/health") return false;
+      if (url.pathname !== "/device-leases") return false;
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(health));
+      res.end(JSON.stringify({ leases: [] }));
       return true;
     },
     async (url) => {
       const result = await spawnRelay([
-        "system",
-        "health",
+        "device",
+        "lease",
+        "list",
         "--json",
         "--server",
         url,
@@ -102,7 +95,7 @@ test("relay bin --json success is exactly one stdout JSON document", async () =>
       const body = oneJson(result.stdout);
       assert.equal(body.type, "result");
       assert.equal(body.ok, true);
-      assert.equal(body.operationId, "system.health.get");
+      assert.equal(body.operationId, "lease.list");
       assert.doesNotMatch(result.stdout, /"type":"progress"/);
     },
   );
@@ -182,7 +175,7 @@ test("relay bin --json keeps progress and heartbeat on stderr", async () => {
       },
       async (url) => {
         const result = await spawnRelay([
-          "job",
+          "run",
           "watch",
           "abc",
           "--json",

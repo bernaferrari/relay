@@ -24,8 +24,8 @@ test("runtime prompt inputs and recording edit discovery are available in help",
   assert.match(recording, /same --actor/u);
 });
 
-test("schedule help explains native Test prerequisites and the create payload", () => {
-  const schedule = renderHelp("schedule");
+test("plan schedule help explains native Test prerequisites and the create payload", () => {
+  const schedule = renderHelp("plan");
   for (const field of [
     "recipeId",
     "combineId",
@@ -55,7 +55,7 @@ test("schedule help explains native Test prerequisites and the create payload", 
 });
 
 test("input Data set help keeps stable row IDs separate from approved prompt payloads", () => {
-  const variable = renderHelp("variable");
+  const variable = renderHelp("test");
   assert.match(variable, /"apply":\{"kind":"input","inputId":"chat-prompt-data"\}/u);
   assert.match(
     variable,
@@ -63,7 +63,7 @@ test("input Data set help keeps stable row IDs separate from approved prompt pay
   );
   assert.match(variable, /shared, non-sensitive list\/static values/u);
   assert.match(variable, /retained during resume/u);
-  assert.match(renderHelp("combine"), /zip to pair equally sized prompt lists in order/u);
+  assert.match(renderHelp("plan"), /zip to pair equally sized prompt lists in order/u);
 });
 
 test("graph Test commands expose one canonical scenario-only workflow", () => {

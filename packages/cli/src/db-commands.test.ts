@@ -19,11 +19,11 @@ function capture() {
   return { streams: { stdout, stderr }, stdout: () => out };
 }
 
-test("relay db path prints the control sqlite location", async () => {
+test("relay system db path prints the control sqlite location", async () => {
   const io = capture();
   const root = await mkdtemp(join(tmpdir(), "relay-db-cli-"));
   try {
-    const code = await runCli(["db", "path", "--json"], {
+    const code = await runCli(["system", "db", "path", "--json"], {
       streams: io.streams,
       registerSignalHandlers: false,
       env: { RELAY_STATE_DIR: root },
@@ -35,7 +35,7 @@ test("relay db path prints the control sqlite location", async () => {
   }
 });
 
-test("relay db events reads the durable control log", async () => {
+test("relay system db events reads the durable control log", async () => {
   const io = capture();
   const root = await mkdtemp(join(tmpdir(), "relay-db-events-"));
   try {
@@ -57,7 +57,7 @@ test("relay db events reads the durable control log", async () => {
       "INSERT INTO control_events(id, at, project_id, type, resource, resource_id, payload) VALUES(?,?,?,?,?,?,?)",
     ).run("evt-1", 1, "p", "lease.changed", "lease", "lease-1", "{}");
     db.close();
-    const code = await runCli(["db", "events", "--json"], {
+    const code = await runCli(["system", "db", "events", "--json"], {
       streams: io.streams,
       registerSignalHandlers: false,
       env: { RELAY_STATE_DIR: root },
@@ -71,9 +71,9 @@ test("relay db events reads the durable control log", async () => {
   }
 });
 
-test("relay db rejects unknown flags with a usage error", async () => {
+test("relay system db rejects unknown flags with a usage error", async () => {
   const io = capture();
-  const code = await runCli(["db", "path", "--verbose"], {
+  const code = await runCli(["system", "db", "path", "--verbose"], {
     streams: io.streams,
     registerSignalHandlers: false,
     env: {},
@@ -81,7 +81,7 @@ test("relay db rejects unknown flags with a usage error", async () => {
   assert.equal(code, ExitCode.usage);
 });
 
-test("relay db supports --ndjson compact rows and --quiet suppression", async () => {
+test("relay system db supports --ndjson compact rows and --quiet suppression", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-db-flags-"));
   try {
     const path = join(root, "control.sqlite");
@@ -104,7 +104,7 @@ test("relay db supports --ndjson compact rows and --quiet suppression", async ()
     db.close();
 
     const ndjson = capture();
-    const ndjsonCode = await runCli(["db", "events", "--after", "0", "--ndjson"], {
+    const ndjsonCode = await runCli(["system", "db", "events", "--after", "0", "--ndjson"], {
       streams: ndjson.streams,
       registerSignalHandlers: false,
       env: { RELAY_STATE_DIR: root },
@@ -115,7 +115,7 @@ test("relay db supports --ndjson compact rows and --quiet suppression", async ()
     assert.equal(JSON.parse(lines[0]!)[0].id, "evt-1");
 
     const quiet = capture();
-    const quietCode = await runCli(["db", "events", "--quiet"], {
+    const quietCode = await runCli(["system", "db", "events", "--quiet"], {
       streams: quiet.streams,
       registerSignalHandlers: false,
       env: { RELAY_STATE_DIR: root },

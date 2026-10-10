@@ -9,6 +9,7 @@ import {
 } from "./commands.js";
 import { UsageError } from "./errors.js";
 import { callerCwd } from "./caller-cwd.js";
+import { renamedCommandError } from "./cli-renames.js";
 import { parseOutcomeCliIntent, type OutcomeCliIntent } from "./outcome-command.js";
 import {
   applyCombineRunFlags,
@@ -418,6 +419,8 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     };
   }
 
+  const renamed = renamedCommandError(tokens.positionals);
+  if (renamed) throw renamed;
   for (const everydayOnly of ["--test", "--junit", "--name"] as const) {
     if (tokens.values.has(everydayOnly)) {
       throw new UsageError(
@@ -515,17 +518,17 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     };
   }
 
-  // `prove --base` is the local source-to-Proof workflow. It must inspect
-  // local Git and a reviewed config before it can optionally call proof.start.
-  // This branch intentionally comes before the generic input reader so
-  // --input cannot smuggle an unreviewed config in.
-  if (group === "prove" && tokens.values.has("--base")) {
-    if (action !== undefined || operationId !== undefined || extra.length > 0) {
-      throw new UsageError("Expected: relay prove --base <ref> [--config-file <path>]");
+  // `proof verify --base` is the local source-to-Proof workflow. It must
+  // inspect local Git and a reviewed config before it can optionally call
+  // proof.start. This branch intentionally comes before the generic input
+  // reader so --input cannot smuggle an unreviewed config in.
+  if (group === "proof" && action === "verify") {
+    if (operationId !== undefined || extra.length > 0 || !tokens.values.has("--base")) {
+      throw new UsageError("Expected: relay proof verify --base <ref> [--config-file <path>]");
     }
     if (rawInput !== undefined || inputFile !== undefined) {
       throw new UsageError(
-        "prove --base reads a reviewed config file; use --config-file instead of --input",
+        "proof verify reads a reviewed config file; use --config-file instead of --input",
       );
     }
     const base = tokens.values.get("--base")!.trim();
@@ -557,15 +560,15 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
 
   for (const verifyChangeOnly of ["--base", "--config", "--config-file"] as const) {
     if (tokens.values.has(verifyChangeOnly)) {
-      throw new UsageError(`${verifyChangeOnly} is only valid on prove --base`);
+      throw new UsageError(`${verifyChangeOnly} is only valid on proof verify`);
     }
   }
 
   const input = readInput(tokens, env);
-  if (group === "browser" && action === "capture-plan") {
+  if (group === "test" && action === "capture-plan") {
     if (!operationId || extra.length !== 1)
       throw new UsageError(
-        "Expected: relay browser capture-plan <map-id> <test-id> --input-file <plan.json>",
+        "Expected: relay test capture-plan <map-id> <test-id> --input-file <plan.json>",
       );
     assertNoOutDir(tokens);
     return {

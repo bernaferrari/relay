@@ -106,13 +106,13 @@ export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
   {
     resourceId: "activity.list",
     label: "List durable project activity",
-    path: path("activity list", [], undefined, {
+    path: path("system activity list", [], undefined, {
       summary: "List durable human, agent, and system activity",
       inputHelp: [
         { name: "limit", type: "number", description: "Positive page size" },
         { name: "cursor", type: "string", description: "Cursor returned by the previous page" },
       ],
-      examples: ["relay activity list --input '{\"limit\":50}'"],
+      examples: ["relay system activity list --input '{\"limit\":50}'"],
     }),
     resourcePath(input) {
       const query = new URLSearchParams();

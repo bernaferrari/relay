@@ -159,7 +159,7 @@ function settled(testId: string): RunTestSnapshot {
 
 test("misspelled family subcommands suggest instead of running a Test or Device", () => {
   assert.throws(() => parseCli(["run", "verdcit"], {}), /Did you mean 'relay run verdict'/u);
-  assert.throws(() => parseCli(["connect", "lst"], {}), /Did you mean 'relay connect list'/u);
+  assert.throws(() => parseCli(["plan", "lsit"], {}), /Did you mean 'relay plan list'/u);
   // An exact subcommand with missing arguments is a usage error, never a Test named "verdict".
   assert.throws(
     () => parseCli(["run", "verdict"], {}),
@@ -243,7 +243,7 @@ test("relay.json in the caller's directory supplies app and device defaults", as
       /unknown field "ap"/u,
     );
     await writeFile(join(dir, "input.json"), '{"limit":1}');
-    const parsed = parseCli(["job", "list", "--input-file", "input.json"], {
+    const parsed = parseCli(["run", "list", "--input-file", "input.json"], {
       RELAY_CALLER_CWD: dir,
     });
     assert.deepEqual(parsed.command === "invoke" && parsed.input, { limit: 1 });

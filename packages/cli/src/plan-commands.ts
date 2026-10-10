@@ -40,6 +40,7 @@ export const planPreflightCommandPath = path(
     examples: [
       "relay plan preflight shop-ios prompt-checks --json",
       'relay plan preflight shop-ios prompt-checks --input \'{"serial":"<device>","targetProfileId":"<saved-profile>"}\' --json',
+      'relay plan preflight shop-web daily-checks --input \'{"browserTargetId":"shop-browser","targetKind":"browser"}\'',
     ],
     note: "Uses the existing Combine preflight. Saved selection is not proof that its device or browser is ready.",
   },
@@ -67,8 +68,64 @@ export const planRunCommandPath = path(
         type: '"jev"',
         description: "Optional read-only OpenRouter sorting of saved findings for human review.",
       },
+      {
+        name: "serial",
+        type: "string",
+        description:
+          "Legacy one-target device serial. Omit it when cellTargetBindings is supplied; Relay will not infer a local target.",
+      },
+      {
+        name: "platform",
+        type: "android | ios",
+        description:
+          "Required with the legacy serial path. Each explicit local target binding carries its own platform.",
+      },
+      {
+        name: "selected",
+        type: "object",
+        description:
+          'Optional value ids selected per Variable, for example {"language":["it"]} to run Italian only',
+      },
+      {
+        name: "strategy",
+        type: "zip | cartesian | pairwise",
+        description: "Value coverage strategy",
+      },
+      {
+        name: "executionMode",
+        type: "pilot | all",
+        description: "Pilot is the default. Pass --all to run every selected world.",
+      },
+      {
+        name: "cellRuntimeProfiles",
+        type: "array",
+        description:
+          "Explicit {testId, values, targetProfileId} bindings for every selected Test × world cell",
+      },
+      {
+        name: "cellTargetBindings",
+        type: "array",
+        description:
+          "Explicit [{testId, values, target}] local execution targets for every selected cell. A target is a versioned local-device Android/iOS reference; provider sessions are not capacity.",
+      },
+      {
+        name: "localAdmission",
+        type: "object",
+        description:
+          "Shared LocalCampaignAdmissionRequest: {deadlineMs, durationEvidence, setupHeadroomMs?, recoveryHeadroomMs?}. Evidence must be fresh observed p50/p95 data for every bound target × Test/action cohort.",
+      },
+      {
+        name: "selectedCellIds",
+        type: "array",
+        description: "Optional subset of cell IDs to queue after offline preparation",
+      },
+      {
+        name: "cell",
+        type: "string",
+        description: "World selector such as ja. Default without --all is one cell.",
+      },
     ],
-    note: "One case is the default. Pass --all to run every selected case. --lane fills browser target, profile, and account overlay so --input-file is not needed. --budget 10m is a watch timeout, not a pack-duration promise. --budget 3m is too tight for the eight-Test logged-out pack. --findings prints markdown after the wait. --export writes the review pack with a Test checklist; optional --todo merges unbound/gated rows. Confirm/Reject never auto-accept visual baselines — use relay run visual review <job>. If watch dies with fetch failed, tsx watch likely restarted :8787 and dropped in-memory jobs — do not recover-kill a live iOS runner, and do not edit core/server while a Plan is live.",
+    note: "One case is the default. Pass --all to run every selected case. --lane fills browser target, profile, and account overlay so --input-file is not needed. --budget 10m is a watch timeout, not a pack-duration promise. --budget 3m is too tight for the eight-Test logged-out pack. --findings prints markdown after the wait. --export writes the review pack with a Test checklist; optional --todo merges unbound/gated rows. A default serial/target fills missing cell bindings; per-cell cellRuntimeProfiles and cellTargetBindings remain overrides; a local multi-target campaign passes cellTargetBindings plus the shared localAdmission object. Confirm/Reject never auto-accept visual baselines — use relay run visual review <job>. If watch dies with fetch failed, tsx watch likely restarted :8787 and dropped in-memory jobs — do not recover-kill a live iOS runner, and do not edit core/server while a Plan is live.",
     behavior: "job-start-watch",
   },
 );

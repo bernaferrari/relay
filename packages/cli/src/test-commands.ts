@@ -265,7 +265,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
       examples: [
         "relay test run shop-web open-home --lane daily",
         "relay test run shop-android locale-tour --in language=hu,ro --lens visual --target current --revision current",
-        "relay combine export <batch-id>",
+        "relay plan export <batch-id>",
         "relay test run checkout smoke --target current --revision current",
         'relay test run shop-android chat --target current --revision current --input \'{"variables":{"chat_prompt":"Explain why sailboats need a keel."}}\'',
         "relay test run shop-ios settings-tour --in language=ja,pt --lens visual --target current --revision current",
