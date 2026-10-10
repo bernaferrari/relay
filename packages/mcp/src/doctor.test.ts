@@ -38,8 +38,14 @@ function fakeFetch(missing: readonly string[] = []): typeof fetch {
   };
 }
 
-test("doctor validates the default operator surface without exposing credentials", async () => {
+test("doctor defaults to the qa profile", async () => {
   const report = await runRelayMcpDoctor([], env, fakeFetch());
+  assert.equal(report.ok, true);
+  assert.equal(report.config.profile, "qa");
+});
+
+test("doctor validates the operator surface without exposing credentials", async () => {
+  const report = await runRelayMcpDoctor(["--profile", "operator"], env, fakeFetch());
 
   assert.equal(report.ok, true);
   assert.equal(report.config.profile, "operator");
@@ -89,7 +95,7 @@ test("doctor fails clearly when the server is missing a canonical Proof operatio
 
 test("doctor fails when the operator profile cannot cancel, save, or export", async () => {
   const report = await runRelayMcpDoctor(
-    [],
+    ["--profile", "operator"],
     env,
     fakeFetch(["job.cancel", "app-map.test.save", "run.walkthrough-pack.get"]),
   );

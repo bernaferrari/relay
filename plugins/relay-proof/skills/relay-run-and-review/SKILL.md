@@ -1,28 +1,30 @@
 ---
 name: relay-run-and-review
-description: Run a saved Relay Test, repeat selected data values, inspect a failed Run, or export retained evidence for review.
+description: Write a Relay Test from a description, run it and read the verdict, check a code change against an App's Tests, inspect a failure, or export evidence.
 ---
 
-# Run and review
+# Describe, run, read the verdict
 
-1. Read `relay://guides/run`; for a failure read `relay://guides/debug`, and
-   for sharing read `relay://guides/review`. Call `relay_panel` to choose an App,
-   then call it with that `appMapId` to find the exact saved Test. Read
-   `relay://app-maps/<appMapId>/tests/<testId>` for its steps. Use returned IDs
-   in `relay_run_test`; select the intended target through `relay_connect_target`.
-   A saved Test can run directly. The panel also returns text for tools-only hosts.
-2. Call `relay_run_test`. Keep the returned workflow ID and version. Inspect
-   through `relay_inspect_workflow` until the server reports completion or a
-   concrete blocker. A queued request is not a completed Run.
-3. For explicitly requested data values, use `relay_repeat_test` for one
-   representative pilot. Inspect its result before `relay_continue_repeat`;
-   continuation requires explicit confirmation and the latest version.
-4. Inspect a failed Run with `relay_inspect_failure`. Return the failed check,
-   expected versus observed state, target, and evidence. Propose a repair only
-   when requested; proposals remain reviewable and retain the original attempt.
-5. Export an existing Run through `relay_export_evidence`. Finish with the
-   Run ID, exact result, evidence references and any missing captures or review.
+1. Read `relay://guides/describe`; for a failure read `relay://guides/debug`.
+   Call `relay_health`, then `relay_panel` (with an `appMapId` for that App's
+   Tests) so you reuse an existing Test instead of writing a duplicate.
+2. New coverage: call `relay_create_test` with one sentence (or one step per
+   line) and the `url` or `app`. It saves the Test and returns the exact
+   `relay_run_test` call. Steps written from words need a model key.
+3. Call `relay_run_test`. It waits and returns one verdict: passed, failed,
+   blocked or cancelled, with the failing step's expected vs. saw and a
+   screenshot. Pass `targetId` from `relay_connect_target` when several
+   targets are ready. If it returns `running`, call `relay_get_verdict` later.
+   A risk report needs a deliberate repeat with transport `confirm: true`.
+4. After changing code, call `relay_check_change` with the App and, when known,
+   the changed `areas` or `testIds`. It runs the relevant ready Tests and
+   returns their verdicts. This is a quick signal, not a merge decision; gated
+   merge checks use the Proof flow (`relay-proof` skill, proof profile).
+5. For a failure, call `relay_inspect_failure` for evidence and repair options.
+   Propose a repair only when asked; the original attempt is kept.
+   Export a Run with `relay_export_evidence` for a reviewer.
+6. For explicitly requested data values, use `relay_repeat_test` for one pilot,
+   then `relay_continue_repeat` with explicit confirmation.
 
-Functional completion, captured screenshots, and human visual review are
-separate results. A human makes review decisions; agents summarize evidence.
-Keep interrupted or unknown outcomes inspectable and preserve target identity.
+Finish with the App/Test/Run IDs, the verdict, and the failing step if any.
+A human makes screenshot review decisions; agents summarize evidence.

@@ -1,38 +1,31 @@
 ---
 name: relay-setup
-description: Connect Relay for app testing, diagnose an unreachable service or incompatible tools, or capture the first screen without a model.
+description: Connect Relay for app testing, diagnose an unreachable service or incompatible tools, and get to a first verdict.
 ---
 
 # Connect Relay
 
-If the host exposes no Relay tools, follow the plugin README's connection
-setup using the installed connector executable with `--profile qa` and the
-intended service or workspace. Its `--help` works offline. For a manually
-configured connection, verify that same profile before using the QA tools below;
-the executable's no-flag operator default exposes different tool names.
+If the host exposes no Relay tools, follow the plugin README to configure the
+installed connector executable (`qa` is its default profile; the plugin passes
+`--profile qa` explicitly) with the intended service or workspace. Its
+`--help` works offline.
 
-1. Read `relay://guides/start` and `relay://guides/agents`. These guides ship
-   with the MCP connector and remain readable while the service is offline.
-2. Call `relay_health`. If the service is unavailable, run `relay-mcp doctor --profile qa`
-   in the host's configured environment and follow its failed check's next
-   action. With the matching `@relay/runtime` candidate installed, configure
-   an explicitly chosen absolute `--workspace` directory to attach or launch
-   its canonical local service. Use `--runtime-port` when the default is occupied.
-   An explicit `--server` or `RELAY_URL` keeps attachment to that endpoint.
-   Store the workspace outside plugin caches; browser engines and native
-   tools remain target prerequisites. Doctor is read-only and never launches.
-3. Call `relay_panel` to list Apps, then call it with the selected `appMapId`
-   to find that App's saved Tests and recent Runs. It returns read-only state
-   even when the host cannot render a panel. For detailed Test steps, read
-   `relay://app-maps/<appMapId>/tests/<testId>` using the returned exact IDs.
-4. Call `relay_connect_target`. Select a returned ready target explicitly when
-   several exist. Keep its identity throughout the task. Resolve unavailable
-   pairing, unlock, or control prerequisites before recording.
-5. Call `relay_observe_target` for that target. Completion is an actual
-   captured frame with its evidence reference, or the specific reported
-   missing prerequisite. A healthy connection alone is not a tested app.
+1. Read `relay://guides/start` and `relay://guides/agents`. They ship with the
+   connector and stay readable while the service is offline.
+2. Call `relay_health`. If the service is unavailable, run
+   `relay-mcp doctor --profile qa` in the host's environment and follow its
+   failed check's next action. With the matching `@relay/runtime` installed,
+   an explicit absolute `--workspace` attaches to or launches the local
+   service (`--runtime-port` when the default is taken). An explicit
+   `--server` or `RELAY_URL` keeps that endpoint. Doctor never launches.
+3. Call `relay_panel` to list Apps, Tests and recent Runs.
+4. Call `relay_connect_target`; pick a ready target explicitly when several
+   exist and keep its `targetId`.
+5. First verdict: `relay_create_test` with a sentence and the `url` or `app`,
+   then the returned `relay_run_test` call. Running steps written from words
+   needs a model key (`OPENROUTER_API_KEY` or one saved in Settings); without
+   one, record the Test instead (`relay-debug-and-record`).
 
-Credentials belong in the host process environment. Use its authorized
-organization/project and a distinct `agent:<name>` actor. Another actor's
-control or an active Run requires waiting or authorized cancellation.
-Installing this local connector does not establish web/mobile host support.
+Credentials belong in the host process environment. Use a distinct
+`agent:<name>` actor. Another actor's control or an active Run means waiting
+or authorized cancellation. A healthy connection alone is not a tested app.

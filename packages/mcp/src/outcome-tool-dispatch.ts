@@ -51,7 +51,7 @@ export async function dispatchRelayOutcomeTool(
       ...parsed,
       tracePacks: dependencies.replayLabTracePacks.parse(parsed.tracePacks),
     };
-  } else if (input.name === "relay_proof_analyze" || input.name === "relay_verify_change") {
+  } else if (input.name === "relay_proof_analyze") {
     parsed = {
       ...parsed,
       selection: dependencies.verifyChangeSelection.parse(parsed.selection),
@@ -268,7 +268,7 @@ export async function dispatchRelayOutcomeTool(
       tracePacks: parsed.tracePacks as Parameters<RelayOutcomeJobs["replayLab"]>[0]["tracePacks"],
     });
   }
-  if (input.name === "relay_proof_analyze" || input.name === "relay_verify_change") {
+  if (input.name === "relay_proof_analyze") {
     const selection = parsed.selection as
       | { kind: "runs"; runIds: string[] }
       | { kind: "tests"; appMapId: string; testIds: string[] }

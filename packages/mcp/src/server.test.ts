@@ -20,6 +20,10 @@ import {
 } from "./tools.js";
 import { relayQaOutcomeTools, relayQaOperatorTools } from "./qa-tools.js";
 import { relayOutcomeTools } from "./outcome-tools.js";
+import { relayEverydayToolsForProfile } from "./everyday-tools.js";
+
+const everydayNames = (profile: RelayMcpProfile) =>
+  relayEverydayToolsForProfile(profile).map(({ name }) => name);
 
 type RpcResponse = {
   id: number;
@@ -175,9 +179,12 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     const tools = listed.result?.tools as ListedTool[];
     assert.deepEqual(
       tools.map(({ name }) => name),
-      relayMcpTools.map(({ name }) => name),
+      [...everydayNames("full"), ...relayMcpTools.map(({ name }) => name)],
     );
-    assert.equal(new Set(tools.map(({ name }) => name)).size, relayMcpTools.length);
+    assert.equal(
+      new Set(tools.map(({ name }) => name)).size,
+      everydayNames("full").length + relayMcpTools.length,
+    );
     assert.equal(
       tools.some(({ name }) => name === "relay_health"),
       false,
@@ -340,10 +347,10 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       ({ name }) => name,
     );
     const nameSet = new Set<string>(names);
-    assert.deepEqual(
-      names,
-      relayOutcomeTools.map(({ name }) => name),
-    );
+    assert.deepEqual(names, [
+      ...everydayNames("outcome"),
+      ...relayOutcomeTools.map(({ name }) => name),
+    ]);
     assert.equal(nameSet.has("relay_lease_create"), false);
     assert.equal(nameSet.has("relay_app_map_test_run"), false);
     for (const name of [
@@ -359,7 +366,7 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       "relay_continue_repeat",
       "relay_inspect_proof",
       "relay_prove_change",
-      "relay_verify_change",
+      "relay_proof_analyze",
       "relay_export_evidence",
     ]) {
       assert.ok(nameSet.has(name), `default outcome profile is missing ${name}`);
@@ -1331,10 +1338,10 @@ test("profile selection exposes deterministic least-privilege tool sets", async 
       const names = ((listed.result?.tools as ListedTool[] | undefined) ?? []).map(
         ({ name }) => name,
       );
-      assert.deepEqual(
-        names,
-        relayMcpToolsForProfile(profile).map(({ name }) => name),
-      );
+      assert.deepEqual(names, [
+        ...everydayNames(profile),
+        ...relayMcpToolsForProfile(profile).map(({ name }) => name),
+      ]);
       assert.equal(new Set(names).size, names.length);
     } finally {
       await session.close();
@@ -2499,11 +2506,15 @@ test("QA preset exposes one existing recording/run path and accurate discovery",
     const tools = listed.result?.tools as ListedTool[];
     const names = tools.map(({ name }) => name);
     assert.deepEqual(names, [
+      "relay_create_test",
+      "relay_get_verdict",
+      "relay_check_change",
       "relay_panel",
-      ...[...relayQaOutcomeTools, ...relayQaOperatorTools, ...relayMcpToolsForProfile("qa")].map(
-        ({ name }) => name,
-      ),
+      ...[...relayQaOutcomeTools, ...relayQaOperatorTools].map(({ name }) => name),
     ]);
+    // One way to browse Apps/Tests (relay_panel); no raw App Map schemas.
+    assert.equal(names.includes("relay_app_map_get"), false);
+    assert.equal(names.includes("relay_app_map_test_edit"), false);
     assert.equal(new Set(names).size, names.length);
     for (const absent of [
       "relay_goal",

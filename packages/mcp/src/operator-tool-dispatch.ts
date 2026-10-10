@@ -511,7 +511,10 @@ export async function invokeRelayOperatorTool(input: {
       parsed.findings === true && batchId
         ? await invoker.invoke(
             "job.combine.analysis",
-            { batchId, ...(parsed.triage === "jev" ? { triage: "jev" } : {}) },
+            {
+              batchId,
+              ...(parsed.triage === "jev" || parsed.triage === "model" ? { triage: "jev" } : {}),
+            },
             { signal },
           )
         : undefined;
@@ -604,7 +607,7 @@ export async function invokeRelayOperatorTool(input: {
         "job.combine.analysis",
         {
           batchId: parsed.batchId,
-          ...(parsed.triage === "jev" ? { triage: "jev" } : {}),
+          ...(parsed.triage === "jev" || parsed.triage === "model" ? { triage: "jev" } : {}),
         },
         { signal },
       ),

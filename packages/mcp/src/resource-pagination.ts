@@ -304,8 +304,8 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
         : [];
     }
     if (!relativeName && !caption && typeof rec.captureId !== "string") return [];
-    // Parity with CLI/MCP run.get compact captureReview: SuperGrok* / fixture
-    // display names are not live identity (Bernardo Ferrari or authfx:… stay).
+    // Parity with CLI/MCP run.get compact captureReview: plan-tier / fixture
+    // display names are not live identity (real names or authfx:… stay).
     // Device-observed historical signed-out (iOS Lane) is also dropped.
     const rawConfiguration = object(rec.configuration);
     const { account: listedAccount, ...configurationRest } = rawConfiguration;

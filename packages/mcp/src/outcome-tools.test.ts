@@ -338,17 +338,6 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       },
     },
     {
-      name: "relay_verify_change",
-      argumentsValue: {
-        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
-      },
-      method: "verifyChange",
-      expected: {
-        kind: "verify-change",
-        selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
-      },
-    },
-    {
       name: "relay_export_evidence",
       argumentsValue: { runId: "run-1" },
       method: "exportEvidence",
@@ -786,8 +775,8 @@ test("default outcome tool copy keeps engine nouns behind advanced profiles", ()
   }
 });
 
-test("verify-change is a read-only fail-closed tool with no provider posting fields", () => {
-  const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_verify_change")!;
+test("proof analysis is a read-only fail-closed tool with no provider posting fields", () => {
+  const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_proof_analyze")!;
   assert.equal(descriptor.annotations.readOnlyHint, true);
   assert.equal(descriptor.requiresConfirmation, false);
   assert.equal(
@@ -837,7 +826,7 @@ test("verify-change returns the canonical bounded decision projection unchanged"
   } as unknown as RelayOutcomeJobs;
 
   const returned = await invokeRelayOutcomeToolWithJobs({
-    name: "relay_verify_change",
+    name: "relay_proof_analyze",
     argumentsValue: { selection: { kind: "runs", runIds: ["run-1"] } },
     confirmed: false,
     jobs,
@@ -905,7 +894,7 @@ test("verify-change bounds ids and supplied TracePacks before invoking the faça
   const invocations: Invocation[] = [];
   await assert.rejects(
     invokeRelayOutcomeToolWithJobs({
-      name: "relay_verify_change",
+      name: "relay_proof_analyze",
       argumentsValue: {
         selection: {
           kind: "runs",
@@ -924,7 +913,7 @@ test("verify-change bounds ids and supplied TracePacks before invoking the faça
   falselySmall.objects[0]!.bytes = 1;
   await assert.rejects(
     invokeRelayOutcomeToolWithJobs({
-      name: "relay_verify_change",
+      name: "relay_proof_analyze",
       argumentsValue: {
         selection: { kind: "trace-packs", tracePacks: [falselySmall] },
       },
@@ -943,7 +932,7 @@ test("verify-change bounds ids and supplied TracePacks before invoking the faça
   }));
   await assert.rejects(
     invokeRelayOutcomeToolWithJobs({
-      name: "relay_verify_change",
+      name: "relay_proof_analyze",
       argumentsValue: {
         selection: { kind: "trace-packs", tracePacks: [tooManyObjects] },
       },

@@ -21,7 +21,7 @@ export const relayMcpProfiles = [
 ] as const;
 
 export type RelayMcpProfile = (typeof relayMcpProfiles)[number];
-export const defaultRelayMcpProfile: RelayMcpProfile = "operator";
+export const defaultRelayMcpProfile: RelayMcpProfile = "qa";
 
 export const relayMcpExclusions = [
   {
@@ -87,11 +87,11 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "target.interact":
     " Happy path 2/3: after screenshot, send one interaction. Prefer identifier, then label, then text, then point. Use preview:true to mark without committing (returns a PNG image, not JSON). Huge SwiftUI cells are often not hittable — tap the label. If pixels do not change, it is a dead cell, not a new screen. A missing XCTest runner is not a reason to retry a point tap — Relay taps via pixels (CoreDevice HID). Recover only for identifier/label. A requested saved Test can start directly with app-map.test.run.",
   "target.ground":
-    " Resolve text (or InteractInput) to a tap without committing. Order: unique a11y label/id → Grok Menu/Private heuristics → optional OpenRouter vision. On miss, returns candidates — never relaunches the app.",
+    " Resolve text (or InteractInput) to a tap without committing. Order: unique a11y label/id → common menu heuristics → optional OpenRouter vision. On miss, returns candidates — never relaunches the app.",
   "target.do":
     " Ground then interact in one call. Prefer this for NL taps (Menu, Appearance). Requires exclusive lease.",
   "target.snapshot.capture":
-    " Default JSON is a digest (app, header, controls, nodeCount, fingerprint). Missing trees still return pixel identity (visualFingerprint/proposedRows/app/header when visual identity or last launch can name them). Pass visual:false to skip that one-shot PNG. Pass full:true for nodes. Pass laneId for a saved Lane overlay (signed-in grok-lab); snapshot grok-com without a Lane is the unsigned profile. Screenshot plus a point tap uses pixels (HID), not XCTest. Do not retry snapshot or the tap because the runner is down. Do not retry snapshot in a loop.",
+    " Default JSON is a digest (app, header, controls, nodeCount, fingerprint). Missing trees still return pixel identity (visualFingerprint/proposedRows/app/header when visual identity or last launch can name them). Pass visual:false to skip that one-shot PNG. Pass full:true for nodes. Pass laneId for a saved sign-in/browser; without it a browser snapshot is signed out. Screenshot plus a point tap uses pixels (HID), not XCTest. Do not retry snapshot or the tap because the runner is down. Do not retry snapshot in a loop.",
   "target.devices.list":
     " Omit phase to list iOS, Android, and browsers. phase is an optional android|ios filter, not a required platform.",
   "target.scroll-survey.capture":
@@ -123,7 +123,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "job.combine.start":
     " Run a saved Plan. Default is one cell. Pass executionMode all to run every selected world. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. cell or selectedCellIds names the worlds to queue. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never invent a Variable for screenshots.",
   "app-map.test.edit":
-    " Semantic edits include test.patch.requirementAction: capture-view | test-action. MCP can author the same dest-end contract as CLI. capture-view leftover-skip is only GQA-004 attach and GQA-040 Settings inventory; omitted dest-end stays test-action.",
+    " Semantic edits include test.patch.requirementAction: capture-view | test-action. MCP can author the same dest-end contract as CLI. capture-view may reuse the screen a previous Test left open; omitted dest-end stays test-action.",
   "app-map.test.run":
     " Run a requested saved Test directly on its selected target. Without `in`: runs one saved Test once (expectedRevision + target are required). Compiled wait-for/expect-screen check their authored condition within its timeout; inspect retained evidence on failure. With `in`: upserts a Combine for this Test × the selected worlds and runs one cell — pass executionMode:'all' to run every world instead; `cell` or `selectedCellIds` names which. Never invent a Variable for screenshots.",
   "app-map.screen.alias-observe":
@@ -597,9 +597,9 @@ const profileOperations: Record<
 
 function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): boolean {
   if (profile === "full") return true;
-  if (profile === "qa")
-    return tool.operationId === "app-map.list" || tool.operationId === "app-map.get";
-  if (profile === "outcome" || profile === "operator") return false;
+  // qa browses Apps/Tests through relay_panel and App/Test resources, not raw
+  // App Map schemas; outcome and operator expose only their friendly verbs.
+  if (profile === "qa" || profile === "outcome" || profile === "operator") return false;
   return profileOperations[profile].has(tool.operationId);
 }
 

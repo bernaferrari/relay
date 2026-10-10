@@ -12,30 +12,28 @@ export type RelayTaskGuide = {
 const guides: readonly RelayTaskGuide[] = [
   {
     topic: "start",
-    title: "Capture your first screen",
-    summary: "Get useful evidence before configuring a model.",
-    markdown: `Relay records a journey, repeats it, and keeps evidence you can review.
-Start with one screen on a connected device or an existing Browser.
+    title: "Write and run your first Test",
+    summary: "Describe what should work, run it, read the verdict.",
+    markdown: `Relay turns a sentence into a Test, runs it on a browser or device,
+and tells you whether it passed — with the failing step, what it expected,
+what it saw, and a screenshot.
 
-1. Open Relay desktop and choose your App and Device. If your phone is locked,
-   unlock it. Use Reconnect when Relay reports that control is unavailable.
-2. Open the app you want to test. Inspect its live screen before recording.
-3. Choose New Test, record a short action, and capture a named screenshot.
-4. Stop and save the Test. Run it once, then open the result and its screenshot.
-
-Recording, saved Test replay, screenshots, and human review require no model.
-Assisted exploration needs a configured provider only when you request it.
-For the executable record, check, save, and repeat sequence, read relay guide
-record (MCP: relay://guides/record). The first recording can create its App Map.
+1. Describe what should work, e.g. "Sign in and see the dashboard", with the
+   website address or the App. Relay writes Action and Check steps and saves
+   the Test (read relay guide describe; MCP: relay://guides/describe).
+2. Run it. The result is one verdict: passed, failed, blocked or cancelled.
+3. When a step must be exact, or must run without a model, record it (relay
+   guide record). Recorded steps, saved replay, screenshots and human review
+   need no model; steps written from words need a model key (OPENROUTER_API_KEY
+   or one saved in Settings).
 
 From a checkout, use ./bin/relay for the commands below. The MCP distribution
 is a connector to a Relay server; installing it does not install the desktop
-or native device prerequisites. For an agent's first recording or saved Test,
-configure relay-mcp --profile qa and the intended service or workspace. Check
-relay-mcp doctor --profile qa with those same connection options. Then call
-relay_health and relay_panel to find an App and its saved Tests. The panel
-returns text when the host cannot render it. Check the distribution README
-for installation and prerequisites.
+or native device prerequisites. For an agent, configure relay-mcp (qa is the
+default profile) with the intended service or workspace, and check it with
+relay-mcp doctor --profile qa. Then call relay_health, relay_create_test, and
+relay_run_test, which waits for the verdict. relay_panel lists existing Apps
+and Tests; it returns text when the host cannot render it.
 
 For an existing server, list its available devices, then replace <serial> with
 the device you chose and save its current screen. This captures evidence;
@@ -47,10 +45,54 @@ it does not assert that the app works.`,
     ],
   },
   {
+    topic: "describe",
+    title: "Write a Test from a description",
+    summary: "One sentence becomes saved Action and Check steps you can run.",
+    markdown: `Say what should work in plain English: one sentence, or one step per
+line. Give the website address for a web app, or the App's id or name when it
+already exists. Relay drafts Action steps (what to do) and Check steps (what
+must be true), finds or creates the App, and saves the Test.
+
+Run it right away. Actions are carried out by a model reading the screen, and
+Checks are judged against what Relay sees, so running needs a model key
+(OPENROUTER_API_KEY or one saved in Settings). Without a model, Relay splits
+your lines into steps but cannot run them until you record them.
+
+Read the verdict: passed, failed, blocked or cancelled, a one-line reason, and
+for a failed step what it expected, what it saw, and a screenshot. A failed
+Check is a finding about the app or the description — fix the code, or edit
+the step's words, then run again.
+
+A Test is also a small file you can keep in your repo and edit by hand:
+
+  name: Create an API key
+  url: https://shop.example/settings
+  steps:
+    - Open the API keys page
+    - Create a new API key
+    - check: The new key is listed
+
+Plain text is an Action, check: is a Check. Applying the file again with the
+same name (or id:) updates the Test in place and keeps any recorded step whose
+words did not change. Copy any Test as its file from the app's test menu.
+
+When a step must be exact, fast, or model-free, record it (relay guide record).
+Recording replaces guessing with the taps you made and the checks you added.
+
+MCP (qa): relay_create_test {goal, url | app} or {yaml} returns the Test and the exact
+relay_run_test call. relay_run_test waits for the verdict by default; pass
+wait:false to return at once and read it later with relay_get_verdict {runId}.
+After a code change, relay_check_change runs the App's relevant ready Tests and
+returns their verdicts. It is a quick signal; merge decisions use the gated
+Proof flow.`,
+    examples: [],
+  },
+  {
     topic: "record",
     title: "Record a reusable Test",
     summary: "Record actions, check the outcome, save, and repeat with evidence.",
-    markdown: `Record one short journey with an observable result. The mobile
+    markdown: `Recording makes a Test exact and model-free; to start from a sentence,
+read relay guide describe. Record one short journey with an observable result. The mobile
 example below starts on Home, opens Sidebar, then opens Settings. Replace the
 menu and Settings-only labels with unique controls observed on your own phone;
 these are selector examples, not a prebuilt Test or known screen identity.
@@ -120,10 +162,11 @@ relay_inspect_workflow with \`{"workflowId":"recording-workflow-id"}\` to inspec
 the replay result. Call relay_approve_recording with transport confirm: true
 only after the replay passed and \`approve\` is in \`allowedNextActions\`. For an
 unchanged recording, follow the allowed next action without an extra replay.
-Read the saved Test resource returned by relay_panel for the App, run it with
-relay_run_test, and inspect its workflow. In the result, pass
-\`workflow.workflowId\` to relay_inspect_workflow and \`execution.runId\` to
-relay_export_evidence. These IDs serve different calls. Follow the evidence
+Read the saved Test resource returned by relay_panel for the App, then run it
+with relay_run_test, which waits and returns its verdict with \`runId\` and
+\`workflow\`. Pass \`workflow.workflowId\` to relay_inspect_workflow and the
+\`runId\` to relay_get_verdict or relay_export_evidence. These IDs serve
+different calls. Follow the evidence
 references for handoff. Human review of an image remains a human decision. An
 uncertain mutation outcome requires inspection before more input.`,
     examples: [
@@ -276,9 +319,9 @@ navigation or switching devices. Do not reuse another device's coordinates.`,
     markdown: `A screenshot staying unchanged proves neither completion nor
 success. A stalled spinner can stay unchanged, and a finished video can move.
 
-Wait for a result control or state that identifies completion. For a new Grok
-reply, the Stop message control should disappear and a new Copy message control
-should become available. An old result already on screen is insufficient.
+Wait for a result control or state that identifies completion. For a new chat
+reply, the Stop control should disappear and a new Copy control should become
+available. An old result already on screen is insufficient.
 
 Recording can infer a bounded completion wait when it observes an unambiguous
 busy-to-ready transition in the same app. When that evidence is unavailable,
@@ -380,29 +423,30 @@ from labels or a screenshot when the app's navigation has not been recorded.`,
 CLI: relay guide <topic>. MCP: read relay://guides, then the listed guide URI.
 These documents ship with this version and can be read without Relay running.
 
-For a new MCP connection, configure relay-mcp --profile qa and the intended
-service or workspace. Run relay-mcp doctor --profile qa with the same connection
-options. Discover the tools in that configured profile. Existing operator or
-specialist connections keep their own contracts; use their exposed tools.
+For a new MCP connection, configure relay-mcp (qa is the default profile) and
+the intended service or workspace. Run relay-mcp doctor --profile qa with the
+same connection options. Specialist profiles keep their own tools.
 
-With QA, call relay_health and relay_panel to choose an App, then call the panel
-with its appMapId to find saved Tests. Read the returned Test's resource URI for
-its steps. Select the ready target through relay_connect_target, then run the
-exact saved Test with relay_run_test. Keep the returned workflow identity and
-inspect it through relay_inspect_workflow until completion or a concrete blocker.
-The panel returns text when the host cannot render it.
+Describe first. Call relay_health, then relay_panel to see existing Apps and
+Tests so you do not write a duplicate. To cover something new, call
+relay_create_test with a sentence and the url or app; it saves the Test and
+returns the exact relay_run_test call. relay_run_test waits and returns one
+verdict: passed or failed, the failing step's expected vs. saw, a screenshot.
+Use relay_connect_target first when several targets are ready, and pass its
+targetId. A wait that runs out returns status running; read it later with
+relay_get_verdict. On a failure, relay_inspect_failure adds evidence.
 
-When coverage is missing, read relay://guides/record for the complete action,
-check, stop, save, and repeat sequence. The first relay_record_test can create
-its App Map. Each following mutation uses workflowId and numeric
-expectedVersion from the latest returned workflow, subject to allowedNextActions.
-The configured tools describe their input contracts; read those schemas before
-acting. Use relay_connect_target with targetKind: device to select only phones;
-phase: android or ios further narrows that choice.
+After changing code, call relay_check_change with the App (and the changed
+areas or Test ids when you know them). It runs the relevant ready Tests and
+returns their verdicts — a quick signal for you, not a merge decision; gated,
+human-approved merge checks use the Proof flow in the proof profile.
 
-For a saved Test, run it directly on the selected App and target. For discovery,
-observe, preview the action, act, then inspect the fresh state. Keep actor and
-target identity consistent. Bound assisted exploration and preserve failures.
+Steps written from words need a model key. When a step must be exact or
+model-free, record it: read relay://guides/record for the action, check, stop,
+save, and repeat sequence. Each recording mutation uses workflowId and numeric
+expectedVersion from the latest returned workflow, subject to
+allowedNextActions. Use relay_connect_target with targetKind: device to select
+only phones; phase: android or ios further narrows that choice.
 
 Finish with the saved Test or Run identity, result, evidence, and concrete
 remaining blocker. Unit tests and accepted requests do not prove that the
