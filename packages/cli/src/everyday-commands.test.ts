@@ -8,7 +8,7 @@ import type { RunTestSnapshot } from "@relay/workflows";
 import { ciExitCode, ciTotals, runCiCommand } from "./ci-command.js";
 import { parseCli } from "./config.js";
 import { CliError, ExitCode, UsageError } from "./errors.js";
-import { formatListResult, formatVerdict, type Verdict } from "./everyday-format.js";
+import { ciMarkdown, formatListResult, formatVerdict, type Verdict } from "./everyday-format.js";
 import { runCli } from "./index.js";
 import type { OperationInvoker } from "./invoke.js";
 import { resolveOutcomeNames, verdictExitCode } from "./outcome-runner.js";
@@ -443,4 +443,21 @@ test("test files: apply a folder, show a Test as a file, and refuse a bad file b
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("relay ci writes a GitHub job summary with each failure's expected and saw", () => {
+  const failed = verdictFor("run-test-checkout");
+  const summary = ciMarkdown({
+    app: "Shop",
+    verdicts: [{ ...verdictFor("run-1"), status: "passed", summary: "Passed" }, failed],
+    skipped: [{ testId: "t", name: "Refunds", reason: "needs recording" }],
+    totals: { total: 3, passed: 1, failed: 1, blocked: 0, cancelled: 0, skipped: 1 },
+  });
+  assert.match(summary, /^### Relay · Shop/u);
+  assert.match(summary, /1 passed · 1 failed · 0 could not run · 1 skipped/u);
+  assert.match(summary, /\| ❌ \|/u);
+  assert.match(summary, /<details><summary>Checkout works/u);
+  assert.match(summary, /\*\*Expected:\*\* Total is \$20/u);
+  assert.match(summary, /\*\*Saw:\*\* Total is \$25/u);
+  assert.match(summary, /Skipped: Refunds \(needs recording\)/u);
 });

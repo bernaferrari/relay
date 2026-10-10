@@ -12,6 +12,7 @@ import { callerCwd } from "./caller-cwd.js";
 import { classifyError, ExitCode, UsageError } from "./errors.js";
 import {
   ciJunit,
+  ciMarkdown,
   formatCiReport,
   type CiSkipped,
   type CiTotals,
@@ -213,6 +214,15 @@ export async function runCiCommand(input: {
       resolve(cwd, options.junit),
       ciJunit({ app: appName(app), verdicts, skipped, totals }),
     );
+  }
+  // Inside GitHub Actions, the verdicts also land on the job's summary page.
+  const summaryPath = input.env.GITHUB_STEP_SUMMARY;
+  if (summaryPath) {
+    const { appendFile } = await import("node:fs/promises");
+    await appendFile(
+      summaryPath,
+      ciMarkdown({ app: appName(app), verdicts, skipped, totals }),
+    ).catch(() => undefined);
   }
   return {
     report,

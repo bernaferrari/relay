@@ -39,6 +39,8 @@ as skipped and do not fail the build.
 
 --output writes {totals, verdicts, skipped}; each verdict has status, summary,
 and every step's expected and saw. --junit writes JUnit XML for CI dashboards.
+In GitHub Actions the same table, with each failure's expected and saw, is
+added to the job summary automatically.
 Paths are relative to the directory you run relay from.
 
 Exit codes: 0 every Test passed, 1 at least one failed, 3 none failed but
