@@ -14,7 +14,7 @@ export const PRODUCT_PUBLIC_OBJECTS = Object.freeze([
   "Session",
   "Plan",
   "Environment",
-  "Checkpoint",
+  "Step",
   "Report",
   "Proof",
   "Recording",

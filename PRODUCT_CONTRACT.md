@@ -69,7 +69,6 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 /devices
 /devices/:deviceId
 /goals
-/prototype/workbench
 /debug
 /settings/general
 /settings/evidence
