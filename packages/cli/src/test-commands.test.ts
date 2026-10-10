@@ -4,8 +4,11 @@ import { graphTestCommandDescriptors, graphTestListPath } from "./test-commands.
 import { renderHelp } from "./help.js";
 
 test("first-read help leads from discovery to explicit offline compilation", () => {
-  const root = renderHelp();
-  assert.ok(root.indexOf("relay test list <appId>") < root.indexOf("Run a saved Test"));
+  const everyday = renderHelp();
+  assert.ok(everyday.indexOf("relay tests [<app>]") > everyday.indexOf("relay run <test>"));
+  assert.match(everyday, /whether each is ready/);
+  const root = renderHelp("advanced");
+  assert.ok(root.indexOf("relay test list <appId>") < root.indexOf("relay test compile"));
   assert.match(root, /discovery\.status/);
   assert.match(root, /preflight\.summary\.blockers/);
   assert.match(root, /map export <appId> --json/);
@@ -46,7 +49,7 @@ test("schedule help explains native Test prerequisites and the create payload", 
   assert.match(schedule, /Selected input Data set rows freeze approved Project values/u);
   assert.match(schedule, /changing schedule seed does not rotate its prompts/u);
   assert.match(schedule, /not a testId or per-schedule runtime variables/u);
-  assert.match(schedule, /"combineId":"grok-android-chat-prompts"/u);
+  assert.match(schedule, /"combineId":"chat-prompts"/u);
   assert.match(schedule, /"intervalMinutes":30/u);
   assert.match(schedule, /"enabled":false/u);
 });

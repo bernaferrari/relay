@@ -300,7 +300,7 @@ test("device and Combine help name the Test-run apply path and evidence folder",
   const combine = renderHelp("combine");
   assert.match(combine, /portable review folder/u);
   assert.match(combine, /Test checklist/u);
-  assert.match(combine, /--lane grok-lab/u);
+  assert.match(combine, /--lane lab/u);
 });
 
 test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => {
@@ -860,23 +860,38 @@ test("run evidence CLI resource exposes packet provenance through the canonical 
 
 test("root help documents exit codes, --confirm, and the machine envelopes", () => {
   const help = renderHelp();
-  for (const code of ["0", "2", "3", "4", "5", "6", "7", "8", "9"]) {
+  for (const code of ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]) {
     assert.ok(new RegExp(`^  ${code}  `, "m").test(help), `exit code ${code} documented`);
   }
-  assert.match(help, /5 {2}validation \(client-side input problem/u);
-  assert.match(help, /9 {2}operation failed/u);
+  assert.match(help, /1 {2}a Test failed/u);
+  assert.match(help, /3 {2}could not run/u);
+  assert.match(help, /11 not found/u);
   assert.match(help, /--confirm/u);
   assert.match(help, /-h, --help/u);
   assert.match(help, /"type":"result","ok":true/u);
   assert.match(help, /"type":"error","ok":false/u);
   assert.match(help, /relay doctor/u);
-  assert.match(
-    help,
-    /relay goal run --url http:\/\/127\.0\.0\.1:3000 --goal "Open settings" --confirm/u,
-  );
-  assert.match(help, /Inspect a Run\s+relay inspect <runOrWorkflowId>/u);
-  assert.match(help, /10 verification incomplete/u);
-  assert.match(help, /screenshots are awaiting review/u);
+  assert.match(help, /relay ci \[<app>\]/u);
+  assert.match(help, /relay new "<what should work>"/u);
+  assert.match(help, /relay inspect <runId>/u);
+  assert.match(help, /10 the Test passed but screenshots are awaiting review/u);
+  assert.match(help, /relay\.json/u);
+  // Everyday help stays free of internal vocabulary and product examples.
+  for (const jargon of [
+    /\bLane\b/u,
+    /\bCombine\b/u,
+    /\bcell\b/u,
+    /\blease\b/iu,
+    /grok/iu,
+    /replay-lab/u,
+  ]) {
+    assert.doesNotMatch(help, jargon);
+  }
+  assert.doesNotMatch(help, /operation invoke/u);
+  assert.doesNotMatch(help, /verify-change/u);
+  const advanced = renderHelp("advanced");
+  assert.match(advanced, /Proof commands:/u);
+  assert.doesNotMatch(advanced, /replay-lab|operation invoke/u);
 });
 
 test("browser commands reuse canonical navigation, capture, and semantic input", () => {

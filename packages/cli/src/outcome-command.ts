@@ -202,7 +202,8 @@ function parseRecordingEdit(args: readonly string[]): AuthoringRecordingEdit {
 export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliIntent | undefined {
   const [verb, ...args] = tokens.positionals;
   const targetId = tokens.values.get("--device");
-  const selectedMap = tokens.values.get("--map");
+  // --app is the everyday spelling; --map stays for scripts.
+  const selectedMap = tokens.values.get("--map") ?? tokens.values.get("--app");
   if (
     verb !== "repeat" &&
     verb !== "goal" &&

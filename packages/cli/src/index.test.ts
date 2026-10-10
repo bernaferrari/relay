@@ -216,7 +216,7 @@ test("Replay Lab rejects invalid explicit files without starting Relay or invoki
   assert.equal(code, ExitCode.validation);
   assert.equal(ensured, false);
   assert.equal(invoked, false);
-  assert.match(io.stderr(), /not a regular local file/u);
+  assert.match(io.stdout(), /not a regular local file/u);
 });
 
 test("relay observe emits durable references without transient presentation bytes", async () => {
@@ -1451,6 +1451,10 @@ test("root and family help are useful without creating a client", async () => {
   const cases = [
     {
       argv: ["--help"],
+      matches: [/Everyday:/, /relay ci \[<app>\]/, /relay devices/, /--out <dir>/],
+    },
+    {
+      argv: ["help", "advanced"],
       matches: [
         /Start with App, Device, Test, Checkpoint, Run, and Report/,
         /Topology\s+map, screen, connect, flow/,
@@ -1460,6 +1464,10 @@ test("root and family help are useful without creating a client", async () => {
         /--timeout <ms>.*default 180s/,
         /--out <dir>/,
       ],
+    },
+    {
+      argv: ["ci", "--help"],
+      matches: [/--junit junit\.xml/, /0 every Test passed, 1 at least one failed, 3/],
     },
     {
       argv: ["session", "--help"],
@@ -3507,7 +3515,7 @@ test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", as
     assert.equal(records.at(-1).error.exitCode, ExitCode.cancellation);
     assert.doesNotMatch(io.stdout(), /relay:/);
     assert.equal(hasTerminalControl(io.stdout()), false);
-    assert.match(io.stderr(), /Operation cancelled/);
+    assert.equal(io.stderr(), "");
   }
 
   assert.equal(process.listenerCount("SIGINT"), listenersBefore.sigint);
@@ -3534,7 +3542,7 @@ test("JSON event follow is a usage error before creating a client", async () => 
   assert.match(JSON.parse(records[0]!).error.message, /use --ndjson/);
 });
 
-test("JSON failures emit exactly one terminal object and diagnostics only to stderr", async () => {
+test("JSON failures emit exactly one terminal object on stdout and nothing on stderr", async () => {
   const io = capture();
   const secret = "must-not-leak";
   const code = await runCli(
@@ -3575,8 +3583,8 @@ test("JSON failures emit exactly one terminal object and diagnostics only to std
       exitCode: ExitCode.connection,
     },
   });
-  assert.match(io.stderr(), /fetch failed/);
-  assert.match(io.stderr(), /tsx watch/);
+  assert.match(io.stdout(), /fetch failed/);
+  assert.match(io.stdout(), /tsx watch/);
   assert.doesNotMatch(io.stdout(), /Invoking|relay:/);
   assert.doesNotMatch(`${io.stdout()}${io.stderr()}`, new RegExp(secret));
 });
@@ -3604,7 +3612,7 @@ test("structured operation failures use a non-zero exit instead of a false succe
       details: { ok: false, error: "the system Copy action did not appear", logs: [] },
     },
   });
-  assert.match(io.stderr(), /the system Copy action did not appear/);
+  assert.match(io.stdout(), /the system Copy action did not appear/);
 });
 
 test("device locale fails loudly when the app keeps another language", async () => {
@@ -3630,7 +3638,7 @@ test("device locale fails loudly when the app keeps another language", async () 
   };
   assert.match(body.error?.message ?? "", /did not take/u);
   assert.equal(body.error?.details?.code, "APP_LOCALE_DID_NOT_TAKE");
-  assert.match(io.stderr(), /did not take/u);
+  assert.match(io.stdout(), /did not take/u);
 });
 
 test("structured recovery is machine-readable and useful in the human CLI", async () => {
@@ -3661,8 +3669,8 @@ test("structured recovery is machine-readable and useful in the human CLI", asyn
 
   assert.equal(code, ExitCode.conflict);
   assert.deepEqual(JSON.parse(io.stdout()).error.details, details);
-  assert.match(io.stderr(), /Recovery: Create a 15-minute exclusive lease/u);
-  assert.match(io.stderr(), /Try: relay lease create ipad-1 --actor agent:mapper/u);
+  assert.doesNotMatch(io.stderr(), /relay:|Recovery:/u, "JSON errors are not repeated on stderr");
+  assert.match(io.stdout(), /Create a 15-minute exclusive lease/u);
 });
 
 test("failed watched jobs use a non-zero exit", async () => {

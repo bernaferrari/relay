@@ -78,11 +78,30 @@ Relay includes a [plugin with agent skills](./plugins/relay-proof/README.md), an
 the result, and look at the Map, the same way you do in the app.
 
 ```bash
-./bin/relay device list --json
-./bin/relay run <test-id> --map <app-id> --device <serial> --json
-./bin/relay export <run-id> --out ./review --json
+./bin/relay new "Add a shirt to the cart and check the total" --url https://shop.example.com
+./bin/relay tests shop.example.com           # the app's Tests and whether each is ready
+./bin/relay run "Cart total" --app shop.example.com --device browser --out ./evidence
+./bin/relay ci shop.example.com --output result.json --junit junit.xml
 ./bin/relay guide
 ```
+
+Apps, Tests, and devices take the names you see (or ids; devices also take `ios`, `android`,
+`browser`). A `relay.json` such as `{"app": "Shop", "device": "ios"}` in your project sets the
+defaults. Add `--json` for machine output; `relay run` and `relay ci` include each step's
+expected and saw. `relay --help` lists everything.
+
+| Exit code | Meaning                                                                        |
+| --------- | ------------------------------------------------------------------------------ |
+| `0`       | passed                                                                         |
+| `1`       | a Test failed: the product did not do what the Test expects                    |
+| `2`       | usage: bad arguments or unknown command                                        |
+| `3`       | could not run: blocked (device, sign-in, harness), no ready Test, or no server |
+| `7`       | cancelled                                                                      |
+| `10`      | passed, but screenshots are awaiting review                                    |
+| `11`      | not found: no App, Test, Run, or device with that name                         |
+
+Other codes (4 auth, 5 validation, 6 device in use, 8 server error, 9 another command failed)
+are listed in `relay --help`.
 
 Guides are bundled with the code (`./bin/relay guide`, `relay-mcp guide`, or `relay://guides`)
 and need no server, model, or credentials.

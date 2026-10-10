@@ -202,7 +202,7 @@ test("Plan preflight keeps canonical device/profile input and blockers without s
 });
 
 test("everyday and Plan help show the same required identifiers and read-only discovery", async () => {
-  const root = await command(["--help"]);
+  const root = await command(["help", "advanced"]);
   const plan = await command(["plan", "--help"]);
   for (const help of [root, plan]) {
     assert.equal(help.code, ExitCode.success);

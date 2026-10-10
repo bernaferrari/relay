@@ -26,7 +26,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        `relay variable save grok-android questions --input '${JSON.stringify({
+        `relay variable save shop-android questions --input '${JSON.stringify({
           expectedRevision: 4,
           variable: {
             name: "Chat prompts",
@@ -53,12 +53,12 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
             ],
           },
         })}'`,
-        `relay variable save grok-android language --input '${JSON.stringify({
+        `relay variable save shop-android language --input '${JSON.stringify({
           expectedRevision: 4,
           variable: {
             name: "Language",
             kind: "language",
-            apply: { kind: "appLocale", app: "ai.x.grok" },
+            apply: { kind: "appLocale", app: "com.example.shop" },
             options: [
               { id: "en", label: "English" },
               { id: "ja", label: "日本語" },
@@ -85,7 +85,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
           name: "targetProfileId",
           type: "string",
           description:
-            "Saved evidence profile, or ios/android to follow a linked grok-ios / grok-android companion",
+            "Saved evidence profile, or ios/android to follow a linked iOS or Android companion Test",
         },
         {
           name: "profileTargets",
@@ -95,10 +95,10 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         },
       ],
       examples: [
-        "relay combine preflight grok-android language-x-settings",
-        'relay combine preflight grok-android language-x-settings --input \'{"serial":"DEVICE"}\'',
-        'relay combine preflight grok-web grok-web-daily --input \'{"browserTargetId":"grok-com","targetKind":"browser"}\'',
-        'relay combine preflight grok-web grok-web-daily --input \'{"browserTargetId":"grok-com","targetProfileId":"android"}\'',
+        "relay combine preflight shop-android language-x-settings",
+        'relay combine preflight shop-android language-x-settings --input \'{"serial":"DEVICE"}\'',
+        'relay combine preflight shop-web daily-checks --input \'{"browserTargetId":"shop-browser","targetKind":"browser"}\'',
+        'relay combine preflight shop-web daily-checks --input \'{"browserTargetId":"shop-browser","targetProfileId":"android"}\'',
       ],
     }),
     planPreflightCommandPath,
