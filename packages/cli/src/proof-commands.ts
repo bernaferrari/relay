@@ -270,24 +270,6 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
       examples: ["relay prove <proof-id> --json", "relay prove <proof-id> --wait --json"],
       note: "One server-owned operation selects, runs, resumes, and records the required cases. Reopening Relay or disconnecting this CLI does not lose execution progress.",
     }),
-    path("proof run", ["proofId"], undefined, {
-      summary: "Run or resume one approved Proof",
-      argumentHelp: [{ name: "proofId", type: "string", description: "Proof identifier" }],
-      inputHelp: [
-        {
-          name: "expectedVersion",
-          type: "positive integer",
-          description: "Optional current Proof version for optimistic concurrency",
-        },
-        {
-          name: "wait",
-          type: "boolean",
-          description: "Wait for the coordinator to reach a terminal outcome",
-        },
-      ],
-      examples: ["relay proof run <proof-id> --wait --json"],
-      note: "Alias of relay prove. The server owns the durable execution loop.",
-    }),
   ),
   mapped(
     "proof.run.confirm",

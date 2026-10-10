@@ -39,13 +39,11 @@ export type EverydayDependencies = {
 
 type Verb = "version" | "apps" | "tests" | "runs" | "devices" | "new" | "ci" | "apply" | "show";
 
-/** Positionals after the verb word(s), e.g. `test new <goal>` → [<goal>]. */
+/** Positionals after the verb word, e.g. `new <goal>` → [<goal>]. */
 function everydayVerb(tokens: ParsedTokens): { verb: Verb; args: string[] } | undefined {
-  const [first, second, ...rest] = tokens.positionals;
+  const [first] = tokens.positionals;
   if (!first) return tokens.switches.has("--version") ? { verb: "version", args: [] } : undefined;
   if (first === "version") return { verb: "version", args: tokens.positionals.slice(1) };
-  if (first === "app" && second === "list") return { verb: "apps", args: rest };
-  if (first === "test" && second === "new") return { verb: "new", args: rest };
   if (["apps", "tests", "runs", "devices", "new", "ci", "apply", "show"].includes(first)) {
     return { verb: first as Verb, args: tokens.positionals.slice(1) };
   }

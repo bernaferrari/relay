@@ -5,7 +5,8 @@ import type { CliOperationDescriptor } from "./command-descriptors.js";
 export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = [
   {
     operationId: "run.list",
-    paths: [{ command: "run list", summary: "List recent runs (everyday: relay runs)" }],
+    exclusion: "internal",
+    reason: "relay runs lists recent runs through it.",
   },
   {
     operationId: "app-map.observed",
@@ -46,24 +47,8 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
   },
   {
     operationId: "test.create-from-goal",
-    paths: [
-      {
-        command: "test new",
-        arguments: ["goal"],
-        summary: "Describe what should work in plain English; Relay writes and saves the Test",
-        argumentHelp: [
-          { name: "goal", type: "string", description: "What should work, or one step per line" },
-        ],
-        inputHelp: [
-          { name: "url", type: "string", description: "Website the Test opens first" },
-          { name: "app", type: "string", description: "Existing app id or name" },
-        ],
-        examples: [
-          'relay new "Add a shirt to the cart and check the total" --url https://shop.example.com',
-        ],
-        note: 'Everyday spelling: relay new "<goal>" [--url <website>] [--app <name>].',
-      },
-    ],
+    exclusion: "internal",
+    reason: 'relay new "<what should work>" writes and saves a Test through it.',
   },
   {
     operationId: "run.get",

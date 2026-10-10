@@ -4,21 +4,20 @@ import {
   type MappedOperationDescriptor,
 } from "./command-descriptors.js";
 
-/** Device discovery, observation, recovery, and direct-control commands. */
+/** Device discovery, observation, recovery, and direct-control commands.
+ * Device control has one spelling (`relay device …`); `target` keeps only
+ * target records (list, create, delete, preflight, open). */
 export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped("target.actions.list", path("action list")),
   mapped(
     "target.devices.list",
-    path("target device list"),
-    path("target devices"),
     path("device list", [], undefined, {
       summary: "List connected devices",
-      examples: ["relay device list", "relay target device list --json"],
+      examples: ["relay device list", "relay device list --json"],
     }),
   ),
   mapped(
     "target.avds.list",
-    path("target avd list"),
     path("device avd list", [], undefined, {
       summary: "List configured Android emulators (including stopped AVDs)",
       examples: ["relay device avd list --json"],
@@ -27,7 +26,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.health.get",
-    path("target health", ["serial"]),
     path("device health", ["serial"], undefined, {
       summary: "Read bounded target health without taking control",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -37,7 +35,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.input.receipt.get",
-    path("target input receipt", ["serial"]),
     path("device input-receipt", ["serial"], undefined, {
       summary: "Read a durable reconciliation receipt without sending input",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -46,7 +43,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.input.reconcile",
-    path("target input reconcile", ["serial", "mutationId", "outcome"]),
     path("device reconcile-input", ["serial", "mutationId", "outcome"], undefined, {
       summary: "Review one uncertain device input against a fresh observation",
       argumentHelp: [
@@ -145,7 +141,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.boot",
-    path("target boot", ["serial"]),
     path("device boot", ["serial"], undefined, {
       summary: "Boot a device",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -153,7 +148,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.avd.boot",
-    path("target avd boot", ["avdName"]),
     path("device avd boot", ["avdName"], undefined, {
       summary: "Boot exactly one named Android emulator",
       argumentHelp: [{ name: "avdName", type: "string", description: "Exact configured AVD name" }],
@@ -167,7 +161,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.authorize",
-    path("target authorize", ["serial"]),
     path("device authorize", ["serial"], undefined, {
       summary: "Authorize a device for control",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -175,8 +168,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.snapshot.capture",
-    path("target observe", ["serial"]),
-    path("target snapshot", ["serial"]),
     path("browser snapshot", ["serial"], { visual: true }),
     path(
       "device observe",
@@ -250,8 +241,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.screenshot.capture",
-    path("target screenshot", ["serial"], undefined, { behavior: "screenshot" }),
-    path("browser screenshot", ["serial"], undefined, { behavior: "screenshot" }),
     path("device screenshot", ["serial"], undefined, {
       summary: "Capture the current screen as PNG",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -266,7 +255,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.scroll-survey.capture",
-    path("target survey", ["serial"]),
     path("device survey", ["serial"], undefined, {
       summary: "Capture a bounded scrollable page with original viewport evidence",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -303,8 +291,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.app.launch",
-    path("target app launch", ["serial", "app"]),
-    path("browser navigate", ["serial", "app"]),
     path("device launch", ["serial", "app"], undefined, {
       summary: "Launch an app and make it the active device session",
       argumentHelp: [
@@ -327,7 +313,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
 
   mapped(
     "target.app.locales",
-    path("target app locales", ["serial", "package"]),
     path("device app-locales", ["serial", "package"], undefined, {
       summary: "List the locales declared by an installed Android app",
       argumentHelp: [
@@ -340,7 +325,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.app.locale.set",
-    path("target locale", ["serial", "package", "locale"]),
     path("device locale", ["serial", "package", "locale"], undefined, {
       summary: "Set an Android app's per-app locale and verify it took",
       argumentHelp: [
@@ -357,7 +341,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.recover",
-    path("target recover", ["serial"]),
     path("device recover", ["serial"], undefined, {
       summary: "Verify and, only when necessary, repair live device control",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -387,38 +370,31 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.ui.describe",
-    path("target ui", ["serial"], undefined, {
-      summary: "Describe app/sheet/keyboard/bounds for the current target",
-      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
-      examples: ["relay target ui 00008110"],
-    }),
     path("device ui", ["serial"], undefined, {
       summary: "Describe app/sheet/keyboard/bounds for the current target",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      examples: ["relay device ui 00008110"],
     }),
   ),
   mapped(
     "target.ui.back",
-    path("target back", ["serial"], undefined, {
+    path("device back", ["serial"], undefined, {
       summary: "Sheet-aware back (Back/parent title before Close)",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
-      examples: ['relay target back 00008110 --input \'{"parentTitles":["Settings"]}\''],
+      examples: ['relay device back 00008110 --input \'{"parentTitles":["Settings"]}\''],
       note: "Requires an exclusive lease owned by the same --actor.",
     }),
-    path("device back", ["serial"]),
   ),
   mapped(
     "target.ui.scrollCollect",
-    path("target scroll-collect", ["serial"], undefined, {
+    path("device scroll-collect", ["serial"], undefined, {
       summary: "Scroll a list and collect interactive controls without overscroll-dismiss",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
       note: "Requires an exclusive lease owned by the same --actor.",
     }),
-    path("device scroll-collect", ["serial"]),
   ),
   mapped(
     "target.interact",
-    path("target interact", ["serial"]),
     path("browser click", ["serial", "label"], { kind: "label" }),
     path("device interact", ["serial"], undefined, {
       summary: "Perform a semantic device interaction",
@@ -450,7 +426,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.ground",
-    path("target ground", ["serial"]),
     path("device ground", ["serial"], undefined, {
       summary: "Resolve text or structured target to an InteractInput without tapping",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -471,7 +446,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.do",
-    path("target do", ["serial", "target"]),
     path("device do", ["serial", "target"], undefined, {
       summary: "Ground a text target then tap it",
       argumentHelp: [
@@ -491,7 +465,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.touch",
-    path("target touch", ["serial"]),
     path("device touch", ["serial"], undefined, {
       summary: "Send a low-level touch event",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -510,7 +483,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.key",
-    path("target key", ["serial"]),
     path("device key", ["serial"], undefined, {
       summary: "Send a device key",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -529,7 +501,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.scroll",
-    path("target scroll", ["serial"]),
     path("device scroll", ["serial"], undefined, {
       summary: "Scroll the current device screen",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -544,7 +515,6 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   ),
   mapped(
     "target.video.start",
-    path("target video", ["serial"]),
     path("device video", ["serial"], undefined, {
       summary: "Record device video",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],

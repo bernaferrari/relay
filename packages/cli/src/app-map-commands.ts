@@ -23,7 +23,6 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
       examples: ["relay map get checkout"],
     }),
     path("screen list", ["appMapId"]),
-    path("connection list", ["appMapId"]),
     path("connect list", ["appMapId"], undefined, {
       summary:
         "List the saved connections between an app's screens (not devices; see relay devices)",
@@ -602,11 +601,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
       ],
     }),
   ),
-  mapped(
-    "app-map.connection.update",
-    path("connect update", ["appMapId", "connectionId"]),
-    path("connection update", ["appMapId", "connectionId"]),
-  ),
+  mapped("app-map.connection.update", path("connect update", ["appMapId", "connectionId"])),
   mapped("app-map.connection.remove", path("connect remove", ["appMapId", "connectionId"])),
   mapped(
     "app-map.connection.run",

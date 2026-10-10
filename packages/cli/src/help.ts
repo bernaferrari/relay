@@ -86,9 +86,6 @@ function familyNames(): Set<string> {
     "db",
     "report",
     "prove",
-    // Kept so `relay verify-change --help` remains a useful migration aid;
-    // it is intentionally absent from the ordinary command groups below.
-    "verify-change",
   ]);
 }
 
@@ -105,6 +102,7 @@ function renderRootHelp(): string {
 Everyday:
   relay new "<what should work>" --url <website>   Write and save a Test from a sentence
   relay apply <test.yaml | folder>                 Save test files (name, url, steps)
+  relay show "<test>"                              Print a Test as its file
   relay run <test> [--app <name>] [--device ios]   Run one Test and show each step's result
   relay ci [<app>] --output result.json            Run every ready Test (for CI)
   relay apps                                       Your apps
@@ -116,7 +114,6 @@ Everyday:
 Also:
   relay record "<title>" [--app <name>] --confirm  Record a Test by using the app
   relay connect [device] | relay observe [device]  Open a device and look at it
-  relay show "<test>"                              Print a Test as its file
   relay inspect <runId>                            What happened in a run
   relay review [--app <name>]                      Review screenshots that changed
   relay export <runId> --out ./review              Save a run's evidence
@@ -173,11 +170,11 @@ function renderAdvancedHelp(): string {
     "plan findings",
     "plan capture review",
     "plan capture review apply",
-    "proposal create",
-    "proposal record",
+    "session create",
+    "session start",
     "session replay",
-    "proposal accept",
-    "run watch",
+    "session commit",
+    "job watch",
     "activity follow",
     "proof list",
   ];
@@ -219,11 +216,11 @@ Full command reference:
     [--strategy <cartesian|zip|pairwise>] [--pilot <representative|first|dimension=value,...>]
     [--resume <untouched|failed|all>] [--map <id>] [--device <id>] [--confirm]
   relay continue-repeat <workflowId> <expectedVersion> --confirm
-  relay inspect <workflowId|legacyV1Ref> | relay inspect-workflow <workflowId>
+  relay inspect <runId|workflowId|legacyV1Ref>
   relay cancel-run <workflowId> <expectedVersion> --confirm
   relay inspect-failure <runId>
   relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
-  relay export <runId> [--out <dir>] | relay export-evidence <runId>
+  relay export <runId> [--out <dir>]
   relay doctor
   relay prove --base <ref> [--config-file <path>] [--confirm]
   relay prove <proof-id> [--wait | --no-wait]
@@ -246,9 +243,8 @@ Goal exploration options:
   --auth-fixture <reference>     Bind one existing managed browser fixture (single worker only)
 
 Outcome commands:
-  connect, observe, explore, goal, record, edit-recording, run, repeat, continue-repeat, inspect-workflow, cancel-run,
-  inspect-failure, propose-repair,
-  export-evidence, doctor
+  connect, observe, explore, goal, record, edit-recording, run, repeat, continue-repeat, inspect,
+  cancel-run, inspect-failure, propose-repair, export, doctor
 
 These resolve the sole connected Device and current Test workspace automatically. Use --device, or
 the advanced --map option, only when selection is ambiguous. The first Record creates its backing
@@ -324,10 +320,10 @@ ${globalOptions}`;
     return `Relay browser commands
 
   relay browser open <target-id>
-  relay browser navigate <target-id> <url>
+  relay device launch <target-id> <url>
   relay browser snapshot <target-id> --json
   relay browser click <target-id> <accessible-name>
-  relay browser screenshot <target-id> --file <image.png>
+  relay device screenshot <target-id> --file <image.png>
   relay browser capture-plan <map-id> <test-id> --input-file <plan.json>
 
 Capture plans contain name, expectedRevision, language (observed options and
@@ -412,36 +408,6 @@ uses prove.
 ${globalOptions}
 `;
   }
-  if (family === "verify-change") {
-    return `Relay verify-change compatibility commands (deprecated)
-
-Usage:
-  relay verify-change --base <ref> [--config-file <path>] [--confirm]
-  relay verify-change run <runId...>
-  relay verify-change test <appMapId> <testId...>
-  relay verify-change revision <gitSha>
-
-The --base form reads the reviewed .relay/change-proof.json (or --config-file),
-resolves exact local Git base/HEAD SHAs and changed files, compiles an explained
-Verification Plan, and creates one durable Proof only with --confirm. For a
-complete executable plan, --confirm also requests human approval, runs the
-deterministic local pilot, records its persisted Run, and expands required cases
-sequentially. The server derives the terminal Proof decision from Run evidence;
-provider-session targets fail closed.
-
-Options for the --base form:
-  --base <ref>                     Exact local Git base ref (required)
-  --config-file <path>             Reviewed JSON config (default .relay/change-proof.json)
-  --config <path>                  Alias for --config-file
-  --confirm                        Authorize Proof creation and its live local lifecycle
-
-Use relay prove for live Change Proofs, or relay proof analyze for offline
-analysis. This compatibility spelling emits a deprecation notice.
-
-${globalOptions}
-`;
-  }
-
   const paths = friendlyPaths().filter(
     ({ descriptor }) => descriptor.command.split(" ")[0] === family,
   );
