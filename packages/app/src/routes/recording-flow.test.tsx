@@ -39,7 +39,6 @@ const emptyBrowserSpaces = {
 } as unknown as BrowserSpacesProductService;
 const emptyAppResources = {
   createApp: async (name: string) => ({ id: name, name }),
-  listVersions: async () => [],
   listBrowserAccounts: async () => [],
   listBrowserTargets: async () => [],
 } satisfies AppResourcesProductService;

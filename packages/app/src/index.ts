@@ -3,11 +3,8 @@ export { createRelayQueryClient } from "./data/query-client";
 export {
   createAppResourcesProductService,
   type AppResourcesProductService,
-  type AppVersionProductService,
   type BrowserAccountProductService,
   type OperationalAppResourcesProductService,
-  type ProductAppVersion,
-  type ProductAppVersionInput,
   type ProductBrowserAccount,
   type ProductBrowserAccountInput,
 } from "./data/app-resources-product-service";

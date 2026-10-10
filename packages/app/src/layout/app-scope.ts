@@ -146,7 +146,6 @@ function isWorkspaceRoute(pathname: string): boolean {
     pathname === "/devices" ||
     pathname.startsWith("/devices/") ||
     pathname === "/accounts" ||
-    pathname === "/versions" ||
     pathname === "/environments" ||
     pathname.startsWith("/environments/") ||
     pathname.startsWith("/settings/")
@@ -159,7 +158,7 @@ export function appContextDestination(input: {
   appId?: string;
 }): string {
   const appId = input.appId?.trim();
-  if (input.pathname === "/versions" || input.pathname === "/accounts") return input.pathname;
+  if (input.pathname === "/accounts") return input.pathname;
   if (/^\/apps\/[^/]+\/map$/u.test(input.pathname))
     return appId ? `/apps/${encodeURIComponent(appId)}/map` : "/apps";
 

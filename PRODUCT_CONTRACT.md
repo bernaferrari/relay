@@ -38,7 +38,6 @@ Change → relay ci / relay_check_change → Verdicts
 
 ```text
 /apps
-/versions
 /accounts
 /apps/:appId/map
 /tests
@@ -63,8 +62,8 @@ Change → relay ci / relay_check_change → Verdicts
 /settings/about
 ```
 
-Versions and Accounts are workspace resources; an app selection does not imply ownership of
-those resources. Primary navigation is Tests and Runs, with the Map following the chosen App, and
+Accounts are a workspace resource; an app selection does not imply ownership of them. Builds
+are registered through the CLI and MCP (`build.save`), not a screen. Primary navigation is Tests and Runs, with the Map following the chosen App, and
 Accounts and Devices as setup. Plans are groups in the Tests library, and app management belongs
 in the app selector. Checking a code change is a CLI and agent loop (`relay ci`,
 `relay_check_change`), not a screen.

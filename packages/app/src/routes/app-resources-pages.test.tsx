@@ -133,7 +133,6 @@ function resources(
 ): AppResourcesProductService {
   return {
     createApp: async (name) => ({ id: "created-app", name }),
-    listVersions: async () => [],
     listBrowserAccounts: async () => [],
     ...overrides,
   };
@@ -424,103 +423,6 @@ describe("App routes", () => {
     expect(alert?.textContent).toContain("Relay is not connected");
     expect(alert?.textContent).toContain("Start Relay, then try loading your apps again.");
     expect(alert?.querySelectorAll("button")).toHaveLength(1);
-  });
-
-  it("shows real workspace builds without inventing an app association", async () => {
-    await render(
-      "/versions",
-      resources({
-        listVersions: async () => [
-          {
-            id: "build-private",
-            name: "Checkout 3.4.0",
-            platform: "ios",
-            status: "ready",
-            applicationId: "com.example.checkout",
-            configuration: "release",
-            sourceSha: "private-revision",
-            updatedAt: now,
-          },
-        ],
-      }),
-    );
-
-    expect(document.querySelector("h1")?.textContent).toBe("Versions");
-    expect(document.body.textContent).toContain("Builds Relay can run against.");
-    expect(document.body.textContent).toContain("Checkout 3.4.0");
-    expect(document.body.textContent).toContain("iOS · release · com.example.checkout");
-    expect(document.body.textContent).not.toContain("build-private");
-    expect(document.body.textContent).not.toContain("private-revision");
-  });
-
-  it("creates and edits versions through build.save and does not invent removal", async () => {
-    const created: unknown[] = [];
-    const updated: unknown[] = [];
-    await render(
-      "/versions",
-      resources({
-        listVersions: async () => [
-          {
-            id: "build-private",
-            name: "Checkout 3.4.0",
-            platform: "ios",
-            status: "ready",
-            updatedAt: now,
-          },
-        ],
-        createVersion: async (input) => {
-          created.push(input);
-          return { ...input, updatedAt: now };
-        },
-        updateVersion: async (input) => {
-          updated.push(input);
-          return { ...input, updatedAt: now };
-        },
-      }),
-    );
-
-    await click(button("Add version"));
-    await fill(document.querySelector<HTMLInputElement>("#version-id")!, "checkout-ios-3-5");
-    await fill(document.querySelector<HTMLInputElement>("#version-name")!, "Checkout 3.5.0");
-    await click(button("Add version", document.querySelector('[role="dialog"]')!));
-    expect(created).toEqual([
-      {
-        id: "checkout-ios-3-5",
-        name: "Checkout 3.5.0",
-        platform: "ios",
-        status: "uploaded",
-      },
-    ]);
-    expect(document.body.textContent).not.toContain("Remove version");
-
-    await click(button("Edit"));
-    await fill(document.querySelector<HTMLInputElement>("#version-name")!, "Checkout 3.4.1");
-    await click(button("Save version", document.querySelector('[role="dialog"]')!));
-    expect(updated).toEqual([
-      {
-        id: "build-private",
-        name: "Checkout 3.4.1",
-        platform: "ios",
-        status: "ready",
-      },
-    ]);
-  });
-
-  it("keeps the version dialog open and reports canonical save failures", async () => {
-    await render(
-      "/versions",
-      resources({
-        createVersion: async () => Promise.reject(new Error("revision conflict")),
-      }),
-    );
-
-    await click(button("Add version"));
-    await fill(document.querySelector<HTMLInputElement>("#version-id")!, "checkout-ios-3-5");
-    await fill(document.querySelector<HTMLInputElement>("#version-name")!, "Checkout 3.5.0");
-    await click(button("Add version", document.querySelector('[role="dialog"]')!));
-
-    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("revision conflict");
   });
 
   it("explains accounts in one sentence and adds one through a live sign-in", async () => {
@@ -833,18 +735,18 @@ describe("App routes", () => {
     }
   });
 
-  it.each([
-    ["/versions", "registered versions", "listVersions"],
-    ["/accounts", "saved accounts", "listBrowserAccounts"],
-  ] as const)("uses the centered recovery pattern on %s", async (path, subject, method) => {
-    await render(path, resources({ [method]: async () => Promise.reject(new Error("offline")) }));
+  it("uses the centered recovery pattern on /accounts", async () => {
+    await render(
+      "/accounts",
+      resources({ listBrowserAccounts: async () => Promise.reject(new Error("offline")) }),
+    );
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
     await settle();
 
     const alert = document.querySelector('[role="alert"]');
     expect(alert?.getAttribute("data-slot")).toBe("recovery-centered");
     expect(alert?.textContent).toContain("Could not load resources");
-    expect(alert?.textContent).toContain(`try loading ${subject} again`);
+    expect(alert?.textContent).toContain("try loading saved accounts again");
     expect(alert?.querySelectorAll("button")).toHaveLength(1);
   });
 });

@@ -6,19 +6,6 @@ const { calls, invoke } = vi.hoisted(() => {
   const calls: Array<{ id: string; input: unknown }> = [];
   const invoke = vi.fn(async (id: string, input: unknown) => {
     calls.push({ id, input });
-    if (id === "build.save") {
-      return {
-        build: {
-          id: "build-1",
-          projectId: "project-1",
-          name: "Release",
-          platform: "android",
-          status: "ready",
-          createdAt: 1,
-          updatedAt: 2,
-        },
-      };
-    }
     if (id === "target.browser-auth.save" || id === "target.browser-auth.revoke") {
       return {
         fixture: {
@@ -115,25 +102,6 @@ vi.mock("./product-client", () => ({
 }));
 
 describe("operational app resources product service", () => {
-  it("uses canonical build.save for both version creation and update", async () => {
-    calls.length = 0;
-    const service = createAppResourcesProductService({} as Platform);
-    await service.createVersion({
-      id: "build-1",
-      name: "Release",
-      platform: "android",
-      status: "ready",
-    });
-    await service.updateVersion({
-      id: "build-1",
-      name: "Release 2",
-      platform: "android",
-      status: "ready",
-    });
-    expect(calls.map(({ id }) => id)).toEqual(["build.save", "build.save"]);
-    expect(calls[1]?.input).toMatchObject({ id: "build-1", name: "Release 2" });
-  });
-
   it("confirms and reuses canonical browser-auth operations", async () => {
     calls.length = 0;
     const service = createAppResourcesProductService({} as Platform);

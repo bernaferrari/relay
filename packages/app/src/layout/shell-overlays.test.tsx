@@ -553,12 +553,12 @@ describe("shell overlays", () => {
     await act(async () => {
       if (!input) return;
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(input, "Manage versions");
+      setter?.call(input, "Review screenshots");
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
     await settle();
-    expect(history.location.pathname).toBe("/versions");
+    expect(history.location.pathname).toBe("/review");
   });
   it("wraps keyboard selection and returns focus when Escape closes the palette", async () => {
     await renderShell({});
