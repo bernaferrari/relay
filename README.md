@@ -90,7 +90,8 @@ Apps, Tests, and devices take the names you see (or ids; devices also take `ios`
 defaults. Add `--json` for machine output; `relay run` and `relay ci` include each step's
 expected and saw. `relay --help` lists everything. Over MCP the same loop is
 `relay_create_test`, `relay_run_test`, `relay_get_verdict`, `relay_check_change` and
-`relay_inspect_failure`.
+`relay_inspect_failure` in the default `qa` profile; `device` adds live control and recording,
+and `full` adds every raw operation.
 
 | Exit code | Meaning                                                                        |
 | --------- | ------------------------------------------------------------------------------ |
@@ -105,7 +106,7 @@ expected and saw. `relay --help` lists everything. Over MCP the same loop is
 Other codes (4 auth, 5 validation, 6 device in use, 8 server error, 9 another command failed)
 are listed in `relay --help`.
 
-Guides are bundled with the code (`./bin/relay guide`, `relay-mcp guide`, or `relay://guides`)
+Guides are bundled with the code (`./bin/relay guide`, `relay-mcp guide`, or `relay_get_guide`)
 and need no server, model, or credentials.
 
 ## Going further

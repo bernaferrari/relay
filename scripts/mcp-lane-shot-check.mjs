@@ -1,10 +1,10 @@
-/** Live check: the default MCP operator verb relay_screenshot accepts a Lane
- * and captures through its exact account context (§10 CLI/MCP parity). */
+/** Live check: the device profile's relay_screenshot accepts a saved sign-in
+ * (laneId) and captures through its exact account context (§10 CLI/MCP parity). */
 import { spawn } from "node:child_process";
 
 const server = spawn(
   "node",
-  ["packages/mcp/dist/relay-mcp.js", "--profile", "operator", "--credential-source", "none"],
+  ["packages/mcp/dist/relay-mcp.js", "--profile", "device", "--credential-source", "none"],
   {
     env: {
       ...process.env,
@@ -53,7 +53,7 @@ await request("initialize", {
 });
 const shot = await request("tools/call", {
   name: "relay_screenshot",
-  arguments: { lane: "slice4-member" },
+  arguments: { laneId: "slice4-member" },
 });
 console.log(
   JSON.stringify({

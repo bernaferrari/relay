@@ -18,26 +18,69 @@ relay-mcp guide waits --json
 
 The installed artifact includes guidance for setup, recording, running, target
 selection, waits, debugging, review, maps, and agents. These commands do not
-connect to Relay or require credentials. Every MCP profile also exposes
-`relay://guides` and the topic URIs it lists. The CLI's `relay guide` reads the
-same catalog, so instructions match the shipped code.
+connect to Relay or require credentials. Every MCP profile also has
+`relay_get_guide` (and the `relay://guides` resources). The CLI's `relay guide`
+reads the same catalog, so instructions match the shipped code.
 
-## Find a saved Test with QA tools
+## Tool profiles
 
-The Relay plugin configures `--profile qa` for recording and saved Test work.
-Use the same option in a manually configured MCP connection. After
-`relay_health`, call `relay_panel` to choose an App, then call it with that
-`appMapId` to list its Tests and recent Runs. The tool also returns text when
-the host cannot display MCP Apps.
+Relay MCP has three profiles. Each one contains the one before it.
 
-For detailed steps, read `relay://app-maps/<appMapId>/tests/<testId>` using the
-returned IDs. Choose the intended target through `relay_connect_target`, then
-call `relay_run_test` with those exact IDs. Inspect its returned workflow with
-`relay_inspect_workflow`; queued work is not a completed Run. For recording,
-read `relay://guides/record` before sending actions.
+| Profile        | Tools | Use it to                                                              |
+| -------------- | ----- | ---------------------------------------------------------------------- |
+| `qa` (default) | 12    | Write a Test from a sentence, run it, read the verdict, check a change |
+| `device`       | 36    | Everything in `qa`, plus drive a device or browser and record Tests    |
+| `full`         | ~290  | Everything in `device`, plus every raw Relay operation as a tool       |
 
-Use `relay://app-maps` and `relay://app-maps/<appMapId>/tests` for resource-only
-discovery; follow returned next-page URIs when a collection is paginated.
+Pick one with `--profile <name>` or `RELAY_MCP_PROFILE`. Destructive tools
+(cancel, delete, remove, discard, revoke) carry the MCP `destructiveHint`
+annotation and read-only tools carry `readOnlyHint`, so a host can ask before
+side effects.
+
+**`qa`** — the agent loop and what it needs to find its way:
+
+| Tool                    | What it does                                                    |
+| ----------------------- | --------------------------------------------------------------- |
+| `relay_create_test`     | Save a Test from a description (`goal`) or a test file (`yaml`) |
+| `relay_run_test`        | Run a Test and wait for its verdict                             |
+| `relay_get_verdict`     | Read a Run's verdict later                                      |
+| `relay_inspect_failure` | Explain a failed Run: failing step, evidence, suggested fixes   |
+| `relay_check_change`    | Run the relevant ready Tests after a code change                |
+| `relay_list_apps`       | List Apps                                                       |
+| `relay_list_tests`      | List one App's Tests and whether each is ready                  |
+| `relay_list_runs`       | List recent Runs                                                |
+| `relay_list_devices`    | List ready phones, emulators and browsers with their `targetId` |
+| `relay_get_test`        | Read a Test as its test file                                    |
+| `relay_get_guide`       | Read the bundled how-to guides                                  |
+| `relay_health`          | Check that Relay and its prerequisites are ready                |
+
+**`device`** adds live control and recording:
+
+| Tool                                                                     | What it does                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------- |
+| `relay_screenshot`, `relay_observe_target`                               | See the screen (image, or image plus controls)    |
+| `relay_tap`, `relay_type`, `relay_swipe`, `relay_press_key`              | Send one input (`key`: back, home, enter, …)      |
+| `relay_preview`                                                          | Show where a tap would land without doing it      |
+| `relay_launch_app`, `relay_recover`                                      | Open an app; reconnect a device that stopped      |
+| `relay_record_test`, `relay_record_action`, `relay_add_checkpoint`       | Record a Test step by step                        |
+| `relay_stop_recording`, `relay_edit_recording`, `relay_replay_recording` | Review a recording                                |
+| `relay_approve_recording`                                                | Save the recording as a Test                      |
+| `relay_repeat_test`, `relay_continue_repeat`                             | Run one Test over several values                  |
+| `relay_inspect_workflow`, `relay_cancel_run`                             | Read or stop a recording, repeat or Run           |
+| `relay_explore_goal`                                                     | Let a model drive toward a goal, in few steps     |
+| `relay_propose_repair`, `relay_export_evidence`                          | Suggest a fix for review; export a Run's evidence |
+| `relay_panel`                                                            | Read-only Tests and results view (MCP Apps)       |
+
+Device tools take `targetId` from `relay_list_devices`, or `laneId` for a saved
+browser sign-in. They take control of a free device automatically and say who
+holds a busy one.
+
+**`full`** adds `relay_replay_lab`, the Proof tools (`relay_prove_change`,
+`relay_inspect_proof`) and one `relay_<operation>` tool per Relay operation,
+named after its operation id (for example `relay_target_screenshot_capture`).
+Raw tools take the operation's fields directly, and wrapped or alternate input
+envelopes are rejected. `full` leaves out the raw operations a named tool
+already covers, and it is the only profile that exposes `lease.takeover`.
 
 ## Install and configure a client
 
@@ -72,10 +115,10 @@ Offline `guide` and read-only `doctor` never launch a runtime. The runtime
 candidate's [installation and browser demo](../runtime/README.md) is verified
 without repository sources; physical device support requires qualification.
 
-For your first recording, saved Test, or review task, configure `--profile qa`.
-This matches the plugin and exposes the outcome tools used in the task guides.
-Configure the intended service or workspace, authorized project, and actor in
-the host environment. Reload the MCP connection after changing its configuration.
+Configure `--profile qa` to write, run and check Tests, or `--profile device`
+to also drive devices and record (the Relay plugin uses `device`). Configure the
+intended service or workspace, authorized project, and actor in the host
+environment. Reload the MCP connection after changing its configuration.
 
 ```json
 {
@@ -99,14 +142,11 @@ It checks server reachability, organization/project scope, the configured agent 
 selected profile's role requirements, and the canonical tools present in the server operation
 manifest for that profile. The report never prints `RELAY_AUTH_TOKEN`.
 
-## Specialist profiles
+## Change Proof
 
-The executable defaults to `qa` when no profile is selected. Integrations that
-relied on the old no-flag `operator` default must now pass `--profile operator`.
-Choose another profile with `--profile <name>` or `RELAY_MCP_PROFILE` when the
-task requires its specialist tools.
-Proof hosts launch `--profile proof`: it retains the ordinary `relay_prove_change` outcome and
-adds the raw `proof.*` lifecycle tools for explicit plan review, recovery, publication, and
+The executable defaults to `qa` when no profile is selected. Proof hosts launch
+`--profile full`: it adds `relay_prove_change`, `relay_inspect_proof` and the raw
+`proof.*` lifecycle tools for explicit plan review, recovery, publication, and
 selective reruns. A human approves a Verification Plan in the app or CLI.
 
 ```json
@@ -114,17 +154,17 @@ selective reruns. A human approves a Verification Plan in the app or CLI.
   "mcpServers": {
     "relay": {
       "command": "relay-mcp",
-      "args": ["--profile", "proof"],
-      "env": { "RELAY_MCP_PROFILE": "proof" }
+      "args": ["--profile", "full"],
+      "env": { "RELAY_MCP_PROFILE": "full" }
     }
   }
 }
 ```
 
-The specialist doctor check verifies every canonical Proof tool is present for that profile:
+The `full` doctor check verifies every canonical Proof tool is present:
 
 ```bash
-relay-mcp doctor --profile proof --json
+relay-mcp doctor --profile full --json
 ```
 
 For a remote authenticated service, set `RELAY_AUTH_TOKEN` in the environment that launches the MCP
@@ -181,92 +221,34 @@ For a ChatGPT-compatible remote MCP client, select the bridge URL and require ap
 side-effecting tools in the host. Do not recreate the Relay tool list in the host configuration;
 the bridge exposes exactly the profile selected by `RELAY_MCP_PROFILE`.
 
-## Tool profiles
-
-Use `qa` (the executable's default) to describe, run and check Tests and read
-verdicts. Pass `--profile operator` for the hand-named device verbs. Configure the required
-profile once when setting up the host; discover its tools before the task.
-`full` is trusted orchestration only and is the only profile that exposes
-`lease.takeover`.
-
-| Profile    | Intended use                                                                             |
-| ---------- | ---------------------------------------------------------------------------------------- |
-| `qa`       | Default: describe a Test, run it for a verdict, check a change, record, inspect, export  |
-| `operator` | ~22 hand-named device verbs + `relay_advanced` + the describe/verdict loop; no takeover  |
-| `outcome`  | Test workflow: connect, observe, record, replay, run, repeat, inspect, export            |
-| `control`  | Advanced direct target observation, input, recovery, and lease management                |
-| `map`      | Discovery and observation proposals without full authoring edits                         |
-| `observe`  | Read-only project, device, App Map, proposal, run, and evidence inspection               |
-| `author`   | Default App Map editing, device recording, and proposal creation                         |
-| `test`     | Graph Test creation, review, compilation, one-pass runs, and evidence                    |
-| `run`      | Test/Combine execution, jobs, and run evidence                                           |
-| `locale`   | Language Variables, profiles, Combine campaigns, and analysis                            |
-| `review`   | Proposal/take repair, replay, approval, and run-baseline review                          |
-| `admin`    | Workspace policy, projects, targets, schedules, matrices, and retention                  |
-| `proof`    | Prove one change with the outcome tool plus explicit proof.* lifecycle/recovery controls |
-| `full`     | Every canonical Relay operation; trusted orchestration only; includes `lease.takeover`   |
-
-Outcome tools accept job-level intent and resolve the sole Test workspace, Device, current revision,
-and available control internally. Advanced profile tools advertise and take canonical operation
-fields directly. For example, capture a screenshot with
-`{"serial":"emulator-5554"}`. Wrapped or alternate input envelopes are rejected. Known operation
-contracts expose specific required fields, types, and enums; intentionally generic Relay operations
-remain extensible objects and are still validated by the canonical protocol parser before invocation.
-
 ## Run an existing Test
 
-With the recommended `qa` profile, use `relay_panel` to choose an App and its
-saved Test. Call `relay_connect_target` to choose the intended ready target,
-then call `relay_run_test` with the returned exact IDs:
+With `qa`, call `relay_list_apps` and `relay_list_tests` to find the saved Test,
+`relay_list_devices` to pick a ready target, then `relay_run_test`:
 
 ```json
 { "appMapId": "checkout", "testId": "signed-in-home", "targetId": "<returned-target-id>" }
 ```
 
-Inspect the returned workflow through `relay_inspect_workflow`. Keep that
-workflow ID through disconnections instead of starting the Test again. A queued
-workflow is not a completed Run; execution completion and human screenshot
-acceptance remain separate outcomes.
-
-### Operator compatibility
-
-Existing `operator` integrations call `relay_run` with the saved Test identity:
-
-```json
-{ "appMapId": "checkout", "testId": "signed-in-home", "lane": "qa-member" }
-```
-
-There is no manual tap or exploration prerequisite. Use `relay_wait` with the returned job ID;
-`{"jobId":"job-1","wait":false}` reads current progress once without waiting. Keep that job ID
-through disconnections instead of starting the Test again. Execution completion is separate from
-human screenshot acceptance.
-
-For manual observation and control, `relay_snapshot`, `relay_preview`, `relay_tap`, `relay_type`,
-and `relay_swipe` accept either `serial` or `lane`. Use the same Lane as the Test to preserve the
-browser/account context. Do not combine a serial with a Lane. `laneId` is an equivalent alias;
-conflicting aliases are rejected. `relay_screenshot` accepts either a serial or a Lane (browser captures go through the Lane's exact account context); `relay_recover` accepts that same Lane or a serial;
-a Lane-aware `relay_preview` returns pixels without committing the interaction.
-
-For a long Plan, set `wait:false` on `relay_plan_run`. It returns the batch and job IDs immediately.
-Inspect those jobs with `relay_wait`, then use `relay_findings` after completion. `findings`,
-`triage`, and `export` cannot be combined with `wait:false`. The `export` option is a boolean,
-not a destination path. The existing blocking behavior remains the default.
+It waits for the verdict. With `wait:false` it returns the `runId` at once; read
+the verdict later with `relay_get_verdict` instead of starting the Test again.
+Execution completion and human screenshot acceptance remain separate outcomes.
 
 ## Agent quickstart: record, run, and review
 
-Configure `--profile qa` and your intended service or workspace. Check
-`relay-mcp doctor --profile qa --json` with those same connection options. For
-a contributor service, `pnpm ensure:serve` starts Relay; it replaces the port
-listener, so use it before starting a recording or Run.
+Configure `--profile device` and your intended service or workspace. Check
+`relay-mcp doctor --profile device --json` with those same connection options.
+For a contributor service, `pnpm ensure:serve` starts Relay; it replaces the
+port listener, so use it before starting a recording or Run.
 
-1. Call `relay_health`, then `relay_panel` to choose an App. Call the panel
-   with its `appMapId` to find the intended saved Test before creating one.
-2. Call `relay_connect_target` and keep the selected target identity. An
-   existing Test can run directly with `relay_run_test`.
-3. When coverage is missing, read `relay://guides/record`, observe the starting
-   screen with `relay_observe_target`, and use `relay_record_test`. Each
-   recording mutation carries the continuation reference and expected version
-   returned by the previous step.
+1. Call `relay_health`, then `relay_list_apps` and `relay_list_tests` to find
+   the intended saved Test before creating one.
+2. Call `relay_list_devices` and keep the selected `targetId`. An existing Test
+   can run directly with `relay_run_test`.
+3. When coverage is missing, call `relay_get_guide {topic:"record"}`, look at
+   the starting screen with `relay_observe_target`, and use `relay_record_test`.
+   Each recording step carries the workflow id and expected version returned
+   by the previous step.
 4. Use `relay_inspect_workflow` until completion or a concrete blocker, then
    `relay_export_evidence` to share the retained Run.
 
@@ -284,11 +266,6 @@ edited revision before saving it.
 Repeat explicitly selected data values with `relay_repeat_test`; inspect one
 pilot before confirming `relay_continue_repeat`. The CLI language variant is
 documented in [Repeat a Test across languages](../../docs/LANGUAGE_SWEEP_LOOP.md).
-
-For existing operator authoring integrations, `relay_save` accepts the canonical
-Test document and current `expectedRevision`. Lower-level recording operations
-remain available through `relay_advanced`. The `outcome` profile retains its
-workflow interface for hosts already using it.
 
 ## Advanced graph Test loop
 
@@ -320,7 +297,7 @@ Destination-mismatch repair proposals are also exposed as typed data: when a fai
 `destination-repair-proposals` artifact, `relay://runs/{runId}/repair-proposals` reads it through
 the protocol schema — review-only screen candidates with confidence, rationale, and method, or an
 explicit zero-proposal result with reason `grounding-unavailable`. The
-`relay_prove_this_change` prompt (available from the `proof` profile) walks an agent through the
+`relay_prove_this_change` prompt (available from the `full` profile) walks an agent through the
 full loop: establish impact, select affected Tests, obtain human approval for the frozen plan, call
 the server-owned `relay_proof_run` once, inspect its durable Proof result and repair proposals on
 failure, and return a structured verdict with share links for reviewers. Lower-level Test/job tools
@@ -330,8 +307,8 @@ remain an explicit legacy/manual `record-runs` recovery path, not the normal Pro
 
 - Resources expose bounded, sanitized project, App Map, Flow, Run, Authoring Session, Target, and
   observation state under scoped `relay://` URIs. They do not provide arbitrary filesystem reads.
-- Outcome tools call the typed `@relay/workflows` façade; advanced tools are generated from the
-  canonical operation registry. Both invoke Relay through `@relay/client` and retain actor identity,
+- Named tools call the typed `@relay/workflows` façade or one operation; raw `full` tools are
+  generated from the canonical operation registry. Both invoke Relay through `@relay/client` and retain actor identity,
   lease, revision, confirmation, and idempotency rules.
 - `relay_target_screenshot_capture` returns the current Target screenshot as native MCP `image/png`
   content plus safe metadata. It never exposes Relay host paths.
@@ -354,34 +331,30 @@ The bridge is intentionally only a transport adapter. Run the Relay HTTP server 
 MCP process remains a scoped adapter, not the source of truth. The package build and clean-host
 installation check can be run from this workspace with `pnpm build` and `pnpm test:clean-host`.
 
-## Ordinary QA preset
+## The qa loop
 
 `relay-mcp` (or `--profile qa`) is describe-first:
 
 - `relay_create_test {goal, url | app}` writes Action/Check steps from a sentence, saves the
-  Test, and returns the exact `relay_run_test` call.
+  Test, and returns the exact `relay_run_test` call. `{yaml}` applies a test file as written.
 - `relay_run_test` waits for the verdict by default (`wait:false` returns at once;
   `timeoutSeconds` bounds the wait, which returns `status: "running"` when it runs out).
   The agent response never includes the compiled plan.
 - `relay_get_verdict {runId}` reads passed/failed/blocked/cancelled, a reason, and each failed
   step's expected vs. saw and screenshot. `relay_inspect_failure` includes the failing step.
 - `relay_check_change {app, areas?, testIds?}` runs the App's relevant ready Tests and returns
-  their verdicts — a quick signal, not a merge decision; gated merge checks use `proof`.
+  their verdicts — a quick signal, not a merge decision; gated merge checks use Change Proof.
 
-Steps written from words need a model key; recording (`relay_record_test` …) makes a step exact
-and model-free. `relay_panel` and the App/Test resources are the one way to browse Apps and
-Tests; raw App Map tools are not exposed. It excludes assisted goals, raw admin operations and
-Change Proof. All five loop tools (`relay_create_test`, `relay_run_test`, `relay_get_verdict`,
-`relay_check_change`, `relay_inspect_failure`) are also registered in `outcome`, `operator`,
-`author`, `test`, `run` and `full`; `full` hides the raw operations they wrap.
+Steps written from words need a model key; recording (`device` profile) makes a step exact and
+model-free. Every profile registers these tools; `full` hides the raw operations they wrap.
 Run `relay-mcp doctor --profile qa` against the same configured service first.
 The connector requires a compatible Relay runtime and target prerequisites;
 the optional local startup described above can attach or launch the runtime.
 
 ### Read-only Tests and results panel
 
-The QA preset adds `relay_panel` to inspect existing Apps, saved Tests, recent
-Runs and one retained PNG per request. It calls canonical read operations;
+The `device` profile adds `relay_panel` to inspect existing Apps, saved Tests,
+recent Runs and one retained PNG per request. It calls canonical read operations;
 it cannot start Runs, capture a live device or accept visual evidence.
 Screenshot bytes are retained artifact data, bounded and checked against their
 recorded SHA-256 before inclusion in result metadata.

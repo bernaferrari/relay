@@ -2,9 +2,9 @@
   "mcpServers": {
     "relay": {
       "command": "relay-mcp",
-      "args": ["--profile", "qa"],
+      "args": ["--profile", "device"],
       "env": {
-        "RELAY_MCP_PROFILE": "qa"
+        "RELAY_MCP_PROFILE": "device"
       },
       "type": "stdio"
     }

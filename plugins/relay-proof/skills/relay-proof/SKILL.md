@@ -8,11 +8,11 @@ description: Prove an AI-authored change with Relay before merge. Use the server
 Relay answers whether a specific code change has earned permission to merge.
 Keep this workflow change-first and evidence-first.
 
-This specialist skill requires the configured `proof` profile. For a quick
-check while coding, use `relay_check_change` in the default `qa` session: it
-runs the App's relevant Tests and returns verdicts. Use Proof only when a
-change needs a gated, human-approved merge decision. If Proof tools are
-absent, explain that a separate explicit `proof` session is needed.
+This specialist skill requires the configured `full` profile. For a quick
+check while coding, use `relay_check_change` in an ordinary session: it runs
+the App's relevant Tests and returns verdicts. Use Proof only when a change
+needs a gated, human-approved merge decision. If Proof tools are absent,
+explain that a separate explicit `full` session is needed.
 
 ## Start from the active workspace
 
