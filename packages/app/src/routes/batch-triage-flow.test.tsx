@@ -515,7 +515,7 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("Select a group to rerun");
     expect(document.body.textContent).not.toContain("1 groups");
     expect(document.body.textContent).toContain("Product behavior");
-    expect(document.body.textContent).toContain("2 cases · grok-com");
+    expect(document.body.textContent).toContain("2 cases · Grok com");
     expect(document.body.textContent).not.toContain("causal failure");
     expect(document.body.textContent).not.toContain("339a5a430a41");
     const reportLink = [...document.querySelectorAll("a")].find(

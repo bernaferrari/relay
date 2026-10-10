@@ -434,7 +434,7 @@ describe("Test editor", () => {
     expect(
       document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")?.value,
     ).toBe("Composer is visible");
-    expect(document.body.textContent).toContain("Two independent judges must agree");
+    expect(document.body.textContent).toContain("Ask two models and require them to agree");
   });
 
   it("opens a route-selected step and saves a stable-ID patch", async () => {
@@ -555,40 +555,21 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Ignore for identity");
     expect(document.querySelector('[aria-label="Check type"]')).not.toBeNull();
     await chooseCheckpoint("Visual judge");
-    expect(document.body.textContent).toContain("Fails closed without OPENROUTER_API_KEY");
-    expect(document.body.textContent).toContain("Do not auto-accept a visual baseline");
-    expect(document.body.textContent).toContain("Do not parse LaTeX or H1–H6 size");
-    expect(document.body.textContent).toContain("Two independent judges must agree");
+    expect(document.body.textContent).toContain("Uses your model key from Settings");
+    expect(document.body.textContent).toContain("Ask two models and require them to agree");
     await chooseCheckpoint("Ignore for identity");
-    expect(document.body.textContent).toContain("Identity and visual compare skip");
-    expect(document.body.textContent).toContain("User bubble");
-    expect(document.body.textContent).toContain("Reply body");
+    expect(document.body.textContent).toContain("Screenshots and screen matching skip this area");
+    expect(document.body.textContent).toContain("Header");
+    expect(document.body.textContent).toContain("Main content");
     expect(document.body.textContent).toContain("Cookie banner");
-    expect(document.body.textContent).toContain("Composer placeholder");
-    expect(document.body.textContent).toContain("Heading caret");
-    expect(document.body.textContent).toContain("Library chrome sandwich");
-    expect(document.body.textContent).toContain("Do not survey the infinite feed");
-    expect(document.body.textContent).toContain("Enjoying Grok?");
-    await click("Library chrome sandwich");
-    expect(
-      document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
-    ).toBe("0.06,0.14,0.88,0.60");
     await click("Cookie banner");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
-    ).toBe("0.57,0.80,0.43,0.20");
-    await click("Composer placeholder");
+    ).toBe("0,0.8,1,0.2");
+    await click("Header");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
-    ).toBe("0.21,0.29,0.57,0.06");
-    await click("Heading caret");
-    expect(
-      document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
-    ).toBe("0.53,0.25,0.08,0.01");
-    await click("User bubble");
-    expect(
-      document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
-    ).toBe("0.70,0.08,0.28,0.10");
+    ).toBe("0,0,1,0.1");
   });
 
   it("offers Remember reply when the test already extracts a reply", async () => {
@@ -613,7 +594,7 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("does not accept a visual baseline");
     expect(document.body.textContent).toContain("Visual judge");
     await chooseCheckpoint("Visual judge");
-    expect(document.body.textContent).toContain("Two independent judges must agree");
+    expect(document.body.textContent).toContain("Ask two models and require them to agree");
     await click("Remove step");
     await click("Remove step");
     expect(harness.edits).toEqual([]);
@@ -699,8 +680,7 @@ describe("Test editor", () => {
     await render(harness.editor, "/tests/test-checkout?step=step-cart");
     await click("Add a check");
     await chooseCheckpoint("Upload a file");
-    expect(document.body.textContent).toContain("not a Grok Files pass");
-    expect(document.body.textContent).toContain("do not accept a visual baseline");
+    expect(document.body.textContent).toContain("record picking the file once");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-upload-file")?.value,
     ).toBe("tests/fixtures/sample.pdf");
@@ -737,9 +717,8 @@ describe("Test editor", () => {
     const harness = service(source);
     await render(harness.editor);
 
-    expect(document.body.textContent).toContain("Fails closed without OPENROUTER_API_KEY");
-    expect(document.body.textContent).toContain("Do not auto-accept a visual baseline");
-    expect(document.body.textContent).toContain("Two independent judges must agree");
+    expect(document.body.textContent).toContain("Uses your model key from Settings");
+    expect(document.body.textContent).toContain("Ask two models and require them to agree");
     await fill(
       document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")!,
       "Composer is empty",
