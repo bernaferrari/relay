@@ -53,6 +53,20 @@ export const targetOperationInputSchemas = {
   "target.browser-device.inspect": browserDeviceInspectInputSchema,
   "target.browser-device.control": browserDeviceControlInputSchema,
   "system.doctor.get": empty,
+  "test.create-from-goal": z
+    .object({
+      goal: z.string().trim().min(1).max(4_000).describe("What should work, or one step per line"),
+      url: z
+        .string()
+        .trim()
+        .max(2048)
+        .regex(/^https?:\/\//iu)
+        .optional()
+        .describe("Website the Test opens first"),
+      app: z.string().trim().min(1).max(200).optional().describe("App id or name"),
+      name: z.string().trim().min(1).max(200).optional(),
+    })
+    .strict(),
   "system.model-key.set": z
     .object({
       key: z.string().max(512).describe("OpenRouter key, or an empty string to remove it"),
