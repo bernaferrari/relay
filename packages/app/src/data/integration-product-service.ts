@@ -1,5 +1,4 @@
 import type { ServerConnection } from "@relay/protocol";
-import type { ProductChangeDetails } from "@relay/product/change-journey";
 import type { ProductBatchReport } from "@relay/product/run-across";
 import type { ProductRunReportOverview } from "./run-product-service";
 import type { Platform } from "../platform/types";
@@ -21,8 +20,7 @@ export type ProductIntegration = {
 
 export type ProductIssueSource =
   | { readonly kind: "run"; readonly report: ProductRunReportOverview }
-  | { readonly kind: "batch"; readonly report: ProductBatchReport }
-  | { readonly kind: "change"; readonly details: ProductChangeDetails };
+  | { readonly kind: "batch"; readonly report: ProductBatchReport };
 
 export type ProductIssueDraft = {
   readonly id: string;
@@ -117,49 +115,14 @@ function linesForBatch(report: ProductBatchReport): { id: string; lines: string[
   return { id: report.id, lines, count: report.runIds.length };
 }
 
-function linesForChange(details: ProductChangeDetails): {
-  id: string;
-  lines: string[];
-  count: number;
-} {
-  const change = details.change;
-  const lines = [
-    `Change: ${clean(change.id)}`,
-    `Status: ${clean(change.status)}`,
-    ...(clean(change.baseRevision) ? [`Base revision: ${clean(change.baseRevision)}`] : []),
-    ...(clean(change.requestedRevision)
-      ? [`Requested revision: ${clean(change.requestedRevision)}`]
-      : []),
-    ...(details.firstFailure
-      ? [
-          `First failure: ${clean(details.firstFailure.summary)} (${clean(details.firstFailure.runId)})`,
-        ]
-      : []),
-    ...(change.coverageGaps.length
-      ? [`Coverage gaps: ${bounded(change.coverageGaps).join(",")}`]
-      : []),
-    ...(change.residualRisk.length
-      ? [`Residual risk: ${bounded(change.residualRisk).join(",")}`]
-      : []),
-    `Publications: ${details.publications.length}`,
-  ].filter(Boolean);
-  return { id: change.id, lines, count: change.evidenceCount };
-}
-
 /** Compose a bounded, redacted handoff without constructing provider payloads. */
 export function composeProductIssue(source: ProductIssueSource): ProductIssueDraft {
   const projection =
-    source.kind === "run"
-      ? linesForRun(source.report)
-      : source.kind === "batch"
-        ? linesForBatch(source.report)
-        : linesForChange(source.details);
+    source.kind === "run" ? linesForRun(source.report) : linesForBatch(source.report);
   const title =
     source.kind === "run"
       ? clean(source.report.title) || "Run failure"
-      : source.kind === "batch"
-        ? clean(source.report.title) || "Batch failure"
-        : clean(source.details.change.title) || "Change verification issue";
+      : clean(source.report.title) || "Batch failure";
   const safeTitle = redact(title);
   const result = redact([`# ${title}`, "", ...projection.lines].join("\n"));
   const redactedFields = [...new Set([...safeTitle.fields, ...result.fields])].sort();
@@ -168,7 +131,7 @@ export function composeProductIssue(source: ProductIssueSource): ProductIssueDra
     title: safeTitle.value,
     body: result.value,
     source: { kind: source.kind, id: projection.id },
-    labels: ["relay", source.kind === "change" ? "verification" : "failure"],
+    labels: ["relay", "failure"],
     evidence: { available: projection.count > 0, count: projection.count },
     redaction: { applied: redactedFields.length > 0, redactedFields },
     delivery: {

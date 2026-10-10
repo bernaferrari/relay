@@ -879,74 +879,6 @@ describe("record, review, replay, and save", () => {
     );
   });
 
-  it("carries the live page into Ask Relay without losing the workbench context", async () => {
-    const fake = fakeService();
-    const browserTarget = {
-      kind: "browser" as const,
-      platform: "browser" as const,
-      targetId: "browser-checkout",
-    };
-    fake.service.connect = async () => ({
-      status: "target-selection",
-      targets: [browserTarget],
-      selectedTarget: browserTarget,
-    });
-    fake.service.presentTargets = async () => [
-      { ...browserTarget, name: "checkout.example", detail: "Managed browser · Ready" },
-    ];
-    fake.service.previewTarget = async () => {
-      let status: ReturnType<LiveTargetSession["snapshot"]> = {
-        status: "connecting",
-        target: browserTarget,
-      };
-      const listeners = new Set<Parameters<LiveTargetSession["subscribe"]>[0]>();
-      return {
-        snapshot: () => status,
-        subscribe(listener) {
-          listeners.add(listener);
-          listener(status);
-          return () => listeners.delete(listener);
-        },
-        mount() {
-          status = {
-            status: "streaming",
-            target: browserTarget,
-            frameSequence: 1,
-            browserContext: {
-              sessionId: "session-test",
-              pageUrl: "https://staging.example.test/account",
-              engine: "chromium",
-              viewport: { width: 1280, height: 800 },
-              locale: "en",
-            },
-          };
-          for (const listener of listeners) listener(status);
-          return () => undefined;
-        },
-        async input() {
-          fake.calls.push("input");
-        },
-        close() {
-          status = { status: "closed", target: browserTarget };
-        },
-      };
-    };
-    const { history } = await renderJourney(
-      "/tests/new?app=app-1&target=browser-checkout",
-      fake.service,
-      platformWithStorage().platform,
-    );
-
-    await act(async () => click(button("Explore URL in a new browser")));
-    await settle();
-    expect(history.location.pathname).toBe("/goals");
-    expect(history.location.search).toBe(
-      "?url=" + encodeURIComponent("https://staging.example.test/account"),
-    );
-    const urlInput = document.querySelector<HTMLInputElement>("#goal-start-url");
-    expect(urlInput?.value).toBe("https://staging.example.test/account");
-  });
-
   it("preserves a missing device selection without asking the user to select it again", async () => {
     const fake = fakeService();
     fake.service.connect = async () => ({ status: "target-selection", targets: [] });
@@ -2423,16 +2355,6 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("Taps and typing appear here.");
     expect(fake.calls).toContain("inspect:workflow-1");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
-  });
-
-  it("keeps the test-owned recording route available for a true test ID", async () => {
-    const fake = fakeService();
-    const storage = platformWithStorage();
-    await renderJourney("/tests/test-1/record", fake.service, storage.platform);
-
-    expect(document.body.textContent).toContain("Taps and typing appear here.");
-    expect(fake.calls).toContain("inspect:test-1");
-    expect(storage.values.get("activeRecordingWorkflowId")).toBe("test-1");
   });
 
   it("projects low-level capture actions as human review moments", async () => {

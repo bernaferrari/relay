@@ -3,23 +3,15 @@ import { isSidebarItemActive } from "./sidebar";
 
 describe("sidebar route ownership", () => {
   it("gives apps an explicit stable destination", () => {
-    const primaryItems = [
-      "/tests",
-      "/runs",
-      "/accounts",
-      "/devices",
-      "/sessions",
-      "/changes",
-    ] as const;
+    const primaryItems = ["/tests", "/runs", "/accounts", "/devices", "/sessions"] as const;
     const activeItems = primaryItems.filter((item) => isSidebarItemActive("/apps/app-1", item));
 
     expect(activeItems).toEqual([]);
   });
 
   it("keeps each primary product area active for nested routes", () => {
-    expect(isSidebarItemActive("/tests/test-1/run-across", "/tests")).toBe(true);
+    expect(isSidebarItemActive("/tests/test-1/edit", "/tests")).toBe(true);
     expect(isSidebarItemActive("/sessions/session-1", "/sessions")).toBe(true);
-    expect(isSidebarItemActive("/debug", "/sessions")).toBe(true);
     expect(isSidebarItemActive("/runs/run-1", "/runs")).toBe(true);
     expect(isSidebarItemActive("/devices/device-1", "/devices")).toBe(true);
     expect(isSidebarItemActive("/environments/profile-1", "/devices")).toBe(true);
@@ -33,10 +25,7 @@ describe("sidebar route ownership", () => {
     expect(isSidebarItemActive("/review", "/tests")).toBe(false);
   });
 
-  it("folds plans into tests and Ask Relay into the workbench context", () => {
-    expect(isSidebarItemActive("/suites", "/tests")).toBe(true);
+  it("folds plans into tests", () => {
     expect(isSidebarItemActive("/apps/app-1/suites/suite-1", "/tests")).toBe(true);
-    expect(isSidebarItemActive("/goals", "/tests")).toBe(true);
-    expect(isSidebarItemActive("/suites", "/suites")).toBe(false);
   });
 });

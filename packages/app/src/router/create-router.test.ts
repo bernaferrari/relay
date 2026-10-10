@@ -20,8 +20,6 @@ const deepLinks = [
   "/tests/new",
   "/tests/test-1",
   "/tests/test-1/edit",
-  "/tests/test-1/record",
-  "/tests/test-1/run-across",
   "/apps/app-1/suites/suite-1",
   "/environments",
   "/environments/chrome-staging",
@@ -32,8 +30,6 @@ const deepLinks = [
   "/runs",
   "/runs/run-1",
   "/batches/batch-1",
-  "/changes",
-  "/changes/change-1",
   "/devices",
   "/devices/device-1",
   "/settings/general",
@@ -61,35 +57,17 @@ describe("React router", () => {
     expect(router.state.matches).toHaveLength(2);
   });
 
-  it.each(["/", "/home"])("opens Tests as home from %s", async (path) => {
+  it.each(["/"])("opens Tests as home from %s", async (path) => {
     const router = testRouter([path]);
     await router.load();
     expect(router.state.location.pathname).toBe("/tests");
     expect(router.state.status).toBe("idle");
   });
 
-  it("redirects the retired Plans list to Tests, where plans are groups", async () => {
-    const router = testRouter(["/suites"]);
-    await router.load();
-    expect(router.state.location.pathname).toBe("/tests");
-    router.history.back();
-    await router.load();
-    expect(router.state.location.pathname).not.toBe("/suites");
-  });
-
   it("redirects the retired Evidence tab to Results", async () => {
     const router = testRouter(["/evidence"]);
     await router.load();
     expect(router.state.location.pathname).toBe("/runs");
-  });
-
-  it.each([
-    ["/apps/app-1/versions", "/versions"],
-    ["/apps/app-1/accounts", "/accounts"],
-  ] as const)("moves legacy resource route %s to workspace route", async (legacy, canonical) => {
-    const router = testRouter([legacy]);
-    await router.load();
-    expect(router.state.location.pathname).toBe(canonical);
   });
 
   it("uses the injected history for navigation and Back", async () => {
@@ -103,10 +81,10 @@ describe("React router", () => {
   });
 
   it("uses hash history by default", async () => {
-    window.location.hash = "#/changes/change-1";
+    window.location.hash = "#/runs/run-1";
     const router = createAppRouter({ platform, queryClient: new QueryClient() });
     await router.load();
-    expect(router.state.location.pathname).toBe("/changes/change-1");
-    expect(window.location.hash).toBe("#/changes/change-1");
+    expect(router.state.location.pathname).toBe("/runs/run-1");
+    expect(window.location.hash).toBe("#/runs/run-1");
   });
 });

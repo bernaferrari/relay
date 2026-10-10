@@ -8,11 +8,6 @@ type RoutePresentation = {
 };
 
 const routePresentations = {
-  "/home": {
-    path: "/home",
-    eyebrow: "Relay",
-    description: "See what is ready to verify and continue recent work.",
-  },
   "/apps": {
     path: "/apps",
     eyebrow: "Workspace",
@@ -22,16 +17,6 @@ const routePresentations = {
     path: "/apps/$appId",
     eyebrow: "App",
     description: "Review tests, runs, and verified behavior for this app.",
-  },
-  "/apps/:appId/versions": {
-    path: "/apps/$appId/versions",
-    eyebrow: "App",
-    description: "Review registered builds and deployments available to this workspace.",
-  },
-  "/apps/:appId/accounts": {
-    path: "/apps/$appId/accounts",
-    eyebrow: "App",
-    description: "Saved logins your tests can run as.",
   },
   "/versions": {
     path: "/versions",
@@ -68,21 +53,6 @@ const routePresentations = {
     path: "/tests/$testId/edit",
     eyebrow: "Test",
     description: "Refine the reviewed steps and expected checkpoints.",
-  },
-  "/tests/:testId/record": {
-    path: "/tests/$testId/record",
-    eyebrow: "Test",
-    description: "Record a focused, repeatable journey.",
-  },
-  "/tests/:testId/run-across": {
-    path: "/tests/$testId/run-across",
-    eyebrow: "Test",
-    description: "Choose a data set, preview the exact scope, and run across it deliberately.",
-  },
-  "/suites": {
-    path: "/suites",
-    eyebrow: "Library",
-    description: "Saved Tests and Data sets you run together as a Plan.",
   },
   "/apps/:appId/suites/:suiteId": {
     path: "/apps/$appId/suites/$suiteId",
@@ -134,25 +104,10 @@ const routePresentations = {
     eyebrow: "Run",
     description: "Review evidence, checkpoints, and failures for this run.",
   },
-  "/runs/:runId/walkthrough": {
-    path: "/runs/$runId/walkthrough",
-    eyebrow: "Run",
-    description: "Walk the recorded app state by state, configuration by configuration.",
-  },
   "/batches/:batchId": {
     path: "/batches/$batchId",
     eyebrow: "Runs",
     description: "Open a failed case, or rerun the ones you select.",
-  },
-  "/changes": {
-    path: "/changes",
-    eyebrow: "Verification",
-    description: "Connect code changes to the tests and evidence that prove them.",
-  },
-  "/changes/:changeId": {
-    path: "/changes/$changeId",
-    eyebrow: "Verification",
-    description: "Review the verification plan and its durable evidence.",
   },
   "/devices": {
     path: "/devices",
@@ -163,16 +118,6 @@ const routePresentations = {
     path: "/devices/$deviceId",
     eyebrow: "Devices",
     description: "Review readiness and capabilities for this device.",
-  },
-  "/goals": {
-    path: "/goals",
-    eyebrow: "Explore",
-    description: "Give Relay a goal and a URL, then review the evidence it retains.",
-  },
-  "/debug": {
-    path: "/debug",
-    eyebrow: "Live",
-    description: "Name the problem, pick a device, and start capturing.",
   },
   "/settings/general": {
     path: "/settings/general",

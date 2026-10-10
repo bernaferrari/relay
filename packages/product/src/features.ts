@@ -5,7 +5,6 @@ import { createRelayRunOutcomeJobs } from "@relay/workflows/run-outcomes";
 import type { AppMap } from "@relay/protocol";
 import { createProductRecordingJourney } from "./recording-journey.js";
 import { createProductRunJourney } from "./run-journey.js";
-import { createProductChangeJourney } from "./change-journey.js";
 import { findUniqueProductTestOwner } from "./test-identity.js";
 export type ProductFeatures = ReturnType<typeof createProductFeatures>;
 export function createProductFeatures(client: RelayInvokeClient, options: { actorId: string }) {
@@ -35,7 +34,6 @@ export function createProductFeatures(client: RelayInvokeClient, options: { acto
       start: (intent: RunTestOutcomeIntent) => run.run(intent),
       journey: createProductRunJourney({ jobs: run }),
     },
-    change: createProductChangeJourney({ operations }),
     device: {
       list: () => operations.invoke("target.list", {}).then((result) => result.targets),
     },

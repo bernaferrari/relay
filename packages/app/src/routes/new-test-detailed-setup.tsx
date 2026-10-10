@@ -13,7 +13,7 @@ import type { RecordingSetupAdmission } from "../data/recording-setup-admission"
 import { BrowserSetup } from "./new-test-browser-setup";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { Button } from "@relay/ui-react/components/button";
-import { CircleDot, Compass, Play, RotateCcw, Smartphone, Plus } from "lucide-react";
+import { CircleDot, Play, RotateCcw, Smartphone, Plus } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import { targetLabel } from "./recording-shared";
 import type { ProductTargetOption } from "../data/target-presentation";
@@ -62,7 +62,6 @@ export function NewTestDetailedSetup({
   inputFailure,
   inputRecoveryBusy,
   onObserveInput,
-  onExploreUrl,
   targetFetching,
   browsersUnavailable,
   savedBrowsers,
@@ -112,7 +111,6 @@ export function NewTestDetailedSetup({
   inputFailure?: RecordingInputOutcome;
   inputRecoveryBusy: boolean;
   onObserveInput(observed: RecordingObservedEffect): Promise<void>;
-  onExploreUrl(url: string): void;
   targetFetching: boolean;
   browsersUnavailable: boolean;
   savedBrowsers: readonly Browser[];
@@ -301,20 +299,6 @@ export function NewTestDetailedSetup({
               aria-label="Device preview"
             >
               <div className="flex items-center justify-end gap-1">
-                {browserContext?.pageUrl ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={admission.busy}
-                    onClick={() => {
-                      if (admission.mayEdit()) onExploreUrl(browserContext.pageUrl!);
-                    }}
-                  >
-                    <Compass aria-hidden="true" />
-                    Explore URL in a new browser
-                  </Button>
-                ) : null}
                 {previewIssue ? (
                   <Button
                     type="button"

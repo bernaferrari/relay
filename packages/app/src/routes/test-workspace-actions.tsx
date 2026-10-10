@@ -151,19 +151,6 @@ export function TestWorkspaceActions({
                 <MoreHorizontal aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                {!activeRun && testPresent ? (
-                  <DropdownMenuItem
-                    render={
-                      <Link
-                        to="/tests/$testId/run-across"
-                        params={{ testId }}
-                        search={{ app: appMapId }}
-                      />
-                    }
-                  >
-                    Run with different data or devices…
-                  </DropdownMenuItem>
-                ) : null}
                 {attachedRunId ? (
                   <DropdownMenuItem
                     render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}

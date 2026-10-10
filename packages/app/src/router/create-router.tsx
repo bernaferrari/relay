@@ -56,18 +56,9 @@ import {
   type LiveTestEditorProductService,
 } from "../data/live-test-editor-product-service";
 import {
-  createChangeProductService,
-  type ChangeProductService,
-} from "../data/change-product-service";
-import {
   createTestEditorProductService,
   type TestEditorProductService,
 } from "../data/test-editor-product-service";
-import {
-  createAgentDebugProductService,
-  type AgentDebugProductService,
-} from "../data/agent-debug-product-service";
-import { createGoalProductService, type GoalProductService } from "../data/goal-product-service";
 import { AppShell } from "../layout/app-shell";
 import type { Platform } from "../platform/types";
 import { assertAllowedRouteSearch } from "./route-contract";
@@ -119,9 +110,7 @@ const TestsPage = lazyNamedRoute(() => import("../routes/tests-page"), "TestsPag
 const NewTestPage = lazyNamedRoute(() => import("../routes/new-test-page"), "NewTestPage");
 const TestPage = lazyNamedRoute(() => import("../routes/test-page"), "TestPage");
 const EditTestPage = lazyNamedRoute(() => import("../routes/edit-test-page"), "EditTestPage");
-const RecordTestPage = lazyNamedRoute(() => import("../routes/record-test-page"), "RecordTestPage");
 const RecordingPage = lazyNamedRoute(() => import("../routes/record-test-page"), "RecordingPage");
-const RunAcrossPage = lazyNamedRoute(() => import("../routes/run-across-page"), "RunAcrossPage");
 const SuitePage = lazyNamedRoute(() => import("../routes/suite-page"), "SuitePage");
 const EnvironmentsPage = lazyNamedRoute(
   () => import("../routes/environments-page"),
@@ -139,18 +128,10 @@ const SessionsPage = lazyNamedRoute(() => import("../routes/sessions-page"), "Se
 const SessionPage = lazyNamedRoute(() => import("../routes/session-page"), "SessionPage");
 const RunsPage = lazyNamedRoute(() => import("../routes/runs-page"), "RunsPage");
 const RunPage = lazyNamedRoute(() => import("../routes/run-page"), "RunPage");
-const RunWalkthroughPage = lazyNamedRoute(
-  () => import("../routes/run-walkthrough-page"),
-  "RunWalkthroughPage",
-);
 const BatchPage = lazyNamedRoute(() => import("../routes/batch-page"), "BatchPage");
-const ChangesPage = lazyNamedRoute(() => import("../routes/changes-page"), "ChangesPage");
-const ChangePage = lazyNamedRoute(() => import("../routes/change-page"), "ChangePage");
 const DevicesPage = lazyNamedRoute(() => import("../routes/devices-page"), "DevicesPage");
 const DevicePage = lazyNamedRoute(() => import("../routes/device-page"), "DevicePage");
 const SettingsPage = lazyNamedRoute(() => import("../routes/settings-page"), "SettingsPage");
-const AgentDebugPage = lazyNamedRoute(() => import("../routes/agent-debug-page"), "AgentDebugPage");
-const GoalPage = lazyNamedRoute(() => import("../routes/goal-page"), "GoalPage");
 
 // Route tests assert settled product behavior, not Suspense timing. Production
 // keeps the split chunks and intent preloading; tests eagerly resolve
@@ -169,14 +150,11 @@ export type AppRouterContext = {
   catalogService: CatalogProductService;
   deviceService: DeviceProductService;
   settingsService: SettingsProductService;
-  changeService: ChangeProductService;
   testEditorService: TestEditorProductService;
   sessionService: SessionProductService;
   suiteProfileService: SuiteProfileProductService;
   browserSpacesService: BrowserSpacesProductService;
   liveTestEditorService: LiveTestEditorProductService;
-  agentDebugService: AgentDebugProductService;
-  goalService: GoalProductService;
   queryClient: QueryClient;
 };
 
@@ -219,14 +197,6 @@ const indexRoute = createRoute({
   },
 });
 
-// Tests is home: what needs you, your plans, and your tests.
-const homeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/home",
-  beforeLoad: () => {
-    throw redirect({ to: "/tests", replace: true });
-  },
-});
 const appsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps",
@@ -236,20 +206,6 @@ const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps/$appId",
   component: AppPage,
-});
-const appVersionsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/apps/$appId/versions",
-  beforeLoad: () => {
-    throw redirect({ to: "/versions", replace: true });
-  },
-});
-const appAccountsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/apps/$appId/accounts",
-  beforeLoad: () => {
-    throw redirect({ to: "/accounts", replace: true });
-  },
 });
 const versionsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -293,28 +249,10 @@ const editTestRoute = createRoute({
   path: "/tests/$testId/edit",
   component: EditTestPage,
 });
-const recordTestRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tests/$testId/record",
-  component: RecordTestPage,
-});
 const recordingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/recordings/$recordingId",
   component: RecordingPage,
-});
-const runAcrossRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tests/$testId/run-across",
-  component: RunAcrossPage,
-});
-const suitesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/suites",
-  // Keep old Plan links on the Plans view of the Test library.
-  beforeLoad: () => {
-    throw redirect({ to: "/tests", search: { view: "plans" }, replace: true });
-  },
 });
 const suiteRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -362,47 +300,15 @@ const runRoute = createRoute({
   path: "/runs/$runId",
   component: RunPage,
 });
-const runWalkthroughRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/runs/$runId/walkthrough",
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { state?: string; variant?: string; capture?: string } => ({
-    ...(typeof search.state === "string" && search.state ? { state: search.state } : {}),
-    ...(typeof search.variant === "string" && search.variant ? { variant: search.variant } : {}),
-    ...(typeof search.capture === "string" && search.capture ? { capture: search.capture } : {}),
-  }),
-  component: RunWalkthroughPage,
-});
 const batchRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/batches/$batchId",
   component: BatchPage,
 });
-const changesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/changes",
-  component: ChangesPage,
-});
-const changeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/changes/$changeId",
-  component: ChangePage,
-});
 const devicesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/devices",
   component: DevicesPage,
-});
-const agentDebugRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/debug",
-  component: AgentDebugPage,
-});
-const goalsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/goals",
-  component: GoalPage,
 });
 const deviceRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -458,11 +364,8 @@ const settingsAboutRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  homeRoute,
   appsRoute,
   appRoute,
-  appVersionsRoute,
-  appAccountsRoute,
   versionsRoute,
   accountsRoute,
   appMapRoute,
@@ -470,10 +373,7 @@ const routeTree = rootRoute.addChildren([
   newTestRoute,
   testRoute,
   editTestRoute,
-  recordTestRoute,
   recordingRoute,
-  runAcrossRoute,
-  suitesRoute,
   suiteRoute,
   environmentsRoute,
   environmentRoute,
@@ -483,14 +383,9 @@ const routeTree = rootRoute.addChildren([
   reviewRoute,
   runsRoute,
   runRoute,
-  runWalkthroughRoute,
   batchRoute,
-  changesRoute,
-  changeRoute,
   devicesRoute,
   deviceRoute,
-  agentDebugRoute,
-  goalsRoute,
   settingsIndexRoute,
   settingsGeneralRoute,
   settingsEvidenceRoute,
@@ -511,14 +406,11 @@ export function createAppRouter(options: {
   catalogService?: CatalogProductService;
   deviceService?: DeviceProductService;
   settingsService?: SettingsProductService;
-  changeService?: ChangeProductService;
   testEditorService?: TestEditorProductService;
   sessionService?: SessionProductService;
   suiteProfileService?: SuiteProfileProductService;
   browserSpacesService?: BrowserSpacesProductService;
   liveTestEditorService?: LiveTestEditorProductService;
-  agentDebugService?: AgentDebugProductService;
-  goalService?: GoalProductService;
   queryClient: QueryClient;
   history?: RouterHistory;
 }) {
@@ -540,7 +432,6 @@ export function createAppRouter(options: {
       catalogService: options.catalogService ?? createCatalogProductService(options.platform),
       deviceService: options.deviceService ?? createDeviceProductService(options.platform),
       settingsService: options.settingsService ?? createSettingsProductService(options.platform),
-      changeService: options.changeService ?? createChangeProductService(options.platform),
       testEditorService,
       sessionService,
       suiteProfileService:
@@ -554,9 +445,6 @@ export function createAppRouter(options: {
           sessions: sessionService,
           recording: productService,
         }),
-      agentDebugService:
-        options.agentDebugService ?? createAgentDebugProductService(options.platform),
-      goalService: options.goalService ?? createGoalProductService(options.platform),
       queryClient: options.queryClient,
     },
     defaultPreload: "intent",

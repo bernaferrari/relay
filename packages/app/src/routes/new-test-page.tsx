@@ -655,7 +655,6 @@ export function NewTestPage() {
             inputFailure={previewInput.failure}
             inputRecoveryBusy={previewInput.recoveryBusy}
             onObserveInput={previewInput.observe}
-            onExploreUrl={(url) => void navigate({ to: "/goals", search: { url } })}
             targetFetching={targets.isFetching}
             browsersUnavailable={savedBrowsers.isError}
             savedBrowsers={savedBrowsers.data ?? []}

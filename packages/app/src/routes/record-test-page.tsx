@@ -49,7 +49,6 @@ import { useRecordingInputReceipt } from "./use-recording-input-receipt";
 import { useRecordingConditionRecovery } from "./use-recording-condition-recovery";
 import { prepareRecordingStop, recordingStopBlockedReason } from "../data/recording-stop-state";
 
-const testRouteApi = getRouteApi("/tests/$testId/record");
 const recordingRouteApi = getRouteApi("/recordings/$recordingId");
 
 type CaptureAction =
@@ -59,11 +58,6 @@ type CaptureAction =
   | { action: "condition"; condition: RecordingCondition }
   | { action: "stop" }
   | { action: "cancel" };
-
-export function RecordTestPage() {
-  const { testId } = testRouteApi.useParams();
-  return <RecordingWorkspace workflowId={testId} />;
-}
 
 /** The recording-owned route is used while a new Test has no Test ID yet. It
  * intentionally shares the exact recorder workspace with true Test recording

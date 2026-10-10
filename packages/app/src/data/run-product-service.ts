@@ -50,53 +50,6 @@ export type RunTargetDiscoveryScope = Pick<
   "targetKind" | "targetId"
 >;
 export type ProductVisualBaselineApproval = OperationOutput<"run.visual-baseline.update">;
-export type PlayerManifestProjection = {
-  schemaVersion: 1;
-  pinned: {
-    appMapId: string;
-    appMapRevision: number;
-    runIds: readonly string[];
-    generatedAt: number;
-  };
-  entryStateId?: string;
-  states: readonly { id: string; title: string }[];
-  variants: readonly { id: string; label: string }[];
-  captures: readonly {
-    id: string;
-    stateId: string;
-    variantId: string;
-    runId: string;
-    framePath: string;
-    imageSha256: string;
-    caption: string;
-    capturedAt: number;
-  }[];
-  connections: readonly {
-    id: string;
-    fromStateId: string;
-    toStateId: string;
-    kind: "recorded" | "authored" | "suggested";
-    label: string;
-    provenance?: { runId: string; captureId?: string };
-    hotspot?: {
-      connectionId: string;
-      point?: { x: number; y: number };
-      rect?: { x: number; y: number; width: number; height: number };
-      actions: readonly { kind: string; label?: string }[];
-    };
-  }[];
-  findings: readonly {
-    id: string;
-    runId: string;
-    captureId: string;
-    action: string;
-    note?: string;
-    decidedAt: number;
-    decidedBy?: string;
-    reviewVersion?: number;
-  }[];
-  missing: readonly { stateId: string; variantId: string; reason: string }[];
-};
 /** The same Test id exists in several apps; the caller must say which one. */
 export class AmbiguousTestError extends Error {
   constructor(readonly owners: readonly { appMapId: string; appName: string }[]) {
@@ -147,12 +100,6 @@ export type RunProductService = {
   ): Promise<ProductVisualBaselineApproval>;
   reviewCapture?(input: OperationInput<"run.capture.review">): Promise<ProductCaptureReviewResult>;
   getReport(runId: string, canonical?: ProductRunReport): Promise<ProductRunReportOverview>;
-  /** Read-only captured-app player manifest (delivery plan §6). Composition
-   * needs no report data; the player works without any report present. */
-  getPlayerManifest?(
-    runId: string,
-    withRunIds?: readonly string[],
-  ): Promise<PlayerManifestProjection>;
   /** One captured frame as a Blob for display (authenticated transport). */
   loadFrame?(runId: string, framePath: string): Promise<Blob>;
   /** The running job as it is now: title, status, steps, and frames so far. */
@@ -439,21 +386,6 @@ export function createRunProductService(platform: Platform): RunProductService {
       return new Blob([new Uint8Array(resource.bytes)], {
         type: resource.headers.get("content-type") ?? "image/png",
       });
-    },
-    async getPlayerManifest(runId, withRunIds = []) {
-      const client = await relayClient();
-      const joined = withRunIds.filter((id) => id && id !== runId);
-      const query = joined.length
-        ? `?${joined.map((id) => `with=${encodeURIComponent(id)}`).join("&")}`
-        : "";
-      const response = await client.download(
-        `/runs/${encodeURIComponent(runId)}/player-manifest${query}`,
-      );
-      const payload: unknown = await response.json();
-      if (!payload || typeof payload !== "object" || !("manifest" in payload)) {
-        throw new Error("Player manifest is missing.");
-      }
-      return payload.manifest as PlayerManifestProjection;
     },
     async exportWalkthrough(runId, withRunIds = []) {
       const client = await relayClient();

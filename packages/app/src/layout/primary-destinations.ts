@@ -1,11 +1,4 @@
-import {
-  Activity,
-  FlaskConical,
-  GitCompare,
-  History,
-  KeyRound,
-  MonitorSmartphone,
-} from "lucide-react";
+import { Activity, FlaskConical, History, KeyRound, MonitorSmartphone } from "lucide-react";
 
 /**
  * One destination vocabulary for the sidebar and command palette, per the
@@ -62,14 +55,6 @@ export const moreDestinations = [
     icon: Activity,
     detail: "Recordings and live sessions",
     keywords: "sessions activity live recordings",
-  },
-  {
-    to: "/changes",
-    label: "Changes",
-    shortLabel: "Changes",
-    icon: GitCompare,
-    detail: "Verify a code change against your tests",
-    keywords: "changes proof verification pull request",
   },
 ] as const;
 

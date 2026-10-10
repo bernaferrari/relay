@@ -279,7 +279,7 @@ export function SuitePage() {
           title="Plan not found"
           detail="It may have been removed from this app."
           action={
-            <Link className={productLinkClassName} to="/suites">
+            <Link className={productLinkClassName} to="/tests" search={{ view: "plans" }}>
               Back to plans
             </Link>
           }

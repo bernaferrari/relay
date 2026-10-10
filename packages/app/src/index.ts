@@ -1,11 +1,4 @@
 export { RelayApp } from "./app";
-export {
-  createGoalProductService,
-  type GoalPromotionInput,
-  type GoalProductService,
-  type GoalRunResult,
-  type GoalStartInput,
-} from "./data/goal-product-service";
 export { createRelayQueryClient } from "./data/query-client";
 export {
   createAppResourcesProductService,
@@ -131,12 +124,6 @@ export {
   type ProductCompareSet,
   type ProductCompareSetInput,
 } from "./data/browser-spaces-product-service";
-export {
-  createChangeProductService,
-  type ChangeNameIndex,
-  type ChangeProductService,
-  type ProductChangeDetail,
-} from "./data/change-product-service";
 export {
   assessProductAuthenticationFixture,
   createSuiteProfileProductService,

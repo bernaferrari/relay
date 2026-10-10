@@ -12,7 +12,7 @@ import {
 import { ApiError } from "@relay/client";
 import { createScriptedRelayClient } from "@relay/workflows/testing";
 test("route registry is exhaustive and exact", () => {
-  assert.equal(ROUTE_DEFINITIONS.length, 39);
+  assert.equal(ROUTE_DEFINITIONS.length, 28);
   assert.equal(routeMeta("/tests/new").id, "/tests/new");
   assert.equal(routeMeta("/tests/t-1").id, "/tests/:testId");
   assert.throws(() => routeMeta("/tests/t-1/extra"));
@@ -80,8 +80,6 @@ test("feature functions use canonical operations", async () => {
   const features = createProductFeatures(scripted.client, { actorId: "actor-1" });
   assert.deepEqual(await features.device.list(), []);
   assert.equal(scripted.invocations[0]?.id, "target.list");
-  assert.equal(typeof features.change.open, "function");
-  assert.equal(typeof features.change.run, "function");
 });
 test("global test lookup uses app-map.list", async () => {
   const app = { tests: { wanted: { id: "wanted" } } };

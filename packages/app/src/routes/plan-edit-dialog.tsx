@@ -218,7 +218,7 @@ export function PlanRemoveDialog({
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["suites"] });
-      await navigate({ to: "/suites" });
+      await navigate({ to: "/tests", search: { view: "plans" } });
     },
   });
   return (

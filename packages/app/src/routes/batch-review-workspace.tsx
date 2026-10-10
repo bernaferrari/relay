@@ -221,25 +221,6 @@ export function BatchReviewWorkspace({
                         >
                           {inspection.kind === "live" ? "Open run" : "Open report"}
                         </Button>
-                        {focused.runId ? (
-                          <Button
-                            nativeButton={false}
-                            variant="ghost"
-                            render={
-                              <Link
-                                to="/runs/$runId/walkthrough"
-                                params={{ runId: focused.runId }}
-                                search={{
-                                  state: undefined,
-                                  variant: undefined,
-                                  capture: undefined,
-                                }}
-                              />
-                            }
-                          >
-                            Walk through
-                          </Button>
-                        ) : null}
                       </>
                     ) : focused.identity?.testId ? (
                       <Button
