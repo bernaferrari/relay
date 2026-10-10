@@ -71,7 +71,7 @@ export type ProductTestDetail = ProductTestSummary & {
   /** The screen Variant profile this Test was recorded on (browser size and
    * saved login). Runs default to it. */
   recordedProfileId?: string;
-  links: { self: string; app: string; edit: string };
+  links: { self: string; app: string };
 };
 
 export type ProductRunPhase =
@@ -587,7 +587,6 @@ export function productTestDetail(
     links: {
       self: routeUrls.test(test.id),
       app: routeUrls.app(app.id),
-      edit: routeUrls.testEdit(test.id),
     },
   };
 }

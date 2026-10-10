@@ -324,8 +324,10 @@ describe("Tests library", () => {
   it("opens a ready test at the run composer instead of a second dialog", async () => {
     const { history } = await render("/tests");
     expect(
-      document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
-    ).toContain("Review steps");
+      [...document.querySelectorAll('a[href="/tests/test-checkout-internal"]')].some((link) =>
+        link.textContent?.includes("Review steps"),
+      ),
+    ).toBe(true);
     await clickText("Run");
     expect(history.location.pathname).toBe("/tests/test-language-internal");
     expect(history.location.search).toBe("?setup=run");

@@ -324,7 +324,7 @@ describe("shell overlays", () => {
     expect(history.location.pathname).toBe("/accounts");
   });
 
-  it("shows running work and links to full Activity", async () => {
+  it("shows running work and links to all runs", async () => {
     const run: ProductRunSummary = {
       id: "run-server",
       title: "Checkout",
@@ -353,12 +353,12 @@ describe("shell overlays", () => {
     expect(document.body.textContent).toContain("Checkout");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Activity");
     const activityLink = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (link) => link.textContent === "View all activity",
+      (link) => link.textContent === "View all runs",
     );
     expect(activityLink).toBeTruthy();
     await act(async () => activityLink?.click());
     await settle();
-    expect(history.location.pathname).toBe("/sessions");
+    expect(history.location.pathname).toBe("/runs");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 

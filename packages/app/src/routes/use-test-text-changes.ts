@@ -2,20 +2,17 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import type { ProductTestEditorDocument } from "../data/test-editor-product-service";
 import type { ProductTestTextAction } from "../data/test-text-actions";
-import type { LiveTestEditorSession } from "../data/live-test-editor-product-service";
 import { collectStepEntries } from "./test-editor-route-helpers";
 import type { useTestStepDrafts } from "./use-test-step-drafts";
 
 export function useTestTextChanges({
   currentDocument,
-  currentLiveEditor,
   saveDocument,
   setSaveNotice,
   acknowledgeTextDraft,
 }: {
   currentDocument(): ProductTestEditorDocument | undefined;
-  currentLiveEditor(): LiveTestEditorSession | undefined;
-  saveDocument(next: ProductTestEditorDocument | LiveTestEditorSession): void;
+  saveDocument(next: ProductTestEditorDocument): void;
   setSaveNotice(notice: string): void;
   acknowledgeTextDraft: ReturnType<typeof useTestStepDrafts>["acknowledgeTextDraft"];
 }) {
@@ -29,8 +26,7 @@ export function useTestTextChanges({
     },
     onMutate: () => setSaveNotice("Saving…"),
     onSuccess: (next, input) => {
-      const live = currentLiveEditor();
-      saveDocument(live ? { ...live, test: next } : next);
+      saveDocument(next);
       const step = collectStepEntries(next.test.steps).find(
         (entry) => entry.step.id === input.stepId,
       )?.step;

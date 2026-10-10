@@ -8,10 +8,9 @@ import { appScopeDetailsForLocation, safeDecodeURIComponent } from "./app-scope"
 /** One resource-owned App context for the selector and primary destinations. */
 export function useCurrentAppScope() {
   const location = useLocation();
-  const { productService, catalogService, sessionService, runService, runAcrossService } =
-    useRouteContext({
-      from: "__root__",
-    });
+  const { productService, catalogService, runService, runAcrossService } = useRouteContext({
+    from: "__root__",
+  });
   const canListApps = typeof productService.listApps === "function";
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -67,22 +66,6 @@ export function useCurrentAppScope() {
     enabled: Boolean(recordingId),
     staleTime: 5_000,
   });
-  const sessionId = safeDecodeURIComponent(
-    /^\/sessions\/([^/]+)$/u.exec(location.pathname)?.[1] ?? "",
-  );
-  const session = useQuery({
-    queryKey: ["app-scope", "session", sessionId ?? "unselected"],
-    queryFn: async () => {
-      try {
-        return (await sessionService.get(sessionId!)) ?? null;
-      } catch {
-        return null;
-      }
-    },
-    enabled: Boolean(sessionId),
-    staleTime: 15_000,
-    retry: false,
-  });
   const scope = appScopeDetailsForLocation({
     pathname: location.pathname,
     search: location.search,
@@ -109,13 +92,6 @@ export function useCurrentAppScope() {
         ]
       : recordingId
         ? recording.isFetched
-          ? []
-          : undefined
-        : undefined,
-    sessions: session.data
-      ? [{ id: session.data.id, appMapId: session.data.appMapId }]
-      : sessionId
-        ? session.isFetched
           ? []
           : undefined
         : undefined,

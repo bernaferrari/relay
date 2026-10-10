@@ -23,10 +23,7 @@ export function TestEditorDoneButton({
 }) {
   const blocker = useBlocker({
     shouldBlockFn: ({ current, next }) =>
-      (saving || hasUnsavedChanges) &&
-      (current.pathname !== next.pathname ||
-        (current.search as { session?: string }).session !==
-          (next.search as { session?: string }).session),
+      (saving || hasUnsavedChanges) && current.pathname !== next.pathname,
     enableBeforeUnload: saving || hasUnsavedChanges,
     withResolver: true,
   });

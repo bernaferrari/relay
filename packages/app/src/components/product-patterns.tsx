@@ -32,7 +32,7 @@ type ReadinessValue = "ready" | "needs-review";
 export type BreadcrumbItem =
   | {
       label: string;
-      to: "/apps" | "/environments" | "/sessions" | "/runs" | "/devices";
+      to: "/apps" | "/environments" | "/runs" | "/devices";
     }
   | { label: string; to: "/tests"; search?: { app?: string; view?: "plans" } }
   | { label: string; to: "/apps/$appId"; params: { appId: string } }

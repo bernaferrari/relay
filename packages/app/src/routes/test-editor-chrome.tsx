@@ -8,7 +8,6 @@ import { TestEditorSettingsPanel } from "./test-editor-page-sections";
 
 export function TestEditorChrome({
   embedded,
-  sessionId,
   editorDocument,
   saveState,
   saving,
@@ -26,7 +25,6 @@ export function TestEditorChrome({
   onSaveSettings,
 }: {
   embedded: boolean;
-  sessionId?: string;
   editorDocument?: ProductTestEditorDocument;
   saveState: ReactNode;
   saving: boolean;
@@ -66,17 +64,15 @@ export function TestEditorChrome({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {saveState}
-            {!sessionId ? (
-              <Button
-                size="icon-sm"
-                aria-label="Test settings"
-                title="Test settings"
-                variant="ghost"
-                onClick={() => onSettingsOpenChange((open) => !open)}
-              >
-                <Settings2 aria-hidden="true" />
-              </Button>
-            ) : null}
+            <Button
+              size="icon-sm"
+              aria-label="Test settings"
+              title="Test settings"
+              variant="ghost"
+              onClick={() => onSettingsOpenChange((open) => !open)}
+            >
+              <Settings2 aria-hidden="true" />
+            </Button>
             <TestEditorDoneButton
               saving={saving}
               hasUnsavedChanges={hasUnsavedChanges}
@@ -86,24 +82,22 @@ export function TestEditorChrome({
           </div>
         </header>
       )}
-      {!sessionId ? (
-        <TestEditorSettingsPanel
-          name={settingsName}
-          originApplication={settingsOrigin}
-          open={settingsOpen}
-          saving={settingsSaving}
-          error={settingsError}
-          onNameChange={(name) => {
-            onNameChange(name);
-          }}
-          onOriginChange={(origin) => {
-            onOriginChange(origin);
-          }}
-          onOpenChange={onSettingsOpenChange}
-          onRetry={() => onSaveSettings()}
-          onSave={() => onSaveSettings()}
-        />
-      ) : null}
+      <TestEditorSettingsPanel
+        name={settingsName}
+        originApplication={settingsOrigin}
+        open={settingsOpen}
+        saving={settingsSaving}
+        error={settingsError}
+        onNameChange={(name) => {
+          onNameChange(name);
+        }}
+        onOriginChange={(origin) => {
+          onOriginChange(origin);
+        }}
+        onOpenChange={onSettingsOpenChange}
+        onRetry={() => onSaveSettings()}
+        onSave={() => onSaveSettings()}
+      />
     </>
   );
 }

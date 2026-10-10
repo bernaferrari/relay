@@ -12,12 +12,9 @@ const expectedPaths = {
   "/tests": "/tests",
   "/tests/new": "/tests/new",
   "/tests/:testId": "/tests/$testId",
-  "/tests/:testId/edit": "/tests/$testId/edit",
   "/apps/:appId/suites/:suiteId": "/apps/$appId/suites/$suiteId",
   "/environments": "/environments",
   "/environments/:profileId": "/environments/$profileId",
-  "/sessions": "/sessions",
-  "/sessions/:sessionId": "/sessions/$sessionId",
   "/recordings/:recordingId": "/recordings/$recordingId",
   "/recordings/:recordingId/review": "/recordings/$recordingId/review",
   "/review": "/review",
@@ -76,7 +73,7 @@ describe("React route contract", () => {
   );
 
   it("builds semantic parent locations for direct-entry navigation", () => {
-    expect(parentPathForPath("/tests/test-1/edit")).toBe("/tests/test-1");
+    expect(parentPathForPath("/tests/test-1")).toBe("/tests");
     expect(parentPathForPath("/apps/app%201/map")).toBe("/apps/app%201");
     expect(parentPathForPath("/tests")).toBeUndefined();
   });

@@ -12,7 +12,7 @@ import {
 import { ApiError } from "@relay/client";
 import { createScriptedRelayClient } from "@relay/workflows/testing";
 test("route registry is exhaustive and exact", () => {
-  assert.equal(ROUTE_DEFINITIONS.length, 28);
+  assert.equal(ROUTE_DEFINITIONS.length, 25);
   assert.equal(routeMeta("/tests/new").id, "/tests/new");
   assert.equal(routeMeta("/tests/t-1").id, "/tests/:testId");
   assert.throws(() => routeMeta("/tests/t-1/extra"));
@@ -25,14 +25,12 @@ test("route metadata uses public vocabulary", () => {
     assert.equal(text.includes(term), false);
   assert.equal(routeMeta("/recordings/r-1/review").primaryAction, "review-recording");
   assert.equal(routeMeta("/recordings/r-1").primaryAction, "continue-recording");
-  assert.equal(routeMeta("/sessions/s-1").primaryObject, "Session");
   assert.equal(routeMeta("/batches/b-1").primaryAction, "review-batch");
   assert.equal(routeMeta("/settings/about").primaryObject, null);
 });
 test("builders encode and load intents validate concrete routes", () => {
   assert.equal(routeUrls.test("a/b"), "/tests/a%2Fb");
   assert.equal(routeUrls.recording("a/b"), "/recordings/a%2Fb");
-  assert.equal(routeUrls.session("a/b"), "/sessions/a%2Fb");
   assert.equal(routeUrls.suite("app one", "smoke/all"), "/apps/app%20one/suites/smoke%2Fall");
   assert.equal(routeUrls.environment("chrome/staging"), "/environments/chrome%2Fstaging");
   assert.throws(() => routeUrls.test(" "));

@@ -69,7 +69,7 @@ export function useDescribeWebsiteTest({
         const yaml = /\n\s*(?:url|app):/u.test(`\n${goal}`) ? goal : `${goal}\nurl: ${url}\n`;
         const applied = await testEditorService.applyYaml(yaml);
         await queryClient.invalidateQueries({ queryKey: catalogQueryKeys.tests });
-        await navigate({ to: "/tests/$testId/edit", params: { testId: applied.testId } });
+        await navigate({ to: "/tests/$testId", params: { testId: applied.testId } });
         return;
       }
       setProgress("Writing steps…");
@@ -90,7 +90,7 @@ export function useDescribeWebsiteTest({
       });
       await queryClient.invalidateQueries({ queryKey: catalogQueryKeys.tests });
       await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.apps });
-      await navigate({ to: "/tests/$testId/edit", params: { testId: document.test.id } });
+      await navigate({ to: "/tests/$testId", params: { testId: document.test.id } });
     } catch (error) {
       setError(
         error instanceof Error && error.message
