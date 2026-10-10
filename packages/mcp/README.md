@@ -28,7 +28,7 @@ Relay MCP has three profiles. Each one contains the one before it.
 
 | Profile        | Tools | Use it to                                                              |
 | -------------- | ----- | ---------------------------------------------------------------------- |
-| `qa` (default) | 12    | Write a Test from a sentence, run it, read the verdict, check a change |
+| `qa` (default) | 13    | Write a Test from a sentence, run it, read the verdict, check a change |
 | `device`       | 36    | Everything in `qa`, plus drive a device or browser and record Tests    |
 | `full`         | ~290  | Everything in `device`, plus every raw Relay operation as a tool       |
 
@@ -53,6 +53,7 @@ side effects.
 | `relay_get_test`        | Read a Test as its test file                                    |
 | `relay_get_guide`       | Read the bundled how-to guides                                  |
 | `relay_health`          | Check that Relay and its prerequisites are ready                |
+| `relay_panel`           | Read-only Tests and results view (MCP Apps hosts)               |
 
 **`device`** adds live control and recording:
 
@@ -69,7 +70,6 @@ side effects.
 | `relay_inspect_workflow`, `relay_cancel_run`                             | Read or stop a recording, repeat or Run           |
 | `relay_explore_goal`                                                     | Let a model drive toward a goal, in few steps     |
 | `relay_propose_repair`, `relay_export_evidence`                          | Suggest a fix for review; export a Run's evidence |
-| `relay_panel`                                                            | Read-only Tests and results view (MCP Apps)       |
 
 Device tools take `targetId` from `relay_list_devices`, or `laneId` for a saved
 browser sign-in. They take control of a free device automatically and say who
@@ -353,7 +353,7 @@ the optional local startup described above can attach or launch the runtime.
 
 ### Read-only Tests and results panel
 
-The `device` profile adds `relay_panel` to inspect existing Apps, saved Tests,
+The default `qa` profile includes `relay_panel` to inspect existing Apps, saved Tests,
 recent Runs and one retained PNG per request. It calls canonical read operations;
 it cannot start Runs, capture a live device or accept visual evidence.
 Screenshot bytes are retained artifact data, bounded and checked against their

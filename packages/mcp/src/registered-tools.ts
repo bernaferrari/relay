@@ -18,14 +18,9 @@ export function relayRegisteredToolNames(
   profile: RelayMcpProfile,
   tools: readonly RelayMcpToolDescriptor[] = relayMcpToolsForProfile(profile),
 ): readonly string[] {
-  const qa = [...names(relayEverydayTools), ...names(relayQaOperationTools)];
+  const qa = [...names(relayEverydayTools), ...names(relayQaOperationTools), relayPanelToolName];
   if (profile === "qa") return qa;
-  const device = [
-    ...qa,
-    ...names(relayOperatorTools),
-    ...names(relayOutcomeTools),
-    relayPanelToolName,
-  ];
+  const device = [...qa, ...names(relayOperatorTools), ...names(relayOutcomeTools)];
   if (profile === "device") return device;
   return [...device, ...names(relayFullOutcomeTools), ...names(tools)];
 }
@@ -56,9 +51,10 @@ const qaRequiredOperationIds = [
   "run.evidence.get",
   "run.repair.list",
   "run.trace-pack.get",
+  "run.panel-manifest.get",
 ] as const satisfies readonly OperationId[];
 
-/** Plus what live control, recording, repeats and the panel call. */
+/** Plus what live control, recording and repeats call. */
 const deviceRequiredOperationIds = [
   ...qaRequiredOperationIds,
   "target.screenshot.capture",
@@ -73,7 +69,6 @@ const deviceRequiredOperationIds = [
   "job.combine.campaign.get",
   "job.combine.campaign.resume",
   "job.combine.campaign.cancel",
-  "run.panel-manifest.get",
   "run.repair.propose",
 ] as const satisfies readonly OperationId[];
 

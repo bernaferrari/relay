@@ -513,7 +513,7 @@ test("each profile contains the one before it, with one name per tool", () => {
   assert.ok(qa.every((name) => device.includes(name)));
   assert.ok(device.every((name) => full.includes(name)));
   assert.ok(qa.every((name) => full.includes(name)));
-  assert.ok(qa.length <= 12, `qa: ${qa.length}`);
+  assert.ok(qa.length <= 13, `qa: ${qa.length}`);
   assert.ok(device.length > qa.length && full.length > device.length);
   assert.ok([...qa, ...device].every((name) => /^relay_[a-z]+(?:_[a-z]+)*$/u.test(name)));
 });

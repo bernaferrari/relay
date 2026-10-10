@@ -64,7 +64,7 @@ The ChatGPT host does not get a custom schema or a second Proof workflow. The
 same canonical MCP tools, resources, confirmation rules, and human approval
 boundary apply everywhere.
 
-The device profile includes the read-only `relay_panel` tool. A host that
+Every profile includes the read-only `relay_panel` tool. A host that
 advertises `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app` gets
 the bundled Tests and results view. Other hosts get its state as text.
 Transport and capability checks do not establish rendered host compatibility.
