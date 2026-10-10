@@ -217,7 +217,7 @@ export function formatBatchEnvironmentLabel(
 ): string {
   // A saved session ("<browser>#signed-out:<session>") is named by the
   // session itself; otherwise a human label beats a "browser:<id>" handle.
-  const session = /#[^:#]+:([A-Za-z0-9][\w-]*)$/u.exec(environmentId)?.[1];
+  const session = /#[^:#]+:([A-Za-z][\w-]*)$/u.exec(environmentId)?.[1];
   if (session && !isProfileDump(session)) return session;
   const target = hints?.targetLabel?.trim();
   if (target && !isProfileDump(target)) return target;

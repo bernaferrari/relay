@@ -195,7 +195,7 @@ export function ValidationExpectationEditor({
               id="selected-step-expected-visual"
               value={value.criteria}
               onChange={(event) => onChange({ ...value, criteria: event.currentTarget.value })}
-              placeholder={"Composer is visible\nSend is enabled"}
+              placeholder={"The cart total is visible\nCheckout is enabled"}
               rows={4}
             />
           </label>
@@ -209,9 +209,7 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            Optional. Pixels or 0–1 fractions. Leave blank to judge the whole screenshot. Judge
-            visible chrome. Do not parse LaTeX or H1–H6 size. Coffee and location replies stay
-            screenshot-only.
+            Optional. Pixels or 0–1 fractions. Leave blank to judge the whole screenshot.
           </p>
           <RegionFrame region={value.region} />
           <JudgeAgreementControls
@@ -258,7 +256,7 @@ export function ValidationExpectationEditor({
               id="selected-step-expected-wait-label"
               value={value.label}
               onChange={(event) => onChange({ ...value, label: event.currentTarget.value })}
-              placeholder="Ask anything"
+              placeholder="Message"
             />
           </label>
           <label htmlFor="selected-step-expected-wait-max">
@@ -293,7 +291,7 @@ export function ValidationExpectationEditor({
               id="selected-step-expected-extract-label"
               value={value.label}
               onChange={(event) => onChange({ ...value, label: event.currentTarget.value })}
-              placeholder="Ask anything"
+              placeholder="Message"
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
