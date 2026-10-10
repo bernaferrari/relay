@@ -169,11 +169,6 @@ const routePresentations = {
     eyebrow: "Explore",
     description: "Give Relay a goal and a URL, then review the evidence it retains.",
   },
-  "/prototype/workbench": {
-    path: "/prototype/workbench",
-    eyebrow: "Prototype",
-    description: "The frozen workbench geometry under review. Static artifact.",
-  },
   "/debug": {
     path: "/debug",
     eyebrow: "Live",

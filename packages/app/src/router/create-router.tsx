@@ -151,10 +151,6 @@ const DevicePage = lazyNamedRoute(() => import("../routes/device-page"), "Device
 const SettingsPage = lazyNamedRoute(() => import("../routes/settings-page"), "SettingsPage");
 const AgentDebugPage = lazyNamedRoute(() => import("../routes/agent-debug-page"), "AgentDebugPage");
 const GoalPage = lazyNamedRoute(() => import("../routes/goal-page"), "GoalPage");
-const PrototypeWorkbenchPage = lazyNamedRoute(
-  () => import("../routes/prototype-workbench"),
-  "PrototypeWorkbenchPage",
-);
 
 // Route tests assert settled product behavior, not Suspense timing. Production
 // keeps the split chunks and intent preloading; tests eagerly resolve
@@ -408,11 +404,6 @@ const goalsRoute = createRoute({
   path: "/goals",
   component: GoalPage,
 });
-const prototypeWorkbenchRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/prototype/workbench",
-  component: PrototypeWorkbenchPage,
-});
 const deviceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/devices/$deviceId",
@@ -500,7 +491,6 @@ const routeTree = rootRoute.addChildren([
   deviceRoute,
   agentDebugRoute,
   goalsRoute,
-  prototypeWorkbenchRoute,
   settingsIndexRoute,
   settingsGeneralRoute,
   settingsEvidenceRoute,

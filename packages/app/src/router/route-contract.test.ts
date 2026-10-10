@@ -36,7 +36,6 @@ const expectedPaths = {
   "/devices": "/devices",
   "/devices/:deviceId": "/devices/$deviceId",
   "/goals": "/goals",
-  "/prototype/workbench": "/prototype/workbench",
   "/debug": "/debug",
   "/settings/general": "/settings/general",
   "/settings/evidence": "/settings/evidence",
