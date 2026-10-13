@@ -34,20 +34,25 @@ export default async function DocumentationPage({ params }: Props) {
           <span className="h-0.5 w-8 bg-primary" aria-hidden="true" /> The Relay field guide
         </div>
       ) : null}
-      <DocsTitle>{page.data.title}</DocsTitle>
-      <DocsDescription>{page.data.description}</DocsDescription>
-      <div className="mb-6 flex flex-wrap items-center gap-4 text-sm text-muted-foreground [&_a]:inline-flex [&_a]:min-h-9 [&_a]:items-center [&_a]:underline-offset-4 [&_a:hover]:text-foreground [&_a:hover]:underline">
-        <MarkdownCopyButton markdownUrl={markdownUrl} />
-        <a
-          href={`${repositoryUrl}/blob/main/packages/site/content/docs/${page.path}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          View source
-        </a>
-        <a href={markdownUrl}>Markdown</a>
-      </div>
-      <DocsBody>
+      <header className="space-y-4">
+        <DocsTitle className="tracking-tight">{page.data.title}</DocsTitle>
+        <DocsDescription className="mb-0 leading-relaxed">{page.data.description}</DocsDescription>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground [&_a]:underline-offset-4 [&_a:hover]:text-foreground [&_a:hover]:underline">
+          <MarkdownCopyButton markdownUrl={markdownUrl} />
+          <a
+            className="inline-flex min-h-11 items-center"
+            href={`${repositoryUrl}/blob/main/packages/site/content/docs/${page.path}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            View source
+          </a>
+          <a href={markdownUrl} className="hidden min-h-11 items-center sm:inline-flex">
+            Markdown
+          </a>
+        </div>
+      </header>
+      <DocsBody className="mt-4">
         <Body components={getMDXComponents()} />
       </DocsBody>
     </DocsPage>

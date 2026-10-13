@@ -4,7 +4,7 @@
 @source "../../../ui-react/src";
 
 :root {
-  --background: oklch(0.992 0.006 85);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.23 0.025 260);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -12,26 +12,26 @@
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.48 0.17 260);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.97 0 0);
+  --secondary: oklch(0.968 0.003 260);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted: oklch(0.968 0.003 260);
+  --muted-foreground: oklch(0.51 0.012 260);
   --accent: oklch(0.957 0.014 260);
   --accent-foreground: oklch(0.38 0.09 260);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --border: oklch(0.916 0.006 260);
+  --input: oklch(0.916 0.006 260);
   --ring: oklch(0.48 0.17 260);
-  --sidebar: oklch(0.98 0.006 85);
+  --sidebar: oklch(0.985 0.003 260);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-accent: oklch(0.95 0.02 260);
   --sidebar-accent-foreground: oklch(0.38 0.09 260);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0.916 0.006 260);
   --radius: 0.625rem;
   --fd-layout-width: 1440px;
 }
 .dark {
   --background: oklch(0.18 0.018 260);
-  --foreground: oklch(0.96 0.005 85);
+  --foreground: oklch(0.96 0 0);
   --card: oklch(0.22 0.018 260);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);

@@ -124,17 +124,17 @@ export default function HomePage() {
     <>
       <SiteHeader />
       <main id="main-content">
-        <section className={`${container} pt-10 pb-6 sm:pt-20 sm:pb-12`}>
+        <section className={`${container} pt-12 pb-8 sm:pt-16 sm:pb-10`}>
           <div className="mx-auto max-w-3xl text-center">
             <p className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Local QA. For people and agents.
             </p>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-6xl">
+            <h1 className="text-3xl font-semibold leading-tight tracking-tight sm:text-6xl">
               Record a flow.
               <br />
               <span className="text-primary">Make it repeatable.</span>
             </h1>
-            <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+            <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
               Test websites and mobile apps in one workspace. Follow every run, inspect the
               screenshots, and keep the evidence behind your decision.
             </p>
@@ -179,7 +179,7 @@ export default function HomePage() {
         <section className={`${container} pb-16 sm:pb-20`} aria-label="Explore Relay's workspace">
           <ProductShowcase />
         </section>
-        <section id="workflow" className="scroll-mt-8 border-y bg-card">
+        <section id="workflow" className="scroll-mt-8 border-y bg-muted/30">
           <div className={`${container} py-14 sm:py-20`}>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>

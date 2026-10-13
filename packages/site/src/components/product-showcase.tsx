@@ -37,35 +37,35 @@ export function ProductShowcase() {
   const [activeId, setActiveId] = useState<(typeof views)[number]["id"]>("run");
   const active = views.find((view) => view.id === activeId)!;
   return (
-    <div id="workspace" className="scroll-mt-8">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div role="group" aria-label="Workspace preview" className="flex items-center gap-1">
-          {views.map(({ id, label, icon: Icon }) => (
-            <Button
-              key={id}
-              variant={activeId === id ? "secondary" : "ghost"}
-              aria-pressed={activeId === id}
-              onClick={() => setActiveId(id)}
-              className="h-11"
-            >
-              <Icon />
-              <span>{label}</span>
-            </Button>
-          ))}
+    <figure id="workspace" className="m-0 scroll-mt-8">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-1 border-b bg-muted/40 p-1 sm:gap-2 sm:px-4 sm:py-2">
+          <div role="group" aria-label="Workspace preview" className="flex items-center sm:gap-1">
+            {views.map(({ id, label, icon: Icon }) => (
+              <Button
+                key={id}
+                variant={activeId === id ? "outline" : "ghost"}
+                aria-pressed={activeId === id}
+                onClick={() => setActiveId(id)}
+                className="h-11"
+              >
+                <Icon />
+                <span>{label}</span>
+              </Button>
+            ))}
+          </div>
+          <a
+            href={active.src}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="View full size"
+            className={buttonVariants({ variant: "ghost", className: "h-11 w-11 sm:w-auto" })}
+          >
+            <span className="hidden sm:inline">View full size</span>{" "}
+            <ArrowUpRight className="size-4" />
+          </a>
         </div>
-        <a
-          href={active.src}
-          target="_blank"
-          rel="noreferrer"
-          aria-label="View full size"
-          className={buttonVariants({ variant: "ghost", className: "size-11 sm:w-auto" })}
-        >
-          <span className="hidden sm:inline">View full size</span>{" "}
-          <ArrowUpRight className="size-4" />
-        </a>
-      </div>
-      <figure className="m-0">
-        <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div>
           {views.map((view, index) => (
             <Image
               key={view.id}
@@ -79,11 +79,11 @@ export function ProductShowcase() {
             />
           ))}
         </div>
-        <figcaption className="mt-4 flex min-h-14 flex-col justify-between gap-1 text-xs leading-relaxed text-muted-foreground sm:min-h-6 sm:flex-row sm:gap-4">
-          <span aria-live="polite">{active.caption}</span>
-          <span className="shrink-0">Actual Relay UI · local demo data</span>
-        </figcaption>
-      </figure>
-    </div>
+      </div>
+      <figcaption className="mt-4 flex min-h-14 flex-col justify-between gap-1 text-xs leading-relaxed text-muted-foreground sm:min-h-6 sm:flex-row sm:gap-4">
+        <span aria-live="polite">{active.caption}</span>
+        <span className="shrink-0">Actual Relay UI · local demo data</span>
+      </figcaption>
+    </figure>
   );
 }
