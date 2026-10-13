@@ -3,12 +3,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import type { TargetRuntimeReadiness } from "@relay/protocol";
 import { TargetSupervisorStore, runWithTargetSupervisorStore } from "./target-supervisor-store.js";
 import {
   invalidateTargetSemanticControl,
   recordTargetPixelCapture,
   recordTargetSemanticFlightSettled,
   recordTargetSemanticSnapshot,
+  targetRuntimeReadiness,
+  TARGET_RUNTIME_READINESS_TTL_MS,
 } from "./target-runtime-readiness.js";
 
 class FakeClock {
@@ -46,6 +49,178 @@ function unprovenReadiness() {
   };
 }
 
+function provenReadiness(pixelAt: number, semanticAt: number): TargetRuntimeReadiness {
+  return {
+    previewPixels: {
+      mode: "pixels",
+      state: "proven",
+      freshness: "current",
+      proof: { at: pixelAt, durationMs: 7 },
+    },
+    semanticControl: {
+      mode: "accessibility",
+      state: "proven",
+      freshness: "current",
+      proof: { at: semanticAt, durationMs: 11, observedNodeCount: 4 },
+    },
+    evidenceCapture: {
+      mode: "evidence",
+      state: "proven",
+      freshness: "current",
+      proof: { at: pixelAt, durationMs: 7 },
+    },
+  };
+}
+
+test("pixels-only recovery retains the original semantic proof without counting another traversal", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-proof-"));
+  const clock = new FakeClock();
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"), { clock });
+  const runtimeTarget = { serial: "ipad-proof-recovery", platform: "ios" as const };
+  const supervised = { id: runtimeTarget.serial, kind: "ios" as const };
+  try {
+    runWithTargetSupervisorStore(store, () => {
+      recordTargetSemanticSnapshot(runtimeTarget, {
+        inspectable: true,
+        at: 999,
+        durationMs: 11,
+        nodes: [{ label: "Settings", rect: { x: 1, y: 1, width: 20, height: 20 } }],
+      });
+    });
+    const before = store.health(supervised);
+    clock.advance(500);
+    runWithTargetSupervisorStore(store, () => {
+      recordTargetPixelCapture(runtimeTarget, { at: 1_499, durationMs: 7 });
+    });
+    const recovered = store.recordRecoveryReceipt(supervised, {
+      channel: "pixels",
+      outcome: "succeeded",
+      reason: "A screenshot was captured without reading accessibility.",
+      readiness: targetRuntimeReadiness(runtimeTarget, clock.now()),
+    });
+    assert.equal(recovered.semantics.lastCapturedAt, 999);
+    assert.deepEqual(recovered.readiness.semanticControl.proof, {
+      at: 999,
+      durationMs: 11,
+      observedNodeCount: 1,
+    });
+    assert.equal(recovered.counters.semanticTraversals, before.counters.semanticTraversals);
+    assert.equal(recovered.pixels.lastCapturedAt, 1_499);
+    assert.deepEqual(recovered.readiness.previewPixels.proof, { at: 1_499, durationMs: 7 });
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("retained semantic proof cannot restore current liveness after restart; a newer proof can", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-retained-proof-"));
+  const path = join(root, "supervisors.sqlite");
+  const clock = new FakeClock();
+  const first = new TargetSupervisorStore(path, { clock });
+  first.health(target, provenReadiness(1_000, 1_000));
+  first.close();
+  clock.advance(500);
+
+  const restarted = new TargetSupervisorStore(path, { clock });
+  try {
+    const retained = restarted.health(target, provenReadiness(1_499, 1_000));
+    assert.equal(retained.semantics.state, "stale");
+    assert.equal(retained.semantics.lastCapturedAt, 1_000);
+    assert.equal(retained.readiness.semanticControl.freshness, "stale");
+    assert.equal(retained.counters.semanticTraversals, 1);
+
+    clock.advance(500);
+    const fresh = restarted.health(target, provenReadiness(1_999, 1_998));
+    assert.equal(fresh.semantics.state, "current");
+    assert.equal(fresh.semantics.lastCapturedAt, 1_998);
+    assert.deepEqual(fresh.readiness.semanticControl.proof, {
+      at: 1_998,
+      durationMs: 11,
+      observedNodeCount: 4,
+    });
+    assert.equal(fresh.counters.semanticTraversals, 2);
+  } finally {
+    restarted.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a retained current readiness receipt cannot undo semantic invalidation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-invalidated-proof-"));
+  const clock = new FakeClock();
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"), { clock });
+  try {
+    store.health(target, provenReadiness(1_000, 1_000));
+    clock.advance(500);
+    store.invalidateSemantics(target, "Confirmed input invalidated the tree.");
+    const retained = store.health(target, provenReadiness(1_499, 1_000));
+    assert.equal(retained.semantics.state, "stale");
+    assert.equal(retained.semantics.lastCapturedAt, 1_000);
+    assert.equal(retained.counters.semanticTraversals, 1);
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("durable health does not advertise expired pixel or semantic proof as current", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-expired-proof-"));
+  const clock = new FakeClock();
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"), { clock });
+  try {
+    store.health(target, provenReadiness(1_000, 1_000));
+    clock.advance(TARGET_RUNTIME_READINESS_TTL_MS + 1);
+    const expired = store.health(target, unprovenReadiness());
+    assert.equal(expired.pixels.state, "delayed");
+    assert.equal(expired.readiness.previewPixels.freshness, "unproven");
+    assert.equal(expired.semantics.state, "stale");
+    assert.equal(expired.readiness.semanticControl.freshness, "stale");
+    assert.equal(expired.semantics.lastCapturedAt, 1_000);
+    assert.equal(expired.counters.semanticTraversals, 1);
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("retained semantic receipts cannot replace foreground context with an older tree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-older-context-"));
+  const clock = new FakeClock();
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"), { clock });
+  try {
+    store.recordSemanticReceipt(target, { state: "current", at: 999, foregroundApp: "ai.grok" });
+    store.recordSemanticReceipt(target, { state: "current", at: 998, foregroundApp: "old.app" });
+    store.recordSemanticReceipt(target, {
+      state: "current",
+      at: 999,
+      foregroundApp: "retained.app",
+    });
+    assert.equal(store.health(target).context.foregroundApp, "ai.grok");
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("future and negative capture timestamps cannot prove liveness or fence out a genuine capture", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-invalid-time-"));
+  const clock = new FakeClock();
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"), { clock });
+  try {
+    store.health(target, provenReadiness(1_001, 1_001));
+    assert.notEqual(store.health(target).overall, "ready");
+    store.health(target, provenReadiness(-1, -1));
+    assert.notEqual(store.health(target).overall, "ready");
+    const genuine = store.health(target, provenReadiness(1_000, 1_000));
+    assert.equal(genuine.overall, "ready");
+    assert.equal(genuine.semantics.lastCapturedAt, 1_000);
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("runtime capture receipts update the server-owned durable actor", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-"));
   const clock = new FakeClock();
@@ -56,6 +231,7 @@ test("runtime capture receipts update the server-owned durable actor", async () 
         { serial: target.id, platform: "ios" },
         { at: 1_000, durationMs: 7, visualFingerprint: "pixels-a" },
       );
+      clock.advance(1);
       recordTargetSemanticSnapshot(
         { serial: target.id, platform: "ios" },
         {
@@ -88,18 +264,21 @@ test("runtime capture receipts update the server-owned durable actor", async () 
 
 test("an authoritative Android foreground replaces the first tree package in supervisor context", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-android-context-"));
-  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"));
+  const clock = new FakeClock();
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"), { clock });
   const androidTarget = { id: "emulator-context", kind: "android" } as const;
   try {
     store.recordSemanticReceipt(androidTarget, {
       state: "current",
       foregroundApp: "com.android.systemui",
     });
+    clock.advance(1);
     runWithTargetSupervisorStore(store, () => {
       recordTargetSemanticSnapshot(
         { serial: androidTarget.id, platform: "android" },
         {
           inspectable: true,
+          at: clock.now(),
           foregroundApp: "com.google.android.apps.nexuslauncher",
           nodes: [
             {

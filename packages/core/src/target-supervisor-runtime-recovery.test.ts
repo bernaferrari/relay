@@ -39,7 +39,10 @@ function readiness(input: { pixels?: boolean; semantics?: boolean }): TargetRunt
 
 async function fixture(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), "relay-runtime-recovery-"));
-  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"));
+  // Mechanism receipts below use a deterministic capture clock (10/11).
+  const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"), {
+    clock: { now: () => 12 },
+  });
   t.after(async () => {
     store.close();
     await rm(root, { recursive: true, force: true });

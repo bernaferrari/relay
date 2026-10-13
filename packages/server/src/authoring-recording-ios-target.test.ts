@@ -141,6 +141,21 @@ async function recordingFixture(
   const restorePost = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
     commands.push(command);
     assert.equal(command.appBundleId, appBundleId);
+    if (command.command === "appWindowBounds") {
+      return {
+        ok: true,
+        data: {
+          appBundleId,
+          appStateBefore: "runningForeground",
+          appStateAfter: "runningForeground",
+          source: "current-window",
+          coordinateSpace: "application-logical",
+          geometrySource: "xcui-window-frame",
+          bounds:
+            options.application === null ? undefined : (options.application ?? application).rect,
+        },
+      };
+    }
     if (command.command === "querySelector") {
       if (![control.identifier, control.label].includes(String(command.selectorValue))) {
         if ([sidebar.identifier, sidebar.label].includes(String(command.selectorValue)))
@@ -469,11 +484,15 @@ test("nonfinite fallback Application geometry blocks input", async () => {
   );
 });
 
-test("raw point recording keeps its live geometry reads and exact coordinates", async () => {
+test("raw point recording verifies current window geometry and keeps exact coordinates", async () => {
   await recordingFixture(
     [application, sidebar],
     async ({ record, commands, inputs }) => {
       await record();
+      assert.deepEqual(
+        commands.filter((command) => command.command === "appWindowBounds"),
+        [{ command: "appWindowBounds", appBundleId, timeoutMs: 15_000 }],
+      );
       assert.ok(commands.some((command) => command.command === "snapshot" && command.depth === 0));
       const taps = commands.filter((command) => command.command === "tap");
       assert.equal(taps.length, 1);

@@ -1,4 +1,4 @@
-import { PNG } from "pngjs";
+import { analyzeScreenshot, type ScreenshotAnalysis } from "./screenshot-analysis.js";
 import type { SnapshotNode } from "./device.js";
 import { pngDimensions } from "./ios-geometry.js";
 import { recordNativeViewport } from "./native-target-profile.js";
@@ -9,8 +9,9 @@ export function recordNativeScreenshotViewport(
   bytes: Uint8Array,
   logicalBounds: { width: number; height: number } | undefined,
   at: number,
+  analysis?: ScreenshotAnalysis,
 ): void {
-  if (!bytes.byteLength || isBlankScreenshot(bytes)) return;
+  if (!bytes.byteLength || (analysis?.blank ?? isBlankScreenshot(bytes))) return;
   const viewport =
     target.platform === "android" ? pngDimensions(Buffer.from(bytes)) : logicalBounds;
   if (viewport?.width && viewport.height) recordNativeViewport(target, viewport, at);
@@ -22,20 +23,7 @@ export function recordNativeScreenshotViewport(
  * while the iPad failure mode has no illuminated pixels at all.
  */
 export function isBlankScreenshot(bytes: Uint8Array): boolean {
-  let image: PNG;
-  try {
-    image = PNG.sync.read(Buffer.from(bytes));
-  } catch {
-    return false;
-  }
-  for (let offset = 0; offset < image.data.length; offset += 4) {
-    const alpha = image.data[offset + 3] ?? 0;
-    const red = image.data[offset] ?? 0;
-    const green = image.data[offset + 1] ?? 0;
-    const blue = image.data[offset + 2] ?? 0;
-    if (alpha > 0 && Math.max(red, green, blue) > 4) return false;
-  }
-  return true;
+  return analyzeScreenshot(bytes).blank;
 }
 /** Follow-on AX after a raster is opt-in. Android used to snapshot by default,
  * which let a hung tree stall the PNG; recipe callers already pass false. */

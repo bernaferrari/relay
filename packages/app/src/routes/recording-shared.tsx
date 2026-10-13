@@ -277,6 +277,13 @@ export function RecordingProblem({
 function recoveryCopy(
   recovery: ProductRecovery,
 ): Pick<ProductRecovery, "title" | "detail" | "recovery"> {
+  if (recovery.sourceCode === "TEST_OFFLINE_PREFLIGHT_BLOCKED") {
+    return {
+      title: "Saved test needs review",
+      detail: recovery.detail,
+      recovery: recovery.recovery,
+    };
+  }
   if (recovery.sourceCode === "local-service-transport") {
     return {
       title: "Relay is not connected",

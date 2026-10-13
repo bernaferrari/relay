@@ -15,6 +15,7 @@ import {
   isIosLivePreviewBackend,
   setRedactionEnabled,
   setSensitiveEvidenceConsent,
+  setEvidenceCollectionMode,
   currentOperationContext,
 } from "@relay/core";
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
@@ -146,10 +147,23 @@ export async function handleSettingsRoute(context: SettingsRouteContext): Promis
       throw new HttpError(403, "Evidence consent can only be changed from a local Relay host");
     }
     const body = (await parseJsonBody(req)) as {
+      mode?: unknown;
       channel?: unknown;
       enabled?: unknown;
       reason?: unknown;
     };
+    if (body.mode !== undefined) {
+      if (body.mode !== "lightweight" && body.mode !== "full") {
+        throw new HttpError(400, "mode must be lightweight or full");
+      }
+      if (body.channel !== undefined || body.enabled !== undefined || body.reason !== undefined) {
+        throw new HttpError(400, "Change either evidence mode or sensitive consent");
+      }
+      const policy = await setEvidenceCollectionMode(body.mode);
+      recordAudit(scope, { action: "evidence.mode.update", resource: body.mode, result: "allow" });
+      json(res, 200, { policy });
+      return true;
+    }
     if (
       body.channel !== "audio" &&
       body.channel !== "crash" &&

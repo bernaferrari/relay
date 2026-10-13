@@ -8,7 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@relay/ui-react/components/dropdown-menu";
-import { ChevronDown, ChevronRight, Circle, CircleAlert, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Circle, CircleAlert, LoaderCircle, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import { EmptyState } from "./product-patterns";
 import { TestEditorRoutes } from "./test-editor-routes";
@@ -169,8 +169,22 @@ export function TestEditorStepOutline({
       )}
       <div className="mt-2 flex flex-wrap items-center gap-1 px-1">
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button size="sm" variant="ghost" disabled={busy} />}>
-            <Plus aria-hidden="true" /> Add step <ChevronDown aria-hidden="true" />
+          <DropdownMenuTrigger
+            render={<Button size="sm" variant="ghost" disabled={busy || recordSteps?.pending} />}
+          >
+            {recordSteps?.pending ? (
+              <>
+                <LoaderCircle
+                  className="animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
+                Starting recording…
+              </>
+            ) : (
+              <>
+                <Plus aria-hidden="true" /> Add step <ChevronDown aria-hidden="true" />
+              </>
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             {recordSteps ? (

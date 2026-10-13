@@ -54,6 +54,8 @@ export {
   type SnapshotPayload,
   inferSnapshotBounds,
   captureSnapshot,
+  SnapshotSemanticsQuarantinedError,
+  SnapshotLogicalBoundsUnavailableError,
   type ScreenshotPayload,
   isBlankScreenshot,
   captureScreenshot,

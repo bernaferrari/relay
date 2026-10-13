@@ -19,6 +19,7 @@ import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { activePage, browserSessions, sessionFor, type BrowserSession } from "./browser-target.js";
 import { probeElectronGrokLabPartitionPresent } from "./electron-grok-lab-partition.js";
 import { readTarget } from "./targets.js";
+import { automaticVideoAllowed, getEvidenceCollectionPolicy } from "./evidence-policy.js";
 
 /** Server-owned Playwright handle; UI never receives it. */
 export type BrowserAuthoringRuntime = Readonly<{
@@ -101,7 +102,7 @@ export async function openBrowserAuthoringRuntime(
     mode: "authoring",
     headless: options.headless,
     profile: options.profile,
-    recordVideo: true,
+    recordVideo: automaticVideoAllowed(getEvidenceCollectionPolicy()),
     ...(options.unsignedLaneId ? { unsignedLaneId: options.unsignedLaneId } : {}),
   });
   return runtimeFromSession(targetId, session);

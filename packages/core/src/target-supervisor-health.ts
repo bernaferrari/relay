@@ -4,22 +4,50 @@ import type {
   TargetRuntimeReadiness,
   TargetSupervisorHealth,
 } from "@relay/protocol";
+import { isCurrentTargetProof } from "./target-proof-freshness.js";
 
 export type TargetSupervisorPlaneFacts = {
   pixels: {
     state: TargetSupervisorHealth["pixels"]["state"];
     lastCapturedAt?: number;
+    durationMs?: number;
     lastError?: string;
     lastErrorAt?: number;
   };
   semantics: {
     state: TargetSupervisorHealth["semantics"]["state"];
     lastCapturedAt?: number;
+    durationMs?: number;
+    observedNodeCount?: number;
     lastError?: string;
     lastErrorAt?: number;
     invalidatedAt?: number;
   };
 };
+
+/** Liveness expires in the projection without altering the durable receipt. */
+export function currentTargetSupervisorPlaneFacts(
+  state: TargetSupervisorPlaneFacts,
+  now: number,
+): TargetSupervisorPlaneFacts {
+  return {
+    pixels: {
+      ...state.pixels,
+      state:
+        state.pixels.state === "ready" && !isCurrentTargetProof(state.pixels.lastCapturedAt, now)
+          ? "delayed"
+          : state.pixels.state,
+    },
+    semantics: {
+      ...state.semantics,
+      state:
+        state.semantics.state === "current" &&
+        !isCurrentTargetProof(state.semantics.lastCapturedAt, now)
+          ? "stale"
+          : state.semantics.state,
+    },
+  };
+}
 
 export function initialTargetSupervisorCounters(): TargetSupervisorHealth["counters"] {
   return {
@@ -84,7 +112,10 @@ function pixelReadiness(
       mode: "pixels",
       state: "proven",
       freshness: "current",
-      proof: { at: pixels.lastCapturedAt },
+      proof: {
+        at: pixels.lastCapturedAt,
+        ...(pixels.durationMs !== undefined ? { durationMs: pixels.durationMs } : {}),
+      },
     };
   }
   return {
@@ -116,7 +147,13 @@ function semanticReadiness(
       mode: "accessibility",
       state: "proven",
       freshness: semantics.state === "current" ? "current" : "stale",
-      proof: { at: semantics.lastCapturedAt },
+      proof: {
+        at: semantics.lastCapturedAt,
+        ...(semantics.durationMs !== undefined ? { durationMs: semantics.durationMs } : {}),
+        ...(semantics.observedNodeCount !== undefined
+          ? { observedNodeCount: semantics.observedNodeCount }
+          : {}),
+      },
       ...(semantics.state === "stale"
         ? {
             invalidated: {

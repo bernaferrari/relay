@@ -38,6 +38,16 @@ export async function bundleServer() {
     sourcemap: true,
     logLevel: "info",
   });
+  await esbuild.build({
+    entryPoints: [resolve(workspaceRoot, "packages/core/src/screenshot-analysis-worker.ts")],
+    outfile: resolve(outDir, "screenshot-analysis-worker.cjs"),
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node22",
+    sourcemap: true,
+    logLevel: "info",
+  });
   await copyFile(
     resolve(
       workspaceRoot,

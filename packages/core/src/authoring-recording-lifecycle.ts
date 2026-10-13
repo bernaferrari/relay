@@ -179,6 +179,7 @@ export async function recordAuthoringInteraction<Captured>(
   const revisionAtEntrance = currentRevision(session);
   const startedAt = now();
   let entrance = revisionAtEntrance.after ?? revisionAtEntrance.before;
+  const discoveryObservations: AuthoringObservation[] = [];
   let entranceEvidence: AuthoringEvidence[] = [];
   let executable = interaction;
   let targetName: string | undefined;
@@ -214,16 +215,46 @@ export async function recordAuthoringInteraction<Captured>(
       session = await recordAuthoringInteraction(session, completion, runtime, input);
       return recordAuthoringInteraction(session, interaction, runtime, input);
     }
-    const semantic =
+    let semantic =
       interaction.kind === "tap"
         ? semanticTargetForRecording(interaction.target, entrance)
         : undefined;
     if (semantic && interaction.kind === "tap") {
+      if (session.target.platform === "ios" && interaction.target.point) {
+        // A point's discovery census could not request the selector it had
+        // not discovered yet. Capture that exact selector before dispatch;
+        // the empty first census must never be relabeled as its entrance.
+        const selected = await persistObservation(
+          await runtime.observe(session, {
+            ...(semantic.target.identifier
+              ? { includeIdentifiers: [semantic.target.identifier] }
+              : {}),
+            ...(semantic.target.label ? { includeLabels: [semantic.target.label] } : {}),
+          }),
+        );
+        const confirmed = semanticTargetForRecording(interaction.target, selected.observation);
+        if (
+          !confirmed ||
+          confirmed.target.identifier !== semantic.target.identifier ||
+          confirmed.target.label !== semantic.target.label
+        ) {
+          throw new AuthoringStateError(
+            "The control changed before it could be recorded. Select it again.",
+          );
+        }
+        discoveryObservations.push(entrance);
+        entrance = selected.observation;
+        entranceEvidence.push(...selected.evidence);
+        semantic = confirmed;
+      }
       executable = { ...interaction, target: semantic.target };
       targetName = semantic.name;
     }
   }
-  const retainedEntrance = retainAuthoringObservations(revisionAtEntrance.observations, [entrance]);
+  const retainedEntrance = retainAuthoringObservations(revisionAtEntrance.observations, [
+    ...discoveryObservations,
+    entrance,
+  ]);
   // Reserve an endpoint before issuing input. Losing a source/exit link after
   // a successful tap would make the durable revision misleading.
   if (!retainedEntrance || retainedEntrance.length >= MAX_AUTHORING_RETAINED_OBSERVATIONS) {

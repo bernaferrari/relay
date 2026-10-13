@@ -39,11 +39,27 @@ export const workspaceOperationSchemas = {
   "workspace.evidence.get": empty,
   "workspace.evidence.update": z
     .object({
-      channel: z.enum(["audio", "crash", "network-body", "network-raw", "browser-trace"]),
-      enabled: z.boolean(),
+      mode: z.enum(["lightweight", "full"]).optional(),
+      channel: z
+        .enum(["audio", "crash", "network-body", "network-raw", "browser-trace"])
+        .optional(),
+      enabled: z.boolean().optional(),
       reason: z.string().optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((input, context) => {
+      if (input.mode !== undefined) {
+        if (
+          input.channel !== undefined ||
+          input.enabled !== undefined ||
+          input.reason !== undefined
+        ) {
+          context.addIssue({ code: "custom", message: "Change either mode or consent" });
+        }
+      } else if (input.channel === undefined || input.enabled === undefined) {
+        context.addIssue({ code: "custom", message: "Choose mode or a channel and enabled value" });
+      }
+    }),
   "workspace.change.inspect": z
     .object({ baseRef: z.string().trim().min(1).max(512).optional() })
     .strict(),

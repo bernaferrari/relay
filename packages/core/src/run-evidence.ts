@@ -10,6 +10,7 @@ import { base, recordDeviceVideo, type Device } from "./device.js";
 import { now } from "./events.js";
 import { getRedactionPolicy, redactValue, visualEvidenceAllowed } from "./redaction.js";
 import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
+import { runVideoAllowed } from "./run-video-policy.js";
 import { ensureRunDir, type RunArtifact } from "./runs.js";
 import type { TestJob } from "./session.js";
 import { stopBrowserProofEvidence } from "./run-evidence-browser.js";
@@ -79,10 +80,6 @@ export type RunEvidenceHandle = {
   stopped: boolean;
   manifest: EvidenceManifest;
 };
-
-function hasStepScopedCampaignEvidence(job: TestJob): boolean {
-  return job.recipeSnapshot?.steps.some((step) => Boolean(step.check)) === true;
-}
 
 export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
   const startedAt = now();
@@ -537,11 +534,14 @@ export async function startRunEvidence(
 
   const visualAllowed = visualEvidenceAllowed(job.evidencePolicy.redaction ?? getRedactionPolicy());
   if (visualAllowed) {
-    const videoUnsupported = hasStepScopedCampaignEvidence(job)
-      ? "step-scoped campaign frames already provide reviewable visual evidence"
-      : options.physicalIos
-        ? "full-flow video is unavailable; recorded transitions keep their own takes"
-        : undefined;
+    const videoUnsupported =
+      job.evidencePolicy.mode === "lightweight"
+        ? "lightweight evidence keeps screenshots, UI trees, and the action timeline without automatic video"
+        : !runVideoAllowed(job)
+          ? "step-scoped campaign frames already provide reviewable visual evidence"
+          : options.physicalIos
+            ? "full-flow video is unavailable; recorded transitions keep their own takes"
+            : undefined;
     await guardedCollector(
       handle,
       "video",

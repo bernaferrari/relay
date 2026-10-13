@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { PNG } from "pngjs";
+import { TargetSupervisorStore, runWithTargetSupervisorStore } from "./target-supervisor-store.js";
+import { setLiveIosRunnerCommandPostForTests } from "./ios-runner-listener-command.js";
 import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 import {
   IosSnapshotTimedOutError,
@@ -15,7 +18,9 @@ import { runWithTargetContext } from "./target-context.js";
 import {
   invalidateTargetSemanticControl,
   recordTargetPixelCapture,
+  recordTargetSemanticSnapshot,
   resetTargetRuntimeReadiness,
+  targetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
 import {
   captureScreenshot,
@@ -35,6 +40,266 @@ function iosSnapshotDevice(nodes: SnapshotNode[]): Device {
 }
 
 test.afterEach(() => resetTargetRuntimeReadiness());
+
+test("a quarantined iPad snapshot retains fresh pixels without reading AX or clearing quarantine", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-quarantined-snapshot-"));
+  const previousBinary = process.env.RELAY_GO_IOS_BIN;
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
+  const binary = join(root, "pixels-only.cjs");
+  const pixels = new PNG({ width: 80, height: 160 });
+  pixels.data.fill(255);
+  pixels.data[0] = 0;
+  const png = PNG.sync.write(pixels).toString("base64");
+  await writeFile(
+    binary,
+    `#!/usr/bin/env node\nconst fs = require('node:fs');\nconst output = process.argv.find(arg => arg.startsWith('--output='));\nif (!output) process.exit(2);\nfs.writeFileSync(output.slice(9), Buffer.from(${JSON.stringify(png)}, 'base64'));\n`,
+  );
+  await chmod(binary, 0o700);
+  process.env.RELAY_GO_IOS_BIN = binary;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  const store = new TargetSupervisorStore(":memory:");
+  const serial = "quarantined-pixels-ipad";
+  const target = { id: serial, kind: "ios" } as const;
+  store.transition(target, {
+    kind: "operator.quarantined",
+    reason: "Repeated bounded recovery failures.",
+  });
+  let semanticCalls = 0;
+  try {
+    const result = await runWithTargetSupervisorStore(store, () =>
+      runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+        captureSnapshot({
+          includeVisual: true,
+          device: {
+            capture: {
+              snapshot: async () => {
+                semanticCalls += 1;
+                return { nodes: [] };
+              },
+            },
+          } as unknown as Device,
+        }),
+      ),
+    );
+    assert.equal(semanticCalls, 0);
+    assert.equal(result.inspectable, false);
+    assert.equal(result.source, "pixels-only");
+    assert.deepEqual(result.nodes, []);
+    assert.deepEqual(result.interactive, []);
+    assert.match(result.inspectionError ?? "", /quarantined/i);
+    assert.ok(result.visualFingerprint);
+    assert.equal(result.readiness?.previewPixels.state, "proven");
+    assert.notEqual(result.readiness?.semanticControl.state, "proven");
+    const health = store.health(target);
+    assert.equal(health.overall, "quarantined");
+    assert.equal(health.counters.semanticTraversals, 0);
+    assert.equal(health.counters.pixelCaptures, 1);
+  } finally {
+    store.close();
+    if (previousBinary === undefined) delete process.env.RELAY_GO_IOS_BIN;
+    else process.env.RELAY_GO_IOS_BIN = previousBinary;
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a semantics-only quarantined iPad snapshot is a typed policy refusal before AX", async () => {
+  const store = new TargetSupervisorStore(":memory:");
+  const serial = "quarantined-semantics-ipad";
+  const target = { id: serial, kind: "ios" } as const;
+  store.transition(target, {
+    kind: "operator.quarantined",
+    reason: "Repeated bounded recovery failures.",
+  });
+  let semanticCalls = 0;
+  try {
+    await assert.rejects(
+      runWithTargetSupervisorStore(store, () =>
+        runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+          captureSnapshot({
+            includeVisual: false,
+            device: {
+              capture: {
+                snapshot: async () => {
+                  semanticCalls += 1;
+                  return { nodes: [] };
+                },
+              },
+            } as unknown as Device,
+          }),
+        ),
+      ),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, "TARGET_SEMANTICS_QUARANTINED");
+        return true;
+      },
+    );
+    assert.equal(semanticCalls, 0);
+    assert.equal(store.health(target).overall, "quarantined");
+    assert.equal(store.health(target).counters.semanticTraversals, 0);
+  } finally {
+    store.close();
+  }
+});
+
+test("logical-bounds-only quarantined iPad snapshot masks retained semantic proof without changing it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-logical-window-snapshot-"));
+  const previousLeaseDir = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = root;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  const serial = "logical-window-quarantined-ipad";
+  await writeFile(
+    join(root, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 57766 }),
+  );
+  const store = new TargetSupervisorStore(":memory:");
+  const target = { id: serial, kind: "ios" } as const;
+  const runtimeTarget = { serial, platform: "ios" } as const;
+  runWithTargetSupervisorStore(store, () =>
+    recordTargetSemanticSnapshot(runtimeTarget, {
+      inspectable: true,
+      at: Date.now(),
+      nodes: [
+        {
+          label: "Ask Grok",
+          bundleId: "ai.x.GrokApp",
+          enabled: true,
+          visibleToUser: true,
+          rect: { x: 1, y: 1, width: 20, height: 20 },
+        },
+      ],
+    }),
+  );
+  assert.equal(targetRuntimeReadiness(runtimeTarget).semanticControl.state, "proven");
+  store.transition(target, {
+    kind: "operator.quarantined",
+    reason: "Repeated bounded recovery failures.",
+  });
+  store.transition(target, { kind: "context.updated", context: { foregroundApp: "ai.x.GrokApp" } });
+  const healthBefore = store.health(target);
+  const readinessBefore = targetRuntimeReadiness(runtimeTarget);
+  const commands: string[] = [];
+  const restorePost = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    commands.push(String(command.command));
+    assert.equal(command.appBundleId, "ai.x.GrokApp");
+    return {
+      ok: true,
+      data: {
+        appBundleId: "ai.x.GrokApp",
+        appStateBefore: "runningForeground",
+        appStateAfter: "runningForeground",
+        source: "current-window",
+        coordinateSpace: "application-logical",
+        geometrySource: "xcui-window-frame",
+        bounds: { x: 0, y: 0, width: 834, height: 1112 },
+      },
+    };
+  });
+  let semanticCalls = 0;
+  try {
+    const result = await runWithTargetSupervisorStore(store, () =>
+      runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+        captureSnapshot({
+          logicalBoundsOnly: true,
+          includeVisual: false,
+          device: {
+            capture: {
+              snapshot: async () => {
+                semanticCalls += 1;
+                return { nodes: [] };
+              },
+            },
+          } as unknown as Device,
+        }),
+      ),
+    );
+    assert.deepEqual(commands, ["appWindowBounds"]);
+    assert.equal(semanticCalls, 0);
+    assert.deepEqual(result.bounds, { width: 834, height: 1112 });
+    assert.equal(result.boundsSource, "current-window");
+    assert.equal(result.inspectable, false);
+    assert.deepEqual(result.nodes, []);
+    assert.deepEqual(result.interactive, []);
+    assert.match(result.inspectionError ?? "", /geometry.*accessibility/i);
+    const health = store.health(target);
+    assert.equal(health.overall, "quarantined");
+    assert.deepEqual(health.semantics, healthBefore.semantics);
+    assert.deepEqual(health.counters, healthBefore.counters);
+    assert.equal(health.counters.pixelCaptures, 0);
+    assert.equal(result.readiness?.semanticControl.state, "unavailable");
+    assert.equal(result.readiness?.semanticControl.freshness, "unproven");
+    assert.equal(result.readiness?.semanticControl.proof, undefined);
+    assert.match(result.readiness?.semanticControl.lastError?.message ?? "", /quarantined/i);
+    assert.deepEqual(targetRuntimeReadiness(runtimeTarget), readinessBefore);
+    assert.notEqual(result.readiness?.previewPixels.state, "proven");
+    const restoreInvalid = setLiveIosRunnerCommandPostForTests(async () => ({
+      ok: true,
+      data: {
+        appBundleId: "com.example.another-app",
+        appStateBefore: "runningForeground",
+        appStateAfter: "runningForeground",
+        source: "current-window",
+        coordinateSpace: "application-logical",
+        geometrySource: "xcui-window-frame",
+        bounds: { x: 0, y: 0, width: 834, height: 1112 },
+      },
+    }));
+    try {
+      await assert.rejects(
+        runWithTargetSupervisorStore(store, () =>
+          runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
+            captureSnapshot({ logicalBoundsOnly: true, device: iosSnapshotDevice([]) }),
+          ),
+        ),
+        (error: unknown) => {
+          assert.equal((error as { code?: string }).code, "TARGET_IOS_LOGICAL_BOUNDS_UNAVAILABLE");
+          assert.equal((error as { reason?: string }).reason, "bounds-unavailable");
+          return true;
+        },
+      );
+      assert.deepEqual(store.health(target).counters, healthBefore.counters);
+    } finally {
+      restoreInvalid();
+    }
+  } finally {
+    restorePost();
+    store.close();
+    if (previousLeaseDir === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previousLeaseDir;
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("logical-bounds-only snapshot refuses an unknown origin and unsupported platforms", async () => {
+  for (const [context, reason] of [
+    [
+      { kind: "device", platform: "ios", serial: "unknown-logical-origin-ipad" } as const,
+      "origin-unavailable",
+    ],
+    [
+      { kind: "browser", platform: "browser", targetId: "logical-bounds-browser" } as const,
+      "unsupported-platform",
+    ],
+  ] as const) {
+    await assert.rejects(
+      runWithTargetContext(context, () =>
+        captureSnapshot({
+          logicalBoundsOnly: true,
+          device: iosSnapshotDevice([]),
+        }),
+      ),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, "TARGET_IOS_LOGICAL_BOUNDS_UNAVAILABLE");
+        assert.equal((error as { reason?: string }).reason, reason);
+        return true;
+      },
+    );
+  }
+});
 
 test("classifies unreleased Android automation ownership as a hard semantic boundary", () => {
   assert.equal(

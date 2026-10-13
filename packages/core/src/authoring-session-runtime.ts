@@ -12,6 +12,8 @@ import type {
 } from "./authoring-observation-capture.js";
 import { currentRevision } from "./authoring-session-screen-proof.js";
 import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
+import { observedIosApplication } from "./recorded-entrance-proof.js";
+import { resolveIosLaunchBundleId } from "./ios-app-launch.js";
 import { screenExpectation } from "./app-map-compiler.js";
 import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
 import type { Recipe } from "./recipes.js";
@@ -102,7 +104,46 @@ export function authoringReplaySourceSteps(session: AuthoringSession, map?: AppM
 /** Current-screen recording freezes the app the operator chose by recording there. */
 export function authoringOriginApplication(session: AuthoringSession): string | undefined {
   if (session.originApplication) return session.originApplication;
-  if (session.target.platform !== "android" || !session.take) return undefined;
+  if (!session.take) return undefined;
   const before = currentRevision(session).before;
-  return before && hasCurrentAuthoringSemantics(before.proof) ? before.foregroundApp : undefined;
+  if (!before || !hasCurrentAuthoringSemantics(before.proof)) return undefined;
+  if (session.target.platform === "android") return before.foregroundApp;
+  if (session.target.platform !== "ios" || before.screen.deviceId !== session.target.targetId)
+    return undefined;
+  const proof = before.proof!;
+  const pixels = proof.pixels;
+  const times = [
+    pixels.capturedAt,
+    proof.semantics.capturedAt,
+    pixels.bracket?.afterCapturedAt,
+    before.capturedAt,
+  ];
+  if (
+    proof.captureOrder !== "pixels-ax-pixels" ||
+    pixels.status !== "captured" ||
+    times.some((time) => time === undefined || !Number.isFinite(time) || time < 0) ||
+    times[0]! > times[1]! ||
+    times[1]! > times[2]! ||
+    times[2]! > times[3]!
+  )
+    return undefined;
+  const nodes = before.nodes ?? [];
+  const roots = nodes.filter((node) => node.type === "Application" && node.depth === 0);
+  if (roots.length !== 1) return undefined;
+  const app = observedIosApplication(roots);
+  if (!app) return undefined;
+  try {
+    if (
+      nodes.some(
+        (node) =>
+          node.bundleId !== undefined &&
+          (typeof node.bundleId !== "string" || resolveIosLaunchBundleId(node.bundleId) !== app),
+      )
+    )
+      return undefined;
+  } catch {
+    return undefined;
+  }
+  // This is the commit origin, not a new Begin request or remembered launch state.
+  return app;
 }

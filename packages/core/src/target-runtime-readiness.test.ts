@@ -193,6 +193,21 @@ test("pixel and semantic proofs stay independent and retain timing", () => {
   });
 });
 
+test("future and negative capture times cannot advertise current runtime readiness", () => {
+  for (const at of [-1, 12]) {
+    resetTargetRuntimeReadiness();
+    recordTargetPixelCapture(ipad, { at });
+    recordTargetSemanticSnapshot(ipad, {
+      inspectable: true,
+      at,
+      nodes: [{ label: "Settings", rect: { x: 1, y: 1, width: 20, height: 20 } }],
+    });
+    const readiness = targetRuntimeReadiness(ipad, 11);
+    assert.equal(readiness.previewPixels.state, "unproven");
+    assert.equal(readiness.semanticControl.state, "unproven");
+  }
+});
+
 test("an empty or root-only accessibility response is explicitly not semantic control", () => {
   recordTargetSemanticSnapshot(ipad, {
     inspectable: true,

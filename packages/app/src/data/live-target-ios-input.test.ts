@@ -37,6 +37,40 @@ async function preview(
   return live;
 }
 describe("canonical iOS preview input", () => {
+  it("uses a current window receipt without requiring accessibility controls", async () => {
+    const invoke = vi.fn(async (operation: string) =>
+      operation === "target.snapshot.capture"
+        ? {
+            bounds: { width: 1366, height: 1024 },
+            boundsSource: "current-window",
+            nodes: [],
+            inspectable: false,
+          }
+        : {},
+    );
+    const live = await preview(invoke);
+    try {
+      await live.input({ kind: "touch", action: "up", x: 1366, y: 512 });
+      expect(invoke.mock.calls).toEqual([
+        ["target.snapshot.capture", { serial: "ipad", logicalBoundsOnly: true }],
+        ["target.interact", { serial: "ipad", kind: "point", x: 683, y: 256 }],
+      ]);
+    } finally {
+      live.close();
+    }
+  });
+  it("does not accept unproven viewport dimensions as current iOS geometry", async () => {
+    const invoke = vi.fn(async () => ({ bounds: { width: 1366, height: 1024 } }));
+    const live = await preview(invoke);
+    try {
+      await expect(live.input({ kind: "touch", action: "up", x: 1366, y: 512 })).rejects.toThrow(
+        "iOS logical screen dimensions",
+      );
+      expect(invoke).toHaveBeenCalledOnce();
+    } finally {
+      live.close();
+    }
+  });
   it("rejects Android-only Recents locally before invoking an endpoint", async () => {
     const invoke = vi.fn(async () => ({}));
     const live = await preview(invoke);
@@ -60,6 +94,7 @@ describe("canonical iOS preview input", () => {
         );
         expect(invoke).toHaveBeenCalledExactlyOnceWith("target.snapshot.capture", {
           serial: "ipad",
+          logicalBoundsOnly: true,
         });
       } finally {
         live.close();
@@ -75,20 +110,25 @@ describe("canonical iOS preview input", () => {
       await expect(live.input({ kind: "touch", action: "up", x: 1366, y: 512 })).rejects.toThrow(
         "iOS logical screen dimensions",
       );
-      expect(invoke).toHaveBeenCalledExactlyOnceWith("target.snapshot.capture", { serial: "ipad" });
+      expect(invoke).toHaveBeenCalledExactlyOnceWith("target.snapshot.capture", {
+        serial: "ipad",
+        logicalBoundsOnly: true,
+      });
     } finally {
       live.close();
     }
   });
   it("sends one point interaction using logical viewport coordinates rather than Android down/up", async () => {
     const invoke = vi.fn(async (operation: string) =>
-      operation === "target.snapshot.capture" ? { bounds: { width: 1366, height: 1024 } } : {},
+      operation === "target.snapshot.capture"
+        ? { bounds: { width: 1366, height: 1024 }, boundsSource: "current-window" }
+        : {},
     );
     const live = await preview(invoke);
     try {
       await live.input({ kind: "touch", action: "up", x: 1366, y: 512 });
       expect(invoke.mock.calls).toEqual([
-        ["target.snapshot.capture", { serial: "ipad" }],
+        ["target.snapshot.capture", { serial: "ipad", logicalBoundsOnly: true }],
         ["target.interact", { serial: "ipad", kind: "point", x: 683, y: 256 }],
       ]);
     } finally {
@@ -134,7 +174,10 @@ describe("canonical iOS preview input", () => {
     }
   });
   it("keeps iOS authored taps and Enter under recording authority without direct native mutation", async () => {
-    const invoke = vi.fn(async () => ({ bounds: { width: 1366, height: 1024 } }));
+    const invoke = vi.fn(async () => ({
+      bounds: { width: 1366, height: 1024 },
+      boundsSource: "current-window",
+    }));
     const onInteraction = vi.fn();
     const live = await preview(invoke, onInteraction);
     try {
@@ -149,7 +192,10 @@ describe("canonical iOS preview input", () => {
         ],
         [{ kind: "device", action: "keyboard-enter" }],
       ]);
-      expect(invoke).toHaveBeenCalledExactlyOnceWith("target.snapshot.capture", { serial: "ipad" });
+      expect(invoke).toHaveBeenCalledExactlyOnceWith("target.snapshot.capture", {
+        serial: "ipad",
+        logicalBoundsOnly: true,
+      });
     } finally {
       live.close();
     }

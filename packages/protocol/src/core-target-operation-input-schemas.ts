@@ -56,6 +56,11 @@ export const coreTargetOperationInputSchemas = {
       interactiveOnly: queryBoolean
         .optional()
         .describe("Return only interactive controls for a compact live overlay."),
+      logicalBoundsOnly: queryBoolean
+        .optional()
+        .describe(
+          "iOS only: read the foreground app’s logical window bounds without an accessibility tree or screenshot.",
+        ),
       visual: queryBoolean
         .optional()
         .describe(

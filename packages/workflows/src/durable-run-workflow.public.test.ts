@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { DurableWorkflowRead, ExecutionRisk } from "@relay/protocol";
+import type { DurableWorkflowRead, ExecutionRisk, OperationInput } from "@relay/protocol";
 import { createRelayWorkflows, type RunTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
 
@@ -221,6 +221,81 @@ test("an authoritative pre-dispatch rejection terminally abandons its durable re
   assert.deepEqual(
     scripted.invocations.map(({ id }) => id),
     ["app-map.test.compile", "workflow.create", "app-map.test.run", "workflow.transition"],
+  );
+});
+
+test("offline preflight blockers and recovery survive durable start and later inspect without redispatch", async () => {
+  const terminal = workflow(2, { status: "terminal", transition: "run-abandoned" });
+  const scripted = createScriptedRelayClient([
+    compile(),
+    { id: "workflow.create", output: { disposition: "created", workflow: workflow(1) } },
+    {
+      id: "app-map.test.run",
+      error: Object.assign(
+        new Error("Offline Test preflight is blocked; Relay did not control the target"),
+        {
+          status: 409,
+          body: {
+            details: {
+              code: "TEST_OFFLINE_PREFLIGHT_BLOCKED",
+              preflight: {
+                findings: [
+                  {
+                    severity: "blocker",
+                    code: "selector-absent",
+                    message: 'Saved control "Ask Grok" is absent from the recorded screen.',
+                    evidence: { raw: "private evidence" },
+                  },
+                  {
+                    severity: "blocker",
+                    code: "raw-evidence-variant-recapture-required",
+                    message: "The selected iPad capture needs review.",
+                  },
+                ],
+              },
+              recovery: "Open the Test editor and recapture the affected iPad screen.",
+              password: "private password",
+            },
+          },
+        },
+      ),
+    },
+    {
+      id: "workflow.transition",
+      checkInput: (input) => {
+        const transition = input as OperationInput<"workflow.transition">;
+        if (transition.action !== "abandon-run") assert.fail("Expected pre-dispatch abandonment");
+        assert.equal(transition.expectedVersion, 1);
+        assert.ok(transition.reason && transition.reason.length <= 1_000);
+        assert.match(transition.reason, /Ask Grok.*absent/);
+        assert.match(transition.reason, /Record the affected step.*Test editor/);
+        assert.doesNotMatch(transition.reason, /private/);
+        terminal.record.resolution = { kind: "abandoned", reason: transition.reason, at: 2 };
+      },
+      output: { workflow: terminal },
+    },
+    { id: "workflow.get", output: { workflow: terminal } },
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+  const started = await workflows.start(intent());
+  const inspected = await workflows.inspectRun("workflow-1");
+  assert.equal(started.phase, "blocked");
+  assert.equal(inspected.phase, "blocked");
+  assert.equal(started.execution, undefined);
+  assert.deepEqual(inspected.problems, started.problems);
+  assert.equal(inspected.problems[0]?.sourceCode, "TEST_OFFLINE_PREFLIGHT_BLOCKED");
+  assert.match(inspected.problems[0]?.detail ?? "", /Ask Grok.*absent/);
+  assert.match(inspected.problems[0]?.detail ?? "", /new recording for the selected setup/);
+  assert.match(inspected.problems[0]?.recovery ?? "", /Record the affected step.*Test editor/);
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    [
+      "app-map.test.compile",
+      "workflow.create",
+      "app-map.test.run",
+      "workflow.transition",
+      "workflow.get",
+    ],
   );
 });
 

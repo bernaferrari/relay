@@ -55,6 +55,7 @@ import {
   frozenIdentity,
   unavailableDurableRun,
   preDispatchProblem,
+  preDispatchProblemReason,
   readCompile,
   resolveRunTestLane,
   selectBrowserTargetProfile,
@@ -573,7 +574,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
               workflowId: durable.workflow.record.workflowId,
               expectedVersion: durable.workflow.record.version,
               action: "abandon-run",
-              reason: problem.detail,
+              reason: preDispatchProblemReason(problem),
             });
             return {
               ...durableRunSnapshot(abandoned),

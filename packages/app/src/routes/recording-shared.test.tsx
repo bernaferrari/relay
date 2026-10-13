@@ -123,6 +123,40 @@ it("does not describe a run preparation failure as restoring work", async () => 
   expect(host.textContent).not.toContain("Workflow request identity");
 });
 
+it.each(["compact", "centered"] as const)(
+  "preserves blocked saved test findings and recovery in the %s run view",
+  async (layout) => {
+    const retry = vi.fn();
+    const host = await render(
+      <RecordingProblem
+        operation="run"
+        layout={layout}
+        recovery={{
+          code: "operation-unavailable",
+          sourceCode: "TEST_OFFLINE_PREFLIGHT_BLOCKED",
+          title: "Offline Test preflight is blocked",
+          detail:
+            "The saved selector binding is missing from the raw accessibility capture for Open settings.",
+          recovery: "Open the Test editor and capture Open settings again before running.",
+          retryable: false,
+        }}
+        onRetry={retry}
+        action={<button>Review saved test</button>}
+      />,
+    );
+    expect(host.textContent).toContain("Saved test needs review");
+    expect(host.textContent).toContain(
+      "The saved selector binding is missing from the raw accessibility capture for Open settings.",
+    );
+    expect(host.textContent).toContain(
+      "Open the Test editor and capture Open settings again before running.",
+    );
+    expect(host.textContent).not.toMatch(/Relay needs your attention|Try again/u);
+    expect(host.querySelector("button")?.textContent).toBe("Review saved test");
+    expect(retry).not.toHaveBeenCalled();
+  },
+);
+
 it("identifies interrupted replay without offering another execution", async () => {
   const retry = vi.fn();
   const host = await render(

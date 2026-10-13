@@ -25,8 +25,14 @@ export async function nativePreviewDimensions(
 ): Promise<{ width: number; height: number }> {
   let size: { width?: number; height?: number } | undefined;
   try {
-    const snapshot = await client.invoke("target.snapshot.capture", { serial });
-    size = snapshot.bounds;
+    const snapshot = await client.invoke("target.snapshot.capture", {
+      serial,
+      ...(platform === "ios" ? { logicalBoundsOnly: true } : {}),
+    });
+    size =
+      platform !== "ios" || snapshot.boundsSource === "current-window"
+        ? snapshot.bounds
+        : undefined;
   } catch {
     // Android can use screenshot pixels. iOS requires observed logical bounds.
   }

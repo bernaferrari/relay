@@ -5,8 +5,9 @@ import {
   nativeCaptureTargetProfile,
   captureScreenshot,
   cleanupScreenshot,
-  isBlankScreenshot,
-  observeVisualScreenFingerprint,
+  analyzeScreenshot,
+  analyzeScreenshotAsync,
+  type ScreenshotAnalysis,
   runWithTargetContext,
   type AuthoringObservationRequest,
   type CapturedAuthoringObservation,
@@ -96,8 +97,8 @@ export async function disposeAuthoringScreenshots(
  * raw bytes are a conservative fallback for failed/fixture decoders. It is
  * deliberately separate from the AX identity so a late tree cannot certify
  * its own visual bracket. */
-export function pixelFingerprint(bytes: Uint8Array): string {
-  return observeVisualScreenFingerprint(bytes) ?? createHash("sha256").update(bytes).digest("hex");
+export function pixelFingerprint(bytes: Uint8Array, analysis = analyzeScreenshot(bytes)): string {
+  return analysis.visualFingerprint ?? createHash("sha256").update(bytes).digest("hex");
 }
 
 export async function captureAuthoringObservation(
@@ -115,6 +116,8 @@ export async function captureAuthoringObservation(
     // path because their capture transports are independent.
     let snapshot: SnapshotPayload;
     let screenshot: ScreenshotPayload | undefined;
+    let screenshotBytes: Buffer | undefined;
+    let screenshotAnalysis: ScreenshotAnalysis | undefined;
     let closingScreenshot: ScreenshotPayload | undefined;
     let closingScreenshotBytes: Buffer | undefined;
     try {
@@ -124,8 +127,9 @@ export async function captureAuthoringObservation(
         // still describe what was visibly on the device when this observation
         // began.
         screenshot = await dependencies.captureScreenshot(device);
-        const openingBytes = Buffer.from(screenshot.base64, "base64");
-        if (isBlankScreenshot(openingBytes)) {
+        screenshotBytes = Buffer.from(screenshot.base64, "base64");
+        screenshotAnalysis = await analyzeScreenshotAsync(screenshotBytes);
+        if (screenshotAnalysis.blank) {
           throw new Error(
             "The device returned a blank screenshot. Recover or relaunch the app, then retry capture; no map screen was saved.",
           );
@@ -173,15 +177,19 @@ export async function captureAuthoringObservation(
       if (!screenshot) throw new Error("Authoring screenshot capture did not return evidence.");
       // captureScreenshot already bakes iOS orientation; do not normalize again
       // (a second 180° would flip upright frames back).
-      const screenshotBytes = Buffer.from(screenshot.base64, "base64");
-      if (isBlankScreenshot(screenshotBytes)) {
+      screenshotBytes ??= Buffer.from(screenshot.base64, "base64");
+      screenshotAnalysis ??= await analyzeScreenshotAsync(screenshotBytes);
+      if (screenshotAnalysis.blank) {
         throw new Error(
           "The device returned a blank screenshot. Recover or relaunch the app, then retry capture; no map screen was saved.",
         );
       }
-      const primaryPixelFingerprint = pixelFingerprint(screenshotBytes);
+      const primaryPixelFingerprint = pixelFingerprint(screenshotBytes, screenshotAnalysis);
+      const closingAnalysis = closingScreenshotBytes
+        ? await analyzeScreenshotAsync(closingScreenshotBytes)
+        : undefined;
       const closingPixelFingerprint = closingScreenshotBytes
-        ? pixelFingerprint(closingScreenshotBytes)
+        ? pixelFingerprint(closingScreenshotBytes, closingAnalysis)
         : undefined;
       const bracket =
         ios && semanticProofStatus(snapshot) === "current"
@@ -193,6 +201,7 @@ export async function captureAuthoringObservation(
                       beforeFingerprint: primaryPixelFingerprint,
                       after: closingScreenshot,
                       afterBytes: closingScreenshotBytes,
+                      afterBlank: closingAnalysis?.blank,
                       afterFingerprint: closingPixelFingerprint,
                     })
                   : ("unavailable" as const),
@@ -211,7 +220,7 @@ export async function captureAuthoringObservation(
       // when a test fixture or provider cannot decode the image.
       const fingerprint = ios
         ? primaryPixelFingerprint
-        : (observeVisualScreenFingerprint(screenshotBytes) ?? snapshot.screenIdentity.fingerprint);
+        : (screenshotAnalysis.visualFingerprint ?? snapshot.screenIdentity.fingerprint);
       const semanticStatus: SemanticProofStatus =
         ios && semanticProofStatus(snapshot) === "current" && bracket?.status !== "coherent"
           ? "stale"

@@ -468,7 +468,7 @@ export function TestPage() {
       <TestWorkspaceActions
         testId={testId}
         appMapId={test.data?.appMapId}
-        testName={test.data?.name}
+        testName={editorDocument.data?.test.name ?? test.data?.name}
         testPresent={Boolean(test.data)}
         inPlan={typeof search.plan === "string"}
         activeRun={Boolean(activeRun || liveRunId)}

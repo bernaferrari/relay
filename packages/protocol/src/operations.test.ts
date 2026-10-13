@@ -1538,6 +1538,11 @@ test("snapshot input accepts optional full and stays valid when omitted", () => 
     serial: "ipad-1",
     interactiveOnly: true,
   });
+  assert.deepEqual(parse({ serial: "ipad-1", logicalBoundsOnly: true }), {
+    serial: "ipad-1",
+    logicalBoundsOnly: true,
+  });
+  assert.throws(() => parse({ serial: "ipad-1", logicalBoundsOnly: "yes" }), /logicalBoundsOnly/);
   assert.deepEqual(parse({ serial: "ipad-1", full: "true" }), { serial: "ipad-1", full: true });
   assert.throws(() => parse({ serial: "ipad-1", full: "yes" }), /full/);
   assert.throws(() => parse({}), /serial or laneId is required/);

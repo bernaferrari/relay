@@ -18,9 +18,12 @@ export function pixelBracketStatus(input: {
   beforeFingerprint: string;
   after: ScreenshotPayload;
   afterBytes: Uint8Array;
+  /** Classification from this same closing raster, when the capture owner
+   * already decoded it for its visual fingerprint. */
+  afterBlank?: boolean;
   afterFingerprint: string;
 }): PixelBracketStatus {
-  if (isBlankScreenshot(input.afterBytes)) return "unavailable";
+  if (input.afterBlank ?? isBlankScreenshot(input.afterBytes)) return "unavailable";
   const dimensionsChanged =
     input.before.width !== undefined &&
     input.before.height !== undefined &&

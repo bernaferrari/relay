@@ -13,6 +13,7 @@ import { browserProofSessionForTarget, closeBrowserTarget } from "./browser-targ
 import { acquirePreparedSessionDevice } from "./session-provider-execution.js";
 import { deleteTarget, saveBrowserTarget } from "./targets.js";
 import type { TestJob } from "./session.js";
+import { loadEvidenceCollectionPolicy } from "./evidence-policy.js";
 
 const CHROME =
   process.env.RELAY_TEST_CHROME_PATH ??
@@ -127,6 +128,56 @@ test("redacted frozen proof runs disable Playwright context video recording", as
   } finally {
     await closeBrowserTarget(target.id, { mode: "proof" }).catch(() => undefined);
     await deleteTarget(target.id).catch(() => undefined);
+  }
+});
+
+test("proof admission uses its frozen mode before creating a Playwright video context", async (t) => {
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
+  await loadEvidenceCollectionPolicy();
+  for (const mode of ["lightweight", "full"] as const) {
+    const browserTarget = await saveBrowserTarget({
+      id: `browser-${mode}-proof`,
+      name: `${mode} evidence fixture`,
+      startUrl,
+      headless: true,
+      environment: { viewport: { width: 900, height: 600 } },
+    });
+    const job = {
+      id: `${mode}-proof-run`,
+      targetKind: "browser",
+      browserTargetId: browserTarget.id,
+      targetContext: { kind: "browser", platform: "browser", targetId: browserTarget.id },
+      browserCaseProfile: compileBrowserEnvironment(browserTarget.browser?.environment ?? {}),
+      projectId: "default",
+      artifacts: [],
+      recipeSnapshot: { steps: [{ kind: "screenshot", check: { id: "checkpoint" } }] },
+      evidencePolicy: {
+        schemaVersion: 1,
+        sensitive: {},
+        mode,
+        redaction: { enabled: false, source: "workspace", locked: false },
+      },
+    } as unknown as TestJob;
+    try {
+      await acquirePreparedSessionDevice(
+        job,
+        { browserTarget, deviceAvailable: true },
+        () => undefined,
+      );
+      const session = await browserProofSessionForTarget(browserTarget.id);
+      assert.equal(session.recordVideo, mode === "full");
+      assert.equal(Boolean(session.context.pages()[0]?.video()), mode === "full");
+      assert.equal(await session.page.title(), "context fixture");
+      assert.equal(job.evidencePolicy.mode, mode);
+    } finally {
+      await closeBrowserTarget(browserTarget.id, { mode: "proof" }).catch(() => undefined);
+      await deleteTarget(browserTarget.id).catch(() => undefined);
+    }
   }
 });
 

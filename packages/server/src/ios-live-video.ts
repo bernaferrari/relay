@@ -14,6 +14,7 @@ import {
   type IosLivePreviewBackend,
 } from "@relay/core";
 import { CORS_HEADERS, HttpError } from "./http.js";
+import { createIosTunnelReadiness, tunnelListingLooksReady } from "./ios-tunnel-readiness.js";
 import {
   IOS_PREVIEW_STALE_AFTER_MS,
   IosLatestFrameFanout,
@@ -295,7 +296,6 @@ const activePreviews = new IosPreviewOwnerRegistry<ActiveIosPreview>();
 const stoppingPreviews = new Map<string, ActiveIosPreview>();
 const failedPreviews = new Map<string, { failedAt: number; message: string }>();
 let activeTunnel: ActiveGoIosTunnel | null = null;
-let tunnelStartup: Promise<void> | null = null;
 
 function repoRootFromHere(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -366,15 +366,19 @@ async function runGoIos(
   }
 }
 
-function tunnelListingLooksReady(listed: string): boolean {
-  return /"udid"\s*:/.test(listed) || /userspaceTun/.test(listed) || /rsdPort/.test(listed);
-}
-
-async function hasGoIosTunnel(bin: string, tunnelInfoArgs: readonly string[]): Promise<boolean> {
+async function hasGoIosTunnel(
+  bin: string,
+  tunnelInfoArgs: readonly string[],
+  serial: string,
+): Promise<boolean> {
   const result = await runGoIos(bin, ["tunnel", "ls", ...tunnelInfoArgs], {
     timeoutMs: GO_IOS_TUNNEL_COMMAND_TIMEOUT_MS,
   });
-  return tunnelListingLooksReady(`${result.stdout}\n${result.stderr}`);
+  if (result.code !== 0) throw new Error("go-ios tunnel-info command failed");
+  if (!Array.isArray(JSON.parse(result.stdout))) {
+    throw new Error("go-ios tunnel-info did not return a native tunnel listing");
+  }
+  return tunnelListingLooksReady(result.stdout, serial);
 }
 
 async function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
@@ -421,7 +425,31 @@ function pipeGoIosLog(
   child.once("error", closeLog);
 }
 
-async function startGoIosTunnel(bin: string, tunnelInfoArgs: readonly string[]): Promise<void> {
+async function waitForGoIosTunnelDevice(
+  bin: string,
+  tunnelInfoArgs: readonly string[],
+  serial: string,
+): Promise<void> {
+  const deadline = Date.now() + GO_IOS_TUNNEL_READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      if (await hasGoIosTunnel(bin, tunnelInfoArgs, serial)) return;
+    } catch {
+      // A transient tunnel-info failure does not authorize stopping a live tunnel.
+    }
+    await sleep(GO_IOS_START_POLL_MS);
+  }
+  throw new HttpError(
+    503,
+    `go-ios tunnel did not publish a usable endpoint for iOS device ${serial} within ${GO_IOS_TUNNEL_READY_TIMEOUT_MS}ms; the existing tunnel was preserved.`,
+  );
+}
+
+async function startGoIosTunnel(
+  bin: string,
+  tunnelInfoArgs: readonly string[],
+  serial: string,
+): Promise<void> {
   const child = spawn(bin, ["tunnel", "start", "--userspace", ...tunnelInfoArgs], {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, ENABLE_GO_IOS_AGENT: process.env.ENABLE_GO_IOS_AGENT || "user" },
@@ -462,7 +490,7 @@ async function startGoIosTunnel(bin: string, tunnelInfoArgs: readonly string[]):
       );
     }
     try {
-      if (await hasGoIosTunnel(bin, tunnelInfoArgs)) return;
+      if (await hasGoIosTunnel(bin, tunnelInfoArgs, serial)) return;
     } catch (error) {
       lastError = error;
     }
@@ -471,43 +499,19 @@ async function startGoIosTunnel(bin: string, tunnelInfoArgs: readonly string[]):
   const stopped = await tunnel.stop();
   throw new HttpError(
     502,
-    `go-ios tunnel did not become ready (${errorMessage(lastError)}${stopped ? "" : "; process is still stopping"})`,
+    `go-ios tunnel did not become ready for iOS device ${serial} (${errorMessage(lastError)}${stopped ? "" : "; process is still stopping"})`,
   );
 }
 
-async function ensureGoIosTunnel(bin: string, tunnelInfoArgs: readonly string[]): Promise<void> {
-  if (tunnelStartup) return tunnelStartup;
-  try {
-    if (await hasGoIosTunnel(bin, tunnelInfoArgs)) return;
-  } catch {
-    // Start a local userspace tunnel below.
-  }
-  if (tunnelStartup) return tunnelStartup;
-
-  const previous = activeTunnel;
-  if (previous) {
-    const stopped = await previous.stop();
-    if (!stopped) {
-      throw new HttpError(
-        503,
-        "The previous go-ios tunnel is still stopping; retry once it exits.",
-      );
-    }
-  }
-  if (tunnelStartup) return tunnelStartup;
-
-  const startup = startGoIosTunnel(bin, tunnelInfoArgs);
-  tunnelStartup = startup;
-  void startup.then(
-    () => {
-      if (tunnelStartup === startup) tunnelStartup = null;
-    },
-    () => {
-      if (tunnelStartup === startup) tunnelStartup = null;
-    },
-  );
-  return startup;
-}
+const ensureGoIosTunnel = createIosTunnelReadiness({
+  hasTunnel: hasGoIosTunnel,
+  startTunnel: startGoIosTunnel,
+  waitForDevice: waitForGoIosTunnelDevice,
+  ownedTunnel: () =>
+    activeTunnel
+      ? { running: activeTunnel.child.exitCode === null, stop: activeTunnel.stop }
+      : undefined,
+});
 
 async function relayTunnelInfoArgs(): Promise<string[]> {
   await rememberGoIosTunnelInfoPort();
@@ -637,7 +641,7 @@ async function startInstrumentsMjpeg(bin: string, serial: string): Promise<Activ
   // identity and must never trigger an unsafe go-ios streaming fallback.
   const producer = await verifySafeIosPreviewProducer();
   const tunnelInfoArgs = await relayTunnelInfoArgs();
-  await ensureGoIosTunnel(bin, tunnelInfoArgs);
+  await ensureGoIosTunnel(bin, tunnelInfoArgs, serial);
   const tunnelReadyMs = Date.now() - startedAt;
   const logPath = join(tmpdir(), `relay-ios-preview-${serial.slice(0, 8)}.log`);
   const child = spawn(producer.path, safeIosPreviewProducerArgs(serial, tunnelInfoArgs), {

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { TargetKind, TargetRuntimeReadiness, TargetSupervisorHealth } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import { isValidTargetCaptureTime } from "./target-proof-freshness.js";
 import {
   TargetSupervisor,
   type TargetSupervisorCheckpoint,
@@ -101,10 +102,17 @@ export class TargetSupervisorStore {
 
   recordPixelCapture(
     target: SupervisedTarget,
-    input: { durationMs?: number; fingerprint?: string },
+    input: { at?: number; durationMs?: number; fingerprint?: string },
   ): TargetSupervisorHealth {
     const actor = this.#actor(target);
-    actor.transition({ kind: "pixels.captured", durationMs: input.durationMs });
+    const previousAt = actor.health().pixels.lastCapturedAt;
+    if (input.at !== undefined && !isValidTargetCaptureTime(input.at, this.#clock.now())) {
+      return actor.health();
+    }
+    if (input.at !== undefined && previousAt !== undefined && input.at <= previousAt) {
+      return actor.health();
+    }
+    actor.transition({ kind: "pixels.captured", at: input.at, durationMs: input.durationMs });
     if (input.fingerprint) {
       const current = actor.health().context;
       actor.transition({
@@ -120,12 +128,35 @@ export class TargetSupervisorStore {
     target: SupervisedTarget,
     input: {
       state: "current" | "stale" | "unavailable" | "in-flight" | "wedged";
+      at?: number;
       durationMs?: number;
+      observedNodeCount?: number;
       reason?: string;
       foregroundApp?: string;
     },
   ): TargetSupervisorHealth {
     const actor = this.#actor(target);
+    const current = actor.health().semantics;
+    if (input.at !== undefined && !isValidTargetCaptureTime(input.at, this.#clock.now())) {
+      return actor.health();
+    }
+    const retainedProof =
+      (input.state === "current" || input.state === "stale") &&
+      input.at !== undefined &&
+      current.lastCapturedAt !== undefined &&
+      input.at <= current.lastCapturedAt;
+    if (retainedProof) {
+      // Old readiness can downgrade a tree, but cannot renew liveness after
+      // input, expiry, or restart. It is not another native traversal.
+      if (input.state === "stale" && current.state === "current") {
+        actor.transition({
+          kind: "semantics.invalidated",
+          reason: input.reason ?? "Semantic proof is stale.",
+        });
+      }
+      this.#persist(actor);
+      return actor.health();
+    }
     let token = actor.health().semantics.traversal?.token;
     if (!token) {
       token = actor.transition({ kind: "semantics.traversal-started" }).traversalToken!;
@@ -147,8 +178,10 @@ export class TargetSupervisorStore {
         kind: "semantics.traversal-completed",
         token,
         usable: input.state === "current" || input.state === "stale",
+        at: input.at,
         ...(input.state === "stale" ? { freshness: "stale" as const } : {}),
         durationMs: input.durationMs,
+        observedNodeCount: input.observedNodeCount,
         reason: input.reason,
       });
     }
@@ -241,9 +274,15 @@ export class TargetSupervisorStore {
     if (
       pixel.state === "proven" &&
       pixel.freshness === "current" &&
-      (health.pixels.state !== "ready" || pixel.proof?.at !== health.pixels.lastCapturedAt)
+      pixel.proof !== undefined &&
+      isValidTargetCaptureTime(pixel.proof.at, this.#clock.now()) &&
+      (health.pixels.lastCapturedAt === undefined || pixel.proof.at > health.pixels.lastCapturedAt)
     ) {
-      actor.transition({ kind: "pixels.captured", durationMs: pixel.proof?.durationMs });
+      actor.transition({
+        kind: "pixels.captured",
+        at: pixel.proof.at,
+        durationMs: pixel.proof.durationMs,
+      });
     } else if (pixel.state === "unavailable" && health.pixels.state !== "unavailable") {
       actor.transition({
         kind: "pixels.unavailable",
@@ -255,6 +294,8 @@ export class TargetSupervisorStore {
     // Preserve the rehydrated stale state until an adapter provides an actual
     // receipt; otherwise a read-only health request would manufacture failure.
     if (semantic.state === "unproven") return;
+    // `proven` without an observation identity is not new evidence.
+    if (semantic.state === "proven" && semantic.proof === undefined) return;
     const desired =
       semantic.state === "proven"
         ? semantic.freshness === "stale"
@@ -275,7 +316,9 @@ export class TargetSupervisorStore {
     }
     this.recordSemanticReceipt(actor.health().target, {
       state: desired,
+      at: semantic.proof?.at ?? semantic.lastError?.at,
       durationMs: semantic.proof?.durationMs ?? semantic.lastError?.durationMs,
+      observedNodeCount: semantic.proof?.observedNodeCount,
       reason: semantic.lastError?.message ?? semantic.reason,
     });
   }

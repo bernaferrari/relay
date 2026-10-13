@@ -51,6 +51,11 @@ pnpm dev:desktop
 2. Relay writes the steps. Edit any of them, then run the test.
 3. Open the run to see the result for each step.
 
+New runs use lightweight evidence: screenshots, screen structure, an action timeline, and
+available diagnostics. Choose **Settings → Evidence & privacy → Include video** when motion or transitions
+matter; video is added where the device supports it. A running test keeps the evidence mode it
+started with.
+
 Plain-English steps use a model. Paste an [OpenRouter](https://openrouter.ai) key in
 **Settings → Advanced**, or set `OPENROUTER_API_KEY`. The key stays on your computer.
 

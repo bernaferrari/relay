@@ -66,6 +66,21 @@ it("never advertises a stopped simulator as ready", () => {
   expect(device?.runnable).toBe(false);
 });
 
+it("explains missing screen controls without calling a connected iPad disconnected", () => {
+  const summary = currentPixelsWithStaleLabels();
+  summary.readiness!.semanticControl = {
+    mode: "accessibility",
+    state: "unavailable",
+    freshness: "unproven",
+    reason: "probe-failed",
+  };
+  const [device] = projectDevices([summary]);
+  expect(device).toMatchObject({ status: "needs-attention", runnable: false });
+  expect(device.recovery).toContain("connected");
+  expect(device.recovery).toContain("screen controls");
+  expect(device.recovery).not.toMatch(/Reconnect the Apple device/);
+});
+
 function currentPixelsWithStaleLabels(): DeviceSummary {
   const readiness: TargetRuntimeReadiness = {
     previewPixels: { mode: "pixels", state: "proven", freshness: "current", proof: { at: 200 } },

@@ -46,9 +46,6 @@ import { useDevicePreviewSession } from "./use-device-preview-session";
 const routeApi = getRouteApi("/devices/$deviceId");
 
 function deviceDescription(device: ProductDevice): string {
-  if (device.status === "needs-attention") {
-    return "One step before this device is ready";
-  }
   return deviceSummaryLine(device);
 }
 
@@ -395,7 +392,7 @@ export function DevicePage() {
         {recover.data && !recover.data.ready ? (
           <p className="py-2 text-sm text-muted-foreground" role="status">
             <strong className="font-medium">Device still needs attention.</strong>{" "}
-            {recover.data.summary}
+            {device.data?.recovery ?? recover.data.summary}
           </p>
         ) : null}
         {recover.data?.ready && !device.isError ? (
@@ -506,7 +503,7 @@ export function DevicePage() {
                 layout="centered"
                 className="min-h-64"
                 title={device.data.avdName ? "Emulator is not running" : "Device needs attention"}
-                detail="Connect the device to see its screen here."
+                detail={device.data.recovery ?? "Connect the device to see its screen here."}
                 action={
                   <Button
                     onClick={() => (device.data?.avdName ? boot.mutate() : recover.mutate())}

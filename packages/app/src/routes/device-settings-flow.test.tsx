@@ -101,14 +101,21 @@ function fakeDeviceService(): DeviceProductService & { recoveryCalls: string[] }
 function fakeSettingsService(): SettingsProductService & {
   privacyCalls: boolean[];
   evidenceCalls: Array<{ channel: string; enabled: boolean }>;
+  evidenceModeCalls: Array<"lightweight" | "full">;
 } {
   let privacy: RedactionPolicy = { enabled: true, source: "workspace", locked: false };
-  let evidence: EvidenceCollectionPolicy = { schemaVersion: 1, sensitive: {} };
+  let evidence: EvidenceCollectionPolicy = {
+    schemaVersion: 1,
+    mode: "lightweight",
+    sensitive: {},
+  };
   const privacyCalls: boolean[] = [];
   const evidenceCalls: Array<{ channel: string; enabled: boolean }> = [];
+  const evidenceModeCalls: Array<"lightweight" | "full"> = [];
   return {
     privacyCalls,
     evidenceCalls,
+    evidenceModeCalls,
     async privacy() {
       return privacy;
     },
@@ -121,6 +128,11 @@ function fakeSettingsService(): SettingsProductService & {
       return evidence;
     },
     async setEvidence(input) {
+      if ("mode" in input) {
+        evidenceModeCalls.push(input.mode);
+        evidence = { ...evidence, mode: input.mode };
+        return evidence;
+      }
       evidenceCalls.push(input);
       evidence = {
         ...evidence,
@@ -603,7 +615,9 @@ describe("Devices", () => {
         (candidate) => candidate.textContent?.trim() === "Reconnect device",
       ),
     ).toHaveLength(1);
-    expect(document.body.textContent).toContain("One step before this device is ready");
+    expect(document.body.textContent).toContain("Android · Physical device");
+    expect(document.body.textContent).toContain("Wake or reconnect the device, then check again.");
+    expect(document.body.textContent).not.toContain("Connect the device to see its screen here.");
     await click(button("Reconnect device"));
     expect(service.recoveryCalls).toEqual(["phone"]);
     expect(document.body.textContent).toContain("Device is ready");
@@ -952,8 +966,12 @@ describe("Settings", () => {
       [...document.querySelectorAll('[aria-label="Settings sections"] a')].map((item) =>
         item.textContent?.trim(),
       ),
-    ).toContain("Privacy");
-    expect(document.body.textContent).toContain("Evidence");
+    ).toContain("Evidence & privacy");
+    expect(document.body.textContent).toContain("Evidence & privacy");
+    expect(document.body.textContent).toContain("Lightweight (recommended)");
+    expect(document.body.textContent).toContain("Include video");
+    expect(document.body.textContent).toContain("Applies to new runs and recordings.");
+    expect(document.body.textContent).toContain("Screenshots use less storage");
     expect(document.body.textContent).not.toContain("Protect evidence before it is saved");
     expect(document.body.textContent).toContain("HTTP bodies");
     expect(document.body.textContent).toContain("Packet captures");
@@ -962,6 +980,14 @@ describe("Settings", () => {
     );
     expect(document.querySelector('[aria-live="polite"]:not(.sr-only)')).toBeNull();
     expect(document.body.textContent).not.toMatch(/\b(?:lease|runtime profile|inventory)\b/i);
+
+    const fullEvidence = [...document.querySelectorAll("label")].find((item) =>
+      item.textContent?.includes("Include video"),
+    );
+    if (!(fullEvidence instanceof HTMLElement)) throw new Error("Full evidence option not found");
+    await click(fullEvidence);
+    expect(service.evidenceModeCalls).toEqual(["full"]);
+    expect(document.body.textContent).toContain("Saved");
 
     await click(input("Redact sensitive evidence"));
     expect(service.privacyCalls).toEqual([false]);

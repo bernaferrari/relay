@@ -11,6 +11,8 @@ import { readFile } from "node:fs/promises";
 import type http from "node:http";
 import {
   AuthoringStateError,
+  automaticVideoAllowed,
+  getEvidenceCollectionPolicy,
   authoringReplaySourceSteps,
   prepareAuthoringBrowserReplay,
   authoringSessions,
@@ -271,7 +273,10 @@ export function createAuthoringRuntime(
     },
     async startVideo(session) {
       if (session.target.kind === "device" && session.target.platform === "ios") {
-        if (await usesExclusivePhysicalIosRunner(session)) {
+        if (
+          !automaticVideoAllowed(getEvidenceCollectionPolicy()) ||
+          (await usesExclusivePhysicalIosRunner(session))
+        ) {
           evidenceOnlyIosSessions.add(session.id);
           return;
         }

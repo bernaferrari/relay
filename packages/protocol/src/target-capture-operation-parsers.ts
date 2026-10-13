@@ -239,6 +239,7 @@ export function createTargetCaptureOperationParsers(input: {
       }
       optionalQueryBoolean(value.full, "full");
       optionalQueryBoolean(value.interactiveOnly, "interactiveOnly");
+      optionalQueryBoolean(value.logicalBoundsOnly, "logicalBoundsOnly");
     },
   );
 
@@ -261,6 +262,9 @@ export function createTargetCaptureOperationParsers(input: {
       number(value.capturedAt, "snapshot capturedAt");
       boolean(value.inspectable, "snapshot inspectable");
       string(value.source, "snapshot source");
+      if (value.boundsSource !== undefined && value.boundsSource !== "current-window") {
+        fail("snapshot boundsSource", "must be current-window");
+      }
       record(value.screenIdentity, "snapshot screenIdentity");
       if (typeof value.tree !== "string") fail("snapshot tree", "must be a string");
       if (!value.tree && value.inspectable !== false) {

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type {
   AuthoringEvidence,
@@ -16,6 +19,16 @@ import {
   type AuthoringRecordingLifecycleDependencies,
   type PersistedAuthoringObservation,
 } from "./authoring-recording-lifecycle.js";
+import {
+  persistCapturedAuthoringObservation,
+  type CapturedAuthoringObservation,
+} from "./authoring-observation-capture.js";
+import { readAuthoringEvidence } from "./authoring-evidence.js";
+import { nativeCaptureTargetProfile } from "./native-target-profile.js";
+import { recordedActions } from "./app-map/recording-actions.js";
+import { loadFrozenRecordedEntrances } from "./frozen-recorded-entrance.js";
+import { authoringOriginApplication } from "./authoring-session-runtime.js";
+import type { AppMapCompiledTest } from "@relay/protocol";
 
 function evidence(id: string, capturedAt: number): AuthoringEvidence {
   return {
@@ -118,6 +131,232 @@ function dependencies(input: {
       };
     },
   };
+}
+
+for (const originMode of ["requested", "observed"] as const) {
+  test(`an iPad point with ${originMode} origin captures its exact selector entrance before the single dispatch`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-point-entrance-"));
+    const previousState = process.env.RELAY_STATE_DIR;
+    process.env.RELAY_STATE_DIR = root;
+    let tick = 100;
+    let dispatched = 0;
+    const captures = new Map<string, CapturedAuthoringObservation>();
+    const order: string[] = [];
+    const app = "com.example.product";
+    const source = observation("source", 100);
+    source.nodes = [
+      {
+        type: "Application",
+        depth: 0,
+        bundleId: app,
+        logicalCoordinates: true,
+        rect: { x: 0, y: 0, width: 834, height: 1112 },
+      },
+    ];
+    source.proof = {
+      schemaVersion: 1,
+      captureOrder: "pixels-ax-pixels",
+      pixels: {
+        status: "captured",
+        capturedAt: 98,
+        bracket: { status: "coherent", afterCapturedAt: 100 },
+      },
+      semantics: { status: "current", capturedAt: 99 },
+    };
+    const session = recordingSession(source);
+    if (originMode === "requested") session.originApplication = app;
+    const profile = nativeCaptureTargetProfile({
+      targetId: session.target.targetId,
+      platform: "ios",
+      observedAt: tick,
+      viewport: { width: 834, height: 1112 },
+    });
+    try {
+      const recorded = await recordAuthoringInteraction(
+        session,
+        { kind: "tap", target: { point: { x: 25, y: 25 } } },
+        {
+          async observe(_session, request) {
+            const at = (tick += 10);
+            const key = `capture-${at}`;
+            order.push(request?.includeIdentifiers?.[0] ?? "observe");
+            captures.set(key, {
+              capturedAt: at,
+              targetId: session.target.targetId,
+              fingerprint: "fixture-pixels",
+              screenshotCapturedAt: at - 2,
+              screenshot: { data: Buffer.from("fixture-raster"), mime: "image/png" },
+              bounds: profile.viewport,
+              nodes: [
+                {
+                  type: "Application",
+                  depth: 0,
+                  bundleId: app,
+                  rect: { x: 0, y: 0, width: 834, height: 1112 },
+                },
+                {
+                  type: "Button",
+                  identifier: "sidebar.open.button",
+                  label: "Open sidebar",
+                  hittable: true,
+                  rect: { x: 10, y: 10, width: 44, height: 44 },
+                },
+              ],
+              proof: {
+                schemaVersion: 1,
+                captureOrder: "pixels-ax-pixels",
+                pixels: {
+                  status: "captured",
+                  capturedAt: at - 2,
+                  fingerprint: "fixture-pixels",
+                  bracket: { status: "coherent", afterCapturedAt: at },
+                },
+                semantics: { status: "current", capturedAt: at - 1, fingerprint: "fixture-tree" },
+              },
+              capture: {
+                snapshotSource: "sdk",
+                inspectable: true,
+                treeApp: app,
+                ...(request
+                  ? {
+                      selectorEntrance: {
+                        schemaVersion: 1,
+                        request: {
+                          identifiers: [...(request.includeIdentifiers ?? [])],
+                          labels: [...(request.includeLabels ?? [])],
+                        },
+                        profile: {
+                          id: profile.id,
+                          targetId: profile.targetId,
+                          platform: "ios",
+                          viewport: profile.viewport!,
+                          capabilities: ["snapshot", "screenshot"],
+                        },
+                      },
+                    }
+                  : {}),
+              },
+            });
+            return key;
+          },
+          async execute(_session, executable) {
+            dispatched++;
+            order.push("dispatch");
+            assert.deepEqual(executable, {
+              kind: "tap",
+              target: { identifier: "sidebar.open.button" },
+            });
+          },
+        },
+        dependencies({
+          now: () => ++tick,
+          persistObservation: (key) => persistCapturedAuthoringObservation(captures.get(key)!),
+          async persistEvidence() {
+            throw new Error("No video expected");
+          },
+          async writeSession() {},
+        }),
+      );
+      const revision = recorded.take!.revisions.at(-1)!;
+      const actions = recordedActions({
+        sessionId: recorded.id,
+        target: recorded.target,
+        takeId: recorded.take!.id,
+        takeRevision: revision.revision,
+        entranceCaptureVersion: revision.entranceCaptureVersion,
+        originApplication: authoringOriginApplication(recorded),
+        observations: revision.observations,
+        actions: revision.actions,
+        evidenceIds: revision.evidence.map((item) => item.id),
+        evidenceById: Object.fromEntries(revision.evidence.map((item) => [item.id, item])),
+      });
+      const action = actions[0]!;
+      assert.equal(action.kind, "recorded");
+      assert.ok(action.kind === "recorded");
+      assert.equal(action.steps[0]!.recordedEntrance?.status, "captured");
+      assert.deepEqual(order, ["observe", "sidebar.open.button", "dispatch", "observe"]);
+      assert.equal(dispatched, 1);
+      assert.equal(recorded.originApplication, originMode === "requested" ? app : undefined);
+      const plan = {
+        recipes: { flow: { id: "flow", steps: action.steps } },
+      } as unknown as AppMapCompiledTest;
+      const frozen = await loadFrozenRecordedEntrances(plan, readAuthoringEvidence);
+      const entrances = Object.values(frozen!);
+      assert.equal(entrances.length, 1);
+      assert.equal(
+        entrances[0]!.status,
+        undefined,
+        "the immutable raw tree must pass the offline identity guard",
+      );
+      assert.equal(entrances[0]!.sources[0]!.nodes?.length, 2);
+    } finally {
+      if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+      else process.env.RELAY_STATE_DIR = previousState;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const changed of ["mismatched", "ambiguous"] as const) {
+  test(`${changed === "ambiguous" ? "an" : "a"} ${changed} iPad selector entrance refuses the point before intent or dispatch`, async () => {
+    let tick = 100;
+    let captures = 0;
+    let dispatches = 0;
+    let writes = 0;
+    const node = {
+      type: "Button",
+      identifier: "sidebar.open.button",
+      label: "Open sidebar",
+      hittable: true,
+      rect: { x: 10, y: 10, width: 44, height: 44 },
+    };
+    const discovery = observation("discovery", 110);
+    discovery.bounds = { width: 834, height: 1112 };
+    discovery.proof!.semantics = {
+      status: "current",
+      capturedAt: 110,
+      fingerprint: "fixture-tree",
+    };
+    discovery.nodes = [node];
+    const selected = structuredClone(discovery);
+    selected.id = "selected";
+    selected.nodes =
+      changed === "mismatched"
+        ? [{ ...node, identifier: "another.button", label: "Another control" }]
+        : [node, { ...node, rect: { x: 20, y: 20, width: 44, height: 44 } }];
+    await assert.rejects(
+      recordAuthoringInteraction(
+        recordingSession(),
+        { kind: "tap", target: { point: { x: 25, y: 25 } } },
+        {
+          async observe(_session, request) {
+            if (++captures === 1) return "discovery";
+            assert.deepEqual(request, { includeIdentifiers: ["sidebar.open.button"] });
+            return "selected";
+          },
+          async execute() {
+            dispatches++;
+          },
+        },
+        dependencies({
+          now: () => ++tick,
+          async persistObservation(key) {
+            return { observation: key === "discovery" ? discovery : selected, evidence: [] };
+          },
+          async persistEvidence() {
+            throw new Error("No video expected");
+          },
+          async writeSession() {
+            writes++;
+          },
+        }),
+      ),
+      /control changed before it could be recorded/i,
+    );
+    assert.equal(captures, 2);
+    assert.equal(dispatches, 0);
+    assert.equal(writes, 0);
+  });
 }
 
 test("interaction lifecycle writes the raw intent before dispatch and links its terminal outcome", async () => {

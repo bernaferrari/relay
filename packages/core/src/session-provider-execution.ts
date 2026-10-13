@@ -17,7 +17,7 @@ import { createDeviceForTarget } from "./device-factory.js";
 import { getBrowserDevice } from "./browser-target.js";
 import { hardStopDeviceSession } from "./control.js";
 import { now } from "./events.js";
-import { getRedactionPolicy, visualEvidenceAllowed } from "./redaction.js";
+import { runVideoAllowed } from "./run-video-policy.js";
 import type { TestJob } from "./session-contract.js";
 import { resolveSessionDeviceMeta } from "./session-job-support.js";
 import { executionTargetRefForJob } from "./target-driver.js";
@@ -248,7 +248,7 @@ export async function acquirePreparedSessionDevice(
       // Browser proof contexts are acquired before generic collectors start.
       // Carry the Run-frozen privacy decision into Playwright so a redacted
       // Run never opens a context that records visual bytes in the first place.
-      recordVideo: visualEvidenceAllowed(job.evidencePolicy.redaction ?? getRedactionPolicy()),
+      recordVideo: runVideoAllowed(job),
     });
   }
 

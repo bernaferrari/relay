@@ -26,7 +26,12 @@ import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
 import { browserProfileDir, readTarget } from "./targets.js";
-import { getEvidenceCollectionPolicy, hasSensitiveEvidenceConsent } from "./evidence-policy.js";
+import {
+  automaticVideoAllowed,
+  getEvidenceCollectionPolicy,
+  hasSensitiveEvidenceConsent,
+} from "./evidence-policy.js";
+import { saveBrowserVideoArtifact } from "./browser-video-artifact.js";
 import { redactSensitiveEvidenceValue, redactValue, visualEvidenceAllowed } from "./redaction.js";
 import {
   attachBrowserEvidence,
@@ -107,10 +112,10 @@ async function createSession(
     browserProfileDir(targetId, options.mode === "authoring" ? options.unsignedLaneId : undefined),
     options.mode === "authoring" ? "recordings" : "proof-recordings",
   );
-  const recordVideo = options.recordVideo !== false;
+  const recordVideo = options.recordVideo ?? automaticVideoAllowed(getEvidenceCollectionPolicy());
   let recordingUnavailable = recordVideo
     ? undefined
-    : "Live Browser Device video is disabled. Screenshots, steps, and logs are still captured.";
+    : "Automatic browser video is disabled. Screenshots, steps, and logs are still captured.";
   let contextHandle;
   try {
     contextHandle =
@@ -229,6 +234,10 @@ export async function sessionFor(
     throw new Error("The prepared live browser is no longer available. Open it again.");
   }
   const mode = options.mode ?? "authoring";
+  options = {
+    ...options,
+    recordVideo: options.recordVideo ?? automaticVideoAllowed(getEvidenceCollectionPolicy()),
+  };
   const key = browserSessionStoreKey({
     targetId,
     mode,
@@ -263,9 +272,10 @@ export async function sessionFor(
       : browserSessionProfileMatches(session.profile, requestedProfile);
     if (
       profileMatches &&
+      (options.recordVideo === undefined || session.recordVideo === options.recordVideo) &&
       ((options.reuseMatchingIdentity && !options.requirePresentationMatch) ||
-        ((options.recordVideo === undefined || session.recordVideo === options.recordVideo) &&
-          (options.headless === undefined || session.headless === options.headless)))
+        options.headless === undefined ||
+        session.headless === options.headless)
     ) {
       // A proof session with the exact frozen profile (engine, viewport,
       // fixture revision) is the same configuration, not a stale one: reuse
@@ -732,10 +742,11 @@ export async function getBrowserDevice(
           const page = await activePage(session);
           const returnUrl = page.url();
           const output = session.recordingPath?.replace(/\.mp4$/i, ".webm");
+          let cleanupWarning: string | undefined;
           await page.close();
           if (output && session.recordingVideo) {
             await mkdir(dirname(output), { recursive: true });
-            await session.recordingVideo.saveAs(output);
+            cleanupWarning = await saveBrowserVideoArtifact(session.recordingVideo, output);
           }
           session.page = await session.context.newPage();
           attachBrowserEvidence(session, session.page);
@@ -743,7 +754,7 @@ export async function getBrowserDevice(
             await session.page.goto(returnUrl, { waitUntil: "domcontentloaded" });
           }
           session.recordingVideo = null;
-          return { stopped: true, path: output };
+          return { stopped: true, path: output, ...(cleanupWarning ? { cleanupWarning } : {}) };
         }),
     },
   };

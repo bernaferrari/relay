@@ -2,6 +2,7 @@
 import { ModelKeyForm } from "../components/settings-model-key";
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
 import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
+import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -210,6 +211,9 @@ function GeneralSettings() {
   );
 }
 
+const evidenceModeCard =
+  "relative grid min-h-16 w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_20px] items-center gap-3 rounded-lg border border-border bg-card p-3 text-card-foreground outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:bg-muted/50 has-data-checked:border-foreground has-data-checked:bg-muted has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50";
+
 function EvidenceSettings() {
   const { settingsService, queryClient } = useRouteContext({ from: "__root__" });
   const privacy = useQuery({
@@ -225,11 +229,19 @@ function EvidenceSettings() {
     onSuccess: (policy) => queryClient.setQueryData(settingsQueryKeys.privacy, policy),
   });
   const evidenceMutation = useMutation({
-    mutationFn: (input: { channel: SensitiveEvidenceChannel; enabled: boolean }) =>
-      settingsService.setEvidence({
-        ...input,
-        ...(input.enabled ? { reason: "Enabled in Relay Evidence & privacy settings" } : {}),
-      }),
+    mutationFn: (
+      input:
+        | { mode: "lightweight" | "full" }
+        | { channel: SensitiveEvidenceChannel; enabled: boolean; reason?: string },
+    ) =>
+      settingsService.setEvidence(
+        "mode" in input
+          ? input
+          : {
+              ...input,
+              ...(input.enabled ? { reason: "Enabled in Relay Evidence & privacy settings" } : {}),
+            },
+      ),
     onSuccess: (policy) => queryClient.setQueryData(settingsQueryKeys.evidence, policy),
   });
   const saveState: SaveState | undefined =
@@ -274,6 +286,46 @@ function EvidenceSettings() {
       ) : null}
       {privacy.data && evidence.data ? (
         <>
+          <SettingsGroup title="Run evidence" id="evidence-mode">
+            <p className="mb-3 max-w-prose text-sm leading-5 text-muted-foreground">
+              Applies to new runs and recordings. Screenshots use less storage. Add video when
+              motion or transitions matter.
+            </p>
+            <RadioGroup
+              aria-label="Run evidence level"
+              name="run-evidence-level"
+              value={evidence.data.mode ?? "lightweight"}
+              disabled={evidenceMutation.isPending}
+              onValueChange={(mode) => {
+                if (mode === "lightweight" || mode === "full") {
+                  evidenceMutation.mutate({ mode });
+                }
+              }}
+              className="grid gap-2"
+            >
+              <FieldLabel className={evidenceModeCard}>
+                <span className="grid min-w-0 gap-0.5">
+                  <span className="text-sm font-medium text-foreground">
+                    Lightweight (recommended)
+                  </span>
+                  <span className="text-sm leading-5 text-muted-foreground">
+                    Screenshots, screen structure, timeline, and diagnostics.
+                  </span>
+                </span>
+                <RadioGroupItem value="lightweight" />
+              </FieldLabel>
+              <FieldLabel className={evidenceModeCard}>
+                <span className="grid min-w-0 gap-0.5">
+                  <span className="text-sm font-medium text-foreground">Include video</span>
+                  <span className="text-sm leading-5 text-muted-foreground">
+                    Adds video on browsers and supported mobile runs.
+                  </span>
+                </span>
+                <RadioGroupItem value="full" />
+              </FieldLabel>
+            </RadioGroup>
+          </SettingsGroup>
+
           <SettingsGroup title="Privacy" id="privacy">
             <ToggleRow
               id="redact-sensitive-evidence"

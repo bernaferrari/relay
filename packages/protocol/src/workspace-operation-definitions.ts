@@ -40,6 +40,9 @@ const evidencePolicyParser = objectParser<{ policy: EvidenceCollectionPolicyDto 
     const policy = record(input.policy, "evidence policy");
     if (policy.schemaVersion !== 1) fail("evidence policy schemaVersion", "must be 1");
     record(policy.sensitive, "evidence policy sensitive grants");
+    if (policy.mode !== undefined && policy.mode !== "lightweight" && policy.mode !== "full") {
+      fail("evidence policy mode", "must be lightweight or full");
+    }
   },
 );
 
@@ -64,8 +67,21 @@ export const workspaceOperationDefinitions = [
     category: "workspace",
     minimumRole: "viewer",
   }),
-  command("workspace.evidence.update", "Update evidence consent", "PUT", "/settings/evidence", {
-    input: objectParser("evidence consent", (input) => {
+  command("workspace.evidence.update", "Update evidence policy", "PUT", "/settings/evidence", {
+    input: objectParser("evidence policy update", (input) => {
+      if (input.mode !== undefined) {
+        if (input.mode !== "lightweight" && input.mode !== "full") {
+          fail("evidence mode", "must be lightweight or full");
+        }
+        if (
+          input.channel !== undefined ||
+          input.enabled !== undefined ||
+          input.reason !== undefined
+        ) {
+          fail("evidence policy update", "must change either mode or consent");
+        }
+        return;
+      }
       string(input.channel, "evidence channel");
       boolean(input.enabled, "evidence enabled");
     }),

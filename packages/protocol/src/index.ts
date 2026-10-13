@@ -52,10 +52,15 @@ export type EvidenceConsentGrant = {
   reason: string;
 };
 
+export type EvidenceCollectionMode = "lightweight" | "full";
+
 /** Workspace policy frozen into a run before any sensitive collector starts. */
 export type EvidenceCollectionPolicy = {
   schemaVersion: 1;
   sensitive: Partial<Record<SensitiveEvidenceChannel, EvidenceConsentGrant>>;
+  /** Automatic video is optional; both modes retain step evidence and diagnostics.
+   * A missing mode identifies a legacy frozen Run and preserves its policy. */
+  mode?: EvidenceCollectionMode;
   /** Effective privacy policy frozen with the Run. A missing value identifies
    * a legacy record and must never let a collector silently widen access. */
   redaction?: RedactionPolicy;
@@ -399,7 +404,9 @@ export type RelayEndpointMap = {
   };
   "GET /settings/evidence": { response: { policy: EvidenceCollectionPolicy } };
   "PUT /settings/evidence": {
-    request: { channel: SensitiveEvidenceChannel; enabled: boolean; reason?: string };
+    request:
+      | { mode: EvidenceCollectionMode }
+      | { channel: SensitiveEvidenceChannel; enabled: boolean; reason?: string };
     response: { policy: EvidenceCollectionPolicy };
   };
   "GET /jobs?full=0": { response: { jobs: JobSummary[] } };

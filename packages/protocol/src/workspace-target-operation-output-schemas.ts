@@ -539,6 +539,7 @@ const traceStep = z
 const evidencePolicy = z
   .object({
     schemaVersion: z.literal(1),
+    mode: z.enum(["lightweight", "full"]).optional(),
     sensitive: z
       .object({
         audio: z

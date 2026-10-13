@@ -28,6 +28,7 @@ import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
 import { observeScreenIdentityForHost, observeVisualScreenFingerprint } from "./screen-identity.js";
 import { proposeVisualRows, type ProposedVisualRow } from "./visual-rows.js";
+import { analyzeScreenshotAsync } from "./screenshot-analysis-async.js";
 import {
   androidSnapshotApplication,
   androidSnapshotMatchesForeground,
@@ -41,6 +42,11 @@ import {
 import { currentTargetContext, runWithTargetContext, targetIdentity } from "./target-context.js";
 import { readIosDisplayOrientation } from "./ios-device-adapter.js";
 import { captureIosPngViaGoIos } from "./ios-app-launch.js";
+import { prepareSnapshotMetadata } from "./snapshot-metadata.js";
+export {
+  SnapshotSemanticsQuarantinedError,
+  SnapshotLogicalBoundsUnavailableError,
+} from "./snapshot-metadata.js";
 import { annotateTapPreview, tapPreviewLogicalBounds } from "./tap-preview.js";
 import {
   inferIosSnapshotGeometry,
@@ -92,6 +98,8 @@ export type SnapshotPayload = {
   interactive: SnapshotNode[];
   /** rough screen bounds from max rect extents (for overlay scaling) */
   bounds?: { width: number; height: number };
+  /** A current native window receipt, independently observed without an AX tree. */
+  boundsSource?: "current-window";
   /** False when Android's hierarchy cannot be safely aligned with mirrored pixels. */
   inspectable: boolean;
   /** Capture implementation, useful for diagnostics without leaking host details to UI logic. */
@@ -395,6 +403,8 @@ export async function captureSnapshot(opts?: {
   interactiveOnly?: boolean;
   device?: Device;
   includeVisual?: boolean;
+  /** Current app-window geometry only; never starts an accessibility traversal. */
+  logicalBoundsOnly?: boolean;
   overlay?: RuntimeTargetOverlay;
   /** Preview remains a single read-only AX attempt with distinct diagnostics. */
   iosOperation?: "preview" | "snapshot";
@@ -410,41 +420,47 @@ export async function captureSnapshot(opts?: {
       context.kind === "device"
         ? { serial: context.serial, platform: context.platform }
         : undefined;
+    const metadata = await prepareSnapshotMetadata(context, opts);
+    if (metadata.kind === "window") return metadata.payload;
+    const semanticBlocked = metadata.kind === "pixels-only";
     // Stamp request order before XCTest starts. Its result can arrive after a
     // newer pixel frame, in which case the tree is evidence but not geometry
     // for that frame.
     const semanticObservationEpoch =
-      context.kind === "device" && context.platform === "ios"
+      !semanticBlocked && context.kind === "device" && context.platform === "ios"
         ? beginTargetRuntimeObservation(readinessTarget!)
         : undefined;
     let snapshot: SnapshotCapture;
-    try {
-      snapshot = await snapshotForTarget(
-        target,
-        opts?.interactiveOnly ?? false,
-        opts?.iosOperation ?? "snapshot",
-        opts,
-      );
-    } catch (error) {
-      if (target.context.kind === "device" && target.context.platform === "ios") {
-        const inspectionError = await iosInspectionErrorMessage(error, target.context.serial);
-        const rememberedApp = await rememberedTargetApplication(target.context);
-        snapshot = {
-          nodes: [],
-          inspectable: false,
-          source: "pixels-only",
-          bindingState: "unavailable",
-          ...(inspectionError ? { inspectionError } : {}),
-          ...(isIosAccessibilityQueryInFlightError(error) ? { semanticProbeInFlight: true } : {}),
-          ...(rememberedApp ? { foregroundApp: rememberedApp } : {}),
-        };
-      } else {
-        throw error;
+    if (metadata.kind === "pixels-only") {
+      snapshot = metadata.capture;
+    } else
+      try {
+        snapshot = await snapshotForTarget(
+          target,
+          opts?.interactiveOnly ?? false,
+          opts?.iosOperation ?? "snapshot",
+          opts,
+        );
+      } catch (error) {
+        if (target.context.kind === "device" && target.context.platform === "ios") {
+          const inspectionError = await iosInspectionErrorMessage(error, target.context.serial);
+          const rememberedApp = await rememberedTargetApplication(target.context);
+          snapshot = {
+            nodes: [],
+            inspectable: false,
+            source: "pixels-only",
+            bindingState: "unavailable",
+            ...(inspectionError ? { inspectionError } : {}),
+            ...(isIosAccessibilityQueryInFlightError(error) ? { semanticProbeInFlight: true } : {}),
+            ...(rememberedApp ? { foregroundApp: rememberedApp } : {}),
+          };
+        } else {
+          throw error;
+        }
       }
-    }
     const { nodes: capturedNodes, semanticProbeInFlight, ...capture } = snapshot;
     const iosSessionLifecycle =
-      context.kind === "device" && context.platform === "ios"
+      !semanticBlocked && context.kind === "device" && context.platform === "ios"
         ? lastIosSessionOperationDiagnostic(context.serial)
         : undefined;
     const iosGeometry =
@@ -458,7 +474,7 @@ export async function captureSnapshot(opts?: {
     // fallback PNG must be able to invalidate this tree; recording after that
     // PNG would falsely restamp an older AX read as current.
     const semanticCapturedAt = now();
-    if (readinessTarget) {
+    if (readinessTarget && !semanticBlocked) {
       recordTargetSemanticCapture(readinessTarget, {
         inspectable: capture.inspectable,
         nodes,
@@ -546,9 +562,7 @@ export async function captureSnapshot(opts?: {
     }
     const capturedAt = semanticCapturedAt;
     const readinessAt = now();
-    const readiness = readinessTarget
-      ? targetRuntimeReadiness(readinessTarget, readinessAt)
-      : undefined;
+    const readiness = metadata.readiness(readinessAt, semanticCapturedAt);
     const pixelsChrome = describePixelsOnlySnapshotChrome({
       foregroundApp: capture.foregroundApp,
       visualFingerprint,
@@ -729,7 +743,8 @@ export async function captureScreenshot(opts?: {
     // Use the transport raster solely to advance the visual epoch before we
     // consult cached AX geometry. The public fingerprint below remains the
     // normalized image that people actually inspect.
-    const rawVisualFingerprint = observeVisualScreenFingerprint(buf);
+    let analysis = await analyzeScreenshotAsync(buf);
+    const rawVisualFingerprint = analysis.visualFingerprint;
     const pixelCapturedAt = now();
     if (readinessTarget) {
       recordTargetPixelCapture(readinessTarget, {
@@ -763,15 +778,17 @@ export async function captureScreenshot(opts?: {
       if (!buf.equals(normalized)) {
         buf = Buffer.from(normalized);
         await writeFile(path, buf);
+        analysis = await analyzeScreenshotAsync(buf);
       }
     }
-    const visualFingerprint = observeVisualScreenFingerprint(buf);
+    const visualFingerprint = analysis.visualFingerprint;
     if (context.kind === "device")
       recordNativeScreenshotViewport(
         { targetId: context.serial, platform: context.platform },
         buf,
         context.platform === "ios" ? iosLogicalBoundsForSerial(context.serial) : undefined,
         pixelCapturedAt,
+        analysis,
       );
     if (
       opts?.previewTap &&
@@ -790,6 +807,7 @@ export async function captureScreenshot(opts?: {
         : undefined;
       buf = Buffer.from(annotateTapPreview(buf, opts.previewTap, logical));
       await writeFile(path, buf);
+      analysis = await analyzeScreenshotAsync(buf);
     }
     const base64 = buf.toString("base64");
     const dimensions = pngDimensions(buf);
@@ -829,7 +847,7 @@ export async function captureScreenshot(opts?: {
     const serial = targetIdentity();
     publish({ type: "screenshot.captured", at: pixelCapturedAt, serial, bytes: buf.byteLength });
 
-    const proposedRows = proposeVisualRows(buf);
+    const proposedRows = analysis.proposedRows ? [...analysis.proposedRows] : [];
     const active = !opts?.ephemeral
       ? opts?.jobId
         ? { id: opts.jobId }

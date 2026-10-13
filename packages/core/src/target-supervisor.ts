@@ -15,11 +15,13 @@ import type {
   TargetSupervisorRecoveryEvent,
 } from "@relay/protocol";
 import {
+  currentTargetSupervisorPlaneFacts,
   deriveTargetSupervisorOverall,
   deriveTargetSupervisorReadiness,
   initialTargetSupervisorCounters,
   summarizeTargetSupervisorLatency,
 } from "./target-supervisor-health.js";
+import { isCurrentTargetProof } from "./target-proof-freshness.js";
 import {
   boundedText,
   boundedId,
@@ -88,12 +90,15 @@ export type TargetSupervisorCheckpoint = {
   pixels: {
     state: TargetSupervisorHealth["pixels"]["state"];
     lastCapturedAt?: number;
+    durationMs?: number;
     lastError?: string;
     lastErrorAt?: number;
   };
   semantics: {
     state: TargetSupervisorHealth["semantics"]["state"];
     lastCapturedAt?: number;
+    durationMs?: number;
+    observedNodeCount?: number;
     lastError?: string;
     lastErrorAt?: number;
     invalidatedAt?: number;
@@ -113,7 +118,7 @@ export type TargetSupervisorCheckpoint = {
 export type TargetSupervisorEvent =
   | { kind: "context.updated"; context: TargetSupervisorContext }
   | { kind: "control.updated"; control: TargetSupervisorHealth["control"] }
-  | { kind: "pixels.captured"; durationMs?: number }
+  | { kind: "pixels.captured"; at?: number; durationMs?: number }
   | { kind: "pixels.delayed"; reason: string }
   | { kind: "pixels.unavailable"; reason: string }
   | { kind: "semantics.traversal-started" }
@@ -122,7 +127,9 @@ export type TargetSupervisorEvent =
       token: string;
       usable: boolean;
       freshness?: "current" | "stale";
+      at?: number;
       durationMs?: number;
+      observedNodeCount?: number;
       reason?: string;
     }
   | { kind: "semantics.traversal-timed-out"; token: string; durationMs?: number }
@@ -282,7 +289,7 @@ export class TargetSupervisor {
         this.record("TARGET_CONTROL_UPDATED", `Target control is ${this.state.control.state}.`);
         break;
       case "pixels.captured":
-        this.capturePixels(event.durationMs);
+        this.capturePixels(event.durationMs, event.at);
         break;
       case "pixels.delayed":
         this.state.pixels = {
@@ -372,6 +379,8 @@ export class TargetSupervisor {
   }
 
   health(): TargetSupervisorHealth {
+    const now = this.clock.now();
+    const { pixels, semantics } = currentTargetSupervisorPlaneFacts(this.state, now);
     const pending = this.state.input.pending;
     const control = this.effectiveControl();
     const inputState = pending?.uncertainAt
@@ -383,24 +392,24 @@ export class TargetSupervisor {
       quarantined: this.state.quarantined,
       needsHuman: this.state.needsHuman,
       recovering: Boolean(this.state.recovery),
-      pixels: this.state.pixels.state,
-      semantics: this.state.semantics.state,
+      pixels: pixels.state,
+      semantics: semantics.state,
       targetInput: inputState,
     });
     return {
       schemaVersion: 1,
       target: { ...this.state.target },
-      observedAt: this.clock.now(),
+      observedAt: now,
       epochs: { target: this.state.targetEpoch, semanticSession: this.state.semanticSessionEpoch },
       pixels: {
-        state: this.state.pixels.state,
+        state: pixels.state,
         ...(this.state.pixels.lastCapturedAt !== undefined
           ? { lastCapturedAt: this.state.pixels.lastCapturedAt }
           : {}),
         ...(this.state.pixels.lastError ? { lastError: this.state.pixels.lastError } : {}),
       },
       semantics: {
-        state: this.state.semantics.state,
+        state: semantics.state,
         ...(this.state.semantics.lastCapturedAt !== undefined
           ? { lastCapturedAt: this.state.semantics.lastCapturedAt }
           : {}),
@@ -433,7 +442,7 @@ export class TargetSupervisor {
         semantics: summarizeTargetSupervisorLatency(this.state.latencySamples.semantics),
         recovery: summarizeTargetSupervisorLatency(this.state.latencySamples.recovery),
       },
-      readiness: deriveTargetSupervisorReadiness(this.state, this.clock.now()),
+      readiness: deriveTargetSupervisorReadiness({ pixels, semantics }, now),
       events: this.state.events
         .slice(-this.maxEvents)
         .reverse()
@@ -445,13 +454,18 @@ export class TargetSupervisor {
     return cloneCheckpoint(this.state);
   }
 
-  private capturePixels(durationMs?: number): void {
-    const at = this.clock.now();
-    this.state.pixels = { state: "ready", lastCapturedAt: at };
+  private capturePixels(durationMs?: number, capturedAt = this.clock.now()): void {
+    this.state.pixels = {
+      state: "ready",
+      lastCapturedAt: capturedAt,
+      ...(durationMs !== undefined ? { durationMs: finiteDuration(durationMs) } : {}),
+    };
     this.state.counters.pixelCaptures += 1;
     this.sample("pixels", durationMs);
     this.record("PIXELS_CAPTURED", "Fresh pixels are available.");
-    this.clearStaleHumanHold("Fresh pixels prove the device is observable again.");
+    if (isCurrentTargetProof(capturedAt, this.clock.now())) {
+      this.clearStaleHumanHold("Fresh pixels prove the device is observable again.");
+    }
   }
 
   /**
@@ -501,17 +515,27 @@ export class TargetSupervisor {
     const invalidatedAfterStart =
       this.state.semantics.invalidatedAt !== undefined &&
       this.state.semantics.invalidatedAt >= traversal.startedSequence;
+    const capturedAt = event.at ?? this.clock.now();
+    const proof = {
+      lastCapturedAt: capturedAt,
+      ...(event.durationMs !== undefined ? { durationMs: finiteDuration(event.durationMs) } : {}),
+      ...(event.observedNodeCount !== undefined
+        ? { observedNodeCount: event.observedNodeCount }
+        : {}),
+    };
     if (event.usable && !invalidatedAfterStart && event.freshness !== "stale") {
-      this.state.semantics = { state: "current", lastCapturedAt: this.clock.now() };
+      this.state.semantics = { state: "current", ...proof };
       this.record("SEMANTIC_TRAVERSAL_COMPLETED", "Fresh semantic evidence is current.", {
         traversalToken: event.token,
       });
-      this.clearStaleHumanHold("Fresh semantic evidence proves the device is observable again.");
+      if (isCurrentTargetProof(capturedAt, this.clock.now())) {
+        this.clearStaleHumanHold("Fresh semantic evidence proves the device is observable again.");
+      }
       return;
     }
     if (event.usable) {
       this.state.semantics.state = "stale";
-      this.state.semantics.lastCapturedAt = this.clock.now();
+      Object.assign(this.state.semantics, proof);
       this.record(
         "SEMANTIC_TRAVERSAL_STALE",
         "The traversal began before newer input and remains stale.",
@@ -685,8 +709,13 @@ export class TargetSupervisor {
         this.state.semanticSessionEpoch += 1;
         delete this.state.semantics.traversal;
       }
-      if (active.channel === "semantics") this.state.semantics.state = "refreshing";
-      else this.state.pixels.state = "delayed";
+      // An adapter may already have recorded the actual capture while executing
+      // this effect. Keep that exact proof; success alone never renews it.
+      if (active.channel === "semantics") {
+        if (this.health().semantics.state !== "current") this.state.semantics.state = "refreshing";
+      } else if (this.health().pixels.state !== "ready") {
+        this.state.pixels.state = "delayed";
+      }
       delete this.state.recovery;
       this.state.needsHuman = false;
       if (!this.state.input.pending) {
@@ -759,8 +788,11 @@ export class TargetSupervisor {
       return;
     }
     this.state.needsHuman = false;
-    if (event.channel === "pixels") this.state.pixels.state = "delayed";
-    else this.state.semantics.state = "refreshing";
+    if (event.channel === "pixels") {
+      if (this.health().pixels.state !== "ready") this.state.pixels.state = "delayed";
+    } else if (this.health().semantics.state !== "current") {
+      this.state.semantics.state = "refreshing";
+    }
     this.record("RECOVERY_COMPLETED", event.reason, { channel: event.channel });
   }
 

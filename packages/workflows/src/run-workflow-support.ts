@@ -354,6 +354,86 @@ export function unavailableDurableRun(input: {
   };
 }
 
+const OFFLINE_PREFLIGHT_CODE = "TEST_OFFLINE_PREFLIGHT_BLOCKED";
+const STORED_PREFLIGHT_PREFIX = `${OFFLINE_PREFLIGHT_CODE}\n`;
+const STORED_RECOVERY_SEPARATOR = "\nRecovery: ";
+const RECAPTURE_CODES = new Set([
+  "raw-evidence-recapture-required",
+  "raw-evidence-variant-recapture-required",
+  "surface-recapture-required",
+]);
+
+/** Project allowlisted diagnostic text, never the error body, tree, candidates, or inputs. */
+function preflightDiagnosticText(value: unknown, limit: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value
+    .replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/gi, "$1?[REDACTED]")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
+    .replace(/\b(cookie|set-cookie)\s*[:=]\s*[^\s,;]+/gi, "$1: [REDACTED]")
+    .replace(/[\s\u0000-\u001f\u007f]+/gu, " ")
+    .trim();
+  return text ? text.slice(0, limit) : undefined;
+}
+
+function recaptureFindingText(
+  preflight: unknown,
+  finding: Record<string, unknown>,
+): string | undefined {
+  if (typeof finding.code !== "string" || !RECAPTURE_CODES.has(finding.code)) return undefined;
+  const timeline =
+    preflight &&
+    typeof preflight === "object" &&
+    "cursorTimeline" in preflight &&
+    Array.isArray(preflight.cursorTimeline)
+      ? preflight.cursorTimeline
+      : [];
+  const screen = timeline.find(
+    (entry) =>
+      entry &&
+      typeof entry === "object" &&
+      typeof finding.screenId === "string" &&
+      entry.screenId === finding.screenId &&
+      typeof entry.screenTitle === "string",
+  );
+  const title = preflightDiagnosticText(screen?.screenTitle, 120) ?? "This screen";
+  if (finding.code === "raw-evidence-variant-recapture-required") {
+    return `${title} needs a new recording for the selected setup.`;
+  }
+  if (finding.code === "surface-recapture-required")
+    return `${title} needs a complete screen recording.`;
+  return typeof finding.message === "string" &&
+    /no immutable|unavailable|corrupt/u.test(finding.message)
+    ? `${title}’s recorded controls are unavailable for this saved step.`
+    : `${title}’s recorded controls don’t match its saved step.`;
+}
+
+function offlinePreflightProblem(detail: string, recovery: string): WorkflowProblem {
+  return {
+    code: "operation-unavailable",
+    title: "Saved test needs review before running",
+    detail,
+    recovery,
+    retryable: false,
+    sourceCode: OFFLINE_PREFLIGHT_CODE,
+  };
+}
+
+/** A readable durable reason stays within the existing 1,000-character resolution contract. */
+export function preDispatchProblemReason(problem: WorkflowProblem): string {
+  return problem.sourceCode === OFFLINE_PREFLIGHT_CODE
+    ? `${STORED_PREFLIGHT_PREFIX}${preflightDiagnosticText(problem.detail, 600)}${STORED_RECOVERY_SEPARATOR}${preflightDiagnosticText(problem.recovery, 300)}`
+    : problem.detail;
+}
+
+function storedPreflightProblem(reason: string): WorkflowProblem | undefined {
+  if (!reason.startsWith(STORED_PREFLIGHT_PREFIX) || reason.length > 1_000) return undefined;
+  const fields = reason.slice(STORED_PREFLIGHT_PREFIX.length).split(STORED_RECOVERY_SEPARATOR);
+  if (fields.length !== 2 || fields.some((field) => field.includes("\n"))) return undefined;
+  const detail = preflightDiagnosticText(fields[0], 600);
+  const recovery = preflightDiagnosticText(fields[1], 300);
+  return detail && recovery ? offlinePreflightProblem(detail, recovery) : undefined;
+}
+
 export function durableRunSnapshot(output: DurableWorkflowOperationOutput): RunTestSnapshot {
   const record = output.workflow.record,
     workflow = { workflowId: record.workflowId, expectedVersion: record.version },
@@ -376,7 +456,7 @@ export function durableRunSnapshot(output: DurableWorkflowOperationOutput): RunT
         ...unavailableDurableRun({
           workflow,
           frozen,
-          problem: {
+          problem: storedPreflightProblem(record.resolution.reason) ?? {
             code: "operation-unavailable",
             title: "The Test run was rejected before dispatch",
             detail: record.resolution.reason,
@@ -435,6 +515,45 @@ export function preDispatchProblem(error: unknown): WorkflowProblem {
   const body =
     error && typeof error === "object" && "body" in error && error.body ? error.body : undefined;
   const details = body && typeof body === "object" && "details" in body ? body.details : body;
+  if (
+    details &&
+    typeof details === "object" &&
+    "code" in details &&
+    details.code === OFFLINE_PREFLIGHT_CODE
+  ) {
+    const preflight = "preflight" in details ? details.preflight : undefined;
+    const findings =
+      preflight &&
+      typeof preflight === "object" &&
+      "findings" in preflight &&
+      Array.isArray(preflight.findings)
+        ? preflight.findings
+        : [];
+    const blockers: string[] = [];
+    let needsRecapture = false;
+    let otherBlockers = false;
+    for (const finding of findings) {
+      if (!finding || typeof finding !== "object" || finding.severity !== "blocker") continue;
+      const recapture = recaptureFindingText(preflight, finding);
+      needsRecapture ||= recapture !== undefined;
+      otherBlockers ||= recapture === undefined;
+      const message = recapture ?? preflightDiagnosticText(finding.message, 180);
+      if (!message) continue;
+      if (blockers.length < 3) blockers.push(message);
+    }
+    const detail =
+      preflightDiagnosticText(
+        blockers.length ? blockers.join(" ") : "detail" in details ? details.detail : undefined,
+        600,
+      ) ?? "The frozen Test plan has blocking evidence findings. Relay did not control the target.";
+    const recovery = needsRecapture
+      ? otherBlockers
+        ? "Record the affected step again in the Test editor, review the other reported blockers, then start a new Run."
+        : "Record the affected step again in the Test editor before running."
+      : (preflightDiagnosticText("recovery" in details ? details.recovery : undefined, 300) ??
+        "Open the Test editor and resolve its blocking evidence findings, then start a new Run.");
+    return offlinePreflightProblem(detail, recovery);
+  }
   if (
     details &&
     typeof details === "object" &&

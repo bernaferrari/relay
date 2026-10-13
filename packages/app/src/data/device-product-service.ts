@@ -160,6 +160,13 @@ function readiness(device: DeviceSummary): { runnable: boolean; recovery?: strin
     };
   }
   if (device.platform === "ios" && channels.some((channel) => channel.state === "unavailable")) {
+    if (currentPixels && runtime.semanticControl.state === "unavailable") {
+      return {
+        runnable: false,
+        recovery:
+          "The iPad is connected, but Relay cannot read its screen controls. Keep the app open and try Reconnect once.",
+      };
+    }
     return { runnable: false, recovery: "Reconnect the Apple device and check its screen again." };
   }
   return { runnable: true };

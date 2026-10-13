@@ -19,7 +19,7 @@ export const settingsCategories: readonly {
 }[] = [
   { id: "general", path: "/settings/general", label: "General" },
   // Capture policy. QA evidence is Result / Findings / visual compare.
-  { id: "evidence", path: "/settings/evidence", label: "Privacy" },
+  { id: "evidence", path: "/settings/evidence", label: "Evidence & privacy" },
   { id: "integrations", path: "/settings/integrations", label: "Integrations" },
   { id: "appearance", path: "/settings/appearance", label: "Appearance" },
   { id: "advanced", path: "/settings/advanced", label: "Advanced" },
@@ -37,11 +37,15 @@ export type SettingsProductService = {
   privacy(): Promise<RedactionPolicy>;
   setPrivacy(enabled: boolean): Promise<RedactionPolicy>;
   evidence(): Promise<EvidenceCollectionPolicy>;
-  setEvidence(input: {
-    channel: "audio" | "crash" | "network-body" | "network-raw" | "browser-trace";
-    enabled: boolean;
-    reason?: string;
-  }): Promise<EvidenceCollectionPolicy>;
+  setEvidence(
+    input:
+      | { mode: "lightweight" | "full" }
+      | {
+          channel: "audio" | "crash" | "network-body" | "network-raw" | "browser-trace";
+          enabled: boolean;
+          reason?: string;
+        },
+  ): Promise<EvidenceCollectionPolicy>;
   appleSetup(): Promise<unknown>;
   /** Save (or with "", remove) the model key. The key is never read back. */
   setModelKey?(key: string): Promise<{ configured: boolean; source: string }>;

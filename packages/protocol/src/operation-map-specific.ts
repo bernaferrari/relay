@@ -121,7 +121,9 @@ export type SpecificOperationMap = {
     output: { policy: EvidenceCollectionPolicyDto };
   };
   "workspace.evidence.update": {
-    input: { channel: SensitiveEvidenceChannelDto; enabled: boolean; reason?: string };
+    input:
+      | { mode: "lightweight" | "full" }
+      | { channel: SensitiveEvidenceChannelDto; enabled: boolean; reason?: string };
     output: { policy: EvidenceCollectionPolicyDto };
   };
   "target.actions.list": { input: Record<string, never>; output: { actions: ActionSummary[] } };
@@ -189,6 +191,8 @@ export type SpecificOperationMap = {
       visual?: boolean;
       full?: boolean;
       interactiveOnly?: boolean;
+      /** Read current iOS logical window bounds without traversing accessibility. */
+      logicalBoundsOnly?: boolean;
     };
     output: TargetSnapshotDto;
   };

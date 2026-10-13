@@ -96,6 +96,12 @@ function service(source: ProductTestEditorDocument = initialDocument) {
   const historyCalls: string[] = [];
   const editor: TestEditorProductService = {
     get: async () => structuredClone(current),
+    saveSettings: async ({ name, originApplication }) => {
+      current.test.name = name;
+      current.test.originApplication = originApplication;
+      current.revision += 1;
+      return structuredClone(current);
+    },
     edit: async ({ edits: nextEdits }) => {
       edits.push(structuredClone([...nextEdits]));
       for (const edit of nextEdits) {
@@ -281,6 +287,36 @@ async function chooseCheckpoint(label: string) {
 }
 
 describe("Test editor", () => {
+  it("refreshes the Test heading after saving its name in details", async () => {
+    const harness = service();
+    await render(harness.editor);
+    expect(document.querySelector("h1")?.textContent).toContain("Complete checkout");
+
+    await click("More test actions");
+    await click("Name and details");
+    await fill(
+      document.querySelector<HTMLInputElement>('input[value="Complete checkout"]')!,
+      "Grok iPad · Settings round trip · Lightweight",
+    );
+    const saveSettings = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Test settings"] button[type="submit"]',
+    );
+    if (!saveSettings) throw new Error("Test settings Save button not found");
+    await act(async () => saveSettings.click());
+    await settle();
+
+    expect((await harness.editor.get("test-checkout"))?.test.name).toBe(
+      "Grok iPad · Settings round trip · Lightweight",
+    );
+    expect(document.querySelector("h1")?.textContent).toContain(
+      "Grok iPad · Settings round trip · Lightweight",
+    );
+    await click("Run settings");
+    expect(document.querySelector("h1")?.textContent).toContain(
+      "Grok iPad · Settings round trip · Lightweight",
+    );
+  });
+
   it("preserves a draft through a revision conflict and saves it on retry", async () => {
     const harness = service();
     const save = harness.editor.edit;

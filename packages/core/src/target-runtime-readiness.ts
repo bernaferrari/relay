@@ -15,6 +15,8 @@ import type {
 } from "@relay/protocol";
 import type { DevicePlatform, SnapshotNode } from "./device.js";
 import { currentTargetSupervisorStore } from "./target-supervisor-store.js";
+import { isCurrentTargetProof, TARGET_RUNTIME_READINESS_TTL_MS } from "./target-proof-freshness.js";
+export { TARGET_RUNTIME_READINESS_TTL_MS } from "./target-proof-freshness.js";
 export {
   targetExecutionReadiness,
   type TargetExecutionReadiness,
@@ -80,12 +82,6 @@ type TargetProbes = {
   nextObservationEpoch?: number;
 };
 
-/**
- * A target can be unplugged, locked, or lose its XCTest session at any time.
- * Keep a proof brief enough that discovery cannot quietly turn yesterday's
- * successful snapshot into a green control state.
- */
-export const TARGET_RUNTIME_READINESS_TTL_MS = 2 * 60_000;
 /** A tree is not a video stream. Back off only real failed iOS AX probes; a
  * due time permits one recovery probe but never asks UI to poll indefinitely. */
 export const IOS_SEMANTIC_PROBE_INITIAL_COOLDOWN_MS = 15_000;
@@ -185,10 +181,7 @@ function liveProbe(
   const probe = targetProbes?.capabilities[capability];
   if (!probe) return undefined;
   const probeAt = probe.proof?.at ?? probe.lastError?.at;
-  if (
-    probeAt !== undefined &&
-    (probeAt > observedAt || observedAt - probeAt <= TARGET_RUNTIME_READINESS_TTL_MS)
-  ) {
+  if (isCurrentTargetProof(probeAt, observedAt)) {
     return {
       mode: probe.mode,
       state: probe.state,
@@ -372,6 +365,7 @@ export function recordTargetPixelCapture(
     observationEpoch: options?.observationEpoch,
   });
   currentTargetSupervisorStore()?.recordPixelCapture(supervisedTarget(target), {
+    at,
     durationMs: options?.durationMs,
     ...(fingerprint ? { fingerprint } : {}),
   });
@@ -571,7 +565,9 @@ export function recordTargetSemanticSnapshot(
           ? "stale"
           : "current"
         : "unavailable",
-    durationMs: input.durationMs,
+    at: readiness.proof?.at ?? readiness.lastError?.at,
+    durationMs: readiness.proof?.durationMs ?? readiness.lastError?.durationMs,
+    observedNodeCount: readiness.proof?.observedNodeCount,
     reason: input.errorMessage,
     ...((input.foregroundApp ?? input.nodes.find((node) => node.bundleId)?.bundleId)
       ? {
@@ -604,6 +600,7 @@ export function recordTargetSemanticProbeInFlight(
   });
   currentTargetSupervisorStore()?.recordSemanticReceipt(supervisedTarget(target), {
     state: "in-flight",
+    at: input?.at,
     durationMs: input?.durationMs,
     reason: input?.errorMessage,
   });
@@ -638,7 +635,9 @@ export function recordTargetSemanticFlightSettled(
     : targetRuntimeReadiness(target, input.at ?? Date.now()).semanticControl;
   currentTargetSupervisorStore()?.recordSemanticReceipt(supervisedTarget(target), {
     state: input.staleAfterInput || readiness?.freshness === "stale" ? "stale" : "current",
+    at: readiness?.proof?.at ?? input.at,
     durationMs: input.durationMs,
+    observedNodeCount: readiness?.proof?.observedNodeCount ?? input.nodes.length,
     ...(input.nodes.find((node) => node.bundleId)?.bundleId
       ? { foregroundApp: input.nodes.find((node) => node.bundleId)!.bundleId }
       : {}),

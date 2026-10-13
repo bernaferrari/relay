@@ -12,14 +12,26 @@ export type ProposedVisualRow = {
   height: number;
 };
 
-function lumaAt(image: PNG, x: number, y: number): number {
+export type DecodedVisualRowRaster = Readonly<{
+  width: number;
+  height: number;
+  data: ArrayLike<number>;
+  sampleDepth: 8 | 16;
+}>;
+
+function channelAt(image: DecodedVisualRowRaster, offset: number): number {
+  const value = image.data[offset]!;
+  return image.sampleDepth === 16 ? Math.floor((value * 255) / 65_535 + 0.5) : value;
+}
+
+function lumaAt(image: DecodedVisualRowRaster, x: number, y: number): number {
   const px = Math.max(0, Math.min(image.width - 1, x));
   const py = Math.max(0, Math.min(image.height - 1, y));
   const offset = (py * image.width + px) * 4;
   return (
-    0.2126 * image.data[offset]! +
-    0.7152 * image.data[offset + 1]! +
-    0.0722 * image.data[offset + 2]!
+    0.2126 * channelAt(image, offset) +
+    0.7152 * channelAt(image, offset + 1) +
+    0.0722 * channelAt(image, offset + 2)
   );
 }
 
@@ -37,6 +49,18 @@ export function proposeVisualRows(png: Uint8Array): ProposedVisualRow[] {
   } catch {
     return [];
   }
+  return proposeVisualRowsFromDecodedRaster({
+    width: image.width,
+    height: image.height,
+    data: image.data,
+    sampleDepth: 8,
+  });
+}
+
+/** Reuse a captured raster; inspect only the centerline and preserve PNG rounding. */
+export function proposeVisualRowsFromDecodedRaster(
+  image: DecodedVisualRowRaster,
+): ProposedVisualRow[] {
   if (image.width < 80 || image.height < 160) return [];
 
   const topCut = Math.floor(image.height * 0.08);

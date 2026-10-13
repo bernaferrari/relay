@@ -13,8 +13,8 @@ const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: stri
     description: "Relay status, devices, and keyboard shortcuts.",
   },
   evidence: {
-    title: "Privacy",
-    description: "What future runs may capture.",
+    title: "Evidence & privacy",
+    description: "Choose what Relay saves from future runs.",
   },
   integrations: {
     title: "Integrations",

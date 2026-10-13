@@ -63,7 +63,7 @@ function progressMessage(
 ): string | undefined {
   if (phase === "following") return "Following live activity… (Ctrl-C to stop)";
   if (phase === "watching") return "Waiting for the job to finish…";
-  if (operationId === "target.snapshot.capture") return "Waiting on accessibility tree…";
+  if (operationId === "target.snapshot.capture") return "Reading the device…";
   if (operationId === "target.screenshot.capture") return "Waiting on screenshot…";
   if (operationId.startsWith("authoring.")) return "Waiting on device recording…";
   if (operationId === "target.interact" || operationId === "target.app.launch") {

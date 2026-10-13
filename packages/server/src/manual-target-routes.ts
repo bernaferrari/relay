@@ -4,6 +4,8 @@ import {
   captureScrollableSurveyForTarget,
   captureScreenshot,
   captureSnapshot,
+  SnapshotSemanticsQuarantinedError,
+  SnapshotLogicalBoundsUnavailableError,
   cleanupScreenshot,
   describeTargetUi,
   devicePlatformForSerial,
@@ -51,6 +53,7 @@ export type ManualTargetRouteInput = {
   scope: RequestContext;
   liveVideoStream: (response: http.ServerResponse, serial: string) => Promise<void>;
   captureTargetScreenshot: typeof captureScreenshot;
+  captureTargetSnapshot?: typeof captureSnapshot;
 };
 
 /** A manual navigation stop never retries by itself. Give every caller one
@@ -81,6 +84,7 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
     scope,
     liveVideoStream,
     captureTargetScreenshot,
+    captureTargetSnapshot = captureSnapshot,
   } = input;
 
   if (method === "GET" && pathname === "/snapshot") {
@@ -91,6 +95,44 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
       url.searchParams.get("interactiveOnly") === "true";
     const includeVisual =
       url.searchParams.get("visual") !== "0" && url.searchParams.get("visual") !== "false";
+    const logicalBoundsOnly = ["1", "true"].includes(
+      url.searchParams.get("logicalBoundsOnly") ?? "",
+    );
+    const readSnapshot = async (options: Parameters<typeof captureSnapshot>[0]) => {
+      try {
+        return await captureTargetSnapshot(options);
+      } catch (error) {
+        if (error instanceof SnapshotSemanticsQuarantinedError) {
+          const query = `serial=${encodeURIComponent(error.serial)}`;
+          throw new HttpError(409, error.message, {
+            code: error.code,
+            targetId: error.serial,
+            capability: "semantics",
+            blocked: true,
+            recovery:
+              "Review target health and resolve quarantine before retrying semantic inspection.",
+            safeObservations: {
+              pixels: { method: "GET", href: `/screenshot?${query}&ephemeral=1` },
+              snapshot: { method: "GET", href: `/snapshot?${query}&visual=1` },
+              health: { method: "GET", href: `/device/health?${query}` },
+            },
+            recoveryAction: {
+              method: "POST",
+              href: "/device/recover",
+              input: { serial: error.serial },
+            },
+          });
+        }
+        if (error instanceof SnapshotLogicalBoundsUnavailableError) {
+          throw new HttpError(error.reason === "unsupported-platform" ? 400 : 503, error.message, {
+            code: error.code,
+            capability: "logical-bounds",
+            reason: error.reason,
+          });
+        }
+        throw error;
+      }
+    };
     if (laneId) {
       const resolved = await applyLaneToInteractOrThrow({
         projectId: scope.projectId,
@@ -99,10 +141,11 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
       });
       const overlay = runtimeOverlayFromLaneResolution(resolved, scope.projectId);
       assertTargetObservation(scope, resolved.serial);
-      const snap = await captureSnapshot({
+      const snap = await readSnapshot({
         serial: resolved.serial,
         interactiveOnly,
         includeVisual,
+        logicalBoundsOnly,
         ...(overlay ? { overlay } : {}),
       });
       const tree = formatSnapshotTree(snap.nodes);
@@ -110,7 +153,7 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
       return true;
     }
     assertTargetObservation(scope, serial);
-    const snap = await captureSnapshot({ serial, interactiveOnly, includeVisual });
+    const snap = await readSnapshot({ serial, interactiveOnly, includeVisual, logicalBoundsOnly });
     const tree = formatSnapshotTree(snap.nodes);
     json(res, 200, { ...snap, tree });
     return true;

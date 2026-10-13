@@ -193,6 +193,8 @@ export * from "./execution-queue-compile.js";
 export * from "./combine-visual-surface.js";
 export * from "./variable-option-inference.js";
 export * from "./screen-identity.js";
+export * from "./screenshot-analysis.js";
+export * from "./screenshot-analysis-async.js";
 export * from "./visual-rows.js";
 export * from "./authoring-evidence.js";
 export * from "./authoring-observation-capture.js";

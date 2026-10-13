@@ -86,6 +86,7 @@ export type SensitiveEvidenceChannelDto =
 
 export type EvidenceCollectionPolicyDto = {
   schemaVersion: 1;
+  mode?: "lightweight" | "full";
   sensitive: Partial<
     Record<SensitiveEvidenceChannelDto, { grantedAt: number; grantedBy: string; reason: string }>
   >;
@@ -312,6 +313,7 @@ export type TargetSnapshotDto = {
   interactive: TargetSnapshotNodeDto[];
   tree: string;
   bounds?: { width: number; height: number };
+  boundsSource?: "current-window";
   inspectable: boolean;
   source: "sdk" | "android-system" | "pixels-only";
   androidTreeBackend?: "helper" | "dump";
