@@ -16,6 +16,10 @@ packages/*/coverage.lcov
 !tests/coverage/**
 .turbo/
 .cache/
+.next/
+.source/
+packages/site/public/llms*.txt
+packages/site/next-env.d.ts
 vendor/opencode/
 .vite-hooks/
 packages/*/dist/

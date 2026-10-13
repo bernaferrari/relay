@@ -1,0 +1,67 @@
+---
+title: Use the CLI
+description: Create, run, and inspect the same Tests you see in Relay's visual workspace.
+---
+
+The CLI uses the same App, Test, Run, and target model as the interface. From a source checkout, use `./bin/relay` rather than assuming a public global package is installed.
+
+## Find your way
+
+```bash
+./bin/relay --help
+./bin/relay guide
+./bin/relay guide record
+./bin/relay guide waits --json
+```
+
+Guides are bundled with the code. Reading them needs no server, model, or credentials.
+
+## Create a Test
+
+With Relay running and a model key configured for plain-English authoring:
+
+```bash
+./bin/relay new "Add a shirt to the cart and check the total" \
+  --url https://shop.example.com
+```
+
+The URL is an example. Replace it with a website you can test. For deterministic authoring without a model, [record the flow](/docs/workflows/recording) in the app or use the MCP recording tools.
+
+## List and run
+
+```bash
+./bin/relay tests Shop
+./bin/relay run "Cart total" --app Shop --device browser --out ./evidence
+```
+
+Use names from your workspace or their IDs. Targets also accept platform selections such as `ios`, `android`, and `browser`; use an exact device ID when several targets are available.
+
+Add `--json` for machine output. A verdict includes each step's **expected** and **saw**, so an agent can diagnose the failure before attempting a repair.
+
+## Set project defaults
+
+A `relay.json` in your project can set defaults:
+
+```json title="relay.json"
+{ "app": "Shop", "device": "ios" }
+```
+
+These are selections, not credentials. Keep secrets out of Test files, data sets, and command history.
+
+## Read exit codes honestly
+
+| Code | Meaning                                              |
+| ---- | ---------------------------------------------------- |
+| `0`  | Passed.                                              |
+| `1`  | A Test failed its expectation.                       |
+| `2`  | Invalid arguments or an unknown command.             |
+| `3`  | Could not run: blocked, no ready Test, or no server. |
+| `7`  | Cancelled.                                           |
+| `10` | Passed, with screenshot review pending.              |
+| `11` | App, Test, Run, or device not found.                 |
+
+`--help` lists the other codes. A blocked setup is not an app defect, and pending screenshot review is not a completed human decision.
+
+## A useful agent loop
+
+Inspect the saved Test and target, run the smallest relevant flow, read the verdict and evidence, repair the cause, and repeat the same Test. Use [MCP](/docs/agents/mcp) when your agent host supports tools, or [e2e](/docs/agents/e2e) for code-managed upstream Tests.

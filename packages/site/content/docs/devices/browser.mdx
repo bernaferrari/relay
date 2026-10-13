@@ -1,0 +1,36 @@
+---
+title: Test a website
+description: Connect a local browser and make your first website flow repeatable.
+---
+
+## Check the prerequisites
+
+Install Chrome, Chromium, or Edge on the machine running Relay. From the repository:
+
+```bash
+pnpm doctor -- --web
+```
+
+If your browser is installed in an unusual location, set `RELAY_BROWSER_EXECUTABLE` to its absolute executable path before starting Relay.
+
+## Start with the local demo
+
+[Your first test](/docs/getting-started/first-test) uses a controlled local website. It is the simplest way to confirm browser execution and evidence collection without sign-in or a model key.
+
+## Use your own website
+
+Open **Tests → New test**, choose the website target, and enter its address. Describe one outcome, or leave the description empty to record manually.
+
+Use a test account and check its identity before recording. For journeys behind sign-in, prepare the intended account in Relay's workspace rather than assuming any browser session has the right identity.
+
+## Replay in the right context
+
+Use the saved Test's Run settings to choose its browser setup. A page you happen to have open is not automatically the same execution context as a controlled Test run.
+
+Keep viewport and language stable for the first qualification. Add other configurations through [Plans and Data sets](/docs/workflows/data-sets) after the journey works.
+
+## Keep evidence small
+
+New recordings and Runs use lightweight evidence. Screenshots, structure, and diagnostics are retained without automatic video. Enable **Include video** in [Evidence & privacy](/docs/reference/evidence) when motion or transitions matter.
+
+If Relay cannot open or control the browser, follow [troubleshooting](/docs/reference/troubleshooting). Do not repeatedly create browser setups to work around one broken connection.

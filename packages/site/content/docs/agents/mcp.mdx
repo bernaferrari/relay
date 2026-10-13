@@ -1,0 +1,69 @@
+---
+title: Connect an agent over MCP
+description: Give an agent the tools it needs, with the same workspace and results as Relay's UI.
+---
+
+Relay MCP is a project-scoped connector. Its tools use the same service operations as the app and CLI.
+
+## Build the connector from source
+
+From the installed repository:
+
+```bash
+pnpm --filter @relay/mcp build
+pnpm ensure:serve
+```
+
+The bundled entry point is `packages/mcp/dist/relay-mcp.js`. Public npm installation instructions apply after publication; this guide uses the local build.
+
+## Configure your host
+
+For a host with a `mcpServers` configuration:
+
+```json title="MCP host configuration"
+{
+  "mcpServers": {
+    "relay": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/relay/packages/mcp/dist/relay-mcp.js",
+        "--workspace",
+        "/absolute/path/to/relay",
+        "--profile",
+        "qa"
+      ]
+    }
+  }
+}
+```
+
+Replace both paths. Start the local service before connecting, or configure the matching packaged runtime for startup. Choose the workspace containing your Tests and evidence.
+
+## Pick the smallest useful profile
+
+| Profile    | Use it for                                                                        |
+| ---------- | --------------------------------------------------------------------------------- |
+| **qa**     | Create Tests, run them, read verdicts, and inspect failures. This is the default. |
+| **device** | QA tools plus live input, observations, and recording.                            |
+| **full**   | All raw operations for advanced workflows and debugging.                          |
+
+For recording on a connected device, switch the profile to `device`. Avoid giving an agent a large raw tool inventory when it only needs to run Tests.
+
+## Start with the supported loop
+
+Ask the agent to use:
+
+1. `relay_health` and `relay_list_devices` to check readiness.
+2. `relay_list_tests` or `relay_create_test` to select the journey.
+3. `relay_run_test` to execute it.
+4. `relay_get_verdict` and `relay_inspect_failure` to read the result.
+
+`relay_get_guide` provides offline task guidance. The `device` profile adds `relay_record_test`, `relay_record_action`, `relay_add_checkpoint`, and the recording review tools.
+
+## Keep attribution intact
+
+Use the target ID returned by device listing and the Run ID returned by execution. Inspect evidence from that Run, rather than a similar-looking screenshot from another attempt.
+
+If the device is busy, respect its current owner. If the app or connection changes, recover and observe before sending more input.
+
+See the [connector's source README](https://github.com/bernaferrari/relay/tree/main/packages/mcp) for host-specific packaging and bridge details.

@@ -18,6 +18,8 @@
     "dev:app": "node scripts/dev-app.mjs",
     "dev:web": "node scripts/dev-app.mjs",
     "dev:desktop": "pnpm --filter @relay/desktop dev",
+    "dev:site": "pnpm --filter @relay/site dev",
+    "build:site": "pnpm --filter @relay/site build",
     "relay": "node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts",
     "inspect:desktop": "pnpm --filter @relay/desktop inspect",
     "agent-device:install": "cd vendor/agent-device && pnpm install --frozen-lockfile --ignore-scripts",

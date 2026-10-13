@@ -1,0 +1,42 @@
+---
+title: Record a flow
+description: Turn what you do in the app into a Test you can inspect and repeat.
+---
+
+Start small: opening Settings, applying a promo code, or creating one item. A short, reliable Test is easier to diagnose than a long recording of everything at once.
+
+## Prepare the starting screen
+
+1. Open **Devices** and select your browser, phone, or tablet.
+2. Confirm the app, account, and current screen in the preview.
+3. Keep a physical device unlocked and awake. Reserve it for this recording so another app or agent does not interrupt the journey.
+
+## Record the actions
+
+Open **Tests → New test**. Choose the app and target. To record manually, leave the description empty and choose **Start recording**.
+
+Use the live preview to tap, click, type, or swipe. Relay saves the action and its before/after evidence. Wait for an action to finish saving before sending another input.
+
+Use the inspection control to see which accessible element a tap will target. Stable control identities are better than coordinates; coordinate steps depend on the captured layout and viewport.
+
+## Capture what matters
+
+Use **Save screenshot** for a checkpoint you want to review. Give it a meaningful name: “Settings menu” is more useful than “Screenshot 4.” Use **Full page** when the required content extends beyond the visible screen and the target supports it.
+
+If the app does background work, use **Wait or check** with the condition that indicates completion. Prefer an expected control, state, or result over an arbitrary delay. An unchanged screenshot can still show an app that is stuck.
+
+## Review and save
+
+Choose **Stop and review**. Inspect the steps, remove accidental actions, and name the Test after its outcome. Before/After selects the evidence moment for the chosen step.
+
+Choose **Save Test**, or add the steps to the existing Test when recording from its editor. Changing a step's name does not change its target; changing its action does require verification.
+
+## Replay it
+
+[Run the saved Test](/docs/workflows/running). Recording proves what happened during that recording; a successful replay proves that the saved journey can execute again on that target.
+
+If Relay says a recorded control does not match its saved step, record the affected step again from the correct screen. Avoid weakening a check just to make the error disappear.
+
+## Expand after the first repeat
+
+Once the flow runs reliably, add screenshots, checks, or [data sets](/docs/workflows/data-sets). Recheck any coordinate-based action when changing the device, viewport, or language.

@@ -16,6 +16,8 @@ catalog:
 minimumReleaseAgeExclude:
   - "@types/react-dom@19.2.7"
   - e2e@0.20.0
+  - fumadocs-core@16.17.2
+  - fumadocs-ui@16.17.2
 
 overrides:
   vite: "catalog:"

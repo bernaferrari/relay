@@ -1,0 +1,39 @@
+---
+title: Welcome to Relay
+description: Record a real journey, run it again, and see the evidence behind every result.
+---
+
+Relay is a local visual testing workspace for websites, Android apps, and iOS apps. You can work in the desktop app, use the web interface, or give a coding agent the CLI and MCP tools.
+
+<WorkflowDiagram />
+
+## Start with one successful run
+
+**New to Relay?** [Run the local demo](/docs/getting-started/first-test). It catches a seeded layout bug, repairs the demo website, and reruns the same saved Test. No account or model key is needed.
+
+**Have an app to test?** [Install Relay](/docs/getting-started/installation), connect your [browser](/docs/devices/browser), [Android device](/docs/devices/android), or [iPhone or iPad](/docs/devices/ios), then [record a short flow](/docs/workflows/recording).
+
+**Working with a coding agent?** Start with the [CLI](/docs/agents/cli) or [MCP setup](/docs/agents/mcp). They use the same workspace and results as the app.
+
+## Four things to know
+
+| In Relay   | What it means                                                      |
+| ---------- | ------------------------------------------------------------------ |
+| **Test**   | The saved steps and checks you want to repeat.                     |
+| **Run**    | One execution of a Test, on a particular target and configuration. |
+| **Map**    | Screens reached by runs and the paths between them.                |
+| **Review** | Your decision about a screenshot from a specific Run.              |
+
+A completed Run and an accepted screenshot are separate facts. Automated checks tell you whether their conditions passed. Human review tells you whether the captured appearance is acceptable.
+
+## Choose how to author
+
+- **Record** clicks and typing for deterministic steps.
+- **Describe** what should work and let a configured model help write or execute steps.
+- **Use code** through the opt-in [upstream e2e integration](/docs/agents/e2e). The integration runs the original program; its current scope is reporter, evidence import, and process support.
+
+## Where your work lives
+
+Relay retains Tests, Runs, and captured evidence in your local workspace. New runs collect [lightweight evidence](/docs/reference/evidence) by default. Model-assisted actions can send their required input to the model provider you configure.
+
+Relay is in active development. Start with one target and a short journey, qualify it with a replay, then expand to [data sets and Plans](/docs/workflows/data-sets).

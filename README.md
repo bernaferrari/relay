@@ -124,6 +124,10 @@ and need no server, model, or credentials.
 
 ## Working on Relay
 
+The public landing page and Fumadocs guides are in [packages/site](./packages/site/README.md).
+Run `pnpm dev:site` to preview them at `http://localhost:3002`, or `pnpm build:site` to export
+the static site for hosting.
+
 Use `vp check` for formatting and lint, `pnpm typecheck` for type checks, and `pnpm test` for the
 tests. `pnpm test:coverage` writes LCOV reports; CI requires at least 70% line coverage on changed
 source. The [product contract](./PRODUCT_CONTRACT.md) defines the public routes, vocabulary, and

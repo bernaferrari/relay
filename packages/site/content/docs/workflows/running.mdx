@@ -1,0 +1,43 @@
+---
+title: Run and understand a Test
+description: Choose the right target, follow the live screen path, and read the result.
+---
+
+## Choose the run setup
+
+Open a saved Test and use the control beside **Run** to select its target. Check the device name, platform, and intended setup.
+
+Under **Advanced run options**, **Restart app before running** controls whether the app starts fresh. Leave it off when deliberately testing from the current screen. Either way, the device must be able to reach the Test's recorded source screen.
+
+## Start the run
+
+Choose **Run**. Relay checks the saved steps before sending device input. A blocked preflight is a setup or evidence problem, not a passing Test and not automatically a product defect.
+
+During execution, the Result view shows:
+
+- The **screen path**, including planned and observed screens.
+- The current step and its completed actions or checks.
+- A **live device preview** when the target provides one.
+
+The live preview is read-only during a run. Use **Stop** to cancel rather than manipulating the device out from under the runner.
+
+## Read the result
+
+| Result        | What to do                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| **Passed**    | Inspect the checks and retained evidence. Required human review may still be pending.            |
+| **Failed**    | Compare what the step expected with what it saw. Inspect that step's screenshot and diagnostics. |
+| **Blocked**   | Fix the reported prerequisite: target, sign-in, starting screen, saved control, or connection.   |
+| **Cancelled** | The execution stopped. Do not treat incomplete checks as passes.                                 |
+
+Open a step to inspect the evidence attributed to it. **Open report** shows the fuller result; **Screenshots** opens the captured images.
+
+## Repeat without ambiguity
+
+Run the same saved Test again on the same configuration. Each execution gets its own Run and evidence. Use the Test's name to describe what should work, and Run history to see what happened on a particular attempt.
+
+For different inputs or configurations, use [data sets and Plans](/docs/workflows/data-sets). Qualify each intended target before scheduling unattended repetitions.
+
+## When a run needs attention
+
+Read the specific step and recovery action. If the device is busy, let its owner finish. If a connection drops, use **Reconnect** in Devices and check the preview before retrying. See [troubleshooting](/docs/reference/troubleshooting) for common cases.

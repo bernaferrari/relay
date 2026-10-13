@@ -1,0 +1,56 @@
+---
+title: Install and open Relay
+description: Set up the local workspace, choose desktop or web, and configure only what you need.
+---
+
+## Install from source
+
+You need **Node.js 24+**, **pnpm**, and Git. Platform tools depend on what you want to test; a website does not require Android or iOS tooling.
+
+```bash
+git clone https://github.com/bernaferrari/relay.git
+cd relay
+pnpm install
+pnpm doctor
+```
+
+The doctor reports missing prerequisites. Address the ones for your intended target first.
+
+## Open the workspace
+
+Choose one interface:
+
+```bash title="Desktop app"
+pnpm dev:desktop
+```
+
+```bash title="Web interface"
+pnpm dev:web
+```
+
+The web command prints the local URL. Both interfaces use Relay's local service and the same workspace operations. Use the URL printed by your process; the port can differ when another service is already running.
+
+## Choose a target
+
+- **Website:** use a supported local browser. See [browser setup](/docs/devices/browser).
+- **Android:** connect a device over USB or start an emulator. See [Android setup](/docs/devices/android).
+- **iOS:** use a Mac with Xcode and a simulator or a connected device. See [iPhone and iPad setup](/docs/devices/ios).
+
+Open **Devices** and check that the preview shows the app and account you intend to use. A screenshot alone does not prove that interactive controls are available.
+
+## Add a model key when you need one
+
+The local demo and deterministic recorded steps do not need a model. Describing tests and model-assisted actions do.
+
+Open **Settings → Advanced** and add your OpenRouter key, or set it in your shell before starting Relay:
+
+```bash
+export OPENROUTER_API_KEY="your-key"
+pnpm dev:web
+```
+
+Keep the real key out of version control. Relay keeps the key locally; model requests go to your configured provider.
+
+## Confirm the setup
+
+[Run the local demo](/docs/getting-started/first-test), or [record and replay](/docs/workflows/recording) a short journey in your own app. A successful replay on your intended target is the useful setup check.

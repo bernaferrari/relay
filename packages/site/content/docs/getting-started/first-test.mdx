@@ -1,0 +1,59 @@
+---
+title: Your first test
+description: Catch a real layout bug, see the repair, and repeat the same Test. No model key needed.
+---
+
+The fastest way to understand Relay is a complete, local browser demo. It records a journey to Settings, catches a seeded overlap, fixes the demo website, and reruns the unchanged saved Test.
+
+> Relay currently runs from source. Public npm packages and standalone desktop installers are not yet qualified releases. These instructions use the repository.
+
+## 1. Get the workspace ready
+
+Install [Node.js 24 or newer](https://nodejs.org/en/download), [pnpm](https://pnpm.io/installation), and Chrome, Chromium, or Edge. Then:
+
+```bash title="Terminal"
+git clone https://github.com/bernaferrari/relay.git
+cd relay
+pnpm install
+pnpm doctor -- --web
+```
+
+Follow the doctor's instructions if a prerequisite is missing. For an unusual browser installation, set `RELAY_BROWSER_EXECUTABLE` to its absolute path before starting the service.
+
+## 2. Run the demo
+
+```bash title="From the relay directory"
+pnpm ensure:serve
+pnpm demo
+```
+
+No account, model key, Android tools, or iOS tools are needed. Keep the demo terminal open: it serves the local website used by the Test.
+
+## 3. Open both results
+
+The terminal prints two review links:
+
+| Result            | What to look for                                              |
+| ----------------- | ------------------------------------------------------------- |
+| **Defect Review** | The first Run fails because **Save** overlaps the team seats. |
+| **Review**        | The repaired website passes the same layout check.            |
+
+The output also includes the Test ID, separate Run IDs, measured durations, and an exported **Member settings.png** screenshot for each Run. Both screenshots should show Workspace settings for the Member account.
+
+“Layout check passed” means Save and the team seats do not overlap. It does **not** mean someone has approved the appearance. That is a [screenshot review](/docs/workflows/review) decision.
+
+## 4. Repeat it
+
+Use the exact **Repeat** command printed by the demo. It runs the same saved Test against the repaired website and creates a new Run with its own evidence.
+
+Stop the demo with Ctrl+C when finished. Start it again before repeating after the website has stopped. Review links need the Relay service running and expire after 24 hours.
+
+For a demo that closes its website after the two runs:
+
+```bash
+pnpm demo -- --once
+```
+
+## Next: use your own app
+
+Open Relay's [desktop or web interface](/docs/getting-started/installation), choose **New test**, and [record one short journey](/docs/workflows/recording). Aim for a single repeatable outcome before adding more coverage.

@@ -1,0 +1,40 @@
+---
+title: Data sets and Plans
+description: Repeat a qualified flow with different inputs, languages, or devices.
+---
+
+A **Test** describes a journey. A **Plan** selects Tests and configurations to run together. A **Data set** supplies the approved values used for a repetition.
+
+## Parameterize the input
+
+Use a named Run input such as `{{chat_prompt}}` in the recorded text action. Approve shared, non-sensitive values in the Project Data sets.
+
+Keep the value separate from its display label. “Tides” can label a row whose actual prompt is “Explain ocean tides in three sentences.” The label must not silently become the text sent to the app.
+
+## Choose the combinations
+
+Use **Run across** for configurations, or save a Plan for repeated use. A Plan can refer to the input Data set's stable ID. Each Test consumes only the inputs it references.
+
+For equally sized lists, a `zip` strategy pairs rows in order. Be deliberate about combinations: selecting several targets and several values can create many executions.
+
+## Check a saved Plan
+
+```bash
+./bin/relay plan list <app-id> --json
+./bin/relay plan get <app-id> <plan-id> --json
+./bin/relay plan preflight <app-id> <plan-id> --json
+```
+
+Replace the angle-bracket placeholders with IDs from your workspace. These commands inspect saved selections and validate bindings without starting a Run. A live Run on the intended device is still required to qualify it.
+
+## Schedule after qualification
+
+Run the selected Plan manually first. Confirm its target, expected captures, and recovery behavior. A 30-minute schedule must retain the exact target and Plan configuration; prepare it disabled, then enable it after reviewing a successful Run.
+
+Selected input values remain frozen when a repetition resumes, even if a Data set changes later. Without selected rows, list defaults use the first value. A changing schedule seed does not automatically rotate prompts.
+
+## Keep the first scope manageable
+
+Start with one journey and a few values. Add languages, layouts, and devices after replay succeeds. Coordinate fallbacks need special attention because a new layout or locale can move the control.
+
+Use [screenshot review](/docs/workflows/review) to compare the resulting images, and keep [execution status](/docs/workflows/running) separate from review decisions.

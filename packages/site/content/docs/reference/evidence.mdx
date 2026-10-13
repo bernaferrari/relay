@@ -1,0 +1,39 @@
+---
+title: Evidence and privacy
+description: Keep useful proof without automatically recording large videos.
+---
+
+## Choose the evidence mode
+
+Open **Settings → Evidence & privacy → Run evidence**.
+
+| Mode                      | What it adds                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Lightweight** — default | Screenshots, screen structure, action timeline, and available diagnostics.                       |
+| **Include video**         | Video on browsers and supported mobile execution paths, in addition to the lightweight evidence. |
+
+The setting applies to new recordings and Runs. A running Test keeps the mode it started with. Changing the preference does not delete evidence already retained.
+
+## When video is useful
+
+Use video for motion, transitions, timing issues, or failures where a still image misses the important moment. Use lightweight captures for settings, subscription screens, translation checks, and most screenshot review work.
+
+Video availability depends on the target and execution path. Full-flow physical iOS video is not qualified everywhere; do not assume enabling the preference guarantees a video artifact.
+
+## Choose optional channels
+
+The same settings page controls optional collection such as audio, crashes, HTTP bodies, packet captures, and browser traces. Only enable the channels you need and are permitted to capture.
+
+A storage preference does not grant optional-channel consent. Redaction and privacy policy still apply to the evidence that is retained.
+
+## Keep evidence tied to the run
+
+Screenshots, control trees, and diagnostics belong to their captured step, target, and Run. A visually similar image from another attempt cannot satisfy the current Run's evidence requirement.
+
+If an expected capture is missing or blocked, keep that status visible and collect new evidence. Do not infer completeness from the number of files that happen to exist.
+
+## Share deliberately
+
+Inspect an evidence pack before sharing it. Captures may contain account details, user content, or app information. Model-assisted actions can also send required observations to your configured provider.
+
+See [screenshot review](/docs/workflows/review) to record human decisions and export the exact Run you inspected.

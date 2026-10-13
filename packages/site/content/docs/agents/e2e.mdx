@@ -1,0 +1,71 @@
+---
+title: Use upstream e2e
+description: Run the original e2e program and import its evidence without translating its semantics.
+---
+
+Relay has an **opt-in prototype** for `e2e@0.20.0`. Relay's visual/YAML execution stays available. The integration runs the real upstream program; it does not turn TypeScript into plain-English instructions.
+
+## What is supported now
+
+- A reporter with a bounded local event queue.
+- Durable import of final reports and locally available artifacts.
+- A process adapter for a trusted project's pinned upstream CLI.
+- Separate upstream verdict and Relay evidence status.
+
+The visual project picker, integrated Run-history UI, code generation, and full mobile qualification are still in development. This is not a promise that every TypeScript Test is visually editable.
+
+## Add the reporter
+
+Build `@relay/e2e` from this workspace and make it available alongside `e2e@0.20.0` in your trusted project:
+
+```bash
+pnpm --filter @relay/e2e build
+```
+
+Keep the project's original engines, fixtures, models, targets, and settings:
+
+```ts title="e2e configuration excerpt"
+import { relayReporter } from "@relay/e2e";
+
+export default {
+  ...existingConfig,
+  reporters: [
+    ...(existingConfig.reporters ?? ["list"]),
+    relayReporter({
+      directory: "/absolute/path/to/relay-evidence",
+      requireHumanReview: true,
+    }),
+  ],
+};
+```
+
+`existingConfig` is your project's existing configuration. This excerpt adds the reporter; it is not a replacement configuration or a published installation command.
+
+## Execute through the adapter
+
+```ts
+import { runE2EProject } from "@relay/e2e";
+
+await runE2EProject({
+  projectRoot: "/absolute/path/to/trusted-project",
+  trust: "trusted-project",
+  args: ["--config", "e2e.config.ts"],
+  signal,
+});
+```
+
+The adapter uses argument arrays, not a shell. e2e owns hooks, fixtures, assertions, retries, scheduling, cleanup, and its verdict. Relay owns the imported evidence workflow.
+
+## Preserve trust and verdicts
+
+Tests, configuration, engines, and reporters execute code with process permissions. Establish project trust before executing a repository. A child process is not a sandbox.
+
+The imported `report.json` preserves the upstream result. A passed upstream execution with missing evidence is not a completed Relay evidence review. Human review remains pending when requested.
+
+Missing files, hash mismatches, external artifacts, and privacy restrictions stay explicit. The integration does not bypass upstream secret or screenshot policy.
+
+## One authoritative source
+
+Keep the visual document authoritative for a Relay-managed Test, and the `.e2e.ts` program authoritative for a code-managed Test. Do not silently flatten branches or overwrite developer edits.
+
+Read the [integration README](https://github.com/bernaferrari/relay/tree/main/packages/e2e) for conformance commands, artifact details, and remaining scope.

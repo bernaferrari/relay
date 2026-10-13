@@ -3,7 +3,16 @@ import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const excluded = new Set(["node_modules", "dist", "build", "out", ".vite", "coverage"]);
+const excluded = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".source",
+  ".vite",
+  "coverage",
+]);
 async function styles(directory) {
   const found = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {

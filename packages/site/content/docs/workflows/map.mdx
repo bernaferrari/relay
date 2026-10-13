@@ -1,0 +1,34 @@
+---
+title: Understand the Map
+description: See the screens your tests reach, how they connect, and where coverage is missing.
+---
+
+The Map grows as Runs visit an App. New screens retain their captures and screen structure. Moves between screens become observed draft paths.
+
+## Read a path
+
+A Test's origin appears before its later screens. Follow its connections to see the journey. Parallel paths may share one wire; select it and use **Choose path** to inspect the individual actions.
+
+Return paths stay beside their screen until inspected so they do not obscure forward navigation.
+
+An observed path records what happened. It is not automatically an approved executable path for a saved Test.
+
+## Understand screen status
+
+Screens distinguish recent passing, failing, reached-but-untested, and unreached states. A newly discovered screen is useful evidence, but discovery alone does not establish a passing check.
+
+## Name screens clearly
+
+Use names from the user's mental model: “Settings” or “Subscription plans.” Select a screen title to rename it. Click away to leave editing, and use the screen inspector to examine captures and connections.
+
+## Merge true duplicates
+
+Keyboard visibility and input focus usually belong to the same logical screen. Relay can reuse a screen when current semantic evidence uniquely matches its saved structure. A shared title or sparse tree is not enough to prove a match.
+
+If duplicates remain, compare their captures and use **Merge with another screen**. The merge retains evidence and rewires affected Tests. Replay those Tests afterward.
+
+## Use the Map as an agent
+
+The same observed map information is available through CLI and MCP. Agents should inspect it before inventing new paths and distinguish observed draft paths from saved executable steps.
+
+See [CLI workflows](/docs/agents/cli) for workspace access and [running a Test](/docs/workflows/running) for verification.

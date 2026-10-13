@@ -1,0 +1,50 @@
+---
+title: Troubleshooting
+description: Identify the failing layer, recover once, and confirm the target before trying again.
+---
+
+## Start with the specific result
+
+Read the failed or blocked step and its suggested recovery. Separate an app defect from missing prerequisites, a connection problem, or incomplete evidence.
+
+```bash
+pnpm doctor
+./bin/relay guide
+```
+
+For a specific device:
+
+```bash
+./bin/relay device health <target-id> --json
+```
+
+Replace `<target-id>` with the device ID from Relay. Health describes the target's readiness; it does not run your Test.
+
+## Common symptoms
+
+| What you see                             | What to check                                                                                                     |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Device does not appear                   | Cable, USB authorization, platform tools, simulator state, and `pnpm doctor`.                                     |
+| Preview works but controls do not        | Pixels and accessibility are separate. Keep the app open and unlocked, use **Reconnect** once, and inspect again. |
+| Recorded control does not match its step | Return to the intended source screen and record that step again. Do not reuse mismatched control evidence.        |
+| Device is busy                           | Let the owning recording or Run finish. Do not send competing input.                                              |
+| Test starts on the wrong screen          | Check the selected app, account, target, and **Restart app before running** option.                               |
+| Description-based step needs a model     | Configure the key in **Settings → Advanced**. The local demo and deterministic recorded steps do not need one.    |
+| Screenshot is missing                    | Inspect capture status and connection health. Rerun to collect new evidence; missing evidence cannot be approved. |
+| Review decision save was interrupted     | Refresh and check the saved-decision count before repeating unconfirmed decisions.                                |
+
+## Wait for the right condition
+
+A slow app is not necessarily a failed app. Wait for the control or state that establishes completion, with an appropriate bound. An unchanged screenshot is not enough: it can show a loading screen, stale frame, or error.
+
+If the product shows an outage or error, keep that result attributed to the product. Do not make Relay's own connection issue look like an application assertion failure.
+
+## Avoid repeated input after uncertainty
+
+If a tap or request may already have happened, observe the current state before trying again. Repeating a click can create a duplicate action even when the first response was lost.
+
+## Get useful evidence for an issue
+
+Use the Run's report and export its evidence. Include the affected step, platform, device or browser, app build, and the result you expected. Inspect captures and logs before sharing them.
+
+For an upstream e2e-backed Run, preserve its original verdict and report when raising an integration issue. See [e2e support](/docs/agents/e2e) for the qualified scope.
