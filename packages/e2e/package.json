@@ -1,0 +1,28 @@
+{
+  "name": "@relay/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/*.test.ts",
+    "test:upstream": "tsx scripts/verify-upstream.ts"
+  },
+  "devDependencies": {
+    "@e2e-dev/web": "0.14.0",
+    "@types/node": "^26.6.4",
+    "e2e": "0.20.0",
+    "tsx": "^4.23.15",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "e2e": "0.20.0"
+  }
+}
