@@ -23,13 +23,15 @@ Use the inspection control to see which accessible element a tap will target. St
 
 Use **Save screenshot** for a checkpoint you want to review. Give it a meaningful name: “Settings menu” is more useful than “Screenshot 4.” Use **Full page** when the required content extends beyond the visible screen and the target supports it.
 
-If the app does background work, use **Wait or check** with the condition that indicates completion. Prefer an expected control, state, or result over an arbitrary delay. An unchanged screenshot can still show an app that is stuck.
+If the app does background work, use [**Wait or check**](/docs/workflows/waits) with the condition that indicates completion. Prefer an expected control, state, or result over an arbitrary delay. An unchanged screenshot can still show an app that is stuck.
+
+A screenshot checkpoint retains evidence. It does not, by itself, assert that a save succeeded or a generated result is ready. Add a condition for that outcome before capturing.
 
 ## Review and save
 
 Choose **Stop and review**. Inspect the steps, remove accidental actions, and name the Test after its outcome. Before/After selects the evidence moment for the chosen step.
 
-Choose **Save Test**, or add the steps to the existing Test when recording from its editor. Changing a step's name does not change its target; changing its action does require verification.
+Choose **Save test**, or add the steps to the existing Test when recording from its editor. Changing a step's name does not change its target; changing its action does require verification.
 
 ## Replay it
 

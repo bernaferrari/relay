@@ -1,1 +1,4 @@
-{ "title": "Coding agents", "pages": ["cli", "mcp", "e2e"] }
+{
+  "title": "Coding agents",
+  "pages": ["cli", "test-files", "mcp", "e2e"]
+}

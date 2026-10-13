@@ -1,6 +1,6 @@
 ---
 title: Connect an iPhone or iPad
-description: Prepare an iOS simulator or physical device, verify controls, and record a qualified flow.
+description: Prepare an iOS simulator or physical device, verify controls, and record a repeatable flow.
 ---
 
 ## Prepare the Mac
@@ -31,8 +31,12 @@ Do not infer tap coordinates from screenshot pixel dimensions: Retina captures a
 
 A control-specific capture belongs to that recorded step, app, and device profile. If it no longer matches, record the affected step again from the correct screen.
 
+## Start with one iOS case
+
+Qualify one short flow on the exact iPhone, iPad, or simulator first. Do not assume an Android recording transfers unchanged: accessible control identities, coordinates, and layouts can differ. Keep platform-specific steps when needed, and compare the resulting screenshots in the same [review workflow](/docs/workflows/review).
+
 ## Current limitations
 
 Native capture and control support varies by device, OS, app, and build. Full-flow video is not qualified on every physical iOS path; lightweight screenshots and structure are the default. Capture saving can also be slower than browser execution.
 
-Avoid competing automation clients during qualification. If a connection is interrupted, use the [recovery steps](/docs/reference/troubleshooting) before resuming.
+Avoid competing automation clients while verifying a flow. If a connection is interrupted, use the [recovery steps](/docs/reference/troubleshooting) before resuming.

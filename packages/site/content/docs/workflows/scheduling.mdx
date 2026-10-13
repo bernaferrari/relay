@@ -1,0 +1,69 @@
+---
+title: Schedule a Plan
+description: Repeat saved Tests every 30 minutes, hourly, or daily.
+---
+
+A schedule repeats a saved [Plan](/docs/workflows/data-sets) on its selected local target. Relay's service must remain running, and the computer and required devices must be available. Scheduling is not a hosted device service.
+
+## Run it manually first
+
+1. Save the Tests you want to repeat in a Plan.
+2. Choose the exact browser or device and account setup.
+3. Run a pilot, inspect its checks and captures, then run the intended selection.
+4. Confirm the flow can return to a repeatable starting state.
+
+A schedule should not depend on someone manually returning the app to the right screen between runs. Use the appropriate restart or recorded navigation, and verify it with another replay.
+
+## Add a schedule in Relay
+
+Open the Plan and find **Schedule** below its run setup.
+
+1. Choose **Every 30 minutes**, **Hourly**, or **Daily at time**.
+2. For a daily schedule, choose the hour and check the displayed timezone.
+3. Choose **Add schedule**.
+4. Check **Next scheduled run** and the saved target setup.
+
+Adding a schedule in the UI enables automatic runs. Run and inspect the Plan before adding it. **Change frequency** edits an existing schedule; **Remove schedule** stops future repetitions.
+
+Under **Previous scheduled runs**, inspect the last run time and any failure to start. A saved schedule or a next-run time does not establish that a Test passed.
+
+## Prepare a paused schedule from the CLI
+
+For a native target, save this as `schedule.json`. Replace the App, Plan, and device IDs with the exact selections from your workspace.
+
+```json title="schedule.json"
+{
+  "appMapId": "my-android-app",
+  "combineId": "daily-checks",
+  "targetKind": "device",
+  "targetId": "your-device-serial",
+  "platform": "android",
+  "intervalMinutes": 30,
+  "enabled": false
+}
+```
+
+```bash
+./bin/relay plan schedule create --input-file ./schedule.json --json
+./bin/relay plan schedule list --json
+```
+
+`combineId` is the saved Plan ID. A schedule accepts a Plan (`appMapId` + `combineId`) or a compiled `recipeId`, not a bare `testId`. For a browser, use its exact target ID with `targetKind: "browser"` and `platform: "browser"`.
+
+To enable the paused schedule, add its returned `id` to the same JSON and change `enabled` to `true`, then run the create command again. Supplying the existing ID updates that schedule. Preserve its target, Plan, and any saved `profileTargets`; otherwise verify the new setup with a manual Run first. Changing frequency in the UI preserves a paused schedule's paused state.
+
+To stop future repetitions:
+
+```bash
+./bin/relay plan schedule delete <schedule-id>
+```
+
+Deleting a schedule does not replace cancelling an execution that already started.
+
+## Repeat different inputs deliberately
+
+Select the approved Data set rows in the Plan. A repetition uses those saved selections; a changing schedule seed does not automatically rotate prompts. An unselected list defaults to its first value.
+
+For three prompts every half hour, select all three rows and verify the resulting three cases. For one rotating prompt per half hour, explicit rotation needs its own qualified orchestration; do not assume the scheduler implements it.
+
+Use bounded [completion waits](/docs/workflows/waits) so a stuck app produces a useful result. Keep execution, missing evidence, and [human review](/docs/workflows/review) visible as separate outcomes.

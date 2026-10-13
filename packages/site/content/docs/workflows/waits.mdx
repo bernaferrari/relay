@@ -1,0 +1,51 @@
+---
+title: Waits and checks
+description: Make a slow operation repeatable without guessing how long it takes.
+---
+
+A wait answers “is it ready yet?” A check answers “did the expected thing happen?” Use both when an app generates a response, uploads media, or saves a change.
+
+## Add a condition while recording
+
+1. Perform the action that starts the work.
+2. Choose **Wait or check** in the recorder.
+3. Select the condition and enter the text or control label from the app.
+4. For a wait, choose **Give up after**. Choose **Add step**.
+
+Relay evaluates the condition on the current screen and saves it as a step. It uses the same condition during replay; an agent or model is not required for these visible-text conditions.
+
+| Choice                    | When to use it                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| **Wait until it appears** | A result control such as Download becomes available.                                   |
+| **Wait until it’s gone**  | A busy indicator such as Generating disappears.                                        |
+| **Check it is on screen** | Verify a confirmation, heading, or result is present.                                  |
+| **Just wait**             | A fixed pause when the app exposes no useful condition. It does not verify completion. |
+
+The timeout is a maximum: a 60-second wait ends as soon as its condition matches. If it never matches, the step fails. **Just wait** always consumes the chosen delay.
+
+## Example: a generated reply
+
+After sending a new prompt, wait for its busy indicator to disappear, then check for a control that belongs to the new reply. In an app that exposes **Stop** while generating and **Copy** on a completed reply, these are useful signals.
+
+An old Copy button can already be present. Start from a clean conversation, or use a label or state that identifies the new result. Text you typed into a prompt also appears on screen; checking that text can accidentally match your own input.
+
+Then [save a screenshot](/docs/workflows/recording#capture-what-matters) of the result. You do not need to assert the model's exact wording to catch an error, an empty result, or a response that exceeds your time limit.
+
+## Choose an honest limit
+
+Use the response time your product promises. For a response that must finish within one minute, use a one-minute completion bound. Do not increase the timeout just to hide a regression.
+
+A ready control establishes readiness, not every quality claim. A video's **Download** button does not prove its resolution or that the file was saved. Add a check for the actual outcome you need, or keep that aspect for human review.
+
+## Use the same condition from an agent
+
+Read the bundled guide without starting Relay:
+
+```bash
+./bin/relay guide waits
+./bin/relay guide record
+```
+
+The waits guide includes the recording interaction payload. MCP's `relay_record_action` accepts the same interaction contract. Use the current recording identity and version returned by the preceding operation.
+
+[Replay the saved Test](/docs/workflows/running) to confirm the condition works on a new attempt. Recording a single successful wait does not establish repeatability.

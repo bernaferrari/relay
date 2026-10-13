@@ -10,8 +10,11 @@ Install Android platform tools so `adb` is available. On a physical device, enab
 For an emulator, start it through your Android tooling before opening Relay.
 
 ```bash
+adb devices
 pnpm doctor
 ```
+
+The device should appear as `device`, not `unauthorized` or `offline`. If it is unauthorized, unlock it and accept the USB debugging prompt. If it is offline, reconnect the cable or emulator and check again.
 
 ## Check it in Relay
 
@@ -23,7 +26,13 @@ If several devices are available, choose the exact device rather than relying on
 
 Choose **Phone or tablet** in New test, select your device and app, then [record a short flow](/docs/workflows/recording).
 
-Inspect controls when available. A named or identified control is more robust than a coordinate tap. Coordinate steps need requalification on another viewport or language.
+Inspect controls when available. A named or identified control is more robust than a coordinate tap. Replay coordinate steps after changing the viewport or language.
+
+## Check app language support
+
+In the device details, select the App and inspect **Language** when that control is available. Relay lists the App’s declared supported locales; a language name is not proof that the rendered content changed. Confirm the current screen after applying it.
+
+Apps without a supported locale control may require an in-app or OS language-change flow. Record and replay that path before adding it to a [language Plan](/docs/workflows/data-sets).
 
 ## Run and inspect
 

@@ -1,11 +1,13 @@
 ---
-title: Run and understand a Test
+title: Run a Test
 description: Choose the right target, follow the live screen path, and read the result.
 ---
 
 ## Choose the run setup
 
 Open a saved Test and use the control beside **Run** to select its target. Check the device name, platform, and intended setup.
+
+For a signed-in website, select its [saved account](/docs/workflows/accounts) too. The device name alone does not establish the account identity.
 
 Under **Advanced run options**, **Restart app before running** controls whether the app starts fresh. Leave it off when deliberately testing from the current screen. Either way, the device must be able to reach the Test's recorded source screen.
 
@@ -20,6 +22,12 @@ During execution, the Result view shows:
 - A **live device preview** when the target provides one.
 
 The live preview is read-only during a run. Use **Stop** to cancel rather than manipulating the device out from under the runner.
+
+<DocScreenshot
+  src="/images/relay-run.webp"
+  alt="A completed Relay Run with saved steps, a passed check, and its screenshot"
+  caption="A Run keeps the steps and their evidence together. This local demo passed its deterministic layout check; human appearance review is a separate decision."
+/>
 
 ## Read the result
 
@@ -36,7 +44,7 @@ Open a step to inspect the evidence attributed to it. **Open report** shows the 
 
 Run the same saved Test again on the same configuration. Each execution gets its own Run and evidence. Use the Test's name to describe what should work, and Run history to see what happened on a particular attempt.
 
-For different inputs or configurations, use [data sets and Plans](/docs/workflows/data-sets). Qualify each intended target before scheduling unattended repetitions.
+For different inputs or configurations, use [data sets and Plans](/docs/workflows/data-sets). Verify the flow on each intended target before scheduling unattended repetitions.
 
 ## When a run needs attention
 

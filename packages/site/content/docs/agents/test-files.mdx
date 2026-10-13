@@ -1,0 +1,68 @@
+---
+title: Tests as YAML files
+description: Write simple action and check steps, then save and run them through the CLI.
+---
+
+Use YAML for a small, readable list of instructions. Use [recording](/docs/workflows/recording) for exact interactions, or [upstream e2e](/docs/agents/e2e) when code, fixtures, hooks, and control flow are the authoritative test program.
+
+## Write a Test
+
+Save this as `settings.yaml`. Replace the URL with your test website and adapt the steps to its interface.
+
+```yaml title="settings.yaml"
+id: settings-opens
+name: Settings opens
+url: https://app.example.com
+steps:
+  - Open Settings
+  - check: The Settings heading is visible
+  - check: There is no error message
+```
+
+A plain string is an action. `do:` is the explicit action form; `check:` is a validation. These are descriptions, not browser selectors or deterministic waits.
+
+## Save and run
+
+From the installed Relay checkout, with the local service running:
+
+```bash
+./bin/relay apply ./settings.yaml
+./bin/relay run settings-opens --device browser --out ./evidence
+```
+
+`apply` saves the Test; it does not execute it. New or changed description-based steps need a configured model during execution. Applying YAML does not make those steps model-free. To make interactions exact, record them and verify a replay.
+
+## Supported fields
+
+| Field   | Meaning                                                                     |
+| ------- | --------------------------------------------------------------------------- |
+| `name`  | Required display name.                                                      |
+| `id`    | Optional stable ID. Keep it when renaming or updating the same Test.        |
+| `url`   | Website address beginning with `http://` or `https://`.                     |
+| `app`   | Existing App name or ID; use it for an App already in your workspace.       |
+| `steps` | Required non-empty list of strings, `do:` actions, or `check:` validations. |
+
+Provide `app` or `url`. Unknown fields are rejected. Do not add unsupported `retry`, `timeout`, fixture, or loop fields to this format.
+
+## Edit an existing Test
+
+```bash
+./bin/relay show "Settings opens" --app "My app" > settings.yaml
+./bin/relay apply ./settings.yaml
+```
+
+The App name is an example. Use the one returned by `./bin/relay apps`.
+
+Keep the exported ID. Steps whose words and kind remain unchanged can retain their recorded interactions. Changed steps run from their descriptions until recorded or bound again. Inspect the saved Test and replay after editing.
+
+The YAML export is a description of actions and checks. It does **not** preserve every recorded locator, screenshot obligation, branch, or loop. Do not use it as a lossless backup of a complex visual Test or flatten arbitrary e2e code into it.
+
+## Save a folder
+
+```bash
+./bin/relay apply ./tests
+```
+
+Relay discovers `.yaml` and `.yml` files recursively. Files are applied in order, not as one atomic transaction: if a later file is invalid, earlier files may already be saved. Read the result before retrying.
+
+Keep credentials out of YAML. Use [saved accounts](/docs/workflows/accounts), and keep reusable non-sensitive inputs in [Data sets](/docs/workflows/data-sets).

@@ -1,0 +1,39 @@
+---
+title: Saved website accounts
+description: Sign in once, choose the intended identity, and recover an expired session.
+---
+
+A saved website account lets a Test run as a particular signed-in user. It is associated with a Relay-managed browser setup; it is not a password embedded in the Test.
+
+This guide covers **website accounts**. For native apps, use the account already signed in on the selected phone or tablet and confirm it before recording.
+
+## Add an account
+
+1. Open **Accounts → Add account**.
+2. Choose a website or enter its address.
+3. Sign in in the browser Relay opens. Use the external-window option if the inline preview is unsuitable for the sign-in flow.
+4. Confirm the website shows the intended identity.
+5. Give the account a clear name, such as “Member · staging,” and choose **Save account**.
+
+The saved session can contain sensitive cookies or tokens. Use a test account and keep the workspace private. Do not paste credentials into a Test description or Data set.
+
+## Use it in a Test or Plan
+
+Select the saved account in the Test's run setup, or in the Plan's account setup. Confirm the website, browser or device, and account together before starting.
+
+A personal browser tab that is already signed in is not automatically the browser session Relay will use. **Open signed in** lets you inspect the saved account's actual browser context.
+
+Record and replay one short journey with that account before expanding to other identities. A member and an administrator can reach different screens even on the same website.
+
+## Refresh an expired session
+
+If an account needs sign-in:
+
+1. Open **Accounts** and choose **Sign in again** for that account.
+2. Finish signing in and verify the identity in the opened browser.
+3. Choose **Save sign-in**.
+4. Recheck the Test's setup and run it again.
+
+Checking an account reports its current health; it does not sign in for you. A revoked account is unavailable for future use. Tests that depend on an unavailable account should remain blocked rather than fall back to a different identity.
+
+See [troubleshooting](/docs/reference/troubleshooting) for connection problems and [Evidence & privacy](/docs/reference/evidence) before sharing captures from a signed-in session.

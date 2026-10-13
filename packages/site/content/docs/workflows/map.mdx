@@ -5,6 +5,12 @@ description: See the screens your tests reach, how they connect, and where cover
 
 The Map grows as Runs visit an App. New screens retain their captures and screen structure. Moves between screens become observed draft paths.
 
+<DocScreenshot
+  src="/images/relay-map.webp"
+  alt="Relay Map showing the local demo’s sign-in and settings screens connected by paths"
+  caption="The local demo’s observed screen map. Connections describe navigation evidence; they are not a claim that every reachable screen was checked."
+/>
+
 ## Read a path
 
 A Test's origin appears before its later screens. Follow its connections to see the journey. Parallel paths may share one wire; select it and use **Choose path** to inspect the individual actions.
@@ -16,6 +22,10 @@ An observed path records what happened. It is not automatically an approved exec
 ## Understand screen status
 
 Screens distinguish recent passing, failing, reached-but-untested, and unreached states. A newly discovered screen is useful evidence, but discovery alone does not establish a passing check.
+
+## Move around the canvas
+
+Select a screen to inspect its captures and paths. Drag a screen to reposition it. Click the empty canvas to dismiss the current selection or title edit. Use the zoom controls to fit a larger map before following a path.
 
 ## Name screens clearly
 

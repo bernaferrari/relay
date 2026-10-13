@@ -15,6 +15,17 @@ Relay is a local visual testing workspace for websites, Android apps, and iOS ap
 
 **Working with a coding agent?** Start with the [CLI](/docs/agents/cli) or [MCP setup](/docs/agents/mcp). They use the same workspace and results as the app.
 
+## Pick your next task
+
+| I want to…                                       | Start here                                       |
+| ------------------------------------------------ | ------------------------------------------------ |
+| Record clicks and taps                           | [Record a flow](/docs/workflows/recording)       |
+| Wait for a generated result or save confirmation | [Waits and checks](/docs/workflows/waits)        |
+| Test a signed-in website                         | [Saved accounts](/docs/workflows/accounts)       |
+| Repeat with different inputs or languages        | [Data sets and Plans](/docs/workflows/data-sets) |
+| Run every 30 minutes                             | [Schedule a Plan](/docs/workflows/scheduling)    |
+| Maintain simple Tests as files                   | [YAML Tests](/docs/agents/test-files)            |
+
 ## Four things to know
 
 | In Relay   | What it means                                                      |
@@ -30,6 +41,7 @@ A completed Run and an accepted screenshot are separate facts. Automated checks 
 
 - **Record** clicks and typing for deterministic steps.
 - **Describe** what should work and let a configured model help write or execute steps.
+- **Use YAML** for a simple [list of instructions and checks](/docs/agents/test-files). New description-based steps need a model during execution.
 - **Use code** through the opt-in [upstream e2e integration](/docs/agents/e2e). The integration runs the original program; its current scope is reporter, evidence import, and process support.
 
 ## Where your work lives

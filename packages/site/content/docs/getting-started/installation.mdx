@@ -28,7 +28,7 @@ pnpm dev:desktop
 pnpm dev:web
 ```
 
-The web command prints the local URL. Both interfaces use Relay's local service and the same workspace operations. Use the URL printed by your process; the port can differ when another service is already running.
+The launchers start or reuse the local service. Keep the interface process running while you use it. The web command prints the local URL. Both interfaces use Relay's local service and the same workspace operations. Use the URL printed by your process; the port can differ when another service is already running.
 
 ## Choose a target
 
@@ -49,7 +49,18 @@ export OPENROUTER_API_KEY="your-key"
 pnpm dev:web
 ```
 
-Keep the real key out of version control. Relay keeps the key locally; model requests go to your configured provider.
+The placeholder is not a real key. Prefer the Settings form to avoid putting a real key in shell history. Keep the key out of version control. Model requests go to the configured provider; deterministic recorded input and visible-text checks do not need a model, but description-based steps and model-assisted checks do.
+
+If Relay was already running, setting an environment variable in a new shell does not update that process. Save the key in Settings, or restart the service with the new environment after active recordings and Runs finish.
+
+## Where to go next
+
+| Your goal                                 | Guide                                               |
+| ----------------------------------------- | --------------------------------------------------- |
+| Prove the workspace works without a model | [Your first test](/docs/getting-started/first-test) |
+| Test your own app manually                | [Record a flow](/docs/workflows/recording)          |
+| Test a signed-in website                  | [Saved accounts](/docs/workflows/accounts)          |
+| Connect a coding agent                    | [MCP setup](/docs/agents/mcp)                       |
 
 ## Confirm the setup
 

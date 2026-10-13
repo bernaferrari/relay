@@ -1,7 +1,7 @@
 # Relay website
 
 The public landing page and documentation live together in this package. It uses Next.js,
-Fumadocs MDX/Core/UI, Tailwind CSS 4, shared Relay shadcn components, and shadcn's component patterns with Relay’s blue-and-gold accents.
+Fumadocs MDX/Core/UI, Tailwind CSS 4, shared Relay shadcn components, and shadcn's component patterns, cool neutral surfaces, and Relay’s native loop artwork.
 
 ## Develop
 
@@ -46,7 +46,8 @@ run `node packages/site/scripts/prepare-content.mjs` first.
 
 Keep release claims grounded in the current repository. Relay is currently installed from
 source, and upstream e2e support is a reporter/process integration prototype. The landing
-page demo is explicitly labelled illustrative; it never controls a browser or device.
+page previews and guide screenshots are real captures from an owned local demo; they never
+control a browser or device on the documentation site.
 
 ## Brand and product imagery
 

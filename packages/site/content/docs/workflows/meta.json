@@ -1,1 +1,4 @@
-{ "title": "Workflows", "pages": ["recording", "running", "review", "map", "data-sets"] }
+{
+  "title": "Workflows",
+  "pages": ["recording", "waits", "running", "review", "accounts", "map", "data-sets", "scheduling"]
+}

@@ -26,6 +26,16 @@ The same settings page controls optional collection such as audio, crashes, HTTP
 
 A storage preference does not grant optional-channel consent. Redaction and privacy policy still apply to the evidence that is retained.
 
+## Find the evidence
+
+Open a Run’s **Screenshots** for images and its report for the fuller timeline and diagnostics. To save a portable copy from the CLI:
+
+```bash
+./bin/relay export <run-id> --out ./evidence
+```
+
+Use the ID of the completed Run you inspected. Lightweight evidence describes the collection mode, not a fixed storage limit; long runs and full-page captures can still retain many images.
+
 ## Keep evidence tied to the run
 
 Screenshots, control trees, and diagnostics belong to their captured step, target, and Run. A visually similar image from another attempt cannot satisfy the current Run's evidence requirement.

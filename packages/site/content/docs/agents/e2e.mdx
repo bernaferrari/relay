@@ -46,15 +46,30 @@ export default {
 ```ts
 import { runE2EProject } from "@relay/e2e";
 
-await runE2EProject({
+const controller = new AbortController();
+const result = await runE2EProject({
   projectRoot: "/absolute/path/to/trusted-project",
   trust: "trusted-project",
   args: ["--config", "e2e.config.ts"],
-  signal,
+  signal: controller.signal,
+  onOutput: (stream, text) => {
+    const output = stream === "stdout" ? process.stdout : process.stderr;
+    output.write(text);
+  },
 });
+
+console.log(result); // Upstream exit code and termination signal.
 ```
 
+Call `controller.abort()` to request cancellation. The adapter always invokes upstream `run`; pass its flags in `args`, not another `run` subcommand. The project’s config must include the reporter for evidence import.
+
 The adapter uses argument arrays, not a shell. e2e owns hooks, fixtures, assertions, retries, scheduling, cleanup, and its verdict. Relay owns the imported evidence workflow.
+
+## Find the imported artifacts
+
+The reporter’s output directory contains one durable directory per imported Run, including the untouched `report.json`, Relay’s `receipt.json`, event records, and copied local artifacts. Inspect the receipt for unavailable evidence and the separate evidence gate.
+
+The prototype does not yet provide integrated human decisions in Relay’s Run-history UI. `requireHumanReview: true` keeps the receipt pending; it does not create an implemented approval interface.
 
 ## Preserve trust and verdicts
 

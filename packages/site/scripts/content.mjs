@@ -16,6 +16,18 @@ async function files(directory, prefix = "") {
   return result;
 }
 
+export function markdownBody(body) {
+  return body
+    .replace(
+      /<WorkflowDiagram\s*\/>/g,
+      "Record a real journey → Replay saved steps → Inspect this Run's evidence → Keep your review decision.",
+    )
+    .replace(
+      /<DocScreenshot\s+src="([^"\n]+)"\s+alt="([^"\n]+)"\s+caption="([^"\n]+)"\s*\/>/g,
+      (_, src, alt, caption) => `![${alt}](${src})\n\n${caption}`,
+    );
+}
+
 export async function readPages() {
   return Promise.all(
     (await files(contentRoot)).map(async (path) => {
@@ -34,7 +46,7 @@ export async function readPages() {
         body,
         url: slug === "index" ? "/docs" : `/docs/${slug}`,
         markdownPath: `/docs/${slug}.md`,
-        markdown: `# ${title}\n\n${description}\n\n${body.replace(/<WorkflowDiagram\s*\/>/g, "Record a real journey → Replay saved steps → Inspect this Run's evidence → Keep your review decision.")}\n`,
+        markdown: `# ${title}\n\n${description}\n\n${markdownBody(body)}\n`,
       };
     }),
   );

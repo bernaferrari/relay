@@ -1,24 +1,41 @@
 ---
 title: Connect an agent over MCP
-description: Give an agent the tools it needs, with the same workspace and results as Relay's UI.
+description: Let an agent run, inspect, or record Tests in the same local workspace as Relay.
 ---
 
-Relay MCP is a project-scoped connector. Its tools use the same service operations as the app and CLI.
+The MCP connector uses the same service operations as the app and CLI. Choose a small tool profile for the task, connect it to the intended Relay service, and verify readiness before sending device input.
 
-## Build the connector from source
+## Build and start from source
 
-From the installed repository:
+From the installed Relay checkout:
 
 ```bash
 pnpm --filter @relay/mcp build
-pnpm ensure:serve
+pnpm ensure:serve -- --reuse
 ```
 
-The bundled entry point is `packages/mcp/dist/relay-mcp.js`. Public npm installation instructions apply after publication; this guide uses the local build.
+The connector entry point is `packages/mcp/dist/relay-mcp.js`. The `--reuse` option preserves a healthy local service instead of starting a fresh one. The connector build does not itself start Relay.
+
+This guide uses the default local development service at `http://127.0.0.1:8787`. If yours prints a different address, use that address in the commands and host configuration below.
+
+## Check the connection first
+
+For an explicitly unauthenticated local development service:
+
+```bash
+node packages/mcp/dist/relay-mcp.js doctor \
+  --server http://127.0.0.1:8787 \
+  --credential-source none \
+  --profile qa --json
+```
+
+The doctor checks the service, scope, role, and required tools. **NOT READY** needs attention before the agent starts work. Run it with the same connection options and profile you will give the host.
+
+For an authenticated service, use its configured credential environment variable instead of `--credential-source none`. The latter selects a client with no credential; it does not disable server authentication. Use the intended organization, project, and authorized agent identity for a scoped service.
 
 ## Configure your host
 
-For a host with a `mcpServers` configuration:
+For a host that accepts `mcpServers` JSON, this connects to that same local development service:
 
 ```json title="MCP host configuration"
 {
@@ -27,8 +44,10 @@ For a host with a `mcpServers` configuration:
       "command": "node",
       "args": [
         "/absolute/path/to/relay/packages/mcp/dist/relay-mcp.js",
-        "--workspace",
-        "/absolute/path/to/relay",
+        "--server",
+        "http://127.0.0.1:8787",
+        "--credential-source",
+        "none",
         "--profile",
         "qa"
       ]
@@ -37,33 +56,60 @@ For a host with a `mcpServers` configuration:
 }
 ```
 
-Replace both paths. Start the local service before connecting, or configure the matching packaged runtime for startup. Choose the workspace containing your Tests and evidence.
+Replace the absolute path. Start the service, then reload the host's MCP connection. Configuration format and reload controls vary by host; use its MCP settings rather than pasting this JSON into an ordinary chat prompt.
 
-## Pick the smallest useful profile
+`--workspace /absolute/path/to/project` is also available for the optional matching packaged runtime's local startup. It is not needed when explicitly attaching to the running source service. The configured service owns the Tests and evidence; changing a client path does not move them to another workspace.
 
-| Profile    | Use it for                                                                        |
-| ---------- | --------------------------------------------------------------------------------- |
-| **qa**     | Create Tests, run them, read verdicts, and inspect failures. This is the default. |
-| **device** | QA tools plus live input, observations, and recording.                            |
-| **full**   | All raw operations for advanced workflows and debugging.                          |
+## Choose the profile
 
-For recording on a connected device, switch the profile to `device`. Avoid giving an agent a large raw tool inventory when it only needs to run Tests.
+| Profile          | Use it for                                                               |
+| ---------------- | ------------------------------------------------------------------------ |
+| **qa** — default | Create and run Tests, inspect verdicts, and diagnose failures.           |
+| **device**       | QA tools plus observations, live input, recording, and repeat workflows. |
+| **full**         | Named tools plus advanced raw operations and Proof workflows.            |
 
-## Start with the supported loop
+For recording, change `qa` to `device` in both the doctor command and host configuration. Reload the connection after changing it.
 
-Ask the agent to use:
+## Give the agent a complete task
 
-1. `relay_health` and `relay_list_devices` to check readiness.
-2. `relay_list_tests` or `relay_create_test` to select the journey.
-3. `relay_run_test` to execute it.
-4. `relay_get_verdict` and `relay_inspect_failure` to read the result.
+```text title="Run an existing Test"
+Use Relay to find my App and the saved Test that opens Settings.
+Check the target's readiness and run it on the intended device and account.
+Inspect the returned Run's verdict and retained screenshots.
+Return the App, Test, target and Run IDs, the execution outcome,
+and any missing evidence. Keep human screenshot review pending.
+```
 
-`relay_get_guide` provides offline task guidance. The `device` profile adds `relay_record_test`, `relay_record_action`, `relay_add_checkpoint`, and the recording review tools.
+The normal tool sequence is:
 
-## Keep attribution intact
+1. `relay_health`, `relay_list_apps`, and `relay_list_devices`.
+2. `relay_list_tests` for the selected App.
+3. `relay_run_test` with that App, Test, and target.
+4. `relay_get_verdict` and, on failure, `relay_inspect_failure`.
 
-Use the target ID returned by device listing and the Run ID returned by execution. Inspect evidence from that Run, rather than a similar-looking screenshot from another attempt.
+The IDs below are placeholders, not resources shipped with Relay:
 
-If the device is busy, respect its current owner. If the app or connection changes, recover and observe before sending more input.
+```json title="relay_run_test arguments"
+{
+  "appMapId": "your-app-id",
+  "testId": "your-test-id",
+  "targetId": "returned-target-id",
+  "wait": false
+}
+```
 
-See the [connector's source README](https://github.com/bernaferrari/relay/tree/main/packages/mcp) for host-specific packaging and bridge details.
+With `wait: false`, execution returns its Run ID promptly. Poll `relay_get_verdict` with that ID until terminal. The default wait can also return **running** when its wait limit expires: follow the same Run rather than starting another Test. Use **Stop** in Relay when you intend to cancel. The `device` profile also exposes `relay_cancel_run`; that tool needs the workflow ID and expected version, not just the Run ID.
+
+## Record missing coverage
+
+Use the `device` profile and ask the agent to read `relay_get_guide` with topic `record`. The recording tools include `relay_record_test`, `relay_record_action`, `relay_add_checkpoint`, stop/review/replay operations, and `relay_approve_recording` to save.
+
+Each mutation uses the workflow identity and expected version returned by the preceding operation. Add a [completion condition](/docs/workflows/waits), capture the result, and replay the edited recording before saving it. A screenshot checkpoint is evidence, not an executable outcome check.
+
+The read-only `relay_panel` can inspect existing Tests, Runs, and retained PNGs in compatible hosts. It cannot start a Run, control a live device, or approve screenshots. Hosts without the visual panel receive bounded text results.
+
+## Keep the right ownership and evidence
+
+Use the target ID returned by discovery and evidence from the returned Run. Respect a device held by another recording or Run. If its app or connection changes, recover and observe before sending more input.
+
+See the [connector README](https://github.com/bernaferrari/relay/tree/main/packages/mcp) for authenticated scopes, packaged runtime startup, and remote bridge options. The reporter-based [e2e integration](/docs/agents/e2e) has a separate, explicitly limited scope.

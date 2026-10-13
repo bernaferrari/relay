@@ -16,6 +16,16 @@ The CLI uses the same App, Test, Run, and target model as the interface. From a 
 
 Guides are bundled with the code. Reading them needs no server, model, or credentials.
 
+## Select your workspace objects
+
+```bash
+./bin/relay apps
+./bin/relay devices
+./bin/relay tests "My app"
+```
+
+Replace “My app” with an App from the first command. Keep its Test ID and the target ID for the run.
+
 ## Create a Test
 
 With Relay running and a model key configured for plain-English authoring:
@@ -37,6 +47,16 @@ The URL is an example. Replace it with a website you can test. For deterministic
 Use names from your workspace or their IDs. Targets also accept platform selections such as `ios`, `android`, and `browser`; use an exact device ID when several targets are available.
 
 Add `--json` for machine output. A verdict includes each step's **expected** and **saw**, so an agent can diagnose the failure before attempting a repair.
+
+## Inspect and export the same Run
+
+```bash
+./bin/relay runs "My app"
+./bin/relay inspect <run-id>
+./bin/relay export <run-id> --out ./evidence
+```
+
+Replace the Run ID with the one returned by execution. Read its verdict before deciding what to repair. For hand-edited files, see [YAML Tests](/docs/agents/test-files).
 
 ## Set project defaults
 
@@ -60,7 +80,7 @@ These are selections, not credentials. Keep secrets out of Test files, data sets
 | `10` | Passed, with screenshot review pending.              |
 | `11` | App, Test, Run, or device not found.                 |
 
-`--help` lists the other codes. A blocked setup is not an app defect, and pending screenshot review is not a completed human decision.
+Exit code 4 is authentication, 5 is invalid input, 6 is a conflict such as a busy device, 8 is a server error, and 9 is another command’s reported failure. `--help` lists the full table. A blocked setup is not an app defect, and pending screenshot review is not a completed human decision.
 
 ## A useful agent loop
 

@@ -5,7 +5,7 @@ description: Catch a real layout bug, see the repair, and repeat the same Test. 
 
 The fastest way to understand Relay is a complete, local browser demo. It records a journey to Settings, catches a seeded overlap, fixes the demo website, and reruns the unchanged saved Test.
 
-> Relay currently runs from source. Public npm packages and standalone desktop installers are not yet qualified releases. These instructions use the repository.
+Relay currently runs from source. This walkthrough uses a checkout; no published npm package or desktop installer is required.
 
 ## 1. Get the workspace ready
 
@@ -22,6 +22,8 @@ Follow the doctor's instructions if a prerequisite is missing. For an unusual br
 
 ## 2. Run the demo
 
+Let any existing Relay recording or Run finish first. `ensure:serve` starts a fresh development service; it can restart the service used by other local Relay work.
+
 ```bash title="From the relay directory"
 pnpm ensure:serve
 pnpm demo
@@ -31,7 +33,9 @@ No account, model key, Android tools, or iOS tools are needed. Keep the demo ter
 
 ## 3. Open both results
 
-The terminal prints two review links:
+The terminal prints two local, read-only review links. Open them directly; this walkthrough does not require the desktop app or a web development server. The links require the Relay service to stay running.
+
+Compare these results:
 
 | Result            | What to look for                                              |
 | ----------------- | ------------------------------------------------------------- |
@@ -41,6 +45,14 @@ The terminal prints two review links:
 The output also includes the Test ID, separate Run IDs, measured durations, and an exported **Member settings.png** screenshot for each Run. Both screenshots should show Workspace settings for the Member account.
 
 “Layout check passed” means Save and the team seats do not overlap. It does **not** mean someone has approved the appearance. That is a [screenshot review](/docs/workflows/review) decision.
+
+<DocScreenshot
+  src="/images/relay-run.webp"
+  alt="Relay showing the local demo after its layout check passed"
+  caption="The repaired demo in Relay: saved steps on the left, retained evidence on the right. This screenshot illustrates the product workspace; the terminal’s review links open a read-only gallery."
+/>
+
+To record a human appearance decision, open `pnpm dev:web` or `pnpm dev:desktop`, select **Demo · Member layout**, and review that Run’s screenshots. The local gallery links alone do not save a review decision.
 
 ## 4. Repeat it
 

@@ -28,7 +28,7 @@ export default async function DocumentationPage({ params }: Props) {
   const Body = page.data.body;
   const markdownUrl = `${page.url === "/docs" ? "/docs/index" : page.url}.md`;
   return (
-    <DocsPage toc={page.data.toc} id="main-content">
+    <DocsPage toc={page.data.toc} id="main-content" className="max-w-3xl">
       {page.url === "/docs" ? (
         <div className="mb-3 flex items-center gap-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
           <span className="h-0.5 w-8 bg-primary" aria-hidden="true" /> The Relay field guide
