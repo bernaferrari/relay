@@ -268,6 +268,14 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     ) {
       throw new HttpError(404, "Recorded run not found");
     }
+    if (
+      Array.isArray(run.artifacts) &&
+      run.artifacts.some((artifact) => artifact?.kind === "e2e-execution")
+    )
+      throw new HttpError(
+        409,
+        "Open the e2e project to run its original source; this Run cannot use native replay",
+      );
     await requireScopedAppMapTestExecution(appMapTestExecutionSourceFromRun(run));
     await assertCurrentBrowserExecutionProfile({ execution: run, runtime });
     await assertPersistedRunExecutionTargetRouteControl({

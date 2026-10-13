@@ -132,7 +132,11 @@ export function buildRunVerdict(
   }
   // Every frame the run kept, for the step that stopped it.
   const runFrames = [...run.frames, ...run.steps.flatMap((step) => step.frames)];
-  const failureScreenshot = (entry?: { frames: string[]; startedAt?: number; finishedAt?: number }) =>
+  const failureScreenshot = (entry?: {
+    frames: string[];
+    startedAt?: number;
+    finishedAt?: number;
+  }) =>
     failingStepFrame({
       stepFrames: (entry?.frames ?? []).map((path) => ({ path })),
       runFrames,

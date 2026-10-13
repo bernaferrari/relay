@@ -10,7 +10,10 @@
  */
 import type { AppMap, NormalizedSemanticNode } from "./app-map.js";
 
-export type ScreenNamingNode = Pick<NormalizedSemanticNode, "role" | "label" | "value" | "identifier">;
+export type ScreenNamingNode = Pick<
+  NormalizedSemanticNode,
+  "role" | "label" | "value" | "identifier"
+>;
 
 export type ScreenNamingInput = {
   screens: readonly {
@@ -30,10 +33,13 @@ const PLACEHOLDER = /^(?:start|next screen|known screen|untitled screen|screen|n
 const ACTION_VERB =
   /^(?:send|submit|post|tap|press|click|open|show|go(?:\s+to)?|view|type|enter|choose|select|start|create|add|save|confirm|continue|next)\b/iu;
 const LEADING_NAV_VERB = /^(?:show|open|go\s+to|view)\s+/iu;
-const EDITABLE = /edit\s*text|text\s*field|textfield|textarea|text\s*box|textbox|search\s*field|input/iu;
+const EDITABLE =
+  /edit\s*text|text\s*field|textfield|textarea|text\s*box|textbox|search\s*field|input/iu;
 
-const REPLY = /^(?:copy (?:message|response|reply)|regenerate\b|like this (?:response|message)|dislike this|read aloud)/iu;
-const WORKING = /^(?:stop(?: message| generating| response)?|cancel generation|generating\b|thinking\b|loading\b)/iu;
+const REPLY =
+  /^(?:copy (?:message|response|reply)|regenerate\b|like this (?:response|message)|dislike this|read aloud)/iu;
+const WORKING =
+  /^(?:stop(?: message| generating| response)?|cancel generation|generating\b|thinking\b|loading\b)/iu;
 const VIEWER_ACTIONS = /^(?:download|share|save image|edit image|edit tools|add to favorites)$/iu;
 
 /** True when a saved title says nothing about the screen. */
@@ -92,9 +98,10 @@ export function newScreenTitle(input: {
   nodes?: readonly ScreenNamingNode[];
   intent?: string;
 }): string {
-  const area = input.sourceTitle?.trim() && !isPlaceholderScreenTitle(input.sourceTitle)
-    ? input.sourceTitle.trim()
-    : undefined;
+  const area =
+    input.sourceTitle?.trim() && !isPlaceholderScreenTitle(input.sourceTitle)
+      ? input.sourceTitle.trim()
+      : undefined;
   const state = screenStateWord(input.nodes ?? [], input.intent ? [input.intent] : []);
   if (area && state) return `${area} ${state}`;
   if (state) return capitalize(state);
@@ -119,7 +126,12 @@ export function screenDisplayNames(input: ScreenNamingInput): Map<string, string
       : input.screens.filter((screen) => !incoming.has(screen.id)).map((screen) => screen.id),
   );
   const labelsOf = (id: string) =>
-    new Set(byId.get(id)!.nodes.map((node) => text(node).toLocaleLowerCase()).filter(Boolean));
+    new Set(
+      byId
+        .get(id)!
+        .nodes.map((node) => text(node).toLocaleLowerCase())
+        .filter(Boolean),
+    );
 
   // Named after the control that opened it: "Send prompt", "Show navigation drawer".
   const actionNamed = (id: string) => {
@@ -228,11 +240,12 @@ export function screenDisplayNames(input: ScreenNamingInput): Map<string, string
     const renamed = ids.filter((id) => generic.has(id));
     if (ids.length < 2 || !renamed.length) continue;
     const ordered = [...renamed].sort(
-      (a, b) =>
-        (byId.get(a)!.createdAt ?? 0) - (byId.get(b)!.createdAt ?? 0) || a.localeCompare(b),
+      (a, b) => (byId.get(a)!.createdAt ?? 0) - (byId.get(b)!.createdAt ?? 0) || a.localeCompare(b),
     );
     ordered.forEach((id, index) => {
-      const others = new Set(ids.filter((other) => other !== id).flatMap((other) => [...labelsOf(other)]));
+      const others = new Set(
+        ids.filter((other) => other !== id).flatMap((other) => [...labelsOf(other)]),
+      );
       const detail = [...labelsOf(id)]
         .filter((label) => !others.has(label) && label.length >= 4 && !/<[^>]+>/u.test(label))
         .sort((a, b) => b.length - a.length)[0];
@@ -270,8 +283,8 @@ export function appMapScreenDisplayNames(map: AppMap): Map<string, string> {
               ...(connection.label ? { label: connection.label } : {}),
               tapLabels: (connection.actions ?? []).flatMap((action) =>
                 action.kind === "tap"
-                  ? [action.target.label, action.target.text].filter(
-                      (value): value is string => Boolean(value?.trim()),
+                  ? [action.target.label, action.target.text].filter((value): value is string =>
+                      Boolean(value?.trim()),
                     )
                   : [],
               ),

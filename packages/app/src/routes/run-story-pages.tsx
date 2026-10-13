@@ -72,6 +72,7 @@ export function SavedRunStory({
   };
   visit(test.data?.steps);
   const steps = storyFromReport({
+    ...(report.codeExecution ? { unjoinedTitle: "Test steps" } : {}),
     timeline: report.traceSteps?.length ? report.traceSteps : report.timeline,
     ...(report.stepEvidence ? { stepEvidence: report.stepEvidence } : {}),
     stepTitles,

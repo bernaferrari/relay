@@ -1,28 +1,91 @@
 ---
 title: Use upstream e2e
-description: Run the original e2e program and import its evidence without translating its semantics.
+description: Open an existing code project, run its original Tests, and review retained screenshots in Relay.
 ---
 
-Relay has an **opt-in prototype** for `e2e@0.20.0`. Relay's visual/YAML execution stays available. The integration runs the real upstream program; it does not turn TypeScript into plain-English instructions.
+Use **Relay** for visually managed Tests and **e2e** for code-managed Tests. Your `.e2e.ts` files remain authoritative: Relay invokes the project's installed `e2e@0.20.0`, preserves its result, and adds evidence review around it.
 
-## What is supported now
+This source-checkout pilot qualifies **web engines**. Mobile project execution, recording-to-code generation, authentication fixtures, and a public reporter release still need qualification. Arbitrary TypeScript is executable; it is not automatically visually editable.
 
-- A reporter with a bounded local event queue.
-- Durable import of final reports and locally available artifacts.
-- A process adapter for a trusted project's pinned upstream CLI.
-- Separate upstream verdict and Relay evidence status.
+## Open and run a project
 
-The visual project picker, integrated Run-history UI, code generation, and full mobile qualification are still in development. This is not a promise that every TypeScript Test is visually editable.
+1. [Install Relay from source](/docs/getting-started/installation), then build the reporter:
 
-## Add the reporter
+   ```bash
+   pnpm --filter @relay/e2e build
+   pnpm --filter @relay/e2e exec e2e-web install chromium
+   ```
 
-Build `@relay/e2e` from this workspace and make it available alongside `e2e@0.20.0` in your trusted project:
+2. Your existing project must install **e2e 0.20.0**, its configured engine and matching browser, and an `e2e.config.ts`, `e2e.config.mjs`, or `e2e.config.js` at its root.
+3. In Relay, open **Tests → Open project** and enter its absolute folder path.
+4. Choose **Trust project and open**. Collection executes configuration and Test modules with local process permissions. Only open code you trust; a child process is not a sandbox.
+5. Inspect the discovered Tests and configured targets. **Source** displays the original file. Edit it in your project, then choose **Refresh Tests**.
+6. Choose **Run project**, or run a configured case individually. **Stop** forwards cancellation to upstream. e2e owns fixtures, hooks, assertions, attempts, retries, engine cleanup, and its verdict.
+7. Open a result to inspect its steps and screenshots in Relay's existing Run screen. Captures remain pending until a person reviews them. Results also appear in **Runs** and the screenshot review queue.
 
-```bash
-pnpm --filter @relay/e2e build
+Relay temporarily adds its reporter through a configuration wrapper. It does not rewrite your configuration or Test source. Upstream output is retained inside the trusted project at `.relay/e2e/`; Relay imports its reports and local artifacts into its own workspace. Add `.relay/` to your project's ignore rules if it is not already ignored.
+
+## Execution, evidence, and review
+
+These are separate results:
+
+| Result                                  | Meaning                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------- |
+| Upstream passed, failed, or interrupted | The original e2e execution result, preserved unchanged                    |
+| Evidence imported                       | The declared required artifacts are retained                              |
+| Evidence incomplete                     | Required evidence is missing, ambiguous, denied, or could not be imported |
+| Pending review                          | A person has not yet decided whether the image looks correct              |
+
+**Retry evidence import** reads retained reports and artifacts. It never repeats application actions. Restore missing source artifacts before retrying. A restart retains project history, imported images, and human decisions. If Relay lost control of an unfinished process, it reports that interruption rather than starting a competing execution.
+
+The existing Run's **Download all files** export includes screenshots, decisions, and the original upstream report. Upstream diagnostic channels absent from the Run are not fabricated.
+
+## Declare required screenshots
+
+Without a declaration, Relay reports how many images were produced. It does not invent an expected denominator.
+
+To require specific captures, add `relay.evidence.json` to the trusted project:
+
+```json title="relay.evidence.json"
+{
+  "obligations": [
+    {
+      "id": "account-settings-before",
+      "testId": "tests/settings.e2e.ts::Account%20settings",
+      "targetId": "web",
+      "stepLabel": "Account settings",
+      "occurrence": 1
+    }
+  ]
+}
 ```
 
-Keep the project's original engines, fixtures, models, targets, and settings:
+Use the **exact Test ID from the upstream report**, target name, and `app.screenshot()` label. `occurrence` is one-based within the final attempt. Specify `agent` and `repeat` when variants require them. Repeated labels without an occurrence, overlapping declarations, or ambiguous variants remain unsatisfied. Serial-group capture declarations are not yet qualified.
+
+Run the full project when it has a capture plan. Requirements and human-review policy are frozen for that execution: retrying import with different requirements fails rather than changing the denominator. An intentional plan change belongs to a new execution.
+
+Missing optional videos, downloads, and logs do not block screenshot review. `requiredArtifactKinds` can explicitly require these diagnostics; `maxArtifactBytes` sets the import byte limit per artifact. Imported evidence still obeys upstream redaction and privacy restrictions.
+
+## Use CLI or MCP
+
+The CLI uses the same project operations as the UI:
+
+```bash
+relay e2e open /absolute/path/to/project --input '{"trust":"trusted-project"}'
+relay e2e projects
+relay e2e run <project-id>
+relay e2e status <execution-id>
+relay e2e stop <execution-id>
+relay e2e import <execution-id>
+```
+
+`run` returns an execution identity. Poll `status` until execution and import settle; a successful request to start is not a completed test. Human review remains separate.
+
+The MCP **full** profile exposes `relay_e2e_project_open`, `relay_e2e_project_run`, `relay_e2e_execution_get`, and `relay_e2e_execution_retry_import`, plus listing, source, refresh, and cancellation. Establish user trust before loading a project. Agents can inspect evidence but cannot approve captures as a person.
+
+## Reporter-only integration
+
+To use the reporter independently of the UI, build the private workspace package and make it available alongside the pinned upstream runner:
 
 ```ts title="e2e configuration excerpt"
 import { relayReporter } from "@relay/e2e";
@@ -31,56 +94,21 @@ export default {
   ...existingConfig,
   reporters: [
     ...(existingConfig.reporters ?? ["list"]),
-    relayReporter({
-      directory: "/absolute/path/to/relay-evidence",
-      requireHumanReview: true,
-    }),
+    relayReporter({ directory: "/absolute/path/to/relay-evidence", requireHumanReview: true }),
   ],
 };
 ```
 
-`existingConfig` is your project's existing configuration. This excerpt adds the reporter; it is not a replacement configuration or a published installation command.
+`existingConfig` is your original configuration. This is a workspace integration example, not a published npm installation command. Standalone imports preserve reports and artifacts; the project workflow above additionally connects them to Relay's Run history and human review.
 
-## Execute through the adapter
+The reporter constructor has no filesystem effects. Live events enter a bounded queue; duplicate sequences are ignored, and queue pressure is recorded. Final reports reconcile evidence independently. Missing files, hash mismatches, external URLs, and privacy-denied artifacts remain explicit; Relay does not bypass secret handling or download remote evidence automatically.
 
-```ts
-import { runE2EProject } from "@relay/e2e";
+## Verify compatibility
 
-const controller = new AbortController();
-const result = await runE2EProject({
-  projectRoot: "/absolute/path/to/trusted-project",
-  trust: "trusted-project",
-  args: ["--config", "e2e.config.ts"],
-  signal: controller.signal,
-  onOutput: (stream, text) => {
-    const output = stream === "stdout" ? process.stdout : process.stderr;
-    output.write(text);
-  },
-});
-
-console.log(result); // Upstream exit code and termination signal.
+```bash
+pnpm run test:e2e
 ```
 
-Call `controller.abort()` to request cancellation. The adapter always invokes upstream `run`; pass its flags in `args`, not another `run` subcommand. The project’s config must include the reporter for evidence import.
+This explicitly builds the integration and runs both importer tests and the real upstream web parity experiment. It covers fixtures, hooks, branches, data variants, assertion failure, screenshot-only execution, retry, and cancellation. Mobile qualification is a separate milestone.
 
-The adapter uses argument arrays, not a shell. e2e owns hooks, fixtures, assertions, retries, scheduling, cleanup, and its verdict. Relay owns the imported evidence workflow.
-
-## Find the imported artifacts
-
-The reporter’s output directory contains one durable directory per imported Run, including the untouched `report.json`, Relay’s `receipt.json`, event records, and copied local artifacts. Inspect the receipt for unavailable evidence and the separate evidence gate.
-
-The prototype does not yet provide integrated human decisions in Relay’s Run-history UI. `requireHumanReview: true` keeps the receipt pending; it does not create an implemented approval interface.
-
-## Preserve trust and verdicts
-
-Tests, configuration, engines, and reporters execute code with process permissions. Establish project trust before executing a repository. A child process is not a sandbox.
-
-The imported `report.json` preserves the upstream result. A passed upstream execution with missing evidence is not a completed Relay evidence review. Human review remains pending when requested.
-
-Missing files, hash mismatches, external artifacts, and privacy restrictions stay explicit. The integration does not bypass upstream secret or screenshot policy.
-
-## One authoritative source
-
-Keep the visual document authoritative for a Relay-managed Test, and the `.e2e.ts` program authoritative for a code-managed Test. Do not silently flatten branches or overwrite developer edits.
-
-Read the [integration README](https://github.com/bernaferrari/relay/tree/main/packages/e2e) for conformance commands, artifact details, and remaining scope.
+See the [integration README](https://github.com/bernaferrari/relay/tree/main/packages/e2e) for retained-file details and ownership boundaries.

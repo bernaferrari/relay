@@ -117,7 +117,8 @@ test("the step that stopped the run shows the screen at the moment it failed", (
   const verdict = buildRunVerdict(
     run({
       outcome: "harness-failure",
-      error: "Text entry verification failed: the field readback does not match the requested text.",
+      error:
+        "Text entry verification failed: the field readback does not match the requested text.",
       frames: [
         { path: "frames/001.png", caption: "step:open:Open the cart", capturedAt: 10 },
         { path: "frames/003.png", caption: "failed:primary:Type text", capturedAt: 35 },
@@ -142,5 +143,8 @@ test("the step that stopped the run shows the screen at the moment it failed", (
   );
   assert.equal(verdict.status, "blocked");
   assert.equal(verdict.steps[1]!.screenshot, "/runs/run-1/frames/003.png");
-  assert.equal(verdict.steps[1]!.saw, "Relay typed the text, but the field showed something different.");
+  assert.equal(
+    verdict.steps[1]!.saw,
+    "Relay typed the text, but the field showed something different.",
+  );
 });

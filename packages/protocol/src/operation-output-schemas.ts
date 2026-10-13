@@ -1,3 +1,4 @@
+import { e2eOperationOutputSchemas } from "./e2e-project.js";
 import type * as z from "zod/v4";
 import { coreOperationOutputSchemas } from "./core-operation-output-schemas.js";
 import { executionOperationOutputSchemas } from "./execution-operation-output-schemas.js";
@@ -20,6 +21,7 @@ export const operationFamilyOutputSchemas = {
 /** Exact runtime schemas for every descriptor that does not own a specialized parser. */
 export const operationOutputSchemas = {
   ...coreOperationOutputSchemas,
+  ...e2eOperationOutputSchemas,
   ...operationFamilyOutputSchemas,
 } as const satisfies Readonly<Record<string, z.ZodType>>;
 

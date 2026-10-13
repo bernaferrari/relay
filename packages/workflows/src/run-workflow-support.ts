@@ -370,6 +370,7 @@ function preflightDiagnosticText(value: unknown, limit: number): string | undefi
     .replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/gi, "$1?[REDACTED]")
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
     .replace(/\b(cookie|set-cookie)\s*[:=]\s*[^\s,;]+/gi, "$1: [REDACTED]")
+    // eslint-disable-next-line no-control-regex -- Collapse terminal/control bytes in user-facing diagnostics.
     .replace(/[\s\u0000-\u001f\u007f]+/gu, " ")
     .trim();
   return text ? text.slice(0, limit) : undefined;

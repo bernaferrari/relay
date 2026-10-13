@@ -108,8 +108,9 @@ test("Proof lifecycle commands resolve to canonical operations", () => {
   });
 });
 
-test("the advanced surface is nine nouns with one spelling per operation", () => {
+test("the advanced surface includes the e2e harness noun with one spelling per operation", () => {
   const nouns = new Set([
+    "e2e",
     "test",
     "run",
     "plan",

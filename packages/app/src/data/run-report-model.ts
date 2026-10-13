@@ -93,6 +93,7 @@ export type ReportAuthoredOutline = {
 export type ProductRunReportOverview = {
   performance?: readonly ReportPerformanceSeries[];
   runId: string;
+  codeExecution?: { harness: "e2e"; projectId: string; sourceFile?: string };
   testId?: string;
   title: string;
   outcome?: RunOutcome;

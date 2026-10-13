@@ -491,7 +491,7 @@ async function compareItem(
  *
  * People review only what changed: unless a Plan explicitly asks for human
  * review of every capture, a capture that matches its approved reference is
- * accepted, a first capture on a passing run is accepted, and only a capture
+ * accepted, a capture without a reference remains pending, and a capture
  * that differs from its reference waits for a person.
  */
 export async function applyCaptureReferences(
@@ -501,8 +501,7 @@ export async function applyCaptureReferences(
   return withRunWriteLock(run.dir, async () => {
     const latest = (await readCompletedPersistedRun(run.dir)) ?? run;
     latest.dir = run.dir;
-    if ((latest.referenceReviewMode ?? "approved-reference") !== "approved-reference")
-      return latest;
+    if ((latest.referenceReviewMode ?? "human") !== "approved-reference") return latest;
     const queue = captureReviewQueueForRun(latest);
     if (!queue.items.length) return latest;
     const references = await readReferences(root);
@@ -527,21 +526,14 @@ export async function applyCaptureReferences(
           decision.captureId === item.captureId && decidedByReference(decision.decidedBy),
       );
       if (human) continue;
-      const firstOnPass = comparison?.state === "new" && latest.outcome === "passed";
-      // The first passing capture becomes the baseline, so later changes are caught.
-      if (firstOnPass) {
-        await setCaptureReference(root, latest, item, { ...CAPTURE_REFERENCE_ACTOR }, null).catch(
-          () => undefined,
-        );
-      }
-      if (comparison?.state === "match" || firstOnPass) {
+      if (comparison?.state === "match") {
         const decision: CaptureReviewDecision = {
           captureId: item.captureId,
           action: "accept",
           decidedAt: comparison.comparedAt,
           decidedBy: { ...CAPTURE_REFERENCE_ACTOR },
           ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
-          note: firstOnPass ? FIRST_CAPTURE_ON_PASS_NOTE : "Matches the approved reference.",
+          note: "Matches the approved reference.",
           reviewVersion: 0,
         };
         if (index >= 0) decisions[index] = decision;

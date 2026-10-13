@@ -209,3 +209,129 @@ test("concurrent conflicting imports cannot overwrite the same upstream identity
   assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
   assert.equal(results.filter((r) => r.status === "rejected").length, 1);
 });
+
+test("import requirements are frozen across retries and concurrent policy changes", async () => {
+  const { run, output } = await fixture();
+  const first = await importFinishedRun(
+    run,
+    { directory: output, requireHumanReview: true },
+    signal(),
+  );
+  await assert.rejects(
+    importFinishedRun(run, { directory: output, requireHumanReview: false }, signal()),
+    /Conflicting import requirements/,
+  );
+  await assert.rejects(
+    importFinishedRun(run, { directory: output, obligations: [] }, signal()),
+    /Conflicting import requirements/,
+  );
+  const retained = JSON.parse(await readFile(join(first.directory, "receipt.json"), "utf8"));
+  assert.equal(retained.requirementsHash, first.receipt.requirementsHash);
+  assert.equal(retained.acceptance.humanReview, "pending");
+});
+
+test("duplicate checkpoint selectors are rejected before any report is published", async () => {
+  const { run, output } = await fixture();
+  const checkpoint = { testId: "test", targetId: "target", stepLabel: "checkpoint" };
+  await assert.rejects(
+    importFinishedRun(
+      run,
+      {
+        directory: output,
+        obligations: [
+          { id: "before", ...checkpoint },
+          { id: "after", ...checkpoint },
+        ],
+      },
+      signal(),
+    ),
+    /Duplicate capture selector/,
+  );
+  await assert.rejects(access(join(runDirectory(output, run.report.run.id), "report.json")));
+});
+
+test("repeated screenshot labels require invocation identity even with identical bytes", async () => {
+  const { run, output } = await fixture([
+    artifact(),
+    artifact("after.png", { id: "after", producer: { kind: "step", stepId: "after-step" } }),
+  ]);
+  run.report.run.results[0]!.attempts[0]!.steps.push({
+    ...run.report.run.results[0]!.attempts[0]!.steps[0]!,
+    id: "after-step",
+  });
+  await writeFile(join(run.artifactsRoot, "capture.png"), "same");
+  await writeFile(join(run.artifactsRoot, "after.png"), "same");
+  const checkpoint = { testId: "test", targetId: "target", stepLabel: "checkpoint" };
+  const ambiguous = await importFinishedRun(
+    run,
+    { directory: output, obligations: [{ id: "owed", ...checkpoint }] },
+    signal(),
+  );
+  assert.equal(ambiguous.receipt.coverage.obligations?.[0]?.state, "ambiguous");
+  const exact = await importFinishedRun(
+    run,
+    {
+      directory: join(output, "exact"),
+      obligations: [
+        { id: "before", ...checkpoint, occurrence: 1 },
+        { id: "after", ...checkpoint, occurrence: 2 },
+      ],
+    },
+    signal(),
+  );
+  assert(exact.receipt.coverage.obligations?.every((slot) => slot.state === "available"));
+  assert.equal(new Set(exact.receipt.artifacts.map((a) => a.path)).size, 1);
+  assert.notDeepEqual(
+    exact.receipt.coverage.obligations?.[0]?.artifactIds,
+    exact.receipt.coverage.obligations?.[1]?.artifactIds,
+  );
+});
+
+test("overlapping declarations cannot consume a single screenshot twice", async () => {
+  const { run, output } = await fixture([artifact()]);
+  await writeFile(join(run.artifactsRoot, "capture.png"), "image");
+  const checkpoint = { testId: "test", targetId: "target", stepLabel: "checkpoint" };
+  const { receipt } = await importFinishedRun(
+    run,
+    {
+      directory: output,
+      obligations: [
+        { id: "first", ...checkpoint },
+        { id: "second", ...checkpoint, occurrence: 1, agent: "default" },
+      ],
+    },
+    signal(),
+  );
+  assert(receipt.coverage.obligations?.every((item) => item.state === "ambiguous"));
+});
+
+test("missing optional diagnostics do not block required captured screenshots", async () => {
+  const { run, output } = await fixture([
+    artifact(),
+    artifact("video.webm", { id: "video", kind: "video", mediaType: "video/webm" }),
+  ]);
+  await writeFile(join(run.artifactsRoot, "capture.png"), "image");
+  const { receipt } = await importFinishedRun(run, { directory: output }, signal());
+  assert.equal(receipt.artifacts[1]?.state, "missing");
+  assert.equal(receipt.acceptance.evidenceComplete, true);
+  assert.equal(receipt.acceptance.state, "pending-review");
+  const required = await importFinishedRun(
+    run,
+    { directory: join(output, "video-required"), requiredArtifactKinds: ["screenshot", "video"] },
+    signal(),
+  );
+  assert.equal(required.receipt.acceptance.evidenceComplete, false);
+});
+
+test("partial import can resume from retained evidence without upstream actions or files", async () => {
+  const { recoverImportedRun } = await import("./recover-import.js");
+  const { run, output } = await fixture([artifact()]);
+  await writeFile(join(run.artifactsRoot, "capture.png"), "image");
+  const imported = await importFinishedRun(run, { directory: output }, signal());
+  await rm(join(imported.directory, "receipt.json"));
+  await rm(run.artifactsRoot, { recursive: true });
+  const recovered = await recoverImportedRun(output, run.report.run.id, signal());
+  assert.equal(recovered.receipt.artifacts[0]?.state, "available");
+  assert.equal(recovered.receipt.requirementsHash, imported.receipt.requirementsHash);
+  assert.equal(recovered.receipt.acceptance.humanReview, "pending");
+});

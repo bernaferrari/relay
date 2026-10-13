@@ -7,9 +7,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "tsx watch --clear-screen=false --include ../core/src --include ../protocol/src src/index.ts",
+    "dev": "pnpm --filter @relay/e2e build && tsx watch --clear-screen=false --include ../core/src --include ../protocol/src src/index.ts",
     "postinstall": "fetch-scrcpy-server 2.5",
-    "start": "tsx src/index.ts",
+    "start": "pnpm --filter @relay/e2e build && tsx src/index.ts",
     "test": "tsx --import ./scripts/test-environment.mjs --test src/*.test.ts",
     "test:coverage": "tsx --import ./scripts/test-environment.mjs --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov src/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
@@ -17,6 +17,7 @@
   "dependencies": {
     "@relay/client": "workspace:*",
     "@relay/core": "workspace:*",
+    "@relay/e2e": "workspace:*",
     "@relay/protocol": "workspace:*",
     "@relay/workflows": "workspace:*",
     "@yume-chan/adb": "2.6.4",

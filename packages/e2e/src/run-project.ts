@@ -1,7 +1,5 @@
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
-import { readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { pinnedE2EProject } from "./project.js";
 
 /** Explicit trust is required before loading the project's executable configuration. */
 export async function runE2EProject(options: {
@@ -9,28 +7,21 @@ export async function runE2EProject(options: {
   trust: "trusted-project";
   args?: readonly string[];
   signal?: AbortSignal;
+  onStarted?: (pid: number) => void;
   onOutput?: (stream: "stdout" | "stderr", text: string) => void;
 }) {
   if (options.trust !== "trusted-project")
     throw new Error("Project trust is required to execute e2e code");
   options.signal?.throwIfAborted();
-  const projectRoot = resolve(options.projectRoot);
-  const require = createRequire(join(projectRoot, "package.json"));
-  const packageRoot = dirname(dirname(require.resolve("e2e")));
-  const pkg = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
-    name: string;
-    version: string;
-    bin: Record<string, string>;
-  };
-  if (pkg.name !== "e2e" || pkg.version !== "0.20.0")
-    throw new Error("This adapter requires the project's upstream e2e@0.20.0");
-  const executable = resolve(packageRoot, pkg.bin.e2e!);
+  const { root: projectRoot, executable } = await pinnedE2EProject(options.projectRoot);
   return new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
     (resolveRun, reject) => {
       const child = spawn(process.execPath, [executable, "run", ...(options.args ?? [])], {
         cwd: projectRoot,
         stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, E2E_TELEMETRY_DISABLED: "1" },
       });
+      if (child.pid) options.onStarted?.(child.pid);
       const cancel = () => child.kill("SIGINT");
       options.signal?.addEventListener("abort", cancel, { once: true });
       child.stdout.on("data", (chunk) => options.onOutput?.("stdout", String(chunk)));

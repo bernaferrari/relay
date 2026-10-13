@@ -229,6 +229,7 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
       "full",
       "interactiveOnly",
       "laneId",
+      "logicalBoundsOnly",
       "serial",
       "visual",
     ]);

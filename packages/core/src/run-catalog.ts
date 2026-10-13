@@ -92,7 +92,7 @@ const summaryMigrations = new Map<string, Promise<void>>();
 
 const SUMMARY_MIGRATION_KEYS = ["capture-summary-v1", "matrix-case-v2"] as const;
 /** Screenshot counts re-read under the "first capture on a passing run" policy. */
-const PASSING_RUN_POLICY_KEY = "capture-summary-passing-run-v1";
+const PASSING_RUN_POLICY_KEY = "capture-summary-explicit-review-v2";
 
 /**
  * Passing runs recorded before the review policy still list their first
@@ -416,7 +416,9 @@ export async function catalogSummaries(
   limit = 40,
   actionPrefix?: string,
 ): Promise<RunSummary[]> {
-  return (await catalogRecords(root, limit, actionPrefix)).map(({ dir: _dir, ...summary }) => summary);
+  return (await catalogRecords(root, limit, actionPrefix)).map(
+    ({ dir: _dir, ...summary }) => summary,
+  );
 }
 
 /** Newest catalog rows with the directory each Run lives in. */

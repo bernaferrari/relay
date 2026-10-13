@@ -5,6 +5,7 @@
  * graph separate lets consumers discover the public API without coupling the
  * registry's runtime parsers to every DTO in one source file.
  */
+import type { E2EOperationMap } from "./e2e-project.js";
 import type { SpecificOperationMap } from "./operation-map-specific.js";
 import type {
   AuthoringEvidence,
@@ -450,7 +451,7 @@ export type HealthSummary = {
   };
 };
 
-export type RelayOperationMap = SpecificOperationMap & OperationFamilyMap;
+export type RelayOperationMap = SpecificOperationMap & OperationFamilyMap & E2EOperationMap;
 export type OperationId = keyof RelayOperationMap;
 export type OperationInput<Id extends OperationId> = RelayOperationMap[Id]["input"];
 export type OperationOutput<Id extends OperationId> = RelayOperationMap[Id]["output"];

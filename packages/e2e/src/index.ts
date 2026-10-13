@@ -93,3 +93,9 @@ export function relayReporter(options: ImportOptions & { maxQueuedEventBytes?: n
   };
 }
 export { runE2EProject } from "./run-project.js";
+export { recoverImportedRun } from "./recover-import.js";
+export { discoverE2EProject, pinnedE2EProject } from "./project.js";
+export type { DiscoveredE2ETest } from "./project.js";
+export { atomicJson } from "./import-run.js";
+export { importRequirements } from "./import-spec.js";
+export type { FinishedRun } from "e2e";

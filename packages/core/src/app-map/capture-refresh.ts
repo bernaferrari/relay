@@ -63,10 +63,7 @@ export function hasPendingCaptureRefresh(map: AppMap): boolean {
  * each variant only the newest capture is applied, and only when it is newer
  * than what the map shows; the rest are closed as superseded, never deleted.
  */
-export function settleCaptureRefreshProposals(
-  map: AppMap,
-  context: AppMapMutationContext,
-): AppMap {
+export function settleCaptureRefreshProposals(map: AppMap, context: AppMapMutationContext): AppMap {
   const pending = Object.values(map.proposals ?? {})
     .filter((proposal) => proposal.status === "pending" && isCaptureRefreshProposal(proposal))
     .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));

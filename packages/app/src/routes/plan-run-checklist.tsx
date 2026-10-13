@@ -155,9 +155,7 @@ function CaseMark({ status }: { status: ProductBatchCase["status"] }) {
   if (status === "failed")
     return <CircleX className={`${size} text-destructive`} aria-label="Failed" />;
   if (status === "blocked")
-    return (
-      <CircleAlert className={`${size} text-warning-foreground`} aria-label="Could not run" />
-    );
+    return <CircleAlert className={`${size} text-warning-foreground`} aria-label="Could not run" />;
   if (status === "cancelled")
     return <CircleSlash className={`${size} text-muted-foreground`} aria-label="Cancelled" />;
   if (status === "running")

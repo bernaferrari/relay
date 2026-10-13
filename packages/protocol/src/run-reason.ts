@@ -31,12 +31,17 @@ const PHRASES: readonly [RegExp, (match: RegExpExecArray, line: string) => strin
         : "Relay couldn’t read the screen’s controls.";
     },
   ],
-  [/could not read the current accessibility tree/iu, () => "Relay couldn’t read the screen’s controls."],
+  [
+    /could not read the current accessibility tree/iu,
+    () => "Relay couldn’t read the screen’s controls.",
+  ],
   [
     /named target absent from current \w+ accessibility tree/iu,
     (_match, line) => {
       const target = QUOTED_TARGET.exec(line)?.[1];
-      return target ? `Relay couldn’t find “${target}” on the screen.` : "Relay couldn’t find that control on the screen.";
+      return target
+        ? `Relay couldn’t find “${target}” on the screen.`
+        : "Relay couldn’t find that control on the screen.";
     },
   ],
   [
@@ -67,14 +72,18 @@ const PHRASES: readonly [RegExp, (match: RegExpExecArray, line: string) => strin
     /navigating to "(.+?)", waiting until/u,
     (match) => `The page at ${match[1]} didn’t finish loading.`,
   ],
-  [/Job control lease is no longer valid/iu, () => "Relay lost track of this run before it finished."],
+  [
+    /Job control lease is no longer valid/iu,
+    () => "Relay lost track of this run before it finished.",
+  ],
   [
     /recovery-required fence/iu,
     () => "The device needs to be recovered before Relay can use it again.",
   ],
   [
     /^Stuck at “(.+?)” and nobody resumed it within (\d+)s/u,
-    (match) => `Relay paused at “${match[1]}” and nobody continued it within ${seconds(String(Number(match[2]) * 1000))}.`,
+    (match) =>
+      `Relay paused at “${match[1]}” and nobody continued it within ${seconds(String(Number(match[2]) * 1000))}.`,
   ],
 ];
 
@@ -111,6 +120,7 @@ export function plainRunReason(message: string | undefined): string | undefined 
   const best = lines.find((line) => line.startsWith("✗")) ?? lines.at(-1) ?? message.trim();
   const cleaned = best
     // Terminal colour codes from browser drivers are not words.
+    // eslint-disable-next-line no-control-regex -- Strip ANSI escape sequences from driver messages.
     .replace(/\u001b\[[0-9;]*m|\[\d+m/gu, "")
     .replace(/^-\s+/u, "")
     .replace(/^\d+ campaign checks? failed: [^:]+: /u, "")

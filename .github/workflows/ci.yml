@@ -46,6 +46,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Install pinned e2e web browser
+        run: pnpm --filter @relay/e2e exec e2e-web install chromium --with-deps
+
       # Keep these stages aligned with `pnpm verify`, but expose each trust
       # boundary separately. A setup/install failure therefore cannot look
       # like a repository typecheck or test failure in the Check UI.
@@ -74,6 +77,9 @@ jobs:
 
       - name: Test packages
         run: pnpm run test:packages
+
+      - name: Qualify pinned upstream e2e
+        run: pnpm run test:e2e
 
       - name: Check changed-source coverage
         env:

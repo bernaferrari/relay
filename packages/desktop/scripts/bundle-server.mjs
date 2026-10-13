@@ -39,6 +39,14 @@ export async function bundleServer() {
     logLevel: "info",
   });
   await esbuild.build({
+    entryPoints: [resolve(workspaceRoot, "packages/e2e/src/index.ts")],
+    outfile: resolve(outDir, "relay-e2e-reporter.mjs"),
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node24",
+  });
+  await esbuild.build({
     entryPoints: [resolve(workspaceRoot, "packages/core/src/screenshot-analysis-worker.ts")],
     outfile: resolve(outDir, "screenshot-analysis-worker.cjs"),
     bundle: true,

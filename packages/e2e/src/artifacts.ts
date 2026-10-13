@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, realpath, rename, rm } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Report } from "e2e";
@@ -21,7 +21,7 @@ export type ImportedArtifact = {
 };
 const within = (root: string, file: string) => {
   const part = relative(root, file);
-  return part !== "" && !isAbsolute(part) && part !== ".." && !part.startsWith("../");
+  return part !== "" && !isAbsolute(part) && part !== ".." && !part.startsWith(`..${sep}`);
 };
 
 export async function copyArtifact(

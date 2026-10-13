@@ -1,6 +1,6 @@
 # Relay support for upstream e2e
 
-Opt-in prototype for `e2e@0.20.0`. Relay's existing visual/YAML execution remains available. This package runs the real upstream program; it never translates TypeScript into Relay instructions.
+Opt-in, pinned integration for `e2e@0.20.0`. Relay's existing visual/YAML execution remains available. This package runs the real upstream program; it never translates TypeScript into Relay instructions.
 
 ## Add a reporter to a trusted project
 
@@ -25,6 +25,14 @@ Each durable run directory contains the untouched `report.json`, a separate `rec
 
 Import is idempotent for an identical report. A different report under the same upstream run identity is rejected. Local paths and symlink destinations must stay inside the declared artifacts directory. Hash/size mismatches, missing files, external URLs and incomplete redaction remain explicit unavailable evidence. The prototype does not bypass upstream secret/screenshot policy or download remote evidence.
 
+## Open a project in Relay
+
+Build this package, start Relay, and choose **Tests → Open project**. The project must install e2e 0.20.0 with its configured web engine. Explicitly trust its executable configuration before collection. Relay generates a temporary reporter wrapper without rewriting Test source or config. Results use the existing Run gallery, review decisions, and exports. The original upstream report is included in the evidence export.
+
+A `relay.evidence.json` file can declare `obligations`, `requiredArtifactKinds`, and `maxArtifactBytes`. The project workflow always requires human review. Required capture declarations are frozen per execution. Optional diagnostics do not block screenshot-only acceptance. Retry evidence import uses retained reports and artifacts only; it never reruns application actions. `import-progress.json` permits recovery after an interrupted artifact copy, and `import-spec.json` preserves report and policy identity.
+
+See the [UI and CLI walkthrough](../../packages/site/content/docs/agents/e2e.mdx) for the complete project path. The package remains private; no public install or mobile compatibility is implied.
+
 ## Run through Relay's process adapter
 
 ```ts
@@ -46,11 +54,12 @@ Tests, configuration, engines and reporters are executable code. The caller must
 
 An e2e failure, blocked result or interrupted execution stays exactly that in `report.json`. `receipt.upstream` records its verdict and exit code. Relay's separate evidence gate can be `blocked`, `execution-not-passed`, `pending-review`, or `evidence-ready`; none of these rewrites upstream status or means organizational release acceptance.
 
-An optional `obligations` list declares expected screenshot checkpoints by test ID, target ID and exact upstream `app.screenshot` label, with optional agent/repeat disambiguation. Only the final ordinary-test attempt satisfies a checkpoint. Ambiguous variants and serial-group coverage are not guessed. Without a declaration, there is no invented planned denominator. Human review remains pending when requested; this prototype does not implement review decisions.
+An optional `obligations` list declares expected screenshot checkpoints by test ID, target ID and exact upstream `app.screenshot` label, with optional agent/repeat disambiguation. Use a one-based `occurrence` when labels repeat. Overlapping declarations are rejected as ambiguous. Import requirements are immutable for an execution; changed requirements require a new execution or explicit import revision. Only the final ordinary-test attempt satisfies a checkpoint. Ambiguous variants and serial-group coverage are not guessed. Without a declaration, there is no invented planned denominator. The standalone receipt keeps human review pending. The server project workflow projects captures into Relay’s existing Run history and human-review queue; imported captures do not automatically become approved references.
 
 ## Qualification
 
 ```sh
+pnpm --filter @relay/e2e exec e2e-web install chromium
 pnpm --filter @relay/e2e test
 E2E_TELEMETRY_DISABLED=1 pnpm --filter @relay/e2e test:upstream
 ```
@@ -59,7 +68,7 @@ The second command uses the published upstream web engine and an owned local HTT
 
 ## Scope and next stage
 
-This is reporter/import/process support, not the finished project-picker or Run-history UI. Mobile engines, serial screenshot obligations, authentication fixtures, engine conformance, visual code generation, batch human review and organizational acceptance still need qualification.
+The source-checkout web pilot now provides Tests → Open project, explicit trust, upstream discovery, original source viewing, run/cancel, separate import progress, retained Run history, human screenshot review, and evidence export. CLI and MCP full-profile operations use the same contract. Project execution rejects mobile engines until device ownership is qualified. Mobile engines, serial screenshot obligations, authentication fixtures, visual code generation, public distribution and organizational acceptance still need qualification.
 
 The product choice should be **Relay** or **e2e**, with one authoritative source per Test. Keep native visual/YAML documents authoritative for Relay-managed Tests and `.e2e.ts` authoritative for code-managed Tests. Never silently flatten branches or overwrite edited code. Additional harnesses can be added after a real integration proves their semantics.
 

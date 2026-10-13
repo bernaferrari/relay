@@ -35,6 +35,7 @@ export { publishChangeProofToGitHub } from "./change-proof-github-publisher.js";
 export * from "./github-proof-intake.js";
 import { githubProofWebhookConfigurationFromEnvironment as githubWebhookFromEnv } from "./github-proof-intake.js";
 import { growAppMapsFromPastRuns, loadSavedModelKey, saveModelKey } from "@relay/core";
+import { handleE2EProjectRoute } from "./e2e-project-routes.js";
 import { handleEverydayRoute } from "./everyday-routes.js";
 import {
   captureScreenshot,
@@ -593,6 +594,8 @@ async function handleRequest(
     )
       return;
 
+    if (await handleE2EProjectRoute({ method, pathname, url, request: req, response: res, scope }))
+      return;
     if (await handleEverydayRoute({ method, pathname, request: req, response: res, scope })) return;
     if (await handleLiveRunRoute({ method, pathname, response: res, scope })) return;
 

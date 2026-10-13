@@ -16,6 +16,7 @@ import {
 
 /** The advanced surface: `relay <noun> <verb>`, one spelling per operation. */
 const nouns = [
+  ["e2e", "Trusted upstream projects: discover, run, inspect, and recover evidence"],
   ["test", "Saved Tests, their Variables, Data sets, and case stacks"],
   ["run", "Runs and execution jobs: watch, retry, review, share, repair"],
   ["plan", "Saved Plans (Variables × Tests), their campaigns, matrices, and schedules"],

@@ -804,6 +804,7 @@ export function projectRunReport(
     video?.clock ?? {},
   );
   const runArtifacts = array(run.artifacts) as Array<{ kind?: string; data?: unknown }>;
+  const external = record(runArtifacts.find((item) => item.kind === "e2e-execution")?.data);
   const execution = runArtifacts.find((item) => item.kind === "app-map-test-execution-intent");
   const cellExecution = runArtifacts.find(
     (item) => item.kind === "app-map-combine-cell-execution-intent",
@@ -831,6 +832,15 @@ export function projectRunReport(
   });
   return {
     runId,
+    ...(external?.harness === "e2e" && typeof external.sourceProjectId === "string"
+      ? {
+          codeExecution: {
+            harness: "e2e" as const,
+            projectId: external.sourceProjectId,
+            sourceFile: text(external.sourceFile),
+          },
+        }
+      : {}),
     ...(testId ? { testId } : {}),
     title: resolvedTitle ?? canonical?.title ?? text(run.title) ?? "Test run",
     ...(outcome ? { outcome } : {}),

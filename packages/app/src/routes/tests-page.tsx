@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type CSSProperties, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import type { ProductTestSummary } from "@relay/product/catalog";
@@ -12,7 +12,7 @@ import { ChevronRight, CircleDot, CircleX, Clock, Eye, Play, Plus, Search, X } f
 import { Input } from "@relay/ui-react/components/input";
 import { EmptyState } from "../components/product-patterns";
 import { LibraryPage } from "../components/page-layout";
-import { runStateDot, runStateLabel, runStateOf, type RunState } from "../components/run-status";
+import { runStateOf, type RunState } from "../components/run-status";
 import { libraryRowSurface } from "../components/library-row-styles";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { createReviewProductService, reviewQueryKeys } from "../data/review-product-service";
@@ -22,6 +22,8 @@ import { readRunPointer } from "../data/run-pointer";
 import { readWorkflowPointer } from "../data/workflow-pointer";
 import type { ProductPlanSchedule, ProductSuite } from "../data/suite-profile-product-service";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { PlanResultSummary } from "./plan-result-summary";
+import { E2EProjectLibrary } from "./e2e-project-library";
 import { NewPlanDialog } from "./new-plan-dialog";
 import { PlanLibraryQueryState } from "./plan-library-query-state";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
@@ -46,8 +48,11 @@ export function TestsPage() {
     q?: unknown;
     view?: unknown;
     plan?: unknown;
+    e2eProject?: unknown;
   };
   const navigate = useNavigate({ from: "/tests" });
+  const [e2eOpen, setE2EOpen] = useState(false);
+  const [codeTestCount, setCodeTestCount] = useState(0);
   const [query, setQuery] = useState(() => (typeof search.q === "string" ? search.q : ""));
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const result = resultFilter(search.result);
@@ -170,7 +175,12 @@ export function TestsPage() {
     "/tests/",
   );
 
-  function updateSearch(next: { q?: string; result?: ResultFilter; view?: LibraryView }) {
+  function updateSearch(next: {
+    q?: string;
+    result?: ResultFilter;
+    view?: LibraryView;
+    e2eProject?: string;
+  }) {
     void navigate({
       replace: true,
       search: (previous) => ({
@@ -197,6 +207,9 @@ export function TestsPage() {
           <h1 className="text-3xl leading-9 font-semibold tracking-tight">Tests</h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setE2EOpen(true)}>
+            Open project
+          </Button>
           {/* One main action per tab: plans are created where plans are listed. */}
           {view === "plans" ? <NewPlanDialog {...(app ? { appId: app } : {})} /> : null}
           <Button
@@ -215,6 +228,16 @@ export function TestsPage() {
         onShowFailing={() => updateSearch({ result: "failed", view: "tests" })}
       />
 
+      <E2EProjectLibrary
+        open={e2eOpen}
+        onOpenChange={setE2EOpen}
+        search={deferredQuery}
+        onCount={setCodeTestCount}
+        visible={view === "tests" && !app}
+        initialProjectId={typeof search.e2eProject === "string" ? search.e2eProject : undefined}
+        onProjectClose={() => updateSearch({ e2eProject: undefined })}
+      />
+
       <Tabs
         value={view}
         onValueChange={(value) => updateSearch({ view: value as LibraryView, result: "all" })}
@@ -223,7 +246,7 @@ export function TestsPage() {
         <TabsList variant="line" aria-label="Test library" className="h-11 gap-3">
           {(
             [
-              ["tests", "Tests", saved.length],
+              ["tests", "Tests", saved.length + (app ? 0 : codeTestCount)],
               ["plans", "Plans", plans.length],
               ["drafts", "Drafts", drafts.length + recordingDrafts.length],
             ] as const
@@ -312,7 +335,7 @@ export function TestsPage() {
             </>
           ) : null}
 
-          {tests.data && !testCount && view === "tests" ? (
+          {tests.data && !testCount && (app || !codeTestCount) && view === "tests" ? (
             <EmptyState
               title={app ? "No tests for this app yet" : "No tests yet"}
               detail="Describe what should work in a sentence. Relay writes the steps and runs them."
@@ -627,53 +650,6 @@ function PlanGroup({
         </div>
       ) : null}
     </li>
-  );
-}
-
-const SUMMARY_ORDER: readonly RunState[] = [
-  "failed",
-  "review",
-  "running",
-  "passed",
-  "cancelled",
-  "not-run",
-];
-
-/** One glance: a health bar, then only the counts that matter. */
-function PlanResultSummary({ states }: { states: readonly RunState[] }) {
-  const counts = new Map<RunState, number>();
-  for (const state of states) counts.set(state, (counts.get(state) ?? 0) + 1);
-  const ordered = SUMMARY_ORDER.filter((state) => counts.has(state));
-  const description = ordered
-    .map((state) => `${counts.get(state)} ${runStateLabel(state).toLowerCase()}`)
-    .join(", ");
-  if (!states.length) return null;
-  return (
-    <span className="grid gap-1.5" title={description} aria-label={description}>
-      <span className="flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        {ordered.map((state) => (
-          <span
-            key={state}
-            className={`grow-(--share) ${runStateDot(state)}`}
-            style={{ "--share": counts.get(state) } as CSSProperties}
-          />
-        ))}
-      </span>
-      <span className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
-        {ordered
-          .filter((state) => state !== "not-run" && state !== "cancelled")
-          .map((state) => (
-            <span key={state} className="inline-flex items-center gap-1 tabular-nums">
-              <span className={`size-1.5 rounded-full ${runStateDot(state)}`} />
-              {counts.get(state)}{" "}
-              {state === "review" ? "to review" : runStateLabel(state).toLowerCase()}
-            </span>
-          ))}
-        {counts.has("not-run") ? (
-          <span className="tabular-nums">{counts.get("not-run")} not run</span>
-        ) : null}
-      </span>
-    </span>
   );
 }
 

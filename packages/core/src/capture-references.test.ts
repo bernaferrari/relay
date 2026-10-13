@@ -402,7 +402,7 @@ test("a failed promotion retry cannot replace a newer Run's reference", async ()
   }
 });
 
-test("passing runs need no review unless a screenshot changed from its baseline", async () => {
+test("passing runs require explicit reference enrollment before automatic matching", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-reference-baseline-"));
   try {
     const passing = async (id: string, bytes: Buffer) =>
@@ -412,11 +412,13 @@ test("passing runs need no review unless a screenshot changed from its baseline"
       );
     const first = await passing("run-first", png());
     const item = captureReviewQueueForRun(first).items[0]!;
-    assert.equal(item.status, "accepted");
-    assert.ok(
-      await findCaptureReference(root, first, item),
-      "the first passing capture is the baseline",
-    );
+    assert.equal(item.status, "pending");
+    assert.equal(await findCaptureReference(root, first, item), undefined);
+    await reviewPersistedCapture(root, first, {
+      captureId: item.captureId,
+      action: "accept-as-reference",
+      actor: human,
+    });
     const same = await passing("run-same", png());
     assert.equal(captureReviewQueueForRun(same).items[0]?.status, "accepted");
     const changed = await passing("run-changed", png({ x: 10, y: 10 }));
@@ -426,7 +428,7 @@ test("passing runs need no review unless a screenshot changed from its baseline"
   }
 });
 
-test("first screenshots of passing runs recorded before the policy read as accepted", async () => {
+test("legacy passing screenshots without a saved decision remain pending", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-reference-legacy-pass-"));
   try {
     // Never compared: the run predates automatic references.
@@ -434,9 +436,9 @@ test("first screenshots of passing runs recorded before the policy read as accep
       outcome: "passed",
     });
     const queue = captureReviewQueueForRun(legacy);
-    assert.equal(queue.items[0]?.status, "accepted");
-    assert.equal(queue.summary.pending, 0);
-    assert.equal(queue.summary.accepted, 1);
+    assert.equal(queue.items[0]?.status, "pending");
+    assert.equal(queue.summary.pending, 1);
+    assert.equal(queue.summary.accepted, 0);
 
     const failing = await captureRun(root, "run-failing", png(), undefined, undefined, {
       outcome: "product-failure",
@@ -449,7 +451,10 @@ test("first screenshots of passing runs recorded before the policy read as accep
     assert.equal(captureReviewQueueForRun(human).summary.pending, 1, "a Plan asked for a person");
 
     // Compared, but the comparison failed: a person still decides.
-    assert.equal(captureReviewQueueForRun({ ...legacy, captureComparisons: {} }).summary.pending, 1);
+    assert.equal(
+      captureReviewQueueForRun({ ...legacy, captureComparisons: {} }).summary.pending,
+      1,
+    );
 
     const item = captureReviewQueueForRun(legacy).items[0]!;
     const decided = await reviewPersistedCapture(root, legacy, {

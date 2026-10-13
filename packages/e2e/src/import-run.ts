@@ -4,20 +4,9 @@ import { resolve } from "node:path";
 import type { FinishedRun } from "e2e";
 import { copyArtifact, type ImportedArtifact } from "./artifacts.js";
 
-export type CaptureObligation = {
-  id: string;
-  testId: string;
-  targetId: string;
-  stepLabel: string;
-  agent?: string;
-  repeat?: number;
-};
-export type ImportOptions = {
-  directory: string;
-  obligations?: readonly CaptureObligation[];
-  requireHumanReview?: boolean;
-  maxArtifactBytes?: number;
-};
+import { freezeImportSpec, type ImportOptions } from "./import-spec.js";
+import { resolveCaptureObligations } from "./capture-obligations.js";
+export type { CaptureObligation, ImportOptions } from "./import-spec.js";
 export async function atomicJson(path: string, value: unknown, signal?: AbortSignal) {
   const temp = `${path}.${randomUUID()}.tmp`;
   try {
@@ -45,6 +34,7 @@ export async function importFinishedRun(
   const directory = runDirectory(options.directory, run.report.run.id);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const reportHash = createHash("sha256").update(JSON.stringify(run.report)).digest("hex");
+  const spec = await freezeImportSpec(directory, run.report.run.id, reportHash, options, signal);
   const reportPath = resolve(directory, "report.json");
   try {
     const previous = JSON.parse(await readFile(reportPath, "utf8"));
@@ -70,9 +60,32 @@ export async function importFinishedRun(
   } finally {
     await rm(candidate, { force: true });
   }
+  const incomingSource = {
+    projectRoot: run.projectRoot,
+    reportPath: run.reportPath,
+    artifactsRoot: run.artifactsRoot,
+    traces: [...run.traces],
+    aiTracePath: run.aiTracePath,
+  };
+  const sourcePath = resolve(directory, "import-source.json");
+  const sourceCandidate = `${sourcePath}.${randomUUID()}.candidate`;
+  let provenance: typeof incomingSource;
+  try {
+    await writeFile(sourceCandidate, JSON.stringify(incomingSource), { signal, mode: 0o600 });
+    await link(sourceCandidate, sourcePath).catch((error) => {
+      if (error.code !== "EEXIST") throw error;
+    });
+    provenance = JSON.parse(await readFile(sourcePath, "utf8"));
+  } finally {
+    await rm(sourceCandidate, { force: true });
+  }
   let previousArtifacts: ImportedArtifact[] = [];
   try {
-    const previous = JSON.parse(await readFile(resolve(directory, "receipt.json"), "utf8"));
+    const previous = JSON.parse(
+      await readFile(resolve(directory, "import-progress.json"), "utf8").catch(() =>
+        readFile(resolve(directory, "receipt.json"), "utf8"),
+      ),
+    );
     if (previous.reportHash === reportHash && Array.isArray(previous.artifacts))
       previousArtifacts = previous.artifacts;
   } catch {
@@ -108,7 +121,7 @@ export async function importFinishedRun(
               directory,
               directory,
               signal,
-              options.maxArtifactBytes ?? 64 * 1024 * 1024,
+              spec.requirements.maxArtifactBytes,
             )
           : undefined;
         if (!copied || copied.state !== "available")
@@ -117,7 +130,7 @@ export async function importFinishedRun(
             run.artifactsRoot,
             directory,
             signal,
-            options.maxArtifactBytes ?? 64 * 1024 * 1024,
+            spec.requirements.maxArtifactBytes,
           );
         artifacts.push({
           ownerKind: kind,
@@ -127,49 +140,33 @@ export async function importFinishedRun(
           source,
           ...copied,
         });
+        await atomicJson(
+          resolve(directory, "import-progress.json"),
+          { reportHash, artifacts },
+          signal,
+        );
       }
-  const obligations = options.obligations?.map((obligation) => {
-    const results = run.report.run.results.filter(
-      (result) =>
-        result.testId === obligation.testId &&
-        result.targetId === obligation.targetId &&
-        result.selected &&
-        (obligation.agent === undefined || result.agent === obligation.agent) &&
-        (obligation.repeat === undefined || result.repeat === obligation.repeat),
+  const obligations = resolveCaptureObligations(run, artifacts, spec.requirements.obligations);
+  const requiredArtifacts = artifacts.filter((item) => {
+    if (!spec.requirements.requiredArtifactKinds.includes(item.source.kind)) return false;
+    const owner = owners.find(
+      ({ kind, owner }) => kind === item.ownerKind && owner.id === item.ownerId,
     );
-    if (results.length !== 1)
-      return { ...obligation, state: results.length ? "ambiguous" : "missing", artifactIds: [] };
-    const result = results[0]!;
-    const attempt = result.attempts.at(-1);
-    // Serial-group coverage is not guessed from another member's shared artifacts.
-    const steps =
-      attempt?.steps.filter(
-        (step) => step.api === "app.screenshot" && step.label === obligation.stepLabel,
-      ) ?? [];
-    const matches = artifacts.filter(
-      (item) =>
-        item.ownerKind === "result" &&
-        item.ownerId === result.id &&
-        item.attemptId === attempt?.id &&
-        item.source.kind === "screenshot" &&
-        item.source.producer.kind === "step" &&
-        steps.some(
-          (step) => item.source.producer.kind === "step" && step.id === item.source.producer.stepId,
-        ),
+    return (
+      owner &&
+      !owner.kind.startsWith("carried-") &&
+      owner.owner.attempts.at(-1)?.id === item.attemptId
     );
-    return {
-      ...obligation,
-      state: matches.some((item) => item.state === "available") ? "available" : "missing",
-      artifactIds: matches.map((item) => item.source.id),
-    };
   });
   const evidenceComplete =
-    artifacts.every((item) => item.state === "available") &&
+    requiredArtifacts.every((item) => item.state === "available") &&
     (obligations?.every((item) => item.state === "available") ?? true);
   const receipt = {
     schemaVersion: "relay-e2e-import-1",
     harness: "e2e",
     reportHash,
+    requirementsHash: spec.requirementsHash,
+    requirements: spec.requirements,
     upstream: {
       schemaVersion: run.report.schemaVersion,
       runner: run.report.run.runner,
@@ -177,23 +174,17 @@ export async function importFinishedRun(
       exitCode: run.exitCode,
       runId: run.report.run.id,
     },
-    provenance: {
-      projectRoot: run.projectRoot,
-      reportPath: run.reportPath,
-      artifactsRoot: run.artifactsRoot,
-      traces: Object.fromEntries(run.traces),
-      aiTracePath: run.aiTracePath,
-    },
+    provenance: { ...provenance, traces: Object.fromEntries(provenance.traces) },
     artifacts,
     coverage: { declared: obligations !== undefined, expected: obligations?.length, obligations },
     acceptance: {
       evidenceComplete,
-      humanReview: options.requireHumanReview ? "pending" : "not-required",
+      humanReview: spec.requirements.requireHumanReview ? "pending" : "not-required",
       state: !evidenceComplete
         ? "blocked"
         : run.status !== "passed"
           ? "execution-not-passed"
-          : options.requireHumanReview
+          : spec.requirements.requireHumanReview
             ? "pending-review"
             : "evidence-ready",
     },

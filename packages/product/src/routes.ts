@@ -67,6 +67,7 @@ export type RouteDefinition = {
   allowedSearchKeys: readonly (
     | "plan"
     | "planApp"
+    | "e2eProject"
     | "item"
     | "filter"
     | "status"
@@ -125,6 +126,7 @@ export const ROUTE_DEFINITIONS = [
   d("/accounts", "/tests", "Accounts", null, "accounts", null, ["status", "view"]),
   d("/apps/:appId/map", "/tests", "Map", "Map", "apps", "explore-app", ["view", "screen", "path"]),
   d("/tests", null, "Tests", "Test", "tests", "record-test", [
+    "e2eProject",
     "status",
     "app",
     "view",

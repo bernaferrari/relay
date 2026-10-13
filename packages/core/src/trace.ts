@@ -45,6 +45,8 @@ export type TraceAction = {
 };
 
 export type TraceStep = {
+  /** One-based upstream attempt when projecting an external execution. */
+  attempt?: number;
   id: string;
   index: number;
   /** Immutable recipe identity captured at execution time when available. */

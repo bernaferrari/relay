@@ -1,9 +1,7 @@
+import { e2eOperationDefinitions } from "./e2e-operation-definitions.js";
 import { replayRunInputParser, runIdInputParser } from "./run-replay-operation-parser.js";
 import { createAuthoringSessionParser } from "./authoring-session-operation-parser.js";
-import {
-  captureReviewInputParser,
-  captureReviewOutputParser,
-} from "./capture-review-operation-parser.js";
+import { captureReviewOperationDefinition } from "./capture-review-operation-definition.js";
 import { assertTargetRuntimeReadiness } from "./target-runtime-readiness-parser.js";
 import {
   targetDevicesInputParser,
@@ -1040,6 +1038,7 @@ export const operationDefinitions = [
     { category: "authoring", input: authoringSessionRefParser, output: okParser },
   ),
   ...scheduleOperationDefinitions,
+  ...e2eOperationDefinitions,
   ...discoveryOperationDefinitions,
   query("job.list", "List jobs", "/jobs", { category: "execution", output: jobsParser }),
   query("job.get", "Get job", "/jobs/:jobId", { category: "execution", input: jobIdInputParser }),
@@ -1170,18 +1169,7 @@ export const operationDefinitions = [
     input: visualReviewInputParser,
     output: visualReviewOutputParser,
   }),
-  command(
-    "run.capture.review",
-    "Review a captured screenshot",
-    "POST",
-    "/runs/:runId/capture-review",
-    {
-      category: "evidence",
-      confirmation: "confirm",
-      input: captureReviewInputParser,
-      output: captureReviewOutputParser,
-    },
-  ),
+  captureReviewOperationDefinition,
   query("run.visual-policy.get", "Get visual comparison policy", "/runs/:runId/visual-policy", {
     category: "evidence",
     input: visualPolicyGetInputParser,

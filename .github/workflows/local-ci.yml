@@ -40,6 +40,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Install pinned e2e web browser
+        run: pnpm --filter @relay/e2e exec e2e-web install chromium
+
       - name: Format, lint, and static checks
         run: pnpm run check
 
@@ -58,6 +61,9 @@ jobs:
           # Live-device journeys are golden-device work; this lane verifies
           # the repository and must not contend for the one device slot.
           RELAY_SKIP_LIVE_DEVICE_TESTS: "1"
+
+      - name: Qualify pinned upstream e2e
+        run: pnpm run test:e2e
 
       - name: Check changed-source coverage
         env:

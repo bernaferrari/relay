@@ -53,7 +53,7 @@ async function writeRun(
   );
 }
 
-test("passing runs leave the review inbox unless a Plan asked a person to look", async () => {
+test("passing and legacy runs remain in the inbox until explicitly reviewed", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-review-inbox-"));
   const previous = process.env.RELAY_RUNS_DIR;
   process.env.RELAY_RUNS_DIR = root;
@@ -71,19 +71,23 @@ test("passing runs leave the review inbox unless a Plan asked a person to look",
     db.prepare(
       `UPDATE runs SET capture_summary_json='{"captured":1,"missing":0,"pending":1,"accepted":0,"issue":0,"needMoreEvidence":0}' WHERE id='run-pass'`,
     ).run();
-    db.prepare("DELETE FROM metadata WHERE key='capture-summary-passing-run-v1'").run();
+    db.prepare("DELETE FROM metadata WHERE key='capture-summary-explicit-review-v2'").run();
     db.close();
     const passing = (await catalogSummaries(root)).find((summary) => summary.id === "run-pass");
-    assert.equal(passing?.captureSummary?.pending, 0);
-    assert.equal(passing?.captureSummary?.accepted, 1);
+    assert.equal(passing?.captureSummary?.pending, 1);
+    assert.equal(passing?.captureSummary?.accepted, 0);
 
     const inbox = await listReviewInbox(root, { now: NOW });
-    assert.deepEqual(inbox.entries.map((entry) => entry.runId).sort(), ["run-fail", "run-human"]);
-    assert.equal(inbox.totals.pending, 2);
+    assert.deepEqual(inbox.entries.map((entry) => entry.runId).sort(), [
+      "run-fail",
+      "run-human",
+      "run-pass",
+    ]);
+    assert.equal(inbox.totals.pending, 3);
 
     const count = await listReviewInbox(root, { now: NOW, countOnly: true });
     assert.deepEqual(count.entries, []);
-    assert.equal(count.totals.pending, 2, "the badge count matches the list");
+    assert.equal(count.totals.pending, 3, "the badge count matches the list");
 
     // A rewritten manifest is read again rather than served from memory.
     await writeRun(root, "run-fail", "search", {
@@ -98,10 +102,7 @@ test("passing runs leave the review inbox unless a Plan asked a person to look",
       ],
     });
     const after = await listReviewInbox(root, { now: NOW });
-    assert.deepEqual(
-      after.entries.map((entry) => entry.runId),
-      ["run-human"],
-    );
+    assert.deepEqual(after.entries.map((entry) => entry.runId).sort(), ["run-human", "run-pass"]);
   } finally {
     if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
     else process.env.RELAY_RUNS_DIR = previous;

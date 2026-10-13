@@ -92,3 +92,25 @@ describe("recorded HTTP errors", () => {
     expect(JSON.stringify(report)).toContain("Check Network for the request URL.");
   });
 });
+
+it("retains upstream project authority on imported e2e Runs", () => {
+  const report = projectRunReport(
+    "e2e-run",
+    {
+      title: "Settings",
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "e2e-execution",
+          data: { harness: "e2e", sourceProjectId: "project", sourceFile: "tests/settings.e2e.ts" },
+        },
+      ],
+    },
+    {},
+  );
+  expect(report.codeExecution).toEqual({
+    harness: "e2e",
+    projectId: "project",
+    sourceFile: "tests/settings.e2e.ts",
+  });
+});

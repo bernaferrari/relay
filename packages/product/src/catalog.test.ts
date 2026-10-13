@@ -531,8 +531,20 @@ test("a test is flaky when recent runs keep flipping between passing and failing
 
 test("a run Relay could not finish is blocked, not failed; an uncertain one needs review", () => {
   const projected = projectProductRuns([
-    run({ id: "product", action: "test.run", status: "error", queuedAt: 1, outcome: "product-failure" }),
-    run({ id: "harness", action: "test.run", status: "error", queuedAt: 2, outcome: "harness-failure" }),
+    run({
+      id: "product",
+      action: "test.run",
+      status: "error",
+      queuedAt: 1,
+      outcome: "product-failure",
+    }),
+    run({
+      id: "harness",
+      action: "test.run",
+      status: "error",
+      queuedAt: 2,
+      outcome: "harness-failure",
+    }),
     run({ id: "unsure", action: "test.run", status: "ok", queuedAt: 3, outcome: "uncertain" }),
     run({ id: "legacy", action: "test.run", status: "error", queuedAt: 4 }),
   ]);

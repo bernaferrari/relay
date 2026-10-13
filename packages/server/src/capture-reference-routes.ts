@@ -59,7 +59,8 @@ export async function handleCaptureReferenceRoute(
     const sinceDays = Number(url.searchParams.get("sinceDays") ?? "14");
     const appMapId = url.searchParams.get("appMapId")?.trim();
     // Catalog totals cover every run; only a trusted local reader may skip the per-run check.
-    const countOnly = ["true", "1"].includes(url.searchParams.get("countOnly") ?? "") && scope.localTrusted;
+    const countOnly =
+      ["true", "1"].includes(url.searchParams.get("countOnly") ?? "") && scope.localTrusted;
     json(
       response,
       200,

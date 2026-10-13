@@ -184,6 +184,16 @@ async function bootstrap() {
     throw new Error("Relay port changed before startup; refusing to spawn another server");
   }
 
+  // The imported reporter is a compiled workspace package on a source checkout.
+  execFileSync(
+    process.execPath,
+    [
+      join(root, "packages/e2e/node_modules/typescript/bin/tsc"),
+      "-p",
+      join(root, "packages/e2e/tsconfig.json"),
+    ],
+    { cwd: root, stdio: "inherit" },
+  );
   const logFd = openSync(logFile, "a");
   const child = spawn(process.execPath, relayWatcherArguments({ tsx, port }), {
     cwd: join(root, "packages/server"),

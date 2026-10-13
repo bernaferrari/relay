@@ -68,6 +68,14 @@ function isToolOperation(
 }
 
 const extraGuidance: Partial<Record<OperationId, string>> = {
+  "e2e.project.open":
+    " Execute collection only after explicit user trust in this local project. Supports installed e2e 0.20.0. Project UI execution currently qualifies web engines only.",
+  "e2e.project.run":
+    " Run the original upstream program. e2e owns fixtures, hooks, assertions and retries. Poll e2e.execution.get; process completion and evidence import are separate. Human capture review stays pending.",
+  "e2e.execution.retry-import":
+    " Recover retained reports and artifacts only. Never reruns application actions; conflicting capture or review requirements fail closed.",
+  "app-map.variable.infer":
+    " Inspect the observed picker and propose a canonical Variable. Confirm actual options and navigation before adopting it; never invent a Variable merely to take screenshots.",
   "target.screenshot.capture":
     " Happy path 1/3: capture pixels, then interact, then screenshot again. iOS 17+ pixels need go-ios tunnel, not target.open. A missing XCTest session is not a failed screenshot. For a requested saved Test, run it directly; this observation loop is for manual control. Do not retry snapshot in a loop if the tree is missing.",
   "target.interact":

@@ -216,6 +216,13 @@ export function replayInputFromPersistedRun(
   > & { artifacts?: PersistedRun["artifacts"] },
   mode: PersistedReplayMode = "saved-steps",
 ): EnqueueJobInput {
+  if (
+    Array.isArray(run.artifacts) &&
+    run.artifacts.some((artifact) => artifact?.kind === "e2e-execution")
+  )
+    throw new Error(
+      "Open the e2e project to run its original source; native replay cannot execute an imported e2e Run",
+    );
   if (!run.recipeSnapshot || !run.recipeGraph) {
     throw new Error("This run predates frozen replay data and cannot be replayed safely");
   }

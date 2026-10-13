@@ -35,14 +35,14 @@
     "check": "vp check",
     "fmt": "vp fmt",
     "lint": "vp lint",
-    "typecheck": "pnpm --filter @relay/mcp build && pnpm -r --if-present run typecheck",
+    "typecheck": "pnpm --filter @relay/e2e build && pnpm --filter @relay/mcp build && pnpm -r --if-present run typecheck",
     "pack": "vp pack",
     "prepare": "vp config",
     "doctor": "node scripts/workspace-doctor.mjs",
     "demo": "node --import tsx scripts/first-run-demo.mjs",
     "server:doctor": "node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts system doctor",
     "test": "pnpm run ios-preview:test && pnpm run test:packages && vp test",
-    "test:packages": "pnpm --workspace-concurrency=1 -r --if-present run test",
+    "test:packages": "pnpm --filter @relay/e2e build && pnpm --workspace-concurrency=1 -r --if-present run test",
     "test:coverage": "pnpm --filter @relay/mcp build && pnpm --workspace-concurrency=1 -r --if-present run test:coverage && node scripts/check-coverage.mjs",
     "test:proof-cursor": "node node_modules/tsx/dist/cli.mjs --test packages/core/src/proof-cursor-adversarial-fixtures.test.ts",
     "test:ios-terminality": "node node_modules/tsx/dist/cli.mjs --test packages/core/src/ios-mutation-terminality-contract.test.ts packages/core/src/workspace-capture-video.test.ts packages/core/src/ios-interaction-safety.test.ts && node node_modules/tsx/dist/cli.mjs --import ./packages/server/scripts/test-environment.mjs --test packages/server/src/step-run-route.test.ts && node node_modules/tsx/dist/cli.mjs --test packages/mcp/src/server.test.ts",
@@ -61,7 +61,8 @@
     "check:workflows": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12",
     "check:docs": "node scripts/check-docs.mjs",
     "check:architecture": "node scripts/verify-android-snapshot-helper.mjs && node scripts/check-source-budgets.mjs && node scripts/check-ios-mutation-boundaries.mjs && node scripts/check-canonical-product-model.mjs && node scripts/product-contract.mjs && node scripts/check-product-copy.mjs && node scripts/check-renderer-operation-transport.mjs && node scripts/check-global-styles.mjs",
-    "verify": "vp check && pnpm run check:workflows && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run ios-preview:test && pnpm run test:packages && vp test && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build && pnpm run test:visual && pnpm run test:browser && pnpm run test:electron && pnpm run ios-preview:verify"
+    "verify": "vp check && pnpm run check:workflows && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run ios-preview:test && pnpm run test:packages && pnpm run test:e2e && vp test && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build && pnpm run test:visual && pnpm run test:browser && pnpm run test:electron && pnpm run ios-preview:verify",
+    "test:e2e": "pnpm --filter @relay/e2e build && pnpm --filter @relay/e2e test && E2E_TELEMETRY_DISABLED=1 pnpm --filter @relay/e2e test:upstream"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

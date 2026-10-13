@@ -144,7 +144,15 @@ export function RunReportActions({
           Review result
         </Button>
       ) : null}
-      {!embedded && report.outcome === "harness-failure" ? (
+      {report.codeExecution ? (
+        <Button
+          nativeButton={false}
+          variant="outline"
+          render={<Link to="/tests" search={{ e2eProject: report.codeExecution.projectId }} />}
+        >
+          Open project
+        </Button>
+      ) : !embedded && report.outcome === "harness-failure" ? (
         <RunReplayAction
           report={report}
           runService={runService}

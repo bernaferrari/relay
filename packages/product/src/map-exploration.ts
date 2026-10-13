@@ -218,7 +218,7 @@ function projectMap(map: AppMap): ProductMapOverview {
   // Placeholder names ("Next screen") read from what is on the screen instead.
   const displayNames = appMapScreenDisplayNames(map);
   const titleOf = (screen: Screen | undefined, fallback: string) =>
-    text(screen ? displayNames.get(screen.id) ?? screen.title : undefined, fallback);
+    text(screen ? (displayNames.get(screen.id) ?? screen.title) : undefined, fallback);
   const tests = Object.values(map.tests);
   const testByConnection = new Map<string, { id: string; name: string }[]>();
   for (const test of tests) {

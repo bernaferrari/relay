@@ -89,7 +89,7 @@ export function MapFrameTitle({
           autoFocus
           aria-label={`Rename ${title}`}
           value={draft}
-          className="h-5 w-full min-w-0 rounded-sm bg-background px-1 text-center text-[13px] font-medium leading-tight outline-1 outline-foreground/40 focus-visible:outline-2 focus-visible:outline-foreground/60"
+          className="h-5 w-full min-w-0 rounded-sm bg-background px-1 text-center text-sm font-medium leading-tight outline-1 outline-foreground/40 focus-visible:outline-2 focus-visible:outline-foreground/60"
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => finish(true)}
           onKeyDown={(event) => {

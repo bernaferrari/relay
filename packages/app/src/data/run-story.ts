@@ -162,6 +162,7 @@ export function storyFromReport(input: {
   timeline: readonly ReportTimelineItem[];
   stepEvidence?: readonly RunTestStepEvidence[];
   stepTitles?: Readonly<Record<string, string>>;
+  unjoinedTitle?: string;
 }): StoryStep[] {
   const byTraceIndex = new Map<number, string>();
   for (const evidence of input.stepEvidence ?? []) {
@@ -188,7 +189,7 @@ export function storyFromReport(input: {
         title:
           input.stepTitles?.[groupId] ??
           (groupId === "run"
-            ? "Getting ready"
+            ? (input.unjoinedTitle ?? "Getting ready")
             : groupId === "finish"
               ? "Finish"
               : humanizeIdentifier(groupId)),

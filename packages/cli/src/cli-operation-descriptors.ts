@@ -21,6 +21,14 @@ import { targetCommandDescriptors } from "./target-commands.js";
 import { laneCommandDescriptors } from "./lane-commands.js";
 
 export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
+  mapped("e2e.project.list", path("e2e projects")),
+  mapped("e2e.project.open", path("e2e open", ["path"])),
+  mapped("e2e.project.refresh", path("e2e refresh", ["projectId"])),
+  mapped("e2e.project.source", path("e2e source", ["projectId", "file"])),
+  mapped("e2e.project.run", path("e2e run", ["projectId"])),
+  mapped("e2e.execution.get", path("e2e status", ["executionId"])),
+  mapped("e2e.execution.cancel", path("e2e stop", ["executionId"])),
+  mapped("e2e.execution.retry-import", path("e2e import", ["executionId"])),
   {
     operationId: "system.health.get",
     exclusion: "internal",

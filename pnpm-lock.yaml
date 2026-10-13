@@ -616,6 +616,9 @@ importers:
       '@relay/core':
         specifier: workspace:*
         version: link:../core
+      '@relay/e2e':
+        specifier: workspace:*
+        version: link:../e2e
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
