@@ -1,3 +1,4 @@
+import { destWaitForEvidenceFrames } from "./run-report-screenshot-selection";
 import type { ProductRunReport } from "@relay/product/run-journey";
 import { reportTraceSteps } from "./run-story";
 import { authoredRunOutline } from "./run-authored-outline";
@@ -624,46 +625,6 @@ function publicFrameCaption(value: unknown): string | undefined {
   const caption = publicEvidenceText(value);
   if (!caption || isCaptureReviewLeftoverCaption(caption)) return undefined;
   return humanStepTitle(caption);
-}
-
-/** Dest wait-for evidence when leftover Close / Transition executed last-frame
- * captions are also listed — or when empty-frame leftover wrapper titles sit
- * beside dest (logo leftover inspect). Opener before · Tap cannot fill dest
- * beside those leftovers. Stamped dest-phase paths win over prelude Reach /
- * Land frames (home Observe used to keep those beside Fast dest). Capture for
- * review step frames win over prelude Wait for / failed:primary when dest-phase
- * is absent (failed Android models `78e87393` still listed Wait for Heavy in
- * shots after firstEvidence already preferred Fast Capture). Unphased
- * dest-wait (no leftover beside dest, no dest-phase, no Capture step) keeps
- * every frame. */
-function destWaitForEvidenceFrames(
-  frames: unknown[],
-  leftoverBesideDest = false,
-  artifacts: Array<{ kind?: string; data?: unknown }> = [],
-  captureStepPaths: ReadonlySet<string> = new Set(),
-): unknown[] {
-  const destPhasePaths = new Set(captureReviewIdentityFramePaths(artifacts));
-  if (destPhasePaths.size) {
-    const phased = frames.filter((frame) => destPhasePaths.has(text(record(frame)?.path) ?? ""));
-    if (phased.length) return phased;
-  }
-  if (captureStepPaths.size) {
-    const captured = frames.filter((frame) =>
-      captureStepPaths.has(text(record(frame)?.path) ?? ""),
-    );
-    if (captured.length) return captured;
-  }
-  const dest = frames.filter(
-    (frame) => !isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
-  );
-  const leftover = frames.filter((frame) =>
-    isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
-  );
-  if (!(dest.length && (leftover.length || leftoverBesideDest))) return frames;
-  const withoutOpeners = dest.filter(
-    (frame) => !isCaptureReviewOpenerCaption(text(record(frame)?.caption)),
-  );
-  return withoutOpeners.length ? withoutOpeners : dest;
 }
 
 /** Paths owned by Capture for review · step:… rows — Fast dest rasters even
