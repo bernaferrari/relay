@@ -23,6 +23,7 @@ import {
 } from "@relay/ui-react/components/card";
 import { WorkflowDiagram } from "@/components/workflow-diagram";
 import { buttonVariants } from "@relay/ui-react/components/button";
+import { RelayRoute } from "@/components/relay-route";
 import { SiteHeader } from "@/components/site-header";
 import { RelayBrand } from "@/components/relay-brand";
 import { ProductPreview } from "@/components/product-preview";
@@ -127,13 +128,13 @@ export default function HomePage() {
       <main id="main-content">
         <section className={`${container} grid items-center gap-12 py-16 lg:grid-cols-2 lg:py-24`}>
           <div>
-            <p className="mb-6 text-sm font-medium text-muted-foreground">
-              Open-source testing workspace
+            <p className="mb-6 flex items-center gap-3 text-sm font-medium text-muted-foreground">
+              <RelayRoute /> A real flow. A repeatable test.
             </p>
             <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">
               Test your app.
               <br />
-              See the proof.
+              <span className="text-primary">See the proof.</span>
             </h1>
             <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground">
               Record a flow, replay the steps, and review the result on web, Android, or iOS.

@@ -20,8 +20,9 @@ export function ProductPreview() {
   const hasDiscount = selectedStep > 0 && !failed;
   return (
     <div className="min-w-0" id="product">
-      <p className="mb-3 text-xs text-muted-foreground">
-        Interactive example · select a step to inspect it
+      <p className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="size-1.5 rounded-full bg-route-gold" aria-hidden="true" /> Interactive
+        example · select a step to inspect it
       </p>
       <Card>
         <CardHeader>

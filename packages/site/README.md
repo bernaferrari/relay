@@ -1,7 +1,7 @@
 # Relay website
 
 The public landing page and documentation live together in this package. It uses Next.js,
-Fumadocs MDX/Core/UI, Tailwind CSS 4, shared Relay shadcn components, and shadcn's neutral theme.
+Fumadocs MDX/Core/UI, Tailwind CSS 4, shared Relay shadcn components, and shadcn's component patterns with Relay’s blue-and-gold accents.
 
 ## Develop
 

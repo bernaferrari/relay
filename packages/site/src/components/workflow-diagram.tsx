@@ -13,7 +13,7 @@ export function WorkflowDiagram() {
     >
       {steps.map(({ icon: Icon, title, detail }, index) => (
         <div key={title} className="flex flex-col gap-2">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Icon className="size-4" />
           </span>
           <strong className="text-sm font-medium">
