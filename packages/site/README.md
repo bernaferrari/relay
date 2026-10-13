@@ -47,3 +47,25 @@ run `node packages/site/scripts/prepare-content.mjs` first.
 Keep release claims grounded in the current repository. Relay is currently installed from
 source, and upstream e2e support is a reporter/process integration prototype. The landing
 page demo is explicitly labelled illustrative; it never controls a browser or device.
+
+## Brand and product imagery
+
+`prepare-brand-assets.mjs` resizes the exact loop artwork from
+`packages/desktop/resources/Relay.icon/Assets/relay-loop.png`. It supplies the header,
+favicon, and Apple touch icon; do not replace it with a hand-drawn approximation.
+
+The Run, Review, and Map screenshots under `public/images/` were captured from the
+production Relay UI on October 13, 2026, using an isolated, owned browser demo workspace.
+The demo website was styled for presentation; the Relay interface, outcomes, and review
+controls were not altered. The review image shows a pending visual change from an earlier
+demo run. These are static product screenshots, not a live browser, and contain no user
+accounts, API keys, or shared-report capability URLs.
+
+Keep the three screenshots at the same 1280 × 900 aspect ratio for stable view switching.
+They are lossless WebP exports, loaded eagerly for instant view switching. Use the full-size link
+to inspect details on smaller screens. Regenerate the social preview after updating them:
+
+```bash
+node packages/site/scripts/prepare-brand-assets.mjs
+node packages/site/scripts/prepare-social-image.mjs
+```

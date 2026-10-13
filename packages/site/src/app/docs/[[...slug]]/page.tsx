@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/page";
 import { MarkdownCopyButton } from "fumadocs-ui/layouts/docs/page";
 import { getMDXComponents } from "@/mdx-components";
-import { RelayRoute } from "@/components/relay-route";
 import { source } from "@/lib/source";
 import { repositoryUrl } from "@/lib/site";
 
@@ -32,7 +31,7 @@ export default async function DocumentationPage({ params }: Props) {
     <DocsPage toc={page.data.toc} id="main-content">
       {page.url === "/docs" ? (
         <div className="mb-3 flex items-center gap-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          <RelayRoute /> The Relay field guide
+          <span className="h-0.5 w-8 bg-primary" aria-hidden="true" /> The Relay field guide
         </div>
       ) : null}
       <DocsTitle>{page.data.title}</DocsTitle>

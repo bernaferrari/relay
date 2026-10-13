@@ -15,11 +15,11 @@ const inter = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
-  title: { default: "Relay — Test your app. See the proof.", template: "%s | Relay" },
+  title: { default: "Relay — Record a flow. Make it repeatable.", template: "%s | Relay" },
   description: siteDescription,
-  icons: { icon: "/relay-mark.svg" },
+  icons: { icon: "/favicon.png", apple: "/apple-touch-icon.png" },
   openGraph: {
-    title: "Relay — Test your app. See the proof.",
+    title: "Relay — Record a flow. Make it repeatable.",
     description: siteDescription,
     type: "website",
     images: [
@@ -27,13 +27,13 @@ export const metadata: Metadata = {
         url: "/og.png",
         width: 1200,
         height: 630,
-        alt: "Relay: Record a real flow. Replay it. Review the proof.",
+        alt: "Relay: Record a flow. Make it repeatable.",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Relay — Test your app. See the proof.",
+    title: "Relay — Record a flow. Make it repeatable.",
     description: siteDescription,
     images: ["/og.png"],
   },

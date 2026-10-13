@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file-if-exists=.env.local scripts/prepare-content.mjs && next dev --hostname 127.0.0.1 --port 3002",
-    "build": "node --env-file-if-exists=.env.local scripts/prepare-content.mjs && next build",
+    "dev": "node scripts/prepare-brand-assets.mjs && node --env-file-if-exists=.env.local scripts/prepare-content.mjs && next dev --hostname 127.0.0.1 --port 3002",
+    "build": "node scripts/prepare-brand-assets.mjs && node --env-file-if-exists=.env.local scripts/prepare-content.mjs && next build",
     "typecheck": "next typegen && tsc --noEmit",
     "check:content": "node scripts/check-content.mjs"
   },

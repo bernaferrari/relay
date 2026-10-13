@@ -26,12 +26,10 @@
   --sidebar-accent: oklch(0.95 0.02 260);
   --sidebar-accent-foreground: oklch(0.38 0.09 260);
   --sidebar-border: oklch(0.922 0 0);
-  --route-gold: oklch(0.76 0.135 80);
   --radius: 0.625rem;
   --fd-layout-width: 1440px;
 }
 .dark {
-  --route-gold: oklch(0.81 0.11 80);
   --background: oklch(0.18 0.018 260);
   --foreground: oklch(0.96 0.005 85);
   --card: oklch(0.22 0.018 260);
@@ -103,6 +101,5 @@ summary:focus-visible {
 }
 
 @theme inline {
-  --color-route-gold: var(--route-gold);
   --font-sans: var(--font-site-sans, Inter, ui-sans-serif, system-ui, sans-serif);
 }

@@ -2,17 +2,18 @@ import Link from "next/link";
 import {
   ArrowRight,
   ArrowUpRight,
-  CircleCheck,
+  Check,
+  ChevronDown,
   Code2,
-  GitFork,
   Globe2,
   ImageIcon,
   LockKeyhole,
   MousePointer2,
+  Play,
   ScanLine,
   Smartphone,
+  Tablet,
   Terminal,
-  ChevronDown,
 } from "lucide-react";
 import {
   Card,
@@ -21,44 +22,12 @@ import {
   CardTitle,
   CardDescription,
 } from "@relay/ui-react/components/card";
-import { WorkflowDiagram } from "@/components/workflow-diagram";
 import { buttonVariants } from "@relay/ui-react/components/button";
-import { RelayRoute } from "@/components/relay-route";
 import { SiteHeader } from "@/components/site-header";
 import { RelayBrand } from "@/components/relay-brand";
-import { ProductPreview } from "@/components/product-preview";
+import { ProductShowcase } from "@/components/product-showcase";
 import { CopyExampleCommand } from "@/components/site-controls";
 import { repositoryUrl } from "@/lib/site";
-
-const workflow = [
-  {
-    number: "01",
-    icon: MousePointer2,
-    title: "Record a flow",
-    description:
-      "Click through your app to record a flow, or describe what should work. Edit the steps before you run them.",
-    link: "/docs/workflows/recording",
-    label: "Record your first flow",
-  },
-  {
-    number: "02",
-    icon: CircleCheck,
-    title: "Run the test",
-    description:
-      "Replay saved steps on your website, phone, or tablet. Follow the screen path and inspect the result of each step.",
-    link: "/docs/workflows/running",
-    label: "Understand a run",
-  },
-  {
-    number: "03",
-    icon: ScanLine,
-    title: "Review the evidence",
-    description:
-      "Review screenshots from the actual run. Mark what looks right, report an issue, and share the evidence behind your decision.",
-    link: "/docs/workflows/review",
-    label: "Explore screenshot review",
-  },
-];
 
 const faqs = [
   {
@@ -120,174 +89,214 @@ const container = "mx-auto w-full max-w-6xl px-5 sm:px-8";
 const heading = "text-3xl font-semibold tracking-tight sm:text-4xl";
 const textLink =
   "inline-flex min-h-11 items-center gap-2 text-sm font-medium underline-offset-4 hover:underline";
+const workflow = [
+  {
+    number: "01",
+    icon: MousePointer2,
+    title: "Record what you actually do.",
+    description:
+      "Click through your website or mobile app. Keep the useful steps, add checks, and save the flow.",
+    link: "/docs/workflows/recording",
+    label: "Recording guide",
+  },
+  {
+    number: "02",
+    icon: Play,
+    title: "Run it. See what happened.",
+    description:
+      "Replay on your own device. Follow each action and the screens it reaches, with evidence for the result.",
+    link: "/docs/workflows/running",
+    label: "Running tests",
+  },
+  {
+    number: "03",
+    icon: ScanLine,
+    title: "Make the call with evidence.",
+    description:
+      "Inspect the screenshots from that run. Accept what looks right, flag an issue, and keep the review decision.",
+    link: "/docs/workflows/review",
+    label: "Screenshot review",
+  },
+];
 
 export default function HomePage() {
   return (
     <>
       <SiteHeader />
       <main id="main-content">
-        <section className={`${container} grid items-center gap-12 py-16 lg:grid-cols-2 lg:py-24`}>
-          <div>
-            <p className="mb-6 flex items-center gap-3 text-sm font-medium text-muted-foreground">
-              <RelayRoute /> A real flow. A repeatable test.
+        <section className={`${container} pt-10 pb-6 sm:pt-20 sm:pb-12`}>
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              Local QA. For people and agents.
             </p>
-            <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">
-              Test your app.
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-6xl">
+              Record a flow.
               <br />
-              <span className="text-primary">See the proof.</span>
+              <span className="text-primary">Make it repeatable.</span>
             </h1>
-            <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted-foreground">
-              Record a flow, replay the steps, and review the result on web, Android, or iOS.
+            <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+              Test websites and mobile apps in one workspace. Follow every run, inspect the
+              screenshots, and keep the evidence behind your decision.
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-4">
+            <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/docs/getting-started/first-test"
-                className={buttonVariants({ className: "h-11 gap-2 px-5" })}
+                className={buttonVariants({ className: "h-11 px-5" })}
               >
-                Get started <ArrowRight className="size-4" />
+                Try the demo <ArrowRight className="size-4" />
               </Link>
-              <a href={repositoryUrl} className={textLink}>
-                <GitFork className="size-4" /> View the source
+              <a
+                href="#workspace"
+                aria-label="Explore the workspace"
+                className={buttonVariants({ variant: "outline", className: "h-11 px-5" })}
+              >
+                See Relay
               </a>
             </div>
-            <p className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
-              <LockKeyhole className="size-4" /> Open source. Runs on your machine.
-            </p>
+            <p className="mt-4 text-xs text-muted-foreground">Local demo. No model key required.</p>
+            <div className="mt-4 flex flex-wrap justify-center gap-6 text-sm text-muted-foreground">
+              <Link
+                href="/docs/devices/browser"
+                className="inline-flex min-h-11 items-center gap-2 hover:text-foreground"
+              >
+                <Globe2 className="size-4" /> Web
+              </Link>
+              <Link
+                href="/docs/devices/android"
+                className="inline-flex min-h-11 items-center gap-2 hover:text-foreground"
+              >
+                <Smartphone className="size-4" /> Android
+              </Link>
+              <Link
+                href="/docs/devices/ios"
+                className="inline-flex min-h-11 items-center gap-2 hover:text-foreground"
+              >
+                <Tablet className="size-4" /> iOS
+              </Link>
+            </div>
           </div>
-          <ProductPreview />
         </section>
-        <div
-          className={`${container} flex flex-wrap items-center gap-x-8 gap-y-4 border-y py-6 text-sm text-muted-foreground`}
-        >
-          <span className="mr-auto">Supported devices</span>
-          <span className="inline-flex items-center gap-2">
-            <Globe2 className="size-4" /> Web
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <Smartphone className="size-4" /> Android
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <Smartphone className="size-4" /> iPhone & iPad
-          </span>
-        </div>
-        <section id="workflow" className={`${container} scroll-mt-24 py-20`}>
-          <h2 className={heading}>Record. Run. Review.</h2>
-          <p className="mt-4 text-muted-foreground">
-            A test is more useful when everyone can see how it ran.
-          </p>
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {workflow.map(({ number, icon: Icon, title, description, link, label }) => (
-              <Card key={number}>
-                <CardHeader>
-                  <Icon className="mb-3 size-5 text-muted-foreground" />
-                  <CardTitle>{title}</CardTitle>
-                  <CardDescription className="leading-relaxed">{description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Link href={link} className={textLink}>
+        <section className={`${container} pb-16 sm:pb-20`} aria-label="Explore Relay's workspace">
+          <ProductShowcase />
+        </section>
+        <section id="workflow" className="scroll-mt-8 border-y bg-card">
+          <div className={`${container} py-14 sm:py-20`}>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  The useful part is the whole loop
+                </p>
+                <h2 className={heading}>Record. Run. Review.</h2>
+              </div>
+              <Link href="/docs" className={textLink}>
+                Read the field guide <ArrowUpRight className="size-4" />
+              </Link>
+            </div>
+            <div className="mt-10 grid gap-10 md:grid-cols-3">
+              {workflow.map(({ number, icon: Icon, title, description, link, label }) => (
+                <article key={number}>
+                  <div className="mb-5 flex items-center gap-3">
+                    <span className="font-mono text-xs text-muted-foreground">{number}</span>
+                    <span className="h-px w-8 bg-border" />
+                    <Icon className="size-5 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                    {description}
+                  </p>
+                  <Link href={link} className={`${textLink} mt-3`}>
                     {label}
-                    <ArrowUpRight className="size-4" />
+                    <ArrowRight className="size-4" />
                   </Link>
-                </CardContent>
-              </Card>
-            ))}
+                </article>
+              ))}
+            </div>
           </div>
         </section>
-        <section className={`${container} grid items-center gap-8 pb-20 md:grid-cols-2`}>
+        <section className={`${container} grid items-center gap-10 py-16 sm:py-20 md:grid-cols-2`}>
           <div>
-            <h2 className={heading}>Follow the path through your app.</h2>
-            <p className="mt-4 leading-relaxed text-muted-foreground">
-              Relay's Map grows as runs visit screens. See how they connect, where a test failed,
-              and which paths still need attention.
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              Start with something that really runs
             </p>
-            <Link href="/docs/workflows/map" className={`${textLink} mt-3`}>
-              Explore the Map <ArrowRight className="size-4" />
+            <h2 className={heading}>
+              Catch a bug.
+              <br />
+              Prove the repair.
+            </h2>
+            <p className="mt-5 max-w-lg leading-relaxed text-muted-foreground">
+              The local demo checks a layout, catches an overlapping button, repairs the demo
+              website, and runs the same saved test again. You can inspect both results.
+            </p>
+            <Link href="/docs/getting-started/first-test" className={`${textLink} mt-4`}>
+              Follow the quickstart <ArrowRight className="size-4" />
             </Link>
           </div>
           <Card>
             <CardHeader>
-              <CardTitle>A complete testing loop</CardTitle>
-              <CardDescription>Every run leaves evidence you can inspect.</CardDescription>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Terminal className="size-4" /> Your first run
+                </CardTitle>
+                <CopyExampleCommand text={"pnpm ensure:serve\npnpm demo"} />
+              </div>
+              <CardDescription>From a source checkout, after pnpm install:</CardDescription>
             </CardHeader>
             <CardContent>
-              <WorkflowDiagram />
+              <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm leading-7">
+                <code>{"pnpm ensure:serve\npnpm demo"}</code>
+              </pre>
+              <ul className="mt-5 grid gap-3 text-sm text-muted-foreground">
+                <li className="flex items-center gap-2">
+                  <Check className="size-4 text-primary" /> See the failing check
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="size-4 text-primary" /> Inspect the repair
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="size-4 text-primary" /> Repeat the saved test
+                </li>
+              </ul>
             </CardContent>
           </Card>
         </section>
         <section className="border-y bg-muted/30">
-          <div className={`${container} grid items-center gap-8 py-16 md:grid-cols-2`}>
-            <div>
-              <h2 className={heading}>Same tests. Same evidence.</h2>
-              <p className="mt-4 leading-relaxed text-muted-foreground">
-                Work visually in Relay, or give your coding agent the CLI and MCP tools. Both use
-                the same workspace and run results.
-              </p>
-              <div className="mt-3 flex gap-5">
-                <Link href="/docs/agents/cli" className={textLink}>
-                  CLI guide <ArrowUpRight className="size-4" />
-                </Link>
-                <Link href="/docs/agents/mcp" className={textLink}>
-                  MCP setup <ArrowUpRight className="size-4" />
-                </Link>
-              </div>
-            </div>
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle className="flex items-center gap-2">
-                    <Terminal className="size-4" /> Run from your terminal
-                  </CardTitle>
-                  <CopyExampleCommand
-                    text={'./bin/relay run "Checkout total" --app Shop --device browser'}
-                  />
-                </div>
-                <CardDescription>After saving a test in your workspace:</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-4 text-xs leading-6">
-                  <code>{'./bin/relay run "Checkout total" --app Shop --device browser'}</code>
-                </pre>
-                <p className="mt-4 text-sm text-muted-foreground">
-                  Add <code className="rounded bg-muted px-1 py-0.5">--json</code> for structured
-                  output.
-                </p>
-              </CardContent>
-            </Card>
+          <div className={`${container} grid gap-10 py-14 sm:py-16 md:grid-cols-3`}>
+            {[
+              {
+                icon: LockKeyhole,
+                title: "Your devices. Your workspace.",
+                description:
+                  "Use your local browser, Android phone, or iOS device. Tests and evidence stay in the workspace you own.",
+              },
+              {
+                icon: ImageIcon,
+                title: "Keep the evidence lightweight.",
+                description:
+                  "Collect screenshots, screen structure, and diagnostics. Add video when you need to inspect motion.",
+              },
+              {
+                icon: Code2,
+                title: "Bring your coding agent.",
+                description:
+                  "The UI, CLI, and MCP tools use the same saved tests and run results. Pick the interface that suits the job.",
+              },
+            ].map(({ icon: Icon, title, description }) => (
+              <article key={title}>
+                <Icon className="mb-4 size-5 text-primary" />
+                <h3 className="text-base font-semibold">{title}</h3>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{description}</p>
+              </article>
+            ))}
           </div>
         </section>
-        <section className={`${container} grid gap-8 py-20 md:grid-cols-3`}>
-          {[
-            {
-              icon: LockKeyhole,
-              title: "Your workspace stays yours.",
-              description:
-                "Tests and evidence live locally. Choose what gets captured and which model provider you use.",
-            },
-            {
-              icon: ImageIcon,
-              title: "Keep it lightweight.",
-              description:
-                "Screenshots, screen structure, and diagnostics by default. Add video when motion matters.",
-            },
-            {
-              icon: Code2,
-              title: "Work in the open.",
-              description:
-                "Read the source, edit the steps, inspect the results. Relay is built to be understandable.",
-            },
-          ].map(({ icon: Icon, title, description }) => (
-            <article key={title}>
-              <Icon className="mb-4 size-5 text-muted-foreground" />
-              <h3 className="text-base font-semibold">{title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
-            </article>
-          ))}
-        </section>
-        <section className={`${container} grid gap-8 border-t py-16 md:grid-cols-2`}>
+        <section className={`${container} grid gap-8 py-16 sm:py-20 md:grid-cols-2`}>
           <div>
-            <h2 className={heading}>Before you start.</h2>
-            <Link href="/docs" className={`${textLink} mt-4`}>
-              More in the docs <ArrowRight className="size-4" />
+            <h2 className={heading}>Before your first run.</h2>
+            <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted-foreground">
+              Source setup, real devices, model keys, and the current scope of e2e support.
+            </p>
+            <Link href="/docs/getting-started/installation" className={`${textLink} mt-3`}>
+              Installation guide <ArrowRight className="size-4" />
             </Link>
           </div>
           <div>
@@ -305,27 +314,22 @@ export default function HomePage() {
           </div>
         </section>
         <section className={`${container} pb-16`}>
-          <Card>
-            <CardContent className="flex flex-col items-start justify-between gap-6 pt-6 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight">Start with one flow.</h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Try the local demo. Catch a bug, inspect the repair, and rerun the same test.
-                </p>
-              </div>
-              <div className="shrink-0">
-                <Link
-                  href="/docs/getting-started/first-test"
-                  className={buttonVariants({ className: "h-11 gap-2 px-5" })}
-                >
-                  Run your first test <ArrowRight className="size-4" />
-                </Link>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  No account or model key needed for the demo.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-start justify-between gap-6 border-t pt-10 sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight">
+                Give one flow a repeat button.
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Start with the demo, then record a journey in your own app.
+              </p>
+            </div>
+            <Link
+              href="/docs/getting-started/first-test"
+              className={buttonVariants({ className: "h-11 px-5" })}
+            >
+              Get started <ArrowRight className="size-4" />
+            </Link>
+          </div>
         </section>
       </main>
       <footer className="border-t">
@@ -342,7 +346,7 @@ export default function HomePage() {
             </Link>
             <a
               href={repositoryUrl}
-              className="inline-flex min-h-11 items-center hover:text-foreground"
+              className="inline-flex min-h-11 items-center gap-2 hover:text-foreground"
             >
               GitHub
             </a>

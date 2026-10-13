@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { GitFork } from "lucide-react";
 import { buttonVariants } from "@relay/ui-react/components/button";
 import { RelayBrand } from "./relay-brand";
 import { ThemeToggle } from "./site-controls";
@@ -30,7 +29,7 @@ export function SiteHeader() {
             aria-label="Relay on GitHub"
             className="inline-flex size-11 items-center justify-center text-muted-foreground hover:text-foreground"
           >
-            <GitFork className="size-4" />
+            <span className="text-sm">GitHub</span>
           </a>
           <ThemeToggle />
           <span className="hidden lg:inline-flex">
