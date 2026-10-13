@@ -18,7 +18,11 @@ export function useLatestTestReport(
     queryKey: ["catalog", "run-report", latestRun?.id ?? "none"],
     queryFn: () => runService.getReport(latestRun!.id),
     enabled: Boolean(
-      latestRun && (latestRun.phase === "completed" || latestRun.phase === "failed"),
+      latestRun &&
+        (latestRun.phase === "completed" ||
+          latestRun.phase === "failed" ||
+          latestRun.phase === "blocked" ||
+          latestRun.phase === "needs-review"),
     ),
     staleTime: 30_000,
     retry: false,

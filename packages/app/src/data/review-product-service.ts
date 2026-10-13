@@ -11,6 +11,8 @@ import { productClientForPlatform } from "./product-client";
 
 export type ReviewProductService = {
   inbox(input?: { sinceDays?: number; appMapId?: string }): Promise<ReviewInboxResult>;
+  /** How many screenshots wait for a person, without loading them. */
+  pendingCount(input?: { appMapId?: string }): Promise<number>;
   /** The screenshot captured by the run. */
   captureImage(runId: string, item: CaptureReviewItem, signal?: AbortSignal): Promise<Blob>;
   /** The approved reference this screenshot is compared with. */
@@ -37,6 +39,8 @@ export type ReviewProductService = {
 export const reviewQueryKeys = {
   inbox: (sinceDays = 14, appMapId?: string) =>
     ["review", "inbox", sinceDays, appMapId ?? "all"] as const,
+  /** Shares the inbox prefix, so saving a decision refreshes the badge too. */
+  count: (appMapId?: string) => ["review", "inbox", "count", appMapId ?? "all"] as const,
   image: (kind: "capture" | "reference" | "diff", runId: string, item: CaptureReviewItem) =>
     [
       "review",
@@ -72,6 +76,12 @@ export function createReviewProductService(platform: Platform): ReviewProductSer
           entry.targetName ? { ...entry, targetName: readableDeviceName(entry.targetName) } : entry,
         ),
       };
+    },
+    async pendingCount(input = {}) {
+      const result = await (
+        await client()
+      ).invoke("review.inbox.list", { ...input, countOnly: true });
+      return result.totals.pending;
     },
     async captureImage(runId, item, signal) {
       return png(

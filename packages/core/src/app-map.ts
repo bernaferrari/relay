@@ -129,6 +129,13 @@ export {
 } from "./app-map/test-step-operations.js";
 export { freezeMissingBrowserCaseProfiles } from "./app-map/browser-profile-freeze.js";
 export {
+  applyAppMapScreenCaptureReview,
+  CAPTURE_REFRESH_APPLIED_REASON,
+  hasPendingCaptureRefresh,
+  isCaptureRefreshProposal,
+  settleCaptureRefreshProposals,
+} from "./app-map/capture-refresh.js";
+export {
   commitAppMapRecording,
   commitAppMapScreenCapture,
   findAppMapCaptureScreen,

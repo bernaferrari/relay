@@ -425,3 +425,40 @@ test("passing runs need no review unless a screenshot changed from its baseline"
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("first screenshots of passing runs recorded before the policy read as accepted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-reference-legacy-pass-"));
+  try {
+    // Never compared: the run predates automatic references.
+    const legacy = await captureRun(root, "run-legacy", png(), undefined, undefined, {
+      outcome: "passed",
+    });
+    const queue = captureReviewQueueForRun(legacy);
+    assert.equal(queue.items[0]?.status, "accepted");
+    assert.equal(queue.summary.pending, 0);
+    assert.equal(queue.summary.accepted, 1);
+
+    const failing = await captureRun(root, "run-failing", png(), undefined, undefined, {
+      outcome: "product-failure",
+    });
+    assert.equal(captureReviewQueueForRun(failing).summary.pending, 1);
+
+    const human = await captureRun(root, "run-human-pass", png(), undefined, "human", {
+      outcome: "passed",
+    });
+    assert.equal(captureReviewQueueForRun(human).summary.pending, 1, "a Plan asked for a person");
+
+    // Compared, but the comparison failed: a person still decides.
+    assert.equal(captureReviewQueueForRun({ ...legacy, captureComparisons: {} }).summary.pending, 1);
+
+    const item = captureReviewQueueForRun(legacy).items[0]!;
+    const decided = await reviewPersistedCapture(root, legacy, {
+      captureId: item.captureId,
+      action: "report-issue",
+      actor: { id: "human:qa", kind: "human" },
+    });
+    assert.equal(decided.queue.items[0]?.status, "issue", "a person can still overrule it");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

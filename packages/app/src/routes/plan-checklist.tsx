@@ -3,14 +3,21 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
 import type { ProductRunSummary } from "@relay/product/catalog";
-import { CircleAlert, CircleCheck, CircleDashed, Eye, LoaderCircle } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  Eye,
+  LoaderCircle,
+  TriangleAlert,
+} from "lucide-react";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { ResultsBar } from "../components/results-bar";
 import { relativeTime } from "#lib/relative-time";
 
 type PlanTest = { id: string; name: string; status: string };
 
-export type CheckState = "passed" | "review" | "failed" | "running" | "not-run";
+export type CheckState = "passed" | "review" | "failed" | "blocked" | "running" | "not-run";
 
 export function checkState(run: ProductRunSummary | undefined): CheckState {
   if (!run) return "not-run";
@@ -18,11 +25,12 @@ export function checkState(run: ProductRunSummary | undefined): CheckState {
   if (
     run.phase === "failed" ||
     run.outcome === "product-failure" ||
-    run.outcome === "harness-failure" ||
     (run.captureSummary?.issue ?? 0) > 0
   )
     return "failed";
+  if (run.phase === "blocked" || run.outcome === "harness-failure") return "blocked";
   if (run.outcome === "uncertain" || (run.captureSummary?.pending ?? 0) > 0) return "review";
+  if (run.phase === "needs-review") return "review";
   if (run.phase === "completed") return "passed";
   return "not-run";
 }
@@ -50,6 +58,7 @@ const STATE_PRESENTATION: Record<
   passed: { label: "Passed", icon: CircleCheck, className: "text-success-foreground" },
   review: { label: "To review", icon: Eye, className: "text-warning-foreground" },
   failed: { label: "Failed", icon: CircleAlert, className: "text-destructive" },
+  blocked: { label: "Could not run", icon: TriangleAlert, className: "text-warning-foreground" },
   running: { label: "Running", icon: LoaderCircle, className: "text-info-foreground" },
   "not-run": {
     label: "Not run yet",

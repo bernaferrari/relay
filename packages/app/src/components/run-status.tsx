@@ -1,8 +1,25 @@
 /** @jsxImportSource react */
-import { CircleCheck, CircleDashed, CircleMinus, CircleX, Eye, LoaderCircle } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  CircleMinus,
+  CircleX,
+  Eye,
+  LoaderCircle,
+} from "lucide-react";
 
-/** The six states a person acts on. Every surface speaks this vocabulary. */
-export type RunState = "passed" | "review" | "failed" | "running" | "not-run" | "cancelled";
+/** The states a person acts on. Every surface speaks this vocabulary:
+ * "failed" means the app misbehaved; "blocked" means Relay could not run the
+ * Test (device, sign-in, harness) and says nothing about the app. */
+export type RunState =
+  | "passed"
+  | "review"
+  | "failed"
+  | "blocked"
+  | "running"
+  | "not-run"
+  | "cancelled";
 
 type RunLike = {
   phase?: string;
@@ -15,13 +32,13 @@ export function runStateOf(run: RunLike | undefined): RunState {
   if (run.phase === "queued" || run.phase === "running") return "running";
   if (run.outcome === "cancelled" || run.phase === "cancelled") return "cancelled";
   if (
-    run.phase === "failed" ||
-    run.outcome === "failed" ||
     run.outcome === "product-failure" ||
-    run.outcome === "harness-failure" ||
+    run.outcome === "failed" ||
     (run.captureSummary?.issue ?? 0) > 0
   )
     return "failed";
+  if (run.outcome === "harness-failure" || run.phase === "blocked") return "blocked";
+  if (run.phase === "failed") return "failed";
   // The verdict is behavior. Screenshots waiting for approval are shown beside
   // it, never instead of it: a run whose steps and checks passed has passed.
   if (run.outcome === "uncertain") return "review";
@@ -49,6 +66,12 @@ const PRESENTATION: Record<
     icon: CircleX,
     pill: "bg-destructive/12 text-destructive",
     dot: "bg-destructive",
+  },
+  blocked: {
+    label: "Could not run",
+    icon: CircleAlert,
+    pill: "bg-warning/15 text-warning-foreground",
+    dot: "bg-warning-foreground",
   },
   running: {
     label: "Running",

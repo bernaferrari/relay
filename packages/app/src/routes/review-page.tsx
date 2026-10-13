@@ -36,6 +36,7 @@ import {
 } from "../data/review-product-service";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { ReviewCompare, type CompareMode } from "./review-compare";
+import { AcceptFirstCaptures, firstCapturesFromPassingRuns } from "./review-first-captures";
 import { relativeTime } from "#lib/relative-time";
 
 type Card = { entry: ReviewInboxEntry; item: CaptureReviewItem; key: string };
@@ -308,6 +309,14 @@ export function ReviewPage() {
         }
       />
 
+      {cards.length ? (
+        <AcceptFirstCaptures
+          captures={firstCapturesFromPassingRuns(inbox.data, done)}
+          service={service}
+          onAccepted={(keys) => setDone((current) => new Set([...current, ...keys]))}
+          onSettled={refresh}
+        />
+      ) : null}
       {inbox.isPending ? (
         <p className="p-6 text-sm text-muted-foreground" role="status">
           Loading screenshots to review…

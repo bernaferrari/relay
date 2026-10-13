@@ -731,6 +731,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       inputHelp: [
         { name: "sinceDays", type: "number", description: "Look back this many days (14)" },
         { name: "appMapId", type: "string", description: "Only this App" },
+        {
+          name: "countOnly",
+          type: "boolean",
+          description: "Only the totals, without the screenshots",
+        },
       ],
       examples: ["relay review list", 'relay review list --input \'{"appMapId":"shop-ios"}\''],
     }),

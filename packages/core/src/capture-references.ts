@@ -22,7 +22,7 @@ import {
   type CaptureReviewDecision,
   type CaptureReviewItem,
 } from "@relay/protocol";
-import { captureReviewQueueForRun } from "./capture-review-queue.js";
+import { captureReviewQueueForRun, FIRST_CAPTURE_ON_PASS_NOTE } from "./capture-review-queue.js";
 import { readFrameFile } from "./run-artifact-files.js";
 import { runTestSource } from "./run-test-source.js";
 import {
@@ -541,9 +541,7 @@ export async function applyCaptureReferences(
           decidedAt: comparison.comparedAt,
           decidedBy: { ...CAPTURE_REFERENCE_ACTOR },
           ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
-          note: firstOnPass
-            ? "No reference yet; accepted with a passing run."
-            : "Matches the approved reference.",
+          note: firstOnPass ? FIRST_CAPTURE_ON_PASS_NOTE : "Matches the approved reference.",
           reviewVersion: 0,
         };
         if (index >= 0) decisions[index] = decision;

@@ -6,7 +6,7 @@
  */
 import { join } from "node:path";
 import type { AppMapScenarioTestStep } from "@relay/protocol";
-import { plainRunReason as plainReason } from "@relay/protocol";
+import { failingStepFrame, plainRunReason as plainReason } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 
 export type RunVerdictStatus = "passed" | "failed" | "blocked" | "cancelled" | "running";
@@ -107,7 +107,10 @@ export function buildRunVerdict(
   }
   const traceById = new Map(run.steps.map((step) => [step.id, step]));
   const order: string[] = [];
-  const byStep = new Map<string, { failed: boolean; frames: string[]; log?: string }>();
+  const byStep = new Map<
+    string,
+    { failed: boolean; frames: string[]; log?: string; startedAt?: number; finishedAt?: number }
+  >();
   for (const join_ of [...(run.testStepEvidence ?? [])].sort(
     (a, b) => a.traceStepIndex - b.traceStepIndex,
   )) {
@@ -122,7 +125,20 @@ export function buildRunVerdict(
       entry.log = trace.log;
     }
     entry.frames.push(...join_.evidence.framePaths, ...(trace?.frames.map((f) => f.path) ?? []));
+    if (trace?.startedAt !== undefined)
+      entry.startedAt = Math.min(entry.startedAt ?? trace.startedAt, trace.startedAt);
+    if (trace?.finishedAt !== undefined)
+      entry.finishedAt = Math.max(entry.finishedAt ?? trace.finishedAt, trace.finishedAt);
   }
+  // Every frame the run kept, for the step that stopped it.
+  const runFrames = [...run.frames, ...run.steps.flatMap((step) => step.frames)];
+  const failureScreenshot = (entry?: { frames: string[]; startedAt?: number; finishedAt?: number }) =>
+    failingStepFrame({
+      stepFrames: (entry?.frames ?? []).map((path) => ({ path })),
+      runFrames,
+      ...(entry?.startedAt === undefined ? {} : { startedAt: entry.startedAt }),
+      ...(entry?.finishedAt === undefined ? {} : { finishedAt: entry.finishedAt }),
+    })?.path;
   for (const id of intents.keys()) if (!byStep.has(id)) order.push(id);
 
   const judged = run.artifacts
@@ -145,6 +161,9 @@ export function buildRunVerdict(
     if (!entry || reachedFailure) return { ...base, status: "not-run" as const };
     if (!entry.failed) return { ...base, status: "passed" as const };
     reachedFailure = true;
+    // The step that stopped the run shows the screen at that moment.
+    const failureShot = failureScreenshot(entry);
+    if (failureShot && run.dir) base.screenshot = join(run.dir, failureShot);
     const saw =
       (meta?.kind === "check" && typeof failedJudgement?.summary === "string"
         ? failedJudgement.summary
@@ -158,6 +177,8 @@ export function buildRunVerdict(
   if (status !== "passed" && status !== "running" && !steps.some((s) => s.status === "failed")) {
     const next = steps.find((step) => step.status === "not-run");
     if (next) {
+      const lastScreen = [...runFrames].sort((a, b) => a.capturedAt - b.capturedAt).at(-1)?.path;
+      if (!next.screenshot && lastScreen && run.dir) next.screenshot = join(run.dir, lastScreen);
       next.status = "failed";
       next.expected = next.title;
       if (runReason) next.saw = runReason;

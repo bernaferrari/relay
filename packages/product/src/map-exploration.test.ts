@@ -347,3 +347,41 @@ test("merged captures remain selectable and their raw tree stays paired with the
   assert.equal(overview.screens[0]!.accessibilityTreeUri, "relay-evidence://keyboard-tree");
   assert.equal(overview.screens[0]!.entryPoint, true);
 });
+
+test("map projection names placeholder screens from what is on them", () => {
+  const observation = (...labels: string[]) => ({
+    fingerprint: "f".repeat(64),
+    volatileSignals: [],
+    nodes: labels.map((label) => ({ role: "android.widget.Button", label })),
+  });
+  const overview = projectProductMap({
+    id: "chat",
+    name: "Chat",
+    revision: 1,
+    screens: {
+      home: { id: "home", title: "Chat home", variantIds: [] },
+      reply: { id: "reply", title: "Next screen", variantIds: ["reply-v1"] },
+    },
+    screenVariants: {
+      "reply-v1": {
+        id: "reply-v1",
+        screenId: "reply",
+        updatedAt: 1,
+        observation: observation("Copy message", "Regenerate"),
+      },
+    },
+    connections: {
+      send: {
+        id: "send",
+        fromScreenId: "home",
+        destination: { kind: "screen", screenId: "reply" },
+        label: "Tap “Send”",
+        state: "ready",
+      },
+    },
+    tests: {},
+    targetResults: {},
+  } as never);
+  assert.equal(overview.screens.find((screen) => screen.id === "reply")?.title, "Chat home reply");
+  assert.equal(overview.paths[0]?.toTitle, "Chat home reply");
+});

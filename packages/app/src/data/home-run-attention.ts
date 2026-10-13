@@ -33,7 +33,7 @@ export function attentionLinkLabel(runs: readonly ProductRunSummary[]): string {
   const count = runs.length;
   const review = runs.every(
     (run) =>
-      run.phase === "completed" &&
+      (run.phase === "completed" || run.phase === "needs-review") &&
       run.outcome !== "product-failure" &&
       run.outcome !== "harness-failure" &&
       (run.captureSummary?.pending ?? 0) > 0,

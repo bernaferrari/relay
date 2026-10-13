@@ -9,6 +9,7 @@ import type {
   Screen,
   ScreenVariant,
 } from "@relay/protocol";
+import { appMapScreenDisplayNames } from "@relay/protocol";
 import { createRelayOperationPort, type RelayInvokeClient } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
 
@@ -214,6 +215,10 @@ function projectScreenVariants(
 }
 
 function projectMap(map: AppMap): ProductMapOverview {
+  // Placeholder names ("Next screen") read from what is on the screen instead.
+  const displayNames = appMapScreenDisplayNames(map);
+  const titleOf = (screen: Screen | undefined, fallback: string) =>
+    text(screen ? displayNames.get(screen.id) ?? screen.title : undefined, fallback);
   const tests = Object.values(map.tests);
   const testByConnection = new Map<string, { id: string; name: string }[]>();
   for (const test of tests) {
@@ -260,7 +265,7 @@ function projectMap(map: AppMap): ProductMapOverview {
     }
     return {
       id: screen.id,
-      title: text(screen.title, "Known screen"),
+      title: titleOf(screen, "Known screen"),
       ...(screen.description ? { description: text(screen.description, "") } : {}),
       ...(screen.position ? { position: { x: screen.position.x, y: screen.position.y } } : {}),
       screenshotUri: displayedCapture?.screenshotUri,
@@ -305,13 +310,13 @@ function projectMap(map: AppMap): ProductMapOverview {
         ) ?? [],
       label: text(
         connection.label,
-        destination ? `Open ${text(destination.title, "screen")}` : "Finish journey",
+        destination ? `Open ${titleOf(destination, "screen")}` : "Finish journey",
       ),
       fromScreenId: connection.fromScreenId,
       ...(destination ? { toScreenId: destination.id } : {}),
       ...(connection.state === "draft" ? { draft: true } : {}),
-      fromTitle: text(source?.title, "Known screen"),
-      ...(destination ? { toTitle: text(destination.title, "Known screen") } : {}),
+      fromTitle: titleOf(source, "Known screen"),
+      ...(destination ? { toTitle: titleOf(destination, "Known screen") } : {}),
       coveringTests: testByConnection.get(connection.id) ?? [],
       ...(sourceAnchor ? { sourceAnchor } : {}),
       sourceTarget: connection.actions?.find((action) => action.kind === "tap")?.target,

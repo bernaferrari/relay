@@ -37,7 +37,7 @@ import {
   type AppMap,
 } from "@relay/core";
 import type { OperationInput } from "@relay/protocol";
-import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
+import { HttpError, json, jsonIfChanged, matchPath, parseJsonBody } from "./http.js";
 import type { AppMapRouteInput } from "./app-map-route-input.js";
 import {
   applyAppMapMutation as applyMutation,
@@ -60,6 +60,18 @@ export {
   teachInteractionToAuthoringInteraction,
 } from "./app-map-capture-support.js";
 
+/** Every write bumps an App Map's revision and updatedAt, so they fully
+ * identify what a read would return. */
+function appMapsVersion(catalog: {
+  appMaps: readonly Pick<AppMap, "id" | "revision" | "updatedAt">[];
+  degraded?: readonly unknown[];
+}): string {
+  return JSON.stringify([
+    catalog.appMaps.map((map) => [map.id, map.revision, map.updatedAt]),
+    catalog.degraded ?? [],
+  ]);
+}
+
 export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
 
@@ -67,7 +79,8 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
   if (await handleAppMapScrollSurfaceRoute(input)) return true;
 
   if (method === "GET" && pathname === "/app-maps") {
-    json(response, 200, await listAppMapCatalog(scope.projectId));
+    const catalog = await listAppMapCatalog(scope.projectId);
+    jsonIfChanged(request, response, appMapsVersion(catalog), () => catalog);
     return true;
   }
   if (method === "POST" && pathname === "/app-maps/import") {
@@ -235,7 +248,7 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
   if (method === "GET" && mapMatch) {
     const appMap = await readAppMap(scope.projectId, mapMatch.appMapId!);
     if (!appMap) throw new HttpError(404, `App Map ${mapMatch.appMapId} not found`);
-    json(response, 200, { appMap });
+    jsonIfChanged(request, response, appMapsVersion({ appMaps: [appMap] }), () => ({ appMap }));
     return true;
   }
   if (method === "PUT" && mapMatch) {

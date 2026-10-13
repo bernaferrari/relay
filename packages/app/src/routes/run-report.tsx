@@ -248,14 +248,7 @@ export function RunReport({
           <span role="status">
             <StatusPill
               size="md"
-              label={
-                report.outcome === "passed" && captureIssues
-                  ? "Screenshot issues"
-                  : // Relay couldn't finish: not the same claim as the app failing.
-                    report.outcome === "harness-failure"
-                    ? "Could not complete"
-                    : undefined
-              }
+              label={report.outcome === "passed" && captureIssues ? "Screenshot issues" : undefined}
               state={runStateOf({
                 outcome: report.outcome,
                 captureSummary: {

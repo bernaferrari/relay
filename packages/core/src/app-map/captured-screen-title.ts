@@ -1,4 +1,9 @@
-import type { AuthoringObservation } from "@relay/protocol";
+import {
+  isActionScreenTitle,
+  newScreenTitle,
+  type AuthoringObservation,
+  type RecipeStep,
+} from "@relay/protocol";
 
 export function capturedScreenTitle(observation?: AuthoringObservation): string | undefined {
   const candidates = (observation?.nodes ?? []).flatMap((node, index) => {
@@ -30,4 +35,37 @@ export function capturedScreenTitle(observation?: AuthoringObservation): string 
     ];
   });
   return candidates.sort((a, b) => a.rank - b.rank || a.index - b.index)[0]?.title;
+}
+
+/** Never "Next screen": a heading, a noun-like control, or the area plus what it shows. */
+export function newDestinationTitle(input: {
+  observed: string | undefined;
+  steps: readonly RecipeStep[];
+  after?: AuthoringObservation;
+  sourceTitle: string;
+}): string {
+  // A heading on the screen always wins; a tapped control's label only when it reads as a name.
+  if (input.observed && input.observed === capturedScreenTitle(input.after)) return input.observed;
+  if (input.observed && !isActionScreenTitle(input.observed)) return input.observed;
+  const last = input.steps.at(-1);
+  const intent =
+    last?.kind === "tap"
+      ? `Tap “${last.target.label ?? last.target.text ?? last.target.identifier ?? ""}”`
+      : last?.kind === "type"
+        ? "Type text"
+        : last?.kind === "wait-for"
+          ? "Wait until it appears"
+          : undefined;
+  return newScreenTitle({
+    sourceTitle: input.sourceTitle,
+    nodes: (input.after?.nodes ?? []).map((node) => {
+      const label = node.label ?? node.text;
+      return {
+        role: String(node.role ?? node.type ?? ""),
+        ...(typeof label === "string" ? { label } : {}),
+        ...(typeof node.identifier === "string" ? { identifier: node.identifier } : {}),
+      };
+    }),
+    ...(intent ? { intent } : {}),
+  });
 }

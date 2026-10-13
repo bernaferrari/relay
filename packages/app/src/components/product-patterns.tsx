@@ -256,20 +256,30 @@ function outcomePresentation(outcome: OutcomeValue): {
   icon: LucideIcon;
   tone: "success" | "danger" | "notice" | "quiet";
 } {
-  if (outcome === "passed") return { label: "Passed", icon: Check, tone: "success" };
-  if (outcome === "product-failure") {
-    return { label: "Product issue", icon: X, tone: "danger" };
+  switch (outcome) {
+    case "passed":
+    case "completed":
+      return { label: "Passed", icon: Check, tone: "success" };
+    case "product-failure":
+    case "failed":
+      return { label: "Failed", icon: X, tone: "danger" };
+    // Relay was blocked; the app may be fine. Never red.
+    case "harness-failure":
+    case "blocked":
+      return { label: "Could not run", icon: AlertTriangle, tone: "notice" };
+    case "uncertain":
+    case "needs-review":
+      return { label: "Needs review", icon: CircleHelp, tone: "notice" };
+    case "cancelled":
+      return { label: "Cancelled", icon: Minus, tone: "quiet" };
+    case "queued":
+      return { label: "Waiting to start", icon: CircleDashed, tone: "quiet" };
+    case "running":
+      return { label: "Running", icon: CircleDashed, tone: "quiet" };
+    case "unknown":
+    case undefined:
+      return { label: "Unknown result", icon: CircleHelp, tone: "notice" };
+    default:
+      return { label: "Unknown result", icon: CircleHelp, tone: "notice" };
   }
-  if (outcome === "harness-failure") {
-    return { label: "Could not complete", icon: AlertTriangle, tone: "notice" };
-  }
-  if (outcome === "uncertain") {
-    return { label: "Needs review", icon: CircleHelp, tone: "notice" };
-  }
-  if (outcome === "cancelled") return { label: "Cancelled", icon: Minus, tone: "quiet" };
-  if (outcome === "failed") return { label: "Failed", icon: X, tone: "danger" };
-  if (outcome === "queued") return { label: "Waiting to start", icon: CircleDashed, tone: "quiet" };
-  if (outcome === "running") return { label: "Running", icon: CircleDashed, tone: "quiet" };
-  if (outcome === "completed") return { label: "Completed", icon: Check, tone: "success" };
-  return { label: "Unknown result", icon: CircleHelp, tone: "notice" };
 }

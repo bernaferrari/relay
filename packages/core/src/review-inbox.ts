@@ -11,11 +11,80 @@ import type {
   ReviewInboxResult,
   RunSummary,
 } from "@relay/protocol";
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import { captureReviewQueueForRun } from "./capture-review-queue.js";
-import { catalogSummaries } from "./run-catalog.js";
+import { catalogRecords, type CatalogRecord } from "./run-catalog.js";
 import { readPersistedRun, type PersistedRun } from "./runs.js";
 
 const DAY_MS = 86_400_000;
+const CACHE_LIMIT = 500;
+
+type CachedRun = {
+  stamp: string;
+  run: Pick<PersistedRun, "projectId" | "ownerId">;
+  entry?: Omit<ReviewInboxEntry, "finishedAt">;
+};
+
+/**
+ * Run manifests can be megabytes of evidence; parsing them on every request
+ * made the inbox take seconds. A run's screenshots to review only change when
+ * its manifest is rewritten, so keep the small result keyed by that file.
+ */
+const reviewCache = new Map<string, CachedRun>();
+
+async function manifestStamp(dir: string): Promise<string | undefined> {
+  try {
+    const info = await stat(join(dir, "run.json"));
+    return `${info.mtimeMs}:${info.size}`;
+  } catch {
+    return undefined;
+  }
+}
+
+async function reviewForRun(summary: CatalogRecord): Promise<CachedRun | undefined> {
+  const stamp = await manifestStamp(summary.dir);
+  if (!stamp) return undefined;
+  const cached = reviewCache.get(summary.id);
+  if (cached?.stamp === stamp) return cached;
+  const run = await readPersistedRun(summary.id);
+  if (!run) return undefined;
+  const items = captureReviewQueueForRun(run).items.filter(needsPerson);
+  const source = summary.sourceTest ?? summary.matrixCase;
+  const next: CachedRun = {
+    stamp,
+    run: {
+      ...(run.projectId ? { projectId: run.projectId } : {}),
+      ...(run.ownerId ? { ownerId: run.ownerId } : {}),
+    } as CachedRun["run"],
+    ...(items.length
+      ? {
+          entry: {
+            runId: run.id,
+            title: run.title ?? summary.title ?? run.action,
+            ...(source?.appMapId ? { appMapId: source.appMapId } : {}),
+            ...(source?.testId ? { testId: source.testId } : {}),
+            ...(run.targetProfile?.name || run.deviceName
+              ? { targetName: run.targetProfile?.name ?? run.deviceName }
+              : {}),
+            ...(run.platform ? { platform: run.platform } : {}),
+            ...(summary.matrixCase?.values && Object.keys(summary.matrixCase.values).length
+              ? { data: summary.matrixCase.values }
+              : {}),
+            ...(run.outcome ? { outcome: run.outcome } : {}),
+            items,
+          },
+        }
+      : {}),
+  };
+  reviewCache.delete(summary.id);
+  reviewCache.set(summary.id, next);
+  if (reviewCache.size > CACHE_LIMIT) {
+    const oldest = reviewCache.keys().next().value;
+    if (oldest !== undefined) reviewCache.delete(oldest);
+  }
+  return next;
+}
 
 function testKey(summary: RunSummary): string {
   const source = summary.sourceTest ?? summary.matrixCase;
@@ -49,19 +118,24 @@ export async function listReviewInbox(
   options: {
     sinceDays?: number;
     now?: number;
-    visible?: (run: PersistedRun) => boolean;
+    visible?: (run: Pick<PersistedRun, "projectId" | "ownerId">) => boolean;
     appMapId?: string;
+    /**
+     * Only the totals, from the run catalog: no manifest is opened. Use for
+     * badges; callers that must hide other people's runs need the full list.
+     */
+    countOnly?: boolean;
   } = {},
 ): Promise<ReviewInboxResult> {
   const now = options.now ?? Date.now();
   const since = now - (options.sinceDays ?? 14) * DAY_MS;
-  const summaries = (await catalogSummaries(root, 2_000)).filter(
+  const summaries = (await catalogRecords(root, 2_000)).filter(
     (summary) =>
       runTime(summary) >= since &&
       (!options.appMapId ||
         (summary.sourceTest ?? summary.matrixCase)?.appMapId === options.appMapId),
   );
-  const latest = new Map<string, RunSummary>();
+  const latest = new Map<string, CatalogRecord>();
   for (const summary of summaries) {
     const key = groupKey(summary);
     const current = latest.get(key);
@@ -86,28 +160,10 @@ export async function listReviewInbox(
     for (const key of Object.keys(totals) as (keyof CaptureReviewSummary)[]) {
       totals[key] = (totals[key] ?? 0) + (captured[key] ?? 0);
     }
-    if (!captured.pending) continue;
-    const run = await readPersistedRun(summary.id);
-    if (!run || (options.visible && !options.visible(run))) continue;
-    const items = captureReviewQueueForRun(run).items.filter(needsPerson);
-    if (!items.length) continue;
-    const source = summary.sourceTest ?? summary.matrixCase;
-    entries.push({
-      runId: run.id,
-      title: run.title ?? summary.title ?? run.action,
-      ...(source?.appMapId ? { appMapId: source.appMapId } : {}),
-      ...(source?.testId ? { testId: source.testId } : {}),
-      ...(run.targetProfile?.name || run.deviceName
-        ? { targetName: run.targetProfile?.name ?? run.deviceName }
-        : {}),
-      ...(run.platform ? { platform: run.platform } : {}),
-      ...(summary.matrixCase?.values && Object.keys(summary.matrixCase.values).length
-        ? { data: summary.matrixCase.values }
-        : {}),
-      finishedAt: runTime(summary),
-      ...(run.outcome ? { outcome: run.outcome } : {}),
-      items,
-    });
+    if (!captured.pending || options.countOnly) continue;
+    const review = await reviewForRun(summary);
+    if (!review?.entry || (options.visible && !options.visible(review.run))) continue;
+    entries.push({ ...review.entry, finishedAt: runTime(summary) });
   }
   // Changed screenshots first: they are the likely regressions.
   const weight = (entry: ReviewInboxEntry) =>

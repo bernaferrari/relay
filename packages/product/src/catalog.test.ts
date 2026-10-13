@@ -5,6 +5,8 @@ import { createScriptedRelayClient } from "@relay/workflows/testing";
 import {
   createProductCatalog,
   productRunDetail,
+  productRunPhaseDidNotPass,
+  productRunPhaseLabel,
   productTestStatusLabel,
   projectProductRuns,
   projectProductTests,
@@ -525,4 +527,26 @@ test("a test is flaky when recent runs keep flipping between passing and failing
   assert.equal(isFlaky(runs("passed", "passed", "passed", "product-failure")), false);
   assert.equal(isFlaky(runs("product-failure", "harness-failure", "passed", "passed")), false);
   assert.equal(isFlaky(runs("passed", "cancelled", "passed")), false);
+});
+
+test("a run Relay could not finish is blocked, not failed; an uncertain one needs review", () => {
+  const projected = projectProductRuns([
+    run({ id: "product", action: "test.run", status: "error", queuedAt: 1, outcome: "product-failure" }),
+    run({ id: "harness", action: "test.run", status: "error", queuedAt: 2, outcome: "harness-failure" }),
+    run({ id: "unsure", action: "test.run", status: "ok", queuedAt: 3, outcome: "uncertain" }),
+    run({ id: "legacy", action: "test.run", status: "error", queuedAt: 4 }),
+  ]);
+  const phases = Object.fromEntries(projected.map((item) => [item.id, item.phase]));
+  assert.deepEqual(phases, {
+    product: "failed",
+    harness: "blocked",
+    unsure: "needs-review",
+    legacy: "blocked",
+  });
+  assert.equal(productRunPhaseLabel("blocked"), "Could not run");
+  assert.equal(productRunPhaseLabel("failed"), "Failed");
+  assert.deepEqual(
+    projected.filter((item) => productRunPhaseDidNotPass(item.phase)).map((item) => item.id),
+    ["product", "harness", "legacy"],
+  );
 });

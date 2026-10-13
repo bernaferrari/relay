@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type http from "node:http";
 import { redactPrivateJobs, redactValue } from "@relay/core";
 import { validateOperationBody, validateOperationResponse } from "./operations.js";
@@ -6,7 +7,7 @@ export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
     "Content-Type, Authorization, X-Organization-Id, X-Project-Id, X-Relay-Actor-Id, X-Relay-Actor-Kind, X-Relay-Operation-Id, X-Relay-Request-Id, X-Relay-Command-At, X-Relay-Causation-Id, X-Relay-Correlation-Id, X-Relay-Authoring-Session-Id, Idempotency-Key, Last-Event-ID",
-  "Access-Control-Expose-Headers": "Content-Length, X-Relay-Browser-Device-Transport",
+  "Access-Control-Expose-Headers": "Content-Length, ETag, X-Relay-Browser-Device-Transport",
   "Access-Control-Max-Age": "600",
 };
 
@@ -23,15 +24,42 @@ export class HttpError extends Error {
   }
 }
 
-export function json(res: http.ServerResponse, status: number, body: unknown): void {
+export function json(
+  res: http.ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
   validateOperationResponse(res, status, body);
   const payload = JSON.stringify(redactValue(redactPrivateJobs(body)));
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(payload),
+    ...headers,
     ...CORS_HEADERS,
   });
   res.end(payload);
+}
+
+/**
+ * A GET whose body is fully determined by `version` (for example App Map ids
+ * and revisions). Clients revalidate with If-None-Match; an unchanged body is
+ * answered with 304 before it is validated, redacted, or serialized.
+ */
+export function jsonIfChanged(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  version: string,
+  body: () => unknown,
+): void {
+  const etag = `W/"${createHash("sha1").update(version).digest("base64url")}"`;
+  const headers = { ETag: etag, "Cache-Control": "no-cache" };
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, { ...headers, ...CORS_HEADERS });
+    res.end();
+    return;
+  }
+  json(res, 200, body(), headers);
 }
 
 export function text(

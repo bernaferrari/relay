@@ -2125,7 +2125,7 @@ describe("Run and report", () => {
     });
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("Could not complete");
+    expect(document.body.textContent).toContain("Could not run");
     expect(document.body.textContent).not.toContain("The app took too long to respond");
     expect(document.querySelector('button[aria-label="Technical details"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("ERR_CONNECTION_REFUSED");

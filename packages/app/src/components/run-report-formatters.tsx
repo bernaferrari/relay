@@ -67,7 +67,7 @@ export function outcomeSentence(
   if (outcome === "passed")
     return hasReviewScreenshots ? `Run completed on ${target}.` : `This test passed on ${target}.`;
   if (outcome === "product-failure") return `This test found a product problem on ${target}.`;
-  if (outcome === "harness-failure") return `Relay could not complete this test on ${target}.`;
+  if (outcome === "harness-failure") return `Relay could not run this test on ${target}.`;
   if (outcome === "uncertain") return `Relay could not confirm the outcome on ${target}.`;
   if (outcome === "cancelled") return `This run was cancelled on ${target}.`;
   return `This run on ${target} has no final result yet.`;
@@ -102,7 +102,7 @@ export function resultHeading(
 ): string {
   if (outcome === "passed") return "Checks passed";
   if (outcome === "product-failure") return "Check failed";
-  if (outcome === "harness-failure") return "Could not complete";
+  if (outcome === "harness-failure") return "Could not run";
   if (outcome === "uncertain") return "Outcome not confirmed";
   if (outcome === "cancelled") return "Cancelled";
   return "Incomplete evidence";

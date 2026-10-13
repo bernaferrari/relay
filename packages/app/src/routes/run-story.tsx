@@ -41,7 +41,7 @@ import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReferenceCompareLine } from "./reference-compare-dialog";
 import { StatusPill, type RunState } from "../components/run-status";
 
-export type RunStoryStatus = "running" | "passed" | "review" | "failed" | "cancelled";
+export type RunStoryStatus = "running" | "passed" | "review" | "failed" | "blocked" | "cancelled";
 
 const ACTION_ICON: Record<StoryActionKind, typeof Dot> = {
   tap: MousePointerClick,
@@ -60,6 +60,7 @@ const PILL: Record<RunStoryStatus, RunState> = {
   passed: "passed",
   review: "review",
   failed: "failed",
+  blocked: "blocked",
   cancelled: "cancelled",
 };
 

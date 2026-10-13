@@ -6,6 +6,7 @@ const SEGMENTS: readonly { state: RunState; className: string; label: string }[]
   { state: "passed", className: "bg-success", label: "passed" },
   { state: "review", className: "bg-warning", label: "to review" },
   { state: "failed", className: "bg-destructive", label: "failed" },
+  { state: "blocked", className: "bg-warning-foreground", label: "could not run" },
   { state: "running", className: "bg-brand", label: "running" },
   { state: "not-run", className: "bg-muted-foreground/25", label: "not run" },
 ];

@@ -5,6 +5,7 @@ import { Button } from "@relay/ui-react/components/button";
 import {
   ChevronRight,
   Circle,
+  CircleAlert,
   CircleCheck,
   CircleSlash,
   CircleX,
@@ -154,7 +155,9 @@ function CaseMark({ status }: { status: ProductBatchCase["status"] }) {
   if (status === "failed")
     return <CircleX className={`${size} text-destructive`} aria-label="Failed" />;
   if (status === "blocked")
-    return <CircleX className={`${size} text-destructive`} aria-label="Could not run" />;
+    return (
+      <CircleAlert className={`${size} text-warning-foreground`} aria-label="Could not run" />
+    );
   if (status === "cancelled")
     return <CircleSlash className={`${size} text-muted-foreground`} aria-label="Cancelled" />;
   if (status === "running")
@@ -185,7 +188,8 @@ function isFinished(status: ProductBatchCase["status"]): boolean {
 
 function caseState(item: ProductBatchCase): RunState {
   if (item.status === "passed") return "passed";
-  if (item.status === "failed" || item.status === "blocked") return "failed";
+  if (item.status === "failed") return "failed";
+  if (item.status === "blocked") return "blocked";
   if (item.status === "running") return "running";
   if (item.status === "cancelled") return "cancelled";
   return "not-run";

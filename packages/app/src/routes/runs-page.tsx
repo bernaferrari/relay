@@ -90,7 +90,7 @@ export function RunsPage() {
     // Filters select Results, but never discard the sibling Runs needed to
     // describe a Plan accurately (including other devices and pending reviews).
     const matching = searched.filter((run) => {
-      if (view === "failed") return run.phase === "failed";
+      if (view === "failed") return run.phase === "failed" || run.phase === "blocked";
       if (view === "needs-review")
         return (
           hasScreenshotReviewAttention(run) ||

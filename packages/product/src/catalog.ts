@@ -74,11 +74,19 @@ export type ProductTestDetail = ProductTestSummary & {
   links: { self: string };
 };
 
+/**
+ * Where a Run is, in the product's three-verdict vocabulary: "failed" means the
+ * app misbehaved, "blocked" means Relay could not run it (device, sign-in,
+ * harness), and "needs-review" means the run finished but its verdict waits on
+ * a person.
+ */
 export type ProductRunPhase =
   | "queued"
   | "running"
   | "completed"
   | "failed"
+  | "blocked"
+  | "needs-review"
   | "cancelled"
   | "unknown";
 export type ProductRunView = "all" | "latest" | "active" | "failed" | "needs-review";
@@ -210,13 +218,42 @@ function phase(run: Pick<RunSummary, "status" | "outcome">): ProductRunPhase {
   const value = outcome(run.outcome);
   if (value === "cancelled" || /cancel/u.test(run.status)) return "cancelled";
   if (value === "passed") return "completed";
-  if (value === "product-failure" || value === "harness-failure") return "failed";
-  if (value === "uncertain") return "completed";
+  if (value === "product-failure") return "failed";
+  if (value === "harness-failure") return "blocked";
+  if (value === "uncertain") return "needs-review";
   if (/^(?:queued|pending|waiting)$/iu.test(run.status)) return "queued";
   if (/^(?:running|started|in-progress|active|paused)$/iu.test(run.status)) return "running";
   if (/^(?:ok|healed|succeeded|success|completed|complete)$/iu.test(run.status)) return "completed";
-  if (/^(?:error|failed|failure)$/iu.test(run.status)) return "failed";
+  // A runner error without an outcome is not proof the app misbehaved.
+  if (/^(?:error|failed|failure|blocked)$/iu.test(run.status)) return "blocked";
   return "unknown";
+}
+
+/** Failed or could not run: the runs a person must look at before trusting the Test. */
+export function productRunPhaseDidNotPass(phase: ProductRunPhase): boolean {
+  return phase === "failed" || phase === "blocked";
+}
+
+/** The one label every surface uses for a phase. */
+export function productRunPhaseLabel(phase: ProductRunPhase): string {
+  switch (phase) {
+    case "queued":
+      return "Waiting to start";
+    case "running":
+      return "Running";
+    case "completed":
+      return "Passed";
+    case "failed":
+      return "Failed";
+    case "blocked":
+      return "Could not run";
+    case "needs-review":
+      return "Needs review";
+    case "cancelled":
+      return "Cancelled";
+    case "unknown":
+      return "Unknown result";
+  }
 }
 
 function stepHasReview(step: AppMapScenarioTestStep): boolean {
@@ -463,7 +500,7 @@ function matchesRun(summary: ProductRunSummary, filter: ProductRunFilter): boole
   if (filter.outcome && summary.outcome !== filter.outcome) return false;
   if (filter.view === "active" && summary.phase !== "queued" && summary.phase !== "running")
     return false;
-  if (filter.view === "failed" && summary.phase !== "failed") return false;
+  if (filter.view === "failed" && !productRunPhaseDidNotPass(summary.phase)) return false;
   if (
     filter.view === "needs-review" &&
     summary.review?.status !== "pending" &&

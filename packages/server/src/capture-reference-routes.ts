@@ -58,12 +58,15 @@ export async function handleCaptureReferenceRoute(
   if (method === "GET" && pathname === "/review/inbox") {
     const sinceDays = Number(url.searchParams.get("sinceDays") ?? "14");
     const appMapId = url.searchParams.get("appMapId")?.trim();
+    // Catalog totals cover every run; only a trusted local reader may skip the per-run check.
+    const countOnly = ["true", "1"].includes(url.searchParams.get("countOnly") ?? "") && scope.localTrusted;
     json(
       response,
       200,
       await listReviewInbox(runsRoot(), {
         sinceDays: Number.isFinite(sinceDays) && sinceDays > 0 ? Math.min(sinceDays, 365) : 14,
         ...(appMapId ? { appMapId } : {}),
+        ...(countOnly ? { countOnly } : {}),
         visible: (run) =>
           scope.localTrusted ||
           (run.projectId === scope.projectId && run.ownerId === scope.subject),

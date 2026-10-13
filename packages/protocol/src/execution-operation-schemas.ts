@@ -220,6 +220,7 @@ export const executionOperationSchemas = {
     .object({
       sinceDays: z.coerce.number().int().min(1).max(365).optional(),
       appMapId: identifier("App identifier").optional(),
+      countOnly: queryBoolean.optional(),
     })
     .strict(),
   "run.capture.reference.ignore-regions.update": z

@@ -5,7 +5,7 @@ describe("run result wording", () => {
   it("uses outcome-specific headings instead of a generic Failed label", () => {
     expect(resultHeading("passed")).toBe("Checks passed");
     expect(resultHeading("product-failure")).toBe("Check failed");
-    expect(resultHeading("harness-failure")).toBe("Could not complete");
+    expect(resultHeading("harness-failure")).toBe("Could not run");
     expect(resultHeading("uncertain")).toBe("Outcome not confirmed");
     expect(resultHeading("cancelled")).toBe("Cancelled");
     expect(resultHeading(undefined)).toBe("Incomplete evidence");

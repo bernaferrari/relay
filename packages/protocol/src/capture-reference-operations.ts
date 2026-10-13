@@ -5,7 +5,8 @@ import type { RuntimeParser } from "./operation-contract.js";
 
 export type CaptureReferenceOperationMap = {
   "review.inbox.list": {
-    input: { sinceDays?: number; appMapId?: string };
+    /** countOnly: totals only, without the screenshots (for badges). */
+    input: { sinceDays?: number; appMapId?: string; countOnly?: boolean };
     output: ReviewInboxResult;
   };
   "run.capture.reference.compare": {

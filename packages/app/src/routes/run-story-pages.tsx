@@ -21,6 +21,8 @@ import { RunScreenJourney } from "./run-screen-journey";
 
 function savedStatus(report: ProductRunReportOverview): RunStoryStatus {
   if (report.outcome === "cancelled") return "cancelled";
+  if (report.outcome === "harness-failure") return "blocked";
+  if (report.outcome === "uncertain") return "review";
   if (report.outcome && report.outcome !== "passed") return "failed";
   if (report.captureReview?.items.some((item) => item.status === "issue")) return "failed";
   if (report.captureReview?.items.some((item) => item.status === "pending")) return "review";

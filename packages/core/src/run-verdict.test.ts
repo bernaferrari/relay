@@ -109,6 +109,38 @@ test("runner phrasing becomes plain sentences", () => {
   );
   assert.equal(
     plainReason("check cleanup skipped: x\n✗ Text entry verification failed: readback differs."),
-    "Text entry verification failed: readback differs.",
+    "Relay typed the text, but couldn’t confirm the field received it.",
   );
+});
+
+test("the step that stopped the run shows the screen at the moment it failed", () => {
+  const verdict = buildRunVerdict(
+    run({
+      outcome: "harness-failure",
+      error: "Text entry verification failed: the field readback does not match the requested text.",
+      frames: [
+        { path: "frames/001.png", caption: "step:open:Open the cart", capturedAt: 10 },
+        { path: "frames/003.png", caption: "failed:primary:Type text", capturedAt: 35 },
+      ],
+      steps: [
+        { id: "t1", status: "ok", frames: [], log: "", startedAt: 0, finishedAt: 11 },
+        {
+          id: "t2",
+          status: "error",
+          frames: [
+            { path: "frames/002.png", caption: "after · Type text", capturedAt: 30 },
+            { path: "frames/004.png", caption: "after · Run saved Test", capturedAt: 40 },
+          ],
+          log: "",
+          startedAt: 20,
+          finishedAt: 41,
+        },
+      ] as never,
+      testStepEvidence: [evidence("open", "t1", 0, ["frames/001.png"]), evidence("check", "t2", 1)],
+    }),
+    authored,
+  );
+  assert.equal(verdict.status, "blocked");
+  assert.equal(verdict.steps[1]!.screenshot, "/runs/run-1/frames/003.png");
+  assert.equal(verdict.steps[1]!.saw, "Relay typed the text, but the field showed something different.");
 });

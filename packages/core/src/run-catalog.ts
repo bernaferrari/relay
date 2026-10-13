@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import type { RunReview, RunSummary } from "@relay/protocol";
 import { parseOptionalSourceRevision } from "@relay/protocol";
 
-type CatalogRecord = RunSummary & { dir: string };
+export type CatalogRecord = RunSummary & { dir: string };
 
 export type CatalogSurfaceComparison = {
   runId: string;
@@ -90,31 +90,69 @@ function database(root: string): DatabaseSync {
 
 const summaryMigrations = new Map<string, Promise<void>>();
 
+const SUMMARY_MIGRATION_KEYS = ["capture-summary-v1", "matrix-case-v2"] as const;
+/** Screenshot counts re-read under the "first capture on a passing run" policy. */
+const PASSING_RUN_POLICY_KEY = "capture-summary-passing-run-v1";
+
+/**
+ * Passing runs recorded before the review policy still list their first
+ * screenshots as pending. Re-read only those rows; the manifest is parsed as
+ * plain JSON because the queue needs captures and decisions, not evidence.
+ */
+async function reprojectPassingRunSummaries(root: string): Promise<void> {
+  const db = database(root);
+  try {
+    const rows = db
+      .prepare(
+        "SELECT id, dir, capture_summary_json FROM runs WHERE outcome='passed' AND json_extract(capture_summary_json, '$.pending') > 0",
+      )
+      .all() as Array<{ id: string; dir: string; capture_summary_json: string }>;
+    const update = db.prepare("UPDATE runs SET capture_summary_json=? WHERE id=?");
+    for (const row of rows) {
+      let run: CaptureReviewRun;
+      try {
+        run = JSON.parse(await readFile(join(String(row.dir), "run.json"), "utf8"));
+      } catch {
+        continue;
+      }
+      const summary = JSON.stringify(captureReviewQueueForRun(run).summary);
+      if (summary !== row.capture_summary_json) update.run(summary, String(row.id));
+    }
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES(?, '1')").run(
+      PASSING_RUN_POLICY_KEY,
+    );
+  } finally {
+    db.close();
+  }
+}
+
 /** Backfill retained committed manifests once, preserving pins and retention.
  * Pages then read the indexed projection without rescanning run directories. */
 async function summaryDatabase(root: string): Promise<DatabaseSync> {
   const db = database(root);
-  if (
-    db.prepare("SELECT value FROM metadata WHERE key='capture-summary-v1'").get() &&
-    db.prepare("SELECT value FROM metadata WHERE key='matrix-case-v2'").get()
-  )
-    return db;
+  const recorded = (key: string) =>
+    Boolean(db.prepare("SELECT value FROM metadata WHERE key=?").get(key));
+  const backfill = !SUMMARY_MIGRATION_KEYS.every(recorded);
+  const reproject = !recorded(PASSING_RUN_POLICY_KEY);
+  if (!backfill && !reproject) return db;
   db.close();
   const key = resolve(root);
   let migration = summaryMigrations.get(key);
   if (!migration) {
     migration = (async () => {
-      await rebuildRunCatalog(root, { preserveExisting: true, backfillSummariesOnly: true });
-      const migrated = database(root);
-      try {
-        const record = migrated.prepare(
-          "INSERT OR REPLACE INTO metadata(key,value) VALUES(?, '1')",
-        );
-        record.run("capture-summary-v1");
-        record.run("matrix-case-v2");
-      } finally {
-        migrated.close();
+      if (backfill) {
+        await rebuildRunCatalog(root, { preserveExisting: true, backfillSummariesOnly: true });
+        const migrated = database(root);
+        try {
+          const record = migrated.prepare(
+            "INSERT OR REPLACE INTO metadata(key,value) VALUES(?, '1')",
+          );
+          for (const name of SUMMARY_MIGRATION_KEYS) record.run(name);
+        } finally {
+          migrated.close();
+        }
       }
+      await reprojectPassingRunSummaries(root);
     })();
     summaryMigrations.set(key, migration);
   }
@@ -378,6 +416,15 @@ export async function catalogSummaries(
   limit = 40,
   actionPrefix?: string,
 ): Promise<RunSummary[]> {
+  return (await catalogRecords(root, limit, actionPrefix)).map(({ dir: _dir, ...summary }) => summary);
+}
+
+/** Newest catalog rows with the directory each Run lives in. */
+export async function catalogRecords(
+  root: string,
+  limit = 40,
+  actionPrefix?: string,
+): Promise<CatalogRecord[]> {
   await mkdir(root, { recursive: true });
   const db = await summaryDatabase(root);
   try {
@@ -390,10 +437,7 @@ export async function catalogSummaries(
             .all(actionPrefix.length, actionPrefix, limit)
         : db.prepare("SELECT * FROM runs ORDER BY written_at DESC, id DESC LIMIT ?").all(limit)
     ) as Array<Record<string, unknown>>;
-    return rows.map((row) => {
-      const { dir: _dir, ...summary } = rowToRecord(row);
-      return summary;
-    });
+    return rows.map(rowToRecord);
   } finally {
     db.close();
   }

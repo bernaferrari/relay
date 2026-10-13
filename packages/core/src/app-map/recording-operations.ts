@@ -1,5 +1,5 @@
 import { recordedActions } from "./recording-actions.js";
-import { capturedScreenTitle } from "./captured-screen-title.js";
+import { capturedScreenTitle, newDestinationTitle } from "./captured-screen-title.js";
 import { equivalentScreenCapture } from "./equivalent-screen-capture.js";
 import { createHash } from "node:crypto";
 import type {
@@ -793,7 +793,12 @@ function applyRecordedConnection(
         stableId("screen", `${input.sessionId}:destination`),
         requestedDestination?.kind === "new-screen" && requestedDestination.title?.trim()
           ? requestedDestination.title.trim()
-          : (observedDestinationTitle(input) ?? "Next screen"),
+          : newDestinationTitle({
+              observed: observedDestinationTitle(input),
+              steps: input.actions.flatMap((action) => action.steps),
+              after: input.after,
+              sourceTitle: source.title,
+            }),
         context.at,
       );
       const sourceGroup = Object.values(map.groups).find((group) =>
