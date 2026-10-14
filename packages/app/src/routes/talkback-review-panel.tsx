@@ -112,6 +112,7 @@ export function TalkBackOverlay({
     }>
   >([]);
   const [hoveredId, setHoveredId] = useState<string>();
+  const [stageWidth, setStageWidth] = useState(0);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -121,6 +122,7 @@ export function TalkBackOverlay({
       return;
     }
     const mapBoxes = () => {
+      setStageWidth(parent.clientWidth || parent.getBoundingClientRect().width);
       const mapped = distinctTalkBackOverlays(items).flatMap(({ key, item }) => {
         if (!item.rect) return [];
         const box = talkBackOverlayBox(canvas, parent, item.rect, bounds);
@@ -162,7 +164,11 @@ export function TalkBackOverlay({
   const visible = mode === "always" ? boxes : boxes.filter((entry) => entry.key === hoveredId);
   if (!visible.length && mode === "always") return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-visible" aria-hidden="true">
+    <div
+      data-slot="accessibility-overlay"
+      className="pointer-events-none absolute inset-0 z-10 overflow-x-clip"
+      aria-hidden="true"
+    >
       {visible.map(({ key, item, box }) => (
         <div
           key={key}
@@ -177,20 +183,58 @@ export function TalkBackOverlay({
           }
         >
           {mode === "always" || key === hoveredId ? (
-            <span className="absolute start-0 top-0 flex max-w-64 -translate-y-full items-center gap-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs font-medium text-popover-foreground shadow-md ring-1 ring-border">
-              <span className="truncate">
-                {item.name || item.text || item.description || "No label"}
-              </span>
-              {item.role ? (
-                <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-xs font-normal text-muted-foreground">
-                  {item.role}
-                </code>
-              ) : null}
-            </span>
+            <TalkBackOverlayLabel item={item} left={box.left} stageWidth={stageWidth} />
           ) : null}
         </div>
       ))}
     </div>
+  );
+}
+
+/** Keep labels inside the preview even when the highlighted control is at an edge. */
+function TalkBackOverlayLabel({
+  item,
+  left,
+  stageWidth,
+}: {
+  item: TalkBackReviewItem;
+  left: number;
+  stageWidth: number;
+}) {
+  const label = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const node = label.current;
+    if (!node) return;
+    const measure = () => setWidth(node.getBoundingClientRect().width);
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
+    observer?.observe(node);
+    return () => observer?.disconnect();
+  }, []);
+  const offset = Math.max(8, Math.min(left, stageWidth - width - 8)) - left;
+  return (
+    <span
+      ref={label}
+      data-slot="accessibility-overlay-label"
+      className="absolute left-(--label-left) top-0 flex w-max max-w-(--label-max-width) -translate-y-full items-center gap-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs font-medium text-popover-foreground shadow-md ring-1 ring-border"
+      style={
+        {
+          "--label-left": `${offset}px`,
+          "--label-max-width": `${Math.max(0, Math.min(256, stageWidth - 16))}px`,
+        } as CSSProperties
+      }
+    >
+      <span className="min-w-0 truncate">
+        {item.name || item.text || item.description || "No label"}
+      </span>
+      {item.role ? (
+        <code className="max-w-24 shrink-0 truncate rounded bg-muted px-1 py-0.5 text-xs font-normal text-muted-foreground">
+          {item.role}
+        </code>
+      ) : null}
+    </span>
   );
 }
 
