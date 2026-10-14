@@ -150,7 +150,7 @@ function GeneralSettings() {
                       .join(" · ")
           }
         >
-          <Button size="sm" variant="ghost" nativeButton={false} render={<Link to="/devices" />}>
+          <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/devices" />}>
             Manage
           </Button>
         </SettingRow>

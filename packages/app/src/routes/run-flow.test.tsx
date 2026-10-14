@@ -496,9 +496,15 @@ describe("recorded test destinations", () => {
       editor,
     );
     await openRunSettings();
-    expect(document.body.textContent).toContain("Connect an Android device");
+    // The device field stays in place and keeps looking; no browser is offered.
+    expect(document.body.textContent).toContain("Looking for Android devices");
+    expect(document.body.textContent).toContain("Plug in and unlock your phone");
     expect(document.querySelector('button[aria-label="Sign in as"]')).toBeNull();
-    expect(document.querySelector('button[aria-label="Android device"]')).toBeNull();
+    const field = document.querySelector<HTMLButtonElement>('button[aria-label="Android device"]');
+    expect(field === null || field.disabled || field.getAttribute("data-disabled") !== null).toBe(
+      true,
+    );
+    expect(document.body.textContent).not.toContain("Checkout browser");
     expect(button("Run now").disabled).toBe(true);
     expect(document.querySelector('#test-run-setup a[href="/devices"]')?.textContent).toContain(
       "View devices",
@@ -1376,7 +1382,7 @@ describe("Run and report", () => {
     expect(replayCalls).toBe(1);
     expect(history.location.search).toContain("replayJob=job-replay");
     expect(history.location.pathname).toBe("/runs/run-1");
-    expect(document.body.textContent).toContain("Replay queued on the saved target");
+    expect(document.body.textContent).toContain("Replay queued");
 
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_650))));
     await settle();
@@ -1401,7 +1407,7 @@ describe("Run and report", () => {
     await settle();
 
     expect(document.querySelector('[role="alert"]')).not.toBeNull();
-    expect(document.body.textContent).not.toContain("Replaying saved steps on the saved target");
+    expect(document.body.textContent).not.toContain("Replaying the saved steps");
   });
 
   it("does not navigate from a running replay even if a provisional run id is present", async () => {
@@ -1419,7 +1425,7 @@ describe("Run and report", () => {
     await settle();
 
     expect(history.location.pathname).toBe("/runs/run-1");
-    expect(document.body.textContent).toContain("Automation running · Relay controls the target");
+    expect(document.body.textContent).toContain("Automation running · Relay is in control");
   });
 
   it("surfaces a terminal replay with no report id as an unavailable result", async () => {
@@ -1449,7 +1455,7 @@ describe("Run and report", () => {
       },
       { timeout: 3_000 },
     );
-    expect(document.body.textContent).not.toContain("Replaying saved steps on the saved target");
+    expect(document.body.textContent).not.toContain("Replaying the saved steps");
   });
 
   it.each([

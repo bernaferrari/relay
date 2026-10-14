@@ -108,7 +108,7 @@ it("unrelated failed runs do not become results of a new plan", async () => {
   ]);
   await settled();
   expect(document.body.textContent).toContain("Latest plan runs");
-  expect(document.body.textContent).toContain("No plan runs found");
+  expect(document.body.textContent).toContain("Not run yet");
   expect(document.body.textContent).not.toContain("not run");
   expect(document.body.textContent).not.toContain("failed");
   expect(document.querySelector('a[href^="/runs/"]')).toBeNull();
@@ -143,7 +143,7 @@ it("loading and failed history never claim that the plan has not run", async () 
   expect(document.body.textContent).not.toContain("not run");
   await act(async () => finish([]));
   await settled();
-  expect(document.body.textContent).toContain("No plan runs found");
+  expect(document.body.textContent).toContain("Not run yet");
   act(() => root.unmount());
   document.body.replaceChildren();
   await render(async () => {

@@ -97,7 +97,7 @@ function planResultCase(run: ProductRunSummary): PlanResultCase {
 /** Results list copy. A failed phase is not a product pass when the cell is Infra. */
 export function planResultListCause(run: ProductRunSummary): string | undefined {
   if (run.outcome === "product-failure") return "Failed";
-  if (run.outcome === "harness-failure") return "Could not complete";
+  if (run.outcome === "harness-failure") return "Could not run";
   if (run.review?.status === "pending" || run.outcome === "uncertain") return "Needs review";
   if (run.phase === "queued") return "Waiting to start";
   if (run.phase === "running") return "In progress";

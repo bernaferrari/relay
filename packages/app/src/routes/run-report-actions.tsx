@@ -156,7 +156,7 @@ export function RunReportActions({
         <RunReplayAction
           report={report}
           runService={runService}
-          variant={canInvestigate ? "ghost" : "default"}
+          variant={canInvestigate ? "outline" : "default"}
           label="Run again"
         />
       ) : testId || embedded ? null : (
@@ -171,7 +171,7 @@ export function RunReportActions({
       ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size="sm" />}
+          render={<Button variant="ghost" size={embedded ? "sm" : "default"} />}
           aria-label="More run actions"
         >
           <MoreHorizontal className="size-4" aria-hidden="true" /> More

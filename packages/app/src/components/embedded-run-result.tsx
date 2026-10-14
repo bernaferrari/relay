@@ -338,7 +338,7 @@ export function EmbeddedRunResult({
                   detail={
                     step?.state === "pending"
                       ? "The run stopped before reaching it."
-                      : "This step finished without a screen capture."
+                      : "Relay didn’t save a screen for this step."
                   }
                 />
               </div>

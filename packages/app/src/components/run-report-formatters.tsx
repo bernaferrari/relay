@@ -114,12 +114,13 @@ export function failureTitle(value: string, category?: string): string {
   return line || "Relay could not complete this test";
 }
 
+/** Compact durations ("450ms", "1.4s", "12s", "2m 5s"), matching step timings. */
 export function formatDuration(durationMs: number): string {
-  if (durationMs < 1_000) return `${Math.round(durationMs)} ms`;
-  if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
+  if (durationMs < 1_000) return `${Math.round(durationMs)}ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`;
   const minutes = Math.floor(durationMs / 60_000);
   const seconds = Math.round((durationMs % 60_000) / 1_000);
-  return `${minutes} min ${seconds} s`;
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
 export function nextAction(

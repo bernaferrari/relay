@@ -138,7 +138,7 @@ export function PlanChecklist({
                 ? "Results unavailable"
                 : lastActivity
                   ? `Last activity ${relativeTime(lastActivity)}`
-                  : "No plan runs found"}
+                  : "Not run yet"}
           </p>
         </div>
         {toReview ? (

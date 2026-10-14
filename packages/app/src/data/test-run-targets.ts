@@ -27,6 +27,9 @@ export function testRunDestinationCopy(platforms?: readonly PlanPlatform[]) {
     return {
       label: "Device or browser",
       placeholder: "Choose a device or browser",
+      searching: "Looking for devices and browsers…",
+      searchingDetail: "Connected devices and open browsers appear here automatically.",
+      none: "No recorded route",
       emptyTitle: "This test has no recorded route",
       emptyDetail: "Record its steps on a device or browser before running.",
     };
@@ -35,27 +38,39 @@ export function testRunDestinationCopy(platforms?: readonly PlanPlatform[]) {
     return {
       label: "Android device",
       placeholder: "Choose an Android device",
+      searching: "Looking for Android devices…",
+      searchingDetail: "Connected phones and running emulators appear here automatically.",
+      none: "No Android device found",
       emptyTitle: "Connect an Android device",
       emptyDetail:
-        "Connect and unlock your phone, or start an emulator. Relay will find it automatically.",
+        "Plug in and unlock your phone, or start an emulator.",
     };
   if (platform === "ios")
     return {
       label: "iOS device",
       placeholder: "Choose an iOS device",
+      searching: "Looking for iOS devices…",
+      searchingDetail: "Connected iPhones, iPads, and booted simulators appear here automatically.",
+      none: "No iOS device found",
       emptyTitle: "Connect an iOS device",
-      emptyDetail: "Connect and unlock your device. Relay will find it automatically.",
+      emptyDetail: "Plug in and unlock your iPhone or iPad, or boot a simulator.",
     };
   if (platform === "browser")
     return {
       label: "Browser",
       placeholder: "Choose a browser",
+      searching: "Looking for browsers…",
+      searchingDetail: "Managed browsers appear here as soon as they’re ready.",
+      none: "No browser is ready",
       emptyTitle: "No browser is ready",
       emptyDetail: "Open a managed browser in Devices to run this test.",
     };
   return {
     label: "Device or browser",
     placeholder: "Choose a device or browser",
+    searching: "Looking for devices and browsers…",
+    searchingDetail: "Connected devices and open browsers appear here automatically.",
+    none: "No device or browser found",
     emptyTitle: "No compatible device or browser is ready",
     emptyDetail: "Open Devices to connect a destination for this test.",
   };

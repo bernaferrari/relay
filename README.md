@@ -1,136 +1,205 @@
 <div align="center">
 
-<img src="./packages/desktop/resources/relay-icon.png" alt="Relay logo" width="112" height="112" />
+<img src="./packages/desktop/resources/relay-icon.png" alt="Relay" width="96" height="96" />
 
 # Relay
 
-**Say what should work. Relay tests it on your website, Android, or iOS app.**
+**Local QA for people and coding agents.**<br />
+Click through your app once. Relay replays it on web, Android, and iOS, and shows you every screen.
+
+<p>
+  <a href="./LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-0b0d12?style=flat-square" /></a>
+  <img alt="Web, Android, iOS" src="https://img.shields.io/badge/runs_on-web_%C2%B7_android_%C2%B7_ios-3a63f5?style=flat-square" />
+  <img alt="MCP and CLI" src="https://img.shields.io/badge/agents-MCP_%C2%B7_CLI-ec4f9a?style=flat-square" />
+  <img alt="Local first" src="https://img.shields.io/badge/data-stays_on_your_machine-ff8a3d?style=flat-square" />
+</p>
+
+<p>
+  <a href="#quick-start"><strong>Quick start</strong></a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#for-coding-agents">For agents</a> ·
+  <a href="#platforms">Platforms</a> ·
+  <a href="./docs/FIRST_TEST.md">Your first test</a>
+</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/images/readme/banner-dark.webp" />
+  <img alt="Click through it once. Relay keeps checking." src="./docs/images/readme/banner-light.webp" width="100%" />
+</picture>
 
 </div>
 
-Write a test the way you would explain it to a colleague:
+## Catch a bug. Prove the repair.
 
-> Creating an API key shows it in the list
+The demo website ships with a real layout bug: the **Save** button covers the team-seats count.
+Relay records a check, catches the overlap, the site is repaired, and the **same saved test**
+runs again to prove it.
 
-Relay turns that into short steps and runs them in a real browser or on a real device:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/images/readme/demo-dark.webp" />
+  <img alt="Relay recording a check, failing on an overlapping Save button, repairing the page, and passing on rerun" src="./docs/images/readme/demo-light.webp" width="100%" />
+</picture>
 
-```text
-Action   Open the API keys page
-Action   Create a new API key
-Check    The new key is listed
-```
+Run it yourself from a fresh clone. It needs no account and no model key.
 
-Each run ends with a clear answer. When a check fails, Relay says what it expected and what it
-saw, with the screenshot:
+## Quick start
 
-```text
-✗ The new key is listed
-  Expected  The new key is listed
-  Saw       The list is empty and an error says "Permission denied"
-```
-
-Every run also teaches Relay your app. The **Map** fills in with the screens runs reach and how
-they connect, and shows which screens pass, which fail, and which no test has reached yet. You
-never have to draw it or approve it.
-
-Relay runs locally: your tests, runs, and screenshots stay in your project. Coding agents can do
-everything you can, over MCP or the CLI.
-
-## Get started
-
-Install **Node.js 24+**, **pnpm**, and the **Vite+ CLI** (`vp`), then:
+You need **Node.js 24+**, **pnpm**, the **Vite+ CLI** (`vp`), and Chrome, Chromium, or Edge.
 
 ```bash
 git clone https://github.com/bernaferrari/relay.git
 cd relay
 vp install
-pnpm dev:desktop
-```
-
-1. Choose **New test**, describe what should work, and enter your website address.
-2. Relay writes the steps. Edit any of them, then run the test.
-3. Open the run to see the result for each step.
-
-New runs use lightweight evidence: screenshots, screen structure, an action timeline, and
-available diagnostics. Choose **Settings → Evidence & privacy → Include video** when motion or transitions
-matter; video is added where the device supports it. A running test keeps the evidence mode it
-started with.
-
-Plain-English steps use a model. Paste an [OpenRouter](https://openrouter.ai) key in
-**Settings → Advanced**, or set `OPENROUTER_API_KEY`. The key stays on your computer.
-
-Prefer to show instead of tell? Leave the description empty and choose **Start recording**: your
-clicks and typing become steps. Recorded steps replay exactly, without a model.
-
-To test a phone or tablet, choose **Phone or tablet** in New test. Android needs `adb`; iOS
-devices need Xcode. Run `pnpm doctor` to check what is missing. To use Relay in a browser
-instead of the desktop app, run `pnpm dev:web`.
-
-### Try it without an account or key
-
-```bash
+pnpm doctor -- --web
 pnpm ensure:serve
 pnpm demo
 ```
 
-The demo opens a small local website with a layout bug, runs a saved test that catches it,
-fixes the site, and runs the same test again. See the [first-test guide](./docs/FIRST_TEST.md).
+The demo prints links to both runs: the failure, with Save overlapping the seats, and the passing
+rerun. The [first-test guide](./docs/FIRST_TEST.md) walks through every line of output.
+
+Then open the workspace and record a test in your own app:
+
+```bash
+pnpm dev:desktop   # the desktop app
+pnpm dev:web       # or the same workspace in your browser
+```
+
+## How it works
+
+### 1 · Record
+
+Choose **New test**, pick a website or a phone, and use your app. Taps, typing, and screens
+become steps you can read and edit. Add a check for whatever has to stay true. Recorded steps
+replay exactly, without a model.
+
+Prefer to describe it? Write _"Creating an API key shows it in the list"_ and Relay drafts the
+steps. That path uses a model: add an [OpenRouter](https://openrouter.ai) key in
+**Settings → Advanced**, or set `OPENROUTER_API_KEY`.
+
+### 2 · Replay
+
+Run the saved test on your local browser, an Android phone or emulator, or an iPhone or
+simulator. Each step shows what happened and how long it took. When a check fails, Relay says
+what it **expected** and what it **saw**, next to the screenshot.
+
+<img alt="A Relay run: every step with its timing, and the screen it reached" src="./docs/images/readme/app-run.webp" width="100%" />
+
+### 3 · Review
+
+Every run keeps lightweight evidence: screenshots, screen structure, an action timeline, and
+diagnostics, with video when motion matters. Accept what looks right, flag what doesn't, and
+the decision stays with the run.
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Screenshot review in Relay" src="./docs/images/readme/app-review.webp" /></td>
+    <td width="50%"><img alt="Relay's Map of screens and the paths between them" src="./docs/images/readme/app-map.webp" /></td>
+  </tr>
+  <tr>
+    <td><sub><strong>Review.</strong> Decide on every captured screen.</sub></td>
+    <td><sub><strong>Map.</strong> Runs teach Relay your app's screens and how they connect.</sub></td>
+  </tr>
+</table>
 
 ## For coding agents
 
-Relay includes a [plugin with agent skills](./plugins/relay-proof/README.md), an
-[MCP server](./packages/mcp/README.md), and a CLI. An agent can describe a test, run it, read
-the result, and look at the Map, the same way you do in the app.
+Your agent gets the same buttons you do. The app, the CLI, and MCP drive the same saved tests
+and the same runs, so an agent can rerun a flow, read the verdict, fix the cause, and run it
+again. Then you review the exact run it made.
+
+**CLI:** from a source checkout, use `./bin/relay`.
 
 ```bash
-./bin/relay new "Add a shirt to the cart and check the total" --url https://shop.example.com
-./bin/relay tests shop.example.com           # the app's Tests and whether each is ready
-./bin/relay run "Cart total" --app shop.example.com --device browser --out ./evidence
+./bin/relay run "Member layout" --device browser   # rerun a saved test
+./bin/relay inspect <run-id>                      # expected vs saw, step by step
 ./bin/relay ci shop.example.com --output result.json --junit junit.xml
-./bin/relay guide
+./bin/relay guide                                  # bundled guides, no server needed
 ```
 
-Apps, Tests, and devices take the names you see (or ids; devices also take `ios`, `android`,
-`browser`). A `relay.json` such as `{"app": "Shop", "device": "ios"}` in your project sets the
-defaults. Add `--json` for machine output; `relay run` and `relay ci` include each step's
-expected and saw. `relay --help` lists everything. Over MCP the same loop is
-`relay_create_test`, `relay_run_test`, `relay_get_verdict`, `relay_check_change` and
-`relay_inspect_failure` in the default `qa` profile; `device` adds live control and recording,
-and `full` adds every raw operation.
+Add `--json` for machine output. Exit codes are designed for loops:
 
-| Exit code | Meaning                                                                        |
-| --------- | ------------------------------------------------------------------------------ |
-| `0`       | passed                                                                         |
-| `1`       | a Test failed: the product did not do what the Test expects                    |
-| `2`       | usage: bad arguments or unknown command                                        |
-| `3`       | could not run: blocked (device, sign-in, harness), no ready Test, or no server |
-| `7`       | cancelled                                                                      |
-| `10`      | passed, but screenshots are awaiting review                                    |
-| `11`      | not found: no App, Test, Run, or device with that name                         |
+| Code | Meaning                                                      |
+| ---- | ------------------------------------------------------------ |
+| `0`  | Passed                                                       |
+| `1`  | A test failed: the app didn't do what the test expects       |
+| `3`  | Couldn't run: device, sign-in, or setup blocked it           |
+| `10` | Passed, with screenshots waiting for review                  |
 
-Other codes (4 auth, 5 validation, 6 device in use, 8 server error, 9 another command failed)
-are listed in `relay --help`.
+`./bin/relay --help` lists every code.
 
-Guides are bundled with the code (`./bin/relay guide`, `relay-mcp guide`, or `relay_get_guide`)
-and need no server, model, or credentials.
+**MCP:** build the connector with `pnpm --filter @relay/mcp build`, then add it to your agent host:
 
-## Going further
+```json
+{
+  "mcpServers": {
+    "relay": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/relay/packages/mcp/dist/relay-mcp.js",
+        "--server", "http://127.0.0.1:8787",
+        "--credential-source", "none",
+        "--profile", "qa"
+      ]
+    }
+  }
+}
+```
 
+The `qa` profile covers the everyday loop: `relay_create_test`, `relay_run_test`,
+`relay_get_verdict`, `relay_check_change`, and `relay_inspect_failure`. `device` adds live control
+and recording, and `full` exposes every operation. See the [MCP server](./packages/mcp/README.md)
+and the [agent plugin and skills](./plugins/relay-proof/README.md).
+
+## Platforms
+
+| Target                           | What you need                                         | Guide                                                         |
+| -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------- |
+| **Websites**                     | Chrome, Chromium, or Edge                             | [Browser](./packages/site/content/docs/devices/browser.mdx)   |
+| **Android** phones and emulators | `adb`                                                 | [Android](./packages/site/content/docs/devices/android.mdx)   |
+| **iPhone and iPad**, simulators  | A Mac with Xcode                                      | [iOS](./packages/site/content/docs/devices/ios.mdx)           |
+
+`pnpm doctor` reports anything missing for the targets you want.
+
+## Why Relay
+
+- **Show, don't script.** A test starts as something you did, not code you wrote. Recorded steps
+  replay without a model.
+- **Evidence, not vibes.** Every step keeps the screen it reached, so a pass or a fail comes with
+  proof you can look at.
+- **Local first.** Tests, runs, and screenshots stay in your workspace. Model-assisted steps send
+  only what they need to the provider you choose.
+  [Evidence & privacy](./packages/site/content/docs/reference/evidence.mdx)
+- **Built for agents.** Honest exit codes, expected-vs-saw verdicts, and an MCP doctor that checks
+  the connection before any device input.
+- **Open source.** MIT licensed. Read it, change it, and run it from source today.
+
+## Learn more
+
+- [Your first test](./docs/FIRST_TEST.md): the demo, step by step.
+- [Record a flow](./packages/site/content/docs/workflows/recording.mdx): record and edit a test in
+  your own app.
 - [The Map](./docs/MAP.md): how runs grow it, and how to fix a screen it got wrong.
-- [Plans and Data sets](./docs/PLANS.md): run tests together, repeated with different inputs,
-  languages, or devices.
-- [Packaged runtime](./packages/runtime/README.md): run Relay from a local tarball without the
-  repository sources.
+- [Plans and Data sets](./docs/PLANS.md): run tests together across inputs, languages, or devices.
+- [Packaged runtime](./packages/runtime/README.md): run Relay from a local tarball.
 
-## Working on Relay
+## Contributing
 
-The public landing page and Fumadocs guides are in [packages/site](./packages/site/README.md).
-Run `pnpm dev:site` to preview them at `http://localhost:3002`, or `pnpm build:site` to export
-the static site for hosting.
+Relay is in active development, and device support varies by platform. Issues and pull requests
+are welcome.
 
-Use `vp check` for formatting and lint, `pnpm typecheck` for type checks, and `pnpm test` for the
-tests. `pnpm test:coverage` writes LCOV reports; CI requires at least 70% line coverage on changed
+```bash
+vp check          # formatting and lint
+pnpm typecheck    # type checks
+pnpm test         # tests
+pnpm dev:site     # the landing page and docs
+```
+
+`pnpm test:coverage` writes LCOV reports; CI requires at least 70% line coverage on changed
 source. The [product contract](./PRODUCT_CONTRACT.md) defines the public routes, vocabulary, and
-interaction rules checked in CI.
+interaction rules checked in CI. The website and guides live in
+[packages/site](./packages/site/README.md).
 
-Relay is in active development, and device support varies by platform.
+## License
+
+[MIT](./LICENSE) © Bernardo Ferrari

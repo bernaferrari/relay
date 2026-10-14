@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import type { DesktopUpdateState } from "../platform/types";
 import { errorMessage } from "./settings-support";
@@ -96,8 +97,8 @@ export function AboutSettings() {
             <div className="grid gap-1">
               <h3 className="text-sm font-medium">Run the saved test</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Open the test, choose where to run it, and start. Use run across when you want to
-                try several sets of values.
+                Open the test, choose where to run it, and start. To try several sets of values,
+                add it to a plan.
               </p>
             </div>
           </li>
@@ -118,7 +119,9 @@ export function AboutSettings() {
           </li>
         </ol>
         <div className="flex flex-wrap gap-2">
-          <Button render={<Link to="/tests/new" />}>New test</Button>
+          <Button render={<Link to="/tests/new" />}>
+            <Plus aria-hidden="true" /> New test
+          </Button>
           <Button variant="ghost" render={<Link to="/runs" search={{ view: "needs-review" }} />}>
             Review screenshots
           </Button>

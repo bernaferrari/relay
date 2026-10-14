@@ -106,9 +106,13 @@ export function EmptyState({
 }) {
   return (
     <div data-slot={layout === "filtered" ? "empty-filtered" : undefined}>
-      <Empty>
+      {/* Room to breathe on an otherwise blank page; the quiet icon supports, not shouts. */}
+      <Empty className={layout === "filtered" ? undefined : "py-12"}>
         <EmptyHeader>
-          <EmptyMedia variant={tone === "notice" ? "icon" : "default"}>
+          <EmptyMedia
+            variant={tone === "notice" ? "icon" : "default"}
+            className={tone === "notice" ? undefined : "text-muted-foreground"}
+          >
             <Icon />
           </EmptyMedia>
           <EmptyTitle>{title}</EmptyTitle>

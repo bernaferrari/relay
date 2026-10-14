@@ -35,12 +35,13 @@ export function RecordingScreenCapture({
         render={
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="sm"
             disabled={disabled}
             aria-label="Save screenshot"
-            title="Save screenshot"
+            title="Save an extra screenshot of this screen"
           >
-            <Camera aria-hidden="true" />
+            {/* Labelled like Full page beside it, so the toolbar reads at a glance. */}
+            <Camera aria-hidden="true" /> Screenshot
           </Button>
         }
       />

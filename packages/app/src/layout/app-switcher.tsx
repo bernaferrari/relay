@@ -35,7 +35,10 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
   const triggerDetail =
     selectedFamily && selectedFamily.apps.length > 1
       ? platformLabel(selectedOption?.platform)
-      : "App";
+      : selectedOption?.platform
+        ? `${platformLabel(selectedOption.platform)} app`
+        : "App";
+  const appCount = apps.data?.length;
 
   // Always two lines, so the navigation below never shifts between pages.
   const triggerSubtitle =
@@ -45,7 +48,9 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
         ? "Selected apps"
         : scope.kind === "loading"
           ? "One moment"
-          : "Everything";
+          : appCount
+            ? `${appCount} ${appCount === 1 ? "app" : "apps"}`
+            : "Across apps";
 
   function switchApp(appId?: string) {
     router.history.push(

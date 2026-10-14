@@ -50,10 +50,13 @@ function TestRow({
   const draft = isTestDraft(test);
   const recent = test.recentRun;
   const state = test.status === "needs-review" ? undefined : runStateOf(recent);
+  // No reserved slot: on hover the status slides left (still visible) and Run
+  // appears beside it. Touch keeps Run in its own column.
+  const persistentAction = test.status === "needs-review" || draft;
   return (
     <li>
       <div
-        className={`group/test-row relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pr-3 ${libraryRowSurface}`}
+        className={`group/test-row relative grid items-center gap-1 pr-3 ${persistentAction ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)] [@media(hover:none)]:grid-cols-[minmax(0,1fr)_auto]"} ${libraryRowSurface}`}
       >
         <Link
           to="/tests/$testId"
@@ -63,7 +66,6 @@ function TestRow({
             ...(plan ? { plan: plan.id, planApp: plan.appMapId } : {}),
           }}
           className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 pl-3 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring"
-          title={`${test.stepCount} ${test.stepCount === 1 ? "step" : "steps"}${recent ? ` · ${relativeTime(runTime(recent))}` : ""}`}
         >
           <span className="grid min-w-0 flex-1 basis-48 gap-0.5">
             <strong className="text-sm font-normal text-foreground text-pretty">
@@ -74,7 +76,9 @@ function TestRow({
               {test.stepCount} {test.stepCount === 1 ? "step" : "steps"}
             </span>
           </span>
-          <span className="flex min-w-0 items-center text-xs text-muted-foreground [&_[data-slot=status-pill]]:bg-transparent [&_[data-slot=status-pill]]:p-0 [&_[data-slot=badge]]:border-0 [&_[data-slot=badge]]:bg-transparent [&_[data-slot=badge]]:p-0">
+          <span
+            className={`flex min-w-0 items-center text-xs text-muted-foreground transition-transform duration-200 ease-out motion-reduce:transition-none ${persistentAction ? "" : "group-hover/test-row:-translate-x-9 group-focus-within/test-row:-translate-x-9 [@media(hover:none)]:translate-x-0"} [&_[data-slot=status-pill]]:bg-transparent [&_[data-slot=status-pill]]:p-0 [&_[data-slot=badge]]:border-0 [&_[data-slot=badge]]:bg-transparent [&_[data-slot=badge]]:p-0`}
+          >
             {/* Every draft is unrecorded; the Drafts tab and "Edit draft" already say so. */}
             {draft ? null : test.status !== "ready" ? (
               <ReadinessMark
@@ -105,17 +109,18 @@ function TestRow({
         {/* Run appears on hover or focus so names lead the list (always on touch);
             drafts keep their next step visible. */}
         <span
-          className={`justify-self-end ${
-            test.status === "needs-review" || draft
-              ? ""
-              : "opacity-0 transition-opacity duration-150 group-hover/test-row:opacity-100 group-focus-within/test-row:opacity-100 [@media(hover:none)]:opacity-100"
-          }`}
+          className={
+            persistentAction
+              ? "justify-self-end"
+              : "pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/test-row:pointer-events-auto group-hover/test-row:opacity-100 group-focus-within/test-row:pointer-events-auto group-focus-within/test-row:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:static [@media(hover:none)]:translate-y-0 [@media(hover:none)]:justify-self-end [@media(hover:none)]:opacity-100"
+          }
         >
           <Button
             nativeButton={false}
             variant="ghost"
-            size="sm"
-            className="min-h-9"
+            size={persistentAction ? "sm" : "icon-sm"}
+            className={persistentAction ? "min-h-9" : undefined}
+            {...(persistentAction ? {} : { "aria-label": `Run ${test.name}`, title: "Run" })}
             render={
               test.status === "needs-review" || draft ? (
                 <Link
@@ -136,17 +141,7 @@ function TestRow({
               )
             }
           >
-            {test.status === "needs-review" || draft ? (
-              draft ? (
-                "Edit draft"
-              ) : (
-                "Review steps"
-              )
-            ) : (
-              <>
-                <Play aria-hidden="true" /> Run
-              </>
-            )}
+            {persistentAction ? draft ? "Edit draft" : "Review steps" : <Play aria-hidden="true" />}
           </Button>
         </span>
       </div>

@@ -1,11 +1,12 @@
 /** @jsxImportSource react */
+import { useEffect, useState } from "react";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { SelectField } from "../components/filter-select";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
 import { Link } from "@tanstack/react-router";
-import { EmptyState } from "../components/product-patterns";
-import { PageLoading, targetLabel } from "./recording-shared";
+import { ChevronRight, LoaderCircle } from "lucide-react";
+import { targetLabel } from "./recording-shared";
 import { runSetupContinuation } from "../data/setup-continuation";
 import { productLinkClassName } from "../lib/class-names";
 import type { ProductTargetOption } from "../data/target-presentation";
@@ -74,16 +75,22 @@ export function TestRunSettings({
     (profile) => !recordedPlatforms || recordedPlatforms.includes(profile.platform),
   );
   const browserSetup = !recordedPlatforms || recordedPlatforms.includes("browser");
-  // A just-created browser can be absent from cached discovery while its
-  // refresh is still running. Absence then means checking, not unavailable.
-  const checkingTargets =
-    targets.isPending ||
-    Boolean(
-      targets.isFetching &&
-      targetId &&
-      !targets.data?.some((target) => target.targetId === targetId),
-    );
-  const hasTargets = !checkingTargets && Boolean(targets.data?.length);
+  // One calm, continuous state (like AirDrop's "Looking for nearby devices"): with no
+  // device the field keeps searching with fixed copy, and background polling never
+  // toggles anything. It changes only when a device actually appears.
+  const checkingTargets = targets.data === undefined && !targets.isError;
+  const hasTargets = Boolean(targets.data?.length);
+  const selectedMissing = Boolean(
+    targetId && targets.data && !targets.data.some((target) => target.targetId === targetId),
+  );
+  // A missing saved device is only "unavailable" once a search finished without it,
+  // and then stays decided, so polling can't make the warning blink.
+  const [confirmedMissing, setConfirmedMissing] = useState(false);
+  useEffect(() => {
+    if (!selectedMissing) setConfirmedMissing(false);
+    else if (!targets.isFetching) setConfirmedMissing(true);
+  }, [selectedMissing, targets.isFetching]);
+  const refreshingSelected = selectedMissing && !confirmedMissing;
   const hasSavedLogins = browserSetup && availableProfiles?.some((profile) => profile.account);
   const profilePicker =
     hasTargets && availableProfiles?.length ? (
@@ -172,7 +179,7 @@ export function TestRunSettings({
                   },
                 ]
               : []),
-            ...(configuration.targetUnavailable && hasTargets
+            ...(configuration.targetUnavailable && hasTargets && !refreshingSelected
               ? [
                   {
                     id: "target",
@@ -184,6 +191,17 @@ export function TestRunSettings({
             ...(profileBlocker ? [profileBlocker] : []),
           ],
         }}
+        targetHint={
+          refreshingSelected ? (
+            <span className="inline-flex items-center gap-1.5">
+              <LoaderCircle
+                className="size-3.5 shrink-0 animate-spin text-brand motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              {destination.searching}
+            </span>
+          ) : undefined
+        }
         targetOptions={
           hasTargets
             ? targets.data?.map((target) => ({
@@ -214,6 +232,34 @@ export function TestRunSettings({
         error={scopeError ?? configuration.error}
         onRetry={scopeError ? onRetryScope : configuration.retry}
       >
+        {!hasTargets ? (
+          // Searching is a calm, continuous state; it changes only when a device appears.
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-start gap-3 rounded-xl border border-border bg-muted/30 p-3"
+          >
+            <span
+              className="relative mt-1 flex size-3 shrink-0 items-center justify-center"
+              aria-hidden="true"
+            >
+              <span className="absolute size-3 animate-ping rounded-full bg-brand/40 [animation-duration:2s] motion-reduce:hidden" />
+              <span className="relative size-2 rounded-full bg-brand" />
+            </span>
+            <span className="grid min-w-0 flex-1 gap-0.5">
+              <span className="text-sm font-medium">{destination.searching}</span>
+              <span className="text-xs leading-relaxed text-muted-foreground">
+                {destination.emptyDetail}
+              </span>
+              <Link
+                to="/devices"
+                className="mt-1 w-fit rounded-sm text-xs font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                View devices
+              </Link>
+            </span>
+          </div>
+        ) : null}
         {textInputs ? <TestTextRunInputs state={textInputs} /> : null}
         {hasSavedLogins ? profilePicker : null}
         {hasTargets && browserSetup && selectedProfile?.account ? (
@@ -230,10 +276,14 @@ export function TestRunSettings({
         ) : null}
         {hasTargets ? (
           <details
-            className="group border-t border-border/60 pt-3"
+            className="group/advanced"
             open={configuration.selection.buildId ? true : undefined}
           >
-            <summary className="min-h-10 cursor-pointer text-sm font-medium">
+            <summary className="-mx-1 flex min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-md px-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+              <ChevronRight
+                className="size-3.5 transition-transform duration-150 group-open/advanced:rotate-90 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
               Advanced run options
             </summary>
             <div className="grid gap-3 pt-2">
@@ -273,21 +323,6 @@ export function TestRunSettings({
               </label>
             </div>
           </details>
-        ) : null}
-        {checkingTargets ? (
-          <PageLoading
-            label={destination.label === "Browser" ? "Finding browsers…" : "Finding devices…"}
-          />
-        ) : !targets.data?.length ? (
-          <EmptyState
-            title={destination.emptyTitle}
-            detail={destination.emptyDetail}
-            action={
-              <Link className={productLinkClassName} to="/devices">
-                View devices
-              </Link>
-            }
-          />
         ) : null}
         <div className="flex justify-end border-t border-border pt-3">
           <Button variant="default" onClick={() => onStart()} disabled={!canStart || startPending}>

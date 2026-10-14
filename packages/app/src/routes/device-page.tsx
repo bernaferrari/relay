@@ -17,6 +17,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { Plus } from "lucide-react";
 import { WorkbenchPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
@@ -376,7 +377,7 @@ export function DevicePage() {
                     />
                   }
                 >
-                  New test
+                  <Plus aria-hidden="true" /> New test
                 </Button>
               ) : null}
             </>

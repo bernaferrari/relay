@@ -25,7 +25,8 @@ export function deviceSummaryLine(device: DeviceLabel): string {
   if (!kind || kind.localeCompare(platform, undefined, { sensitivity: "accent" }) === 0) {
     return platform;
   }
-  return `${platform} · ${kind}`;
+  // Raw kinds arrive lowercase ("emulator"); show them like the platform beside them.
+  return `${platform} · ${kind.charAt(0).toLocaleUpperCase()}${kind.slice(1)}`;
 }
 
 function capitalizePlatform(version: string, platform: "Android" | "iOS"): string {

@@ -186,8 +186,7 @@ export function MapPage() {
             nativeButton={false}
             render={<Link to="/tests/new" search={{ app: appId }} />}
           >
-            <Plus />
-            New test
+            <Plus aria-hidden="true" /> New test
           </Button>
         </div>
       </header>

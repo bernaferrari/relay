@@ -5,7 +5,7 @@ describe("device labels", () => {
   it("says Android 16 instead of a bare 16", () => {
     expect(devicePlatformLabel({ platform: "android", osVersion: "16" })).toBe("Android 16");
     expect(deviceSummaryLine({ platform: "android", osVersion: "16", kind: "emulator" })).toBe(
-      "Android 16 · emulator",
+      "Android 16 · Emulator",
     );
   });
 

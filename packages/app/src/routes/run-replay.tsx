@@ -36,9 +36,9 @@ export function replayCompletionAction(
 export function replayPauseLabel(status: string | undefined, waitingForHuman: boolean): string {
   if (status === "paused" && waitingForHuman) return "Paused · You have control";
   if (status === "paused") return "Replay paused; waiting for the current operation to continue.";
-  if (status === "queued") return "Replay queued on the saved target…";
-  if (status === "running") return "Automation running · Relay controls the target";
-  return "Replaying saved steps on the saved target…";
+  if (status === "queued") return "Replay queued. It starts when the device or browser is free…";
+  if (status === "running") return "Automation running · Relay is in control";
+  return "Replaying the saved steps…";
 }
 
 /** Stopping a running replay is the explicit takeover. */
@@ -92,10 +92,11 @@ export function RunReplayAction({
     >
       <DialogTrigger render={<Button variant={variant} />}>{label}</DialogTrigger>
       <DialogContent showCloseButton={!replay.isPending}>
-        <DialogTitle>Rerun this test execution</DialogTitle>
+        <DialogTitle>Run this test again</DialogTitle>
         <DialogDescription>
-          Run the recorded steps and saved inputs on {report.targetName ?? "the original target"}.
-          Relay checks the saved target and browser profile before starting.
+          Run the recorded steps and saved inputs on{" "}
+          {report.targetName ?? "the same device or browser"}. Relay checks that it is ready
+          before starting.
         </DialogDescription>
         <p className="text-sm text-muted-foreground">
           {mode === "same-configuration"

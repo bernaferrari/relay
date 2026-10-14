@@ -2,6 +2,7 @@ import { libraryRowSurface, libraryRowContent } from "../components/library-row-
 /** @jsxImportSource react */
 import { RunThumb } from "../components/run-thumb";
 import { StatusPill, runStateOf } from "../components/run-status";
+import { formatDuration } from "../components/run-report-formatters";
 import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
@@ -166,13 +167,14 @@ export function RunsPage() {
         label="Filter runs"
         tabs={
           <Tabs
-            className="min-w-0 max-w-full overflow-x-auto"
+            // Three short tabs never scroll; clipping would hide the active underline.
+            className="min-w-0 max-w-full"
             value={view}
             onValueChange={(next) => setView(next as RunView)}
           >
-            <TabsList variant="line" className="h-9 justify-start" aria-label="Run view">
+            <TabsList variant="line" className="h-11 justify-start gap-3" aria-label="Run view">
               {runViews.map((item) => (
-                <TabsTrigger key={item.id} value={item.id}>
+                <TabsTrigger key={item.id} value={item.id} className="min-h-10 px-2 transition-colors">
                   {item.label}
                   {item.id === "needs-review" && reviewCount ? (
                     <span
@@ -307,10 +309,7 @@ function RunRow({
       <span className="grid min-w-0 gap-1.5">
         <strong className="truncate text-sm font-semibold text-foreground">{title}</strong>
         <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
-          <StatusPill
-            state={state}
-            {...(run.outcome === "harness-failure" ? { label: "Could not complete" } : {})}
-          />
+          <StatusPill state={state} />
           {genericBrowser || chromeBrowser ? (
             <span className="inline-flex shrink-0 items-center" title={device}>
               {chromeBrowser ? (
@@ -459,13 +458,6 @@ function platformName(value: string | undefined) {
   return undefined;
 }
 
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1_000) return `${Math.round(durationMs)} ms`;
-  if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
-  const minutes = Math.floor(durationMs / 60_000);
-  const seconds = Math.round((durationMs % 60_000) / 1_000);
-  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
-}
 
 function relativeTime(value: number): string {
   const elapsed = Math.max(0, Date.now() - value);

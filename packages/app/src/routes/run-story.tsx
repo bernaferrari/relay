@@ -202,7 +202,7 @@ export function RunStoryView({
           detail={
             status === "running"
               ? "The first screen appears as soon as the run reaches it."
-              : "This step finished without a screen capture. Choose another step to see its screen."
+              : "Relay didn’t save a screen for this step. Choose another step to see its screen."
           }
         />
       )}
@@ -289,6 +289,11 @@ export function RunStoryView({
                           key={action.id}
                           action={action}
                           selected={selected?.id === action.id && Boolean(pinned)}
+                          shown={
+                            selected?.id === action.id &&
+                            (Boolean(pinned) ||
+                              (!livePreview && Boolean(framePath) && selected.framePath === framePath))
+                          }
                           capture={captures?.find(
                             (item) => item.framePath && item.framePath === action.framePath,
                           )}
@@ -386,11 +391,14 @@ function captureBadge(item?: CaptureReviewItem): string | undefined {
 function ActionRow({
   action,
   selected,
+  shown,
   capture,
   onSelect,
 }: {
   action: StoryAction;
   selected: boolean;
+  /** The step whose screenshot the stage shows, pinned or not, stays highlighted. */
+  shown: boolean;
   capture?: CaptureReviewItem;
   onSelect(): void;
 }) {
@@ -404,7 +412,7 @@ function ActionRow({
         disabled={!action.framePath}
         aria-pressed={selected}
         className={`flex w-full min-w-0 items-center gap-2.5 rounded-md py-1.5 pr-2 pl-9 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring enabled:hover:bg-accent/50 ${
-          selected ? "bg-accent" : ""
+          selected || shown ? "bg-accent" : ""
         }`}
       >
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

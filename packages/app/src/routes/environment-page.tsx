@@ -28,7 +28,7 @@ import {
   useNavigate,
   useRouteContext,
 } from "@tanstack/react-router";
-import { ChevronRight, Plus, RotateCcw } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Plus, RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { FormPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
@@ -292,7 +292,7 @@ export function EnvironmentPage() {
                   <DropdownMenuTrigger
                     render={<Button variant="ghost" disabled={openExternal.isPending} />}
                   >
-                    More
+                    <MoreHorizontal aria-hidden="true" /> More
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" sideOffset={6}>
                     <DropdownMenuItem

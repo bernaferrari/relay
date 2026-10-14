@@ -95,13 +95,10 @@ export function TestWorkspaceActions({
             </Button>
           ) : (
             // One split button: run now, or open the chevron to choose where it runs.
-            <div
-              className="flex items-center *:data-[slot=button]:first:rounded-e-none *:data-[slot=button]:last:rounded-s-none"
-              role="group"
-              aria-label="Run"
-            >
+            <div className="flex items-center" role="group" aria-label="Run">
               <Button
                 size="sm"
+                className={testPresent ? "rounded-e-none" : undefined}
                 onClick={onRun}
                 disabled={startPending}
                 title={configurationLabel}
@@ -113,8 +110,24 @@ export function TestWorkspaceActions({
               {testPresent ? (
                 <Popover open={settingsOpen} onOpenChange={onSettingsOpen}>
                   <PopoverTrigger
-                    // Outline, so Run stays the one filled action in the header.
-                    render={<Button ref={configurationTriggerRef} size="sm" variant="outline" />}
+                    // Icon-only: one filled split button with a hairline divider.
+                    // With the target named: outline, so Run stays the one filled action.
+                    render={
+                      configurationName !== "Run settings" ? (
+                        <Button
+                          ref={configurationTriggerRef}
+                          size="sm"
+                          variant="outline"
+                          className="-ml-px rounded-s-none"
+                        />
+                      ) : (
+                        <Button
+                          ref={configurationTriggerRef}
+                          size="icon-sm"
+                          className="w-7 rounded-s-none border-l border-l-primary-foreground/25"
+                        />
+                      )
+                    }
                     aria-label={`Run settings: ${configurationName}`}
                     aria-description={`Run settings: ${configurationLabel}`}
                     title={configurationLabel}

@@ -4,6 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TestRunSettings } from "./test-run-settings";
 
+// The empty state links to Devices; a plain anchor is enough without a router.
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
+    <a className={className}>{children}</a>
+  ),
+}));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root | undefined;
 afterEach(async () => {
@@ -56,7 +63,7 @@ it("keeps a newly recorded browser in discovery while cached destinations refres
   } satisfies ComponentProps<typeof TestRunSettings>;
   await act(async () => root!.render(<TestRunSettings {...props} />));
   expect(host.textContent).not.toContain("Saved target is unavailable");
-  expect(host.querySelector('[role="status"]')?.textContent).toContain("Finding browsers");
+  expect(host.querySelector('[role="status"]')?.textContent).toContain("Looking for browsers");
 
   await act(async () =>
     root!.render(
@@ -79,4 +86,46 @@ it("keeps a newly recorded browser in discovery while cached destinations refres
     root!.render(<TestRunSettings {...props} targets={{ ...props.targets, isFetching: false }} />),
   );
   expect(host.textContent).toContain("Saved target is unavailable");
+});
+
+it("keeps the panel steady while devices are polled after the first search", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  const props = {
+    testId: "test-1",
+    activeRun: false,
+    targetId: "",
+    recordedPlatforms: ["android"] as const,
+    targets: { data: [], isPending: false, isError: false, isFetching: false },
+    profiles: { data: [] },
+    builds: { data: [] },
+    pairedCount: 0,
+    canStart: false,
+    editorState: "saved" as const,
+    configuration: {
+      selection: {},
+      targetUnavailable: false,
+      loading: false,
+      saving: false,
+      restored: false,
+      edited: false,
+      pristine: true,
+      setSelection: vi.fn(),
+      retry: vi.fn(),
+      error: undefined,
+    },
+    onRetryScope: vi.fn(),
+    startPending: false,
+    onStart: vi.fn(),
+  } satisfies ComponentProps<typeof TestRunSettings>;
+  await act(async () => root!.render(<TestRunSettings {...props} />));
+  const steady = host.textContent;
+  expect(steady).toContain("Looking for Android devices");
+  expect(steady).toContain("Plug in and unlock your phone");
+  // A background poll with the same empty answer must not change a single word.
+  await act(async () =>
+    root!.render(<TestRunSettings {...props} targets={{ ...props.targets, isFetching: true }} />),
+  );
+  expect(host.textContent).toBe(steady);
 });

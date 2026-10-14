@@ -476,17 +476,6 @@ export function DevicesPage() {
           description="Choose a device or browser to inspect or record a test."
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                nativeButton={false}
-                render={
-                  <Link
-                    to="/environments"
-                    search={{ view: "new", ...(continuation ? { returnTo: search.returnTo } : {}) }}
-                  />
-                }
-              >
-                <Plus aria-hidden="true" /> New browser
-              </Button>
               {!devices.isError ? (
                 <Button
                   variant="ghost"
@@ -502,12 +491,23 @@ export function DevicesPage() {
                   />
                 </Button>
               ) : null}
+              <Button
+                nativeButton={false}
+                render={
+                  <Link
+                    to="/environments"
+                    search={{ view: "new", ...(continuation ? { returnTo: search.returnTo } : {}) }}
+                  />
+                }
+              >
+                <Plus aria-hidden="true" /> New browser
+              </Button>
             </div>
           }
         />
 
         <div
-          className="flex flex-wrap items-center gap-3 border-b border-border pb-4"
+          className="flex flex-wrap items-center gap-3"
           aria-label="Search devices"
         >
           <LibrarySearch

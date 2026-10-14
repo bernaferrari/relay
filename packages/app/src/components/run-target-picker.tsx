@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
@@ -63,7 +63,13 @@ export function RunTargetPicker({
             />
           }
         >
-          <span>{selected.length ? "+ Add or remove" : "Choose browsers or devices"}</span>
+          {selected.length ? (
+            <>
+              <Plus aria-hidden="true" /> Add or remove
+            </>
+          ) : (
+            <span>Choose browsers or devices</span>
+          )}
         </DialogTrigger>
         <DialogContent className="flex max-h-[85dvh] min-w-0 flex-col gap-4 overflow-hidden">
           <div>

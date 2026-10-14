@@ -15,7 +15,7 @@ export function LibraryToolbar({
   label: string;
 }) {
   return (
-    <div className="grid gap-5 border-b border-border pb-5">
+    <div className="grid gap-5">
       {tabs}
       {search || filters ? (
         <div

@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type RefObject,
 } from "react";
-import { Scan, LoaderCircle } from "lucide-react";
+import { ChevronDown, Scan, LoaderCircle } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import {
   DropdownMenu,
@@ -52,7 +52,7 @@ export function TalkBackModeSelect({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon-sm" />}
+        render={<Button variant="ghost" size="sm" />}
         disabled={disabled}
         aria-label="Inspect elements"
         title={`Inspect elements · ${mode === "hover" ? "Show on hover" : mode === "always" ? "Show all with labels" : "Never show"}`}
@@ -65,6 +65,9 @@ export function TalkBackModeSelect({
         ) : (
           <Scan className="size-4" aria-hidden="true" />
         )}
+        {/* A name says what the scan icon does; the chevron says it opens choices. */}
+        Elements
+        <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-56">
         <DropdownMenuRadioGroup

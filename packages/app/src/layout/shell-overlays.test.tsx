@@ -198,7 +198,7 @@ describe("shell overlays", () => {
     await renderShell({ initialEntries: ["/runs/new-run?app=wrong-app"], runs: [], runDetail });
     const pending = document.querySelector('[aria-label="App: Loading app"]');
     expect(pending).not.toBeNull();
-    expect(pending?.textContent).not.toContain("Everything");
+    expect(pending?.textContent).not.toContain("Across apps");
     await act(async () =>
       resolveRun({
         id: "new-run",

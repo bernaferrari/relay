@@ -225,7 +225,8 @@ export function NewTestDetailedSetup({
               type="button"
               variant="ghost"
               size="sm"
-              className="-mt-2 w-fit"
+              // Optically align the icon with the field edges above.
+              className="-mt-2 -ml-2.5 w-fit"
               disabled={admission.busy}
               onClick={() => {
                 if (!admission.mayEdit()) return;

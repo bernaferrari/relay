@@ -275,7 +275,11 @@ describe("Tests library", () => {
         link.textContent?.includes("Review steps"),
       ),
     ).toBe(true);
-    await clickText("Run");
+    // Run is an icon button named by its test.
+    const run = document.querySelector<HTMLElement>('a[aria-label^="Run "][href*="setup=run"]');
+    expect(run).not.toBeNull();
+    await act(async () => run!.click());
+    await settle();
     expect(history.location.pathname).toBe("/tests/test-language-internal");
     expect(history.location.search).toBe("?setup=run");
     expect(history.location.hash).toBe("");
@@ -560,7 +564,7 @@ describe("Runs workspace", () => {
     ];
     await render("/runs?q=Open%20home", catalog({ listRuns: async () => planRuns }));
     const row = document.querySelector('a[href^="/batches/mixed?"]');
-    expect(row?.textContent).toContain("Could not complete");
+    expect(row?.textContent).toContain("Could not run");
     expect(row?.textContent).toContain("2 tests");
     expect(row?.textContent).not.toContain("Passed");
   });
@@ -623,7 +627,7 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Needs review");
     expect(document.body.textContent).toContain("In progress");
     expect(document.querySelector('[aria-label="Morning review"]')).toBeNull();
-    expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);
+    expect(document.body.textContent?.match(/2\.5s/g)).toHaveLength(1);
     expect(document.body.textContent).not.toContain("run-passed-internal");
     expect(document.querySelector('a[href^="/runs/run-passed-internal?"]')).not.toBeNull();
     expect(document.querySelectorAll("select")).toHaveLength(0);

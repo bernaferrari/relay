@@ -8,10 +8,10 @@ import { TestLibraryList as TestList } from "./test-library-list";
 import { RecordingDraftList } from "./recording-draft-list";
 import { isTestDraft, runTime, relativeTime } from "./test-library-presentation";
 import { Button } from "@relay/ui-react/components/button";
-import { ChevronRight, CircleDot, CircleX, Clock, Eye, Play, Plus, Search, X } from "lucide-react";
-import { Input } from "@relay/ui-react/components/input";
+import { ChevronRight, CircleDot, CircleX, Clock, Eye, Play, Plus, X } from "lucide-react";
+import { LibrarySearch } from "../components/library-toolbar";
 import { EmptyState } from "../components/product-patterns";
-import { LibraryPage } from "../components/page-layout";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { runStateOf, type RunState } from "../components/run-status";
 import { libraryRowSurface } from "../components/library-row-styles";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -200,28 +200,32 @@ export function TestsPage() {
     });
   }
 
+  const libraryEmpty =
+    Boolean(tests.data) && !testCount && (app || !codeTestCount) && view === "tests";
+  const searchLabel =
+    view === "plans" ? "Search plans" : view === "drafts" ? "Search drafts" : "Search tests";
+
   return (
     <LibraryPage className="max-w-5xl" onClickCapture={returnFocus.onClickCapture}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="grid gap-1">
-          <h1 className="font-display text-3xl leading-9 font-semibold tracking-[-0.025em]">
-            Tests
-          </h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setE2EOpen(true)}>
-            Open project
-          </Button>
-          {/* One main action per tab: plans are created where plans are listed. */}
-          {view === "plans" ? <NewPlanDialog {...(app ? { appId: app } : {})} /> : null}
-          <Button
-            nativeButton={false}
-            render={<Link to="/tests/new" search={{ app: app || undefined }} />}
-          >
-            <Plus aria-hidden="true" /> New test
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        title="Tests"
+        description="Flows you recorded once and can run again any time."
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setE2EOpen(true)}>
+              Open project
+            </Button>
+            {/* One main action per tab: plans are created where plans are listed. */}
+            {view === "plans" ? <NewPlanDialog {...(app ? { appId: app } : {})} /> : null}
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/new" search={{ app: app || undefined }} />}
+            >
+              <Plus aria-hidden="true" /> New test
+            </Button>
+          </>
+        }
+      />
 
       <AttentionStrip
         toReview={toReview}
@@ -243,7 +247,6 @@ export function TestsPage() {
       <Tabs
         value={view}
         onValueChange={(value) => updateSearch({ view: value as LibraryView, result: "all" })}
-        className="mt-6"
       >
         <TabsList variant="line" aria-label="Test library" className="h-11 gap-3">
           {(
@@ -267,34 +270,21 @@ export function TestsPage() {
           ))}
         </TabsList>
         <TabsContent value={view}>
-          <div className="relative mt-4">
-            <Search
-              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              aria-label={
-                view === "plans"
-                  ? "Search plans"
-                  : view === "drafts"
-                    ? "Search drafts"
-                    : "Search tests"
-              }
-              className="h-10 pl-9"
-              placeholder={
-                view === "plans"
-                  ? "Search plans"
-                  : view === "drafts"
-                    ? "Search drafts"
-                    : "Search tests"
-              }
-              value={query}
-              onChange={(event) => {
-                setQuery(event.currentTarget.value);
-                updateSearch({ q: event.currentTarget.value });
-              }}
-            />
-          </div>
+          {/* Nothing to search yet: the empty state carries the one next step. */}
+          {libraryEmpty && !query ? null : (
+            <div className="mt-4 flex">
+              <LibrarySearch
+                id="test-library-search"
+                label={searchLabel}
+                placeholder={searchLabel}
+                value={query}
+                onChange={(next) => {
+                  setQuery(next);
+                  updateSearch({ q: next });
+                }}
+              />
+            </div>
+          )}
 
           {tests.isPending ? <PageLoading label="Loading tests…" /> : null}
           <RecordingProblem
@@ -337,7 +327,7 @@ export function TestsPage() {
             </>
           ) : null}
 
-          {tests.data && !testCount && (app || !codeTestCount) && view === "tests" ? (
+          {libraryEmpty ? (
             <EmptyState
               title={app ? "No tests for this app yet" : "No tests yet"}
               detail="Click through your website or app once. Relay saves each step so you can run it again any time."
@@ -453,7 +443,12 @@ export function TestsPage() {
   );
 }
 
-type InProgress = { label: string; action: string; to: "recording" | "run"; id: string };
+type InProgress = {
+  label: string;
+  action: string;
+  to: "recording" | "run";
+  id: string;
+};
 
 /**
  * Work this person started that is still going: a recording or a run. With an
@@ -461,7 +456,9 @@ type InProgress = { label: string; action: string; to: "recording" | "run"; id: 
  * is not known yet is kept so it cannot be lost.
  */
 function useInProgress(app: string): InProgress[] {
-  const { platform, productService, catalogService } = useRouteContext({ from: "__root__" });
+  const { platform, productService, catalogService } = useRouteContext({
+    from: "__root__",
+  });
   const recording = useQuery({
     queryKey: recordingQueryKeys.pointer,
     queryFn: async () => (await readWorkflowPointer(platform)) ?? null,
@@ -507,7 +504,13 @@ function useInProgress(app: string): InProgress[] {
       (item.phase === "running" || item.phase === "queued") &&
       (!app || item.appMapId === app),
   );
-  if (run) items.push({ label: run.testName ?? run.title, action: "Watch", to: "run", id: run.id });
+  if (run)
+    items.push({
+      label: run.testName ?? run.title,
+      action: "Watch",
+      to: "run",
+      id: run.id,
+    });
   return items;
 }
 
@@ -526,13 +529,16 @@ function AttentionStrip({
   const chip =
     "flex min-h-11 items-center gap-2.5 rounded-xl border px-3.5 py-2 text-sm font-medium outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring";
   return (
-    <div className="mt-5 flex flex-wrap gap-2" aria-label="Needs you">
+    <div className="mb-5 flex flex-wrap gap-2" aria-label="Needs you">
       {inProgress.map((item) => (
         <Link
           key={item.id}
           className={`${chip} border-brand/30 bg-brand-soft text-foreground hover:border-brand/60`}
           {...(item.to === "recording"
-            ? { to: "/recordings/$recordingId", params: { recordingId: item.id } }
+            ? {
+                to: "/recordings/$recordingId",
+                params: { recordingId: item.id },
+              }
             : { to: "/runs/$runId", params: { runId: item.id } })}
         >
           <CircleDot

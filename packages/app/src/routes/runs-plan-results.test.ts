@@ -138,7 +138,7 @@ describe("Plan Result rows", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.outcome).toBe("harness-failure");
     expect(rows[0]?.outcome).not.toBe("product-failure");
-    expect(planResultListCause(rows[0]!)).toBe("Could not complete");
+    expect(planResultListCause(rows[0]!)).toBe("Could not run");
     expect(planResultListCause(rows[0]!)).not.toBe("Failed");
   });
 
@@ -166,7 +166,7 @@ describe("Plan Result rows", () => {
       ),
     ]);
     expect(rows[0]?.outcome).toBe("harness-failure");
-    expect(planResultListCause(rows[0]!)).toBe("Could not complete");
+    expect(planResultListCause(rows[0]!)).toBe("Could not run");
   });
 
   it("uses the canonical review classification for a completed pending-review cell", () => {

@@ -41,12 +41,14 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
 function SaveStatus({ state }: { state: SaveState }) {
   return (
     <span
-      className={`mt-0.5 inline-flex min-h-7 items-center gap-2 rounded-full bg-muted px-2.5 text-xs font-semibold text-muted-foreground ${
+      className={`mt-0.5 inline-flex min-h-7 items-center gap-2 rounded-full px-2.5 text-xs font-semibold ${
         state === "saved"
           ? "bg-success/15 text-success-foreground"
-          : state === "failed" || state === "unavailable"
+          : state === "failed"
             ? "bg-destructive/10 text-destructive"
-            : ""
+            : state === "unavailable"
+              ? "bg-warning/15 text-warning-foreground"
+              : "bg-muted text-muted-foreground"
       }`}
       aria-live="polite"
     >
@@ -56,7 +58,7 @@ function SaveStatus({ state }: { state: SaveState }) {
         : state === "failed"
           ? "Could not save"
           : state === "unavailable"
-            ? "Unavailable"
+            ? "Relay offline"
             : "Saved"}
     </span>
   );

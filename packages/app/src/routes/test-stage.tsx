@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import { Image as ImageIcon, Radio } from "lucide-react";
+import { Image as ImageIcon } from "lucide-react";
 import {
   createContext,
   useContext,
@@ -95,29 +95,43 @@ export function TestStage({
   }, [mode]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-stage">
-      {/* The screenshot by default; the live app is one deliberate click away. */}
+      {/* Two named states, always visible: what you see is never a mystery button. */}
       <div
-        className={`flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5 ${shared ? "max-[1099px]:hidden" : ""}`}
+        className={`flex min-h-11 shrink-0 items-center gap-3 border-b border-border px-3 ${shared ? "max-[1099px]:hidden" : ""}`}
       >
-        <span className="text-xs font-medium text-muted-foreground">
-          {mode === "live" ? liveLabel : "Screenshot"}
-        </span>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={mode === "recorded" && !live}
-          onClick={() => setMode(mode === "live" ? "recorded" : "live")}
+        <div
+          role="group"
+          aria-label="Stage view"
+          className="flex shrink-0 gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
         >
-          {mode === "live" ? (
-            <>
-              <ImageIcon aria-hidden="true" /> Show screenshot
-            </>
-          ) : (
-            <>
-              <Radio aria-hidden="true" /> Open {liveLabel.toLocaleLowerCase()}
-            </>
-          )}
-        </Button>
+          <Button
+            size="xs"
+            variant={mode === "recorded" ? "secondary" : "ghost"}
+            aria-pressed={mode === "recorded"}
+            onClick={() => setMode("recorded")}
+          >
+            <ImageIcon aria-hidden="true" /> Screenshot
+          </Button>
+          <Button
+            size="xs"
+            variant={mode === "live" ? "secondary" : "ghost"}
+            aria-pressed={mode === "live"}
+            aria-label={liveLabel}
+            disabled={!live}
+            onClick={() => setMode("live")}
+          >
+            <span
+              aria-hidden="true"
+              className={`size-1.5 rounded-full ${mode === "live" ? "bg-success" : "bg-muted-foreground/60"}`}
+            />
+            Live
+          </Button>
+        </div>
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {mode === "live"
+            ? `Your app right now, in a ${liveLabel.replace(/^Live /u, "").toLocaleLowerCase()} Relay controls. Use it to check a screen or record more steps.`
+            : "What the latest run saw at the selected step."}
+        </span>
       </div>
       <div className={mode === "recorded" ? "min-h-0 flex-1 overflow-auto" : "hidden"}>
         {recorded}

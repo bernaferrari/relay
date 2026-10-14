@@ -36,6 +36,8 @@ export function RunConfigurationComposer({
   pairedWorkspaceAction,
   targetLabel = "Device or browser",
   targetPlaceholder = "Choose a device or browser",
+  targetEmptyPlaceholder,
+  targetHint,
 }: {
   configuration: RunConfigurationState;
   onResolveBlocker?: (blocker: RunConfigurationBlocker) => void;
@@ -55,6 +57,10 @@ export function RunConfigurationComposer({
   pairedWorkspaceAction?: ReactNode;
   targetLabel?: string;
   targetPlaceholder?: string;
+  /** What the field says when there is nothing to pick (searching, or none found). */
+  targetEmptyPlaceholder?: string;
+  /** One steady line under the field; it shares the selected target's detail slot. */
+  targetHint?: ReactNode;
 }) {
   const titleId = useId();
   const languageChoices = Boolean(
@@ -153,16 +159,21 @@ export function RunConfigurationComposer({
                 value={selection?.targetProfileId ?? ""}
                 options={targetOptions.map((option) => ({ value: option.id, label: option.label }))}
                 placeholder={
-                  targetOptions.length ? targetPlaceholder : "No devices or browsers available"
+                  targetOptions.length
+                    ? targetPlaceholder
+                    : (targetEmptyPlaceholder ?? "No devices or browsers available")
                 }
                 onValueChange={(targetProfileId) =>
                   onSelectionChange({ ...selection, targetProfileId, targetProfileIds: undefined })
                 }
                 disabled={loading}
               />
-              {targetOptions.find((option) => option.id === selection?.targetProfileId)?.detail ? (
-                <p className="text-sm text-muted-foreground" role="status">
-                  {targetOptions.find((option) => option.id === selection?.targetProfileId)?.detail}
+              {(targetHint ??
+              targetOptions.find((option) => option.id === selection?.targetProfileId)?.detail) ? (
+                <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+                  {targetHint ??
+                    targetOptions.find((option) => option.id === selection?.targetProfileId)
+                      ?.detail}
                 </p>
               ) : null}
             </div>

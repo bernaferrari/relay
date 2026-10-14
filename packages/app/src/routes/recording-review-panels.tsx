@@ -87,13 +87,23 @@ export function RecordingEvidencePanel({
       aria-labelledby="recording-evidence-title"
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 id="recording-evidence-title" className="flex items-center gap-2 text-sm font-medium">
+        <h2
+          id="recording-evidence-title"
+          className="flex min-w-0 items-center gap-2 text-sm font-medium"
+        >
           {action ? (
             <>
               {stepNumber ? (
-                <span className="text-muted-foreground">Step {stepNumber} ·</span>
+                <>
+                  <span className="shrink-0 text-muted-foreground tabular-nums">
+                    Step {stepNumber}
+                  </span>
+                  <span className="text-muted-foreground/60" aria-hidden="true">
+                    ·
+                  </span>
+                </>
               ) : null}
-              {reviewActionCopy(action).title}
+              <span className="truncate">{reviewActionCopy(action).title}</span>
             </>
           ) : (
             "Step preview"
@@ -101,7 +111,7 @@ export function RecordingEvidencePanel({
         </h2>
         <div className="inline-flex shrink-0 items-center gap-2">
           <Button
-            size="sm"
+            size="icon-sm"
             variant="ghost"
             aria-label="Elements"
             aria-pressed={showElements}
