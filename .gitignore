@@ -98,3 +98,4 @@ evidence/
 !vendor/**/*.md
 !plugins/relay-proof/skills/**/SKILL.md
 packages/ios-preview-producer/ios-preview-producer
+.vercel

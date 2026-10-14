@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm --filter @relay/site... install --frozen-lockfile --ignore-scripts",
+  "buildCommand": "pnpm build:site",
+  "outputDirectory": "packages/site/out",
+  "cleanUrls": true
+}

@@ -3,6 +3,9 @@
 The public landing page and documentation live together in this package. It uses Next.js,
 Fumadocs MDX/Core/UI, Tailwind CSS 4, shared Relay shadcn components, and shadcn's component patterns, cool neutral surfaces, and Relay’s native loop artwork.
 
+Production: [relay-lime-pi.vercel.app](https://relay-lime-pi.vercel.app), with
+[documentation](https://relay-lime-pi.vercel.app/docs).
+
 ## Develop
 
 From the repository root:
@@ -15,6 +18,12 @@ pnpm dev:site
 Open `http://localhost:3002`. The product app uses its own process and port.
 
 ## Build and host
+
+The Vercel project `relay` builds from the repository root using `vercel.json` and
+publishes only `packages/site/out`. Its production and preview environments set
+`NEXT_PUBLIC_SITE_URL=https://relay-lime-pi.vercel.app`. Local device data, runs,
+credentials, and agent worktrees are excluded from CLI uploads by `.vercelignore`.
+From the linked repository root, deploy with `vercel deploy --prod`.
 
 Set `NEXT_PUBLIC_SITE_URL` to the public HTTPS origin in this package's `.env.local`, or in
 the build environment. Then:

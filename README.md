@@ -15,11 +15,13 @@ Click through your app once. Relay replays it on web, Android, and iOS, and show
 </p>
 
 <p>
+  <a href="https://relay-lime-pi.vercel.app"><strong>Website</strong></a> ·
+  <a href="https://relay-lime-pi.vercel.app/docs">Documentation</a> ·
   <a href="#quick-start"><strong>Quick start</strong></a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#for-coding-agents">For agents</a> ·
   <a href="#platforms">Platforms</a> ·
-  <a href="./docs/FIRST_TEST.md">Your first test</a>
+  <a href="https://relay-lime-pi.vercel.app/docs/getting-started/first-test">Your first test</a>
 </p>
 
 <picture>
@@ -56,7 +58,7 @@ pnpm demo
 ```
 
 The demo prints links to both runs: the failure, with Save overlapping the seats, and the passing
-rerun. The [first-test guide](./docs/FIRST_TEST.md) walks through every line of output.
+rerun. The [first-test guide](https://relay-lime-pi.vercel.app/docs/getting-started/first-test) walks through every line of output.
 
 Then open the workspace and record a test in your own app:
 
@@ -119,12 +121,12 @@ again. Then you review the exact run it made.
 
 Add `--json` for machine output. Exit codes are designed for loops:
 
-| Code | Meaning                                                      |
-| ---- | ------------------------------------------------------------ |
-| `0`  | Passed                                                       |
-| `1`  | A test failed: the app didn't do what the test expects       |
-| `3`  | Couldn't run: device, sign-in, or setup blocked it           |
-| `10` | Passed, with screenshots waiting for review                  |
+| Code | Meaning                                                |
+| ---- | ------------------------------------------------------ |
+| `0`  | Passed                                                 |
+| `1`  | A test failed: the app didn't do what the test expects |
+| `3`  | Couldn't run: device, sign-in, or setup blocked it     |
+| `10` | Passed, with screenshots waiting for review            |
 
 `./bin/relay --help` lists every code.
 
@@ -137,9 +139,12 @@ Add `--json` for machine output. Exit codes are designed for loops:
       "command": "node",
       "args": [
         "/absolute/path/to/relay/packages/mcp/dist/relay-mcp.js",
-        "--server", "http://127.0.0.1:8787",
-        "--credential-source", "none",
-        "--profile", "qa"
+        "--server",
+        "http://127.0.0.1:8787",
+        "--credential-source",
+        "none",
+        "--profile",
+        "qa"
       ]
     }
   }
@@ -153,11 +158,11 @@ and the [agent plugin and skills](./plugins/relay-proof/README.md).
 
 ## Platforms
 
-| Target                           | What you need                                         | Guide                                                         |
-| -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------- |
-| **Websites**                     | Chrome, Chromium, or Edge                             | [Browser](./packages/site/content/docs/devices/browser.mdx)   |
-| **Android** phones and emulators | `adb`                                                 | [Android](./packages/site/content/docs/devices/android.mdx)   |
-| **iPhone and iPad**, simulators  | A Mac with Xcode                                      | [iOS](./packages/site/content/docs/devices/ios.mdx)           |
+| Target                           | What you need             | Guide                                                       |
+| -------------------------------- | ------------------------- | ----------------------------------------------------------- |
+| **Websites**                     | Chrome, Chromium, or Edge | [Browser](./packages/site/content/docs/devices/browser.mdx) |
+| **Android** phones and emulators | `adb`                     | [Android](./packages/site/content/docs/devices/android.mdx) |
+| **iPhone and iPad**, simulators  | A Mac with Xcode          | [iOS](./packages/site/content/docs/devices/ios.mdx)         |
 
 `pnpm doctor` reports anything missing for the targets you want.
 
