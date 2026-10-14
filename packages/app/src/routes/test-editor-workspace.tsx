@@ -111,7 +111,7 @@ export function TestEditorWorkspace({
         ...(outerStage?.recording ? { recording: outerStage.recording } : {}),
       }}
     >
-      <div className="flex shrink-0 border-b border-border px-3 py-2 min-[1100px]:hidden">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 py-2 min-[1100px]:hidden">
         <div
           role="group"
           aria-label="Editor view"
@@ -141,6 +141,8 @@ export function TestEditorWorkspace({
             );
           })}
         </div>
+        {/* The list's header is hidden here, so its save state lives in this bar. */}
+        {embedded ? <div className="flex items-center gap-1 text-xs">{saveState}</div> : null}
       </div>
       <div
         className={`grid min-h-0 flex-1 ${embedded ? "min-[1100px]:grid-cols-[340px_minmax(0,1fr)]" : "min-[1100px]:grid-cols-[280px_minmax(0,1fr)]"}`}

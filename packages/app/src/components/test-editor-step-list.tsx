@@ -74,10 +74,8 @@ export function TestEditorStepOutline({
   const compileBlockNotice = uniquePlatformBlockNotice(stepPlatformBlockers);
   return (
     <section className="min-w-0" aria-labelledby="test-steps-title">
-      {/* Narrow windows name the list in the view switcher, so say "Steps" once. */}
-      <div
-        className={`flex min-h-8 items-center justify-between gap-2 pl-3 ${headerAside ? "" : "max-[1099px]:hidden"}`}
-      >
+      {/* Narrow windows name the list (and show save state) in the view switcher bar. */}
+      <div className="flex min-h-8 items-center justify-between gap-2 pl-3 max-[1099px]:hidden">
         <h2 id="test-steps-title" className="text-sm font-semibold max-[1099px]:sr-only">
           Steps{" "}
           <span className="ml-1.5 rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
@@ -92,7 +90,7 @@ export function TestEditorStepOutline({
         }
       />
       {entries.length ? (
-        <ol className="mt-3 grid list-none divide-y divide-border p-0">
+        <ol className="mt-3 grid list-none divide-y divide-border p-0 max-[1099px]:mt-0">
           {entries.map((entry) => (
             <li key={entry.step.id} style={{ "--step-depth": entry.depth } as CSSProperties}>
               <div

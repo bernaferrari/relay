@@ -6,6 +6,7 @@ import { EvidenceImageViewer } from "./evidence-image-viewer";
 import { useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 /** Recorded evidence is explicitly distinct from the result of a later run. */
 export function SavedRecordingPreview({
@@ -84,16 +85,42 @@ export function SavedRecordingPreview({
   const failed = preview.isError || failedUri === frame.uri || !catalogService.getRecordingFrame;
   return (
     <section className="flex h-full min-h-0 flex-col gap-3 p-4" aria-label="Saved recording">
-      {/* Before/After only when there is more than one moment to choose. */}
+      {/* Before = where the step started, After = where it ended. A step that bundles
+          several actions has screens in between; step through those, never decode numbers. */}
       {frames.length > 1 ? (
-        <header className="flex shrink-0 items-center justify-end gap-3">
+        <header className="flex shrink-0 items-center justify-end gap-2">
+          {frames.length > 2 ? (
+            <div className="flex items-center gap-0.5 text-xs text-muted-foreground tabular-nums">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Previous screen"
+                disabled={selectedIndex === 0}
+                onClick={() => setSelected(Math.max(0, selectedIndex - 1))}
+              >
+                <ChevronLeft aria-hidden="true" />
+              </Button>
+              <span aria-live="polite">
+                {selectedIndex + 1} of {frames.length}
+              </span>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Next screen"
+                disabled={selectedIndex === frames.length - 1}
+                onClick={() => setSelected(Math.min(frames.length - 1, selectedIndex + 1))}
+              >
+                <ChevronRight aria-hidden="true" />
+              </Button>
+            </div>
+          ) : null}
           <ScreenshotMomentSwitch
             label="Recording screenshots"
             value={String(selectedIndex)}
-            items={frames.map((item, index) => ({
-              value: String(index),
-              label: `${item.role === "before" ? "Before" : "After"}${frames.length > 2 ? ` ${index + 1}` : ""}`,
-            }))}
+            items={[
+              { value: "0", label: "Before" },
+              { value: String(frames.length - 1), label: "After" },
+            ]}
             onChange={(value) => setSelected(Number(value))}
           />
         </header>
