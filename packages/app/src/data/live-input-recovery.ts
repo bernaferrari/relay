@@ -1,7 +1,11 @@
 import { RecordingInputNotSentError } from "./recording-input-outcome";
 
 /** Only typed pre-dispatch failures may tell the user an input was not sent. */
-export function liveInputRecovery(error: unknown): { message: string; reconnect: boolean } {
+export function liveInputRecovery(error: unknown): {
+  message: string;
+  reconnect: boolean;
+  notSent?: true;
+} {
   const body = error && typeof error === "object" && "body" in error ? error.body : undefined;
   const code = body && typeof body === "object" && "code" in body ? body.code : undefined;
   if (code === "BROWSER_STALE_INPUT") {
@@ -21,7 +25,7 @@ export function liveInputRecovery(error: unknown): { message: string; reconnect:
     return { message: "The browser session changed. Reconnect to continue.", reconnect: true };
   }
   if (error instanceof RecordingInputNotSentError) {
-    return { message: error.message, reconnect: true };
+    return { message: error.message, reconnect: true, notSent: true };
   }
   return {
     message: "Relay couldn’t confirm that input. Check the app before repeating it.",

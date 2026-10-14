@@ -13,6 +13,7 @@ import type {
 } from "../data/device-product-service";
 import type { LiveTargetSession, LiveTargetSnapshot } from "../data/live-target-session";
 import type { RecordingProductService } from "../data/recording-product-service";
+import { RecordingInputNotSentError } from "../data/recording-input-outcome";
 import type { SettingsProductService } from "../data/settings-product-service";
 import type { Platform } from "../platform/types";
 
@@ -266,7 +267,7 @@ function input(label: string): HTMLElement {
   return element;
 }
 
-function liveIpadPreview() {
+function liveIpadPreview(send: LiveTargetSession["input"] = async () => undefined) {
   const target = { kind: "device", platform: "ios", targetId: "ipad" } as const;
   const previews: Array<{
     closed: boolean;
@@ -289,7 +290,7 @@ function liveIpadPreview() {
           };
         },
         mount: () => () => undefined,
-        input: async () => undefined,
+        input: send,
         close: () => {
           preview.closed = true;
         },
@@ -303,7 +304,107 @@ function liveIpadPreview() {
   };
 }
 
+async function tapDeviceCanvas() {
+  const canvas = document.querySelector("canvas")!;
+  canvas.width = 100;
+  canvas.height = 200;
+  canvas.setPointerCapture = vi.fn();
+  canvas.getBoundingClientRect = () => new DOMRect(0, 0, 100, 200);
+  await act(async () => {
+    canvas.dispatchEvent(
+      new PointerEvent("pointerdown", { clientX: 50, clientY: 50, bubbles: true }),
+    );
+    canvas.dispatchEvent(
+      new PointerEvent("pointerup", { clientX: 50, clientY: 50, bubbles: true }),
+    );
+  });
+  return canvas;
+}
+
 describe("Devices", () => {
+  it.each([true, false])(
+    "handles fresh control proof (%s) without retaining a pre-dispatch warning or repeating input",
+    async (ready) => {
+      const service = fakeDeviceService();
+      let prove!: (result: { ready: boolean; message?: string; recoverable?: boolean }) => void;
+      service.checkControl = vi
+        .fn()
+        .mockResolvedValueOnce({ ready: true })
+        .mockImplementationOnce(() => new Promise((resolve) => (prove = resolve)));
+      const message =
+        "Couldn’t read the iOS logical screen dimensions. Reconnect the preview and try again.";
+      const send = vi.fn(async () => {
+        throw new RecordingInputNotSentError(message);
+      });
+      const preview = liveIpadPreview(send);
+      await renderPath("/devices/ipad", {
+        deviceService: service,
+        productService: preview.service,
+      });
+      const canvas = await tapDeviceCanvas();
+      await settle();
+      expect(canvas.getAttribute("aria-disabled")).toBe("true");
+      expect(document.body.textContent).toContain("Checking control");
+      expect(document.body.textContent).not.toContain(message);
+      await act(async () => prove({ ready, message: "View only", recoverable: true }));
+      await settle();
+      if (ready) {
+        expect(document.body.textContent).not.toContain(message);
+        expect(canvas.getAttribute("aria-disabled")).toBe("false");
+        expect(service.recoveryCalls).toEqual([]);
+        expect(send).toHaveBeenCalledOnce();
+        return;
+      }
+      expect(document.body.textContent).toContain("View only");
+      expect(document.body.textContent).not.toContain(message);
+      service.checkControl = vi.fn(async () => ({ ready: true }));
+      await click(button("Enable control"));
+      await act(async () => preview.ready());
+      await settle();
+      expect(document.body.textContent).not.toContain(message);
+      expect(document.body.textContent).not.toContain("View only");
+      expect(canvas.getAttribute("aria-disabled")).toBe("false");
+      expect(send).toHaveBeenCalledOnce();
+    },
+  );
+  it("preserves an uncertain input warning across reconnecting the preview", async () => {
+    const service = fakeDeviceService();
+    service.checkControl = vi.fn(async () => ({ ready: true }));
+    const send = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    const preview = liveIpadPreview(send);
+    await renderPath("/devices/ipad", { deviceService: service, productService: preview.service });
+    await tapDeviceCanvas();
+    await settle();
+    const message = "Relay couldn’t confirm that input. Check the app before repeating it.";
+    expect(document.body.textContent).toContain(message);
+    await click(button("Reconnect"));
+    await act(async () => preview.ready());
+    await settle();
+    expect(document.body.textContent).toContain(message);
+    expect(send).toHaveBeenCalledOnce();
+  });
+  it("does not restore an old dimensions error after the replacement preview reconnects", async () => {
+    const service = fakeDeviceService();
+    service.checkControl = vi.fn(async () => ({ ready: true }));
+    let fail!: (error: Error) => void;
+    const send = vi.fn(() => new Promise<void>((_, reject) => (fail = reject)));
+    const preview = liveIpadPreview(send);
+    await renderPath("/devices/ipad", { deviceService: service, productService: preview.service });
+    const canvas = await tapDeviceCanvas();
+    await click(button("Reconnect"));
+    await act(async () => preview.ready());
+    await settle();
+    const message =
+      "Couldn’t read the iOS logical screen dimensions. Reconnect the preview and try again.";
+    await act(async () => fail(new RecordingInputNotSentError(message)));
+    await settle();
+    expect(document.body.textContent).not.toContain(message);
+    expect(canvas.getAttribute("aria-disabled")).toBe("false");
+    expect(preview.previews).toHaveLength(2);
+    expect(send).toHaveBeenCalledOnce();
+  });
   it("keeps a connected iPad visible when labels are unavailable, without recovery or input", async () => {
     const service = fakeDeviceService();
     const ipad = productDevice("ipad", "Design iPad", "needs-attention", "ios");

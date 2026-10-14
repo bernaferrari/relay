@@ -164,7 +164,7 @@ export function DevicePage() {
       return deviceService.recover(device.data.serial, "connect");
     },
     onSuccess: async () => {
-      setInputIssue(undefined);
+      setInputIssue((current) => (current?.notSent ? undefined : current));
       await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.devices });
       setLiveAttempt((value) => value + 1);
     },
@@ -221,6 +221,8 @@ export function DevicePage() {
   const iosInstalledApps = useIOSInstalledApps(deviceService, device.data, appControlsOpen);
   const reconnecting =
     recover.isPending || (Boolean(target.data) && liveAttempt > 0 && liveStatus === "connecting");
+  const visibleInputIssue =
+    control && !control.ready && inputIssue?.notSent ? undefined : inputIssue;
   const { canvas, session, onCanvasChange } = useDevicePreviewSession({
     enabled: !device.isError && deviceLivePreviewAvailable(device.data),
     target: target.data,
@@ -228,7 +230,6 @@ export function DevicePage() {
     createPreview: productService.previewTarget,
     inspectAccessibility: talkBack.on,
     onSnapshot: (state) => {
-      if (state.status === "connecting") setInputIssue(undefined);
       setLiveStatus(state.status);
       setLiveIssue(state.issue ? friendlyLiveIssue(state.issue) : undefined);
       setBrowserContext(state.browserContext);
@@ -252,16 +253,24 @@ export function DevicePage() {
           ? "Sending swipe…"
           : "Sending text or key…",
     );
+    const inputSession = session.current;
     try {
       if (device.data?.platform !== "browser" && device.data?.serial)
         forgetNativeAppLaunch(deviceService, device.data.serial);
-      await session.current.input(input);
-      setInputIssue(undefined);
-      setTalkBackRefresh((count) => count + 1);
+      await inputSession.input(input);
+      if (session.current === inputSession) {
+        setInputIssue(undefined);
+        setTalkBackRefresh((count) => count + 1);
+      }
       return true;
     } catch (error) {
-      setInputIssue(liveInputRecovery(error));
-      control?.recheck();
+      const failure = liveInputRecovery(error);
+      if (failure.notSent && session.current !== inputSession) return false;
+      setInputIssue(failure);
+      void control?.recheck().then((ready) => {
+        if (ready && failure.notSent && session.current === inputSession)
+          setInputIssue((current) => (current === failure ? undefined : current));
+      });
       return false;
     } finally {
       inputPending.current = false;
@@ -440,13 +449,13 @@ export function DevicePage() {
                 browserContext={browserContext}
                 status={liveStatus}
                 issue={
-                  inputIssue?.message ??
+                  visibleInputIssue?.message ??
                   liveIssue ??
                   (recover.error ? "Couldn’t reconnect to the device." : undefined)
                 }
                 issueAction={
-                  inputIssue ? (
-                    inputIssue.reconnect ? (
+                  visibleInputIssue ? (
+                    visibleInputIssue.reconnect ? (
                       <Button
                         size="sm"
                         variant="secondary"

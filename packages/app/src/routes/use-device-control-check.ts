@@ -29,12 +29,15 @@ export function useDeviceControlCheck({
   });
   return required
     ? {
-        ready: check.isSuccess && check.data?.ready === true,
-        checking: check.isPending && !check.isError,
+        ready: check.isSuccess && !check.isFetching && check.data?.ready === true,
+        checking: check.isFetching || (check.isPending && !check.isError),
         message: check.data?.message,
         recoverable: check.data?.recoverable,
         recheck: () => {
-          void check.refetch();
+          return check
+            .refetch()
+            .then((result) => result.isSuccess && result.data?.ready === true)
+            .catch(() => false);
         },
       }
     : undefined;

@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@relay/client";
 import { liveInputRecovery } from "./live-input-recovery";
+import { RecordingInputNotSentError } from "./recording-input-outcome";
 
 describe("live input recovery", () => {
+  it("marks only proven pre-dispatch errors as safe to clear after control recovers", () => {
+    expect(
+      liveInputRecovery(new RecordingInputNotSentError("Dimensions unavailable")).notSent,
+    ).toBe(true);
+    expect(liveInputRecovery(new Error("Dimensions unavailable")).notSent).toBeUndefined();
+  });
   it("does not ask for a reconnect when only the painted frame expired", () => {
     const recovery = liveInputRecovery(new ApiError(409, "stale", { code: "BROWSER_STALE_INPUT" }));
     expect(recovery.reconnect).toBe(false);
