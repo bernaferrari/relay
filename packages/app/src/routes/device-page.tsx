@@ -17,16 +17,12 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { Circle } from "lucide-react";
 import { WorkbenchPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
 import { liveInputRecovery } from "../data/live-input-recovery";
-import {
-  deviceQueryKeys,
-  deviceDiscoveryScope,
-  type ProductDevice,
-} from "../data/device-product-service";
+import { deviceQueryKeys, deviceLivePreviewAvailable } from "../data/device-product-service";
 import { InstalledAppChoice } from "../components/installed-app-choice";
 import { SelectField } from "../components/filter-select";
 import { readSetupContinuation } from "../data/setup-continuation";
@@ -43,12 +39,13 @@ import { IOSAppLaunchForm } from "./device-app-launch-form";
 import { forgetNativeAppLaunch, rememberNativeAppLaunch } from "../data/native-app-launch-context";
 import type { DeviceProductService } from "../data/device-product-service";
 import { useDevicePreviewSession } from "./use-device-preview-session";
+import {
+  useDeviceControlCheck,
+  useIOSInstalledApps,
+  useDevicePreviewTarget,
+} from "./use-device-control-check";
 
 const routeApi = getRouteApi("/devices/$deviceId");
-
-function deviceDescription(device: ProductDevice): string {
-  return deviceSummaryLine(device);
-}
 
 export function DevicePage() {
   const { deviceId } = routeApi.useParams();
@@ -72,6 +69,7 @@ export function DevicePage() {
   const [inputIssue, setInputIssue] = useState<ReturnType<typeof liveInputRecovery>>();
   const inputPending = useRef(false);
   const [liveBusy, setLiveBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<string>();
   const [liveAttempt, setLiveAttempt] = useState(0);
   const [appControlsOpen, setAppControlsOpen] = useState(false);
   const [iosAppDraft, setIosAppDraft] = useState("");
@@ -131,9 +129,16 @@ export function DevicePage() {
     setIosRelaunch(false);
     iosAppLaunch.reset();
   }, [deviceId]);
+  const control = useDeviceControlCheck({
+    service: deviceService,
+    device: device.data,
+    connected: liveStatus === "streaming",
+    attempt: liveAttempt,
+  });
   const talkBack = useTalkBackReview({
     enabled:
       liveStatus === "streaming" &&
+      (!control || control.ready) &&
       Boolean(device.data?.serial) &&
       device.data?.platform !== "browser",
     serial: device.data?.serial,
@@ -199,33 +204,7 @@ export function DevicePage() {
       await appLocales.refetch();
     },
   });
-  const target = useQuery({
-    queryKey: ["devices", deviceId, "live-target"],
-    queryFn: async () => {
-      const selectedDevice = device.data!;
-      if (selectedDevice.platform === "browser") {
-        return {
-          kind: "browser" as const,
-          platform: "browser" as const,
-          targetId: selectedDevice.id,
-          name: selectedDevice.name,
-          detail: "Managed browser",
-        };
-      }
-      const scope = deviceDiscoveryScope(selectedDevice);
-      const connected = await productService.connect(scope);
-      if (connected.recovery) return null;
-      const options = await productService.presentTargets(connected.targets, scope);
-      return (
-        options.find(
-          (option) =>
-            option.targetId === selectedDevice.serial || option.targetId === selectedDevice.id,
-        ) ?? null
-      );
-    },
-    enabled: Boolean(device.data && device.data.status !== "needs-attention"),
-    staleTime: 5_000,
-  });
+  const target = useDevicePreviewTarget(deviceId, device.data, productService);
   const appControlsSupported = Boolean(
     device.data?.runnable &&
     device.data.platform === "android" &&
@@ -235,13 +214,15 @@ export function DevicePage() {
   const appLanguagesSupported = Boolean(deviceService.listAppLocales && deviceService.setAppLocale);
   const showDeviceControls = Boolean(
     appControlsSupported ||
-    (device.data?.platform === "ios" && device.data.runnable && deviceService.launchApp),
+    (device.data?.platform === "ios" &&
+      deviceLivePreviewAvailable(device.data) &&
+      deviceService.launchApp),
   );
+  const iosInstalledApps = useIOSInstalledApps(deviceService, device.data, appControlsOpen);
   const reconnecting =
     recover.isPending || (Boolean(target.data) && liveAttempt > 0 && liveStatus === "connecting");
-
   const { canvas, session, onCanvasChange } = useDevicePreviewSession({
-    enabled: Boolean(device.data && !device.isError && device.data.status !== "needs-attention"),
+    enabled: !device.isError && deviceLivePreviewAvailable(device.data),
     target: target.data,
     attempt: liveAttempt,
     createPreview: productService.previewTarget,
@@ -256,6 +237,7 @@ export function DevicePage() {
   });
 
   async function send(input: Parameters<LiveTargetSession["input"]>[0]) {
+    if (control && !control.ready) return false;
     if (!session.current) {
       setLiveIssue("The live view is still connecting.");
       return false;
@@ -263,6 +245,13 @@ export function DevicePage() {
     if (inputPending.current) return false;
     inputPending.current = true;
     setLiveBusy(true);
+    setBusyLabel(
+      input.kind === "touch" || input.kind === "tap"
+        ? "Sending tap…"
+        : input.kind === "scroll"
+          ? "Sending swipe…"
+          : "Sending text or key…",
+    );
     try {
       if (device.data?.platform !== "browser" && device.data?.serial)
         forgetNativeAppLaunch(deviceService, device.data.serial);
@@ -272,10 +261,12 @@ export function DevicePage() {
       return true;
     } catch (error) {
       setInputIssue(liveInputRecovery(error));
+      control?.recheck();
       return false;
     } finally {
       inputPending.current = false;
       setLiveBusy(false);
+      setBusyLabel(undefined);
     }
   }
 
@@ -317,7 +308,7 @@ export function DevicePage() {
         <PageHeader
           crumbs={[{ label: "Devices", to: "/devices" }, { label: device.data?.name ?? "Device" }]}
           title={device.data?.name ?? "Device"}
-          description={device.data ? deviceDescription(device.data) : undefined}
+          description={device.data ? deviceSummaryLine(device.data) : undefined}
           actions={
             <>
               {showDeviceControls ? (
@@ -377,7 +368,7 @@ export function DevicePage() {
                     />
                   }
                 >
-                  <Plus aria-hidden="true" /> New test
+                  <Circle aria-hidden="true" /> Record test
                 </Button>
               ) : null}
             </>
@@ -440,7 +431,7 @@ export function DevicePage() {
 
         {device.data && !device.isError ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
-            {device.data.status !== "needs-attention" ? (
+            {deviceLivePreviewAvailable(device.data) ? (
               <DeviceLivePreview
                 platform={device.data.platform}
                 canvas={canvas}
@@ -481,6 +472,8 @@ export function DevicePage() {
                   ) : undefined
                 }
                 busy={liveBusy || reconnecting}
+                busyLabel={reconnecting ? "Enabling control…" : busyLabel}
+                control={control}
                 reconnect={() => {
                   recover.mutate();
                 }}
@@ -530,7 +523,7 @@ export function DevicePage() {
                       ? appLanguagesSupported
                         ? "Choose an app and its supported language."
                         : "Choose an app to open on this device."
-                      : "Open an app by name or bundle identifier."}
+                      : "Choose an app to open on this device."}
                   </SheetDescription>
                 </SheetHeader>
                 <aside
@@ -641,20 +634,21 @@ export function DevicePage() {
                       pending={iosAppLaunch.isPending}
                       error={iosAppLaunch.error}
                       launched={iosAppLaunch.data}
+                      installedApps={iosInstalledApps}
                       onIdentifierChange={(value) => {
                         if (iosAppLaunch.isPending) return;
                         setIosAppDraft(value);
                         iosAppLaunch.reset();
                       }}
                       onRelaunchChange={setIosRelaunch}
-                      onLaunch={() => {
-                        if (!iosAppDraft.trim() || iosAppLaunch.isPending) return;
+                      onLaunch={(name = iosAppDraft) => {
+                        if (!name.trim() || iosAppLaunch.isPending) return;
                         forgetNativeAppLaunch(deviceService, device.data!.serial);
                         iosAppLaunch.mutate({
                           service: deviceService,
                           deviceId,
                           serial: device.data!.serial,
-                          app: iosAppDraft.trim(),
+                          app: name.trim(),
                           relaunch: iosRelaunch,
                         });
                       }}

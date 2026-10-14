@@ -19,13 +19,17 @@ Open the app you intend to test. Keep the device unlocked, awake, and reserved f
 
 ## Verify pixels and controls
 
-Open **Devices** and select the exact device. Check its live preview and inspectable controls.
+Open **Devices** and select the exact device. You can control it here without creating a Test. Choose **Open app → Choose installed app** to find and open an app by its name. Manual name or bundle-identifier entry remains available as a fallback.
 
-Pixels and accessibility are separate capabilities. Relay may be able to display the screen while its accessibility session cannot return controls. If that happens, keep the app open, choose **Reconnect** once, and check again.
+Use **Fullscreen live control** to fit the whole device to the window. Press **Escape** to return; the live session stays connected.
+
+Pixels, touch input, and accessibility are separate capabilities. Relay checks input admission and the current iOS window bounds before enabling taps and typing. **View only** means the pixels are available but control has not been established. Keep the app open, choose **Enable control** once, and check again. If a prior input needs review or another session owns the device, Relay keeps control disabled rather than repeating the input or taking over.
 
 Do not infer tap coordinates from screenshot pixel dimensions: Retina captures and logical input coordinates can differ. Relay uses the current app window's logical bounds for supervised preview input.
 
 ## Record and replay
+
+From live control, choose **Record test**, select the App that should own the Test, and choose **Use current screen** to begin where you are. An acknowledged app launch can carry into setup without launching it again.
 
 [Record a short journey](/docs/workflows/recording), save it, and [run it again](/docs/workflows/running) on the same device and configuration. Choose whether to restart the app or begin from its current state.
 

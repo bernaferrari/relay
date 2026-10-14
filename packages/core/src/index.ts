@@ -168,6 +168,7 @@ export * from "./ios-live-preview.js";
 export * from "./ios-runtime-recovery.js";
 export * from "./android-app-locales.js";
 export * from "./android-installed-apps.js";
+export * from "./ios-installed-apps.js";
 export * from "./matrix.js";
 export * from "./matrix-yaml.js";
 export * from "./app-map-yaml.js";

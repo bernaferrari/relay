@@ -8,6 +8,7 @@ import type {
 import { browserDisplayNames } from "./browser-display-names";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
+import { checkNativeLiveControl, type NativeLiveControl } from "./native-live-control";
 
 export type ProductDeviceStatus = "ready" | "needs-attention" | "virtual";
 
@@ -55,6 +56,7 @@ export type DeviceProductService = {
    * canonical target operation; managed browsers remain a separate target. */
   launchApp?(deviceId: string, app: string, relaunch?: boolean): Promise<ProductLaunchedApp>;
   listInstalledApps?(serial: string): Promise<readonly ProductInstalledApp[]>;
+  checkControl?(serial: string, platform: "android" | "ios"): Promise<NativeLiveControl>;
   listAppLocales?(serial: string, packageName: string): Promise<ProductAppLocales>;
   setAppLocale?(
     serial: string,
@@ -78,6 +80,24 @@ export function deviceDiscoveryScope(
     targetId: device.serial || device.id,
     ...(device.platform === "browser" ? {} : { phase: device.platform }),
   };
+}
+
+/** Observation does not require named controls or admission to a test. */
+export function deviceLivePreviewAvailable(device?: ProductDevice): boolean {
+  if (!device) return false;
+  if (device.status !== "needs-attention") return true;
+  const source = device.device;
+  return (
+    device.platform !== "browser" &&
+    (source.connectionState === "connected" ||
+      (!source.connectionState &&
+        device.platform === "ios" &&
+        source.booted === true &&
+        source.developerServicesAvailable === true)) &&
+    source.booted !== false &&
+    source.developerMode !== "disabled" &&
+    source.developerServicesAvailable !== false
+  );
 }
 
 function identity(device: DeviceSummary): string {
@@ -300,6 +320,9 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
     async listInstalledApps(serial) {
       const result = await (await client()).invoke("target.app.list", { serial });
       return result.apps;
+    },
+    async checkControl(serial, platform) {
+      return checkNativeLiveControl(await client(), serial, platform);
     },
     async listAppLocales(serial, packageName) {
       return (await client()).invoke("target.app.locales", { serial, package: packageName });

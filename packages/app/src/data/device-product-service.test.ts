@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceSummary, TargetRuntimeReadiness } from "@relay/protocol";
-import { projectDevices } from "./device-product-service";
+import { projectDevices, deviceLivePreviewAvailable } from "./device-product-service";
 
 describe("device product projection", () => {
   it("separates ready, attention, and virtual targets", () => {
@@ -79,6 +79,11 @@ it("explains missing screen controls without calling a connected iPad disconnect
   expect(device.recovery).toContain("connected");
   expect(device.recovery).toContain("screen controls");
   expect(device.recovery).not.toMatch(/Reconnect the Apple device/);
+  expect(deviceLivePreviewAvailable(device)).toBe(true);
+  // Physical iOS discovery reports USB/developer availability without a
+  // connectionState field. Missing labels still must not suppress its pixels.
+  delete summary.connectionState;
+  expect(deviceLivePreviewAvailable(projectDevices([summary])[0])).toBe(true);
 });
 
 function currentPixelsWithStaleLabels(): DeviceSummary {
@@ -162,10 +167,12 @@ it.each([
   { developerMode: "disabled" as const },
   { developerServicesAvailable: false },
 ])("keeps an unavailable native device blocked despite current pixels (%j)", (change) => {
-  expect(projectDevices([{ ...currentPixelsWithStaleLabels(), ...change }])[0]).toMatchObject({
+  const device = projectDevices([{ ...currentPixelsWithStaleLabels(), ...change }])[0];
+  expect(device).toMatchObject({
     status: "needs-attention",
     runnable: false,
   });
+  expect(deviceLivePreviewAvailable(device)).toBe(false);
 });
 
 it("preserves managed browser readiness policy", () => {

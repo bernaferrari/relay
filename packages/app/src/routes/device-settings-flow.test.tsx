@@ -304,7 +304,70 @@ function liveIpadPreview() {
 }
 
 describe("Devices", () => {
-  it("hands an acknowledged iOS launch to test setup once and retains its replay origin without an inventory request or second launch", async () => {
+  it("keeps a connected iPad visible when labels are unavailable, without recovery or input", async () => {
+    const service = fakeDeviceService();
+    const ipad = productDevice("ipad", "Design iPad", "needs-attention", "ios");
+    ipad.device.connectionState = "connected";
+    service.get = async () => ipad;
+    service.checkControl = vi.fn(async () => ({
+      ready: false,
+      message: "View only",
+      recoverable: false,
+    }));
+    const preview = liveIpadPreview();
+    preview.service.connect = vi.fn(async () => {
+      throw new Error("Observation must not admit a test");
+    });
+    await renderPath("/devices/ipad", { deviceService: service, productService: preview.service });
+    await act(async () => preview.ready());
+    await settle();
+    expect(document.querySelector("canvas")?.getAttribute("aria-disabled")).toBe("true");
+    expect(document.body.textContent).toContain("View only");
+    expect(document.body.textContent).not.toContain("Connecting to live view");
+    expect(preview.service.connect).not.toHaveBeenCalled();
+    expect(service.recoveryCalls).toEqual([]);
+    expect(service.checkControl).toHaveBeenCalledExactlyOnceWith("ipad", "ios");
+  });
+  it("opens a searched installed iOS app once and shows delivery progress", async () => {
+    const service = fakeDeviceService();
+    service.listInstalledApps = vi.fn(async () => [
+      { package: "com.apple.TestFlight", name: "TestFlight" },
+      { package: "com.apple.Preferences", name: "Settings" },
+    ]);
+    let finish!: (result: ProductLaunchedApp) => void;
+    service.launchApp = vi.fn(
+      () => new Promise<ProductLaunchedApp>((resolve) => (finish = resolve)),
+    );
+    await renderPath("/devices/ipad", { deviceService: service });
+    expect(document.body.textContent).not.toContain("Not recording");
+    expect(document.body.textContent).not.toContain("Click or drag to control");
+    expect(service.listInstalledApps).not.toHaveBeenCalled();
+    await click(button("Open app"));
+    await click(button("Choose installed app"));
+    await fillInput(
+      document.querySelector<HTMLInputElement>('[aria-label="Search installed iOS apps"]')!,
+      "testflight",
+    );
+    await click(button("TestFlight"));
+    expect(service.launchApp).toHaveBeenCalledExactlyOnceWith(
+      "ipad",
+      "com.apple.TestFlight",
+      false,
+    );
+    expect(document.body.textContent).toContain("Opening app…");
+    await act(async () =>
+      finish({
+        serial: "ipad",
+        app: "com.apple.TestFlight",
+        platform: "ios",
+        launchedAt: 10,
+        observed: { app: "TestFlight", matched: true },
+      }),
+    );
+    await settle();
+    expect(document.body.textContent).not.toContain("Opening app…");
+  });
+  it("hands an acknowledged iOS launch to test setup once while loading the installed app picker", async () => {
     const service = fakeDeviceService();
     service.launchApp = vi.fn(async (serial: string, app: string): Promise<ProductLaunchedApp> => ({
       serial,
@@ -329,7 +392,7 @@ describe("Devices", () => {
     await click(button("Launch app"));
     await act(async () => preview.ready());
     const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (link) => link.textContent?.trim() === "New test",
+      (link) => link.textContent?.trim() === "Record test",
     )!;
     await click(record);
     expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe("Grok");
@@ -337,7 +400,7 @@ describe("Devices", () => {
     await act(async () => preview.ready());
     await settle();
     expect(button("Start recording").disabled).toBe(false);
-    expect(service.listInstalledApps).not.toHaveBeenCalled();
+    expect(service.listInstalledApps).toHaveBeenCalledExactlyOnceWith("ipad");
     expect(service.launchApp).toHaveBeenCalledOnce();
     await click(button("Start recording"));
     expect(preview.service.begin).toHaveBeenCalledExactlyOnceWith(
@@ -727,7 +790,7 @@ describe("Devices", () => {
       expect(preview.previews[0].closed).toBe(true);
       expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
       const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-        (candidate) => candidate.textContent?.trim() === "New test",
+        (candidate) => candidate.textContent?.trim() === "Record test",
       )!;
       expect(new URL(record.href).searchParams.get("originApplication")).toBe(
         matched ? "com.example.shop" : null,
@@ -918,7 +981,7 @@ describe("Device app controls", () => {
     expect(document.querySelector('aside[aria-label="Device controls"]')).toBeNull();
     expect(document.body.textContent).not.toContain("App and language");
     expect(document.body.textContent).not.toContain("App controls are unavailable");
-    expect(document.body.textContent).toContain("New test");
+    expect(document.body.textContent).toContain("Record test");
   });
 
   it("shows the observed device language without changing it", async () => {

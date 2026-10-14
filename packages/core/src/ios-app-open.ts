@@ -8,6 +8,7 @@ import { launchIosAppOutsideXctest, resolveIosLaunchBundleId } from "./ios-app-l
 import { dispatchSupervisedIosMutation, runIosMutationOnce } from "./ios-mutation-policy.js";
 import { runTargetMutation } from "./target-control.js";
 import type { DeviceTargetContext } from "./target-context.js";
+import { listIosInstalledApps } from "./ios-installed-apps.js";
 
 type OpenPhysicalIosAppInput = {
   context: DeviceTargetContext;
@@ -19,11 +20,13 @@ type OpenPhysicalIosAppInput = {
 export type IosAppOpenRuntime = {
   resolveBundleId: typeof resolveIosLaunchBundleId;
   launch: typeof launchIosAppOutsideXctest;
+  listApps?: typeof listIosInstalledApps;
 };
 
 const defaultRuntime: IosAppOpenRuntime = {
   resolveBundleId: resolveIosLaunchBundleId,
   launch: launchIosAppOutsideXctest,
+  listApps: listIosInstalledApps,
 };
 
 let testRuntime: IosAppOpenRuntime | undefined;
@@ -39,7 +42,22 @@ export async function openPhysicalIosApp(
 ): Promise<void> {
   // Input validation is local and conclusively pre-dispatch. The sidecar
   // activation below is the one operation guarded as an exact-once mutation.
-  const bundleId = runtime.resolveBundleId(input.app);
+  let bundleId: string;
+  try {
+    bundleId = runtime.resolveBundleId(input.app);
+  } catch (error) {
+    if (!runtime.listApps || !input.app.trim() || input.app.includes(".")) throw error;
+    const name = input.app.trim().toLocaleLowerCase();
+    const apps = await runtime.listApps(input.context.serial);
+    const matches = apps.filter((app) => app.name.toLocaleLowerCase() === name);
+    if (matches.length !== 1)
+      throw new Error(
+        matches.length
+          ? "More than one installed app has that name. Choose it from the app list."
+          : `“${input.app}” is not installed. Choose an app from the list or enter its bundle identifier.`,
+      );
+    bundleId = matches[0]!.package;
+  }
   const launched = await runTargetMutation(input.context.serial, getExecutingJobId(), () =>
     runIosMutationOnce(input.context.serial, "app-open", () =>
       dispatchSupervisedIosMutation(input.context.serial, () =>

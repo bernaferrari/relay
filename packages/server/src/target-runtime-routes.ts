@@ -20,6 +20,7 @@ import {
   listTargets,
   listAndroidAppLocales,
   listAndroidInstalledApps,
+  listIosInstalledApps,
   setAndroidAppLocaleOnDevice,
   listTargetWorkers,
   preflightLocalCampaignCapacity,
@@ -98,6 +99,7 @@ export type TargetRuntimeRouteRuntime = {
   runBuildCommand?: BuildCommandRunner;
   listAndroidAppLocales: typeof listAndroidAppLocales;
   listAndroidInstalledApps: typeof listAndroidInstalledApps;
+  listIosInstalledApps: typeof listIosInstalledApps;
   setAppLocale: typeof setAndroidAppLocaleOnDevice;
   now: () => number;
   readTargetHealth: (serial: string, platform: SupervisedRuntimePlatform) => TargetSupervisorHealth;
@@ -155,6 +157,7 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
   getDurableWorkerAssignments: () => durableWorkerAssignmentStore(),
   listAndroidAppLocales,
   listAndroidInstalledApps,
+  listIosInstalledApps,
   setAppLocale: setAndroidAppLocaleOnDevice,
   now: () => Date.now(),
   readTargetHealth: (serial, platform) => {
@@ -264,9 +267,15 @@ export async function handleTargetRuntimeRoute(context: {
     if (!serial) throw new HttpError(400, "serial is required");
     const device = (await runtime.listDevices()).find((candidate) => candidate.serial === serial);
     if (!device) throw new HttpError(409, "The selected device is no longer connected");
-    if (device.platform !== "android")
-      throw new HttpError(400, "App discovery currently requires an Android device");
-    json(response, 200, { apps: await runtime.listAndroidInstalledApps(serial) });
+    if (device.platform !== "android" && device.platform !== "ios")
+      throw new HttpError(400, "App discovery requires an Android or iOS device");
+    const apps =
+      device.platform === "ios"
+        ? await runtime.listIosInstalledApps(serial, {
+            simulator: /simulator/iu.test(device.kind ?? ""),
+          })
+        : await runtime.listAndroidInstalledApps(serial);
+    json(response, 200, { apps });
     return true;
   }
 

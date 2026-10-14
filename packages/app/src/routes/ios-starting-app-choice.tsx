@@ -6,8 +6,7 @@ import type { DeviceProductService } from "../data/device-product-service";
 import type { RecordingSetupAdmission } from "../data/recording-setup-admission";
 import { IOSAppLaunchForm } from "./device-app-launch-form";
 
-/** iOS launch accepts names and bundle identifiers; installed inventory is
- * not a supported capability. Opening is always an explicit person action. */
+/** Opening an app from test setup is always an explicit person action. */
 export function IOSStartingAppChoice({
   service,
   serial,

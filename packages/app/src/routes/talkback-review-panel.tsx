@@ -43,11 +43,13 @@ export function TalkBackModeSelect({
   loading,
   disabled,
   onModeChange,
+  portalContainer,
 }: {
   mode: AccessibilityLabelMode;
   loading: boolean;
   disabled?: boolean;
   onModeChange: (mode: AccessibilityLabelMode) => void;
+  portalContainer?: HTMLElement | null;
 }) {
   return (
     <DropdownMenu>
@@ -69,7 +71,7 @@ export function TalkBackModeSelect({
         Elements
         <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-56">
+      <DropdownMenuContent align="start" className="min-w-56" portalContainer={portalContainer}>
         <DropdownMenuRadioGroup
           value={mode}
           onValueChange={(value) => onModeChange(validAccessibilityLabelMode(value))}

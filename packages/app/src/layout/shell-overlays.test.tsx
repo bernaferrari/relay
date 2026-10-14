@@ -229,6 +229,7 @@ describe("shell overlays", () => {
   it("keeps narrow-screen destinations reachable and preserves the app when switching collections", async () => {
     const history = await renderShell({ initialEntries: ["/tests?app=checkout"] });
     const navigation = document.querySelector('nav[aria-label="Main navigation"]')!;
+    expect(navigation.classList.contains("grid-cols-4")).toBe(true);
     expect([...navigation.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
       "Tests",
       "Runs",

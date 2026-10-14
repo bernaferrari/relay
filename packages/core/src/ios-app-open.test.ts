@@ -11,6 +11,71 @@ import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-su
 
 const ios = (serial: string) => ({ kind: "device", platform: "ios", serial }) as const;
 
+test("an installed app name is resolved read-only before one supervised launch", async () => {
+  const context = ios("ios-open-installed-name");
+  const supervisors = new TargetSupervisorStore(":memory:");
+  const calls: string[] = [];
+  try {
+    await runWithTargetSupervisorStore(supervisors, () =>
+      runWithTargetContext(context, () =>
+        openPhysicalIosApp(
+          {
+            context,
+            app: "example",
+            relaunch: false,
+            rememberApplication: async (app) => {
+              calls.push(`remember:${app}`);
+            },
+          },
+          {
+            resolveBundleId: () => {
+              throw new Error("Unknown alias");
+            },
+            listApps: async (serial) => {
+              assert.equal(serial, context.serial);
+              calls.push("inventory");
+              return [{ package: "com.example.app", name: "Example" }];
+            },
+            launch: async (serial, bundleId) => {
+              assert.equal(serial, context.serial);
+              calls.push(`launch:${bundleId}`);
+              return { bundleId, method: "go-ios" };
+            },
+          },
+        ),
+      ),
+    );
+    assert.deepEqual(calls, ["inventory", "launch:com.example.app", "remember:com.example.app"]);
+  } finally {
+    supervisors.close();
+  }
+});
+
+test("ambiguous installed app names never dispatch a launch", async () => {
+  let launches = 0;
+  const context = ios("ios-open-ambiguous-name");
+  await assert.rejects(
+    openPhysicalIosApp(
+      { context, app: "Example", relaunch: false, rememberApplication: async () => {} },
+      {
+        resolveBundleId: () => {
+          throw new Error("Unknown alias");
+        },
+        listApps: async () => [
+          { package: "com.example.one", name: "Example" },
+          { package: "com.example.two", name: "Example" },
+        ],
+        launch: async () => {
+          launches++;
+          throw new Error("Unexpected launch");
+        },
+      },
+    ),
+    /More than one installed app/,
+  );
+  assert.equal(launches, 0);
+});
+
 test("a successful sidecar app open dispatches once and never primes through SDK apps.open", async () => {
   const serial = "ios-app-open-sidecar-success";
   const context = ios(serial);

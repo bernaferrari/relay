@@ -8,12 +8,13 @@ import {
   Square,
   MonitorSmartphone,
   LoaderCircle,
-  ZoomIn,
+  Expand,
   Minimize2,
 } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useId,
@@ -23,7 +24,9 @@ import {
   type ReactNode,
   type RefObject,
   type WheelEvent,
+  type CSSProperties,
 } from "react";
+import { useLivePreviewFullscreen } from "./use-live-preview-fullscreen";
 import type {
   LiveTargetBrowserContext,
   LiveTargetInput,
@@ -31,6 +34,7 @@ import type {
 } from "../data/live-target-session";
 
 type Point = { x: number; y: number };
+type TapFeedback = Point & { id: number; pending: boolean };
 
 export function LiveTargetCanvas({
   canvasRef,
@@ -38,6 +42,9 @@ export function LiveTargetCanvas({
   status,
   issue,
   busy,
+  busyLabel = "Sending input…",
+  inputEnabled = true,
+  controlNotice,
   targetTitle,
   targetDetail,
   browserContext,
@@ -58,6 +65,9 @@ export function LiveTargetCanvas({
   status: LiveTargetStatus;
   issue?: string;
   busy: boolean;
+  busyLabel?: string;
+  inputEnabled?: boolean;
+  controlNotice?: ReactNode;
   targetTitle: string;
   targetDetail: string;
   browserContext?: LiveTargetBrowserContext;
@@ -74,7 +84,9 @@ export function LiveTargetCanvas({
   directBrowser?: boolean;
 }) {
   const [text, setText] = useState("");
-  const [enlarged, setEnlarged] = useState(false);
+  const [tap, setTap] = useState<TapFeedback>();
+  const tapSequence = useRef(0);
+  const fullscreen = useLivePreviewFullscreen();
   const helpId = `${useId()}-help`;
   const textInputId = `live-target-text-${useId().replaceAll(":", "")}`;
   const pointerStart = useRef<Point | undefined>(undefined);
@@ -89,6 +101,7 @@ export function LiveTargetCanvas({
     [canvasRef, onCanvasChange],
   );
   const streaming = status === "streaming";
+  const interactive = streaming && inputEnabled;
   const help =
     helpText !== ""
       ? (helpText ??
@@ -103,6 +116,15 @@ export function LiveTargetCanvas({
     },
     [],
   );
+
+  useEffect(() => {
+    if (!tap || tap.pending) return;
+    const timer = setTimeout(
+      () => setTap((current) => (current === tap ? undefined : current)),
+      260,
+    );
+    return () => clearTimeout(timer);
+  }, [tap]);
 
   function point(event: { clientX: number; clientY: number }): Point {
     const canvas = canvasRef.current;
@@ -127,7 +149,7 @@ export function LiveTargetCanvas({
   }
 
   function pointerDown(event: PointerEvent<HTMLCanvasElement>) {
-    if (!streaming || busy) return;
+    if (!interactive || busy) return;
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
     pointerStart.current = point(event);
@@ -135,22 +157,25 @@ export function LiveTargetCanvas({
 
   function pointerUp(event: PointerEvent<HTMLCanvasElement>) {
     const start = pointerStart.current;
-    if (!streaming || busy || !start) return;
+    if (!interactive || busy || !start) return;
     const end = point(event);
     pointerStart.current = undefined;
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     if (Math.hypot(dx, dy) < 10) {
-      void send({ kind: "touch", action: "up", x: end.x, y: end.y });
+      const canvas = event.currentTarget;
+      const id = ++tapSequence.current;
+      setTap({ id, x: end.x / canvas.width, y: end.y / canvas.height, pending: true });
+      const settle = () =>
+        setTap((current) => (current?.id === id ? { ...current, pending: false } : current));
+      void send({ kind: "touch", action: "up", x: end.x, y: end.y }).then(settle, settle);
       return;
     }
     void send({ kind: "scroll", x: start.x, y: start.y, scrollX: dx, scrollY: dy });
   }
 
   function wheelTarget(event: WheelEvent<HTMLCanvasElement>) {
-    // In enlarged mode, wheel input pans the preview. Drag still operates the app.
-    if (enlarged && !directBrowser) return;
-    if (!streaming || busy) return;
+    if (!interactive || busy) return;
     event.preventDefault();
     const origin = point(event);
     const pending = wheel.current ?? { point: origin, x: 0, y: 0 };
@@ -177,7 +202,8 @@ export function LiveTargetCanvas({
   }
 
   function keyTarget(event: KeyboardEvent<HTMLCanvasElement>) {
-    if (!streaming || composing.current || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!interactive || busy || composing.current || event.metaKey || event.ctrlKey || event.altKey)
+      return;
     if (event.key === "Enter") {
       event.preventDefault();
       void send({ kind: "key", key: "enter" });
@@ -195,7 +221,7 @@ export function LiveTargetCanvas({
   }
 
   function pasteTarget(event: ClipboardEvent<HTMLCanvasElement>) {
-    if (!streaming || (busy && !directBrowser)) return;
+    if (!interactive || (busy && !directBrowser)) return;
     const value = event.clipboardData.getData("text");
     if (!value) return;
     event.preventDefault();
@@ -204,7 +230,7 @@ export function LiveTargetCanvas({
 
   function typeText() {
     const value = text;
-    if (!value || busy || !streaming) return;
+    if (!value || busy || !interactive) return;
     void send({ kind: "key", key: "enter", text: value })
       .then((delivered) => {
         // Keep the draft visible when the transport rejects or recording cannot
@@ -220,22 +246,30 @@ export function LiveTargetCanvas({
   const rail = layout === "rail";
 
   return (
-    <div
+    <dialog
+      ref={fullscreen.surface}
+      open
+      role={fullscreen.expanded ? "dialog" : "group"}
+      aria-label={fullscreen.expanded ? `Live control: ${targetTitle}` : undefined}
+      onCancel={(event) => {
+        event.preventDefault();
+        fullscreen.setExpanded(false);
+      }}
       className={
-        rail
-          ? "relative flex h-full min-h-0 flex-col"
-          : "relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto_auto]"
+        fullscreen.expanded
+          ? "fixed inset-0 m-0 grid h-dvh w-screen max-h-none max-w-none grid-rows-[minmax(0,1fr)_auto_auto] overflow-hidden border-0 bg-background p-4 text-foreground backdrop:bg-background/80"
+          : rail
+            ? "relative m-0 flex h-full min-h-0 w-full flex-col border-0 bg-transparent p-0 text-foreground"
+            : "relative m-0 grid h-full min-h-0 w-full grid-rows-[minmax(0,1fr)_auto_auto] border-0 bg-transparent p-0 text-foreground"
       }
     >
       <div
         className={
           directBrowser
             ? "relative flex min-h-0 items-start justify-center overflow-auto bg-muted/40 p-4"
-            : enlarged
-              ? "relative flex min-h-0 flex-1 items-start justify-start overflow-auto p-3"
-              : rail
-                ? "relative flex min-h-80 flex-1 items-center justify-center overflow-hidden bg-muted/40"
-                : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
+            : rail && !fullscreen.expanded
+              ? "relative flex min-h-80 flex-1 items-center justify-center overflow-hidden bg-muted/40"
+              : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
         }
       >
         <canvas
@@ -244,13 +278,13 @@ export function LiveTargetCanvas({
           className={
             directBrowser
               ? "my-auto block h-auto w-full shrink-0 rounded-lg shadow-md ring-1 ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              : enlarged
-                ? "mx-auto h-[200%] w-auto shrink-0 max-w-none min-h-0 object-contain"
-                : "h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
+              : "h-full max-h-full max-w-full min-h-0 min-w-0 touch-none object-contain"
           }
           aria-label={`Interactive Device: ${targetTitle}`}
           aria-describedby={help ? helpId : undefined}
-          tabIndex={streaming ? 0 : -1}
+          tabIndex={interactive ? 0 : -1}
+          aria-disabled={!interactive || busy}
+          aria-busy={busy}
           onPointerDown={pointerDown}
           onPointerUp={pointerUp}
           onPointerCancel={() => {
@@ -264,7 +298,7 @@ export function LiveTargetCanvas({
           }}
           onCompositionEnd={(event) => {
             composing.current = false;
-            if (!streaming || busy || !event.data) return;
+            if (!interactive || busy || !event.data) return;
             void send({ kind: "key", key: "enter", text: event.data });
           }}
         />
@@ -290,13 +324,40 @@ export function LiveTargetCanvas({
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {issue && /failed to fetch|networkerror|load failed/iu.test(issue)
                   ? "Relay lost the connection. Reconnect to restore the live view."
-                  : (issue ?? "The app will appear here once connected.")}
+                  : issue &&
+                      /iOS preview.*(?:cooling down|still stopping|became stale)|safe iOS preview producer ended/iu.test(
+                        issue,
+                      )
+                    ? "The live view stopped. Reconnect to restore it."
+                    : (issue ?? "The app will appear here once connected.")}
               </p>
               {issue && recoveryAction ? <div className="mt-4">{recoveryAction}</div> : null}
             </div>
           </div>
         ) : null}
         {streaming ? overlay : null}
+        {streaming && tap ? <LiveTapFeedback key={tap.id} canvasRef={canvasRef} tap={tap} /> : null}
+        {streaming && ((busy && !tap?.pending) || controlNotice) ? (
+          <div className="pointer-events-none absolute left-3 top-3 z-20">
+            <div
+              className="pointer-events-auto flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm shadow-sm ring-1 ring-border"
+              role="status"
+              aria-live="polite"
+            >
+              {busy ? (
+                <>
+                  <LoaderCircle
+                    className="size-4 animate-spin motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
+                  {busyLabel}
+                </>
+              ) : (
+                controlNotice
+              )}
+            </div>
+          </div>
+        ) : null}
         {streaming && issue ? (
           <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex justify-center">
             <div
@@ -315,22 +376,21 @@ export function LiveTargetCanvas({
           type="button"
           size="icon-sm"
           variant="secondary"
+          ref={fullscreen.trigger}
           className="absolute right-3 top-3 z-20"
-          aria-label={enlarged ? "Fit live view" : "Enlarge live view"}
-          aria-pressed={enlarged}
+          aria-label={fullscreen.expanded ? "Exit fullscreen" : "Fullscreen live control"}
+          aria-pressed={fullscreen.expanded}
           title={
-            enlarged
-              ? "Fit the whole screen"
-              : "Enlarge the screen. Scroll to pan; drag to interact."
+            fullscreen.expanded ? "Exit fullscreen (Escape)" : "Fullscreen · fit the whole device"
           }
           onClick={() => {
             if (wheelTimer.current) clearTimeout(wheelTimer.current);
             wheelTimer.current = undefined;
             wheel.current = undefined;
-            setEnlarged((value) => !value);
+            fullscreen.setExpanded((value) => !value);
           }}
         >
-          {enlarged ? <Minimize2 aria-hidden="true" /> : <ZoomIn aria-hidden="true" />}
+          {fullscreen.expanded ? <Minimize2 aria-hidden="true" /> : <Expand aria-hidden="true" />}
         </Button>
       ) : null}
 
@@ -382,7 +442,7 @@ export function LiveTargetCanvas({
                     variant="ghost"
                     aria-label={`Android ${label}`}
                     title={`${label} — ${help}`}
-                    disabled={busy || !streaming}
+                    disabled={busy || !interactive}
                     onClick={() => void send({ kind: "key", key })}
                   >
                     <Icon aria-hidden="true" className="size-4" />
@@ -408,7 +468,7 @@ export function LiveTargetCanvas({
                     }
                   }}
                   placeholder="Type into the app"
-                  disabled={!streaming || busy}
+                  disabled={!interactive || busy}
                   autoComplete="off"
                   maxLength={16_384}
                 />
@@ -418,7 +478,7 @@ export function LiveTargetCanvas({
                   variant="secondary"
                   aria-label="Type text into app"
                   title="Type text into the focused field"
-                  disabled={!text || !streaming || busy}
+                  disabled={!text || !interactive || busy}
                   onClick={typeText}
                 >
                   <ArrowUp className="size-4" aria-hidden="true" />
@@ -433,7 +493,7 @@ export function LiveTargetCanvas({
           {help}
         </p>
       ) : null}
-    </div>
+    </dialog>
   );
 }
 
@@ -461,4 +521,56 @@ export function containedFrameRect(
     width,
     height,
   };
+}
+
+/** Follow the drawn frame, including letterboxing and fullscreen resize. */
+function LiveTapFeedback({
+  canvasRef,
+  tap,
+}: {
+  canvasRef: RefObject<HTMLCanvasElement | null>;
+  tap: TapFeedback;
+}) {
+  const [position, setPosition] = useState<Point>();
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const stage = canvas?.parentElement;
+    if (!canvas || !stage) return;
+    const update = () => {
+      const frame = containedFrameRect(canvas.getBoundingClientRect(), canvas.width, canvas.height);
+      const origin = stage.getBoundingClientRect();
+      setPosition({
+        x: frame.left - origin.left + stage.scrollLeft + tap.x * frame.width,
+        y: frame.top - origin.top + stage.scrollTop + tap.y * frame.height,
+      });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(canvas);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [canvasRef, tap.x, tap.y]);
+  return position ? (
+    <div
+      data-slot="live-tap-feedback"
+      data-pending={tap.pending}
+      className="pointer-events-none absolute left-(--tap-x) top-(--tap-y) z-20 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center text-primary"
+      style={{ "--tap-x": `${position.x}px`, "--tap-y": `${position.y}px` } as CSSProperties}
+    >
+      <span
+        data-slot="live-tap-ripple"
+        className="absolute inset-0 animate-live-tap-ripple rounded-full border-2 border-current bg-primary/15 motion-reduce:animate-none"
+        aria-hidden="true"
+      />
+      <span
+        className={
+          tap.pending ? "size-2 rounded-full bg-primary ring-2 ring-background" : "sr-only"
+        }
+        aria-hidden="true"
+      />
+      <span className="sr-only" role="status" aria-live="polite">
+        {tap.pending ? "Sending tap…" : ""}
+      </span>
+    </div>
+  ) : null;
 }

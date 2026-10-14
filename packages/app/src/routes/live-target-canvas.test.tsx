@@ -19,11 +19,15 @@ afterEach(async () => {
   });
   document.body.replaceChildren();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 function mountCanvas(
   entries: Array<{
     issue?: string;
+    busy?: boolean;
+    inputEnabled?: boolean;
+    busyLabel?: string;
     status?: LiveTargetStatus;
     reconnect?: () => void;
     title: string;
@@ -46,7 +50,9 @@ function mountCanvas(
             canvasRef={{ current: null }}
             status={entry.status ?? "streaming"}
             issue={entry.issue}
-            busy={false}
+            busy={entry.busy ?? false}
+            inputEnabled={entry.inputEnabled}
+            busyLabel={entry.busyLabel}
             targetTitle={entry.title}
             targetDetail={entry.detail}
             targetPlatform={entry.targetPlatform}
@@ -66,31 +72,107 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
-  it("enlarges the phone without sending input, and pans rather than scrolling the app", async () => {
+  it("anchors tap feedback to the drawn frame through letterboxing and resize, until delivery settles", async () => {
+    vi.useFakeTimers();
+    let resize = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(update: () => void) {
+          resize = update;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    let finish!: (delivered: boolean) => void;
+    const send = vi.fn(() => new Promise<boolean>((resolve) => (finish = resolve)));
+    const host = mountCanvas([{ title: "iPad", detail: "", targetPlatform: "ios", send }]);
+    const canvas = host.querySelector("canvas")!;
+    canvas.width = 100;
+    canvas.height = 200;
+    canvas.setPointerCapture = vi.fn();
+    canvas.getBoundingClientRect = () => new DOMRect(20, 30, 200, 200);
+    canvas.parentElement!.getBoundingClientRect = () => new DOMRect(10, 10, 400, 400);
+    await act(async () => {
+      canvas.dispatchEvent(
+        new PointerEvent("pointerdown", { clientX: 95, clientY: 80, bubbles: true }),
+      );
+      canvas.dispatchEvent(
+        new PointerEvent("pointerup", { clientX: 95, clientY: 80, bubbles: true }),
+      );
+    });
+    expect(send).toHaveBeenCalledExactlyOnceWith({ kind: "touch", action: "up", x: 25, y: 50 });
+    const marker = host.querySelector<HTMLElement>('[data-slot="live-tap-feedback"]')!;
+    expect(marker.style.getPropertyValue("--tap-x")).toBe("85px");
+    expect(marker.style.getPropertyValue("--tap-y")).toBe("70px");
+    expect(marker.dataset.pending).toBe("true");
+    canvas.getBoundingClientRect = () => new DOMRect(20, 30, 400, 200);
+    act(() => resize());
+    expect(marker.style.getPropertyValue("--tap-x")).toBe("185px");
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(marker.isConnected).toBe(true);
+    await act(async () => finish(true));
+    expect(marker.dataset.pending).toBe("false");
+    act(() => vi.advanceTimersByTime(260));
+    expect(marker.isConnected).toBe(false);
+  });
+  it("keeps unproven live pixels visible while blocking pointer and keyboard input", () => {
+    const send = vi.fn(async () => true);
+    const host = mountCanvas([
+      { title: "iPad", detail: "", targetPlatform: "ios", inputEnabled: false, send },
+    ]);
+    const canvas = host.querySelector("canvas")!;
+    act(() => canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true })));
+    expect(send).not.toHaveBeenCalled();
+    expect(canvas.getAttribute("aria-disabled")).toBe("true");
+    expect(host.textContent).not.toContain("Connecting to live view");
+    expect(
+      host.querySelector('input[placeholder="Type into the app"]')?.hasAttribute("disabled"),
+    ).toBe(true);
+  });
+  it("shows a pending action without hiding the live screen or accepting duplicate keys", () => {
+    const send = vi.fn(async () => true);
+    const host = mountCanvas([
+      {
+        title: "iPad",
+        detail: "",
+        targetPlatform: "ios",
+        busy: true,
+        busyLabel: "Sending tap…",
+        send,
+      },
+    ]);
+    const canvas = host.querySelector("canvas")!;
+    act(() => canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(send).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending tap…");
+    expect(canvas.getAttribute("aria-busy")).toBe("true");
+  });
+  it("fits the whole device in fullscreen without replacing its canvas or sending input", async () => {
     const send = vi.fn(async () => true);
     const host = mountCanvas([
       { title: "Phone", detail: "Android", targetPlatform: "android", send },
     ]);
     const canvas = host.querySelector("canvas")!;
     await act(async () => {
-      host.querySelector<HTMLButtonElement>('[aria-label="Enlarge live view"]')!.click();
-    });
-    await act(async () => {
-      canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 200 }));
-      await new Promise((resolve) => setTimeout(resolve, 170));
+      host.querySelector<HTMLButtonElement>('[aria-label="Fullscreen live control"]')!.click();
     });
     expect(send).not.toHaveBeenCalled();
-    expect(canvas.className).toContain("h-[200%]");
-    expect(host.querySelector('[aria-label="Fit live view"]')?.getAttribute("aria-pressed")).toBe(
+    expect(canvas.className).toContain("object-contain");
+    expect(host.querySelector("canvas")).toBe(canvas);
+    expect(host.querySelector('dialog[role="dialog"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Exit fullscreen"]')?.getAttribute("aria-pressed")).toBe(
       "true",
     );
     await act(async () => {
-      host.querySelector<HTMLButtonElement>('[aria-label="Fit live view"]')!.click();
+      host.querySelector<HTMLButtonElement>('[aria-label="Exit fullscreen"]')!.click();
     });
-    expect(canvas.className).not.toContain("h-[200%]");
+    expect(host.querySelector("canvas")).toBe(canvas);
+    expect(host.querySelector('dialog[role="dialog"]')).toBeNull();
   });
 
-  it("cancels a queued device scroll when switching to enlarged pan mode", async () => {
+  it("cancels a queued scroll when changing the fullscreen layout", async () => {
     vi.useFakeTimers();
     const send = vi.fn(async () => true);
     const host = mountCanvas([
@@ -102,12 +184,12 @@ describe("LiveTargetCanvas", () => {
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 1000 }) as DOMRect;
     await act(async () => {
       canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 200 }));
-      host.querySelector<HTMLButtonElement>('[aria-label="Enlarge live view"]')!.click();
+      host.querySelector<HTMLButtonElement>('[aria-label="Fullscreen live control"]')!.click();
       await vi.advanceTimersByTimeAsync(200);
     });
     expect(send).not.toHaveBeenCalled();
     await act(async () => {
-      host.querySelector<HTMLButtonElement>('[aria-label="Fit live view"]')!.click();
+      host.querySelector<HTMLButtonElement>('[aria-label="Exit fullscreen"]')!.click();
     });
     await act(async () => {
       canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -200 }));

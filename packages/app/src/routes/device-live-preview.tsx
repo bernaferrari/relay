@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import { RotateCcw } from "lucide-react";
+import { LoaderCircle, RotateCcw } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 
 import { BrowserAddressBar } from "../components/browser-address-bar";
@@ -23,6 +23,8 @@ export function DeviceLivePreview({
   status,
   issue,
   busy,
+  busyLabel,
+  control,
   reconnect,
   send,
   pending,
@@ -38,6 +40,14 @@ export function DeviceLivePreview({
   status: LiveTargetStatus;
   issue?: string;
   busy: boolean;
+  busyLabel?: string;
+  control?: {
+    ready: boolean;
+    checking: boolean;
+    message?: string;
+    recoverable?: boolean;
+    recheck(): void;
+  };
   reconnect: () => void;
   send: (input: Parameters<LiveTargetSession["input"]>[0]) => Promise<boolean>;
   pending: boolean;
@@ -66,13 +76,12 @@ export function DeviceLivePreview({
   }
   return (
     <section
-      className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl bg-muted/30 max-[900px]:h-[65dvh] max-[900px]:flex-none"
+      className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl bg-muted/30"
       aria-labelledby="device-live-title"
     >
       <div className="flex shrink-0 items-center justify-between gap-4 px-3 py-2">
         <h2 className="text-sm font-medium" id="device-live-title">
           Live control
-          <span className="ml-2 text-xs font-normal text-muted-foreground">Not recording</span>
         </h2>
         {reconnecting || status === "streaming" || (status === "idle" && !pending) ? (
           <Button size="sm" variant="ghost" onClick={reconnect} disabled={reconnecting}>
@@ -95,6 +104,33 @@ export function DeviceLivePreview({
           issue={issue}
           issueAction={issueAction}
           busy={busy}
+          busyLabel={busyLabel}
+          inputEnabled={!control || control.ready}
+          controlNotice={
+            control && !control.ready ? (
+              control.checking ? (
+                <>
+                  <LoaderCircle
+                    className="size-4 animate-spin motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
+                  Checking control…
+                </>
+              ) : (
+                <>
+                  <span>{control.message ?? "Control could not be checked."}</span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={control.recoverable ? reconnect : control.recheck}
+                    disabled={reconnecting}
+                  >
+                    {control.recoverable ? "Enable control" : "Check again"}
+                  </Button>
+                </>
+              )
+            ) : undefined
+          }
           targetTitle={target?.name ?? "Device"}
           targetDetail={target?.detail ?? ""}
           browserContext={browserContext}
@@ -107,7 +143,7 @@ export function DeviceLivePreview({
               <RotateCcw aria-hidden="true" /> {reconnecting ? "Reconnecting…" : "Reconnect"}
             </Button>
           }
-          helpText="Click or drag to control"
+          helpText=""
           overlay={
             talkBack.on && talkBack.mode !== "off" ? (
               <TalkBackOverlay
@@ -121,6 +157,7 @@ export function DeviceLivePreview({
           toolbar={
             <div className="flex items-center gap-2">
               <TalkBackModeSelect
+                portalContainer={canvas.current?.closest("dialog")}
                 mode={talkBack.mode}
                 loading={talkBack.loading}
                 onModeChange={(mode) => talkBack.setMode(mode)}
