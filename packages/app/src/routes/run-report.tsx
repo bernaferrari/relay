@@ -242,9 +242,9 @@ export function RunReport({
   const header = (
     <TestWorkspaceHeader
       title={report.title}
+      context={<RunTestLink testId={testId} />}
       children={
         <>
-          <RunTestLink testId={testId} />
           <span role="status">
             <StatusPill
               size="md"
@@ -335,7 +335,8 @@ export function RunReport({
           notice={
             <>
               <RunReplayStatus runService={runService} />
-              {firstEvidenceIsDistinct && report.firstEvidence ? (
+              {/* The failure card is the one explanation; extra blocks only when it's absent. */}
+              {firstEvidenceIsDistinct && report.firstEvidence && !hasFailedStep ? (
                 <div className="text-sm">
                   <p className="font-medium">{report.firstEvidence.label}</p>
                   {report.firstEvidence.detail ? (
@@ -343,7 +344,10 @@ export function RunReport({
                   ) : null}
                 </div>
               ) : null}
-              {storyFailureOwnsCause(report) ? null : failureNotice}
+              {storyFailureOwnsCause(report) ||
+              (hasFailedStep && report.outcome === "harness-failure")
+                ? null
+                : failureNotice}
               {report.evidenceUnavailable ? (
                 <p className="text-sm text-muted-foreground" role="status">
                   Evidence details are temporarily unavailable. The saved outcome above is

@@ -38,13 +38,14 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
       : "App";
 
   // Always two lines, so the navigation below never shifts between pages.
-  const triggerSubtitle = selectedAppId
-    ? triggerDetail
-    : scope.kind === "multiple"
-      ? "Selected apps"
-      : scope.kind === "loading"
-        ? "One moment"
-        : "Everything";
+  const triggerSubtitle =
+    selectedAppId || scope.kind === "single"
+      ? triggerDetail
+      : scope.kind === "multiple"
+        ? "Selected apps"
+        : scope.kind === "loading"
+          ? "One moment"
+          : "Everything";
 
   function switchApp(appId?: string) {
     router.history.push(

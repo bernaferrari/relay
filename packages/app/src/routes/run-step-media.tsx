@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from "react";
-import { ImageOff } from "lucide-react";
+
 import { Button } from "@relay/ui-react/components/button";
 import type { CaptureReviewMask } from "@relay/protocol";
 import type { ProductRunReportOverview } from "../data/run-report-model";
 import type { ReportEvidenceItem } from "../data/run-product-service";
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
+import { ScreenshotPlaceholder } from "../components/screenshot-placeholder";
 
 export function StepMedia({
   frames,
@@ -94,32 +95,33 @@ export function StepMedia({
             onError={() => setFailed(true)}
           />
         ) : (
-          <div className="max-w-sm py-10 text-center">
-            <ImageOff className="mx-auto mb-3 size-6 text-muted-foreground" aria-hidden="true" />
-            <p className="text-sm font-medium">
-              {failed
+          <ScreenshotPlaceholder
+            title={
+              failed
                 ? "Screenshot unavailable"
                 : unlinked
                   ? "No saved screenshots"
                   : controls
                     ? "No capture linked to this step"
-                    : "No screenshot for this step"}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {failed
+                    : "No screenshot for this step"
+            }
+            detail={
+              failed
                 ? "The saved image could not be loaded. The step result remains available."
                 : unlinked
                   ? "Review the other available evidence below."
                   : controls
                     ? "Other captures are available in this run. View them below."
-                    : "This step did not save a screenshot."}
-            </p>
-            {failed ? (
-              <Button size="sm" variant="outline" className="mt-4" onClick={() => setFailed(false)}>
-                Retry image
-              </Button>
-            ) : null}
-          </div>
+                    : "This step did not save a screenshot."
+            }
+            action={
+              failed ? (
+                <Button size="sm" variant="outline" onClick={() => setFailed(false)}>
+                  Retry image
+                </Button>
+              ) : undefined
+            }
+          />
         )}
       </div>
       {reviewControls ? (

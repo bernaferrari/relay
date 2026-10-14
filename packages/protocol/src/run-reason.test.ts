@@ -40,6 +40,10 @@ test("plain reasons translate runner phrasing seen in real runs", () => {
       "1 campaign check failed: Home: expect-screen: on “unknown”, not “Start” after 5000ms (pixels unchanged for 5022ms). Next: Inspect",
       "Expected the “Start” screen within 5 s, but Relay didn’t recognize the screen it was on.",
     ],
+    [
+      "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4173/checkout\nCall log:\n - navigating to the saved app address, waiting until load",
+      "Nothing answered at http://127.0.0.1:4173/checkout.",
+    ],
   ];
   for (const [raw, plain] of cases) assert.equal(plainRunReason(raw), plain);
 });

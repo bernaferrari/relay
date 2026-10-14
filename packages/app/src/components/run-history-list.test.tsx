@@ -5,7 +5,9 @@ import type { ProductRunSummary } from "@relay/product/catalog";
 import { RunHistoryList } from "./run-history-list";
 
 it("preserves the scroll position when a background refresh updates the same runs", async () => {
+  // The list rides its page's scroller rather than nesting its own scroll box.
   const host = document.createElement("div");
+  host.style.overflowY = "auto";
   document.body.append(host);
   const root = createRoot(host);
   const runs: ProductRunSummary[] = Array.from({ length: 100 }, (_, index) => ({
@@ -25,8 +27,8 @@ it("preserves the scroll position when a background refresh updates the same run
   );
   try {
     await act(async () => root.render(view(runs)));
-    const viewport = host.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!;
-    expect(viewport).not.toBeNull();
+    const viewport = host;
+    expect(host.querySelector('[data-slot="scroll-area-viewport"]')).toBeNull();
     await act(async () => {
       viewport.scrollTop = 400;
       viewport.dispatchEvent(new Event("scroll"));

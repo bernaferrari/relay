@@ -528,6 +528,8 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
               </FieldLabel>
               <Input
                 id="review-test-name"
+                // Reads as the page's heading; the field chrome appears on hover and focus.
+                className="-ml-2.5 h-10 border-transparent bg-transparent px-2.5 text-lg font-semibold md:text-lg tracking-tight shadow-none hover:border-border focus-visible:border-ring dark:bg-transparent"
                 value={testName}
                 disabled={leaveDraft.isPending || transition.isPending}
                 onChange={(event) => {

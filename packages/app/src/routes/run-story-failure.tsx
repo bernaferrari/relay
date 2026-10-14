@@ -20,13 +20,21 @@ export function RunStoryFailure({
   stepNumber: number;
   /** Present only when the failed step belongs to this editable saved Test. */
   testId?: string;
-  report: Pick<ProductRunReportOverview, "outcome" | "failureCategory" | "cause">;
+  report: Pick<
+    ProductRunReportOverview,
+    "outcome" | "failureCategory" | "cause" | "category" | "technicalCause"
+  >;
   onInspectEvidence(): void;
 }) {
   const nextAction = storyFailureNextAction(report);
   // Say why in a sentence, right here; the raw message stays one click away.
-  const rawReason =
-    action?.failure?.summary ?? plainRunReason(action?.detail) ?? plainRunReason(report.cause);
+  // "Could not run" is about Relay or the device, not the app: tell that story,
+  // so the card never contradicts the outcome pill above it.
+  const couldNotRun = report.outcome === "harness-failure";
+  const rawCause = report.technicalCause ?? report.cause;
+  const rawReason = couldNotRun
+    ? (plainRunReason(rawCause) ?? action?.failure?.summary ?? plainRunReason(action?.detail))
+    : (action?.failure?.summary ?? plainRunReason(action?.detail) ?? plainRunReason(report.cause));
   // Engine messages can arrive lowercase ("navigating to…"); present them as sentences.
   const reason = rawReason ? rawReason.charAt(0).toUpperCase() + rawReason.slice(1) : rawReason;
   const inspect = nextAction === "inspect" || !testId;
@@ -38,15 +46,26 @@ export function RunStoryFailure({
         <div className="grid min-w-0 gap-0.5">
           {/* Name the action that failed; the step it belongs to is context. */}
           <p className="font-semibold">
-            {action && action.label !== step.title
-              ? `${action.label} failed`
-              : `${step.title} failed`}
+            {couldNotRun
+              ? "Relay couldn’t finish this run"
+              : action && action.label !== step.title
+                ? `${action.label} failed`
+                : `${step.title} failed`}
           </p>
           <p className="text-xs text-muted-foreground">
-            Step {stepNumber}
-            {action && action.label !== step.title ? ` · ${step.title}` : ""}
+            {couldNotRun ? (
+              <>
+                {report.category ? `${report.category} · ` : ""}Stopped at step {stepNumber}
+                {action ? ` · ${action.label}` : ""}
+              </>
+            ) : (
+              <>
+                Step {stepNumber}
+                {action && action.label !== step.title ? ` · ${step.title}` : ""}
+              </>
+            )}
           </p>
-          {action?.expected && action.state === "failed" ? (
+          {!couldNotRun && action?.expected && action.state === "failed" ? (
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
               <dt className="text-muted-foreground">Expected</dt>
               <dd>{action.expected}</dd>
@@ -56,15 +75,20 @@ export function RunStoryFailure({
           ) : reason ? (
             <p className="mt-1 text-foreground/80">{reason}</p>
           ) : null}
+          {couldNotRun ? (
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Results after this point aren’t a verdict on your app.
+            </p>
+          ) : null}
         </div>
       </div>
-      {action?.failure?.technicalDetail ? (
+      {(couldNotRun ? rawCause : action?.failure?.technicalDetail) ? (
         <details className="pl-6 text-xs text-muted-foreground">
           <summary className="w-fit cursor-pointer rounded-sm py-1 focus-visible:outline-2 focus-visible:outline-ring">
             Technical details
           </summary>
-          <pre className="mt-1 whitespace-pre-wrap break-words font-mono">
-            {action.failure.technicalDetail}
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono">
+            {couldNotRun ? rawCause : action?.failure?.technicalDetail}
           </pre>
         </details>
       ) : null}

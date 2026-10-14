@@ -15,15 +15,15 @@ import {
   Circle,
   CircleCheck,
   CircleX,
-  Dot,
+  CircleDot,
+  Clock,
+  Hand,
   Eye,
   Flag,
   Keyboard,
   ListChecks,
   LoaderCircle,
-  MousePointerClick,
-  MoveVertical,
-  Timer,
+  MoveUpRight,
 } from "lucide-react";
 import {
   decidedByReference,
@@ -40,19 +40,21 @@ import {
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReferenceCompareLine } from "./reference-compare-dialog";
 import { StatusPill, type RunState } from "../components/run-status";
+import { ScreenshotPlaceholder } from "../components/screenshot-placeholder";
 
 export type RunStoryStatus = "running" | "passed" | "review" | "failed" | "blocked" | "cancelled";
 
-const ACTION_ICON: Record<StoryActionKind, typeof Dot> = {
-  tap: MousePointerClick,
+// The same gesture vocabulary as recording and review (see recording-action-icon).
+const ACTION_ICON: Record<StoryActionKind, typeof CircleDot> = {
+  tap: Hand,
   type: Keyboard,
   verify: Eye,
   screenshot: Camera,
-  wait: Timer,
-  scroll: MoveVertical,
+  wait: Clock,
+  scroll: MoveUpRight,
   open: AppWindow,
   check: ListChecks,
-  other: Dot,
+  other: CircleDot,
 };
 
 const PILL: Record<RunStoryStatus, RunState> = {
@@ -185,19 +187,24 @@ export function RunStoryView({
           className="h-full w-full rounded-lg bg-muted/15 ring-1 ring-border/30"
         />
       ) : framePath && frame.isError ? (
-        <div
-          className="grid justify-items-center gap-3 text-sm text-muted-foreground"
-          role="status"
-        >
-          <p>Screenshot couldn’t load.</p>
-          <Button variant="outline" size="sm" onClick={() => void frame.refetch()}>
-            Retry screenshot
-          </Button>
-        </div>
+        <ScreenshotPlaceholder
+          title="Screenshot couldn’t load"
+          detail="It was saved with the run; loading it failed."
+          action={
+            <Button variant="outline" size="sm" onClick={() => void frame.refetch()}>
+              Retry screenshot
+            </Button>
+          }
+        />
       ) : (
-        <p className="px-6 py-16 text-center text-sm text-muted-foreground">
-          {status === "running" ? "Starting…" : "No screenshot was saved for this step"}
-        </p>
+        <ScreenshotPlaceholder
+          title={status === "running" ? "Starting…" : "No screenshot for this step"}
+          detail={
+            status === "running"
+              ? "The first screen appears as soon as the run reaches it."
+              : "This step finished without a screen capture. Choose another step to see its screen."
+          }
+        />
       )}
     </WorkspaceScreenshot>
   );
@@ -207,12 +214,17 @@ export function RunStoryView({
       {embedded
         ? null
         : (header ?? (
-            <TestWorkspaceHeader title={title} actions={actions}>
-              {crumbs ? (
-                <nav aria-label="Breadcrumb" className="flex items-center gap-2">
-                  {crumbs}
-                </nav>
-              ) : null}
+            <TestWorkspaceHeader
+              title={title}
+              actions={actions}
+              context={
+                crumbs ? (
+                  <nav aria-label="Breadcrumb" className="flex items-center gap-2">
+                    {crumbs}
+                  </nav>
+                ) : undefined
+              }
+            >
               <span role="status">
                 <StatusPill state={PILL[status]} size="md" />
               </span>
@@ -252,7 +264,7 @@ export function RunStoryView({
                     state={step.state}
                     heading={
                       <div className="flex items-start gap-2 px-2 py-1.5">
-                        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium tabular-nums">
+                        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-xs tabular-nums text-muted-foreground">
                           {index + 1}
                         </span>
                         <span className="min-w-0 flex-1 text-sm font-semibold leading-6">
@@ -395,7 +407,7 @@ function ActionRow({
           selected ? "bg-accent" : ""
         }`}
       >
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="min-w-0 flex-1">
           <span className="block truncate">{action.label}</span>
           {action.detail ? (

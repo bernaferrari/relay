@@ -2,13 +2,14 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
-import { Camera, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { WorkspaceScreenshot } from "../components/test-workspace";
 import { StatusPill, runStateLabel, runStateOf } from "../components/run-status";
 import { storyFromReport } from "../data/run-story";
 import { relativeTime } from "#lib/relative-time";
+import { ScreenshotPlaceholder } from "../components/screenshot-placeholder";
 
 export function latestRunOf(runs: readonly ProductRunSummary[] | undefined) {
   return [...(runs ?? [])].sort((left, right) => right.queuedAt - left.queuedAt)[0];
@@ -150,27 +151,18 @@ export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
       aria-label="Latest run preview"
       tabIndex={0}
     >
-      <div className="grid max-w-sm justify-items-center gap-3 text-center">
-        <div className="grid size-12 place-items-center rounded-2xl bg-card shadow-xs">
-          <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
-        </div>
-        <div className="grid gap-1.5">
-          <h2 className="text-base font-semibold">
-            {loading
-              ? "Loading screenshot…"
-              : failed
-                ? "Screenshot unavailable"
-                : "No screenshot yet"}
-          </h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {loading
-              ? "Opening the original capture."
-              : failed
-                ? "Open Result to inspect the run’s evidence."
-                : "Run the test and its screenshots show up here."}
-          </p>
-        </div>
-      </div>
+      <ScreenshotPlaceholder
+        title={
+          loading ? "Loading screenshot…" : failed ? "Screenshot unavailable" : "No screenshot yet"
+        }
+        detail={
+          loading
+            ? "Opening the original capture."
+            : failed
+              ? "Open Result to inspect the run’s evidence."
+              : "Run the test and its screenshots show up here."
+        }
+      />
     </div>
   );
 }

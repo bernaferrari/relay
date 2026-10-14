@@ -97,19 +97,20 @@ export function useCurrentAppScope() {
         : undefined,
   });
   const selectedAppId = scope.kind === "single" ? scope.appId : undefined;
-  const selectedApp =
-    apps.data?.find((app) => app.id === selectedAppId) ??
-    (test.data && test.data.appMapId === selectedAppId
-      ? { id: test.data.appMapId, name: test.data.appName }
-      : undefined) ??
-    (run.data?.appName && run.data.appMapId === selectedAppId
-      ? { id: run.data.appMapId, name: run.data.appName }
-      : undefined) ??
-    (batch.data && (batch.data.setup?.appMapId ?? batch.data.appMapId) === selectedAppId
-      ? {
-          id: batch.data.setup?.appMapId ?? batch.data.appMapId ?? selectedAppId,
-          name: batch.data.setup?.appName ?? batch.data.title,
-        }
-      : undefined);
+  // Every fallback requires a real id: `undefined === undefined` must not name an App.
+  const batchAppId = batch.data ? (batch.data.setup?.appMapId ?? batch.data.appMapId) : undefined;
+  const selectedApp = !selectedAppId
+    ? undefined
+    : (apps.data?.find((app) => app.id === selectedAppId) ??
+      (test.data && test.data.appMapId === selectedAppId
+        ? { id: test.data.appMapId, name: test.data.appName }
+        : undefined) ??
+      (run.data?.appName && run.data.appMapId === selectedAppId
+        ? { id: run.data.appMapId, name: run.data.appName }
+        : undefined) ??
+      // A batch title names the run, never the App.
+      (batch.data?.setup?.appName && batchAppId === selectedAppId
+        ? { id: selectedAppId, name: batch.data.setup.appName }
+        : undefined));
   return { location, apps, scope, selectedAppId, selectedApp };
 }

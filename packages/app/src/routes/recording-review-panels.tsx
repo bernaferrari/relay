@@ -14,13 +14,14 @@ import {
   imagePointFromClick,
   type RecordingEvidenceControl,
 } from "../data/recording-evidence-target";
-import { MoreHorizontal, Sparkles, Target, ScanLine } from "lucide-react";
+import { MoreHorizontal, Sparkles, ScanLine } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import {
   recordedMomentCount,
   reviewActionCopy,
   type ReviewAction,
 } from "./recording-review-presentation";
+import { ScreenshotPlaceholder } from "../components/screenshot-placeholder";
 
 type OptimizationSuggestion = NonNullable<
   AuthoringRawOptimizationProposalResponse["proposal"]
@@ -228,16 +229,15 @@ export function RecordingEvidencePanel({
             ) : null}
           </div>
         ) : (
-          <div className="grid max-w-[22ch] justify-items-center gap-2 p-6 text-center text-muted-foreground">
-            <Target aria-hidden="true" />
-            <strong className="text-sm text-foreground">
-              {action ? "No screenshot" : "Select a step"}
-            </strong>
-            <span className="text-xs leading-normal">
-              {action
-                ? "Choose another step or switch between Before and After."
-                : "Its before and after frames will appear here."}
-            </span>
+          <div className="self-center">
+            <ScreenshotPlaceholder
+              title={action ? "No screenshot" : "Select a step"}
+              detail={
+                action
+                  ? "Choose another step or switch between Before and After."
+                  : "Its before and after frames will appear here."
+              }
+            />
           </div>
         )}
       </div>
@@ -351,45 +351,62 @@ export function RecordingActionsPanel({
 
       {actions.length ? (
         <ScrollArea className="min-h-0 flex-1">
-          <ol className="px-4" aria-label="Recorded actions">
+          {/* Same row as the saved Test's step list: muted number, gesture, title. */}
+          <ol className="grid list-none divide-y divide-border p-0" aria-label="Recorded actions">
             {actions.map((step) => {
               const copy = reviewActionCopy(step);
               const ordinal = copy.kind === "pause" ? actionOrdinal : ++actionOrdinal;
               const selected = selectedActionIds.includes(step.id);
               return (
                 <li
-                  className={`grid min-h-13 grid-cols-[auto_28px_minmax(0,1fr)] items-center gap-2 border-t border-border py-2 ${selected ? "bg-muted/60" : ""}`}
                   key={step.id}
+                  data-selected={selected}
+                  className="flex min-h-13 items-stretch transition-colors hover:bg-muted/40 data-[selected=true]:bg-muted/40"
                 >
                   {selecting ? (
-                    <Checkbox
-                      checked={selected}
-                      onCheckedChange={(checked) => onToggle(step.id, checked)}
-                      aria-label={`Select ${copy.title}`}
-                    />
-                  ) : (
-                    <span />
-                  )}
-                  <span
-                    className="grid size-7 place-items-center rounded-full border border-border bg-muted text-foreground shadow-sm"
-                    aria-hidden="true"
-                  >
-                    {copy.kind === "pause" ? <MoreHorizontal /> : ordinal}
-                  </span>
+                    <span className="flex items-center pl-3">
+                      <Checkbox
+                        checked={selected}
+                        onCheckedChange={(checked) => onToggle(step.id, checked)}
+                        aria-label={`Select ${copy.title}`}
+                      />
+                    </span>
+                  ) : null}
                   <button
                     type="button"
-                    className="min-w-0 text-left"
+                    aria-pressed={selected}
+                    // The number is decorative; name the row by its step and state.
+                    aria-label={
+                      step.id === failedActionId
+                        ? `${copy.title}, failed`
+                        : step.proofStatus === "unresolved"
+                          ? `${copy.title}, needs setup`
+                          : copy.title
+                    }
+                    className="grid min-w-0 flex-1 grid-cols-[20px_16px_minmax(0,1fr)] items-center gap-2.5 px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                     onClick={() => onSelect(step.id)}
                   >
-                    <span className="flex items-center gap-2">
-                      <RecordingActionIcon action={step} />
-                      <strong className="text-sm font-medium">{copy.title}</strong>
+                    <span
+                      className="flex justify-center text-xs tabular-nums text-muted-foreground"
+                      aria-hidden="true"
+                    >
+                      {copy.kind === "pause" ? <MoreHorizontal className="size-3.5" /> : ordinal}
                     </span>
-                    {step.id === failedActionId ? (
-                      <p className="text-xs text-destructive">Failed</p>
-                    ) : step.proofStatus === "unresolved" ? (
-                      <p className="text-xs text-muted-foreground">Needs setup</p>
-                    ) : null}
+                    <span className="flex justify-center text-muted-foreground [&_svg]:size-4">
+                      <RecordingActionIcon action={step} />
+                    </span>
+                    <span className="min-w-0">
+                      <strong className="block text-sm font-medium break-words">
+                        {copy.title}
+                      </strong>
+                      {step.id === failedActionId ? (
+                        <small className="mt-0.5 block text-xs text-destructive">Failed</small>
+                      ) : step.proofStatus === "unresolved" ? (
+                        <small className="mt-0.5 block text-xs text-warning-foreground">
+                          Needs setup
+                        </small>
+                      ) : null}
+                    </span>
                   </button>
                 </li>
               );

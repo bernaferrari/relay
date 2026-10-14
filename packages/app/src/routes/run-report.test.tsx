@@ -203,7 +203,13 @@ it.each([
   "retains the generic notice when the story does not account for the run cause: %o",
   async (override) => {
     const container = await render({ ...report(), ...override });
-    expect(container.querySelector('button[aria-label="Technical details"]')).not.toBeNull();
+    // Either the run-level dialog or, for "Could not run", the failure card's disclosure.
+    const inCard = [...container.querySelectorAll("summary")].some(
+      (summary) => summary.textContent === "Technical details",
+    );
+    expect(
+      container.querySelector('button[aria-label="Technical details"]') !== null || inCard,
+    ).toBe(true);
   },
 );
 

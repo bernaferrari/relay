@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@relay/ui-react/components/dropdown-menu";
-import { MoreHorizontal, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
+import { MoreHorizontal, Play, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
 
 export function RecordingReviewActions(props: {
   editing: boolean;
@@ -72,7 +72,7 @@ export function RecordingReviewActions(props: {
           onClick={props.onReplay}
           disabled={props.pending}
         >
-          <RotateCcw aria-hidden="true" />
+          <Play aria-hidden="true" />
           {props.replaying ? "Replaying…" : "Run test"}
         </Button>
       ) : null}

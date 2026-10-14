@@ -97,7 +97,12 @@ export function ActivityCenterButton() {
     running ? `${running} running` : "",
     queued ? `${queued} queued` : "",
     drafts ? `${drafts} ${drafts === 1 ? "draft" : "drafts"}` : "",
-    unknown ? `${unknown} to check` : "",
+    // Name the thing when there is one: "Recording · check status" beats "1 to check".
+    unknown === 1
+      ? `${items.find((item) => item.activity === "unknown")?.kind === "recording" ? "Recording" : "Run"} · check status`
+      : unknown
+        ? `${unknown} to check`
+        : "",
   ]
     .filter(Boolean)
     .join(" · ");

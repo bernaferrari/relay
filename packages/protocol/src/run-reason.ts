@@ -117,15 +117,28 @@ export function plainRunReason(message: string | undefined): string | undefined 
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => line && !/^check cleanup skipped|^Run saved Test/iu.test(line));
-  const best = lines.find((line) => line.startsWith("✗")) ?? lines.at(-1) ?? message.trim();
-  const cleaned = best
-    // Terminal colour codes from browser drivers are not words.
-    // eslint-disable-next-line no-control-regex -- Strip ANSI escape sequences from driver messages.
-    .replace(/\u001b\[[0-9;]*m|\[\d+m/gu, "")
-    .replace(/^-\s+/u, "")
-    .replace(/^\d+ campaign checks? failed: [^:]+: /u, "")
-    .replace(RUNNER_PREFIX, "")
-    .replace(/^✗\s*/u, "")
-    .trim();
-  return humanize(cleaned);
+  const flagged = lines.find((line) => line.startsWith("✗"));
+  if (flagged) return humanize(cleanLine(flagged));
+  // Driver call logs end with chatter ("- navigating to…"); the line Relay can
+  // explain (a refused connection, a closed browser) is the real reason.
+  for (const line of lines) {
+    const cleaned = cleanLine(line);
+    const sentence = humanize(cleaned);
+    if (sentence !== cleaned) return sentence;
+  }
+  return humanize(cleanLine(lines.at(-1) ?? message.trim()));
+}
+
+function cleanLine(line: string): string {
+  return (
+    line
+      // Terminal colour codes from browser drivers are not words.
+      // eslint-disable-next-line no-control-regex -- Strip ANSI escape sequences from driver messages.
+      .replace(/\u001b\[[0-9;]*m|\[\d+m/gu, "")
+      .replace(/^-\s+/u, "")
+      .replace(/^\d+ campaign checks? failed: [^:]+: /u, "")
+      .replace(RUNNER_PREFIX, "")
+      .replace(/^✗\s*/u, "")
+      .trim()
+  );
 }

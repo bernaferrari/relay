@@ -1847,7 +1847,8 @@ describe("record, review, replay, and save", () => {
         document.querySelector<HTMLImageElement>('img[alt="After the step: Open Settings"]')?.src,
       ).toBe(recordedSource);
       expect(
-        document.querySelector('[aria-label="Recorded actions"] li.bg-muted\\/60')?.textContent,
+        document.querySelector('[aria-label="Recorded actions"] li[data-selected="true"]')
+          ?.textContent,
       ).toContain("Open Settings");
       if (operation === "save") {
         expect(button("Saving…").disabled).toBe(true);

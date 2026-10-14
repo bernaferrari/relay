@@ -53,7 +53,7 @@ export function RecordingTimelineSidebar({
       className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden"
       aria-labelledby="capture-timeline-title"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-border px-1 pb-2">
+      <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border px-3">
         <h2 id="capture-timeline-title" className="text-sm font-medium">
           Recorded steps
           {liveInputBusy ? (

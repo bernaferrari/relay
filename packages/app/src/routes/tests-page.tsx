@@ -204,7 +204,9 @@ export function TestsPage() {
     <LibraryPage className="max-w-5xl" onClickCapture={returnFocus.onClickCapture}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="grid gap-1">
-          <h1 className="font-display text-3xl leading-9 font-semibold tracking-[-0.025em]">Tests</h1>
+          <h1 className="font-display text-3xl leading-9 font-semibold tracking-[-0.025em]">
+            Tests
+          </h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setE2EOpen(true)}>

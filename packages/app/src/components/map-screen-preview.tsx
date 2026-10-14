@@ -85,7 +85,7 @@ export function MapScreenPreview({
         />
       ) : uri && load && !preview.isError ? null : (
         <div
-          className={`flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg border border-border bg-muted/40 p-3 text-center text-xs text-muted-foreground ${selected ? "ring-2 ring-brand" : ""}`}
+          className={`flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/60 p-3 text-center text-xs text-muted-foreground ${selected ? "ring-2 ring-brand" : ""}`}
         >
           <ImageOff className={thumbnail ? "size-3.5" : "size-5"} aria-hidden="true" />
           {!thumbnail &&

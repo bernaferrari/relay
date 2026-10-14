@@ -1,6 +1,5 @@
 /** @jsxImportSource react */
 import type { ProductRunSummary } from "@relay/product/catalog";
-import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import {
   useEffect,
   useMemo,
@@ -45,6 +44,14 @@ export function RunHistoryList({
   return <WindowedRunHistory runs={runs}>{children}</WindowedRunHistory>;
 }
 
+/** The nearest ancestor that scrolls, so the list rides the page instead of nesting a box. */
+function scrollParent(node: HTMLElement): HTMLElement {
+  for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+    if (/(auto|scroll|overlay)/u.test(getComputedStyle(parent).overflowY)) return parent;
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
+}
+
 function WindowedRunHistory({
   runs,
   children,
@@ -52,7 +59,8 @@ function WindowedRunHistory({
   runs: readonly ProductRunSummary[];
   children(run: ProductRunSummary, index: number, interaction: RunHistoryRowInteraction): ReactNode;
 }) {
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const scrollerRef = useRef<HTMLElement | null>(null);
   const [viewportHeight, setViewportHeight] = useState(360);
   const [scrollTop, setScrollTop] = useState(0);
   const [compact, setCompact] = useState(false);
@@ -62,19 +70,30 @@ function WindowedRunHistory({
   const visibleCount = Math.ceil(viewportHeight / rowHeight) + OVERSCAN * 2;
   const end = Math.min(runs.length, start + visibleCount);
 
+  /** Where the list begins inside its scroller, in scroller coordinates. */
+  function listOffset(list: HTMLElement, scroller: HTMLElement) {
+    const scrollerTop =
+      scroller === document.scrollingElement ? 0 : scroller.getBoundingClientRect().top;
+    return list.getBoundingClientRect().top - scrollerTop + scroller.scrollTop;
+  }
+
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
+    const list = listRef.current;
+    if (!list) return;
+    const scroller = scrollParent(list);
+    scrollerRef.current = scroller;
     const update = () => {
-      setScrollTop(viewport.scrollTop);
-      setViewportHeight(viewport.clientHeight || 360);
+      setScrollTop(Math.max(0, scroller.scrollTop - listOffset(list, scroller)));
+      setViewportHeight(scroller.clientHeight || 360);
     };
     update();
-    viewport.addEventListener("scroll", update, { passive: true });
+    const target: HTMLElement | Window = scroller === document.scrollingElement ? window : scroller;
+    target.addEventListener("scroll", update, { passive: true });
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
-    observer?.observe(viewport);
+    observer?.observe(scroller);
+    observer?.observe(list);
     return () => {
-      viewport.removeEventListener("scroll", update);
+      target.removeEventListener("scroll", update);
       observer?.disconnect();
     };
   }, []);
@@ -90,13 +109,11 @@ function WindowedRunHistory({
   const rowIdentity = runs.map((run) => run.id).join("\n");
   useEffect(() => {
     setActiveIndex(0);
-    const viewport = viewportRef.current;
-    if (viewport) viewport.scrollTop = 0;
   }, [rowIdentity]);
 
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport || viewport.contains(document.activeElement)) return;
+    const list = listRef.current;
+    if (!list || list.contains(document.activeElement)) return;
     if (activeIndex < start || activeIndex >= end) setActiveIndex(start);
   }, [activeIndex, end, start]);
 
@@ -109,17 +126,18 @@ function WindowedRunHistory({
   function focusIndex(index: number) {
     const nextIndex = Math.max(0, Math.min(runs.length - 1, index));
     setActiveIndex(nextIndex);
-    const viewport = viewportRef.current;
-    if (viewport) {
-      const top = nextIndex * rowHeight;
+    const list = listRef.current;
+    const scroller = scrollerRef.current;
+    if (list && scroller) {
+      const top = listOffset(list, scroller) + nextIndex * rowHeight;
       const bottom = top + rowHeight;
-      if (top < viewport.scrollTop) viewport.scrollTop = top;
-      else if (bottom > viewport.scrollTop + viewport.clientHeight) {
-        viewport.scrollTop = bottom - viewport.clientHeight;
+      if (top < scroller.scrollTop) scroller.scrollTop = top;
+      else if (bottom > scroller.scrollTop + scroller.clientHeight) {
+        scroller.scrollTop = bottom - scroller.clientHeight;
       }
     }
     window.requestAnimationFrame(() => {
-      viewportRef.current?.querySelector<HTMLElement>(`[data-run-index="${nextIndex}"]`)?.focus();
+      listRef.current?.querySelector<HTMLElement>(`[data-run-index="${nextIndex}"]`)?.focus();
     });
   }
 
@@ -152,45 +170,38 @@ function WindowedRunHistory({
         This long history is windowed for performance. Use Up and Down to move one report, Page Up
         and Page Down to move by a screen, and Home or End to jump to the first or last report.
       </p>
-      <ScrollArea
-        viewportRef={viewportRef}
-        viewportProps={{
-          "aria-label": `${runs.length} runs`,
-          "aria-describedby": "run-history-keyboard-help",
-          className: "overscroll-contain",
-        }}
-        className="overflow-auto h-[calc(100dvh-20rem)] min-h-64 max-h-screen min-w-0 md:h-[calc(100dvh-22rem)] md:min-h-120"
+      <ul
+        ref={listRef}
+        aria-label={`${runs.length} runs`}
+        aria-describedby="run-history-keyboard-help"
+        className="relative m-0 h-(--relay-windowed-run-list-height) overflow-hidden rounded-xl border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0"
+        style={
+          {
+            "--relay-windowed-run-list-height": `${runs.length * rowHeight}px`,
+            "--relay-windowed-run-row-height": `${rowHeight}px`,
+          } as CSSProperties
+        }
       >
-        <ul
-          className="relative m-0 h-(--relay-windowed-run-list-height) overflow-hidden rounded-xl border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0"
-          style={
-            {
-              "--relay-windowed-run-list-height": `${runs.length * rowHeight}px`,
-              "--relay-windowed-run-row-height": `${rowHeight}px`,
-            } as CSSProperties
-          }
-        >
-          {renderedIndexes.map((index) => {
-            const run = runs[index];
-            if (!run) return null;
-            return (
-              <li
-                key={run.id}
-                className="absolute inset-x-0 top-0 h-(--relay-windowed-run-row-height) translate-y-(--row-y) [&>a]:h-full"
-                aria-posinset={index + 1}
-                aria-setsize={runs.length}
-                style={{ "--row-y": `${index * rowHeight}px` } as CSSProperties}
-              >
-                {children(run, index, {
-                  tabIndex: activeIndex === index ? 0 : -1,
-                  "data-run-index": index,
-                  onKeyDown: rowKeyDown(index),
-                })}
-              </li>
-            );
-          })}
-        </ul>
-      </ScrollArea>
+        {renderedIndexes.map((index) => {
+          const run = runs[index];
+          if (!run) return null;
+          return (
+            <li
+              key={run.id}
+              className="absolute inset-x-0 top-0 h-(--relay-windowed-run-row-height) translate-y-(--row-y) [&>a]:h-full"
+              aria-posinset={index + 1}
+              aria-setsize={runs.length}
+              style={{ "--row-y": `${index * rowHeight}px` } as CSSProperties}
+            >
+              {children(run, index, {
+                tabIndex: activeIndex === index ? 0 : -1,
+                "data-run-index": index,
+                onKeyDown: rowKeyDown(index),
+              })}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

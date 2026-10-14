@@ -10,7 +10,8 @@ import {
 } from "@relay/protocol";
 import { SavedRecordingPreview } from "./saved-recording-preview";
 import { useState } from "react";
-import { ImageOff, Info } from "lucide-react";
+import { Info } from "lucide-react";
+import { ScreenshotPlaceholder } from "./screenshot-placeholder";
 import { Button } from "@relay/ui-react/components/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import type { ProductRunReportOverview } from "../data/run-product-service";
@@ -211,12 +212,11 @@ export function TestStepEvidencePreview({
               })}
             </div>
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-              <ImageOff className="size-6 text-muted-foreground" aria-hidden="true" />
-              <p className="text-sm font-medium">No screenshot for this step</p>
-              <p className="max-w-xs text-xs leading-5 text-muted-foreground">
-                The run saved the result without a screen capture.
-              </p>
+            <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+              <ScreenshotPlaceholder
+                title="No screenshot for this step"
+                detail="The run saved the result without a screen capture."
+              />
             </div>
           )}
         </div>

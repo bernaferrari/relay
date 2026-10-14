@@ -19,7 +19,6 @@ import {
   CircleDashed,
   CircleMinus,
   CircleX,
-  ImageOff,
   LoaderCircle,
   RotateCcw,
   Smartphone,
@@ -29,6 +28,7 @@ import type {
   ReportEvidenceItem,
   ReportTimelineItem,
 } from "../data/run-report-model";
+import { ScreenshotPlaceholder } from "./screenshot-placeholder";
 
 const STEP_STATE: Record<
   ReportTimelineItem["state"],
@@ -328,13 +328,19 @@ export function EmbeddedRunResult({
                 <EvidenceImageViewer key={shownFrame.id} frame={shownFrame} onError={() => {}} />
               </WorkspaceScreenshot>
             ) : (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-                <ImageOff className="size-5" aria-hidden="true" />
-                <p className="text-sm">
-                  {step?.state === "pending"
-                    ? "This step didn’t run."
-                    : "No screenshot was saved for this step."}
-                </p>
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <ScreenshotPlaceholder
+                  title={
+                    step?.state === "pending"
+                      ? "This step didn’t run"
+                      : "No screenshot for this step"
+                  }
+                  detail={
+                    step?.state === "pending"
+                      ? "The run stopped before reaching it."
+                      : "This step finished without a screen capture."
+                  }
+                />
               </div>
             )}
           </div>

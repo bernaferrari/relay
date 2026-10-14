@@ -134,20 +134,25 @@ export function MapPage() {
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
       <header
-        className={`[-webkit-app-region:drag] grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] border-b border-border px-4 py-3 ${platform.platform === "desktop" ? "sm:pl-20" : ""}`}
+        className={`[-webkit-app-region:drag] grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] border-b border-border px-5 ${platform.platform === "desktop" ? "sm:pl-20" : ""}`}
       >
-        <div className="[-webkit-app-region:no-drag] flex min-w-0 flex-1 items-center gap-2">
+        {/* Same hierarchy as the authoring header: labelled back, hairline, title. */}
+        <div className="[-webkit-app-region:no-drag] flex min-w-0 flex-1 items-center gap-3">
           <Button
-            size="icon-sm"
+            size="sm"
             variant="ghost"
+            className="-ml-2"
             nativeButton={false}
             render={<Link to="/tests" search={{ app: appId }} />}
             aria-label="Tests"
           >
-            <ChevronLeft />
+            <ChevronLeft aria-hidden="true" /> Tests
           </Button>
+          <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold">{map.data?.appName ?? "App"} map</h1>
+            <h1 className="truncate text-base leading-5 font-semibold tracking-tight">
+              {map.data?.appName ?? "App"} map
+            </h1>
             <p className="truncate text-xs text-muted-foreground">
               {coverage ?? "Run a test to see which screens it reaches"}
             </p>
