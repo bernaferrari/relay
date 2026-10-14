@@ -16,7 +16,6 @@ import { Link } from "@tanstack/react-router";
 import { CircleHelp, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { useCurrentAppScope } from "./use-current-app-scope";
-import { RelayWordmark } from "../components/relay-mark";
 import { ReviewCount } from "./review-count";
 import { everydayDestinations, utilityDestinations } from "./primary-destinations";
 
@@ -89,11 +88,6 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
 
   return (
     <SharedSidebarContent className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-3 pb-3 [scrollbar-gutter:auto]">
-      <div className="flex h-10 items-center px-2.5 pb-1">
-        <Link to="/tests" aria-label="Relay home" onClick={closeMobileNavigation}>
-          <RelayWordmark />
-        </Link>
-      </div>
       <AppSwitcher>
         <nav className="flex flex-col gap-0.5 pt-2" aria-label={label}>
           <SidebarMenu className="m-0 grid list-none gap-0.5 p-0">
@@ -121,7 +115,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           />
         ))}
       </SidebarMenu>
-      <SidebarFooter className="mt-auto pt-2.5">
+      <SidebarFooter className="mt-auto px-0 pb-0 pt-2.5">
         <nav
           className="flex flex-col gap-0.5 border-t border-border pt-2.5"
           aria-label={`${label} settings`}
@@ -129,6 +123,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           <SidebarMenuButton
             render={<Link to="/settings/general" onClick={closeMobileNavigation} />}
             isActive={settingsActive}
+            aria-current={settingsActive ? "page" : undefined}
             className={classNames(
               " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium",
               settingsActive
@@ -137,7 +132,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
             )}
           >
             <Settings
-              className={`size-4 shrink-0 text-muted-foreground${settingsActive ? " text-foreground" : ""}`}
+              className={`size-4 shrink-0 ${settingsActive ? "text-brand" : "text-muted-foreground"}`}
               aria-hidden="true"
             />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -147,9 +142,18 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           <SidebarMenuButton
             render={<Link to="/settings/about" onClick={closeMobileNavigation} />}
             isActive={helpActive}
-            className=" focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+            aria-current={helpActive ? "page" : undefined}
+            className={classNames(
+              " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium",
+              helpActive
+                ? " bg-brand-soft font-semibold text-foreground shadow-none"
+                : " text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+            )}
           >
-            <CircleHelp className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <CircleHelp
+              className={`size-4 shrink-0 ${helpActive ? "text-brand" : "text-muted-foreground"}`}
+              aria-hidden="true"
+            />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Help</span>
           </SidebarMenuButton>
         </nav>

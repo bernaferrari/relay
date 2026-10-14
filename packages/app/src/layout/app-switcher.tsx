@@ -37,11 +37,14 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
       ? platformLabel(selectedOption?.platform)
       : "App";
 
+  // Always two lines, so the navigation below never shifts between pages.
   const triggerSubtitle = selectedAppId
     ? triggerDetail
-    : scope.kind === "all" || scope.kind === "workspace"
-      ? "Everything"
-      : undefined;
+    : scope.kind === "multiple"
+      ? "Selected apps"
+      : scope.kind === "loading"
+        ? "One moment"
+        : "Everything";
 
   function switchApp(appId?: string) {
     router.history.push(
@@ -64,11 +67,9 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-sm font-medium leading-5">{triggerName}</span>
-            {triggerSubtitle ? (
-              <span className="truncate text-xs leading-4 text-muted-foreground">
-                {triggerSubtitle}
-              </span>
-            ) : null}
+            <span className="truncate text-xs leading-4 text-muted-foreground">
+              {triggerSubtitle}
+            </span>
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </DropdownMenuTrigger>

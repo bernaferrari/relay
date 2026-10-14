@@ -59,7 +59,7 @@ export function PageHeader({
         className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-3 ${eyebrow ? "mt-1" : ""}`}
       >
         <h1
-          className={`${titleHidden ? "sr-only" : ""} min-w-0 min-w-60 flex-1 text-3xl leading-8 font-semibold tracking-tight wrap-anywhere`}
+          className={`${titleHidden ? "sr-only" : ""} min-w-0 min-w-60 flex-1 font-display text-3xl leading-9 font-semibold tracking-[-0.025em] wrap-anywhere`}
         >
           {title}
         </h1>

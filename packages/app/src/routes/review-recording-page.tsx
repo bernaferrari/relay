@@ -429,7 +429,6 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-2"
               title={productService.saveDraft && !saved ? "Save draft and close" : undefined}
               disabled={
                 transition.isPending ||

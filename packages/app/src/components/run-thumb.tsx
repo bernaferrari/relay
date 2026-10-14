@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { ImageOff, Layers } from "lucide-react";
+import { Layers } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
@@ -76,7 +76,7 @@ export function RunThumb({
         />
       ) : (
         <span
-          className="flex size-full items-center justify-center rounded-md bg-muted/40 text-muted-foreground"
+          className={`flex size-full items-center justify-center rounded-md text-muted-foreground ${runId ? "border border-dashed border-border bg-muted/20" : "bg-muted/40"}`}
           title={
             !runId
               ? "Test plan"
@@ -87,11 +87,8 @@ export function RunThumb({
                   : "No preview available"
           }
         >
-          {!runId ? (
-            <Layers className="size-4" />
-          ) : loading ? null : (
-            <ImageOff className="size-4" />
-          )}
+          {/* A missing preview is normal, not an error: keep the frame quiet. */}
+          {!runId ? <Layers className="size-4" /> : null}
         </span>
       )}
     </div>

@@ -10,6 +10,10 @@ await Promise.all([
     .resize(256, 256)
     .webp({ quality: 95 })
     .toFile(resolve(siteRoot, "public/relay-icon.webp")),
+  sharp(source)
+    .resize(1024, 1024)
+    .webp({ quality: 90, alphaQuality: 100 })
+    .toFile(resolve(siteRoot, "public/relay-loop.webp")),
   sharp(source).resize(48, 48).png().toFile(resolve(siteRoot, "public/favicon.png")),
   sharp(source).resize(180, 180).png().toFile(resolve(siteRoot, "public/apple-touch-icon.png")),
 ]);

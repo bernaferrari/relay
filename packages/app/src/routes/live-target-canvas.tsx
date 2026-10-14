@@ -230,7 +230,7 @@ export function LiveTargetCanvas({
       <div
         className={
           directBrowser
-            ? "relative flex min-h-0 items-start justify-center overflow-auto"
+            ? "relative flex min-h-0 items-start justify-center overflow-auto bg-muted/40 p-4"
             : enlarged
               ? "relative flex min-h-0 flex-1 items-start justify-start overflow-auto p-3"
               : rail
@@ -243,7 +243,7 @@ export function LiveTargetCanvas({
           data-slot="capture-live-target"
           className={
             directBrowser
-              ? "block h-auto w-full shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              ? "my-auto block h-auto w-full shrink-0 rounded-lg shadow-md ring-1 ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
               : enlarged
                 ? "mx-auto h-[200%] w-auto shrink-0 max-w-none min-h-0 object-contain"
                 : "h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"

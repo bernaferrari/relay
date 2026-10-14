@@ -204,7 +204,7 @@ export function TestsPage() {
     <LibraryPage className="max-w-5xl" onClickCapture={returnFocus.onClickCapture}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="grid gap-1">
-          <h1 className="text-3xl leading-9 font-semibold tracking-tight">Tests</h1>
+          <h1 className="font-display text-3xl leading-9 font-semibold tracking-[-0.025em]">Tests</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setE2EOpen(true)}>
@@ -338,7 +338,7 @@ export function TestsPage() {
           {tests.data && !testCount && (app || !codeTestCount) && view === "tests" ? (
             <EmptyState
               title={app ? "No tests for this app yet" : "No tests yet"}
-              detail="Describe what should work in a sentence. Relay writes the steps and runs them."
+              detail="Click through your website or app once. Relay saves each step so you can run it again any time."
               action={
                 <Button
                   nativeButton={false}

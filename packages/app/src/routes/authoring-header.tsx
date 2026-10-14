@@ -23,7 +23,13 @@ export function AuthoringHeader({
     <header className="shrink-0">
       <div className="relative flex min-h-14 items-center justify-between gap-4 px-5 py-3">
         <div className="flex min-w-0 items-center gap-3">
-          {back}
+          {back ? (
+            <>
+              {/* Ghost padding is pulled back so the label aligns with the content edge. */}
+              <div className="-ml-2 flex shrink-0">{back}</div>
+              <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
+            </>
+          ) : null}
           <div className="flex min-w-0 items-center gap-3">
             <h1 className="truncate text-base font-semibold tracking-tight">{title}</h1>
             {phase ? (

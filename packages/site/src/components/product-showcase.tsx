@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { ArrowUpRight, GitBranch, Images, Play } from "lucide-react";
-import { Button, buttonVariants } from "@relay/ui-react/components/button";
+import { GitBranch, Images, Play } from "lucide-react";
 
 const views = [
   {
@@ -12,7 +11,8 @@ const views = [
     icon: Play,
     src: "/images/relay-run.webp",
     alt: "Relay running its local demo: saved steps and a successful layout check",
-    caption: "Follow each action and see its result.",
+    title: "Follow every action.",
+    caption: "Each step, its timing, and the screen it reached, in order.",
   },
   {
     id: "review",
@@ -20,7 +20,8 @@ const views = [
     icon: Images,
     src: "/images/relay-review.webp",
     alt: "Relay's screenshot review with a captured Workspace settings screen from the demo",
-    caption: "Review captured screens and keep a decision.",
+    title: "Decide on every screen.",
+    caption: "Accept what looks right, flag what doesn't, and keep the decision.",
   },
   {
     id: "map",
@@ -28,44 +29,52 @@ const views = [
     icon: GitBranch,
     src: "/images/relay-map.webp",
     alt: "Relay's app map connecting the demo's sign-in and settings screens",
-    caption: "See the screens reached and how they connect.",
+    title: "See how screens connect.",
+    caption: "The screens your tests reached, and the paths between them.",
   },
 ] as const;
 
 /** Screens captured from the production UI against an owned, local demo. */
 export function ProductShowcase() {
   const [activeId, setActiveId] = useState<(typeof views)[number]["id"]>("run");
-  const active = views.find((view) => view.id === activeId)!;
   return (
-    <figure id="workspace" className="m-0 scroll-mt-8">
-      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-1 border-b bg-muted/40 p-1 sm:gap-2 sm:px-4 sm:py-2">
-          <div role="group" aria-label="Workspace preview" className="flex items-center sm:gap-1">
-            {views.map(({ id, label, icon: Icon }) => (
-              <Button
-                key={id}
-                variant={activeId === id ? "outline" : "ghost"}
-                aria-pressed={activeId === id}
-                onClick={() => setActiveId(id)}
-                className="h-11"
+    <figure
+      id="workspace"
+      className="m-0 grid scroll-mt-24 gap-6 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-10"
+    >
+      <div
+        role="group"
+        aria-label="Workspace preview"
+        className="flex gap-1 rounded-xl border bg-muted/60 p-1 lg:flex-col lg:gap-2 lg:border-0 lg:bg-transparent lg:p-0"
+      >
+        {views.map(({ id, label, icon: Icon, title, caption }) => {
+          const active = activeId === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setActiveId(id)}
+              className={`group flex-1 rounded-lg border px-3 py-2.5 text-left lg:rounded-xl lg:p-4 transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring lg:flex-none ${active ? "border-border bg-card shadow-sm" : "border-transparent hover:bg-muted"}`}
+            >
+              <span
+                className={`flex items-center justify-center gap-2 text-sm font-medium lg:justify-start lg:text-xs ${active ? "text-foreground lg:text-muted-foreground" : "text-muted-foreground"}`}
               >
-                <Icon />
-                <span>{label}</span>
-              </Button>
-            ))}
-          </div>
-          <a
-            href={active.src}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="View full size"
-            className={buttonVariants({ variant: "ghost", className: "h-11 w-11 sm:w-auto" })}
-          >
-            <span className="hidden sm:inline">View full size</span>{" "}
-            <ArrowUpRight className="size-4" />
-          </a>
-        </div>
-        <div>
+                <Icon className={`size-3.5 ${active ? "text-primary" : ""}`} />
+                {label}
+              </span>
+              <span className="mt-2 hidden text-sm font-semibold tracking-tight lg:block">
+                {title}
+              </span>
+              <span className="mt-1 hidden text-[0.8rem] leading-relaxed text-muted-foreground lg:block">
+                {caption}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div>
+        <div className="overflow-hidden rounded-2xl border bg-[#0d0f14] p-1.5 shadow-[0_30px_70px_-35px_color-mix(in_oklch,var(--ribbon-blue)_45%,transparent)]">
           {views.map((view, index) => (
             <Image
               key={view.id}
@@ -73,17 +82,20 @@ export function ProductShowcase() {
               alt={view.alt}
               width={1280}
               height={900}
+              sizes="(min-width: 1024px) 860px, 100vw"
               priority={index === 0}
               loading={index === 0 ? undefined : "eager"}
-              className={view.id === activeId ? "block h-auto w-full" : "hidden"}
+              className={view.id === activeId ? "block h-auto w-full rounded-xl" : "hidden"}
             />
           ))}
         </div>
+        <figcaption className="mt-3 flex justify-between gap-4 text-xs text-muted-foreground">
+          <span className="lg:hidden">{views.find((v) => v.id === activeId)!.caption}</span>
+          <span className="hidden lg:inline">
+            Actual Relay UI, captured against the local demo.
+          </span>
+        </figcaption>
       </div>
-      <figcaption className="mt-4 flex min-h-14 flex-col justify-between gap-1 text-xs leading-relaxed text-muted-foreground sm:min-h-6 sm:flex-row sm:gap-4">
-        <span aria-live="polite">{active.caption}</span>
-        <span className="shrink-0">Actual Relay UI · local demo data</span>
-      </figcaption>
     </figure>
   );
 }

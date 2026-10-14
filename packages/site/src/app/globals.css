@@ -4,57 +4,76 @@
 @source "../../../ui-react/src";
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.23 0.025 260);
+  --background: oklch(0.987 0.004 85);
+  --foreground: oklch(0.2 0.02 275);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.2 0.02 275);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.48 0.17 260);
+  --popover-foreground: oklch(0.2 0.02 275);
+  --primary: oklch(0.52 0.22 266);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.968 0.003 260);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.968 0.003 260);
-  --muted-foreground: oklch(0.51 0.012 260);
-  --accent: oklch(0.957 0.014 260);
-  --accent-foreground: oklch(0.38 0.09 260);
-  --border: oklch(0.916 0.006 260);
-  --input: oklch(0.916 0.006 260);
-  --ring: oklch(0.48 0.17 260);
-  --sidebar: oklch(0.985 0.003 260);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-accent: oklch(0.95 0.02 260);
-  --sidebar-accent-foreground: oklch(0.38 0.09 260);
-  --sidebar-border: oklch(0.916 0.006 260);
+  --secondary: oklch(0.962 0.005 85);
+  --secondary-foreground: oklch(0.2 0.02 275);
+  --muted: oklch(0.962 0.005 85);
+  --muted-foreground: oklch(0.49 0.014 275);
+  --accent: oklch(0.955 0.018 266);
+  --accent-foreground: oklch(0.4 0.14 266);
+  --border: oklch(0.905 0.007 85);
+  --input: oklch(0.89 0.008 85);
+  --ring: oklch(0.52 0.22 266);
+  --sidebar: oklch(0.977 0.005 85);
+  --sidebar-foreground: oklch(0.2 0.02 275);
+  --sidebar-accent: oklch(0.95 0.02 266);
+  --sidebar-accent-foreground: oklch(0.4 0.14 266);
+  --sidebar-border: oklch(0.905 0.007 85);
   --radius: 0.625rem;
   --fd-layout-width: 1440px;
+
+  /* The four hues of Relay's loop, sampled from the icon artwork. */
+  --ribbon-blue: oklch(0.57 0.23 264);
+  --ribbon-violet: oklch(0.6 0.23 298);
+  --ribbon-pink: oklch(0.67 0.22 355);
+  --ribbon-orange: oklch(0.75 0.17 52);
+  --signal-pass: oklch(0.6 0.15 155);
+  --signal-fail: oklch(0.6 0.22 27);
+  --ink: oklch(0.17 0.02 275);
+  --ink-foreground: oklch(0.97 0.004 85);
 }
 .dark {
-  --background: oklch(0.18 0.018 260);
-  --foreground: oklch(0.96 0 0);
-  --card: oklch(0.22 0.018 260);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.76 0.115 260);
-  --primary-foreground: oklch(0.18 0.025 260);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.29 0.027 260);
-  --accent-foreground: oklch(0.92 0.027 260);
-  --border: oklch(1 0 0 / 0.1);
-  --input: oklch(1 0 0 / 0.15);
-  --ring: oklch(0.76 0.115 260);
-  --sidebar: oklch(0.2 0.018 260);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.29 0.027 260);
-  --sidebar-accent-foreground: oklch(0.92 0.027 260);
-  --sidebar-border: oklch(1 0 0 / 0.1);
+  --background: oklch(0.155 0.016 275);
+  --foreground: oklch(0.96 0.004 85);
+  --card: oklch(0.19 0.018 275);
+  --card-foreground: oklch(0.96 0.004 85);
+  --popover: oklch(0.19 0.018 275);
+  --popover-foreground: oklch(0.96 0.004 85);
+  --primary: oklch(0.74 0.14 266);
+  --primary-foreground: oklch(0.16 0.02 275);
+  --secondary: oklch(0.23 0.018 275);
+  --secondary-foreground: oklch(0.96 0.004 85);
+  --muted: oklch(0.21 0.016 275);
+  --muted-foreground: oklch(0.71 0.012 275);
+  --accent: oklch(0.26 0.04 266);
+  --accent-foreground: oklch(0.9 0.04 266);
+  --border: oklch(1 0 0 / 0.09);
+  --input: oklch(1 0 0 / 0.14);
+  --ring: oklch(0.74 0.14 266);
+  --sidebar: oklch(0.17 0.017 275);
+  --sidebar-foreground: oklch(0.96 0.004 85);
+  --sidebar-accent: oklch(0.26 0.04 266);
+  --sidebar-accent-foreground: oklch(0.9 0.04 266);
+  --sidebar-border: oklch(1 0 0 / 0.09);
+
+  --ribbon-blue: oklch(0.68 0.18 264);
+  --ribbon-violet: oklch(0.7 0.19 298);
+  --ribbon-pink: oklch(0.74 0.18 355);
+  --ribbon-orange: oklch(0.8 0.15 55);
+  --signal-pass: oklch(0.74 0.15 155);
+  --signal-fail: oklch(0.7 0.19 27);
+  --ink: oklch(0.12 0.016 275);
+  --ink-foreground: oklch(0.97 0.004 85);
 }
 html {
-  scroll-padding-top: 30px;
+  scroll-padding-top: 96px;
 }
 body {
   font-size: 16px;
@@ -102,4 +121,161 @@ summary:focus-visible {
 
 @theme inline {
   --font-sans: var(--font-site-sans, Inter, ui-sans-serif, system-ui, sans-serif);
+  --font-display: var(--font-site-display, var(--font-site-sans), ui-sans-serif, sans-serif);
+  --font-mono: var(--font-site-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+
+  --color-ribbon-blue: var(--ribbon-blue);
+  --color-ribbon-violet: var(--ribbon-violet);
+  --color-ribbon-pink: var(--ribbon-pink);
+  --color-ribbon-orange: var(--ribbon-orange);
+  --color-pass: var(--signal-pass);
+  --color-fail: var(--signal-fail);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  /* The demo website's own palette, for the illustrated frame (always light). */
+  --color-demo-ink: oklch(0.2 0.02 270);
+  --color-demo-accent: oklch(0.47 0.21 266);
+  --color-demo-link: oklch(0.5 0.2 268);
+  --color-demo-tint: oklch(0.94 0.03 270);
+  --color-demo-chrome: oklch(0.97 0.003 90);
+  --color-showcase: oklch(0.16 0.01 270);
+
+  /* Marketing type scale: size / line-height / tracking travel together. */
+  --text-hero: clamp(2.7rem, 10vw, 4rem);
+  --text-hero--line-height: 0.98;
+  --text-hero--letter-spacing: -0.034em;
+  --text-hero-wide: clamp(4rem, 5.3vw, 4.85rem);
+  --text-hero-wide--line-height: 0.98;
+  --text-hero-wide--letter-spacing: -0.034em;
+  --text-headline: 2.35rem;
+  --text-headline--line-height: 1.04;
+  --text-headline--letter-spacing: -0.028em;
+  --text-headline-wide: 3.3rem;
+  --text-headline-wide--line-height: 1.04;
+  --text-headline-wide--letter-spacing: -0.028em;
+  --text-feature: 1.75rem;
+  --text-feature--line-height: 1.15;
+  --text-feature--letter-spacing: -0.03em;
+  --text-wordmark: 1.3rem;
+  --text-wordmark--line-height: 2rem;
+  --text-wordmark--letter-spacing: -0.03em;
+  --text-lede: 1.05rem;
+  --text-lede--line-height: 1.65;
+  --text-lede-wide: 1.15rem;
+  --text-lede-wide--line-height: 1.6;
+  --text-quiet: 0.92rem;
+  --text-quiet--line-height: 1.6;
+  --text-step: 0.8rem;
+  --text-step--line-height: 1.25rem;
+  --text-data: 0.72rem;
+  --text-data--line-height: 1.6;
+  --text-eyebrow: 0.7rem;
+  --text-eyebrow--line-height: 1rem;
+  --text-eyebrow--letter-spacing: 0.14em;
+  --text-tiny: 0.65rem;
+  --text-tiny--line-height: 1rem;
+  --text-nano: 0.58rem;
+  --text-nano--line-height: 0.85rem;
+  --tracking-display: -0.03em;
+
+  --container-page: 1200px;
+  --ease-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --shadow-reel:
+    0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent),
+    0 24px 60px -28px color-mix(in oklch, var(--ribbon-violet) 35%, transparent);
+  --shadow-showcase: 0 30px 70px -35px color-mix(in oklch, var(--ribbon-blue) 45%, transparent);
+  --shadow-terminal: 0 30px 70px -35px color-mix(in oklch, var(--ribbon-pink) 45%, transparent);
+  --shadow-console: 0 30px 80px -30px rgb(0 0 0 / 0.6);
+  --shadow-float: 0 8px 30px -12px rgb(0 0 0 / 0.25);
+  --shadow-gloss: inset 0 -2px 4px rgb(0 0 0 / 0.2), inset 0 2px 3px rgb(255 255 255 / 0.5);
+  --drop-shadow-brand: 0 2px 6px color-mix(in oklch, var(--ribbon-violet) 28%, transparent);
+
+  --animate-loop-drift: loop-drift 9s ease-in-out infinite;
+  --animate-reveal: reveal-step 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-reel-fill: reel-fill 4200ms linear both;
+}
+
+/* The loop, flattened: blue (people) twisting into orange (agents). */
+@utility ribbon-text {
+  background: linear-gradient(
+    100deg,
+    var(--ribbon-blue) 8%,
+    var(--ribbon-violet) 38%,
+    var(--ribbon-pink) 64%,
+    var(--ribbon-orange) 92%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility ribbon-line {
+  background: linear-gradient(
+    90deg,
+    var(--ribbon-blue),
+    var(--ribbon-violet),
+    var(--ribbon-pink),
+    var(--ribbon-orange)
+  );
+}
+@utility ribbon-glow {
+  background: conic-gradient(
+    from 200deg,
+    var(--ribbon-blue),
+    var(--ribbon-violet),
+    var(--ribbon-pink),
+    var(--ribbon-orange),
+    var(--ribbon-blue)
+  );
+}
+@utility ember-glow {
+  background: radial-gradient(closest-side, var(--ribbon-orange), var(--ribbon-pink) 45%, transparent);
+}
+@utility paper-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+@utility fade-hero {
+  mask-image: radial-gradient(ellipse 70% 60% at 70% 35%, black, transparent);
+}
+@utility fade-left {
+  mask-image: linear-gradient(to left, black, transparent 70%);
+}
+
+@keyframes loop-drift {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(4deg);
+  }
+}
+@keyframes reveal-step {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes reel-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Docs share the site's display face for titles, so both feel like one product. */
+#nd-docs-layout article > header h1,
+#nd-docs-layout .prose :is(h2, h3) {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.025em;
+}
+#nd-docs-layout article > header h1 {
+  font-size: 2.1em;
+  letter-spacing: -0.032em;
 }

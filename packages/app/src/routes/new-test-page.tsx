@@ -479,7 +479,7 @@ export function NewTestPage() {
         <AuthoringHeader
           phase="setup"
           title="New test"
-          actions={
+          back={
             <Button
               nativeButton={false}
               render={<Link to="/tests" search={{ app: requestedAppId }} />}

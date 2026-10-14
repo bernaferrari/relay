@@ -25,8 +25,10 @@ export function RunStoryFailure({
 }) {
   const nextAction = storyFailureNextAction(report);
   // Say why in a sentence, right here; the raw message stays one click away.
-  const reason =
+  const rawReason =
     action?.failure?.summary ?? plainRunReason(action?.detail) ?? plainRunReason(report.cause);
+  // Engine messages can arrive lowercase ("navigating to…"); present them as sentences.
+  const reason = rawReason ? rawReason.charAt(0).toUpperCase() + rawReason.slice(1) : rawReason;
   const inspect = nextAction === "inspect" || !testId;
   const productOverlap = inspect && action?.failure?.kind === "layout-overlap";
   return (
@@ -68,13 +70,15 @@ export function RunStoryFailure({
       ) : null}
       <div className="flex flex-wrap gap-2 pl-6">
         {inspect ? (
-          <Button size="sm" onClick={onInspectEvidence}>
+          <Button size="sm" variant="outline" className="bg-card" onClick={onInspectEvidence}>
             <Eye aria-hidden="true" /> See where it failed
           </Button>
         ) : nextAction === "setup" && testId ? (
           <Button
             nativeButton={false}
             size="sm"
+            variant="outline"
+            className="bg-card"
             render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
           >
             <Settings aria-hidden="true" /> Check run setup
@@ -84,7 +88,8 @@ export function RunStoryFailure({
           <Button
             nativeButton={false}
             size="sm"
-            variant={nextAction === "edit" ? "default" : "outline"}
+            variant="outline"
+            className="bg-card"
             render={<Link to="/tests/$testId" params={{ testId }} search={{ step: step.id }} />}
           >
             {productOverlap ? <Eye aria-hidden="true" /> : <Wrench aria-hidden="true" />}
