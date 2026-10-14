@@ -72,51 +72,71 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
-  it("anchors tap feedback to the drawn frame through letterboxing and resize, until delivery settles", async () => {
-    vi.useFakeTimers();
-    let resize = () => {};
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        constructor(update: () => void) {
-          resize = update;
-        }
-        observe() {}
-        disconnect() {}
-      },
-    );
-    let finish!: (delivered: boolean) => void;
-    const send = vi.fn(() => new Promise<boolean>((resolve) => (finish = resolve)));
-    const host = mountCanvas([{ title: "iPad", detail: "", targetPlatform: "ios", send }]);
-    const canvas = host.querySelector("canvas")!;
-    canvas.width = 100;
-    canvas.height = 200;
-    canvas.setPointerCapture = vi.fn();
-    canvas.getBoundingClientRect = () => new DOMRect(20, 30, 200, 200);
-    canvas.parentElement!.getBoundingClientRect = () => new DOMRect(10, 10, 400, 400);
-    await act(async () => {
-      canvas.dispatchEvent(
-        new PointerEvent("pointerdown", { clientX: 95, clientY: 80, bubbles: true }),
+  it.each(["sent", "not-delivered", "rejected"] as const)(
+    "anchors tap feedback through resize and preserves the %s outcome",
+    async (outcome) => {
+      vi.useFakeTimers();
+      let resize = () => {};
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          constructor(update: () => void) {
+            resize = update;
+          }
+          observe() {}
+          disconnect() {}
+        },
       );
-      canvas.dispatchEvent(
-        new PointerEvent("pointerup", { clientX: 95, clientY: 80, bubbles: true }),
+      let finish!: (delivered: boolean) => void;
+      let fail!: (error: Error) => void;
+      const send = vi.fn(
+        () =>
+          new Promise<boolean>((resolve, reject) => {
+            finish = resolve;
+            fail = reject;
+          }),
       );
-    });
-    expect(send).toHaveBeenCalledExactlyOnceWith({ kind: "touch", action: "up", x: 25, y: 50 });
-    const marker = host.querySelector<HTMLElement>('[data-slot="live-tap-feedback"]')!;
-    expect(marker.style.getPropertyValue("--tap-x")).toBe("85px");
-    expect(marker.style.getPropertyValue("--tap-y")).toBe("70px");
-    expect(marker.dataset.pending).toBe("true");
-    canvas.getBoundingClientRect = () => new DOMRect(20, 30, 400, 200);
-    act(() => resize());
-    expect(marker.style.getPropertyValue("--tap-x")).toBe("185px");
-    act(() => vi.advanceTimersByTime(1_000));
-    expect(marker.isConnected).toBe(true);
-    await act(async () => finish(true));
-    expect(marker.dataset.pending).toBe("false");
-    act(() => vi.advanceTimersByTime(260));
-    expect(marker.isConnected).toBe(false);
-  });
+      const host = mountCanvas([{ title: "iPad", detail: "", targetPlatform: "ios", send }]);
+      const canvas = host.querySelector("canvas")!;
+      canvas.width = 100;
+      canvas.height = 200;
+      canvas.setPointerCapture = vi.fn();
+      canvas.getBoundingClientRect = () => new DOMRect(20, 30, 200, 200);
+      canvas.parentElement!.getBoundingClientRect = () => new DOMRect(10, 10, 400, 400);
+      await act(async () => {
+        canvas.dispatchEvent(
+          new PointerEvent("pointerdown", { clientX: 95, clientY: 80, bubbles: true }),
+        );
+        canvas.dispatchEvent(
+          new PointerEvent("pointerup", { clientX: 95, clientY: 80, bubbles: true }),
+        );
+      });
+      expect(send).toHaveBeenCalledExactlyOnceWith({ kind: "touch", action: "up", x: 25, y: 50 });
+      const marker = host.querySelector<HTMLElement>('[data-slot="live-tap-feedback"]')!;
+      expect(marker.style.getPropertyValue("--tap-x")).toBe("85px");
+      expect(marker.style.getPropertyValue("--tap-y")).toBe("70px");
+      expect(marker.dataset.pending).toBe("true");
+      expect(marker.dataset.state).toBe("sending");
+      expect(marker.querySelector('[role="status"]')?.textContent).toBe("Sending tap…");
+      expect(host.querySelector('[data-testid="inspection-overlay"]')).toBeNull();
+      canvas.getBoundingClientRect = () => new DOMRect(20, 30, 400, 200);
+      act(() => resize());
+      expect(marker.style.getPropertyValue("--tap-x")).toBe("185px");
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(marker.isConnected).toBe(true);
+      await act(async () =>
+        outcome === "rejected" ? fail(new Error("Not confirmed")) : finish(outcome === "sent"),
+      );
+      expect(marker.dataset.pending).toBe("false");
+      expect(host.querySelector('[data-testid="inspection-overlay"]')).not.toBeNull();
+      expect(marker.dataset.state).toBe(outcome === "sent" ? "sent" : "unconfirmed");
+      expect(marker.querySelector('[role="status"]')?.textContent).toBe(
+        outcome === "sent" ? "Tap sent" : "Tap not confirmed",
+      );
+      act(() => vi.advanceTimersByTime(420));
+      expect(marker.isConnected).toBe(false);
+    },
+  );
   it("keeps unproven live pixels visible while blocking pointer and keyboard input", () => {
     const send = vi.fn(async () => true);
     const host = mountCanvas([

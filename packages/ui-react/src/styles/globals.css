@@ -2,14 +2,15 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/bricolage-grotesque/opsz.css";
 @import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 @keyframes live-tap-ripple {
   from {
-    transform: scale(0.65);
-    opacity: 0.8;
+    transform: scale(0.75);
+    opacity: 0.9;
   }
   to {
-    transform: scale(1.5);
+    transform: scale(1.35);
     opacity: 0;
   }
 }
@@ -17,7 +18,37 @@
 @utility animate-live-tap-ripple {
   animation: live-tap-ripple 260ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
-@import "shadcn/tailwind.css";
+
+@keyframes live-tap-settle {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@utility animate-live-tap-settle {
+  animation: live-tap-settle 160ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes live-tap-pulse {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+@utility animate-live-tap-pulse {
+  animation: live-tap-pulse 1.2s ease-in-out infinite;
+}
 
 @custom-variant dark (&:is(.dark *, [data-color-scheme="dark"] *));
 

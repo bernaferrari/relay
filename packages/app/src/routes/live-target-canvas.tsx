@@ -10,6 +10,8 @@ import {
   LoaderCircle,
   Expand,
   Minimize2,
+  Check,
+  CircleAlert,
 } from "lucide-react";
 import {
   useCallback,
@@ -34,7 +36,7 @@ import type {
 } from "../data/live-target-session";
 
 type Point = { x: number; y: number };
-type TapFeedback = Point & { id: number; pending: boolean };
+type TapFeedback = Point & { id: number; state: "sending" | "sent" | "unconfirmed" };
 
 export function LiveTargetCanvas({
   canvasRef,
@@ -118,10 +120,10 @@ export function LiveTargetCanvas({
   );
 
   useEffect(() => {
-    if (!tap || tap.pending) return;
+    if (!tap || tap.state === "sending") return;
     const timer = setTimeout(
       () => setTap((current) => (current === tap ? undefined : current)),
-      260,
+      420,
     );
     return () => clearTimeout(timer);
   }, [tap]);
@@ -165,10 +167,13 @@ export function LiveTargetCanvas({
     if (Math.hypot(dx, dy) < 10) {
       const canvas = event.currentTarget;
       const id = ++tapSequence.current;
-      setTap({ id, x: end.x / canvas.width, y: end.y / canvas.height, pending: true });
-      const settle = () =>
-        setTap((current) => (current?.id === id ? { ...current, pending: false } : current));
-      void send({ kind: "touch", action: "up", x: end.x, y: end.y }).then(settle, settle);
+      setTap({ id, x: end.x / canvas.width, y: end.y / canvas.height, state: "sending" });
+      const settle = (state: TapFeedback["state"]) =>
+        setTap((current) => (current?.id === id ? { ...current, state } : current));
+      void send({ kind: "touch", action: "up", x: end.x, y: end.y }).then(
+        (delivered) => settle(delivered === true ? "sent" : "unconfirmed"),
+        () => settle("unconfirmed"),
+      );
       return;
     }
     void send({ kind: "scroll", x: start.x, y: start.y, scrollX: dx, scrollY: dy });
@@ -335,9 +340,9 @@ export function LiveTargetCanvas({
             </div>
           </div>
         ) : null}
-        {streaming ? overlay : null}
+        {streaming && !busy && tap?.state !== "sending" ? overlay : null}
         {streaming && tap ? <LiveTapFeedback key={tap.id} canvasRef={canvasRef} tap={tap} /> : null}
-        {streaming && ((busy && !tap?.pending) || controlNotice) ? (
+        {streaming && ((busy && tap?.state !== "sending") || controlNotice) ? (
           <div className="pointer-events-none absolute left-3 top-3 z-20">
             <div
               className="pointer-events-auto flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm shadow-sm ring-1 ring-border"
@@ -553,23 +558,48 @@ function LiveTapFeedback({
   return position ? (
     <div
       data-slot="live-tap-feedback"
-      data-pending={tap.pending}
-      className="pointer-events-none absolute left-(--tap-x) top-(--tap-y) z-20 grid size-8 -translate-x-1/2 -translate-y-1/2 place-items-center text-primary"
+      data-pending={tap.state === "sending"}
+      data-state={tap.state}
+      className="pointer-events-none absolute left-(--tap-x) top-(--tap-y) z-20 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center"
       style={{ "--tap-x": `${position.x}px`, "--tap-y": `${position.y}px` } as CSSProperties}
     >
       <span
         data-slot="live-tap-ripple"
-        className="absolute inset-0 animate-live-tap-ripple rounded-full border-2 border-current bg-primary/15 motion-reduce:animate-none"
+        className="absolute inset-0 animate-live-tap-ripple rounded-full border-2 border-primary/70 bg-primary/20 motion-reduce:animate-none"
         aria-hidden="true"
       />
+      {tap.state === "sending" ? (
+        <span
+          className="absolute inset-0 animate-live-tap-pulse rounded-full bg-primary/20 motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+      ) : null}
       <span
-        className={
-          tap.pending ? "size-2 rounded-full bg-primary ring-2 ring-background" : "sr-only"
-        }
+        key={tap.state}
+        data-slot="live-tap-indicator"
+        className={`relative grid size-10 place-items-center rounded-full bg-background/95 shadow-md ring-2 ${
+          tap.state === "sending"
+            ? "text-primary ring-primary/70"
+            : tap.state === "sent"
+              ? "animate-live-tap-settle text-success ring-success/60 motion-reduce:animate-none"
+              : "animate-live-tap-settle text-warning ring-warning/60 motion-reduce:animate-none"
+        }`}
         aria-hidden="true"
-      />
+      >
+        {tap.state === "sending" ? (
+          <LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" />
+        ) : tap.state === "sent" ? (
+          <Check className="size-5" strokeWidth={2.5} />
+        ) : (
+          <CircleAlert className="size-5" />
+        )}
+      </span>
       <span className="sr-only" role="status" aria-live="polite">
-        {tap.pending ? "Sending tap…" : ""}
+        {tap.state === "sending"
+          ? "Sending tap…"
+          : tap.state === "sent"
+            ? "Tap sent"
+            : "Tap not confirmed"}
       </span>
     </div>
   ) : null;
