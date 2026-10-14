@@ -30,6 +30,7 @@ export function TestEditorBrowserPane({
   browserTargetIds = [],
   recentAccountIds = [],
   onPreparedBrowserChange,
+  autoOpen = false,
 }: {
   appMapId: string;
   startUrl?: string;
@@ -37,6 +38,8 @@ export function TestEditorBrowserPane({
   /** Accounts this Test ran as, newest first; the first one saved here is the default. */
   recentAccountIds?: readonly string[];
   onPreparedBrowserChange?: (browser: PreparedBrowserRecording | undefined) => void;
+  /** Open the browser right away with the recorded website and account (staging steps). */
+  autoOpen?: boolean;
 }) {
   const { browserSpacesService, appResourcesService, productService, platform } = useRouteContext({
     from: "__root__",
@@ -114,6 +117,14 @@ export function TestEditorBrowserPane({
       setIssue(undefined);
     },
   });
+  // Staging opens the app with intent, so skip the setup form when choices are known.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!autoOpen || autoOpened.current || session || !space) return;
+    if (accounts.isPending || (siteHost && rememberedAccount.isPending)) return;
+    autoOpened.current = true;
+    open.mutate();
+  }, [autoOpen, session, space, accounts.isPending, siteHost, rememberedAccount.isPending, open]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -315,16 +326,23 @@ export function TestEditorBrowserPane({
               }
             />
           </div>
-          <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
-            <p className="text-xs text-muted-foreground">Click and type directly in the browser.</p>
-            <Button
-              size="sm"
-              variant="outline"
-              nativeButton={false}
-              render={<Link to="/tests/new" search={{ app: appMapId, target: spaceId }} />}
-            >
-              New recording
-            </Button>
+          <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border px-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              {autoOpen
+                ? "Click and type directly in the browser. This isn’t recorded yet."
+                : "Click and type directly in the browser."}
+            </p>
+            {/* While staging, Start recording is the one action; a second one would compete. */}
+            {autoOpen ? null : (
+              <Button
+                size="sm"
+                variant="outline"
+                nativeButton={false}
+                render={<Link to="/tests/new" search={{ app: appMapId, target: spaceId }} />}
+              >
+                New recording
+              </Button>
+            )}
           </div>
         </>
       )}

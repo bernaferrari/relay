@@ -166,6 +166,7 @@ function workflowless(state: ProductRunState): ProductRunState {
 function fakeRunService(initial: ProductRunState = runState("running")) {
   let current = initial;
   let finish: ((state: ProductRunState) => void) | undefined;
+  let completed: "succeeded" | "failed" | undefined;
   const calls: string[] = [];
   const startInputs: unknown[] = [];
   const service: RunProductService = {
@@ -267,6 +268,27 @@ function fakeRunService(initial: ProductRunState = runState("running")) {
       finish?.(current);
       return current;
     },
+    // Like the real service: a run appears in the Test's history once it finishes.
+    async listTestRuns() {
+      return completed
+        ? [
+            {
+              id: "run-1",
+              title: "Change the app language",
+              testId: "test-1",
+              action: "saved-test",
+              status: completed === "succeeded" ? "ok" : "error",
+              phase: "completed",
+              outcome:
+                completed === "succeeded" ? ("passed" as const) : ("product-failure" as const),
+              queuedAt: 1,
+              finishedAt: 2,
+              identity: { runId: "run-1" },
+              links: { self: "/runs/run-1" },
+            },
+          ]
+        : [];
+    },
     async getReport(runId) {
       calls.push(`report:${runId}`);
       return report(current.status === "cancelled" ? "cancelled" : "passed");
@@ -293,6 +315,7 @@ function fakeRunService(initial: ProductRunState = runState("running")) {
     calls,
     startInputs,
     complete(phase: "succeeded" | "failed" = "succeeded") {
+      completed = phase;
       const next = runState(phase);
       current = next;
       finish?.(next);
@@ -627,6 +650,13 @@ function reportOutcome(): string | undefined {
   );
 }
 
+/** After a run finishes, the Test page's header shows its outcome and when it ran. */
+function expectLatestRunPassed() {
+  const header = document.querySelector('[data-slot="test-workspace-header"]')?.textContent ?? "";
+  expect(header).toContain("Passed");
+  expect(header).toContain("Last run");
+}
+
 function button(label: string): HTMLButtonElement {
   const result = [...document.querySelectorAll("button")].find(
     (candidate) =>
@@ -729,7 +759,7 @@ describe("Run and report", () => {
     },
   );
 
-  it("keeps saved test steps separate from historical evidence and preserves definition selection", async () => {
+  it("keeps saved test steps on one page with the latest result and preserves step selection", async () => {
     const fake = fakeRunService(runState("succeeded"));
     fake.service.listTestRuns = async () => [
       {
@@ -749,26 +779,15 @@ describe("Run and report", () => {
       fake.service,
       platformWithStorage().platform,
     );
+    // One page: a ?run= link no longer hides the steps behind a Result tab.
+    expect(document.querySelector('[role="tablist"][aria-label="Test views"]')).toBeNull();
+    expect(editorIsHidden()).toBe(false);
     expect(editorSteps()).toHaveLength(3);
-    expect(editorIsHidden()).toBe(true);
-    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-      "Result",
-    );
-    expect(document.body.textContent).not.toContain("Last run");
-    expect(document.querySelector('a[href="/runs/other-failed-run"]')).toBeNull();
-    await click(button("Test"));
+    // The latest result is one click away in the header.
     expect(document.body.textContent).toContain("Last run");
     expect(document.querySelector('a[href="/runs/other-failed-run"]')).not.toBeNull();
     const steps = editorSteps();
-    expect(steps).toHaveLength(3);
     await click(steps[1]!);
-    expect(button("Test").getAttribute("aria-selected")).toBe("true");
-    expect(history.location.search).toContain("view=definition");
-    expect(history.location.search).toContain("step=step-check");
-    await click(button("Result"));
-    expect(editorSteps()).toHaveLength(3);
-    expect(editorIsHidden()).toBe(true);
-    await click(button("Test"));
     expect(history.location.search).toContain("step=step-check");
     expect(
       editorSteps()
@@ -902,7 +921,7 @@ describe("Run and report", () => {
     await act(async () => fake.complete());
     await settle();
     expect(document.querySelector("#test-run-setup")).toBeNull();
-    expect(document.body.textContent).toContain("Test passed");
+    expectLatestRunPassed();
   });
 
   it("selects the only ready target so a test can run immediately", async () => {
@@ -1299,17 +1318,13 @@ describe("Run and report", () => {
     await settle();
 
     expect(history.location.pathname).toBe("/tests/test-1");
-    expect(document.body.textContent).toContain("Test passed");
+    expectLatestRunPassed();
     expect(document.body.textContent).not.toContain("Draft issue");
     await click(button("More test actions"));
     expect(document.body.textContent).toContain("Review result");
     expect(document.body.textContent).not.toContain("Investigate this failure");
-    expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
-    expect(
-      [...document.querySelectorAll('[role="tablist"][aria-label="Test views"] [role="tab"]')].map(
-        (tab) => tab.textContent,
-      ),
-    ).toEqual(["Test", "Result"]);
+    // One page: no Test/Result tabs; the steps carry the latest outcome.
+    expect(document.querySelector('[role="tablist"][aria-label="Test views"]')).toBeNull();
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
 
     const fullReport = [...document.querySelectorAll("a")].find((item) =>
@@ -1796,7 +1811,7 @@ describe("Run and report", () => {
     await settle();
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
-    expect(document.body.textContent).toContain("Test passed");
+    expectLatestRunPassed();
     await click(button("More test actions"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>

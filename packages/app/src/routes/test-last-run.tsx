@@ -28,12 +28,12 @@ export function TestLastRunLine({
   const search = useLocation({ select: (location) => location.search }) as Record<string, unknown>;
   if (running)
     return (
-      <p className="flex h-8 w-full items-center justify-end text-sm" role="status">
+      <p className="flex h-7 items-center text-sm" role="status">
         <StatusPill state="running" />
       </p>
     );
   return (
-    <p className="flex h-8 w-full min-w-0 items-center justify-end gap-2 text-sm whitespace-nowrap text-muted-foreground">
+    <p className="flex h-7 min-w-0 items-center gap-2 text-sm whitespace-nowrap text-muted-foreground">
       {!run && status === "loading" ? (
         <span
           role="status"
@@ -45,7 +45,7 @@ export function TestLastRunLine({
       ) : run ? (
         // One control: the verdict, when, and where it leads (the full report).
         <Link
-          className="group inline-flex h-8 min-w-0 items-center gap-2 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="group inline-flex h-7 min-w-0 items-center gap-2 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           to="/runs/$runId"
           params={{ runId: run.id }}
           search={{
@@ -54,11 +54,12 @@ export function TestLastRunLine({
             ...(typeof search.app === "string" ? { app: search.app } : {}),
           }}
           aria-label={`Open report: ${runStateLabel(runStateOf(run))}, last run ${relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}`}
-          title={run.targetName ? `On ${run.targetName}` : undefined}
+          title={`Last run${run.targetName ? ` on ${run.targetName}` : ""} · open the report`}
         >
           <StatusPill state={runStateOf(run)} />
           <span className="min-w-0 truncate">
-            Last run {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
+            <span className="sr-only">Last run </span>
+            {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
           </span>
           <ChevronRight
             className="size-3.5 shrink-0 opacity-60 group-hover:opacity-100"

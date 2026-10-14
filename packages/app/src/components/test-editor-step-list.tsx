@@ -13,6 +13,7 @@ import type { CSSProperties, ReactNode, RefObject } from "react";
 import { EmptyState } from "./product-patterns";
 import { TestEditorRoutes } from "./test-editor-routes";
 import { stepReadinessLabel, type StepEntry } from "./test-editor-step";
+import { LatestRunBanner, StepOutcomeMark } from "../routes/test-step-outcomes";
 
 function branchLabel(placement: StepEntry["placement"]): string {
   if (placement?.branch === "then") return "Then branch";
@@ -73,8 +74,11 @@ export function TestEditorStepOutline({
   const compileBlockNotice = uniquePlatformBlockNotice(stepPlatformBlockers);
   return (
     <section className="min-w-0" aria-labelledby="test-steps-title">
-      <div className="flex min-h-8 items-center justify-between gap-2 pl-3">
-        <h2 id="test-steps-title" className="text-sm font-semibold">
+      {/* Narrow windows name the list in the view switcher, so say "Steps" once. */}
+      <div
+        className={`flex min-h-8 items-center justify-between gap-2 pl-3 ${headerAside ? "" : "max-[1099px]:hidden"}`}
+      >
+        <h2 id="test-steps-title" className="text-sm font-semibold max-[1099px]:sr-only">
           Steps{" "}
           <span className="ml-1.5 rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
             {entries.length}
@@ -82,6 +86,11 @@ export function TestEditorStepOutline({
         </h2>
         {headerAside ? <div className="flex items-center gap-1">{headerAside}</div> : null}
       </div>
+      <LatestRunBanner
+        stepTitle={(stepId) =>
+          displayTitles?.[stepId] ?? entries.find((entry) => entry.step.id === stepId)?.step.intent
+        }
+      />
       {entries.length ? (
         <ol className="mt-3 grid list-none divide-y divide-border p-0">
           {entries.map((entry) => (
@@ -116,7 +125,7 @@ export function TestEditorStepOutline({
                 }}
               >
                 <button
-                  className="grid min-h-14 min-w-0 grid-cols-[20px_minmax(0,1fr)_12px] items-center gap-2.5 border-0 bg-transparent px-3 py-3 text-left text-inherit focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                  className="grid min-h-14 min-w-0 grid-cols-[20px_minmax(0,1fr)_auto_12px] items-center gap-2.5 border-0 bg-transparent px-3 py-3 text-left text-inherit focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                   type="button"
                   onClick={() => onSelect(entry.step.id)}
                   aria-pressed={selectedStepId === entry.step.id}
@@ -151,6 +160,7 @@ export function TestEditorStepOutline({
                       );
                     })()}
                   </span>
+                  <StepOutcomeMark stepId={entry.step.id} />
                   <ChevronRight
                     className={`size-3.5 text-muted-foreground ${selectedStepId === entry.step.id && selectedEditor ? "rotate-90" : ""}`}
                     aria-hidden="true"
@@ -193,7 +203,7 @@ export function TestEditorStepOutline({
                 onClick={() => recordSteps.onRecord()}
               >
                 <Circle className="fill-destructive text-destructive" aria-hidden="true" />
-                {recordSteps.pending ? "Starting…" : "Record steps"}
+                {recordSteps.pending ? "Starting…" : "Record more steps"}
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem onClick={onAdd}>Write a step</DropdownMenuItem>

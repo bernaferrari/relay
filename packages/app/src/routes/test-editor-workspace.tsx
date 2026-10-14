@@ -1,7 +1,14 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Link } from "@tanstack/react-router";
-import { useState, type ComponentProps, type ReactNode, type RefObject } from "react";
+import {
+  useContext,
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { StageModeContext, type StageMode } from "./test-stage";
 import type {
   ProductTestEditorDocument,
@@ -82,42 +89,58 @@ export function TestEditorWorkspace({
   browserPane: ReactNode;
   latestEvidence: ReactNode;
 }) {
-  const [stageMode, setStageMode] = useState<StageMode>("recorded");
-  // One switcher on narrow windows: the steps, the screenshot, or the live app.
+  // The page may own the stage (to stage new steps); otherwise keep it here.
+  const outerStage = useContext(StageModeContext);
+  const [localStageMode, setLocalStageMode] = useState<StageMode>("recorded");
+  const stageMode = outerStage?.mode ?? localStageMode;
+  const setStageMode = outerStage?.setMode ?? setLocalStageMode;
+  // Staging new steps needs the stage in view, even on a narrow window.
+  useEffect(() => {
+    if (stageMode === "live") onWorkspaceViewChange("browser");
+  }, [stageMode, onWorkspaceViewChange]);
+  // One switcher on narrow windows: the steps or the screenshot.
   const compactViews = [
-    { id: "steps", label: "Steps", view: "steps", mode: undefined },
-    { id: "recorded", label: "Screenshot", view: "browser", mode: "recorded" },
-    {
-      id: "live",
-      label: "Live browser",
-      view: "browser",
-      mode: "live",
-    },
+    { id: "steps", label: "Steps", count: entries.length, view: "steps", mode: undefined },
+    { id: "recorded", label: "Screenshot", count: undefined, view: "browser", mode: "recorded" },
   ] as const;
   return (
-    <StageModeContext.Provider value={{ mode: stageMode, setMode: setStageMode }}>
-      <div
-        className="flex shrink-0 gap-1 border-b border-border px-3 py-2 min-[1100px]:hidden"
-        aria-label="Editor view"
-      >
-        {compactViews.map((item) => {
-          const active =
-            workspaceView === item.view && (item.mode === undefined || stageMode === item.mode);
-          return (
-            <Button
-              key={item.id}
-              size="sm"
-              variant={active ? "secondary" : "ghost"}
-              aria-pressed={active}
-              onClick={() => {
-                onWorkspaceViewChange(item.view);
-                if (item.mode) setStageMode(item.mode);
-              }}
-            >
-              {item.label}
-            </Button>
-          );
-        })}
+    <StageModeContext.Provider
+      value={{
+        mode: stageMode,
+        setMode: setStageMode,
+        ...(outerStage?.recording ? { recording: outerStage.recording } : {}),
+      }}
+    >
+      <div className="flex shrink-0 border-b border-border px-3 py-2 min-[1100px]:hidden">
+        <div
+          role="group"
+          aria-label="Editor view"
+          className="flex gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+        >
+          {compactViews.map((item) => {
+            const active =
+              workspaceView === item.view && (item.mode === undefined || stageMode === item.mode);
+            return (
+              <Button
+                key={item.id}
+                size="sm"
+                variant={active ? "secondary" : "ghost"}
+                aria-pressed={active}
+                onClick={() => {
+                  onWorkspaceViewChange(item.view);
+                  if (item.mode) setStageMode(item.mode);
+                }}
+              >
+                {item.label}
+                {item.count !== undefined ? (
+                  <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                    {item.count}
+                  </span>
+                ) : null}
+              </Button>
+            );
+          })}
+        </div>
       </div>
       <div
         className={`grid min-h-0 flex-1 ${embedded ? "min-[1100px]:grid-cols-[340px_minmax(0,1fr)]" : "min-[1100px]:grid-cols-[280px_minmax(0,1fr)]"}`}

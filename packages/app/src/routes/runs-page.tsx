@@ -174,7 +174,11 @@ export function RunsPage() {
           >
             <TabsList variant="line" className="h-11 justify-start gap-3" aria-label="Run view">
               {runViews.map((item) => (
-                <TabsTrigger key={item.id} value={item.id} className="min-h-10 px-2 transition-colors">
+                <TabsTrigger
+                  key={item.id}
+                  value={item.id}
+                  className="min-h-10 px-2 transition-colors"
+                >
                   {item.label}
                   {item.id === "needs-review" && reviewCount ? (
                     <span
@@ -457,7 +461,6 @@ function platformName(value: string | undefined) {
   if (value === "browser") return "Browser";
   return undefined;
 }
-
 
 function relativeTime(value: number): string {
   const elapsed = Math.max(0, Date.now() - value);

@@ -375,7 +375,7 @@ describe("Batch review controls", () => {
     // Review ownership controls appear once a case is selected.
     expect(document.body.textContent).not.toContain("Assign to me");
     const checkbox = document.querySelector<HTMLButtonElement>(
-      '[role="checkbox"][aria-label="Select case 1"]',
+      '[role="checkbox"][aria-label^="Select case 1:"]',
     );
     if (!checkbox) throw new Error("Case checkbox not found");
     await act(async () => checkbox.click());

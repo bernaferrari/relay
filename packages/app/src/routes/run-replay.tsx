@@ -95,8 +95,8 @@ export function RunReplayAction({
         <DialogTitle>Run this test again</DialogTitle>
         <DialogDescription>
           Run the recorded steps and saved inputs on{" "}
-          {report.targetName ?? "the same device or browser"}. Relay checks that it is ready
-          before starting.
+          {report.targetName ?? "the same device or browser"}. Relay checks that it is ready before
+          starting.
         </DialogDescription>
         <p className="text-sm text-muted-foreground">
           {mode === "same-configuration"

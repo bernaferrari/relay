@@ -506,10 +506,7 @@ export function DevicesPage() {
           }
         />
 
-        <div
-          className="flex flex-wrap items-center gap-3"
-          aria-label="Search devices"
-        >
+        <div className="flex flex-wrap items-center gap-3" aria-label="Search devices">
           <LibrarySearch
             id="device-search"
             label="Search Devices and Browsers"

@@ -97,8 +97,8 @@ export function AboutSettings() {
             <div className="grid gap-1">
               <h3 className="text-sm font-medium">Run the saved test</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Open the test, choose where to run it, and start. To try several sets of values,
-                add it to a plan.
+                Open the test, choose where to run it, and start. To try several sets of values, add
+                it to a plan.
               </p>
             </div>
           </li>

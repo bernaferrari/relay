@@ -365,6 +365,43 @@ const appResourcesService: AppResourcesProductService = {
   },
 };
 
+/** The latest run of the test-detail fixture, joined to its editor steps. */
+const stepJoin = (index: number, testStepId: string) => ({
+  schemaVersion: 1 as const,
+  testStepId,
+  recipeId: "checkout",
+  recipeStepId: testStepId,
+  traceStepId: `trace-${index}`,
+  traceStepIndex: index,
+  occurrence: 1,
+  evidence: { framePaths: [], eventSequences: [], artifactKinds: [] },
+});
+const { cause: _cause, category: _category, firstEvidence: _first, ...reportBase } = failedReport;
+const testDetailReport: typeof failedReport = {
+  ...reportBase,
+  runId: "run-1",
+  outcome: "passed",
+  timeline: [
+    {
+      id: "trace-0",
+      index: 0,
+      title: "Open the cart",
+      state: "passed",
+      durationMs: 1_100,
+      evidenceCount: 1,
+    },
+    {
+      id: "trace-1",
+      index: 1,
+      title: "Order confirmation is visible",
+      state: "passed",
+      durationMs: 2_340,
+      evidenceCount: 1,
+    },
+  ],
+  stepEvidence: [stepJoin(0, "open-cart"), stepJoin(1, "place-order")],
+};
+
 const fixtureTest = {
   id: "test-checkout",
   name: "Complete checkout and confirm the order",
@@ -407,7 +444,12 @@ const defaultRunService = {
       detail: "Android emulator · Ready",
     },
   ],
-  getReport: async () => (fixture === "report-video" ? videoReport : failedReport),
+  getReport: async () =>
+    fixture === "report-video"
+      ? videoReport
+      : fixture === "test-detail"
+        ? testDetailReport
+        : failedReport,
   replay: async () => ({ jobId: "replay-checkout" }),
   getReplayJob: async () => ({ status: "running" }),
   cancelReplay: async () => undefined,

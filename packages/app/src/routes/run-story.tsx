@@ -292,7 +292,9 @@ export function RunStoryView({
                           shown={
                             selected?.id === action.id &&
                             (Boolean(pinned) ||
-                              (!livePreview && Boolean(framePath) && selected.framePath === framePath))
+                              (!livePreview &&
+                                Boolean(framePath) &&
+                                selected.framePath === framePath))
                           }
                           capture={captures?.find(
                             (item) => item.framePath && item.framePath === action.framePath,

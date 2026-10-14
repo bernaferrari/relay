@@ -1,4 +1,3 @@
-import { WorkspaceToolbar } from "../components/test-workspace";
 import { TestPlanNavigation } from "./test-plan-navigation";
 import { TestRunHistory } from "./test-run-history";
 import { TestStepsOutline } from "./test-steps-outline";
@@ -14,7 +13,6 @@ import { runSetupProfile } from "../data/run-setup-profile";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { WorkbenchPage } from "../components/page-layout";
 import { Button } from "@relay/ui-react/components/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -30,7 +28,6 @@ import {
 } from "../data/stability-product-service";
 import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { PageLoading, RecordingProblem } from "./recording-shared";
-import { RunInspection } from "./run-page";
 import {
   WORKSPACE_DESTINATION_KEY,
   parseWorkspaceDestination,
@@ -45,11 +42,13 @@ import { currentTestOutlineCopy } from "../data/workbench-step-selection";
 import { ReviewRecordingPage } from "./review-recording-page";
 import { TestRunSettings } from "./test-run-settings";
 import { TestWorkspaceActions } from "./test-workspace-actions";
-import { TestWorkspaceStage } from "./test-stage";
+import { StageModeContext, TestWorkspaceStage, type StageMode } from "./test-stage";
 import { productLinkClassName } from "../lib/class-names";
 import { testRunDestinationCopy } from "../data/test-run-targets";
 import { useTestTextInputs } from "../data/use-test-text-inputs";
 import { isDeviceTest } from "./test-editor-route-helpers";
+import { StepOutcomesProvider } from "./test-step-outcomes";
+import { RunInspection } from "./run-page";
 
 const routeApi = getRouteApi("/tests/$testId");
 const staleTestMessage = "The saved test changed.";
@@ -86,17 +85,10 @@ export function TestPage() {
   );
   const configurationTriggerRef = useRef<HTMLButtonElement>(null);
 
-  function selectSource(view: "definition" | "run") {
-    void navigate({
-      search: (previous) => ({
-        ...previous,
-        view,
-        ...(view === "run" && attachedRunId ? { run: attachedRunId } : {}),
-      }),
-      replace: true,
-    });
-  }
   const [historyOpen, setHistoryOpen] = useState(false);
+  // The stage shows screenshots; "live" only while staging new steps to record.
+  const [stageMode, setStageMode] = useState<StageMode>("recorded");
+  useEffect(() => setStageMode("recorded"), [testId]);
   const [settingsOpen, setSettingsOpen] = useState(search.setup === "run");
   const [detailsRequest, setDetailsRequest] = useState(0);
   useEffect(() => {
@@ -130,7 +122,7 @@ export function TestPage() {
     queryFn: () => runService.getTest(testId, appScope),
     retry: (count, error) => !(error instanceof AmbiguousTestError) && count < 2,
   });
-  const { recentRuns } = useLatestTestReport(runService, testId, appScope);
+  const { recentRuns, latestRun, latestReport } = useLatestTestReport(runService, testId, appScope);
   const completeStabilityRuns = useQuery({
     queryKey: runQueryKeys.testStability(testId),
     queryFn: () => runService.listTestRunsComplete!(testId),
@@ -279,12 +271,7 @@ export function TestPage() {
 
         setPinnedRunId(runId);
         void navigate({
-          search: (previous) => ({
-            ...previous,
-            setup: undefined,
-            run: runId,
-            view: "run",
-          }),
+          search: (previous) => ({ ...previous, setup: undefined, run: runId }),
           replace: true,
         });
       }
@@ -397,12 +384,20 @@ export function TestPage() {
   const activeRun = pointer.data?.testId === testId ? pointer.data : undefined;
   const liveRunId =
     activeRun?.runId ?? (startingRun?.testId === testId ? startingRun.runId : undefined);
+  // When a live run ends, refresh history so the header and step outcomes update at once.
+  const finishedRunId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (liveRunId) {
+      finishedRunId.current = liveRunId;
+      return;
+    }
+    if (!finishedRunId.current) return;
+    finishedRunId.current = undefined;
+    void queryClient.invalidateQueries({ queryKey: ["catalog", "runs", "test", testId] });
+    void queryClient.invalidateQueries({ queryKey: ["catalog", "run-report"] });
+  }, [liveRunId, queryClient, testId]);
   const attachedRunId =
     pinnedRunId ?? [...(recentRuns.data ?? [])].sort((a, b) => b.queuedAt - a.queuedAt)[0]?.id;
-  const showRecording =
-    !attachedRunId ||
-    search.view === "definition" ||
-    (search.view !== "run" && typeof search.run !== "string");
   const outlineCopy = currentTestOutlineCopy({
     stepCount: test.data?.stepCount ?? 0,
     viewingHistoricalRun: false,
@@ -448,7 +443,6 @@ export function TestPage() {
 
   function focusRunSetup(event: MouseEvent<HTMLButtonElement>) {
     setSetupAnchor(event.currentTarget);
-    selectSource("definition");
     setSettingsOpen(true);
   }
 
@@ -467,6 +461,12 @@ export function TestPage() {
       ) : null}
       <TestWorkspaceActions
         testId={testId}
+        meta={
+          test.data &&
+          (recentRuns.isLoading || recentRuns.isError || recentRuns.data?.length || liveRunId) ? (
+            <TestLastRunLine history={recentRuns} running={Boolean(activeRun || liveRunId)} />
+          ) : undefined
+        }
         appMapId={test.data?.appMapId}
         testName={editorDocument.data?.test.name ?? test.data?.name}
         testPresent={Boolean(test.data)}
@@ -549,7 +549,6 @@ export function TestPage() {
               onClick={() => {
                 start.reset();
                 setSettingsOpen(false);
-                selectSource("definition");
                 void queryClient.invalidateQueries({
                   queryKey: ["test-editor", testId, test.data?.appMapId],
                 });
@@ -564,7 +563,6 @@ export function TestPage() {
               onClick={() => {
                 start.reset();
                 setSettingsOpen(false);
-                selectSource("definition");
               }}
             >
               Review steps
@@ -601,89 +599,71 @@ export function TestPage() {
       ) : null}
 
       {!test.isPending && test.data ? (
-        <Tabs
-          value={showRecording ? "definition" : "run"}
-          onValueChange={(value) => selectSource(value === "run" ? "run" : "definition")}
-          className="min-h-0 flex-1 gap-0"
-        >
-          {/* A never-run test has no tab row: nothing to switch to or report. */}
-          {attachedRunId || activeRun || liveRunId || !recentRuns.isSuccess ? (
-            <WorkspaceToolbar
-              leading={
-                attachedRunId ? (
-                  <TabsList variant="line" aria-label="Test views" className="h-11">
-                    <TabsTrigger value="definition" className="px-4">
-                      Test
-                    </TabsTrigger>
-                    <TabsTrigger value="run" className="px-4">
-                      Result
-                    </TabsTrigger>
-                  </TabsList>
-                ) : null
-              }
-              trailing={
-                showRecording ? (
-                  <TestLastRunLine history={recentRuns} running={Boolean(activeRun || liveRunId)} />
-                ) : undefined
-              }
-            />
-          ) : null}
-          {attachedRunId ? (
-            <TabsContent
-              value="run"
-              className="flex min-h-0 flex-1 flex-col overflow-hidden [&[hidden]]:hidden"
-            >
-              <RunInspection key={attachedRunId} runId={attachedRunId} testId={testId} embedded />
-            </TabsContent>
-          ) : null}
-          <TabsContent
-            value="definition"
-            keepMounted
-            className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
-          >
-            <TestEditor
-              testId={testId}
-              appMapId={test.data.appMapId}
-              onEditingStateChange={onEditorStateChange}
-              stepId={typeof search.step === "string" ? search.step : undefined}
-              onStepChange={(step) =>
-                void navigate({ search: (previous) => ({ ...previous, step }), replace: true })
-              }
-              onSelectedStepChange={(step) => setEvidenceStepId(step ?? "")}
-              detailsRequest={detailsRequest}
-              recordSteps={{
-                onRecord: () => record.mutate(),
-                pending: record.isPending,
-                disabled:
-                  record.isPending ||
-                  devicePreviewBusy ||
-                  Boolean(preparedBrowser?.busy) ||
-                  (!preparedBrowser && !targetReady),
+        // One page in two states: while a run is live it plays here; afterwards the
+        // steps return, each showing how it last ran. No Test/Result tabs to flip.
+        liveRunId ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border">
+            <RunInspection key={liveRunId} runId={liveRunId} testId={testId} embedded />
+          </div>
+        ) : (
+          <StepOutcomesProvider runId={latestRun?.id} report={latestReport.data}>
+            <StageModeContext.Provider
+              value={{
+                mode: stageMode,
+                setMode: setStageMode,
+                recording: {
+                  start: () => record.mutate(),
+                  pending: record.isPending,
+                  // Web steps continue in the staged browser session; devices in place.
+                  ready: deviceTest
+                    ? targetReady && !devicePreviewBusy
+                    : Boolean(preparedBrowser?.sessionId) && !preparedBrowser?.busy,
+                },
               }}
-              stage={
-                <TestWorkspaceStage
-                  key={testId}
-                  step={selectedEvidenceStep}
-                  lastRun={latestRunOf(recentRuns.data)}
-                  deviceTest={deviceTest}
-                  target={selectedTarget}
-                  onDeviceBusyChange={setDevicePreviewBusy}
-                  browser={
-                    editorDocument.data
-                      ? {
-                          appMapId: editorDocument.data.appMapId,
-                          startUrl: editorDocument.data.test.originApplication,
-                          browserTargetIds: editorDocument.data.browserTargetIds,
-                          recentAccountIds: recentAccountIds(recentRuns.data),
-                          onPreparedBrowserChange: setPreparedBrowser,
-                        }
-                      : undefined
+            >
+              <div className="flex min-h-0 flex-1 flex-col border-t border-border">
+                <TestEditor
+                  testId={testId}
+                  appMapId={test.data.appMapId}
+                  onEditingStateChange={onEditorStateChange}
+                  stepId={typeof search.step === "string" ? search.step : undefined}
+                  onStepChange={(step) =>
+                    void navigate({ search: (previous) => ({ ...previous, step }), replace: true })
+                  }
+                  onSelectedStepChange={(step) => setEvidenceStepId(step ?? "")}
+                  detailsRequest={detailsRequest}
+                  recordSteps={{
+                    // Opens the live app to stage the new steps; Start recording begins them.
+                    onRecord: () => setStageMode("live"),
+                    pending: record.isPending,
+                    disabled: record.isPending || stageMode === "live",
+                  }}
+                  stage={
+                    <TestWorkspaceStage
+                      key={testId}
+                      step={selectedEvidenceStep}
+                      lastRun={latestRunOf(recentRuns.data)}
+                      deviceTest={deviceTest}
+                      target={selectedTarget}
+                      onDeviceBusyChange={setDevicePreviewBusy}
+                      browser={
+                        editorDocument.data
+                          ? {
+                              appMapId: editorDocument.data.appMapId,
+                              startUrl: editorDocument.data.test.originApplication,
+                              browserTargetIds: editorDocument.data.browserTargetIds,
+                              recentAccountIds: recentAccountIds(recentRuns.data),
+                              onPreparedBrowserChange: setPreparedBrowser,
+                            }
+                          : undefined
+                      }
+                    />
                   }
                 />
-              }
-            />
-          </TabsContent>
-        </Tabs>
+              </div>
+            </StageModeContext.Provider>
+          </StepOutcomesProvider>
+        )
       ) : null}
 
       <TestRunHistory

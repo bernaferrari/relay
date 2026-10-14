@@ -34,6 +34,7 @@ export function TestWorkspaceActions({
   runSettings,
   hasRecentRuns,
   onHistoryOpen,
+  meta,
 }: {
   testId: string;
   appMapId?: string;
@@ -55,6 +56,8 @@ export function TestWorkspaceActions({
   runSettings: ReactNode;
   hasRecentRuns: boolean;
   onHistoryOpen(): void;
+  /** The latest result, shown beside Run; it links to the full report. */
+  meta?: ReactNode;
 }) {
   const { testEditorService } = useRouteContext({ from: "__root__" });
   const [copied, setCopied] = useState<"copied" | "failed">();
@@ -84,6 +87,8 @@ export function TestWorkspaceActions({
       }
       actions={
         <>
+          {/* The latest result sits beside Run: what happened, then what to do next. */}
+          {meta ? <div className="mr-1 flex min-w-0 items-center">{meta}</div> : null}
           {/* Recording more steps lives in the step list's Add step menu. */}
           {activeRun && (liveRunId || attachedRunId) ? (
             <Button

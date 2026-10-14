@@ -42,8 +42,7 @@ export function testRunDestinationCopy(platforms?: readonly PlanPlatform[]) {
       searchingDetail: "Connected phones and running emulators appear here automatically.",
       none: "No Android device found",
       emptyTitle: "Connect an Android device",
-      emptyDetail:
-        "Plug in and unlock your phone, or start an emulator.",
+      emptyDetail: "Plug in and unlock your phone, or start an emulator.",
     };
   if (platform === "ios")
     return {

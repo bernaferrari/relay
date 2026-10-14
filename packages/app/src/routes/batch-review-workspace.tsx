@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { CircleCheck, CircleX } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { ProductBatchReport } from "@relay/product/run-across";
@@ -72,6 +73,7 @@ export function BatchReviewWorkspace({
         queue.findIndex((item) => item.id === focused?.id),
       ) / 50,
     ) * 50;
+  const anyRerunnable = queue.some(isBatchCaseRerunnable);
   function inspect(id: string) {
     setFocusedId(id);
     setView("queue");
@@ -128,33 +130,50 @@ export function BatchReviewWorkspace({
             className="grid max-h-56 min-[1100px]:max-h-[70dvh] list-none content-start gap-1 overflow-y-auto rounded-xl border border-border bg-card p-2"
             aria-label="Cases"
           >
-            {queue.slice(offset, offset + 50).map((item) => (
-              <li
-                key={item.id}
-                className={`flex items-start gap-2 rounded-lg p-2 ${focused?.id === item.id ? "bg-accent" : "hover:bg-muted/50"}`}
-              >
-                <Checkbox
-                  className="mt-3"
-                  checked={selected.has(item.id)}
-                  disabled={!isBatchCaseRerunnable(item)}
-                  aria-label={`Select case ${item.index + 1}`}
-                  onCheckedChange={(checked) => onToggle(item.id, checked === true)}
-                />
-                <button
-                  type="button"
-                  aria-pressed={focused?.id === item.id}
-                  onClick={() => setFocusedId(item.id)}
-                  className="grid min-h-11 min-w-0 flex-1 gap-1 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-ring"
+            {queue.slice(offset, offset + 50).map((item) => {
+              const problem = isBatchCaseProblem(item);
+              const rerunnable = isBatchCaseRerunnable(item);
+              return (
+                <li
+                  key={item.id}
+                  className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${focused?.id === item.id ? "bg-accent" : "hover:bg-muted/50"}`}
                 >
-                  <span className="text-sm font-medium">{caseName(item)}</span>
-                  <span
-                    className={`text-xs ${isBatchCaseProblem(item) ? "text-destructive" : "text-muted-foreground"}`}
+                  {/* Only cases you can act on get a checkbox: select them to run again or assign. */}
+                  {anyRerunnable ? (
+                    rerunnable ? (
+                      <Checkbox
+                        checked={selected.has(item.id)}
+                        title="Select to run again or assign"
+                        aria-label={`Select case ${item.index + 1}: ${caseName(item)}`}
+                        onCheckedChange={(checked) => onToggle(item.id, checked === true)}
+                      />
+                    ) : (
+                      <span className="size-4 shrink-0" aria-hidden="true" />
+                    )
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-pressed={focused?.id === item.id}
+                    onClick={() => setFocusedId(item.id)}
+                    className="grid min-h-11 min-w-0 flex-1 grid-cols-[16px_minmax(0,1fr)] items-center gap-x-2.5 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-ring"
                   >
-                    {caseStatusLabel(item)}
-                  </span>
-                </button>
-              </li>
-            ))}
+                    {problem ? (
+                      <CircleX className="size-4 text-destructive" aria-hidden="true" />
+                    ) : (
+                      <CircleCheck className="size-4 text-success" aria-hidden="true" />
+                    )}
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{caseName(item)}</span>
+                      <span
+                        className={`block text-xs ${problem ? "text-destructive" : "text-muted-foreground"}`}
+                      >
+                        {caseStatusLabel(item)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
             {problemCount && passingCount ? (
               <li>
                 <Button

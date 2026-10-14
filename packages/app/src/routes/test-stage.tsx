@@ -1,14 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import { Image as ImageIcon } from "lucide-react";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-} from "react";
+import { Circle } from "lucide-react";
+import { createContext, useContext, useState, type ComponentProps, type ReactNode } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import type { ProductTargetOption } from "../data/target-presentation";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -59,7 +52,7 @@ export function TestWorkspaceStage({
             </div>
           )
         ) : browser ? (
-          <TestEditorBrowserPane {...browser} />
+          <TestEditorBrowserPane {...browser} autoOpen />
         ) : null
       }
     />
@@ -68,14 +61,18 @@ export function TestWorkspaceStage({
 
 export type StageMode = "recorded" | "live";
 
-/** On narrow windows the page's own switcher picks Screenshot or Live, so the
- * stage drops its second row of tabs instead of nesting one inside the other. */
+/**
+ * The stage shows the selected step's screenshot. Live app is a mode you enter
+ * with intent ("Record more steps"), never a toggle without a purpose. On narrow
+ * windows the page's own switcher picks the view, so the stage drops its bar.
+ */
 export const StageModeContext = createContext<{
   mode: StageMode;
   setMode(mode: StageMode): void;
+  /** Present while staging new steps: drive the app, then start recording. */
+  recording?: { start(): void; ready: boolean; pending: boolean };
 } | null>(null);
 
-/** The app beside the steps: the recorded screenshot, or its live device or browser. */
 export function TestStage({
   recorded,
   live,
@@ -89,56 +86,49 @@ export function TestStage({
   const [localMode, setLocalMode] = useState<StageMode>("recorded");
   const mode = shared?.mode ?? localMode;
   const setMode = shared?.setMode ?? setLocalMode;
-  const [liveOpened, setLiveOpened] = useState(false);
-  useEffect(() => {
-    if (mode === "live") setLiveOpened(true);
-  }, [mode]);
+  const recording = shared?.recording;
   return (
     <div className="flex h-full min-h-0 flex-col bg-stage">
-      {/* Two named states, always visible: what you see is never a mystery button. */}
-      <div
-        className={`flex min-h-11 shrink-0 items-center gap-3 border-b border-border px-3 ${shared ? "max-[1099px]:hidden" : ""}`}
-      >
+      {mode === "live" ? (
         <div
-          role="group"
-          aria-label="Stage view"
-          className="flex shrink-0 gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+          role="region"
+          aria-label={`${liveLabel}: get ready to record`}
+          className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-2"
         >
-          <Button
-            size="xs"
-            variant={mode === "recorded" ? "secondary" : "ghost"}
-            aria-pressed={mode === "recorded"}
-            onClick={() => setMode("recorded")}
-          >
-            <ImageIcon aria-hidden="true" /> Screenshot
-          </Button>
-          <Button
-            size="xs"
-            variant={mode === "live" ? "secondary" : "ghost"}
-            aria-pressed={mode === "live"}
-            aria-label={liveLabel}
-            disabled={!live}
-            onClick={() => setMode("live")}
-          >
-            <span
-              aria-hidden="true"
-              className={`size-1.5 rounded-full ${mode === "live" ? "bg-success" : "bg-muted-foreground/60"}`}
-            />
-            Live
-          </Button>
+          <span className="relative flex size-2.5 shrink-0" aria-hidden="true">
+            <span className="absolute size-full animate-ping rounded-full bg-success/50 [animation-duration:2s] motion-reduce:hidden" />
+            <span className="relative size-2.5 rounded-full bg-success" />
+          </span>
+          <p className="min-w-0 flex-1 text-sm">
+            <span className="font-medium">Get the app to where the new steps start.</span>{" "}
+            <span className="text-muted-foreground">
+              {recording && !recording.ready
+                ? "Opening the app…"
+                : "Nothing is recorded until you press Start."}
+            </span>
+          </p>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button size="sm" variant="ghost" onClick={() => setMode("recorded")}>
+              Cancel
+            </Button>
+            {recording ? (
+              <Button
+                size="sm"
+                onClick={recording.start}
+                disabled={!recording.ready || recording.pending}
+              >
+                <Circle className="size-2.5 fill-destructive text-destructive" aria-hidden="true" />
+                {recording.pending ? "Starting…" : "Start recording"}
+              </Button>
+            ) : null}
+          </div>
         </div>
-        <span className="min-w-0 truncate text-xs text-muted-foreground">
-          {mode === "live"
-            ? `Your app right now, in a ${liveLabel.replace(/^Live /u, "").toLocaleLowerCase()} Relay controls. Use it to check a screen or record more steps.`
-            : "What the latest run saw at the selected step."}
-        </span>
-      </div>
+      ) : null}
       <div className={mode === "recorded" ? "min-h-0 flex-1 overflow-auto" : "hidden"}>
         {recorded}
       </div>
-      {liveOpened ? (
-        <div className={mode === "live" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>{live}</div>
-      ) : null}
+      {/* Mounted only while staging, so the live app opens with intent. */}
+      {mode === "live" ? <div className="flex min-h-0 flex-1 flex-col">{live}</div> : null}
     </div>
   );
 }
