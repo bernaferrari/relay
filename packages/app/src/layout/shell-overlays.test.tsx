@@ -232,6 +232,7 @@ describe("shell overlays", () => {
     expect([...navigation.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
       "Tests",
       "Runs",
+      "Devices",
     ]);
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Tests");
     expect(navigation.querySelector('button[aria-label="More navigation"]')).not.toBeNull();
@@ -285,7 +286,7 @@ describe("shell overlays", () => {
     expect(history.location.search).toBe("?app=checkout");
   });
 
-  it("orders the sidebar as tests, runs, Map, then Accounts and Devices, and moves Review, Activity, and changes out", async () => {
+  it("puts free device control beside tests and runs, with account setup below Map", async () => {
     const history = await renderShell({ initialEntries: ["/tests"] });
     const sidebar = document.querySelector('[aria-label="Relay navigation"]')!;
     const labels = [...sidebar.querySelectorAll("a, button")]
@@ -293,7 +294,7 @@ describe("shell overlays", () => {
       .filter((text) =>
         ["Tests", "Review", "Results", "Runs", "Map", "Accounts", "Devices"].includes(text ?? ""),
       );
-    expect(labels).toEqual(["Tests", "Runs", "Map", "Accounts", "Devices"]);
+    expect(labels).toEqual(["Tests", "Runs", "Devices", "Map", "Accounts"]);
     expect(sidebar.querySelector('[aria-label="Setup"] a[href="/accounts"]')).not.toBeNull();
     expect(sidebar.querySelector('a[href="/review"]')).toBeNull();
     expect(sidebar.querySelector('a[href="/sessions"]')).toBeNull();
@@ -648,9 +649,9 @@ describe("shell overlays", () => {
     await renderShell({
       devices: [productDevice("ipad", "Design iPad", "ready", "ios")],
     });
-    // Devices is setup: under the everyday links, outside the Primary nav.
-    expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).toBeNull();
-    expect(document.querySelector('[aria-label="Setup"] a[href="/devices"]')).not.toBeNull();
+    // Free control is an everyday destination; target choice remains local to each flow.
+    expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Setup"] a[href="/devices"]')).toBeNull();
     expect(document.querySelector('[aria-label^="Device or browser"]')).toBeNull();
   });
 });

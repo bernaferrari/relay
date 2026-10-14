@@ -4,8 +4,8 @@ import { FlaskConical, History, KeyRound, MonitorSmartphone } from "lucide-react
  * One destination vocabulary for the sidebar and command palette, per the
  * product hierarchy: Tests (home, with plans as groups) and Runs are
  * everyday, and Map follows the chosen App. Screenshot review lives inside
- * Runs. Accounts and Devices are setup. Everything else is reachable from
- * search.
+ * Runs. Devices provides free control before authoring; Accounts is setup.
+ * Everything else is reachable from search.
  */
 export const everydayDestinations = [
   {
@@ -24,6 +24,14 @@ export const everydayDestinations = [
     detail: "Every run, live and finished, and screenshots to review",
     keywords: "results reports evidence history review screenshots approve",
   },
+  {
+    to: "/devices",
+    label: "Devices",
+    shortLabel: "Devices",
+    icon: MonitorSmartphone,
+    detail: "Control a browser, phone, or tablet without creating a test",
+    keywords: "targets environments browsers devices free roam live control explore",
+  },
 ] as const;
 
 /** Setup that people visit now and then; shown under the everyday links. */
@@ -35,14 +43,6 @@ export const utilityDestinations = [
     icon: KeyRound,
     detail: "Saved logins your tests can run as",
     keywords: "accounts logins sign-ins sign in users credentials",
-  },
-  {
-    to: "/devices",
-    label: "Devices",
-    shortLabel: "Devices",
-    icon: MonitorSmartphone,
-    detail: "Browsers, phones, and tablets Relay can use",
-    keywords: "targets environments browsers devices",
   },
 ] as const;
 

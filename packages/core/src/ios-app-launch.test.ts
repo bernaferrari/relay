@@ -65,6 +65,8 @@ async function withEvidenceState<T>(run: (stateDirectory: string) => Promise<T>)
 test("friendly iOS names become bundle ids", () => {
   assert.equal(resolveIosLaunchBundleId("Grok"), "ai.x.GrokApp");
   assert.equal(resolveIosLaunchBundleId("Settings"), "com.apple.Preferences");
+  assert.equal(resolveIosLaunchBundleId("TestFlight"), "com.apple.TestFlight");
+  assert.equal(resolveIosLaunchBundleId("test flight"), "com.apple.TestFlight");
   assert.equal(resolveIosLaunchBundleId("com.apple.Preferences"), "com.apple.Preferences");
   assert.throws(() => resolveIosLaunchBundleId("Notepad"), /bundle id/i);
 });

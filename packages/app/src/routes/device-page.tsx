@@ -321,7 +321,7 @@ export function DevicePage() {
           actions={
             <>
               {showDeviceControls ? (
-                <SheetTrigger render={<Button variant="secondary" />}>Open app</SheetTrigger>
+                <SheetTrigger render={<Button />}>Open app</SheetTrigger>
               ) : null}
               {recordingContinuation ? (
                 <Button
@@ -360,7 +360,7 @@ export function DevicePage() {
                 </Button>
               ) : device.data && !device.isError ? (
                 <Button
-                  variant="default"
+                  variant="secondary"
                   nativeButton={false}
                   disabled={iosAppLaunch.isPending}
                   render={

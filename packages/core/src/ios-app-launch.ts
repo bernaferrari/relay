@@ -122,6 +122,8 @@ const BUNDLE_ALIASES: Record<string, string> = {
   "ai.x.grokapp": "ai.x.GrokApp",
   settings: "com.apple.Preferences",
   safari: "com.apple.mobilesafari",
+  testflight: "com.apple.TestFlight",
+  "test flight": "com.apple.TestFlight",
   preferences: "com.apple.Preferences",
   "com.apple.preferences": "com.apple.Preferences",
   springboard: "com.apple.springboard",

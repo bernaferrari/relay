@@ -473,7 +473,7 @@ export function DevicesPage() {
       >
         <PageHeader
           title="Devices"
-          description="Choose a device or browser to inspect or record a test."
+          description="Open a device or browser and control it freely. Record a test when you’re ready."
           actions={
             <div className="flex flex-wrap items-center gap-2">
               {!devices.isError ? (
