@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useWorkspaceDivider } from "./workspace-divider";
 
 /** The same spatial model for authored steps and their execution evidence. */
 export function TestWorkspace({
@@ -10,16 +11,20 @@ export function TestWorkspace({
   preview: ReactNode;
   layout?: "sidebar" | "balanced" | "live";
 }) {
+  const { grid, width, divider } = useWorkspaceDivider();
   return (
     <div className="@container/workspace flex min-h-0 min-w-0 flex-1" data-slot="test-workspace">
       <div
-        className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 ${layout === "live" ? "grid-rows-[minmax(0,1fr)_minmax(0,2fr)] @min-[520px]/workspace:grid-rows-1 @min-[520px]/workspace:grid-cols-[minmax(14rem,16rem)_minmax(0,1fr)]" : `grid-rows-[auto_minmax(20rem,1fr)] @2xl/workspace:grid-rows-1 ${layout === "balanced" ? "@2xl/workspace:grid-cols-2" : "@2xl/workspace:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]"}`}`}
+        ref={grid}
+        style={{ "--workspace-outline-width": `${width}px` } as CSSProperties}
+        className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 ${layout === "live" ? "grid-rows-[minmax(0,1fr)_minmax(0,2fr)] @min-[520px]/workspace:grid-rows-1 @min-[520px]/workspace:grid-cols-[minmax(14rem,16rem)_minmax(0,1fr)]" : `grid-rows-[auto_minmax(20rem,1fr)] @2xl/workspace:grid-rows-1 ${layout === "balanced" ? "@2xl/workspace:grid-cols-2" : "@2xl/workspace:grid-cols-[minmax(16rem,min(var(--workspace-outline-width),60cqw))_minmax(0,1fr)]"}`}`}
       >
         <div
           data-slot="workspace-outline"
-          className={`flex min-h-0 min-w-0 flex-col overflow-auto border-b border-border bg-card ${layout === "live" ? "@min-[520px]/workspace:border-r @min-[520px]/workspace:border-b-0" : "@2xl/workspace:border-r @2xl/workspace:border-b-0"}`}
+          className={`relative flex min-h-0 min-w-0 flex-col border-b border-border bg-card ${layout === "live" ? "@min-[520px]/workspace:border-r @min-[520px]/workspace:border-b-0" : "@2xl/workspace:border-r @2xl/workspace:border-b-0"}`}
         >
-          {outline}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">{outline}</div>
+          {layout === "sidebar" ? divider : null}
         </div>
         <div
           data-slot="workspace-preview"

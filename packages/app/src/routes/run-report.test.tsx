@@ -226,9 +226,10 @@ it("shows persisted account context without inferring it from the test title", a
     executionContext: { browser: "chromium", account: "Member" },
   };
   const container = await render(value);
-  expect(container.querySelector('[aria-label="Recorded run context"]')?.textContent).toBe(
-    "chromium · Account: Member",
-  );
+  const context = container.querySelector('[aria-label="Recorded run context"]')!;
+  expect(context.textContent).toContain("Account: Member");
+  expect(context.getAttribute("title")).toBe("Browser: chromium");
+  expect(context.className).not.toContain("basis-full");
   await act(async () => root!.unmount());
   root = undefined;
   document.body.replaceChildren();
@@ -237,9 +238,9 @@ it("shows persisted account context without inferring it from the test title", a
     title: "Admin test",
     executionContext: { browser: "chromium" },
   });
-  expect(missing.querySelector('[aria-label="Recorded run context"]')?.textContent).toBe(
-    "chromium · Account not recorded",
-  );
+  const missingContext = missing.querySelector('[aria-label="Recorded run context"]')!;
+  expect(missingContext.textContent).not.toContain("Account");
+  expect(missingContext.getAttribute("title")).toBe("Browser: chromium");
 });
 
 it.each([

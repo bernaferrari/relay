@@ -47,14 +47,14 @@ export function StepMedia({
           if (img instanceof HTMLImageElement)
             setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
         }}
-        className={`relative flex justify-center ${fill ? "mx-5 mb-5 min-h-0 flex-1 items-start" : "min-h-64 items-center"}`}
+        className={`relative flex justify-center ${fill ? "mx-4 my-4 min-h-0 flex-1 items-center" : "min-h-64 items-center"}`}
       >
         {actionBounds && frame?.id === beforeFramePath && imageSize.width > 0 ? (
           <svg
             aria-label="Recorded tap target"
             className="pointer-events-none absolute inset-0 z-10 size-full"
             viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
-            preserveAspectRatio={fill ? "xMidYMin meet" : "xMidYMid meet"}
+            preserveAspectRatio="xMidYMid meet"
           >
             <rect
               {...actionBounds}
@@ -70,7 +70,7 @@ export function StepMedia({
             aria-label="Review overlays"
             className="pointer-events-none absolute inset-0 z-10 size-full"
             viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
-            preserveAspectRatio={fill ? "xMidYMin meet" : "xMidYMid meet"}
+            preserveAspectRatio="xMidYMid meet"
           >
             {masks.map((mask, index) => {
               const normalized = mask.width <= 1 && mask.height <= 1 && mask.x <= 1 && mask.y <= 1;
@@ -94,7 +94,7 @@ export function StepMedia({
             key={frame.id}
             frame={frame}
             details={detailsForFrame?.(frame)}
-            className={fill ? "h-full w-full object-contain object-top" : undefined}
+            className={fill ? "h-full w-full object-contain" : undefined}
             onError={() => setFailed(true)}
           />
         ) : (

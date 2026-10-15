@@ -330,10 +330,6 @@ export function RunStoryView({
                 {...(finishedAt ? { finishedAt } : {})}
                 {...(onReview ? { onReview } : {})}
               />
-            ) : selected && (!livePreview || pinned) ? (
-              <p className="text-sm text-muted-foreground">
-                {selected.framePath === framePath ? selected.label : "Latest captured screenshot"}
-              </p>
             ) : null}
           </div>
         }

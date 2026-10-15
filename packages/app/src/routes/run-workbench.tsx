@@ -157,6 +157,16 @@ export function RunWorkbench({
   const showingCapture =
     panel === "captures" ||
     (panel !== "steps" && panel !== "performance" && previewSource === "captures");
+  const reviewItemForFrame = (frameId?: string) => {
+    const matches = frameId
+      ? reviewItems.filter((item) => item.framePath === frameId && item.status !== "missing")
+      : [];
+    return showingCapture && selectedReview && matches.includes(selectedReview)
+      ? selectedReview
+      : matches.length === 1
+        ? matches[0]
+        : undefined;
+  };
   const authoredFrames = framePathsForTraceStep(
     report.stepEvidence,
     step?.id ?? selectedStepIndex,
@@ -363,27 +373,11 @@ export function RunWorkbench({
                   beforeFramePath={showingCapture ? undefined : step.beforeFramePath}
                   fill
                   detailsForFrame={(frame) => {
-                    const matches = reviewItems.filter((item) => item.framePath === frame.id);
-                    const item =
-                      showingCapture && selectedReview && matches.includes(selectedReview)
-                        ? selectedReview
-                        : matches.length === 1
-                          ? matches[0]
-                          : undefined;
+                    const item = reviewItemForFrame(frame.id);
                     return item ? <CaptureDetails item={item} /> : undefined;
                   }}
                   reviewControlsForFrame={(frame) => {
-                    const matches = frame
-                      ? reviewItems.filter(
-                          (item) => item.framePath === frame.id && item.status !== "missing",
-                        )
-                      : [];
-                    const item =
-                      showingCapture && selectedReview && matches.includes(selectedReview)
-                        ? selectedReview
-                        : matches.length === 1
-                          ? matches[0]
-                          : undefined;
+                    const item = reviewItemForFrame(frame?.id);
                     if (!item || !onReviewCapture)
                       return (
                         <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">

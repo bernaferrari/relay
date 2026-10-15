@@ -25,8 +25,8 @@ Click through your app once. Relay replays it on web, Android, and iOS, and show
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/images/readme/banner-dark.webp" />
-  <img alt="Click through it once. Relay keeps checking." src="./docs/images/readme/banner-light.webp" width="100%" />
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/banner-dark.webp" />
+  <img alt="Click through it once. Relay keeps checking." src="./assets/readme/banner-light.webp" width="100%" />
 </picture>
 
 </div>
@@ -38,8 +38,8 @@ Relay records a check, catches the overlap, the site is repaired, and the **same
 runs again to prove it.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/images/readme/demo-dark.webp" />
-  <img alt="Relay recording a check, failing on an overlapping Save button, repairing the page, and passing on rerun" src="./docs/images/readme/demo-light.webp" width="100%" />
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/demo-dark.webp" />
+  <img alt="Relay recording a check, failing on an overlapping Save button, repairing the page, and passing on rerun" src="./assets/readme/demo-light.webp" width="100%" />
 </picture>
 
 Run it yourself from a fresh clone. It needs no account and no model key.
@@ -85,7 +85,7 @@ Run the saved test on your local browser, an Android phone or emulator, or an iP
 simulator. Each step shows what happened and how long it took. When a check fails, Relay says
 what it **expected** and what it **saw**, next to the screenshot.
 
-<img alt="A Relay run: every step with its timing, and the screen it reached" src="./docs/images/readme/app-run.webp" width="100%" />
+<img alt="A Relay run: every step with its timing, and the screen it reached" src="./assets/readme/app-run.webp" width="100%" />
 
 ### 3 · Review
 
@@ -93,16 +93,14 @@ Every run keeps lightweight evidence: screenshots, screen structure, an action t
 diagnostics, with video when motion matters. Accept what looks right, flag what doesn't, and
 the decision stays with the run.
 
-<table>
-  <tr>
-    <td width="50%"><img alt="Screenshot review in Relay" src="./docs/images/readme/app-review.webp" /></td>
-    <td width="50%"><img alt="Relay's Map of screens and the paths between them" src="./docs/images/readme/app-map.webp" /></td>
-  </tr>
-  <tr>
-    <td><sub><strong>Review.</strong> Decide on every captured screen.</sub></td>
-    <td><sub><strong>Map.</strong> Runs teach Relay your app's screens and how they connect.</sub></td>
-  </tr>
-</table>
+<img alt="Screenshot review in Relay, with capture details beside the image and compact review controls" src="./assets/readme/app-review.webp" width="1280" />
+
+### 4 · Explore
+
+The Map keeps the screens you reached and the paths between them. Open a screen to inspect it,
+rename it, or use a known path in your next test.
+
+<img alt="Relay's Map showing the recorded path from Sign in to Workspace settings" src="./assets/readme/app-map.webp" width="1280" />
 
 ## For coding agents
 

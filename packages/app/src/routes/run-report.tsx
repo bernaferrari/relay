@@ -260,9 +260,20 @@ export function RunReport({
             />
           </span>
           {/* The pill states the outcome; the meta line only says where and how long. */}
-          <span className="tabular-nums">
+          <span
+            className="tabular-nums"
+            aria-label="Recorded run context"
+            title={
+              report.executionContext?.browser
+                ? `Browser: ${report.executionContext.browser}`
+                : undefined
+            }
+          >
             {[
               target,
+              report.executionContext?.account
+                ? `Account: ${report.executionContext.account}`
+                : undefined,
               report.durationMs !== undefined ? formatDuration(report.durationMs) : undefined,
             ]
               .filter(Boolean)
@@ -278,18 +289,6 @@ export function RunReport({
                 ? `${captureIssues} screenshot ${captureIssues === 1 ? "issue" : "issues"}`
                 : `${pendingCaptures} ${pendingCaptures === 1 ? "screenshot needs" : "screenshots need"} review`}
             </button>
-          ) : null}
-          {report.executionContext?.browser || report.executionContext?.account ? (
-            <span className="basis-full text-xs" aria-label="Recorded run context">
-              {[
-                report.executionContext.browser,
-                report.executionContext.account
-                  ? `Account: ${report.executionContext.account}`
-                  : "Account not recorded",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
           ) : null}
         </>
       }

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +58,26 @@ for (const link of localLinks(readme)) {
     await access(resolve(repositoryRoot, link));
   } catch {
     violations.push(`README.md links to missing file: ${link}`);
+  }
+}
+
+// HTML images and picture sources must ship with the README, too. Local
+// ignored assets can look fine on the author's machine while breaking on GitHub.
+const readmeImages = [...readme.matchAll(/<(?:img|source)\b[^>]*\b(?:src|srcset)="([^"]+)"/g)]
+  .flatMap((match) => match[1].split(",").map((source) => source.trim().split(/\s+/)[0]))
+  .filter((source) => source.startsWith("./"));
+for (const image of new Set(readmeImages)) {
+  try {
+    await access(resolve(repositoryRoot, image));
+  } catch {
+    violations.push(`README.md references missing image: ${image}`);
+    continue;
+  }
+  try {
+    execFileSync("git", ["check-ignore", "--quiet", "--", image], { cwd: repositoryRoot });
+    violations.push(`README.md image is ignored by Git: ${image}`);
+  } catch (error) {
+    if (error.status !== 1) throw error;
   }
 }
 
