@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { previousRunManifest, readCommittedRunManifest } from "./run-manifest.js";
 import {
   link,
   lstat,
@@ -112,11 +113,15 @@ export async function exportRelayRunBundle(
     );
   }
 
-  const run = await verifyFinalizedRun(root);
+  const { run, manifestPath } = await verifyFinalizedRun(root);
   const discovered = await discoverRunFiles(root, limits);
   const entries: SourceEntry[] = [];
   let artifactBytes = 0;
   for (const file of discovered) {
+    if (file.path === "run.json") {
+      file.absolutePath = manifestPath;
+      file.bytes = (await stat(manifestPath)).size;
+    }
     const sha256 = await hashFile(file.absolutePath);
     entries.push({ ...file, sha256, mediaType: mediaTypeFor(file.path) });
     artifactBytes += file.bytes;
@@ -167,6 +172,8 @@ export async function exportRelayRunBundle(
         }
       }
       const finalFiles = await discoverRunFiles(root, limits);
+      const finalManifest = finalFiles.find((file) => file.path === "run.json");
+      if (finalManifest) finalManifest.bytes = (await stat(manifestPath)).size;
       if (
         finalFiles.length !== discovered.length ||
         finalFiles.some(
@@ -303,26 +310,27 @@ async function finalizedRunRoot(runDir: string): Promise<string> {
   return root;
 }
 
-async function verifyFinalizedRun(root: string): Promise<RunMetadata> {
-  let runBytes: Buffer;
+async function verifyFinalizedRun(
+  root: string,
+): Promise<{ run: RunMetadata; manifestPath: string }> {
+  let committed: Awaited<ReturnType<typeof readCommittedRunManifest>>;
   let markerBytes: Buffer;
   try {
-    [runBytes, markerBytes] = await Promise.all([
-      readFile(resolve(root, "run.json")),
-      readFile(resolve(root, ".complete")),
-    ]);
+    committed = await readCommittedRunManifest(root);
+    markerBytes = await readFile(resolve(root, ".complete"));
   } catch {
     throw new RelayRunBundleError(
       "INCOMPLETE_RUN",
       "run must contain committed run.json and .complete files",
     );
   }
+  const runBytes = Buffer.from(committed.raw);
   const run = parseRunMetadata(runBytes);
   const marker = jsonObject(markerBytes, ".complete");
   if (marker.digest !== sha256(runBytes) || (marker.id !== undefined && marker.id !== run.id)) {
     throw new RelayRunBundleError("INCOMPLETE_RUN", "run commit marker does not match run.json");
   }
-  return run;
+  return { run, manifestPath: committed.path };
 }
 
 async function discoverRunFiles(root: string, limits: RequiredLimits): Promise<SourceEntry[]> {
@@ -332,6 +340,8 @@ async function discoverRunFiles(root: string, limits: RequiredLimits): Promise<S
     const children = await readdir(directory, { withFileTypes: true });
     children.sort((left, right) => compareText(left.name, right.name));
     for (const child of children) {
+      if (!prefix && (child.name === previousRunManifest || /^\.run\..*\.tmp$/u.test(child.name)))
+        continue;
       const path = prefix ? `${prefix}/${child.name}` : child.name;
       assertSafeBundlePath(path);
       const absolutePath = resolve(directory, child.name);

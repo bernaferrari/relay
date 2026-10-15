@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { TargetProfile } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import { syncRunPath } from "./run-manifest.js";
 import { computeScheduleNextRunAt, assertIanaTimeZone } from "./schedule-next-run.js";
 import type { CombineExecutionAccount } from "./combine-campaign-case-identity.js";
 
@@ -136,10 +137,10 @@ function scheduleFile(): string {
   return join(findWorkspaceRoot(), ".relay", "schedules.json");
 }
 
-async function readAllSchedules(): Promise<LocalSchedule[]> {
+async function readAllSchedules(file = scheduleFile()): Promise<LocalSchedule[]> {
   try {
-    const value = JSON.parse(await readFile(scheduleFile(), "utf8")) as unknown;
-    if (!Array.isArray(value)) return [];
+    const value = JSON.parse(await readFile(file, "utf8")) as unknown;
+    if (!Array.isArray(value)) throw new Error("Invalid schedule storage: expected an array");
     // Local schedule files existed before browser targets. Read their
     // deviceSerial shape once and always write the target-neutral shape back.
     return value.flatMap((raw) => {
@@ -192,8 +193,9 @@ async function readAllSchedules(): Promise<LocalSchedule[]> {
         },
       ];
     });
-  } catch {
-    return [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
   }
 }
 
@@ -203,9 +205,31 @@ export async function listSchedules(filter?: { projectId?: string }): Promise<Lo
   return schedules.filter((item) => item.projectId === filter.projectId);
 }
 
-async function writeSchedules(schedules: LocalSchedule[]): Promise<void> {
-  await mkdir(join(findWorkspaceRoot(), ".relay"), { recursive: true });
-  await writeFile(scheduleFile(), JSON.stringify(schedules, null, 2), "utf8");
+const scheduleWrites = new Map<string, Promise<unknown>>();
+
+function scheduleTransaction<T>(work: (file: string) => Promise<T>): Promise<T> {
+  const file = scheduleFile();
+  const previous = scheduleWrites.get(file) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(() => work(file));
+  scheduleWrites.set(file, next);
+  const clear = () => {
+    if (scheduleWrites.get(file) === next) scheduleWrites.delete(file);
+  };
+  void next.then(clear, clear);
+  return next;
+}
+
+async function writeSchedules(schedules: LocalSchedule[], file: string): Promise<void> {
+  await mkdir(join(file, ".."), { recursive: true });
+  const temp = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temp, JSON.stringify(schedules, null, 2), { flag: "wx", mode: 0o600 });
+    await syncRunPath(temp);
+    await rename(temp, file);
+    await syncRunPath(join(file, ".."));
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
 }
 
 export async function saveSchedule(
@@ -256,75 +280,90 @@ export async function saveSchedule(
   if (input.profileTargets && input.profileTargets.length > 64) {
     throw new Error("A Plan schedule can freeze at most 64 columns");
   }
-  const schedules = await readAllSchedules();
-  const existing = input.id
-    ? schedules.find((item) => item.id === input.id)
-    : schedules.find(
-        (item) =>
-          (combineId ? item.combineId === combineId : item.recipeId === recipeId) &&
-          item.targetKind === input.targetKind &&
-          item.targetId === input.targetId,
-      );
-  const now = Date.now();
-  const hour = input.hour;
-  const timezone = input.timezone?.trim() || undefined;
-  const schedule: LocalSchedule = {
-    id: existing?.id ?? randomUUID(),
-    recipeId,
-    ...(combineId ? { combineId, appMapId: input.appMapId!.trim() } : {}),
-    ...(hour !== undefined ? { hour } : {}),
-    ...(timezone ? { timezone } : {}),
-    ...(input.profileTargets?.length
-      ? { profileTargets: structuredClone(input.profileTargets) }
-      : {}),
-    targetKind: input.targetKind,
-    targetId: input.targetId,
-    platform: input.platform,
-    intervalMinutes: Math.floor(input.intervalMinutes),
-    repetitions: Math.max(1, Math.min(Math.floor(input.repetitions ?? 1), 20)),
-    enabled: input.enabled ?? true,
-    projectId: input.projectId?.trim() || "default",
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-    nextRunAt:
-      existing?.nextRunAt ?? computeScheduleNextRunAt(now, input.intervalMinutes, hour, timezone),
-    lastRunAt: existing?.lastRunAt,
-  };
-  await writeSchedules([...schedules.filter((item) => item.id !== schedule.id), schedule]);
-  return schedule;
+  return scheduleTransaction(async (file) => {
+    const schedules = await readAllSchedules(file);
+    const existing = input.id
+      ? schedules.find((item) => item.id === input.id)
+      : schedules.find(
+          (item) =>
+            (combineId ? item.combineId === combineId : item.recipeId === recipeId) &&
+            item.targetKind === input.targetKind &&
+            item.targetId === input.targetId &&
+            item.projectId === (input.projectId?.trim() || "default"),
+        );
+    if (existing && existing.projectId !== (input.projectId?.trim() || "default"))
+      throw new Error("Schedule belongs to another project");
+    const now = Date.now();
+    const hour = input.hour;
+    const timezone = input.timezone?.trim() || undefined;
+    const schedule: LocalSchedule = {
+      id: existing?.id ?? randomUUID(),
+      recipeId,
+      ...(combineId ? { combineId, appMapId: input.appMapId!.trim() } : {}),
+      ...(hour !== undefined ? { hour } : {}),
+      ...(timezone ? { timezone } : {}),
+      ...(input.profileTargets?.length
+        ? { profileTargets: structuredClone(input.profileTargets) }
+        : {}),
+      targetKind: input.targetKind,
+      targetId: input.targetId,
+      platform: input.platform,
+      intervalMinutes: Math.floor(input.intervalMinutes),
+      repetitions: Math.max(1, Math.min(Math.floor(input.repetitions ?? 1), 20)),
+      enabled: input.enabled ?? true,
+      projectId: input.projectId?.trim() || "default",
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      nextRunAt:
+        existing?.nextRunAt ?? computeScheduleNextRunAt(now, input.intervalMinutes, hour, timezone),
+      lastRunAt: existing?.lastRunAt,
+    };
+    await writeSchedules([...schedules.filter((item) => item.id !== schedule.id), schedule], file);
+    return schedule;
+  });
 }
 
 export async function deleteSchedule(
   id: string,
   filter?: { projectId?: string },
 ): Promise<boolean> {
-  const schedules = await readAllSchedules();
-  const current = schedules.find((item) => item.id === id);
-  if (!current) return false;
-  if (filter?.projectId && current.projectId !== filter.projectId) return false;
-  await writeSchedules(schedules.filter((item) => item.id !== id));
-  return true;
+  return scheduleTransaction(async (file) => {
+    const schedules = await readAllSchedules(file);
+    const current = schedules.find((item) => item.id === id);
+    if (!current) return false;
+    if (filter?.projectId && current.projectId !== filter.projectId) return false;
+    await writeSchedules(
+      schedules.filter((item) => item.id !== id),
+      file,
+    );
+    return true;
+  });
 }
 
 export async function markScheduleRun(id: string, at = Date.now()): Promise<void> {
-  const schedules = await readAllSchedules();
-  const current = schedules.find((item) => item.id === id);
-  if (!current) return;
-  const { lastFailure: _lastFailure, lastFailureAt: _lastFailureAt, ...cleared } = current;
-  await writeSchedules([
-    ...schedules.filter((item) => item.id !== id),
-    {
-      ...cleared,
-      lastRunAt: at,
-      nextRunAt: computeScheduleNextRunAt(
-        at,
-        current.intervalMinutes,
-        current.hour,
-        current.timezone,
-      ),
-      updatedAt: at,
-    },
-  ]);
+  return scheduleTransaction(async (file) => {
+    const schedules = await readAllSchedules(file);
+    const current = schedules.find((item) => item.id === id);
+    if (!current) return;
+    const { lastFailure: _lastFailure, lastFailureAt: _lastFailureAt, ...cleared } = current;
+    await writeSchedules(
+      [
+        ...schedules.filter((item) => item.id !== id),
+        {
+          ...cleared,
+          lastRunAt: at,
+          nextRunAt: computeScheduleNextRunAt(
+            at,
+            current.intervalMinutes,
+            current.hour,
+            current.timezone,
+          ),
+          updatedAt: at,
+        },
+      ],
+      file,
+    );
+  });
 }
 
 /** Record a failed occurrence and advance its deadline exactly once. A broken
@@ -334,22 +373,27 @@ export async function markScheduleFailure(
   error: string,
   at = Date.now(),
 ): Promise<void> {
-  const schedules = await readAllSchedules();
-  const current = schedules.find((item) => item.id === id);
-  if (!current) return;
-  await writeSchedules([
-    ...schedules.filter((item) => item.id !== id),
-    {
-      ...current,
-      nextRunAt: computeScheduleNextRunAt(
-        at,
-        current.intervalMinutes,
-        current.hour,
-        current.timezone,
-      ),
-      lastFailureAt: at,
-      lastFailure: error.trim() || "Scheduled run failed",
-      updatedAt: at,
-    },
-  ]);
+  return scheduleTransaction(async (file) => {
+    const schedules = await readAllSchedules(file);
+    const current = schedules.find((item) => item.id === id);
+    if (!current) return;
+    await writeSchedules(
+      [
+        ...schedules.filter((item) => item.id !== id),
+        {
+          ...current,
+          nextRunAt: computeScheduleNextRunAt(
+            at,
+            current.intervalMinutes,
+            current.hour,
+            current.timezone,
+          ),
+          lastFailureAt: at,
+          lastFailure: error.trim() || "Scheduled run failed",
+          updatedAt: at,
+        },
+      ],
+      file,
+    );
+  });
 }

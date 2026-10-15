@@ -1,9 +1,9 @@
+import { readCommittedRunManifest } from "./run-manifest.js";
 import { captureReviewQueueForRun, type CaptureReviewRun } from "./capture-review-queue.js";
 import { runSummaryLineage } from "./run-matrix-case.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { createHash } from "node:crypto";
 import type { RunReview, RunSummary } from "@relay/protocol";
 import { parseOptionalSourceRevision } from "@relay/protocol";
 
@@ -111,7 +111,7 @@ async function reprojectPassingRunSummaries(root: string): Promise<void> {
     for (const row of rows) {
       let run: CaptureReviewRun;
       try {
-        run = JSON.parse(await readFile(join(String(row.dir), "run.json"), "utf8"));
+        run = JSON.parse((await readCommittedRunManifest(String(row.dir))).raw);
       } catch {
         continue;
       }
@@ -602,16 +602,8 @@ export async function rebuildRunCatalog(
     const dir = join(root, entry);
     try {
       if (!(await stat(dir)).isDirectory()) continue;
-      const raw = await readFile(join(dir, "run.json"), "utf8");
+      const { raw } = await readCommittedRunManifest(dir);
       const run = JSON.parse(raw) as Record<string, unknown>;
-      if (Number(run.schemaVersion) >= 5) {
-        const marker = JSON.parse(await readFile(join(dir, ".complete"), "utf8")) as {
-          digest?: string;
-        };
-        if (marker.digest !== createHash("sha256").update(raw).digest("hex")) {
-          throw new Error("run commit marker digest mismatch");
-        }
-      }
       run.dir = dir;
       await indexRun(root, run, { backfillSummariesOnly: options.backfillSummariesOnly });
       indexed += 1;

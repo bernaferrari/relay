@@ -2,7 +2,7 @@
  * Persist runs to disk — mirrors qa-viewer runs/<ts>_<flow>_<device>/ layout.
  */
 import { existsSync } from "node:fs";
-import { mkdir, writeFile, readFile, readdir, stat, rename, unlink, open } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir, stat, rename, unlink } from "node:fs/promises";
 import { join, basename, isAbsolute, relative, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { TestJob } from "./session.js";
@@ -73,6 +73,11 @@ import {
   redactedArtifactRef,
 } from "./artifact-ref.js";
 import { readFrameFile, runArtifactFile } from "./run-artifact-files.js";
+import {
+  preserveCommittedRunManifest,
+  readCommittedRunManifest,
+  syncRunPath as syncPath,
+} from "./run-manifest.js";
 import { persistedRunIdAt } from "./run-id-probe.js";
 import { summarizeRecipeStability } from "./run-stability.js";
 export { readFrameFile, runArtifactFile } from "./run-artifact-files.js";
@@ -237,6 +242,7 @@ export async function persistPersistedRun(
       "Re-open the run from the current project before deciding its review.",
     );
   }
+  await preserveCommittedRunManifest(run.dir);
   const json = JSON.stringify(next, null, 2);
   const token = randomUUID();
   const temporary = {
@@ -451,7 +457,7 @@ function persistedExecutionProvenance(job: TestJob): PersistedExecutionProvenanc
 
 async function readCompletedRun(dir: string): Promise<PersistedRun | null> {
   try {
-    const raw = await readFile(join(dir, "run.json"), "utf8");
+    const { raw } = await readCommittedRunManifest(dir);
     const parsed = JSON.parse(raw) as PersistedRun;
     if (parsed.browserCaseProfile !== undefined) {
       parsed.browserCaseProfile = parseBrowserCaseProfile(parsed.browserCaseProfile);
@@ -479,15 +485,6 @@ async function readCompletedRun(dir: string): Promise<PersistedRun | null> {
       });
       if (projected.length) parsed.testStepEvidence = projected;
     }
-    // Pre-v5 runs did not have an atomic commit marker. They remain readable
-    // as historical single-manifest runs, while every current run must pass
-    // the marker digest before it is exposed.
-    if (parsed.schemaVersion === undefined || parsed.schemaVersion < 5) return parsed;
-    if (!existsSync(join(dir, COMPLETE_MARKER))) return null;
-    const marker = JSON.parse(await readFile(join(dir, COMPLETE_MARKER), "utf8")) as {
-      digest?: string;
-    };
-    if (marker.digest !== createHash("sha256").update(raw).digest("hex")) return null;
     return parsed;
   } catch {
     return null;
@@ -550,15 +547,6 @@ async function persistRunOnce(job: TestJob): Promise<PersistedRun> {
   }
   job.persisted = true;
   return payload;
-}
-
-async function syncPath(path: string): Promise<void> {
-  const handle = await open(path, "r");
-  try {
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
 }
 
 export function persistRun(job: TestJob): Promise<PersistedRun> {

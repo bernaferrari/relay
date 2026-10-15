@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -34,6 +34,67 @@ test("scheduled profiles match both target identity and target kind", () => {
     },
   ]);
   assert.equal(profile?.id, "browser:chat");
+});
+
+test("concurrent schedule writes, advancement and deletion preserve acknowledged changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-schedule-race-"));
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    const input = {
+      targetKind: "browser" as const,
+      targetId: "browser",
+      platform: "browser" as const,
+      intervalMinutes: 30,
+    };
+    const saved = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => saveSchedule({ ...input, recipeId: `test-${i}` })),
+    );
+    assert.equal((await listSchedules()).length, 8);
+    await Promise.all([
+      deleteSchedule(saved[0]!.id),
+      markScheduleRun(saved[1]!.id, 1000),
+      saveSchedule({ ...input, recipeId: "new" }),
+    ]);
+    const remaining = await listSchedules();
+    assert.equal(remaining.length, 8);
+    assert(!remaining.some((s) => s.id === saved[0]!.id));
+    assert.equal(remaining.find((s) => s.id === saved[1]!.id)?.lastRunAt, 1000);
+    const first = await saveSchedule({ ...input, recipeId: "shared", projectId: "one" });
+    const second = await saveSchedule({ ...input, recipeId: "shared", projectId: "two" });
+    assert.notEqual(first.id, second.id);
+    await assert.rejects(
+      saveSchedule({ ...input, recipeId: "shared", id: first.id, projectId: "two" }),
+      /project/,
+    );
+  } finally {
+    process.chdir(cwd);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("corrupt schedule storage cannot be silently replaced by a new schedule", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-schedule-corrupt-"));
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    await mkdir(join(root, ".relay"));
+    const file = join(root, ".relay/schedules.json");
+    await writeFile(file, "interrupted JSON");
+    await assert.rejects(
+      saveSchedule({
+        recipeId: "new",
+        targetKind: "browser",
+        targetId: "browser",
+        platform: "browser",
+        intervalMinutes: 30,
+      }),
+    );
+    assert.equal(await readFile(file, "utf8"), "interrupted JSON");
+  } finally {
+    process.chdir(cwd);
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("local schedules persist and advance after a run", async () => {
