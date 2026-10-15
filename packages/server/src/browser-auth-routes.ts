@@ -66,6 +66,27 @@ async function saveTargetBrowserEnvironment(
 export async function handleBrowserAuthRoute(context: BrowserAuthRouteContext): Promise<boolean> {
   const { method, pathname, request: req, response: res, scope } = context;
 
+  const importMatch = matchPath(pathname, "/targets/:id/browser-auth-fixtures/import");
+  if (method === "POST" && importMatch) {
+    const targetId = importMatch.id!;
+    const target = await readTarget(targetId);
+    if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
+    const { actorId } = requireHumanBrowserAuthenticationReview();
+    await assertTargetControl(scope, targetId);
+    const body = browserAuthenticationFixtureOperationInputSchemas[
+      "target.browser-auth.import"
+    ].parse({ ...((await parseJsonBody(req)) as object), targetId });
+    const fixture = await saveBrowserAuthenticationFixture({
+      projectId: scope.projectId,
+      targetId,
+      name: body.name,
+      createdBy: actorId,
+      storageState: body.storageState,
+    });
+    json(res, 201, { fixture, target });
+    return true;
+  }
+
   const listMatch = matchPath(pathname, "/targets/:id/browser-auth-fixtures");
   if (method === "GET" && listMatch) {
     const targetId = listMatch.id!;

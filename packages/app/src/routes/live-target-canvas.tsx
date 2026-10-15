@@ -10,13 +10,10 @@ import {
   LoaderCircle,
   Expand,
   Minimize2,
-  Check,
-  CircleAlert,
 } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   useId,
@@ -26,8 +23,10 @@ import {
   type ReactNode,
   type RefObject,
   type WheelEvent,
-  type CSSProperties,
 } from "react";
+import { containedFrameRect } from "../data/live-frame-geometry";
+export { containedFrameRect } from "../data/live-frame-geometry";
+import { LiveTapFeedback, TAP_FEEDBACK_VISIBLE_MS, type TapFeedback } from "./live-tap-feedback";
 import { useLivePreviewFullscreen } from "./use-live-preview-fullscreen";
 import { useLiveKeyboardQueue } from "./use-live-keyboard-queue";
 import type {
@@ -37,7 +36,6 @@ import type {
 } from "../data/live-target-session";
 
 type Point = { x: number; y: number };
-type TapFeedback = Point & { id: number; state: "sending" | "sent" | "unconfirmed" };
 
 export function LiveTargetCanvas({
   canvasRef,
@@ -134,7 +132,7 @@ export function LiveTargetCanvas({
     if (!tap || tap.state === "sending") return;
     const timer = setTimeout(
       () => setTap((current) => (current === tap ? undefined : current)),
-      420,
+      TAP_FEEDBACK_VISIBLE_MS,
     );
     return () => clearTimeout(timer);
   }, [tap]);
@@ -544,107 +542,4 @@ export function LiveTargetCanvas({
       ) : null}
     </dialog>
   );
-}
-
-/**
- * Where the frame is actually drawn inside the canvas element. The canvas uses
- * object-fit: contain, so a frame with a different aspect is letterboxed;
- * mapping a click against the whole element would land on the wrong control.
- */
-export function containedFrameRect(
-  element: { left: number; top: number; width: number; height: number },
-  frameWidth: number,
-  frameHeight: number,
-): { left: number; top: number; width: number; height: number } {
-  const boxWidth = Math.max(element.width, 1);
-  const boxHeight = Math.max(element.height, 1);
-  if (!frameWidth || !frameHeight) {
-    return { left: element.left, top: element.top, width: boxWidth, height: boxHeight };
-  }
-  const scale = Math.min(boxWidth / frameWidth, boxHeight / frameHeight);
-  const width = frameWidth * scale;
-  const height = frameHeight * scale;
-  return {
-    left: element.left + (boxWidth - width) / 2,
-    top: element.top + (boxHeight - height) / 2,
-    width,
-    height,
-  };
-}
-
-/** Follow the drawn frame, including letterboxing and fullscreen resize. */
-function LiveTapFeedback({
-  canvasRef,
-  tap,
-}: {
-  canvasRef: RefObject<HTMLCanvasElement | null>;
-  tap: TapFeedback;
-}) {
-  const [position, setPosition] = useState<Point>();
-  useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    const stage = canvas?.parentElement;
-    if (!canvas || !stage) return;
-    const update = () => {
-      const frame = containedFrameRect(canvas.getBoundingClientRect(), canvas.width, canvas.height);
-      const origin = stage.getBoundingClientRect();
-      setPosition({
-        x: frame.left - origin.left + stage.scrollLeft + tap.x * frame.width,
-        y: frame.top - origin.top + stage.scrollTop + tap.y * frame.height,
-      });
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(canvas);
-    observer.observe(stage);
-    return () => observer.disconnect();
-  }, [canvasRef, tap.x, tap.y]);
-  return position ? (
-    <div
-      data-slot="live-tap-feedback"
-      data-pending={tap.state === "sending"}
-      data-state={tap.state}
-      className="pointer-events-none absolute left-(--tap-x) top-(--tap-y) z-20 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center"
-      style={{ "--tap-x": `${position.x}px`, "--tap-y": `${position.y}px` } as CSSProperties}
-    >
-      <span
-        data-slot="live-tap-ripple"
-        className="absolute inset-0 animate-live-tap-ripple rounded-full border-2 border-primary/70 bg-primary/20 motion-reduce:animate-none"
-        aria-hidden="true"
-      />
-      {tap.state === "sending" ? (
-        <span
-          className="absolute inset-0 animate-live-tap-pulse rounded-full bg-primary/20 motion-reduce:animate-none"
-          aria-hidden="true"
-        />
-      ) : null}
-      <span
-        key={tap.state}
-        data-slot="live-tap-indicator"
-        className={`relative grid size-10 place-items-center rounded-full bg-background/95 shadow-md ring-2 ${
-          tap.state === "sending"
-            ? "text-primary ring-primary/70"
-            : tap.state === "sent"
-              ? "animate-live-tap-settle text-success ring-success/60 motion-reduce:animate-none"
-              : "animate-live-tap-settle text-warning ring-warning/60 motion-reduce:animate-none"
-        }`}
-        aria-hidden="true"
-      >
-        {tap.state === "sending" ? (
-          <LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" />
-        ) : tap.state === "sent" ? (
-          <Check className="size-5" strokeWidth={2.5} />
-        ) : (
-          <CircleAlert className="size-5" />
-        )}
-      </span>
-      <span className="sr-only" role="status" aria-live="polite">
-        {tap.state === "sending"
-          ? "Sending tap…"
-          : tap.state === "sent"
-            ? "Tap sent"
-            : "Tap not confirmed"}
-      </span>
-    </div>
-  ) : null;
 }

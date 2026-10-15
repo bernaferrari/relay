@@ -36,6 +36,7 @@ import { BrowserWorkspacePicker } from "./browser-workspace-picker";
 import { BrowserWorkspaceDropPreview } from "./browser-workspace-drop-preview";
 import { BrowserWorkspaceTile } from "./browser-workspace-tile";
 import { useBrowserWorkspaceFocus } from "./browser-workspace-focus";
+import { BrowserWorkspaceUndo } from "./browser-workspace-undo";
 import { errorMessage } from "./recording-shared";
 
 export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
@@ -50,6 +51,9 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
   const savedLayout = useRef<BrowserLayout | undefined>(undefined);
   const [announcement, setAnnouncement] = useState("");
   const { focused, focus, prepare, container } = useBrowserWorkspaceFocus();
+  const [removed, setRemoved] = useState<
+    { tile: BrowserTile; index: number; before?: BrowserLayout; after?: BrowserLayout }[]
+  >([]);
   const [issue, setIssue] = useState<string>();
   const [saving, setSaving] = useState(false);
   const spaces = useQuery({
@@ -100,6 +104,7 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
     setSaving(true);
     setIssue(undefined);
     const previousLayout = savedLayout.current;
+    const previousTiles = tiles;
     const commit = () => {
       prepare(animate);
       setTiles(next);
@@ -117,6 +122,7 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
       if (optimistic) {
         prepare(true);
         setLayout(previousLayout);
+        setTiles(previousTiles);
       }
       setIssue("Couldn’t save this workspace. Free up browser storage and try again.");
       throw error;
@@ -162,6 +168,48 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
       )
       .catch(() => undefined);
   }
+  function remove(tile: BrowserTile) {
+    if (!tiles || saving) return;
+    const next = tiles.filter((current) => current.id !== tile.id);
+    const after = restoreBrowserLayout(
+      layout,
+      next.map((current) => current.id),
+    );
+    const entry = {
+      tile,
+      index: tiles.findIndex((current) => current.id === tile.id),
+      before: layout,
+      after,
+    };
+    setRemoved((current) => [...current, entry]);
+    if (focused === tile.id) focus(undefined);
+    void save(next, after, true, true).catch(() =>
+      setRemoved((current) => current.filter((item) => item !== entry)),
+    );
+  }
+  function undoRemoval() {
+    const entry = removed.at(-1);
+    if (!entry || !tiles || saving || tiles.length >= MAX_BROWSER_TILES) return;
+    const next = [...tiles];
+    next.splice(Math.min(entry.index, next.length), 0, entry.tile);
+    const nextLayout =
+      JSON.stringify(layout) === JSON.stringify(entry.after)
+        ? entry.before
+        : restoreBrowserLayout(
+            layout,
+            next.map((tile) => tile.id),
+          );
+    setRemoved((current) => current.slice(0, -1));
+    void save(next, nextLayout, true, true).catch(() =>
+      setRemoved((current) => [...current, entry]),
+    );
+  }
+  const renderedTiles = [
+    ...(tiles ?? []),
+    ...removed
+      .filter((entry) => !tiles?.some((tile) => tile.id === entry.tile.id))
+      .map((entry) => entry.tile),
+  ];
   const geometry = browserLayoutGeometry(layout);
   const destination =
     layout && dragging && over
@@ -175,7 +223,7 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
   return (
     <section
       ref={container}
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-4 py-4"
+      className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-4 py-4"
       aria-label="Browser workspace"
     >
       <header className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
@@ -269,8 +317,9 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
       <span role="status" className="sr-only">
         {announcement}
       </span>
-      {count ? (
+      {renderedTiles.length ? (
         <BrowserWorkspaceGrid
+          hidden={!count}
           layout={layout}
           focused={Boolean(focused)}
           onResize={(path, ratio, persist) => {
@@ -281,7 +330,7 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
             if (persist) void save(tiles, next).catch(() => setLayout(savedLayout.current));
           }}
         >
-          {tiles?.map((tile) => (
+          {renderedTiles.map((tile) => (
             <BrowserWorkspaceTile
               key={tile.id}
               rect={focused ? FULL_BROWSER_RECT : (geometry.tiles[tile.id] ?? FULL_BROWSER_RECT)}
@@ -310,18 +359,14 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
               }}
               tile={tile}
               focused={focused === tile.id}
-              hidden={Boolean(focused && focused !== tile.id)}
+              hidden={
+                !tiles?.some((current) => current.id === tile.id) ||
+                Boolean(focused && focused !== tile.id)
+              }
               onFocus={(event) =>
                 focus(focused === tile.id ? undefined : tile.id, event.detail > 0)
               }
-              onRemove={() => {
-                if (saving) return;
-                void save(tiles.filter((current) => current.id !== tile.id))
-                  .then(() => {
-                    if (focused === tile.id) focus(undefined);
-                  })
-                  .catch(() => undefined);
-              }}
+              onRemove={() => remove(tile)}
             />
           ))}
           {destination && over ? (
@@ -339,6 +384,16 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
             />
           ) : null}
         </BrowserWorkspaceGrid>
+      ) : null}
+      {removed.length ? (
+        <BrowserWorkspaceUndo
+          key={removed.at(-1)!.tile.id}
+          name={removed.at(-1)!.tile.name}
+          pending={saving}
+          full={count >= MAX_BROWSER_TILES}
+          onUndo={undoRemoval}
+          onDismiss={() => setRemoved([])}
+        />
       ) : null}
       {picker ? (
         <BrowserWorkspacePicker

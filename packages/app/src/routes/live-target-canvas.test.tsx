@@ -252,6 +252,10 @@ describe("LiveTargetCanvas", () => {
       const marker = host.querySelector<HTMLElement>('[data-slot="live-tap-feedback"]')!;
       expect(marker.style.getPropertyValue("--tap-x")).toBe("85px");
       expect(marker.style.getPropertyValue("--tap-y")).toBe("70px");
+      const indicator = marker.querySelector('[data-slot="live-tap-indicator"]');
+      expect(
+        marker.querySelector<HTMLElement>('[data-slot="live-tap-pending"]')!.dataset.visible,
+      ).toBe("false");
       expect(marker.dataset.pending).toBe("true");
       expect(marker.dataset.state).toBe("sending");
       expect(marker.querySelector('[role="status"]')?.textContent).toBe("Sending tap…");
@@ -261,6 +265,9 @@ describe("LiveTargetCanvas", () => {
       expect(marker.style.getPropertyValue("--tap-x")).toBe("185px");
       act(() => vi.advanceTimersByTime(1_000));
       expect(marker.isConnected).toBe(true);
+      expect(
+        marker.querySelector<HTMLElement>('[data-slot="live-tap-pending"]')!.dataset.visible,
+      ).toBe("true");
       await act(async () =>
         outcome === "rejected" ? fail(new Error("Not confirmed")) : finish(outcome === "sent"),
       );
@@ -270,7 +277,11 @@ describe("LiveTargetCanvas", () => {
       expect(marker.querySelector('[role="status"]')?.textContent).toBe(
         outcome === "sent" ? "Tap sent" : "Tap not confirmed",
       );
-      act(() => vi.advanceTimersByTime(420));
+      expect(marker.querySelector('[data-slot="live-tap-indicator"]')).toBe(indicator);
+      act(() => vi.advanceTimersByTime(270));
+      expect(marker.dataset.exiting).toBe("true");
+      expect(marker.isConnected).toBe(true);
+      act(() => vi.advanceTimersByTime(150));
       expect(marker.isConnected).toBe(false);
     },
   );

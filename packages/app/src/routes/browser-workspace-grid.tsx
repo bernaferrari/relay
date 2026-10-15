@@ -8,11 +8,13 @@ import {
 
 export function BrowserWorkspaceGrid({
   layout,
+  hidden = false,
   focused,
   onResize,
   children,
 }: {
   layout?: BrowserLayout;
+  hidden?: boolean;
   focused: boolean;
   onResize(path: string, ratio: number, persist: boolean): void;
   children: ReactNode;
@@ -23,7 +25,8 @@ export function BrowserWorkspaceGrid({
   return (
     <div
       ref={container}
-      className="relative isolate flex min-h-0 flex-1 flex-col gap-3 overflow-visible"
+      hidden={hidden}
+      className={`${hidden ? "hidden" : "flex"} relative isolate min-h-0 flex-1 flex-col gap-3 overflow-visible`}
     >
       {children}
       {splits.map((split, index) => {

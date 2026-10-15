@@ -1,3 +1,4 @@
+import { browserImportedStorageSchema } from "./browser-session-import.js";
 import * as z from "zod/v4";
 
 const fixtureId = z.uuid();
@@ -90,6 +91,14 @@ export type BrowserAccountHealthLane = z.infer<typeof browserAccountHealthLaneSc
 export type BrowserAccountHealthSummary = z.infer<typeof browserAccountHealthSummarySchema>;
 
 export const browserAuthenticationFixtureOperationInputSchemas = {
+  "target.browser-auth.import": z
+    .object({
+      targetId: z.string().min(1).max(96),
+      name: z.string().trim().min(1).max(128),
+      storageState: browserImportedStorageSchema,
+      confirm: z.literal(true),
+    })
+    .strict(),
   "target.browser-auth.save": z
     .object({
       targetId: z.string().min(1).max(96),

@@ -109,6 +109,11 @@ export type BrowserSpacesProductService = {
     electronPartition?: string;
   }>;
   removeSpace(spaceId: string): Promise<void>;
+  importAuthenticationFixture?(input: {
+    spaceId: string;
+    name: string;
+    storageState: OperationInput<"target.browser-auth.import">["storageState"];
+  }): Promise<ProductBrowserAuthResult>;
   listAuthenticationFixtures(spaceId: string): Promise<readonly ProductBrowserAuthFixture[]>;
   saveAuthenticationFixture(input: {
     spaceId: string;
@@ -300,6 +305,18 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
         targetId: spaceId,
       });
       return fixtures.map(projectFixture).sort((left, right) => right.createdAt - left.createdAt);
+    },
+    async importAuthenticationFixture(input) {
+      await getSpace(input.spaceId);
+      const result = await (
+        await client()
+      ).invoke("target.browser-auth.import", {
+        targetId: input.spaceId,
+        name: input.name.trim(),
+        storageState: input.storageState,
+        confirm: true,
+      });
+      return authResult(result.fixture, result.target);
     },
     saveAuthenticationFixture,
     async refreshAuthenticationFixture(input) {

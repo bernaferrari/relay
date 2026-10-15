@@ -308,9 +308,36 @@ describe("tiled browser workspace", () => {
     expect(sessions.get("Member")!.input).toHaveBeenCalledOnce();
     expect(sessions.get("Admin")!.input).not.toHaveBeenCalled();
   });
+  it("undoes a close with the same live canvas, profile, and split", async () => {
+    const { sessions, values, preview } = await setup();
+    const canvas = document.querySelector('[data-browser-tile="Guest"] canvas');
+    await click("Remove Guest from workspace");
+    expect(document.body.textContent).toContain("Guest removed");
+    expect(sessions.get("Guest")!.close).not.toHaveBeenCalled();
+    expect(document.querySelector<HTMLElement>('[data-browser-tile="Guest"]')!.hidden).toBe(true);
+    await click("Undo");
+    expect(document.querySelector('[data-browser-tile="Guest"] canvas')).toBe(canvas);
+    expect(document.querySelector<HTMLElement>('[data-browser-tile="Guest"]')!.hidden).toBe(false);
+    expect(JSON.parse(values.get(BROWSER_WORKSPACE_KEY)!).tiles).toEqual(tiles);
+    expect(preview).toHaveBeenCalledTimes(4);
+    expect(document.body.textContent).not.toContain("Guest removed");
+    for (const session of sessions.values()) expect(session.close).not.toHaveBeenCalled();
+  });
+  it("can undo consecutive closes, including the last browser", async () => {
+    const { preview } = await setup({ initial: tiles.slice(0, 2) });
+    await click("Remove Admin from workspace");
+    await click("Remove Member from workspace");
+    expect(document.querySelectorAll("[data-browser-tile]:not([hidden])")).toHaveLength(0);
+    await click("Undo");
+    await click("Undo");
+    expect(document.querySelectorAll("[data-browser-tile]:not([hidden])")).toHaveLength(2);
+    expect(preview).toHaveBeenCalledTimes(2);
+  });
   it("removes only the chosen observation and restores remaining profiles after remount", async () => {
     const { sessions, values, preview, render } = await setup();
     await click("Remove Guest from workspace");
+    expect(sessions.get("Guest")!.close).not.toHaveBeenCalled();
+    await click("Dismiss undo");
     expect(sessions.get("Guest")!.close).toHaveBeenCalledOnce();
     expect(sessions.get("Admin")!.close).not.toHaveBeenCalled();
     expect(JSON.parse(values.get(BROWSER_WORKSPACE_KEY)!).tiles).toEqual(
@@ -345,6 +372,7 @@ describe("tiled browser workspace", () => {
         }),
     });
     await click("Remove Admin from workspace");
+    await click("Dismiss undo");
     await act(async () => resolve(next));
     expect(next.close).toHaveBeenCalledOnce();
     expect(next.mount).not.toHaveBeenCalled();

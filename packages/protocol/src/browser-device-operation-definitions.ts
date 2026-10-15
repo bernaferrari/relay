@@ -8,6 +8,7 @@ type BrowserDeviceOperationId =
   | "target.browser-device.frame-binary"
   | "target.browser-device.inspect"
   | "target.browser-device.control"
+  | "target.browser-auth.import"
   | "target.browser-auth.save"
   | "target.browser-auth.list"
   | "target.browser-auth.revoke"
@@ -55,6 +56,19 @@ export const browserDeviceOperationDefinitions = [
     "POST",
     "/targets/:targetId/browser-device/input",
     { category: "target", lease: "exclusive", targetCapabilities: ["tap"] },
+  ),
+  command(
+    "target.browser-auth.import",
+    "Import reviewed browser sign-in state",
+    "POST",
+    "/targets/:targetId/browser-auth-fixtures/import",
+    {
+      category: "target",
+      confirmation: "confirm",
+      idempotency: "required",
+      lease: "exclusive",
+      minimumRole: "author",
+    },
   ),
   command(
     "target.browser-auth.save",

@@ -740,6 +740,9 @@ export const workspaceTargetOperationOutputSchemas = {
       resolution: browserDeviceInputResolutionSchema.optional(),
     })
     .strict(),
+  "target.browser-auth.import": z
+    .object({ fixture: browserAuthenticationFixtureSchema, target: targetDefinition })
+    .strict(),
   "target.browser-auth.save": z
     .object({ fixture: browserAuthenticationFixtureSchema, target: targetDefinition })
     .strict(),
