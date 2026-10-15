@@ -46,14 +46,14 @@ Language is a setup change, not just a label on a case. Use an App locale dimens
 ## Inspect the saved Plan from the CLI
 
 ```bash
-./bin/relay plan list <app-id> --json
-./bin/relay plan get <app-id> <plan-id> --json
-./bin/relay plan preflight <app-id> <plan-id> --json
+pnpm relay plan list <app-id> --json
+pnpm relay plan get <app-id> <plan-id> --json
+pnpm relay plan preflight <app-id> <plan-id> --json
 ```
 
 Replace the placeholders with saved IDs. List and get read selections; preflight checks cases and bindings without sending device input. A successful preflight is not a successful Run.
 
-`./bin/relay plan --help` shows execution options. One case is the default for CLI `plan run`; `--all` requests all selected cases. Use explicit device bindings or a saved browser lane, rather than assuming the target from a different Run.
+`pnpm relay plan --help` shows execution options. One case is the default for CLI `plan run`; `--all` requests all selected cases. Use explicit device bindings or a saved browser lane, rather than assuming the target from a different Run.
 
 ## Review and repeat
 

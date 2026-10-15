@@ -27,7 +27,7 @@ what it saw, and a screenshot.
    need no model; steps written from words need a model key (OPENROUTER_API_KEY
    or one saved in Settings).
 
-From a checkout, use ./bin/relay for the commands below: describe a Test,
+From a checkout, use pnpm relay for the commands below: describe a Test,
 run it on a browser (or ios, android, a device name), then run every ready
 Test of the app the way CI does. relay ci writes result.json for your pipeline.
 

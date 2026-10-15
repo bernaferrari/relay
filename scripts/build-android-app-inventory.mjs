@@ -105,7 +105,7 @@ export async function buildAndroidAppInventory() {
     await exec(join(tools, "apksigner"), [
       "sign",
       "--ks",
-      join(root, "fixtures/android-proof-app/relay-proof-fixture.keystore"),
+      join(root, "tests/fixtures/android-proof-app/relay-proof-fixture.keystore"),
       "--ks-key-alias",
       "relay-proof-fixture",
       "--ks-pass",

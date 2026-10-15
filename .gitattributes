@@ -2,3 +2,6 @@
 # may preserve upstream CRLF in declaration files. Keep Git from rewriting or
 # misclassifying those patch mechanics as product-source whitespace defects.
 patches/*.patch -text whitespace=-trailing-space
+
+# Keep upstream source available without counting it as Relay-authored code.
+vendor/agent-device/** linguist-vendored

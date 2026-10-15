@@ -5,7 +5,7 @@
   "description": "Runtime proof for AI-authored changes across web, Android, and iOS",
   "license": "MIT",
   "bin": {
-    "relay": "bin/relay"
+    "relay": "scripts/relay.mjs"
   },
   "type": "module",
   "scripts": {
@@ -60,7 +60,7 @@
     "test:architecture": "node --test scripts/verify-android-snapshot-helper.test.mjs scripts/check-coverage.test.mjs scripts/product-visual-comparison.test.mjs scripts/check-source-budgets.test.mjs scripts/check-ios-mutation-boundaries.test.mjs scripts/check-canonical-product-model.test.mjs scripts/product-contract.test.mjs scripts/check-product-copy.test.mjs scripts/dev-app.test.mjs scripts/ensure-server-bootstrap.test.mjs scripts/ensure-server-lease-recovery.test.mjs scripts/golden-device.test.mjs scripts/change-proof-golden-live.test.mjs scripts/android-proof-fixture.test.mjs scripts/operational-readiness-benchmark.test.mjs scripts/agent-golden-benchmark.test.mjs scripts/workspace-doctor.test.mjs && node node_modules/tsx/dist/cli.mjs --test scripts/check-renderer-operation-transport.test.mjs",
     "check:workflows": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12",
     "check:docs": "node scripts/check-docs.mjs",
-    "check:architecture": "node scripts/verify-android-snapshot-helper.mjs && node scripts/check-source-budgets.mjs && node scripts/check-ios-mutation-boundaries.mjs && node scripts/check-canonical-product-model.mjs && node scripts/product-contract.mjs && node scripts/check-product-copy.mjs && node scripts/check-renderer-operation-transport.mjs && node scripts/check-global-styles.mjs",
+    "check:architecture": "node scripts/verify-android-snapshot-helper.mjs && node scripts/check-source-budgets.mjs && node scripts/check-ios-mutation-boundaries.mjs && node scripts/check-canonical-product-model.mjs && node scripts/check-product-copy.mjs && node scripts/check-renderer-operation-transport.mjs && node scripts/check-global-styles.mjs",
     "verify": "vp check && pnpm run check:workflows && pnpm run check:docs && pnpm run check:architecture && pnpm run test:architecture && pnpm typecheck && pnpm run ios-preview:test && pnpm run test:packages && pnpm run test:e2e && vp test && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build && pnpm run test:visual && pnpm run test:browser && pnpm run test:electron && pnpm run ios-preview:verify",
     "test:e2e": "pnpm --filter @relay/e2e build && pnpm --filter @relay/e2e test && E2E_TELEMETRY_DISABLED=1 pnpm --filter @relay/e2e test:upstream"
   },

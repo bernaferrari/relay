@@ -108,13 +108,13 @@ Your agent gets the same buttons you do. The app, the CLI, and MCP drive the sam
 and the same runs, so an agent can rerun a flow, read the verdict, fix the cause, and run it
 again. Then you review the exact run it made.
 
-**CLI:** from a source checkout, use `./bin/relay`.
+**CLI:** from a source checkout, use `pnpm relay`.
 
 ```bash
-./bin/relay run "Member layout" --device browser   # rerun a saved test
-./bin/relay inspect <run-id>                      # expected vs saw, step by step
-./bin/relay ci shop.example.com --output result.json --junit junit.xml
-./bin/relay guide                                  # bundled guides, no server needed
+pnpm relay run "Member layout" --device browser   # rerun a saved test
+pnpm relay inspect <run-id>                      # expected vs saw, step by step
+pnpm relay ci shop.example.com --output result.json --junit junit.xml
+pnpm relay guide                                  # bundled guides, no server needed
 ```
 
 Add `--json` for machine output. Exit codes are designed for loops:
@@ -126,7 +126,7 @@ Add `--json` for machine output. Exit codes are designed for loops:
 | `3`  | Couldn't run: device, sign-in, or setup blocked it     |
 | `10` | Passed, with screenshots waiting for review            |
 
-`./bin/relay --help` lists every code.
+`pnpm relay --help` lists every code.
 
 **MCP:** build the connector with `pnpm --filter @relay/mcp build`, then add it to your agent host:
 
@@ -199,8 +199,7 @@ pnpm dev:site     # the landing page and docs
 ```
 
 `pnpm test:coverage` writes LCOV reports; CI requires at least 70% line coverage on changed
-source. The [product contract](./PRODUCT_CONTRACT.md) defines the public routes, vocabulary, and
-interaction rules checked in CI. The website and guides live in
+source. The website and guides live in
 [packages/site](./packages/site/README.md).
 
 ## License

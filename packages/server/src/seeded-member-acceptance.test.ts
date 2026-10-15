@@ -38,7 +38,7 @@ import {
 import { startServer } from "./index.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-const relayBin = join(repoRoot, "bin/relay");
+const relayBin = join(repoRoot, "scripts/relay.mjs");
 const durableRoot = join(repoRoot, ".relay/seeded-member-acceptance");
 const CHROME =
   process.env.RELAY_TEST_CHROME_PATH ??

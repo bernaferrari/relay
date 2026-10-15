@@ -65,7 +65,7 @@ function runMemberLane() {
   // captures awaiting human review (the demo reviews them next). Both carry
   // the run snapshot; any other status fails.
   const result = spawnSync(
-    "./bin/relay",
+    "./scripts/relay.mjs",
     ["run", "test-member-v2", "--map", "slice4-reference", "--lane", "slice4-member", "--json"],
     {
       env: { ...process.env, RELAY_URL: BASE, RELAY_ACTOR_ID: "agent:demo" },
@@ -110,7 +110,7 @@ async function decide(runId, capture, action, note) {
 function report(runId) {
   // Like `relay db`, the proof projection reads the persisted run from disk —
   // it must produce the same report in CI where no server is running.
-  const stdout = execFileSync("./bin/relay", ["report", "emit", "--run", runId, "--json"], {
+  const stdout = execFileSync("./scripts/relay.mjs", ["report", "emit", "--run", runId, "--json"], {
     env: { ...process.env, RELAY_URL: BASE },
     timeout: 60_000,
   }).toString("utf8");

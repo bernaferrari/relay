@@ -32,9 +32,9 @@ even if the Project Data set changes later.
 Discover and inspect the saved Plan using its App and Plan IDs:
 
 ```bash
-./bin/relay plan list <app-id> --json
-./bin/relay plan get <app-id> <plan-id> --json
-./bin/relay plan preflight <app-id> <plan-id> --json
+./scripts/relay.mjs plan list <app-id> --json
+./scripts/relay.mjs plan get <app-id> <plan-id> --json
+./scripts/relay.mjs plan preflight <app-id> <plan-id> --json
 ```
 
 List and get read saved selections. Preflight checks the selected cases and bindings without

@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-const relayBin = join(repoRoot, "bin/relay");
+const relayBin = join(repoRoot, "scripts/relay.mjs");
 const pngBytes = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",

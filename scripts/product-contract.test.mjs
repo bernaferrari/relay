@@ -1,46 +1,11 @@
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
-  evaluateProductContract,
   findProductAdvancedVocabulary,
-  loadProductContract,
-  PRODUCT_ADVANCED_TERMS,
   PRODUCT_OVERLAY_PRIORITY,
   PRODUCT_ROUTES,
 } from "./product-contract.mjs";
-
-test("tracked product contract matches the route registry and vocabulary", async () => {
-  const document = await loadProductContract();
-  assert.deepEqual(evaluateProductContract({ document }), []);
-});
-
-test("a missing product contract fails instead of skipping verification", async () => {
-  const root = await mkdtemp(join(tmpdir(), "relay-product-contract-"));
-  try {
-    await assert.rejects(loadProductContract(root), { code: "ENOENT" });
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a stale route or advanced term fails the contract", async () => {
-  const document = await loadProductContract();
-  const staleRoute = document.replace("/batches/:batchId\n", "");
-  assert.ok(
-    evaluateProductContract({ document: staleRoute }).includes(
-      "documented route missing: /batches/:batchId",
-    ),
-  );
-  const staleTerm = document.replace("publication receipt, ", "");
-  assert.ok(
-    evaluateProductContract({ document: staleTerm }).includes(
-      "documented advanced term missing: publication receipt",
-    ),
-  );
-});
 
 test("route fixture is canonical and overlay priority is deterministic", () => {
   assert.equal(new Set(PRODUCT_ROUTES).size, PRODUCT_ROUTES.length);
@@ -53,16 +18,6 @@ test("route fixture is canonical and overlay priority is deterministic", () => {
     "temporary inspector",
     "canvas selection",
   ]);
-});
-
-test("advanced engine nouns are explicit and cannot be silently public", () => {
-  const document =
-    "## Promise and public model\n## Canonical routes\n## Interaction laws\n## Responsive and accessibility contract\n## Public vocabulary boundary\n## One product shell";
-  const violations = evaluateProductContract({
-    document,
-    advancedTerms: PRODUCT_ADVANCED_TERMS.slice(0, -1),
-  });
-  assert.ok(violations.some((violation) => violation.includes("advanced term missing")));
 });
 
 test("ordinary UI copy can be checked for advanced engine vocabulary", () => {

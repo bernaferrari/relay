@@ -26,8 +26,8 @@ A plain string is an action. `do:` is the explicit action form; `check:` is a va
 From the installed Relay checkout, with the local service running:
 
 ```bash
-./bin/relay apply ./settings.yaml
-./bin/relay run settings-opens --device browser --out ./evidence
+pnpm relay apply ./settings.yaml
+pnpm relay run settings-opens --device browser --out ./evidence
 ```
 
 `apply` saves the Test; it does not execute it. New or changed description-based steps need a configured model during execution. Applying YAML does not make those steps model-free. To make interactions exact, record them and verify a replay.
@@ -47,11 +47,11 @@ Provide `app` or `url`. Unknown fields are rejected. Do not add unsupported `ret
 ## Edit an existing Test
 
 ```bash
-./bin/relay show "Settings opens" --app "My app" > settings.yaml
-./bin/relay apply ./settings.yaml
+pnpm relay show "Settings opens" --app "My app" > settings.yaml
+pnpm relay apply ./settings.yaml
 ```
 
-The App name is an example. Use the one returned by `./bin/relay apps`.
+The App name is an example. Use the one returned by `pnpm relay apps`.
 
 Keep the exported ID. Steps whose words and kind remain unchanged can retain their recorded interactions. Changed steps run from their descriptions until recorded or bound again. Inspect the saved Test and replay after editing.
 
@@ -60,7 +60,7 @@ The YAML export is a description of actions and checks. It does **not** preserve
 ## Save a folder
 
 ```bash
-./bin/relay apply ./tests
+pnpm relay apply ./tests
 ```
 
 Relay discovers `.yaml` and `.yml` files recursively. Files are applied in order, not as one atomic transaction: if a later file is invalid, earlier files may already be saved. Read the result before retrying.

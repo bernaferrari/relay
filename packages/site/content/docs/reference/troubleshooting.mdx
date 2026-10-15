@@ -9,13 +9,13 @@ Read the failed or blocked step and its suggested recovery. Separate an app defe
 
 ```bash
 pnpm doctor
-./bin/relay guide
+pnpm relay guide
 ```
 
 For a specific device:
 
 ```bash
-./bin/relay device health <target-id> --json
+pnpm relay device health <target-id> --json
 ```
 
 Replace `<target-id>` with the device ID from Relay. Health describes the target's readiness; it does not run your Test.

@@ -8,10 +8,3 @@ export declare const PRODUCT_NARROW_WINDOW: {
   readonly noHorizontalScroll: boolean;
 };
 export declare function findProductAdvancedVocabulary(source?: string): string[];
-export declare function evaluateProductContract(input?: {
-  document?: string;
-  routes?: readonly string[];
-  publicObjects?: readonly string[];
-  advancedTerms?: readonly string[];
-}): string[];
-export declare function loadProductContract(root?: string): Promise<string>;

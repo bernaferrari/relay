@@ -44,8 +44,8 @@ For a native target, save this as `schedule.json`. Replace the App, Plan, and de
 ```
 
 ```bash
-./bin/relay plan schedule create --input-file ./schedule.json --json
-./bin/relay plan schedule list --json
+pnpm relay plan schedule create --input-file ./schedule.json --json
+pnpm relay plan schedule list --json
 ```
 
 `combineId` is the saved Plan ID. A schedule accepts a Plan (`appMapId` + `combineId`) or a compiled `recipeId`, not a bare `testId`. For a browser, use its exact target ID with `targetKind: "browser"` and `platform: "browser"`.
@@ -55,7 +55,7 @@ To enable the paused schedule, add its returned `id` to the same JSON and change
 To stop future repetitions:
 
 ```bash
-./bin/relay plan schedule delete <schedule-id>
+pnpm relay plan schedule delete <schedule-id>
 ```
 
 Deleting a schedule does not replace cancelling an execution that already started.

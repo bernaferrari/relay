@@ -58,7 +58,7 @@ jobs:
         run: corepack pnpm ensure:serve
 
       - name: Run the app's Tests
-        run: ./bin/relay ci <app> --output result.json --junit junit.xml
+        run: ./scripts/relay.mjs ci <app> --output result.json --junit junit.xml
 
       - name: Publish the results
         if: always()

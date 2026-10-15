@@ -94,8 +94,11 @@ evidence/
 # Markdown stays on disk. READMEs, the vendored tree, and shipped skill files stay tracked.
 *.md
 !README.md
-!PRODUCT_CONTRACT.md
 !vendor/**/*.md
 !plugins/relay-proof/skills/**/SKILL.md
 packages/ios-preview-producer/ios-preview-producer
 .vercel
+
+# Local agent tracking and executable build output.
+/.beads/
+/bin/

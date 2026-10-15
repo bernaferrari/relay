@@ -59,7 +59,7 @@ console.log("\n2/3 captured-app walkthrough (three states, two configurations)")
 execFileSync("node", ["--import", "tsx", "scripts/walkthrough-demo.mjs"], { stdio: "inherit" });
 
 console.log("\n3/3 thirty-slot reference matrix summary");
-const summary = spawnSync("./bin/relay", ["runs", "--json"], {
+const summary = spawnSync("./scripts/relay.mjs", ["runs", "--json"], {
   env: { ...process.env, RELAY_URL: BASE },
   encoding: "utf8",
   timeout: 60_000,

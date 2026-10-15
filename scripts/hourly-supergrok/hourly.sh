@@ -4,7 +4,7 @@
 # Do not invent Tests. Do not include Delete/Sign Out/older-chat/Thread.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-exec "$root/bin/relay" plan run grok-web grok-hourly \
+exec "$root/scripts/relay.mjs" plan run grok-web grok-hourly \
   --lane grok-lab \
   --actor human:hourly-heavy \
   --findings \

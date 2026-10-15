@@ -10,7 +10,7 @@ const ITERATIONS = Number(process.argv[2] ?? 4);
 const BASE = process.env.RELAY_URL ?? "http://127.0.0.1:8787";
 
 function runRelay(args, timeoutMs = 170_000) {
-  const result = spawnSync("./bin/relay", args, {
+  const result = spawnSync("./scripts/relay.mjs", args, {
     env: { ...process.env, RELAY_URL: BASE, RELAY_ACTOR_ID: "agent:soak" },
     encoding: "utf8",
     timeout: timeoutMs,
@@ -32,7 +32,7 @@ for (let index = 1; index <= ITERATIONS; index += 1) {
     // Start the run detached, kill the app mid-flight, let the run finish,
     // restart the app, then run again to verify recovery.
     const child = spawnSync(
-      "./bin/relay",
+      "./scripts/relay.mjs",
       [
         "run",
         "test-member-reference",

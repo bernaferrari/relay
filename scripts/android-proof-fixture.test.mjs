@@ -33,7 +33,7 @@ test("repaired fixture preserves the distinct seeded-regression source parent", 
   const root = new URL("..", import.meta.url);
   const repairedXml = await readFile(
     new URL(
-      "../fixtures/android-proof-app/app/src/main/res/layout/activity_arabic.xml",
+      "../tests/fixtures/android-proof-app/app/src/main/res/layout/activity_arabic.xml",
       import.meta.url,
     ),
     "utf8",
@@ -63,6 +63,7 @@ test("repaired fixture preserves the distinct seeded-regression source parent", 
     "git",
     [
       "show",
+      // The seeded commit predates the move into tests/fixtures.
       `${seededCommit.trim()}:fixtures/android-proof-app/app/src/main/res/layout/activity_arabic.xml`,
     ],
     { cwd: root },

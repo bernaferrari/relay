@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const buildToolsVersion = "36.1.0";
-export const androidProofFixtureRoot = join(repositoryRoot, "fixtures/android-proof-app");
+export const androidProofFixtureRoot = join(repositoryRoot, "tests/fixtures/android-proof-app");
 export const androidProofFixtureArtifact = join(
   androidProofFixtureRoot,
   "artifacts/relay-android-proof-fixture-1.0.apk",

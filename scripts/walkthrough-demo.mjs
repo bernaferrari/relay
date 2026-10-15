@@ -33,7 +33,7 @@ function runLane(testId, laneId) {
   let stdout = "";
   try {
     stdout = execFileSync(
-      "./bin/relay",
+      "./scripts/relay.mjs",
       ["run", testId, "--map", "walkthrough-demo", "--lane", laneId, "--json"],
       {
         env: { ...process.env, RELAY_URL: BASE, RELAY_ACTOR_ID: "agent:demo" },

@@ -367,7 +367,7 @@ export async function runFirstDemo({
       );
     }
     console.log(
-      `Repeat: ${repeatCommand ?? `./bin/relay run ${testId} --map ${appMapId} --device ${targetId} --json`}`,
+      `Repeat: ${repeatCommand ?? `./scripts/relay.mjs run ${testId} --map ${appMapId} --device ${targetId} --json`}`,
     );
     console.log(
       "Layout check passed. Screenshot review is pending; the demo makes no human decision.",

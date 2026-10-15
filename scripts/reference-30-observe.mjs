@@ -54,7 +54,7 @@ const CONFIGS = [
 
 function relay(args, { allowFail = false } = {}) {
   try {
-    return execFileSync("./bin/relay", args, {
+    return execFileSync("./scripts/relay.mjs", args, {
       env: { ...process.env, RELAY_URL: BASE, RELAY_ACTOR_ID: ACTOR },
       encoding: "utf8",
       timeout: 60_000,

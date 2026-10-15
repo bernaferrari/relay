@@ -3,7 +3,7 @@ import { statSync } from "node:fs";
 type Environment = Record<string, string | undefined>;
 
 /**
- * The directory the person typed `relay` in. `bin/relay` and `pnpm relay` both
+ * The directory the person typed `relay` in. `scripts/relay.mjs` and `pnpm relay` both
  * run the CLI from the Relay checkout, so user paths (--out, --file, --output,
  * relay.json) must resolve against the caller's directory, not the process cwd.
  */
