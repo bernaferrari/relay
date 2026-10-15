@@ -4,10 +4,17 @@ import path from 'node:path';
 import { AppError, normalizeError } from '@agent-device/kernel/errors';
 import { isRecord } from '@agent-device/kernel/record';
 import { runCmd } from '@agent-device/host-kit/command';
-import { acquireProcessLock, publishFileSync } from '@agent-device/host-kit/file';
+import {
+  acquireProcessLock,
+  publishFileSync,
+  resolveUserConfigPath,
+} from '@agent-device/host-kit/file';
 import { readCurrentOwnerIdentity } from '@agent-device/host-kit/process';
-import { resolveUserConfigPath } from '../commands/schema/cli-config.ts';
-import { readPluginManifest, assertUniquePluginProviders } from './manifest.ts';
+import {
+  readPluginManifest,
+  assertUniquePluginProviders,
+  RESERVED_PLUGIN_PROVIDERS,
+} from './manifest.ts';
 
 type PluginSelection = {
   installation: string;
@@ -136,7 +143,7 @@ export async function changePlugin(
   action: PluginAction,
   input: string,
   env: NodeJS.ProcessEnv = process.env,
-  reservedProviders: readonly string[] = [],
+  reservedProviders: readonly string[] = RESERVED_PLUGIN_PROVIDERS,
 ): Promise<void> {
   const { name, version } = parsePluginRequest(action, input);
   const configPath = resolveUserConfigPath(env);

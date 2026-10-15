@@ -1,3 +1,5 @@
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
+import type { DaemonResponse } from '@agent-device/kernel/contracts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,28 +11,26 @@ import type { AgentDeviceClient } from '../../../src/client/client-types.ts';
 import {
   createRequestHandler,
   type RequestRouterDeps,
-} from '../../../src/daemon/request-router.ts';
+} from '@agent-device/daemon/testing/request-router';
 import {
   createPlatformRuntimeGateway,
   createRequestPlatformProviders,
   androidObservation,
   type PlatformProviderResolvers,
 } from '../../../src/platform-runtime.ts';
+import { createClaimRecoveryGateway } from '../../../src/platform-runtime-claim-recovery.ts';
+import { createDaemonPlatformServices } from '../../../src/platform-runtime-daemon-services.ts';
 import { platformResourceCleanup } from '../../../src/platform-runtime-resource-cleanup.ts';
 import { readDaemonProviderCredentials } from '../../../src/provider-credential-fingerprint.ts';
 import type { AppleSimulatorScreenRecordingProcess } from '../../../src/platform-runtime-screen-recording-apple-transport.ts';
-import { trackDownloadableArtifact } from '../../../src/daemon/artifact-tracking.ts';
-import { LeaseRegistry } from '../../../src/daemon/lease-registry.ts';
-import { SessionStore } from '../../../src/daemon/session-store.ts';
-import type {
-  DaemonInvokeFn,
-  DaemonRequest,
-  DaemonResponse,
-} from '../../../src/daemon/daemon-request.ts';
-import type { SessionState } from '../../../src/daemon/session-state.ts';
+import { trackDownloadableArtifact } from '@agent-device/daemon/testing/artifact-tracking';
+import { LeaseRegistry } from '@agent-device/daemon/testing/lease-registry';
+import { SessionStore } from '@agent-device/daemon/testing/session-store';
+import type { DaemonInvokeFn } from '@agent-device/daemon';
+import type { SessionState } from '@agent-device/daemon/testing/session-state';
 import { runCmdBackground } from '@agent-device/host-kit/command';
 import { createOwnedProcessRecordStore } from '@agent-device/host-kit/process';
-import { withClientReplayScriptSources } from '../../../src/__tests__/test-utils/replay-script-source.ts';
+import { withClientReplayScriptSources } from '@agent-device/replay-port/replay-script-source-fixtures';
 import type {
   DeviceInventoryProvider,
   ProviderDeviceRuntime,
@@ -39,19 +39,20 @@ import type {
 import {
   createTestDeviceInventoryGateways,
   createTestDeviceInventoryGatewaysFromProvider,
-} from '../../../src/__tests__/test-utils/device-inventory-gateways.ts';
+} from '@agent-device/device-selection/inventory-gateways-fixtures';
 import { createHostDiagnostics } from '../../../src/platform-runtime-host-diagnostics.ts';
 import type { PlatformRuntimeProviderRegistration } from '../../../src/platform-runtime-gateway.ts';
 import { createProviderPlatformRuntimeRegistrations } from '../../../src/provider-device-runtimes.ts';
 import { isActiveProviderDevice } from '../../../src/provider-device-runtime.ts';
-import { installProviderDeviceAdmission } from '../../../src/daemon/provider-device-admission.ts';
-import { installInteractorResolution } from '../../../src/daemon/interactor-resolution.ts';
+import { installProviderDeviceAdmission } from '@agent-device/daemon/testing/provider-device-admission';
+import { installInteractorResolution } from '@agent-device/daemon/testing/interactor-resolution';
 import { getInteractor } from '../../../src/core/interactors.ts';
-import { unavailableDeviceRuntimeGateway } from '../../../src/daemon/__tests__/test-device-runtime-gateway.ts';
+import { unavailableDeviceRuntimeGateway } from '@agent-device/daemon/testing/__tests__/support/unavailable-device-runtime-gateway';
 
-import { openWebSessionNames } from '../../../src/daemon/web-session-names.ts';
+import { openWebSessionNames } from '@agent-device/daemon/testing/web-session-names';
+import { testCreateCommandSurface } from '../../../src/__tests__/daemon-composition/command-surface-fixture.ts';
 
-// Match daemon composition (src/daemon/server/daemon-runtime.ts): the daemon decides on provider
+// Match daemon composition (src/daemon-composition.ts): the daemon decides on provider
 // ownership through its own admission seam, which root composition installs.
 installProviderDeviceAdmission({ isActive: (device) => isActiveProviderDevice(device) });
 installInteractorResolution({ resolve: getInteractor });
@@ -70,11 +71,11 @@ export type ProviderScenarioHarness = {
   callCommand: (
     command: string,
     positionals?: string[],
-    flags?: DaemonRequest['flags'],
+    flags?: DaemonWireRequest['flags'],
     options?: {
-      input?: DaemonRequest['input'];
-      meta?: DaemonRequest['meta'];
-      runtime?: DaemonRequest['runtime'];
+      input?: DaemonWireRequest['input'];
+      meta?: DaemonWireRequest['meta'];
+      runtime?: DaemonWireRequest['runtime'];
       session?: string;
     },
   ) => Promise<ProviderScenarioRpcResult>;
@@ -165,6 +166,7 @@ export async function createProviderScenarioHarness(
         })
       : unavailableDeviceRuntimeGateway);
   const requestHandler = createRequestHandler({
+    createCommandSurface: testCreateCommandSurface,
     logPath: path.join(os.tmpdir(), 'agent-device-provider-scenario-daemon.log'),
     token: PROVIDER_SCENARIO_TOKEN,
     sessionStore,
@@ -174,11 +176,13 @@ export async function createProviderScenarioHarness(
       : createTestDeviceInventoryGatewaysFromProvider(deviceInventoryProvider),
     deviceRuntimeGateway,
     trackDownloadableArtifact,
-    // Match daemon composition (src/daemon/server/daemon-runtime.ts): doctor's host-scoped
+    // Match daemon composition (src/daemon-composition.ts): doctor's host-scoped
     // diagnostics are injected at the root, so the harness composes them the same way.
     hostDiagnostics: createHostDiagnostics(),
     androidObservation,
     platformResourceCleanup,
+    platformServices: createDaemonPlatformServices(),
+    claimRecoveryGateway: createClaimRecoveryGateway,
     requestPlatformProviders:
       configuredRequestPlatformProviders ??
       createRequestPlatformProviders({
@@ -218,7 +222,7 @@ export async function createProviderScenarioHarness(
       input: req.input,
       flags: req.flags,
       runtime: req.runtime,
-      meta: req.meta as DaemonRequest['meta'],
+      meta: req.meta as DaemonWireRequest['meta'],
     });
 
   return {
@@ -286,7 +290,7 @@ async function removeProviderScenarioTempDir(dir: string): Promise<void> {
   }
 }
 
-export { restoreEnv } from '../../../src/__tests__/test-utils/env.ts';
+export { restoreEnv } from '@agent-device/test-kit/env';
 
 export function likelyPlayableMp4Container(): Buffer {
   return Buffer.concat([atom('ftyp', Buffer.from('isom0000isom')), atom('moov')]);
@@ -325,14 +329,14 @@ function atom(type: string, payload = Buffer.alloc(0)): Buffer {
 function commandRequest(
   command: string,
   positionals: string[] = [],
-  flags: DaemonRequest['flags'] = {},
+  flags: DaemonWireRequest['flags'] = {},
   options: {
-    input?: DaemonRequest['input'];
-    meta?: DaemonRequest['meta'];
-    runtime?: DaemonRequest['runtime'];
+    input?: DaemonWireRequest['input'];
+    meta?: DaemonWireRequest['meta'];
+    runtime?: DaemonWireRequest['runtime'];
     session?: string;
   } = {},
-): DaemonRequest {
+): DaemonWireRequest {
   return {
     token: PROVIDER_SCENARIO_TOKEN,
     session: options.session ?? 'default',

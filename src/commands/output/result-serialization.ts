@@ -15,7 +15,7 @@ import { successText, withSuccessText } from '@agent-device/kernel/success-text'
 import {
   resolveDeployResultTarget,
   resolveInstallFromSourceResultTarget,
-} from '../../core/deploy-result-target.ts';
+} from '@agent-device/contracts/deploy-result-target';
 
 function serializeSessionDevice(
   device: AgentDeviceSessionDevice,
@@ -79,6 +79,7 @@ export function serializeSnapshotResult(result: CaptureSnapshotResult): Record<s
     ...(result.visibility ? { visibility: result.visibility } : {}),
     ...(result.keyboard ? { keyboard: result.keyboard } : {}),
     ...(result.viewport ? { viewport: result.viewport } : {}),
+    ...(result.presentedSurface ? { presentedSurface: result.presentedSurface } : {}),
     ...publicSnapshotCaptureAnnotations({
       ...result,
       ...(result.snapshotQuality ? { quality: result.snapshotQuality } : {}),

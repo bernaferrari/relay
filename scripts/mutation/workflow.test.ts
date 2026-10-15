@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { parse } from 'yaml';
 import { shardMatrix } from './modules.ts';
 import { LANE_TOOLING } from './run.ts';
 
@@ -57,25 +58,67 @@ test('no mutation shard is allowed to exceed the 30-minute budget', () => {
   }
 });
 
-// Only a harness diff can produce a non-empty matrix, so the trigger is asserted
-// in both directions against LANE_TOOLING: a missing path lets a harness change
-// merge without ever running a mutant, and an extra one starts a select job that
-// can only answer `[]`.
-test('the affected lane triggers on exactly the lane sources that can select mutants', () => {
+// Asserted in both directions against LANE_TOOLING: a missing path lets a lane
+// change merge without its self-test or mutants, and an extra one starts a select
+// job that can only answer `[]`.
+test('the affected lane triggers on exactly the lane tooling', () => {
   // Quote style is the formatter's business (oxfmt formats the workflow tree), so
   // accept either spelling of the same scalar rather than pinning this gate to it.
   const paths = [
     ...workflow('mutation-affected.yml').matchAll(/^ {6}- (?<q>['"])(?<glob>[^'"]+)\k<q>$/gm),
   ].map((match) => match.groups!.glob);
-  const expected = [
-    ...LANE_TOOLING.map((prefix) => (prefix.endsWith('/') ? `${prefix}**` : prefix)),
-    // The workflow reruns itself so a trigger edit is proven by the lane it edits.
-    '.github/workflows/mutation-affected.yml',
-  ];
+  const expected = LANE_TOOLING.map((prefix) => (prefix.endsWith('/') ? `${prefix}**` : prefix));
   assert.deepEqual(
     [...paths].sort(),
     [...expected].sort(),
     'the PR path filter drifted from LANE_TOOLING in scripts/mutation/run.ts',
   );
   assert.match(workflow('mutation-affected.yml'), /gate: mutation-affected[\s\S]*--list-affected/);
+});
+
+// Selection and scoring must agree on scope, or the report would score shards the
+// select job never spent (or expect ones it skipped).
+test('manual dispatch widens selection and scoring to the lane dependencies', () => {
+  const yaml = parse(workflow('mutation-affected.yml'));
+  assert.ok('workflow_dispatch' in yaml.on, 'dependency-only diffs have no way to run the canary');
+  assert.equal(
+    yaml.env.MUTATION_SCOPE,
+    "${{ github.event_name == 'workflow_dispatch' && '--with-dependencies' || '' }}",
+  );
+  const select = yaml.jobs.select.steps.find((step: { id?: string }) => step.id === 'select');
+  assert.match(select.with.args, /\$\{\{ env\.MUTATION_SCOPE \}\}/);
+  const score = yaml.jobs.report.steps.find(
+    (step: { name: string }) => step.name === 'Score the affected modules',
+  );
+  assert.equal(score.run.match(/--base "\$MUTATION_BASE" \$MUTATION_SCOPE/g)?.length, 2);
+});
+
+test('mutant job budgets include setup and unconditional evidence upload', () => {
+  for (const name of ['mutation-weekly.yml', 'mutation-affected.yml']) {
+    const jobs = parse(workflow(name)).jobs;
+    const job = jobs[name === 'mutation-weekly.yml' ? 'shard' : 'mutants'];
+    assert.equal(job['timeout-minutes'], 30, name);
+    const steps = job.steps as { name: string; 'timeout-minutes'?: number; if?: string }[];
+    const mutantIndex = steps.findIndex((step) => step.name.startsWith('Run mutants for'));
+    assert.ok(mutantIndex > 0, name);
+    const setup = steps.slice(0, mutantIndex);
+    for (const step of setup) {
+      assert.ok(
+        Number.isInteger(step['timeout-minutes']) && step['timeout-minutes']! > 0,
+        `${name}: unbounded setup step ${step.name}`,
+      );
+    }
+    assert.equal(steps[mutantIndex]!['timeout-minutes'], 22, name);
+    const setupBudget = setup.reduce((total, step) => total + step['timeout-minutes']!, 0);
+    assert.ok(
+      job['timeout-minutes'] - setupBudget - steps[mutantIndex]!['timeout-minutes']! >= 5,
+      `${name}: setup and mutants consume the evidence/upload budget`,
+    );
+    assert.equal(
+      steps.find((step) => step.name === 'Record a failed shard envelope')?.if,
+      'failure() || cancelled()',
+      name,
+    );
+    assert.equal(steps.find((step) => step.name === 'Upload shard report')?.if, 'always()', name);
+  }
 });

@@ -68,9 +68,10 @@ Use `pnpm build:macos-helper:clean` if a Swift cache was created in another work
 
 ## Prepare the npm package
 
-`pnpm publish` and package-manager pack commands run `prepack`, which first checks synchronized MCP
+Package-manager pack commands run `prepack`, which first checks synchronized MCP
 metadata and then runs `pnpm package:npm`. This is the one completeness-oriented aggregate: it
-builds the TypeScript distribution and all four Apple runner targets, clean-builds the macOS helper,
+builds the TypeScript distribution and all four Apple runner targets (into a scratch directory under
+`.tmp/` that it removes afterwards, not into `~/.agent-device`), clean-builds the macOS helper,
 packages the Apple runner source, and rebuilds both Android helper APKs. Any failed build stops
 packaging. It deliberately does not stop the worktree's development daemon; use `pnpm rebuild:cli`
 when a running daemon needs to pick up a new TypeScript build.
@@ -82,50 +83,37 @@ so name the version the CI lanes install and the published helper matches the CI
 `pnpm package:npm` is a release guard, not a routine development command. Use the specific commands
 above while iterating.
 
-### Release the core and public workspace packages together
+### Release through the Release workflow
 
-The root `package.json` owns the release version. Every public workspace package uses that version;
-private internal packages stay unpublished. There is one Git tag and GitHub release, `v<version>`,
-for the whole release. No changeset files or per-package tags are needed.
+Every release publishes from `.github/workflows/release.yml`, through npm trusted publishing: no
+npm token or one-time password is involved, and every release version carries provenance. The one
+exception is the empty `0.0.0` placeholder a maintainer publishes by hand to onboard a new package,
+described below. A local `npm publish` from the repository root refuses to run.
 
-From a clean release checkout, bump the version once:
+The core and every public workspace package release together at one version. Private packages
+stay unpublished. There are three channels:
 
-```bash
-npm version patch
-# or npm version minor / npm version 0.22.0
-```
+- **Nightly** (`npm install -g agent-device@nightly`): once a day, at 01:23 UTC, the workflow
+  checks `main`. It publishes `X.Y.Z-nightly.<YYYYMMDD>.<run>` under the `nightly` dist-tag when
+  `main`'s HEAD has changed since the last nightly and its CI passed, waiting up to 20 minutes for
+  CI that is still running. If that CI fails, is cancelled, or is still running after the wait, no
+  nightly ships that day. A published nightly is tagged `nightly/v<nightly version>`. To publish one now, run **Release** on `main`.
+- **Stable** (`latest`): a repository admin publishes a GitHub release with a new `vX.Y.Z` tag
+  targeting `main`. Use the version `main` builds towards (its `X.Y.Z-dev`), or a later one, and
+  write the notes or generate them in the release form. The tag starts a **Release** run. It waits
+  up to 20 minutes for that commit's CI to pass, then publishes the packages without asking for
+  approval, attaches the iOS runner and Android helper assets to the release, publishes the MCP
+  Registry entry, and commits `main`'s next `-dev` version. Creating the tag is the approval. To
+  stop a release, cancel the run before its publish job starts, then delete the release and its
+  tag. Pushing the tag instead (`git push origin main:refs/tags/vX.Y.Z`) starts the same run, which
+  then drafts the release itself.
+- **Dry run**: a pull request that changes release tooling builds and verifies every package with a
+  nightly version, and publishes nothing.
 
-The version hook synchronizes all public workspace manifests and MCP metadata, stages them, and
-includes them in npm's version commit and `v<version>` tag. Do not bump plugin versions separately.
-
-Publish and push using the normal npm workflow:
-
-```bash
-npm publish && git push && git push --tags
-```
-
-The publish hooks prepare and validate every public package before uploading the core, then
-publish the remaining workspace packages at the same version. Private packages stay unpublished.
-After every package succeeds, the hook commits all public manifests and MCP metadata at the next
-`-dev` version. Your `git push` includes that commit; the version bump created the single release
-tag. Write one GitHub release covering the core and plugins.
-
-After setting the version, preview the full release with `npm publish --dry-run`. It builds and
-checks the packages without uploading them, changing versions, or creating commits. The dry-run
-publish hook makes no additional registry requests. Dependency installation during preparation
-still requires registry access unless the dependencies are cached. Publishing requires npm registry access for
-`agent-device` and the `@agent-device` scope.
-
-If core publication succeeds but a later package fails, run `pnpm release:publish` to finish the
-release. It skips versions already published and commits the development marker once every package
-succeeds. Plain `npm publish` cannot retry an already-published core version.
-If every upload succeeds but development-marker synchronization or its Git commit fails, fix the
-reported error and run `pnpm release:mark-dev` to finish any interrupted version synchronization, then commit the
-changed public manifests and `server.json` before pushing. No package needs republishing.
-
-Use `npm pack` to build and validate a development-version package locally. The normal npm and
-pnpm publishers repack the prepared files when uploading; the checks validate package contents,
-not the byte identity of the uploaded archive.
+To retry a failed run, re-run its failed jobs, or run **Release** on the release tag. The
+publisher skips package versions that are already on npm, so a partial publish completes on the
+next attempt. To preview the packages locally, run
+`pnpm release:prepare`. It builds, verifies, and packs every public package into `.tmp/release`.
 
 A public package owns its `files`, published `exports`, license, repository metadata, README,
 and `prepack` build (including any prerequisites). Use `publishConfig.exports` for source-only
@@ -133,21 +121,63 @@ workspace test exports; pnpm applies the overrides when packing. Keep plugin SDK
 bundled workspace helpers in `devDependencies`. Plugins must not depend on the core at runtime
 or through a peer dependency. Their factories receive the host from `agent-device`.
 
-When adding a public package, initialize its version from the root `package.json`; subsequent
-`npm version` and `release:mark-dev` runs keep it synchronized automatically. An optional plugin
-must have no production import from the core build or production dependency in the root manifest.
-Run its packed-install smoke before releasing.
+When adding a public package, initialize its version from the root `package.json`; the release
+workflow stamps the release version into every public package. An optional plugin must have no
+production import from the core build or production dependency in the root manifest. Run its
+packed-install smoke before releasing. npm can only trust a package that exists, so a maintainer
+publishes an empty `0.0.0` placeholder once and grants the trust before the next nightly:
+
+```bash
+cd "$(mktemp -d)"
+echo '{"name":"@agent-device/<name>","version":"0.0.0","license":"MIT"}' > package.json
+npm publish --access public --tag reserved
+npm trust github @agent-device/<name> --file release.yml --repository callstack/agent-device \
+  --environment npm-publish --allow-publish --yes
+npm access set mfa=publish @agent-device/<name>
+```
+
+### One-time repository setup
+
+npm trusts every run of `release.yml` that reaches the `npm-publish` environment, so GitHub
+settings, not the workflow, decide who can publish. The tag ruleset approves a stable release, so
+the plan job refuses to publish until the first two settings are in place. Apply them before
+granting npm trust:
+
+1. **Environment `npm-publish`** (Settings → Environments): deployment branches and tags limited to
+   the branch `main` and the tag pattern `v*`. No reviewers and no secrets, so nightlies run
+   unattended.
+2. **Tag ruleset** (Settings → Rules → Rulesets → New tag ruleset): active, targeting
+   `refs/tags/v*` with no exclusions, restricting creations, updates, and deletions, with only the
+   Repository admin role allowed to bypass. Nightly tags live under `nightly/` and stay outside it.
+3. **Actions** (Settings → Actions → General): workflow permissions set to read repository contents,
+   and "Allow GitHub Actions to create and approve pull requests" turned off.
+4. **Releases** (Settings → General): leave release immutability off, because the run attaches its
+   assets after the release is published.
+
+Confirm the result, then grant npm trust to each public package and, once a nightly has published,
+refuse token-based publishing:
+
+```bash
+gh api repos/callstack/agent-device/environments/npm-publish/deployment-branch-policies \
+  --jq '.branch_policies[] | "\(.type) \(.name)"'   # branch main, tag v*
+gh api repos/callstack/agent-device/rulesets --jq '.[] | select(.target == "tag") | .name'
+npm trust github <package> --file release.yml --repository callstack/agent-device \
+  --environment npm-publish --allow-publish --yes
+npm access set mfa=publish <package>
+```
+
+Anyone who can push to `main` can still change what the next nightly publishes; `main` does not
+require pull requests.
 
 ### The version on main never equals a published version
 
-`postpublish` runs `release:mark-dev` after all packages publish, moving all public manifests
-and synchronized `server.json` to the next patch with a `-dev` prerelease marker (for example
-`0.20.11-dev`) and committing that bump as part of the release. The invariant it protects: MCP registry
-scanners diff the repository's tool surface per version string, so a released number left on `main`
-while `main` keeps changing is indistinguishable from a republished ("rug-pull") version.
-`prepublishOnly` and the retry command refuse to publish while the `-dev` marker is
-still in place — set the real release version first (for example `npm version patch`, which strips
-the prerelease marker), commit, then publish.
+`main` carries `X.Y.Z-dev`, naming the release it is building towards. Nightlies preview it as
+`X.Y.Z-nightly.*`, and only a stable release publishes `X.Y.Z`. After a stable release, the workflow
+moves `main` to the next patch's `-dev` version, unless `main` already builds towards a later
+release. To plan a minor or major release, commit the new `-dev` version to `main` (for example
+`0.22.0-dev`); nightlies then preview it. The invariant protects MCP Registry scanners, which diff
+the repository's tool surface per version string: a released number left on `main` while `main`
+keeps changing is indistinguishable from a republished ("rug-pull") version.
 
 ### Released-surface baselines roll forward on publish
 
@@ -200,13 +230,57 @@ Useful direct entry points:
 - `pnpm test:integration` — Node and provider-backed integration suites
 - `pnpm perf --platform ios` or `pnpm perf --platform android` — device performance harness
 - `pnpm check:fallow --base origin/main` — changed-code quality gate
+- `pnpm check:coverage-crap --base origin/main` — CRAP from measured coverage for the functions a
+  change touches; it fails when one scores 30 or more, so run `pnpm test:coverage` first. It also
+  fails when `coverage/` was not written by that command on this commit. `--all` reports every
+  function and never fails: that is `main`'s backlog. Both list the per-function CRAP ceilings from
+  `.fallowrc.json` they honoured. `check:fallow` leaves CRAP off without coverage.
 - `pnpm fallow:all` — full-tree audit, including grandfathered baseline findings
-- `pnpm fallow:baseline` — intentionally regenerate both reviewed Fallow baselines
+- `pnpm fallow:baseline` — intentionally regenerate the reviewed Fallow health baseline
 
 See [`docs/agents/testing.md`](docs/agents/testing.md) for gate ownership, shared test utilities,
 mutation/fuzz lanes, contention policy, and test-speed rules. For real devices, follow
 [`docs/agents/device-verification.md`](docs/agents/device-verification.md); a fixture-backed test does
 not prove that a native path was active.
+
+### Reading a coverage-CRAP failure
+
+One rule decides whether `check:coverage-crap --base <ref>` can answer: `coverage/` must have been
+written by a full `pnpm test:coverage` in this checkout, and this checkout must still be the tree that run
+read. The command writes `coverage/coverage-run-stamp.json` beside its reports and the gate re-reads it, so
+anything that moves afterwards — a commit, or an edit to any file the run could have loaded that git tracks
+or would track (source, tests, setup files, or the config that declares the scope) — prints
+`no trustworthy verdict` and names which of those it is. That is the guarantee's limit: an ignored path is
+not hashed, so an edit confined to one leaves the stamp standing. A narrowed pass is refused the same way —
+by file filter, project filter, name pattern, shard, or tag filter — because it still reports every file the
+config instruments, mostly with no counters, so the functions its missing tests would have covered arrive as
+untested. A focused `test.only` is caught earlier, by `--allowOnly=false` on the lane itself, which fails the
+pass before it writes any reports. Re-run `pnpm test:coverage` and re-check; that is the whole fix, and in CI
+the two steps are one job so the refusal cannot fire.
+
+What the verdict then says is a separate question. It scores the functions whose lines your diff adds,
+so a stale map can no longer hide a score you owe, and what counts as debt is editing a function that
+already scores 30 or more — the score does not have to be new. Two gaps still print `no trustworthy
+verdict` after a matching stamp: a touched file the run recorded with counts no execution can produce,
+and a touched file the config instruments that the map does not record at all. Both mean re-run
+coverage. Adding lines is what charges a function; deleting is not, and removing a whole function takes
+its score with it. The two still interact: a charged function is scored as it stands after your
+deletions, and dropping lines that used to be covered can raise that number. A deletion-only edit is
+therefore never charged, and neither is a mixed one so long as no added line lands inside that function
+— the deletion stays out of the PR and whatever the score rose to waits in the `--all` backlog. Moving
+a file without editing its lines touches none of its functions. Unlike the changed-line gate, this one
+has no `coverage-waiver` label: the only way past a score is to test or simplify the function, or to
+raise the ceiling for that one function in `.fallowrc.json`'s `health.thresholdOverrides`.
+
+What is listed rather than blocked, so a green run does not mean it was checked: a touched function
+with no counters in a file the map does record — an ignore comment discarded its lines, or it runs where
+the inspector never sees it — and a touched file out of scope because the config excludes it or its
+source carries a whole-file ignore comment. No re-run scores any of those, and blocking on them would
+refuse every tooling PR. A file the config instruments that the map omits entirely stays a gap:
+out-of-process code looks the same from here as code the run never loaded, so the file has to declare
+itself out of scope — the config's `exclude`, or a whole-file ignore comment. Estimates are compared
+against 30 too, so a below-bar guess about new code is not reported at all; the stamp is what stops that
+guess from standing in for a measurement of code you changed.
 
 ## Test app and Maestro compatibility
 

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import type { IosTreeNode } from './snapshot.ts';
 import { expect, test, vi } from 'vitest';
 import { captureLimrunIosSnapshot } from './ios-snapshot-adapter.ts';
 import {
@@ -97,4 +99,92 @@ test('the Limrun acquired result keeps provider provenance and SDK screen dimens
     width: LIMRUN_SNAPSHOT_SCREEN.width,
     height: LIMRUN_SNAPSHOT_SCREEN.height,
   });
+});
+
+const nativeStates = JSON.parse(
+  readFileSync(
+    new URL('../../../contracts/fixtures/native-snapshot-states.json', import.meta.url),
+    'utf8',
+  ),
+) as {
+  cases: { name: string; input: IosTreeNode; expected: Record<string, boolean> }[];
+};
+for (const row of nativeStates.cases.filter(
+  ({ input }) => !['checked', 'password', 'editable'].some((key) => key in input),
+)) {
+  test(`limrun acquires native states: ${row.name}`, async () => {
+    const result = await captureLimrunIosSnapshot(createLimrunSnapshotSession(row.input));
+    const node = result.acquisition.nodes[0]!;
+    const states = Object.fromEntries(
+      ['checked', 'password', 'editable'].flatMap((key) => {
+        const value = node[key as 'checked' | 'password' | 'editable'];
+        return value === undefined ? [] : [[key, value]];
+      }),
+    );
+    expect(states).toEqual(row.expected);
+  });
+}
+
+test('Limrun secure TextField subrole survives acquisition without changing the native type', async () => {
+  const result = await captureLimrunIosSnapshot(
+    createLimrunSnapshotSession({
+      type: 'TextField',
+      role: 'AXTextField',
+      subrole: 'AXSecureTextField',
+      traits: ['TextOperationsAvailable', 'Scrollable', 'TextEntry', 'SecureTextField'],
+      role_description: 'secure text field',
+      AXUniqueId: 'native-secure',
+      AXValue: 'Native input',
+      enabled: true,
+    }),
+  );
+  expect(result.acquisition.nodes[0]).toMatchObject({
+    type: 'TextField',
+    identifier: 'native-secure',
+    password: true,
+    editable: true,
+    roleDescription: 'secure text field',
+  });
+});
+
+test('Limrun carries docked tree evidence and never infers absence from missing nodes', async () => {
+  const tree = limrunSnapshotTree();
+  expect(
+    (await captureLimrunIosSnapshot(createLimrunSnapshotSession(tree))).acquisition.keyboard,
+  ).toEqual({ kind: 'unmeasurable', reason: 'keyboard-not-observed' });
+  tree.children!.push({
+    elementType: 'Keyboard',
+    frame: { x: 0, y: 140, width: 320, height: 100 },
+  });
+  expect(
+    (await captureLimrunIosSnapshot(createLimrunSnapshotSession(tree))).acquisition.keyboard,
+  ).toEqual({
+    kind: 'derived',
+    derivation: 'docked-tree',
+    frame: { x: 0, y: 140, width: 320, height: 100 },
+  });
+  tree.children!.at(-1)!.frame = { x: 100, y: 60, width: 140, height: 80 };
+  expect(
+    (await captureLimrunIosSnapshot(createLimrunSnapshotSession(tree))).acquisition.keyboard,
+  ).toEqual({ kind: 'tree-rejected', derivation: 'docked-tree' });
+});
+
+test('limrun acquisition shares RN interpretation and preserves native values', async () => {
+  const result = await captureLimrunIosSnapshot(
+    createLimrunSnapshotSession({
+      elementType: 'Other',
+      value: 'checkbox, unchecked',
+      children: [{ elementType: 'TextField', value: 'checkbox, checked' }],
+    }),
+  );
+  const [checkbox, field] = result.acquisition.nodes;
+  expect(checkbox).toMatchObject({
+    type: 'Other',
+    value: 'checkbox, unchecked',
+    checked: false,
+    iosValueSemantics: { role: 'checkbox', checked: false },
+  });
+  expect(field).toMatchObject({ type: 'TextField', value: 'checkbox, checked' });
+  expect(field).not.toHaveProperty('iosValueSemantics');
+  expect(field).not.toHaveProperty('checked');
 });

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, vi } from 'vitest';
 import type { AgentDeviceClient } from '../../client/client-types.ts';
-import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+import { mkdtempForTestSync } from '@agent-device/test-kit/tmp-dir';
 import { createCommandToolExecutor, listCommandTools } from '../command-tools.ts';
 
 // Operator-owned inputs are never model-writable: the model reads untrusted
@@ -86,31 +86,25 @@ test('MCP refuses every explicit operator-owned argument with guidance', async (
   assert.deepEqual(calls, [], 'a refused operator input must never reach the command route');
 });
 
-test('MCP neither advertises nor admits the operator-only readiness budget', async () => {
+test('MCP neither advertises nor admits the retired readiness budget', async () => {
   for (const tool of listCommandTools()) {
     const properties = tool.inputSchema.properties ?? {};
     assert.equal('readinessTimeoutMs' in properties, false, `${tool.name} advertises it`);
   }
-  const calls: unknown[] = [];
+  // The real command route (no runCommand injection), like the retired maxSize regressions:
+  // retired keys pass admission so the command's own reader answers with migration guidance.
   const executor = createCommandToolExecutor({
     createClient: () => ({}) as AgentDeviceClient,
-    runCommand: async (_client, name, input) => {
-      calls.push({ name, input });
-      return {};
-    },
   });
 
-  const result = await executor.execute('press', {
-    target: { kind: 'selector', selector: 'label=Continue' },
-    readinessTimeoutMs: 2_000,
-  });
-
-  assert.equal(result.isError, true);
-  assert.match(
-    result.content[0]?.text ?? '',
-    /readinessTimeoutMs is not accepted as a tool argument/,
-  );
-  assert.deepEqual(calls, [], 'a refused operator input must never reach the command route');
+  for (const [command, input] of [
+    ['press', { target: { kind: 'selector', selector: 'label=Continue' } }],
+    ['fill', { target: { kind: 'selector', selector: 'label=Name' }, text: 'x' }],
+  ] as const) {
+    const result = await executor.execute(command, { ...input, readinessTimeoutMs: 2_000 });
+    assert.equal(result.isError, true, command);
+    assert.match(result.content[0]?.text ?? '', /readinessTimeoutMs was removed/, command);
+  }
 });
 
 test('MCP refuses an explicit daemonAuthToken argument with env guidance', async () => {
@@ -238,4 +232,29 @@ test('MCP still resolves operator env values outside the model-writable surface'
   assert.equal(result.isError, false);
   assert.equal(calls[0]?.input.daemonAuthToken, 'operator-env-token');
   assert.equal(createdConfigs[0]?.stateDir, '/operator/state-dir');
+});
+
+test('MCP neither advertises nor admits the CLI-only fill textStdin marker', async () => {
+  for (const tool of listCommandTools()) {
+    const properties = tool.inputSchema.properties ?? {};
+    assert.equal('textStdin' in properties, false, `${tool.name} advertises it`);
+  }
+  const calls: unknown[] = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      calls.push({ name, input });
+      return {};
+    },
+  });
+
+  const result = await executor.execute('fill', {
+    target: { kind: 'ref', ref: '@e3' },
+    text: 'secret',
+    textStdin: true,
+  });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]?.text ?? '', /textStdin is not accepted as a tool argument/);
+  assert.deepEqual(calls, [], 'a refused operator input must never reach the command route');
 });

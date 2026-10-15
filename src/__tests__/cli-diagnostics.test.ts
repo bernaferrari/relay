@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DaemonResponse } from '../daemon-client/daemon-client.ts';
-import { resolveDaemonPaths } from '../daemon-resolution.ts';
+import { resolveDaemonPaths } from '@agent-device/daemon-contracts/daemon-resolution';
 import {
   runCliCapture as captureCli,
   type CapturedCliRun,
   type CapturedDaemonRequest,
 } from './cli-capture.ts';
-import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
+import { mkdtempForTestSync } from '@agent-device/test-kit/tmp-dir';
 
 async function runCliCapture(
   argv: string[],

@@ -27,73 +27,9 @@ import { deviceLaneOwnership } from './device-lanes.ts';
 // the command-reference docs gate, which used to be reachable only as a workflow
 // job nothing in this repo could name. The run-gate action is the only way a CI lane
 // declares ownership, so `check:gate-manifest` fails when a registered check has no lane.
-// Raw shell earns no ownership credit.
-export type CheckId =
-  | 'format'
-  | 'lint'
-  | 'typecheck'
-  | 'test-app-typecheck'
-  | 'test-app-security'
-  | 'layering'
-  | 'di-seams'
-  | 'fallow'
-  | 'mcp-metadata'
-  | 'build'
-  | 'package'
-  | 'vitest-related'
-  | 'unit'
-  | 'unit-ci'
-  | 'coverage'
-  | 'provider-integration'
-  | 'integration-node'
-  | 'macos-coverage'
-  | 'ios-snapshot-differential'
-  | 'integration-progress'
-  | 'swift-runner-ios'
-  | 'swift-runner-macos'
-  | 'android-helpers'
-  | 'macos-helper'
-  | 'web-smoke'
-  | 'replay-compat'
-  | 'daemon-wire-compat'
-  // Tooling gates: each proves one of the checkers above still behaves.
-  | 'affected-selector'
-  | 'gate-manifest'
-  | 'gate-manifest-model'
-  | 'depgraph'
-  | 'tmpdir-leaks'
-  | 'tmpdir-leaks-model'
-  | 'coverage-model'
-  | 'wire-compat-model'
-  | 'production-exports'
-  | 'bundle-owner-files'
-  | 'freerange'
-  | 'fixture-cache'
-  | 'fixture-fallback'
-  | 'command-docs'
-  | 'agent-guidance'
-  | 'xctest-selection'
-  | 'packaged-runner-swift'
-  // Gates that drive their own runner — declared nowhere, registered here.
-  | 'maestro-conformance'
-  | 'maestro-differential'
-  | 'maestro-regenerate'
-  | 'fuzz-parsers'
-  | 'mutation'
-  | 'mutation-affected'
-  | 'mutation-check'
-  | 'mutation-model'
-  | 'concurrency-torture'
-  | 'replay-ios'
-  | 'replay-ios-device'
-  | 'replay-macos'
-  | 'replay-linux'
-  | 'linux-command-evidence'
-  | 'replay-android';
-
-// The complete local check universe. A fail-open plan selects all of these;
-// keep it in sync with the catalog in checks.ts (asserted by the self-test).
-export const ALL_CHECKS: readonly CheckId[] = [
+// Raw shell earns no ownership credit. A fail-open plan selects all of these; keep it in sync
+// with the catalog in checks.ts (asserted by the self-test).
+export const ALL_CHECKS = [
   'format',
   'lint',
   'typecheck',
@@ -114,6 +50,7 @@ export const ALL_CHECKS: readonly CheckId[] = [
   'unit',
   'unit-ci',
   'coverage',
+  'coverage-crap',
   'provider-integration',
   'integration-progress',
   'swift-runner-ios',
@@ -130,6 +67,7 @@ export const ALL_CHECKS: readonly CheckId[] = [
   'tmpdir-leaks',
   'tmpdir-leaks-model',
   'coverage-model',
+  'coverage-crap-model',
   'wire-compat-model',
   'production-exports',
   'bundle-owner-files',
@@ -137,6 +75,8 @@ export const ALL_CHECKS: readonly CheckId[] = [
   'fixture-cache',
   'fixture-fallback',
   'command-docs',
+  'docs-links',
+  'docs-prose',
   'agent-guidance',
   'xctest-selection',
   'packaged-runner-swift',
@@ -155,7 +95,9 @@ export const ALL_CHECKS: readonly CheckId[] = [
   'replay-linux',
   'linux-command-evidence',
   'replay-android',
-];
+] as const;
+
+export type CheckId = (typeof ALL_CHECKS)[number];
 
 export type SelectionReason = {
   check: CheckId;
@@ -602,26 +544,59 @@ function isAgentGuidance(file: string): boolean {
   return AGENT_GUIDANCE.has(file) || file.startsWith('docs/agents/');
 }
 
-const docsOwnership: OwnershipRule = ({ file }) =>
-  isAgentGuidance(file)
-    ? [
-        reason(
-          'agent-guidance',
-          file,
-          'own:agent-guidance',
-          'agent guidance is held to glossary, routing, and context-budget contracts',
-        ),
-      ]
-    : file === COMMAND_DOCS
-      ? [
-          reason(
-            'command-docs',
-            file,
-            'own:command-docs',
-            'the command reference is asserted against the CLI in both directions',
-          ),
-        ]
-      : [];
+// The user docs: README and the docs site pages. `check:doc-prose` reads them; `check:doc-links`
+// resolves their links and also reruns when the website manifest or config that decide what the
+// built site renders change.
+const SITE_BUILD_INPUTS = new Set(['website/package.json', 'website/rspress.config.ts']);
+
+function isUserDocPage(file: string): boolean {
+  return file === 'README.md' || (file.startsWith('website/docs/') && /\.mdx?$/.test(file));
+}
+
+const docsOwnership: OwnershipRule = ({ file }) => {
+  const selections: SelectionReason[] = [];
+  if (isAgentGuidance(file)) {
+    selections.push(
+      reason(
+        'agent-guidance',
+        file,
+        'own:agent-guidance',
+        'agent guidance is held to glossary, routing, and context-budget contracts',
+      ),
+    );
+  }
+  if (file === COMMAND_DOCS) {
+    selections.push(
+      reason(
+        'command-docs',
+        file,
+        'own:command-docs',
+        'the command reference is asserted against the CLI in both directions',
+      ),
+    );
+  }
+  if (isUserDocPage(file) || SITE_BUILD_INPUTS.has(file)) {
+    selections.push(
+      reason(
+        'docs-links',
+        file,
+        'own:docs-links',
+        'internal docs links must land on an existing page and heading',
+      ),
+    );
+  }
+  if (isUserDocPage(file)) {
+    selections.push(
+      reason(
+        'docs-prose',
+        file,
+        'own:docs-prose',
+        'user docs avoid filler, marketing, and time-relative words',
+      ),
+    );
+  }
+  return selections;
+};
 
 // Live device lanes, by platform family (device-lanes.ts). Selected here alongside the
 // static gates so a TypeScript-only Apple change carries its iOS/macOS lanes in the plan.

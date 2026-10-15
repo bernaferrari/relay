@@ -1,15 +1,19 @@
-import type { AgentDeviceBackend, BackendSnapshotResult } from '../../../../../backend.ts';
+import type { AgentDeviceBackend, BackendSnapshotResult } from '@agent-device/contracts/backend';
+import { annotateCoveredSnapshotNodes } from '@agent-device/capture-kit/snapshot-occlusion';
 import { createLocalArtifactAdapter } from '../../../../../io.ts';
 import type { SnapshotState } from '@agent-device/kernel/snapshot';
-import {
-  createAgentDevice,
-  createMemorySessionStore,
-  localCommandPolicy,
-  type CommandSessionStore,
-} from '../../../../../runtime.ts';
+import { createAgentDevice } from '../../../../../runtime.ts';
+import { localCommandPolicy } from '@agent-device/contracts/command-policy';
+import type { CommandSessionStore } from '@agent-device/contracts/runtime-contract';
 import { ref } from '../../selector-read-utils.ts';
 import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
-import { UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES } from '@agent-device/selectors/interaction-targeting-fixtures';
+import {
+  RN_TEXT_ECHO_DISTINCT_SUBTREE_NODES,
+  RN_TEXT_ECHO_NODES,
+  RN_TEXT_ECHO_OFFSET_RECT_NODES,
+  UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES,
+} from '@agent-device/selectors/interaction-targeting-fixtures';
+import { createMemorySessionStore } from '../../../../../command-runtime/runtime-factory.ts';
 
 export function selectorSnapshot(): SnapshotState {
   return makeSnapshotState([
@@ -74,31 +78,6 @@ export function offscreenDrawerSnapshot(): SnapshotState {
       type: 'Button',
       label: 'Explore',
       rect: { x: -320, y: 240, width: 300, height: 50 },
-      hittable: true,
-    },
-  ]);
-}
-
-export function runtimeScrollSnapshot(options: {
-  hiddenBelow: boolean;
-  message?: string;
-}): SnapshotState {
-  return makeSnapshotState([
-    {
-      index: 1,
-      depth: 0,
-      type: 'ScrollView',
-      label: 'Messages',
-      hiddenContentBelow: options.hiddenBelow ? true : undefined,
-      rect: { x: 0, y: 100, width: 400, height: 600 },
-    },
-    {
-      index: 2,
-      depth: 1,
-      parentIndex: 1,
-      type: 'Button',
-      label: options.message ?? 'Latest message',
-      rect: { x: 0, y: 640, width: 400, height: 56 },
       hittable: true,
     },
   ]);
@@ -203,6 +182,42 @@ export function coveredByTabBarSnapshot(): SnapshotState {
       hittable: true,
     },
   ]);
+}
+
+/**
+ * The same tab-bar-over-button shape run through the real annotation pass, so the covered node
+ * carries the scan's `coveredBy` description exactly as a capture publishes it.
+ */
+export function coveredByScanSnapshot(): SnapshotState {
+  return makeSnapshotState(
+    annotateCoveredSnapshotNodes([
+      {
+        index: 0,
+        depth: 0,
+        type: 'Application',
+        label: 'Example',
+        rect: { x: 0, y: 0, width: 390, height: 844 },
+      },
+      {
+        index: 1,
+        depth: 1,
+        parentIndex: 0,
+        type: 'Button',
+        label: 'Save draft',
+        rect: { x: 16, y: 790, width: 140, height: 44 },
+        hittable: true,
+      },
+      {
+        index: 2,
+        depth: 1,
+        parentIndex: 0,
+        type: 'TabBar',
+        label: 'Media',
+        rect: { x: 0, y: 760, width: 390, height: 84 },
+        hittable: true,
+      },
+    ]),
+  );
 }
 
 export function duplicateCoveredLabelSnapshot(): SnapshotState {
@@ -342,7 +357,7 @@ export function createInteractionDevice(
   > & {
     platform?: AgentDeviceBackend['platform'];
     sessionMetadata?: Record<string, unknown>;
-    /** An advancing clock, for interactions that poll (the promotedTarget readiness loop). */
+    /** An advancing clock for wait, post-action observation, and moving-target recheck loops. */
     clock?: { now: () => number; sleep: (ms: number) => Promise<void> };
   } = {},
 ) {
@@ -458,6 +473,25 @@ export function ambiguousSelectorReadSnapshot(): SnapshotState {
  */
 export function unverifiedWrapperChainReadSnapshot(): SnapshotState {
   return makeSnapshotState(UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES);
+}
+
+/**
+ * React Native text reported twice by a live regular iOS snapshot
+ * (`interaction-targeting.fixtures`): the uniqueness reads answer about the text
+ * reporter instead of refusing a line that is on screen (#2870).
+ */
+export function rnTextEchoReadSnapshot(): SnapshotState {
+  return makeSnapshotState(RN_TEXT_ECHO_NODES);
+}
+
+/** The same label twice in distinct subtrees: nothing collapses here (#2870). */
+export function rnTextEchoDistinctSubtreeReadSnapshot(): SnapshotState {
+  return makeSnapshotState(RN_TEXT_ECHO_DISTINCT_SUBTREE_NODES);
+}
+
+/** The same label mirrored at a rect beyond wrapper slack: a second run of text, not a mirror. */
+export function rnTextEchoOffsetRectReadSnapshot(): SnapshotState {
+  return makeSnapshotState(RN_TEXT_ECHO_OFFSET_RECT_NODES);
 }
 
 /**

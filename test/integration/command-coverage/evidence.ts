@@ -48,11 +48,11 @@ export const ANDROID_FOLD_RUNTIME_CONTRACT_EVIDENCE: AndroidContractEvidence =
   defineAndroidContractEvidence(
     'packages/platform-android/src/runtime.test.ts',
     [C.fold],
-    'Android refuses the fold fact on every kind',
+    'Android admits the fold fact on emulators and refuses every other kind',
   );
 export const ANDROID_VIEWPORT_RUNTIME_CONTRACT_EVIDENCE: AndroidContractEvidence =
   defineAndroidContractEvidence(
-    'src/daemon/__tests__/viewport-runtime.test.ts',
+    'packages/daemon/src/execution/__tests__/viewport-runtime.test.ts',
     [C.viewport],
     'rejects an unavailable exact-owner fact before binding',
   );

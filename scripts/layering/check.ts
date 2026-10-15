@@ -3,10 +3,12 @@
 //
 // Ranked target spine, as rank groups lowest to highest. `A ◄ B` means B may not
 // be outranked by A (the back-edge order the gate rejects), NOT that every displayed import exists:
-//   { contracts, request, selectors } ◄ core ◄ commands
-//         ◄ { client, daemon-server } ◄ daemon-client ◄ cli
-// (authoritative ranks: `TARGET_DAG_RANK` in model.ts. The former rank-0 kernel
-// zone lives in packages/kernel since #1490 W0; R11 owns its boundary.)
+//   { contracts, selectors, ... } ◄ { core, daemon-contracts } ◄ { commands, command-runtime }
+//         ◄ { client, daemon-server, platform-runtime, ... } ◄ daemon-client ◄ { sdk, ai-sdk }
+//         ◄ cli ◄ platform-runtime-host ◄ (root)
+// (authoritative ranks: `TARGET_DAG_RANK` in model.ts; root modules declare their zone in
+// root-module-zones.ts. The former rank-0 kernel zone lives in packages/kernel since #1490 W0;
+// R11 owns its boundary.)
 // `commands/schema/` renders the rest of commands/'s facets and reads them; commands never
 // imports it back (#2543). It shares the commands zone (#2679 folded the standalone
 // cli-schema zone into it), so the ranked spine and the R2 zone-policy table cannot see the
@@ -22,6 +24,8 @@
 //   - Over the RANKED SPINE only: rejection of every spine back-edge (R5), i.e.
 //     an import whose source zone outranks its target zone, plus a ratchet on the
 //     same inversion measured over TYPE-ONLY edges (R6).
+//   - Over the ZONE GRAPH: static value imports between zones form no cycle (R80), which R5
+//     cannot see between two zones of the same rank.
 //   - Over the DAEMON and its capture-admission adapters: SessionState field ownership (R7), because the session
 //     record is store-owned mutable state that any daemon module can write; and the terminal
 //     concrete-platform boundary (R65), which rejects every import form into the retired
@@ -32,8 +36,11 @@
 //   - Across the DAEMON MODULARITY MIGRATION: R7 ownership pressure and external
 //     daemon request/session-state importers only shrink, R9 zone membership cannot grow or absorb
 //     engine files, and planned logical modules start with zero forbidden/internal imports (R10).
-//   - Over the WORKSPACE PACKAGES: no root back-imports, no relative tunnelling past
-//     an exports map, and every workspace specifier declared + exports-named (R11).
+//   - Over the WORKSPACE PACKAGES: every workspace specifier declared, no relative path
+//     leaving its package dir (compiled or not — a planted sibling tunnel tsc -b accepted,
+//     #3289 review), and the full specifier sweep for the scripts/ files the type graph
+//     omits — resolution itself (unknown package, un-exported subpath) is TS2307 under tsc -b
+//     for compiled sources (#3279) (R11).
 //   - Over PLATFORM PACKAGE COMPOSITION: six private metadata façades meet at the exact root
 //     composition file; premature implementation loading and forbidden cross-boundary edges fail (R13).
 //   - Over THE APPLE RUNNER SUBTREE: `runner/**` may not value-import `@agent-device/host-kit/*`
@@ -47,14 +54,20 @@
 //     brand casts inside those two modules, so a udid never runs outside the set that holds it.
 //   - Over REQUEST-BOUND RUNTIME EXECUTION: facts remain the only admission authority and daemon
 //     code cannot manufacture or repair a narrowed runtime proof (R66).
+//   - Over THE DAEMON'S INTERIOR: every production file under the daemon root (DAEMON_ROOT) sits
+//     under one of the five layer folders — the first path segment under the daemon root is its
+//     layer — and no
+//     static edge reads up the daemon-local order core < resources < execution < sessions <
+//     server (R81). The global spine
+//     ranks all five layers at daemon-server's rank, so R5/R6/R80 are blind inside the zone.
 //   - Over CONTRACTS PRODUCTION SOURCE: contracts owns vocabulary only — host, process, and timer
 //     mechanics belong in capture-kit or an adapter (R18).
 // R6, R9, and the R10 R7 counts are ratchets with no written-down reference: each is the same
 // measurement taken over the merge-base with origin/main (`ratchet-reference.ts`), so growth
 // fails, a shrink needs no edit, and no change can bank headroom.
-// `(root)` holds entrypoints and composition roots. The retired `src/utils` zone is deliberately
-// outside the spine and is rejected separately by R14; extracted workspace package zones are
-// classified separately and held behind R11 instead of the src folder spine.
+// `(root)` holds the executables and ranks above the spine. The retired `src/utils` zone is
+// deliberately outside the spine and is rejected separately by R14; extracted workspace package
+// zones are classified separately and held behind R11 instead of the src folder spine.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -79,6 +92,7 @@ import {
   type ResolvedImportEdge,
 } from './model.ts';
 import { checkTypeInversions } from './type-inversion-ratchet.ts';
+import { checkZoneValueDag } from './zone-value-dag.ts';
 import {
   measureRatchets,
   mergeBaseRatchets,
@@ -117,13 +131,13 @@ import { selectorPipelineOwnershipViolations } from './selector-pipeline-ownersh
 import { recordRuntimeRegistryJoinViolations } from './record-runtime-registry-policy.ts';
 import { recordRuntimeDaemonMechanicsViolations } from './record-runtime-mechanics-policy.ts';
 import { checkDaemonPlatformBoundary } from './daemon-platform-boundary.ts';
-import {
-  checkDaemonPlatformRuntimeInventory,
-  DAEMON_PLATFORM_RUNTIME_EDGES,
-} from './daemon-platform-runtime-inventory.ts';
+import { checkDaemonPlatformRuntimeInventory } from './daemon-platform-runtime-inventory.ts';
 import { checkDaemonClientEntry } from './daemon-client-entry.ts';
+import { checkDaemonProcessReach } from './daemon-process-reach.ts';
+import { checkDaemonLayers, DAEMON_ROOT } from './daemon-layers.ts';
 import { checkSessionAuthorityOverlay, handlerOwnedOverlay } from './session-authority-overlay.ts';
 import {
+  DAEMON_SOURCE_ROOT,
   listTrackedPlatformZoneFiles,
   listTrackedProductionSources,
   listTrackedSrcUtilsFiles,
@@ -237,6 +251,15 @@ function checkRecordRuntimeOwnership(sources: ReadonlyMap<string, string>): Laye
  *   import direction no longer matters. Splitting zones into packages would not replace it: the
  *   A4 spike found an undeclared workspace package still resolves through root node_modules and
  *   a relative tunnel into another package's src still compiles.
+ * Scope: static value imports. Dynamic imports are out of scope for R5 and R80 by decision
+ *   (#3280). An `import()` target never joins the importer's eager closure, so a lazy edge cannot
+ *   cost what a value back-edge costs, and the code places lazy seams exactly where a module
+ *   defers one ranked above it or one that depends back on it: `cli/process-entry.ts` loads
+ *   `cli.ts`, the MCP tools load the typed client, the daemon's provider registry loads the
+ *   Limrun runtime from `src/sdk/`, and the platform runtime loads its operation host
+ *   (`loadHost`), which reads daemon session artifacts. Ranking them would reject that pattern
+ *   rather than a mistake; what a lazy edge may load is owned by R13's laziness policy and the
+ *   eager-closure budgets.
  */
 function checkBackEdges(edges: readonly ResolvedImportEdge[]): LayeringViolation[] {
   const seen = new Set<string>();
@@ -262,7 +285,7 @@ function checkSessionStateOwnership(sources: ReadonlyMap<string, string>): Layer
     return [
       {
         rule: 'R7 session-state-ownership',
-        file: 'src/daemon/session-state.ts',
+        file: `${DAEMON_ROOT}/core/session-state.ts`,
         line: 1,
         message: 'no daemon module declares SessionState, so its ownership cannot be checked.',
       },
@@ -398,7 +421,8 @@ function report(
     process.stdout.write(
       `Layering guard: OK — ${files.length} source files satisfy R2 and contain no ` +
         `value-import cycles (both checked globally); the ranked target spine contains no ` +
-        `back-edges; the ranked spine's type-only inversions hold at or under the merge-base ` +
+        `back-edges and the zone graph no value-import cycle (R80); the ranked spine's ` +
+        `type-only inversions hold at or under the merge-base ` +
         `${reference.ref.slice(0, 10)} per zone pair (R6, ${inversions} remaining); ` +
         `${RETIRED_PATH_RULES.R14.rule} permits no tracked paths under retired src/utils; ` +
         `all ${sessionStateFieldCount()} SessionState fields are classified and every write is ` +
@@ -406,12 +430,17 @@ function report(
         `${ratchets.largestTypeCycle.length} files (R9); ${daemonModularitySummary(reference)}; ` +
         `${packageBoundariesSummary(repoRoot)}; ${platformPackagePolicySummary()}; ` +
         `runtime facts remain the only device-command admission authority and daemon code cannot ` +
-        `manufacture narrowed runtime proof (R66); R65 keeps production src/daemon free of ` +
+        `manufacture narrowed runtime proof (R66); R65 keeps production packages/daemon/src ` +
+        `free of ` +
         `concrete platform imports in every executable and type-only form; ` +
-        `${DAEMON_PLATFORM_RUNTIME_EDGES.length} daemon-to-root platform-runtime edges hold ` +
-        `their #2278 classification (R76); and the handler-owned SessionState/SessionStore ` +
+        `no production daemon file reaches the root platform-runtime family or a hub that ` +
+        `does (R76); the daemon process reaches no caller-side replay source module over ` +
+        `static or dynamic edges (R82); and the handler-owned SessionState/SessionStore ` +
         `authority overlay holds at or under the merge-base (R75, ` +
-        `${handlerOwnedShapeFiles} shape / ${handlerOwnedAuthorityFiles} authority files).\n`,
+        `${handlerOwnedShapeFiles} shape / ${handlerOwnedAuthorityFiles} authority files); and ` +
+        `every production daemon file lives under a layer folder with no upward static edges ` +
+        `across core < resources < execution < sessions < server (R81; dynamic cross-layer edges ` +
+        `are reported above when present).\n`,
     );
     return 0;
   }
@@ -473,6 +502,7 @@ export const LAYERING_RULE_IDS = [
   'substrate-domain-shape',
   'selector-pipeline-ownership',
   'back-edges',
+  'zone-value-dag',
   'type-spine-inversions',
   'session-state-ownership',
   'daemon-modularity-ratchets',
@@ -488,8 +518,10 @@ export const LAYERING_RULE_IDS = [
   'provider-snapshot-presentation-ownership',
   'snapshot-assembly-presentation-neutrality',
   'daemon-platform-runtime-inventory',
+  'daemon-process-reach',
   'daemon-client-entry',
   'session-authority-overlay',
+  'daemon-layers',
 ] as const;
 
 export type LayeringRuleId = (typeof LAYERING_RULE_IDS)[number];
@@ -514,6 +546,7 @@ export const LAYERING_RULES: Readonly<Record<LayeringRuleId, LayeringRule>> = {
   'selector-pipeline-ownership': (context) =>
     selectorPipelineOwnershipViolations(context.edges, workspaceSpecifierTargets(repoRoot)),
   'back-edges': (context) => checkBackEdges(context.edges),
+  'zone-value-dag': (context) => checkZoneValueDag(context.edges),
   'type-spine-inversions': (context) =>
     checkTypeInversions(context.edges, context.reference.typeInversions),
   'session-state-ownership': (context) => checkSessionStateOwnership(context.sources),
@@ -550,11 +583,17 @@ export const LAYERING_RULES: Readonly<Record<LayeringRuleId, LayeringRule>> = {
     snapshotAssemblyPresentationViolations(context.sources, context.edges),
   'daemon-platform-runtime-inventory': (context) =>
     checkDaemonPlatformRuntimeInventory(context.edges),
-  'daemon-client-entry': (context) => checkDaemonClientEntry(context.edges),
+  'daemon-process-reach': (context) => checkDaemonProcessReach(context.sourceFiles, context.edges),
+  'daemon-client-entry': (context) => checkDaemonClientEntry(context.sourceFiles, context.edges),
   'session-authority-overlay': (context) =>
     checkSessionAuthorityOverlay(
       context.ratchets.sessionAuthority,
       context.reference.sessionAuthority,
+    ),
+  'daemon-layers': (context) =>
+    checkDaemonLayers(
+      context.sourceFiles.filter((file) => file.startsWith(DAEMON_SOURCE_ROOT)),
+      context.edges,
     ),
 };
 

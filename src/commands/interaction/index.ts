@@ -302,7 +302,7 @@ export const INTERACTION_COMMAND_OUTPUT_SCHEMAS = {
   fill: {
     type: 'object',
     description:
-      'Fill response. Returns target-bound unconfirmed evidence when the exact field changed but its value cannot confirm the text: Android app-owned formatting, or an Apple field whose accessibility value does not echo the typed text.',
+      'Fill response. Target-bound unconfirmed evidence reports an observed value different from the requested text. It does not establish that formatting preserved the input; assert the expected value or resulting screen before continuing.',
     oneOf: [confirmedFillResponseSchema, unconfirmedFillResponseSchema],
   },
   longpress: interactionResponseDataSchema({
@@ -425,7 +425,8 @@ const interactionCliSchemas = {
     allowedFlags: ['delayMs'],
   },
   fill: {
-    usageOverride: 'fill <x> <y> <text> | fill <@ref|selector> <text>',
+    usageOverride:
+      'fill <x> <y> <text> | fill <@ref|selector> <text> | fill <x y|@ref|selector> --text-stdin',
     usageFlags: [],
     positionalArgs: ['targetOrX', 'yOrText', 'text?'],
     allowsExtraPositionals: true,
@@ -433,6 +434,7 @@ const interactionCliSchemas = {
       ...SELECTOR_SNAPSHOT_FLAGS,
       'delayMs',
       'recordAs',
+      'textStdin',
       ...postActionObservationCliFlags('fill'),
     ],
   },
@@ -479,7 +481,7 @@ const fillCommandFacet = defineCommandFacet({
   text: {
     summary: 'Replace text in a UI input',
     cliDetail:
-      'Every positional after an @ref is the replacement text, so fill @e57 good morning enters "good morning"; quote the text when the shell must preserve exact whitespace. Clear a field with an empty text argument: fill @e57 "" (the argument must be present — fill @e57 alone is a missing argument, not a clear). When visible label text also matches a non-input element, constrain the target with editable=true, for example fill \'label="Email" editable=true\' "qa@example.com".',
+      'Every positional after an @ref is the replacement text, so fill @e57 good morning enters "good morning"; quote the text when the shell must preserve exact whitespace. Clear a field with an empty text argument: fill @e57 "" (the argument must be present — fill @e57 alone is a missing argument, not a clear). When visible label text also matches a non-input element, constrain the target with editable=true, for example fill \'label="Email" editable=true\' "qa@example.com". To keep a secret out of argv, omit the text and pipe it in: printf %s "$PASSWORD" | fill @e57 --text-stdin (max 64 KiB, one trailing newline removed).',
   },
   metadata: metadata('fill'),
   run: (client, input) => client.interactions.fill(toFillOptions(input)),
@@ -666,16 +668,7 @@ function metadata<TName extends InteractionCommandName>(
 }
 
 function toClickOptions(input: ClickInput): ClickOptions {
-  return {
-    ...commonToClientOptions(input),
-    ...toClientInteractionTarget(input.target),
-    ...toSelectorSnapshotOptions(input),
-    ...toRepeatedOptions(input),
-    button: input.button,
-    verify: input.verify,
-    readinessTimeoutMs: input.readinessTimeoutMs,
-    ...toSettleOptions(input),
-  };
+  return { ...toPressOptions(input), button: input.button };
 }
 
 function toPressOptions(input: PressInput): PressOptions {
@@ -685,7 +678,6 @@ function toPressOptions(input: PressInput): PressOptions {
     ...toSelectorSnapshotOptions(input),
     ...toRepeatedOptions(input),
     verify: input.verify,
-    readinessTimeoutMs: input.readinessTimeoutMs,
     ...toSettleOptions(input),
   };
 }
@@ -698,6 +690,7 @@ function toFillOptions(input: FillInput): FillOptions {
     text: input.text,
     delayMs: input.delayMs,
     recordAs: input.recordAs,
+    textStdin: input.textStdin,
     verify: input.verify,
     ...toSettleOptions(input),
   };
@@ -709,7 +702,6 @@ function toLongPressOptions(input: LongPressInput): LongPressOptions {
     ...toClientInteractionTarget(input.target),
     ...toSelectorSnapshotOptions(input),
     durationMs: input.durationMs,
-    readinessTimeoutMs: input.readinessTimeoutMs,
     ...toSettleOptions(input),
   };
 }

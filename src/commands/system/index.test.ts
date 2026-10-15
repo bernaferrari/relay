@@ -151,6 +151,101 @@ describe('system command interface', () => {
     );
   });
 
+  test('appstate CLI output renders the Apple session app from the runner read', () => {
+    const output = systemCliOutputFormatters.appstate({
+      input: {},
+      result: {
+        platform: 'ios',
+        appName: 'TestApp',
+        appBundleId: 'com.example.testapp',
+        state: 'runningForeground',
+        source: 'runner',
+        surface: 'app',
+      },
+    });
+    expect(output.text).toBe(
+      [
+        'Session app: TestApp',
+        'Bundle: com.example.testapp',
+        'State: runningForeground',
+        'Source: runner',
+      ].join('\n'),
+    );
+  });
+
+  test('appstate CLI output falls back to the bundle id and omits absent lines', () => {
+    const output = systemCliOutputFormatters.appstate({
+      input: {},
+      result: {
+        platform: 'ios',
+        appBundleId: 'com.example.mobile',
+        source: 'session',
+        surface: 'app',
+      },
+    });
+    expect(output.text).toBe(
+      ['Session app: com.example.mobile', 'Bundle: com.example.mobile', 'Source: session'].join(
+        '\n',
+      ),
+    );
+  });
+
+  test('appstate CLI output renders unknown when the Apple session carries no app identity', () => {
+    const output = systemCliOutputFormatters.appstate({
+      input: {},
+      result: { platform: 'ios', surface: 'app' },
+    });
+    expect(output.text).toBe('Session app: unknown');
+  });
+
+  test('appstate CLI output renders the Android foreground app and activity', () => {
+    const output = systemCliOutputFormatters.appstate({
+      input: {},
+      result: {
+        platform: 'android',
+        package: 'com.example',
+        activity: '.MainActivity',
+      },
+    });
+    expect(output.text).toBe(['Foreground app: com.example', 'Activity: .MainActivity'].join('\n'));
+  });
+
+  test('appstate CLI output renders the macOS session app', () => {
+    // macOS appState is never admitted by the Apple runtime facts, so the live
+    // daemon always answers from the session record: no State line.
+    const output = systemCliOutputFormatters.appstate({
+      input: {},
+      result: {
+        platform: 'macos',
+        appName: 'System Settings',
+        appBundleId: 'com.apple.systempreferences',
+        source: 'session',
+        surface: 'app',
+      },
+    });
+    expect(output.text).toBe(
+      [
+        'Session app: System Settings',
+        'Bundle: com.apple.systempreferences',
+        'Source: session',
+      ].join('\n'),
+    );
+  });
+
+  test('appstate CLI output renders the HarmonyOS foreground app and activity', () => {
+    const output = systemCliOutputFormatters.appstate({
+      input: {},
+      result: {
+        platform: 'harmonyos',
+        package: 'com.example.hmapp',
+        activity: 'EntryAbility',
+      },
+    });
+    expect(output.text).toBe(
+      ['Foreground app: com.example.hmapp', 'Activity: EntryAbility'].join('\n'),
+    );
+  });
+
   test('orientation reader and writer normalize orientation', () => {
     expect(orientationCliReader(['left'], flags())).toMatchObject({
       orientation: 'landscape-left',

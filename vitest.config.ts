@@ -1,17 +1,18 @@
 import { defineConfig } from 'vitest/config';
 import { resolveVitestMaxWorkers } from './scripts/lib/vitest-concurrency.ts';
+import coverageRunStampReporter from './scripts/vitest-coverage-run-stamp-reporter.ts';
 import slowTestGateReporter from './scripts/vitest-slow-test-reporter.ts';
 
 // A real per-case spawn is timeout noise under thousands of mutant reruns, so the
 // mutation lane excludes these tests even though the unit lane runs them normally.
 const MUTATION_EXCLUDED_SUBPROCESS_TESTS: readonly string[] = [
   // Stubs npx plus the package managers and spawns a real Metro dev server per case.
-  'src/__tests__/client-metro.test.ts',
+  'src/metro/client-metro.test.ts',
   // The SUT is the subprocess watchdog: a node subprocess per case, one hangs on purpose (#1414).
   'scripts/fuzz/harness.test.ts',
   // The daemon takeover test launches a branch-named daemon per case to prove
   // that worktree identity does not strand the predecessor (#1545).
-  'src/__tests__/daemon-process-takeover.test.ts',
+  'packages/daemon-contracts/src/daemon-process-takeover.test.ts',
 ];
 
 // The fuzz corpus replay, which must not run under V8 coverage instrumentation.
@@ -48,6 +49,15 @@ const FUZZ_WORKER_TESTS: readonly string[] = [
   // Replays the fuzz corpus through the worker watchdog, waiting its per-case budget (#1414).
   'scripts/fuzz/corpus-replay.test.ts',
 ];
+
+/**
+ * The projects `test:coverage` keeps out of the instrumented invocation, which the stamp reporter has to
+ * expect: without it, the lane's own `--project=!fuzz-worker` is indistinguishable from someone narrowing
+ * the run, and every coverage pass would stamp itself partial. This config owns the split, so it hands the
+ * list to the reporter directly; the guard test compares it against the declared projects below and the
+ * `--project=!x` flags in the script, which are the two ways it can go stale.
+ */
+export const COVERAGE_UNINSTRUMENTED_PROJECTS: readonly string[] = ['fuzz-worker'];
 /**
  * Every test the mutation lane must not collect. The two lists above stay
  * module-local: this union is the whole cross-file surface, and the mutation lane
@@ -93,7 +103,12 @@ export default defineConfig({
     // assumption without reducing ordinary file-level parallelism.
     maxConcurrency: 1,
     // Gate reporters for every lane; a `--reporter` flag would replace them, so no lane passes one.
-    reporters: ['default', slowTestGateReporter()],
+    // The stamp reporter only acts on a lane that ran coverage — see its module.
+    reporters: [
+      'default',
+      slowTestGateReporter(),
+      coverageRunStampReporter(COVERAGE_UNINSTRUMENTED_PROJECTS),
+    ],
     projects: [
       {
         test: {
@@ -103,9 +118,13 @@ export default defineConfig({
           include: [
             'src/**/*.test.ts',
             'packages/*/src/**/*.test.ts',
+            // The maestro conformance projection is test-tree code beside its harness; its own
+            // test stays in the fast lane rather than the node:test conformance script.
+            'packages/maestro/test/conformance/conformance-selector-projection.test.ts',
             // The subprocess watchdog self-check: spawns a real node subprocess per case,
             // and one hangs on purpose (#1414).
             'scripts/fuzz/harness.test.ts',
+            'scripts/replays/android-manual.test.ts',
             // The validation fuzz generators' expectation gates (#1781 B2): in-process, no
             // subprocess or worker, so they ride the fast lane unlike their serialized siblings.
             'scripts/fuzz/validation-arbitraries.test.ts',
@@ -113,6 +132,10 @@ export default defineConfig({
             'scripts/fuzz/validation-arbitraries-maestro.test.ts',
             'scripts/fuzz/validation-case.test.ts',
             'scripts/fuzz/envelope.test.ts',
+            'scripts/__tests__/vitest-slow-test-reporter.test.ts',
+            // Artifact guards assert on Swift sources, package.json, workflows, docs and examples rather
+            // than on a module under src.
+            'test/repo-guards/*.test.ts',
             'scripts/__tests__/help-conformance-bench.test.ts',
             'scripts/__tests__/help-conformance-error-recovery-coverage.test.ts',
             'scripts/__tests__/help-conformance-expectation-falsification.test.ts',
@@ -126,6 +149,7 @@ export default defineConfig({
             // scripts/mutation/modules.ts.
             'scripts/__tests__/test-file-size-ratchet.test.ts',
             'scripts/__tests__/eager-closure-budgets.test.ts',
+            'scripts/__tests__/closure-growth-rule.test.ts',
             'scripts/__tests__/agent-setup-startup-contract.test.ts',
             'scripts/__tests__/npm-skills-exclusion.test.ts',
             'scripts/__tests__/simulator-skills-contract.test.ts',
@@ -153,6 +177,7 @@ export default defineConfig({
             // Publish preparation spawns only fixture-owned scripts and proves both Android
             // helper families are rebuilt through the shared release/size-report owner.
             'scripts/__tests__/prepare-publish-assets.test.ts',
+            'scripts/__tests__/build-package-xcuitest.test.ts',
             // The packager's Swift comment scanner: pure string transform, and the only place a
             // literal that looks like a comment (a URL, a raw or multi-line literal) is proven
             // to survive packaging before the npm package ships unbuildable Swift.
@@ -166,12 +191,15 @@ export default defineConfig({
             // Parse-only guard on the checked-in registry entry: the npm package must declare
             // the fixed mcp subcommand, or registry-format launchers run the bare CLI.
             'scripts/__tests__/mcp-metadata.test.ts',
+            // Release channel versions: nightly naming, promotion lookup, and main's -dev advance.
+            'scripts/__tests__/release-version.test.ts',
+            'scripts/__tests__/release-plan.test.ts',
             'scripts/ios-snapshot-benchmark/*.test.ts',
-            'scripts/png-crop-benchmark/*.test.ts',
-            'scripts/ios-ax-bridge-spike/*.test.ts',
             // Parses CI configuration only, so this action guard needs no device or subprocess lane.
             'test/ci/upload-agent-device-artifacts.test.ts',
             'test/ci/upload-artifact-hidden-paths.test.ts',
+            // npm trusts release.yml, so its token boundary is asserted on the parsed workflow.
+            'test/ci/release-workflow.test.ts',
             // The size reporter is preserved across a base checkout; its entrypoint and imported
             // modules must move as one directory or the Bundle Size lane fails before measuring.
             'test/ci/size-workflow.test.ts',
@@ -254,18 +282,32 @@ export default defineConfig({
     ].map((project) => ({ ...project, test: { ...project.test, ...TEST_ISOLATION } })),
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'lcov', 'json-summary'],
+      reporter: [
+        'text',
+        'html',
+        'lcov',
+        'json-summary',
+        ['json', { file: 'coverage-istanbul.json' }],
+      ],
       thresholds: {
         statements: 78,
         lines: 80,
       },
       include: ['src/**/*.ts', 'packages/*/src/**/*.ts'],
+      // Vitest 5 matches these against the path relative to the repo root without picomatch's
+      // `contains`, so a pattern reaches only the tree its anchor names: `src/**` no longer covers
+      // `packages/*/src/**` the way 4.1.11's did. The four that name a kind of file rather than a
+      // location are root-free. Written as `src/**` instead, package-side type modules and
+      // `__tests__` helpers join the coverage denominator and dilute it with test material.
       exclude: [
-        'src/**/*.test.ts',
-        'src/**/__tests__/**',
+        '**/*.test.ts',
+        '**/__tests__/**',
         '**/*.fixtures.ts',
-        'src/**/*-types.ts',
-        'src/**/types.ts',
+        // Test helpers are test material, not product surface: they sat under `__tests__/` roots
+        // before @agent-device/test-kit existed and must stay out of the coverage denominator.
+        'packages/test-kit/**',
+        '**/*-types.ts',
+        '**/types.ts',
         'src/sdk/**',
         'src/bin.ts',
         'src/client/client-types.ts',

@@ -1,7 +1,15 @@
 import path from 'node:path';
+import { DAEMON_SOURCE_ROOT } from './tracked-sources.ts';
 import { PLATFORMS } from '@agent-device/kernel/device';
+import { createGraph, genDFS, getStronglyConnectedComponents, getSubgraph } from '@statelyai/graph';
 import { parseSync } from 'oxc-parser';
 import { destructuredDynamicImportBindings, visitAst } from './layering-ast.ts';
+import { declaredRootModuleZone } from './root-module-zones.ts';
+import {
+  importGraphFromResolvedEdges,
+  STATIC_EDGES,
+  VALUE_EDGES,
+} from '../depgraph/import-graph.ts';
 
 export type ImportEdge = {
   spec: string;
@@ -13,11 +21,6 @@ export type ImportEdge = {
    * dynamic imports that do not destructure named bindings.
    */
   symbols: readonly string[];
-  /**
-   * True when a dynamic-import destructure holds a binding the scanner cannot name (a rest element
-   * or a computed key); `symbols` then does not enumerate the full imported surface.
-   */
-  bindingResidue: boolean;
 };
 
 export type ResolvedImportEdge = ImportEdge & {
@@ -56,17 +59,24 @@ const TARGET_DAG_RANK = new Map([
   ['selectors', 1],
   ['session-journal', 1],
   ['core', 2],
+  ['daemon-contracts', 2],
+  ['command-runtime', 3],
   ['commands', 3],
   ['mcp', 3],
-  ['ai-sdk', 4],
   ['client', 4],
   ['daemon-server', 4],
   ['metro', 4],
+  ['platform-runtime', 4],
   ['remote', 4],
-  ['sdk', 4],
   ['plugins', 4],
   ['daemon-client', 5],
-  ['cli', 6],
+  // The SDK entries publish the typed client, which reaches the daemon through daemon-client.
+  ['ai-sdk', 6],
+  ['sdk', 6],
+  ['cli', 7],
+  // Reached only through `loadHost`'s import(), so every spine zone ranks below it.
+  ['platform-runtime-host', 8],
+  ['(root)', 9],
 ]);
 
 export const RANKED_ZONES: ReadonlySet<string> = new Set(TARGET_DAG_RANK.keys());
@@ -81,33 +91,28 @@ export function zoneRank(zone: string): number | null {
 }
 
 // Zones deliberately left OUT of the src folder spine. They are NOT unenforced:
-// every file remains under the global value-cycle rule (R4). `(root)` composes
-// the spine from above; extracted package zones are held by R11 package exports
-// and the no-root-back-import rule instead of their former src folder rank.
+// every file remains under the global value-cycle rule (R4) and the zone-level value DAG
+// (R80). Extracted package zones are held by R11 package exports and the no-root-back-import
+// rule instead of a src folder rank.
 //
-// The satellite zones used to be listed here too, on the grounds that ranking them would
-// invent an order the architecture had not committed to. Once `(root)` was emptied of shared
-// contracts, every one of them turned out to have a consistent rank already — so the order was
-// there, just unasserted. The former `utils` zone was retired into owning modules and packages.
-// Extracted workspace packages are not src/ zones: R11 owns their physical seams, and their zone
-// names only appear in workspace-aware graphs. The platform packages additionally carry R13's
+// Every other src/ zone is ranked, `(root)` included: root modules declare their zone in
+// `root-module-zones.ts`, and `(root)` ranks above the spine. Extracted workspace packages are
+// not src/ zones: R11 owns their physical seams, and their zone names only appear in
+// workspace-aware graphs. The platform packages additionally carry R13's
 // exact-family/composition/laziness policy.
 export const UNRANKED_ZONES: ReadonlySet<string> = new Set([
-  '(root)',
   // Stand-ins the bundler resolves in place of a dependency it deliberately omits. Nothing in
   // the production graph imports them, so ranking them would claim an edge the alias replaces.
   'vendor',
-  // Private implementation submodules of the canonical root composition. R13 owns their exact
-  // importer and concrete-platform authority; giving them a spine rank would duplicate that seam.
-  'platform-runtime',
   'kernel',
   'host-kit',
   'capture-kit',
-  'managed-allocation',
   'provision-kit',
+  'test-kit',
   ...PLATFORMS.map((family) => `platform-${family}`),
   'provider-webdriver',
   'provider-limrun',
+  'provider-testmu',
   'proxy',
   'xml',
 ]);
@@ -159,127 +164,138 @@ function literalSpecifier(node: unknown): string | undefined {
   return undefined;
 }
 
-function scanDynamicImports(source: string): ImportEdge[] {
-  const edges: ImportEdge[] = [];
-  const parsed = parseSync('layering-imports.ts', source);
-  const destructured = destructuredDynamicImportBindings(parsed.program);
-  visitAst(parsed.program, (node) => {
-    if (node.type !== 'ImportExpression') return;
-    const spec = literalSpecifier(node.source);
-    if (spec === undefined) return;
-    const start = node.start as number | undefined;
-    const capture = typeof start === 'number' ? destructured.get(start) : undefined;
-    edges.push({
-      spec,
-      dynamic: true,
-      typeOnly: false,
-      line: sourceLine(source, start),
-      symbols: capture ? [...capture.symbols] : [],
-      bindingResidue: capture?.residue ?? false,
-    });
+type LocatedImportEdge = { edge: ImportEdge; start: number };
+
+function importedName(node: unknown): string | undefined {
+  if (node === null || typeof node !== 'object') return undefined;
+  const record = node as Record<string, unknown>;
+  return record.type === 'Identifier' && typeof record.name === 'string' ? record.name : undefined;
+}
+
+function namedSymbols(
+  specifiers: readonly Record<string, unknown>[],
+  importedField: 'imported' | 'local',
+): string[] {
+  const symbols = specifiers.flatMap((specifier) => {
+    const name = importedName(specifier[importedField]);
+    return specifier.type ===
+      (importedField === 'imported' ? 'ImportSpecifier' : 'ExportSpecifier') && name !== undefined
+      ? [name]
+      : [];
   });
-  return edges;
+  return [...new Set(symbols)];
 }
 
-function scanSideEffectImport(line: string, lineNo: number): ImportEdge | null {
-  const match = /^\s*import\s+['"]([^'"]+)['"]/.exec(line);
-  return match
-    ? {
-        spec: match[1]!,
-        dynamic: false,
-        typeOnly: false,
-        line: lineNo,
-        symbols: [],
-        bindingResidue: false,
-      }
-    : null;
+function importTypeSourceName(qualifier: unknown): string | undefined {
+  if (qualifier === null || typeof qualifier !== 'object') return undefined;
+  const record = qualifier as Record<string, unknown>;
+  if (record.type === 'Identifier') return importedName(qualifier);
+  return record.type === 'TSQualifiedName' ? importTypeSourceName(record.left) : undefined;
 }
 
-function withoutImportComments(statement: string): string {
-  return statement.replaceAll(
-    /(["'])(?:\\.|(?!\1)[^\\\r\n])*?\1|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
-    (match) => (match.startsWith('/*') ? ' ' : match.startsWith('//') ? '\n' : match),
-  );
+function specifierTypeOnly(
+  declaration: Record<string, unknown>,
+  specifiers: readonly Record<string, unknown>[],
+  kindField: 'importKind' | 'exportKind',
+): boolean {
+  if (declaration[kindField] === 'type') return true;
+  return specifiers.length > 0 && specifiers.every((specifier) => specifier[kindField] === 'type');
 }
 
-type NamedSpecifier = { name: string; typeOnly: boolean };
-type ParsedNamedSpecifiers = { index: number; specifiers: NamedSpecifier[] };
-
-function parseNamedSpecifiers(statement: string): ParsedNamedSpecifiers | null {
-  const named = /\{([\s\S]*?)\}/.exec(statement);
-  if (!named) return null;
-
-  const specifiers: NamedSpecifier[] = [];
-  for (const specifier of named[1]!.split(',')) {
-    const trimmed = specifier.trim();
-    const typeOnly = /^type\b/.test(trimmed);
-    const sourceName = trimmed.replace(/^type\s+/, '');
-    const name = /^[A-Za-z_$][\w$]*/.exec(sourceName)?.[0];
-    if (name) specifiers.push({ name, typeOnly });
-  }
-  return { index: named.index, specifiers };
-}
-
-function importedSymbols(statement: string): string[] {
-  const parsed = parseNamedSpecifiers(statement);
-  return [...new Set(parsed?.specifiers.map(({ name }) => name) ?? [])];
-}
-
-function statementIsTypeOnly(statement: string): boolean {
-  if (/^\s*(?:import|export)\s+type\b/.test(statement)) return true;
-  const parsed = parseNamedSpecifiers(statement);
-  if (!parsed) return false;
-  const prefix = statement
-    .slice(0, parsed.index)
-    .replace(/^\s*(?:import|export)\s+/, '')
-    .trim()
-    .replace(/,$/, '')
-    .trim();
-  if (prefix.length > 0) return false;
-  return parsed.specifiers.length > 0 && parsed.specifiers.every(({ typeOnly }) => typeOnly);
-}
-
-function scanFromImport(lines: string[], index: number): ImportEdge | null {
-  const fromMatch = /(?:^|[\s;}])from\s+['"]([^'"]+)['"]/.exec(lines[index]!);
-  if (!fromMatch) return null;
-
-  let start = index;
-  while (start >= 0 && !/^\s*(?:import|export)\b/.test(lines[start]!)) start--;
-  if (start < 0) return null;
-
-  const statement = lines.slice(start, index + 1).join('\n');
-  const normalizedStatement = withoutImportComments(statement);
+function staticImportEdge(
+  source: string,
+  node: Record<string, unknown>,
+  specifierNode: unknown,
+  typeOnly: boolean,
+  symbols: string[],
+): ImportEdge | null {
+  const spec = literalSpecifier(specifierNode);
+  if (spec === undefined) return null;
+  const start = node.start as number | undefined;
   return {
-    spec: fromMatch[1]!,
+    spec,
     dynamic: false,
-    typeOnly: statementIsTypeOnly(normalizedStatement),
-    line: start + 1,
-    symbols: importedSymbols(normalizedStatement),
-    bindingResidue: false,
+    typeOnly,
+    line: sourceLine(source, start),
+    symbols,
   };
 }
 
 export function parseImports(source: string): ImportEdge[] {
-  const lines = source.split('\n');
-  const dynamicImports = scanDynamicImports(source);
-  const dynamicImportsByLine = new Map<number, ImportEdge[]>();
-  for (const edge of dynamicImports) {
-    const lineEdges = dynamicImportsByLine.get(edge.line) ?? [];
-    lineEdges.push(edge);
-    dynamicImportsByLine.set(edge.line, lineEdges);
+  const parsed = parseSync('layering-imports.ts', source);
+  if (parsed.errors.length > 0) {
+    throw new SyntaxError(
+      `Cannot parse imports: ${parsed.errors.map(({ message }) => message).join('; ')}`,
+    );
   }
-  const edges: ImportEdge[] = [];
-  for (let index = 0; index < lines.length; index++) {
-    edges.push(...(dynamicImportsByLine.get(index + 1) ?? []));
-    const sideEffect = scanSideEffectImport(lines[index]!, index + 1);
-    if (sideEffect) {
-      edges.push(sideEffect);
-      continue;
+  const destructured = destructuredDynamicImportBindings(parsed.program);
+  const located: LocatedImportEdge[] = [];
+
+  visitAst(parsed.program, (node) => {
+    const start = typeof node.start === 'number' ? node.start : 0;
+    if (node.type === 'ImportExpression') {
+      const spec = literalSpecifier(node.source);
+      if (spec === undefined) return;
+      const capture = destructured.get(start);
+      located.push({
+        start,
+        edge: {
+          spec,
+          dynamic: true,
+          typeOnly: false,
+          line: sourceLine(source, start),
+          symbols: capture ? [...capture.symbols] : [],
+        },
+      });
+      return;
     }
-    const fromImport = scanFromImport(lines, index);
-    if (fromImport) edges.push(fromImport);
-  }
-  return edges;
+
+    let edge: ImportEdge | null = null;
+    if (node.type === 'ImportDeclaration') {
+      const specifiers = Array.isArray(node.specifiers)
+        ? (node.specifiers as Record<string, unknown>[])
+        : [];
+      edge = staticImportEdge(
+        source,
+        node,
+        node.source,
+        specifierTypeOnly(node, specifiers, 'importKind'),
+        namedSymbols(specifiers, 'imported'),
+      );
+    } else if (node.type === 'ExportNamedDeclaration' && node.source) {
+      const specifiers = Array.isArray(node.specifiers)
+        ? (node.specifiers as Record<string, unknown>[])
+        : [];
+      edge = staticImportEdge(
+        source,
+        node,
+        node.source,
+        specifierTypeOnly(node, specifiers, 'exportKind'),
+        namedSymbols(specifiers, 'local'),
+      );
+    } else if (node.type === 'ExportAllDeclaration') {
+      edge = staticImportEdge(source, node, node.source, node.exportKind === 'type', []);
+    } else if (node.type === 'TSImportType') {
+      const sourceName = importTypeSourceName(node.qualifier);
+      edge = staticImportEdge(
+        source,
+        node,
+        node.source,
+        true,
+        sourceName === undefined ? [] : [sourceName],
+      );
+    }
+    if (edge) located.push({ edge, start });
+  });
+
+  return located
+    .sort(
+      (left, right) =>
+        left.edge.line - right.edge.line ||
+        Number(right.edge.dynamic) - Number(left.edge.dynamic) ||
+        left.start - right.start,
+    )
+    .map(({ edge }) => edge);
 }
 
 export function topFolder(file: string): string {
@@ -291,9 +307,9 @@ export function topFolder(file: string): string {
 
 export function targetDagZone(file: string): string {
   // #2342 relocated the daemon client to its own `src/daemon-client/` folder, so the
-  // client zone now falls out of the folder itself; `src/daemon/` is server-only.
-  if (file.startsWith('src/daemon/')) return 'daemon-server';
-  return topFolder(file);
+  // client zone now falls out of the folder itself; `packages/daemon/src/` is server-only.
+  if (file.startsWith(DAEMON_SOURCE_ROOT)) return 'daemon-server';
+  return declaredRootModuleZone(file) ?? topFolder(file);
 }
 
 // The set of zones every production file resolves into. A zone that is neither ranked
@@ -315,6 +331,39 @@ export function unclassifiedZones(files: readonly string[]): string[] {
 // a sibling file — unresolved and invisible to the value-cycle and reverse-reachability graphs).
 const PACKAGE_SRC_PREFIX = /^packages\/[^/]+\/src\//;
 
+/**
+ * Resolve a workspace specifier against an exports-derived targets map, mirroring
+ * Node's exports semantics: exact keys first, then `*` pattern entries with the
+ * longest matching prefix winning and the matched suffix filling the target's
+ * `*`. The map keeps a pattern entry as its literal key
+ * (`@agent-device/daemon/testing/handlers/__tests__/*`), so a plain `get` misses
+ * every concrete import of it — which is how the layering edges, the depgraph,
+ * mutation ownership, and R11's named-surface check each started resolving
+ * pattern-exported specifiers to nothing (#3546 review). This is the single
+ * semantics every in-repo consumer applies: `resolveTargetFile`, `namedByExports`,
+ * and — by ordering its Vite first-match list to this rule — `workspaceSourceAliases`.
+ */
+export function resolveWorkspaceSpecifier(
+  specifier: string,
+  targets: ReadonlyMap<string, string>,
+): string | undefined {
+  const exact = targets.get(specifier);
+  if (exact !== undefined) return exact;
+  let best: { prefix: string; target: string } | undefined;
+  for (const [key, target] of targets) {
+    if (!key.endsWith('*') || !target.includes('*')) continue;
+    const prefix = key.slice(0, -1);
+    if (!specifier.startsWith(prefix)) continue;
+    if (best && best.prefix.length >= prefix.length) continue;
+    best = { prefix, target };
+  }
+  if (!best) return undefined;
+  const star = best.target.indexOf('*');
+  return (
+    best.target.slice(0, star) + specifier.slice(best.prefix.length) + best.target.slice(star + 1)
+  );
+}
+
 function resolveTargetFile(
   fromFile: string,
   spec: string,
@@ -324,11 +373,12 @@ function resolveTargetFile(
   if (spec.startsWith('@agent-device/')) {
     // Workspace specifier (#1490 W0). Real runs pass the exports-derived map
     // (workspaceSpecifierTargets), which is authoritative — it handles '.'
-    // facade exports and any source layout. The positional fallback exists
-    // only for map-less fixtures (the P0-pinned depgraph contract) and cannot
-    // resolve a bare facade specifier by construction.
+    // facade exports, `*` pattern entries, and any source layout. The
+    // positional fallback exists only for map-less fixtures (the P0-pinned
+    // depgraph contract) and cannot resolve a bare facade specifier by
+    // construction.
     if (workspaceExportTargets) {
-      const target = workspaceExportTargets.get(spec);
+      const target = resolveWorkspaceSpecifier(spec, workspaceExportTargets);
       return target !== undefined && sourceFiles.has(target) ? target : null;
     }
     const [name, ...subParts] = spec.slice('@agent-device/'.length).split('/');
@@ -394,91 +444,32 @@ export function resolveImportEdges(
 }
 
 export function findValueImportCycles(edges: readonly ResolvedImportEdge[]): string[][] {
-  const graph = new Map<string, Set<string>>();
-  for (const edge of edges) {
-    if (edge.dynamic || edge.typeOnly) continue;
-    const targets = graph.get(edge.file) ?? new Set<string>();
-    targets.add(edge.target);
-    graph.set(edge.file, targets);
-    if (!graph.has(edge.target)) graph.set(edge.target, new Set());
-  }
-
-  const indexByFile = new Map<string, number>();
-  const lowLinkByFile = new Map<string, number>();
-  const stack: string[] = [];
-  const onStack = new Set<string>();
-  const components: string[][] = [];
-  let nextIndex = 0;
-
-  function visit(file: string): void {
-    const index = nextIndex++;
-    indexByFile.set(file, index);
-    lowLinkByFile.set(file, index);
-    stack.push(file);
-    onStack.add(file);
-
-    for (const target of graph.get(file) ?? []) {
-      if (!indexByFile.has(target)) {
-        visit(target);
-        lowLinkByFile.set(file, Math.min(lowLinkByFile.get(file)!, lowLinkByFile.get(target)!));
-      } else if (onStack.has(target)) {
-        lowLinkByFile.set(file, Math.min(lowLinkByFile.get(file)!, indexByFile.get(target)!));
-      }
+  const graph = importGraphFromResolvedEdges(edges, VALUE_EDGES);
+  const selfCycleFiles = new Set(
+    graph.edges.filter((edge) => edge.sourceId === edge.targetId).map((edge) => edge.sourceId),
+  );
+  const components = getStronglyConnectedComponents(graph).filter(
+    (component) => component.length > 1 || selfCycleFiles.has(component[0]!.id),
+  );
+  const cycles = components.map((component) => {
+    const memberIds = component.map(({ id }) => id);
+    const componentGraph = getSubgraph(graph, memberIds);
+    const firstEdgeByFile = new Map<string, (typeof graph.edges)[number]>();
+    for (const edge of componentGraph.edges) {
+      if (!firstEdgeByFile.has(edge.sourceId)) firstEdgeByFile.set(edge.sourceId, edge);
     }
+    // Inside an SCC every file has an outgoing edge. DFS finds its first back edge before
+    // backtracking, so following only the first outgoing edge preserves the reported cycle.
+    const firstEdgeGraph = createGraph({
+      nodes: componentGraph.nodes,
+      edges: [...firstEdgeByFile.values()],
+    });
+    const path = [...genDFS(firstEdgeGraph, [...memberIds].sort()[0]!)].map(({ id }) => id);
+    const target = firstEdgeByFile.get(path.at(-1)!)!.targetId;
+    return [...path.slice(path.indexOf(target)), target];
+  });
 
-    if (lowLinkByFile.get(file) !== indexByFile.get(file)) return;
-    const component: string[] = [];
-    let member: string;
-    do {
-      member = stack.pop()!;
-      onStack.delete(member);
-      component.push(member);
-    } while (member !== file);
-    const selfCycle = component.length === 1 && graph.get(file)?.has(file);
-    if (component.length > 1 || selfCycle) components.push(component);
-  }
-
-  for (const file of graph.keys()) {
-    if (!indexByFile.has(file)) visit(file);
-  }
-  return components
-    .map((component) => findCyclePath(component, graph))
-    .sort((left, right) => left[0]!.localeCompare(right[0]!));
-}
-
-function findCyclePath(
-  component: readonly string[],
-  graph: ReadonlyMap<string, Set<string>>,
-): string[] {
-  const members = new Set(component);
-  const visited = new Set<string>();
-  const active = new Map<string, number>();
-  const stack: string[] = [];
-
-  function visit(file: string): string[] | null {
-    visited.add(file);
-    active.set(file, stack.length);
-    stack.push(file);
-    for (const target of graph.get(file) ?? []) {
-      if (!members.has(target)) continue;
-      const activeIndex = active.get(target);
-      if (activeIndex !== undefined) return [...stack.slice(activeIndex), target];
-      if (!visited.has(target)) {
-        const path = visit(target);
-        if (path) return path;
-      }
-    }
-    stack.pop();
-    active.delete(file);
-    return null;
-  }
-
-  for (const file of [...component].sort()) {
-    if (visited.has(file)) continue;
-    const path = visit(file);
-    if (path) return path;
-  }
-  throw new Error(`Expected a cycle inside strongly connected component: ${component.join(', ')}`);
+  return cycles.sort((left, right) => left[0]!.localeCompare(right[0]!));
 }
 
 function spineInversionPair(edge: ResolvedImportEdge): string | null {
@@ -563,48 +554,10 @@ export function largestTypeCycleSize(edges: readonly ResolvedImportEdge[]): numb
 
 /** Members of the largest value+type strongly-connected component, sorted. */
 export function largestTypeCycleMembers(edges: readonly ResolvedImportEdge[]): string[] {
-  const successors = new Map<string, string[]>();
-  for (const edge of edges) {
-    if (edge.dynamic) continue;
-    const list = successors.get(edge.file) ?? [];
-    list.push(edge.target);
-    successors.set(edge.file, list);
-  }
-
-  const index = new Map<string, number>();
-  const lowLink = new Map<string, number>();
-  const stack: string[] = [];
-  const onStack = new Set<string>();
-  let next = 0;
-  let biggest: string[] = [];
-
-  function visit(file: string): void {
-    index.set(file, next);
-    lowLink.set(file, next);
-    next++;
-    stack.push(file);
-    onStack.add(file);
-
-    for (const target of successors.get(file) ?? []) {
-      if (!index.has(target)) {
-        visit(target);
-        lowLink.set(file, Math.min(lowLink.get(file)!, lowLink.get(target)!));
-      } else if (onStack.has(target)) {
-        lowLink.set(file, Math.min(lowLink.get(file)!, index.get(target)!));
-      }
-    }
-
-    if (lowLink.get(file) !== index.get(file)) return;
-    const component: string[] = [];
-    let member: string;
-    do {
-      member = stack.pop()!;
-      onStack.delete(member);
-      component.push(member);
-    } while (member !== file);
-    if (component.length > biggest.length) biggest = component;
-  }
-
-  for (const file of successors.keys()) if (!index.has(file)) visit(file);
-  return biggest.sort();
+  return getStronglyConnectedComponents(importGraphFromResolvedEdges(edges, STATIC_EDGES))
+    .reduce<string[]>((largest, component) => {
+      if (component.length > largest.length) largest = component.map(({ id }) => id);
+      return largest;
+    }, [])
+    .sort();
 }

@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { run } from './run.ts';
+import {
+  beginStderrCapture,
+  beginStdoutCapture,
+} from '../../src/__tests__/test-utils/stream-capture.ts';
 
 let repo: string;
 
@@ -25,23 +29,14 @@ function writeLcov(records: string): void {
 // Redirect the module's stdout/stderr writers so the entrypoint's rendering
 // runs without spamming the test reporter.
 function capture(fn: () => number): { code: number; out: string } {
-  const chunks: string[] = [];
-  const original = process.stdout.write.bind(process.stdout);
-  const originalErr = process.stderr.write.bind(process.stderr);
-  process.stdout.write = ((chunk: string | Uint8Array): boolean => {
-    chunks.push(String(chunk));
-    return true;
-  }) as typeof process.stdout.write;
-  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-    chunks.push(String(chunk));
-    return true;
-  }) as typeof process.stderr.write;
+  const stdoutCapture = beginStdoutCapture();
+  const stderrCapture = beginStderrCapture();
   try {
     const code = fn();
-    return { code, out: chunks.join('') };
+    return { code, out: stdoutCapture.read() + stderrCapture.read() };
   } finally {
-    process.stdout.write = original;
-    process.stderr.write = originalErr;
+    stdoutCapture.restore();
+    stderrCapture.restore();
   }
 }
 
@@ -94,6 +89,16 @@ test('fails when a changed source line is uncovered and names that line', () => 
   assert.equal(code, 1);
   assert.match(out, /Changed-line coverage gate: FAIL/);
   assert.match(out, /`src\/feature\.ts`: 2/);
+});
+
+test('a changed line in a non-ASCII path is scored, not skipped by quoted diff headers', () => {
+  write('src/café.ts', 'export const covered = 1;\nexport const uncovered = 2;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'non-ascii path');
+  writeLcov('SF:src/café.ts\nDA:1,3\nDA:2,0\nend_of_record\n');
+  const { code, out } = capture(() => run(['--base', 'main'], repo));
+  assert.equal(code, 1);
+  assert.match(out, /`src\/café\.ts`: 2/);
 });
 
 test('fails when a changed workspace package line is uncovered and names that line', () => {

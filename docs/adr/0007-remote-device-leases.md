@@ -53,6 +53,29 @@ an idle daemon alive; other leases, including human-control holds, do not. A
 retained lease the caller stops heartbeating expires after its `ttlMs`, and idle
 reap then shuts the daemon down within one more idle window.
 
+A session cannot outlive the lease it was opened under. When the lease is
+released (tenant `lease_release` or host `DELETE /admin/leases/<lease-id>`) or
+expires, the daemon tears the session down under its execution locks and clears
+its device claim, even when the device no longer answers. The daemon sweeps for
+expired leases every second, so expiry does not wait for a later request;
+in-flight work and human-control holds still keep a lease from expiring. Once
+daemon shutdown begins, no new lease-end teardown starts, and shutdown waits for
+any that already started before it tears sessions down itself.
+
+The daemon ends a session's lease when a request closes that session, unless the lease was
+allocated with `retainOnClose`. The reply to that request reports each lease it ended once, at
+response level, as `endedLeases: [{ leaseId, outcome: 'released' }]`: in `data` on success, in
+`error.details` on failure, including a close that failed after the release. This holds for every
+request that can close a session: `close`, a `batch` close step, a `replay` or `test` script's
+`close`, and the session cleanup `test` runs after each script. Nested requests record on the
+outermost request's ledger, so a step reply never repeats it. A close that finds its lease already
+inactive reports it as ended. A client never sends a release after such a request. A client that
+stores the lease id forgets it when the reply names it, and a gateway that relays the reply reads
+the lease end from it. Close and lease-end teardown take the same execution locks, so whichever
+runs second finds the session gone: a close after a lease end has no session and ends no lease, and
+a client that still stores that lease id finds it inactive on its next heartbeat and allocates a
+new lease under a fresh id.
+
 ## Consequences
 
 Device contention can fail before platform execution with an explicit
@@ -173,8 +196,11 @@ A `macos-app` lease's device key is a bundle id, optionally pinned to one proces
 only a host administrator allocates one, over the loopback `/admin/leases` route that uses the daemon
 token like host holds; tenant `lease_allocate` refuses the backend. The host picks the lease id, a
 repeated PUT renews it, and a PUT naming another scope for an existing id is refused rather than
-rewritten. Heartbeat, expiry, release, and the loss on daemon restart are those of any lease, except
-that a tenant heartbeat or request cannot renew it for longer than the window of the host's last PUT.
+rewritten. Heartbeat, expiry, and the loss on daemon restart are those of any lease, except that a
+tenant heartbeat or request cannot renew it for longer than the window of the host's last PUT, and
+a tenant cannot release it: `lease_release` is refused with `MACOS_APP_LEASE_HOST_OWNED`. The lease
+ends by the host's `DELETE /admin/leases/<lease-id>`, by expiry, by the loss on daemon restart, or
+when a session it holds closes and the host set `retainOnClose` to false.
 
 Request admission confines every request admitted under the lease, so `batch` steps and `replay`
 actions are confined when they re-enter it: an allow list of commands, the ones whose command
@@ -182,7 +208,7 @@ registry descriptor declares `appLease: 'allowed'` (later commands are refused, 
 lease admission otherwise exempts only `lease_heartbeat` and `lease_release` declare it),
 `open` and `close` of the leased bundle only, the `app` surface only, window-only screenshots, no
 input that names a host path or launches beside the app, and an existing session that is the leased
-app for every request but `open`, the `batch` envelope, and the lease's heartbeat and release, so a
+app for every request but `open` and the `batch` envelope, so a
 request naming no session cannot fall back to the host Mac. `open` requires the native app backend (ADR 0031), because XCTest
 posts screen events that can land outside the app's window. A pid-pinned lease is checked against the
 running process before each admitted request. A session opened under the lease holds its app, not
@@ -193,16 +219,3 @@ These rules bind a request that names the lease or runs in its session. A daemon
 `leases.require` (ADR 0029) refuses requests that name no lease. The proxy token is one credential
 for every client, so a host serving several clients through one proxy authenticates each client and
 sets its tenant, session isolation, and lease on every request it forwards.
-
-## Host managed-device durability amendment
-
-ADR 0021 adds a narrow durability exception for Host leases backed by a managed-device allocator.
-Before allocator acquisition, the daemon persists a non-authoritative allocation operation record;
-Host adds its asserted principal, Host lease id, and run/client attribution. After grant, it records
-the allocator outcome and Host-to-managed-device lease mapping before publishing the Host grant.
-
-This record tracks Host publication and cleanup; it never mirrors allocator lifecycle state or
-becomes a second source of device truth. It exists to reconcile an uncertain allocator outcome and
-prevent duplicate or unattributed local ownership. It does not make the ordinary `LeaseRegistry`,
-proxy leases, or human-control holds durable. Rehydration requires the same authorized Host user
-and revalidates the allocator lease before device operations resume.

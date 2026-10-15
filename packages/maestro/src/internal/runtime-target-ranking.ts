@@ -10,7 +10,6 @@ import {
   type MaestroResolutionProbe,
   type MaestroSnapshotResolver,
 } from './runtime-selector-resolution.ts';
-import { type MaestroPositionRelation } from './runtime-target-position.ts';
 import { filterVisibleMaestroMatches, type MaestroPlatform } from './runtime-target-policy.ts';
 import {
   orderMaestroClickableFirst,
@@ -64,25 +63,6 @@ export function matchMaestroCandidatesWithResolver(
   const parentMatched =
     selector.childOf === undefined || resolver.resolve(selector.childOf).indexed.length > 0;
   return { matches, parentMatched };
-}
-
-export function selectMaestroSnapshotMatches(
-  snapshot: SnapshotState,
-  selector: MaestroSelector,
-  platform?: MaestroPlatform,
-): SnapshotNode[] {
-  const clickability = platform ? resolveMaestroClickability(snapshot, platform) : undefined;
-  return createMaestroResolver(snapshot, clickability).resolve(selector).indexed;
-}
-
-export function selectMaestroPositionMatches(
-  snapshot: SnapshotState,
-  relation: MaestroPositionRelation,
-  anchor: MaestroSelector,
-  platform?: MaestroPlatform,
-): SnapshotNode[] {
-  const clickability = platform ? resolveMaestroClickability(snapshot, platform) : undefined;
-  return createMaestroResolver(snapshot, clickability).resolvePosition(relation, anchor);
 }
 
 export function createMaestroResolver(

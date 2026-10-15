@@ -31,7 +31,13 @@
  */
 
 import type { Platform, PublicPlatform } from '@agent-device/kernel/device';
-import { findNodeByRef, normalizeRef, type SnapshotNode } from '@agent-device/kernel/snapshot';
+import {
+  findNodeByRef,
+  hasSnapshotRef,
+  normalizeRef,
+  snapshotRefBodies,
+  type SnapshotNode,
+} from '@agent-device/kernel/snapshot';
 import { findNodeByLabel } from '@agent-device/capture-kit/snapshot-node-lookup';
 import {
   annotationLocalIdentity,
@@ -50,7 +56,7 @@ import {
   orderByViewportPosition,
 } from '@agent-device/selectors/target-evidence';
 import { resolveRecordedTarget } from '@agent-device/selectors';
-import { resolveUnverifiedWrapperControl } from '@agent-device/selectors/interaction-targeting';
+import { resolveElementReportedTwice } from '@agent-device/selectors/interaction-targeting';
 import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
 import type { ReplayDivergenceTargetBindingKind } from '@agent-device/contracts/divergence';
 
@@ -123,10 +129,10 @@ export function classifyReplayTarget(params: {
 
   const classification = classifyTargetBindingMatch({
     winnerRef: matching.winnerRef,
-    matchedRefs: matching.matchedNodes.map((node) => node.ref),
-    identitySetRefs: identitySet.map((node) => node.ref),
-    siblingMatchRefs: siblingMatches.map((node) => node.ref),
-    regionMemberRefs: regionMembers.map((node) => node.ref),
+    matchedRefs: snapshotRefBodies(matching.matchedNodes),
+    identitySetRefs: snapshotRefBodies(identitySet),
+    siblingMatchRefs: snapshotRefBodies(siblingMatches),
+    regionMemberRefs: snapshotRefBodies(regionMembers),
     viewportCandidateRef,
   });
 
@@ -195,9 +201,13 @@ function resolveRefTargetMatches(
     node !== null && (!requireRect || Boolean(node.rect));
   const ref = normalizeRef(token);
   const byRef = ref ? findNodeByRef(nodes, ref) : null;
-  if (usable(byRef)) return { matchedNodes: [byRef], winnerRef: byRef.ref };
+  if (usable(byRef) && byRef.ref !== undefined) {
+    return { matchedNodes: [byRef], winnerRef: byRef.ref };
+  }
+  // A node the capture issued no ref for cannot be re-addressed, so the label fallback names no
+  // winner and the replay reports the divergence instead of acting on the wrong element.
   const byLabel = refLabel ? findNodeByLabel(nodes, refLabel) : null;
-  return usable(byLabel)
+  return usable(byLabel) && hasSnapshotRef(byLabel)
     ? { matchedNodes: [byLabel], winnerRef: byLabel.ref }
     : { matchedNodes: [], winnerRef: '' };
 }
@@ -214,15 +224,16 @@ function resolveSelectorTargetMatches(
     requireRect,
     allowDisambiguation,
   });
-  if (resolution.kind === 'resolved') {
+  if (resolution.kind === 'resolved' && resolution.winner.ref !== undefined) {
     return { matchedNodes: [...resolution.matchedNodes], winnerRef: resolution.winner.ref };
   }
   // A refusal is not always a changed screen. The rows that verify without
   // disambiguation — `is <predicate>` and `get attrs` — dispatch through a
-  // pipeline that resolves one control reported by its own accessibility wrapper
-  // to the control, so naming no winner here reports a divergence for a screen
+  // pipeline that resolves one element reported twice (a control under its own
+  // accessibility wrapper, or a text reporter and its accessibility mirror) to
+  // that element, so naming no winner here reports a divergence for a screen
   // that did not change.
-  const control = resolveUnverifiedWrapperControl(nodes, resolution.matchedNodes);
+  const control = resolveElementReportedTwice(nodes, resolution.matchedNodes);
   return {
     matchedNodes: [...resolution.matchedNodes],
     winnerRef: control?.ref ?? '',

@@ -2,7 +2,7 @@ import { isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
 import { applicationLifecycleOperationFacts } from '@agent-device/contracts/application-lifecycle-runtime';
 import { elementTextRuntimeOperationFacts } from '@agent-device/contracts/element-text-runtime';
 import type { PlatformRuntimeOperations } from '@agent-device/contracts/platform-runtime-operations';
-import type { RuntimeFacts } from '@agent-device/contracts/platform-runtime';
+import { type RuntimeFacts, unavailableFact } from '@agent-device/contracts/platform-runtime';
 import { screenshotRuntimeOperationFacts } from '@agent-device/contracts/screenshot-runtime';
 import { selectorObservationRuntimeOperationFacts } from '@agent-device/contracts/selector-observation-runtime';
 import { snapshotRuntimeOperationFacts } from '@agent-device/contracts/snapshot-runtime';
@@ -28,73 +28,61 @@ import {
 } from './interaction-operations.ts';
 
 const available = Object.freeze({ available: true } as const);
-const customSnapshotUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Custom snapshot actions are available only for Limrun iOS simulator sessions.',
-} as const);
-const viewportUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Limrun does not expose viewport resizing.',
-} as const);
+const customSnapshotUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Custom snapshot actions are available only for Limrun iOS simulator sessions.',
+);
+const viewportUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Limrun does not expose viewport resizing.',
+);
 /**
  * A point read needs a local tool (adb uiautomator, the XCUITest runner). Limrun's transport
  * carries none of them, so the owner reports no live read and `get` answers from the captured
  * tree; provider ownership never borrows the local family read.
  */
-const elementTextUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Limrun-owned devices read element text from the captured tree only.',
-} as const);
-const headlessUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Headless boot is unavailable for provider-owned devices.',
-} as const);
+const elementTextUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Limrun-owned devices read element text from the captured tree only.',
+);
+const headlessUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Headless boot is unavailable for provider-owned devices.',
+);
 /** Also read outside this module's own facts assembly: the owner's `inspectFacts` reports this
  * for every operation when the request names a device with no matching live session at all. */
-export const liveSessionUnavailable = Object.freeze({
-  available: false,
-  reason: 'owner-capability-missing',
-  hint: 'Limrun requires a matching live provider session for this device.',
-} as const);
-const prepareUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Apple runner preparation is unavailable for Limrun-owned devices.',
-} as const);
-const iosAppStateUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Limrun iOS appstate is session-owned; no sessionless provider foreground probe is exposed.',
-} as const);
-const openTargetUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Limrun open requires a Limrun-owned iOS simulator or Android emulator.',
-} as const);
-const closeTargetUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Limrun close requires a Limrun-owned iOS simulator or Android emulator.',
-} as const);
-const runtimeHintsUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Runtime hints are not applied to provider-owned devices.',
-} as const);
-const portReverseUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Limrun port reverse requires an active Android Limrun session.',
-} as const);
-const audioProbeUnavailable = Object.freeze({
-  available: false,
-  reason: 'unsupported-provider-mode',
-  hint: 'Limrun does not expose the audio probe.',
-} as const);
+export const liveSessionUnavailable = unavailableFact(
+  'owner-capability-missing',
+  'Limrun requires a matching live provider session for this device.',
+);
+const prepareUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Apple runner preparation is unavailable for Limrun-owned devices.',
+);
+const iosAppStateUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Limrun iOS appstate is session-owned; no sessionless provider foreground probe is exposed.',
+);
+const openTargetUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Limrun open requires a Limrun-owned iOS simulator or Android emulator.',
+);
+const closeTargetUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Limrun close requires a Limrun-owned iOS simulator or Android emulator.',
+);
+const runtimeHintsUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Runtime hints are not applied to provider-owned devices.',
+);
+const portReverseUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Limrun port reverse requires an active Android Limrun session.',
+);
+const audioProbeUnavailable = unavailableFact(
+  'unsupported-provider-mode',
+  'Limrun does not expose the audio probe.',
+);
 
 /** Also read outside this module's own facts assembly: the owner's `bind` needs the same
  * deployment options its facts do. */
@@ -182,9 +170,11 @@ export function limrunAppLogFacts(
       }),
       ...screenshotRuntimeOperationFacts({ capture: available }),
       // Provider ownership is authoritative: no native text reading is exposed, so text waits
-      // on a Limrun-owned device poll the canonical tree rather than borrowing Apple's.
+      // on a Limrun-owned device poll the canonical tree rather than borrowing Apple's. The same
+      // ownership answer covers the live selector read: no rescue hook on a provider device.
       ...selectorObservationRuntimeOperationFacts({
         findText: customSnapshotUnavailable,
+        querySelector: customSnapshotUnavailable,
       }),
       ...viewportRuntimeOperationFacts({ setViewport: viewportUnavailable }),
       // Focus rides the same provider interactor the captures do, and a live-session Limrun
@@ -214,11 +204,10 @@ export function limrunAppLogFacts(
       bootTarget: available,
       bootTargetHeadless: headlessUnavailable,
       listApps: available,
-      shutdownTarget: {
-        available: false,
-        reason: 'unsupported-provider-mode',
-        hint: 'Limrun owns the target lifecycle for provider-owned devices.',
-      },
+      shutdownTarget: unavailableFact(
+        'unsupported-provider-mode',
+        'Limrun owns the target lifecycle for provider-owned devices.',
+      ),
       ...limrunLifecycleFacts(device, true),
     },
   });
@@ -251,6 +240,7 @@ export function limrunAppLogRecoveryFacts(
       ...screenshotRuntimeOperationFacts({ capture: liveSessionUnavailable }),
       ...selectorObservationRuntimeOperationFacts({
         findText: liveSessionUnavailable,
+        querySelector: liveSessionUnavailable,
       }),
       ...viewportRuntimeOperationFacts({ setViewport: liveSessionUnavailable }),
       ...limrunInteractionOperationFacts(device, liveSessionUnavailable),

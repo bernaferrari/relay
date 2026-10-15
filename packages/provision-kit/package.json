@@ -10,10 +10,6 @@
     "@agent-device/kernel": "workspace:*"
   },
   "exports": {
-    "./managed-device-scope": {
-      "types": "./src/managed-device-scope.ts",
-      "default": "./src/managed-device-scope.ts"
-    },
     "./app-resolution-cache": {
       "types": "./src/app-resolution-cache.ts",
       "default": "./src/app-resolution-cache.ts"
@@ -49,6 +45,6 @@
   },
   "devDependencies": {
     "ipaddr.js": "^2.5.0",
-    "undici": "7.29.0"
+    "undici": "7.29.1"
   }
 }

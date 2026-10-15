@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type { AgentDeviceBackend, BackendInstallSource } from '../../../backend.ts';
-import type { ArtifactAdapter, FileInputRef } from '../../../io.ts';
+import type { AgentDeviceBackend, BackendInstallSource } from '@agent-device/contracts/backend';
+import type { ArtifactAdapter, FileInputRef } from '@agent-device/contracts/artifact-adapter';
+import { createAgentDevice } from '../../../runtime.ts';
 import {
-  createAgentDevice,
   localCommandPolicy,
   restrictedCommandPolicy,
-} from '../../../runtime.ts';
+} from '@agent-device/contracts/command-policy';
 
 const artifacts = {
   resolveInput: async (ref: FileInputRef) => ({

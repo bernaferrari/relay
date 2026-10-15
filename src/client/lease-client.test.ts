@@ -5,7 +5,7 @@ import { createAgentDeviceClient } from '../agent-device-client.ts';
 import {
   HUMAN_CONTROL_HOLD,
   HUMAN_CONTROL_SCOPE,
-} from '../daemon/__tests__/human-control-fixtures.ts';
+} from '@agent-device/daemon/testing/__tests__/human-control-fixtures';
 import type { DaemonRequest } from '@agent-device/kernel/contracts';
 
 test('human-control client carries normal remote authentication and full lease metadata', async () => {
@@ -96,4 +96,38 @@ test('allocate reports whether the daemon kept retainOnClose on the lease', asyn
   assert.equal((await allocate(true)).retainOnClose, true);
   assert.equal((await allocate(false)).retainOnClose, undefined);
   assert.equal(requests[0]?.meta?.leaseRetainOnClose, true);
+});
+
+test('allocate sends the lease id named on the call, never the configured one', async () => {
+  const requests: Array<Omit<DaemonRequest, 'token'>> = [];
+  const client = createAgentDeviceClient(
+    { leaseId: 'feedfacefeedface' },
+    {
+      transport: async (request) => {
+        requests.push(request);
+        return {
+          ok: true,
+          data: {
+            lease: {
+              leaseId: 'abcdef0123456789',
+              tenantId: 't',
+              runId: 'r',
+              backend: 'ios-instance',
+            },
+          },
+        };
+      },
+    },
+  );
+
+  await client.leases.allocate({ tenant: 't', runId: 'r' });
+  const lease = await client.leases.allocate({
+    tenant: 't',
+    runId: 'r',
+    leaseId: '0123456789abcdef',
+  });
+
+  assert.equal(requests[0]?.meta?.leaseId, undefined);
+  assert.equal(requests[1]?.meta?.leaseId, '0123456789abcdef');
+  assert.equal(lease.leaseId, 'abcdef0123456789');
 });

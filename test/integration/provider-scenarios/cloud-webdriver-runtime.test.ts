@@ -1,3 +1,4 @@
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,15 +8,11 @@ import {
   markRequestCanceled,
   registerRequestAbort,
 } from '@agent-device/host-kit/request';
-import {
-  CLOUD_WEBDRIVER_PROVIDERS,
-  createProviderWebDriver,
-} from '@agent-device/provider-webdriver';
+import { createBundledCloudWebDriverRuntimes } from '@agent-device/provider-webdriver';
 import type { CloudArtifact } from '@agent-device/contracts/observability';
 import type { DeviceLease } from '@agent-device/contracts/device';
 import { createProviderDeviceRuntimeRequestProviders } from '../../../src/provider-device-runtime.ts';
-import { createExpiredProviderLeaseReleaser } from '../../../src/daemon/provider-lease-expiry.ts';
-import type { DaemonRequest } from '../../../src/daemon/daemon-request.ts';
+import { createExpiredProviderLeaseReleaser } from '@agent-device/daemon/testing/provider-lease-expiry';
 import { assertRpcOk } from './assertions.ts';
 import {
   createProviderScenarioHarness,
@@ -31,6 +28,7 @@ import {
   startCloudWebDriverTestServer,
   type StartedCloudWebDriverTestServer,
 } from './cloud-webdriver-test-server.ts';
+import { CLOUD_WEBDRIVER_PROVIDERS } from '@agent-device/provider-webdriver/providers';
 
 const WEBDRIVER_PROVIDER = CLOUD_WEBDRIVER_PROVIDERS.browserStack;
 const CLIENT_VERSION = '0.20.3-test';
@@ -294,18 +292,18 @@ async function waitForSourceRequest(server: FakeWebDriverServer): Promise<void> 
 
 async function createCloudWebDriverWorld() {
   const server = await FakeWebDriverServer.start();
-  const providerWebDriver = createProviderWebDriver({
+  const runtimes = createBundledCloudWebDriverRuntimes({
+    env: {
+      BROWSERSTACK_USERNAME: 'browser-user',
+      BROWSERSTACK_ACCESS_KEY: 'browser-key',
+      BROWSERSTACK_WEBDRIVER_ENDPOINT: `${server.url}/wd/hub/`,
+      BROWSERSTACK_APP_UPLOAD_ENDPOINT: `${server.url}/app-automate/upload`,
+      BROWSERSTACK_SESSION_DETAILS_ENDPOINT: `${server.url}/app-automate/sessions`,
+    },
     clientVersion: CLIENT_VERSION,
     runHostCommand: async () => {
       throw new Error('BrowserStack scenario must not run host commands');
     },
-  });
-  const runtimes = providerWebDriver.createDefaultRuntimes({
-    BROWSERSTACK_USERNAME: 'browser-user',
-    BROWSERSTACK_ACCESS_KEY: 'browser-key',
-    BROWSERSTACK_WEBDRIVER_ENDPOINT: `${server.url}/wd/hub/`,
-    BROWSERSTACK_APP_UPLOAD_ENDPOINT: `${server.url}/app-automate/upload`,
-    BROWSERSTACK_SESSION_DETAILS_ENDPOINT: `${server.url}/app-automate/sessions`,
   });
   const providers = createProviderDeviceRuntimeRequestProviders(runtimes);
   const providerModules = runtimes.map((runtime) =>
@@ -619,7 +617,7 @@ function fakeWebDriverSource(): string {
   );
 }
 
-function leaseFlags(leaseId?: string): DaemonRequest['flags'] {
+function leaseFlags(leaseId?: string): DaemonWireRequest['flags'] {
   return {
     platform: 'android',
     tenant: 'team-a',
@@ -635,7 +633,7 @@ function leaseFlags(leaseId?: string): DaemonRequest['flags'] {
   };
 }
 
-function leaseMeta(leaseId?: string): DaemonRequest['meta'] {
+function leaseMeta(leaseId?: string): DaemonWireRequest['meta'] {
   return {
     tenantId: 'team-a',
     runId: 'run-a',

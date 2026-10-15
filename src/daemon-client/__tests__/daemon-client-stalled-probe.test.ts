@@ -12,14 +12,14 @@ import {
   waitForProcessExit,
 } from '@agent-device/host-kit/process';
 import { findProjectRoot, readVersion } from '@agent-device/host-kit/version';
-import { resolveDaemonPaths } from '../../daemon-resolution.ts';
+import { resolveDaemonPaths } from '@agent-device/daemon-contracts/daemon-resolution';
 import { sendToDaemon } from '../daemon-client.ts';
 import {
   closeLoopbackServer,
   listenOnLoopback,
   supportsLoopbackBind,
-} from '../../__tests__/test-utils/loopback.ts';
-import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+} from '@agent-device/test-kit/loopback';
+import { mkdtempForTestSync } from '@agent-device/test-kit/tmp-dir';
 import { AppError } from '@agent-device/kernel/errors';
 
 const NEWER_DAEMON_VERSION = '999.0.0';

@@ -1,15 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type { AgentDeviceBackend, BackendSnapshotResult } from '../../../backend.ts';
+import type { AgentDeviceBackend, BackendSnapshotResult } from '@agent-device/contracts/backend';
 import { createLocalArtifactAdapter } from '../../../io.ts';
-import {
-  createAgentDevice,
-  createMemorySessionStore,
-  localCommandPolicy,
-} from '../../../runtime.ts';
+import { createAgentDevice } from '../../../runtime.ts';
+import { localCommandPolicy } from '@agent-device/contracts/command-policy';
 import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import { createFakeClock } from './__tests__/test-utils/index.ts';
 import { AppError } from '@agent-device/kernel/errors';
+import { createMemorySessionStore } from '../../../command-runtime/runtime-factory.ts';
 
 const SELECTOR = 'label="Removed"';
 

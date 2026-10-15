@@ -17,11 +17,15 @@ export type FakeRunnerResponse =
   /** Hangs up on this request and every later one for the command: the entry is never consumed. */
   | { kind: 'hangUpAlways' }
   /** Hangs up and stops listening, as a runner process that died mid-command. */
-  | { kind: 'exit' };
+  | { kind: 'exit' }
+  /** Never answers, as a runner still executing the command when its caller gives up. */
+  | { kind: 'hold' };
 
 export type FakeRunnerRequest = {
   command: string;
   body: Record<string, unknown>;
+  /** The listener token the request presented. */
+  token: string | undefined;
 };
 
 export type FakeRunnerServer = {
@@ -41,6 +45,8 @@ export type FakeRunnerCommandScript = Record<string, FakeRunnerResponse[]>;
 
 export async function startFakeRunnerServer(
   script: FakeRunnerResponse[] | FakeRunnerCommandScript,
+  /** A runner built before listener tokens: it never declares that it requires one. */
+  options: { predatesToken?: boolean } = {},
 ): Promise<FakeRunnerServer> {
   const sequential = Array.isArray(script) ? [...script] : undefined;
   const byCommand = Array.isArray(script)
@@ -55,13 +61,10 @@ export async function startFakeRunnerServer(
       raw += chunk;
     });
     req.on('end', () => {
-      const body = parseBody(raw);
-      requests.push({ command: String(body.command ?? ''), body });
+      const request = recordFakeRunnerRequest(req, raw);
+      requests.push(request);
       const next = byCommand
-        ? (takeScriptedResponse(byCommand[String(body.command ?? '')]) ?? {
-            kind: 'ok' as const,
-            data: {},
-          })
+        ? (takeScriptedResponse(byCommand[request.command]) ?? { kind: 'ok' as const, data: {} })
         : takeScriptedResponse(remaining);
       if (next?.kind === 'exit') {
         res.destroy();
@@ -69,6 +72,7 @@ export async function startFakeRunnerServer(
         server.closeAllConnections();
         return;
       }
+      if (!options.predatesToken) res.setHeader('x-agent-device-runner-auth', 'required');
       writeFakeRunnerResponse(res, next);
     });
   });
@@ -79,9 +83,20 @@ export async function startFakeRunnerServer(
     requests,
     close: () =>
       stopped ??
-      new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      ),
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+        server.closeAllConnections();
+      }),
+  };
+}
+
+function recordFakeRunnerRequest(req: http.IncomingMessage, raw: string): FakeRunnerRequest {
+  const body = parseBody(raw);
+  const token = req.headers['x-agent-device-runner-token'];
+  return {
+    command: String(body.command ?? ''),
+    body,
+    token: typeof token === 'string' ? token : undefined,
   };
 }
 
@@ -101,6 +116,7 @@ function writeFakeRunnerResponse(
     res.end(JSON.stringify({ ok: false, error: { message: 'fake runner script exhausted' } }));
     return;
   }
+  if (next.kind === 'hold') return;
   if (next.kind === 'hangUp' || next.kind === 'hangUpAlways') {
     res.destroy();
     return;

@@ -1,19 +1,20 @@
 import { AppError, discloseDispatch } from '@agent-device/kernel/errors';
 import type {
   Point,
+  SnapshotAddressableNode,
   SnapshotKeyboardBandFact,
   SnapshotNode,
   SnapshotState,
 } from '@agent-device/kernel/snapshot';
 import { normalizeRef } from '@agent-device/kernel/snapshot';
-import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
+import type { AgentDeviceRuntime, CommandContext } from '@agent-device/contracts/runtime-contract';
 import {
   runNodePipelineStages,
   type SelectorPipelineHooks,
 } from '@agent-device/selectors/selector-pipeline';
-import type { SelectorPipelinePolicy } from '@agent-device/selectors/selector-pipeline-policy';
+import type { ActingPipelinePolicy } from '@agent-device/selectors/selector-pipeline-policy';
 import { createSnapshotVisibility } from '@agent-device/contracts/snapshot';
-import { INTERACTION_ERROR_REASONS } from '@agent-device/selectors/interaction-error';
+import { coveredInteractionDetails } from '@agent-device/selectors/interaction-error';
 import {
   classifyOffscreenScrollDirection,
   type OffscreenScrollDirection,
@@ -25,12 +26,19 @@ import type { InteractionAction } from './interaction-resolution-request.ts';
 
 /**
  * The one construction site for "covered by another visible element" refusals, shared by the
- * node-stage runner below (ref, selector, native-ref preflight) and `selector-readiness.ts`'s
- * covered-target diagnosis probe.
+ * node-stage runner below (ref, selector, native-ref preflight) and `selector-target-resolution.ts`'s
+ * covered-target diagnosis probe. `find ... focus` builds the same detail shape through
+ * {@link coveredInteractionDetails}, so both producers report one shape.
+ *
+ * When the occlusion scan could name the cover (`node.coveredBy`), the refusal says so in a typed
+ * `coveredBy` detail and in the hint — Playwright's "intercepts pointer events" shape: the agent
+ * learns what to dismiss without re-guessing from a screenshot. Covers from backend-policy
+ * annotations carry no identity, and those refusals keep the generic hint rather than guessing.
+ * The cover is diagnosis only: no ref is ever surfaced as actionable for it.
  */
 export function buildCoveredInteractionError(params: {
   label: string;
-  node: SnapshotNode;
+  node: SnapshotAddressableNode;
   action: InteractionAction;
   selector?: string;
 }): AppError {
@@ -38,13 +46,7 @@ export function buildCoveredInteractionError(params: {
     new AppError(
       'COMMAND_FAILED',
       `${params.label} is covered by another visible element and cannot ${interactionVerb(params.action)} safely`,
-      {
-        reason: INTERACTION_ERROR_REASONS.targetCovered,
-        hint: 'Use a different visible target, scroll it clear of the overlay, or inspect with snapshot/screenshot before retrying.',
-        ...(params.selector ? { selector: params.selector } : {}),
-        ref: `@${params.node.ref}`,
-        interactionBlocked: params.node.interactionBlocked,
-      },
+      coveredInteractionDetails(params.node, { selector: params.selector }),
     ),
     'no',
   );
@@ -62,7 +64,7 @@ export function buildCoveredInteractionError(params: {
  * ref, reading the rect center the platform aims at — says so in its resolver's return type.
  */
 export async function runInteractionPipelineStages<TPoint extends Point | null>(params: {
-  policy: SelectorPipelinePolicy;
+  policy: ActingPipelinePolicy;
   nodes: SnapshotState['nodes'];
   /** The keyboard band `nodes`' capture measured, when it measured one (#2660). */
   keyboard?: SnapshotKeyboardBandFact;
@@ -70,8 +72,8 @@ export async function runInteractionPipelineStages<TPoint extends Point | null>(
   action: InteractionAction;
   label: string;
   hooks: SelectorPipelineHooks;
-  resolveTapPoint: (node: SnapshotNode) => TPoint;
-}): Promise<{ node: SnapshotNode; tapPoint: TPoint }> {
+  resolveTapPoint: (node: SnapshotAddressableNode) => TPoint;
+}): Promise<{ node: SnapshotAddressableNode; tapPoint: TPoint }> {
   const target = await runNodePipelineStages(
     params.policy,
     params.nodes,
@@ -102,7 +104,7 @@ export async function runInteractionPipelineStages<TPoint extends Point | null>(
  * owner, and only for rows whose off-screen stage refuses — the row's decision
  * is made there, so this builds the message and never re-decides.
  */
-type OffscreenStageParams = { action: InteractionAction; pipeline: SelectorPipelinePolicy };
+type OffscreenStageParams = { action: InteractionAction; pipeline: ActingPipelinePolicy };
 
 // Selector parity for the @ref off-screen guard: without it, a selector
 // resolving to a closed drawer/carousel item "succeeds" by tapping coordinates

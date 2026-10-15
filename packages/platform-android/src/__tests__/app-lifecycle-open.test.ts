@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { closeAndroidApp, openAndroidApp } from '../app-lifecycle.ts';
+import { openAndroidApp } from '../app-lifecycle.ts';
 import { withAndroidAdbProvider } from '../adb-executor.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
@@ -21,145 +21,6 @@ test('openAndroidApp rejects activity override for deep link URLs', async () => 
     () => openAndroidApp(device, '  https://example.com/path  ', '.MainActivity'),
     { code: 'INVALID_ARGS' },
   );
-});
-
-test('closeAndroidApp waits until package is no longer foreground', async () => {
-  const device: DeviceInfo = {
-    platform: 'android',
-    id: 'emulator-5554',
-    name: 'Pixel',
-    kind: 'emulator',
-    booted: true,
-  };
-  const calls: (readonly string[])[] = [];
-  let focusPolls = 0;
-
-  await withAndroidAdbProvider(
-    {
-      exec: async (args) => {
-        calls.push(args);
-        if (args.join(' ') === 'shell dumpsys window windows') {
-          focusPolls += 1;
-          return {
-            stdout:
-              focusPolls === 1
-                ? 'mCurrentFocus=Window{42 u0 com.example.app/.MainActivity}\n'
-                : 'mCurrentFocus=Window{43 u0 com.android.launcher/.Launcher}\n',
-            stderr: '',
-            exitCode: 0,
-          };
-        }
-        return { stdout: '', stderr: '', exitCode: 0 };
-      },
-      reverse: {
-        ensure: async () => {},
-        remove: async () => {},
-        removeAllOwned: async () => {},
-      },
-    },
-    { serial: 'emulator-5554' },
-    async () => await closeAndroidApp(device, 'com.example.app'),
-  );
-
-  assert.deepEqual(calls, [
-    ['shell', 'am', 'force-stop', 'com.example.app'],
-    ['shell', 'dumpsys', 'window', 'windows'],
-    ['shell', 'dumpsys', 'window', 'windows'],
-    ['shell', 'pidof', 'com.example.app'],
-    ['shell', 'pidof', 'com.example.app'],
-  ]);
-});
-
-test('closeAndroidApp returns after force-stop when package is already not foreground', async () => {
-  const device: DeviceInfo = {
-    platform: 'android',
-    id: 'emulator-5554',
-    name: 'Pixel',
-    kind: 'emulator',
-    booted: true,
-  };
-  const calls: (readonly string[])[] = [];
-
-  await withAndroidAdbProvider(
-    {
-      exec: async (args) => {
-        calls.push(args);
-        if (args.join(' ') === 'shell dumpsys window windows') {
-          return {
-            stdout: 'mCurrentFocus=Window{43 u0 com.android.launcher/.Launcher}\n',
-            stderr: '',
-            exitCode: 0,
-          };
-        }
-        return { stdout: '', stderr: '', exitCode: 0 };
-      },
-      reverse: {
-        ensure: async () => {},
-        remove: async () => {},
-        removeAllOwned: async () => {},
-      },
-    },
-    { serial: 'emulator-5554' },
-    async () => await closeAndroidApp(device, 'com.example.app'),
-  );
-
-  assert.deepEqual(calls, [
-    ['shell', 'am', 'force-stop', 'com.example.app'],
-    ['shell', 'dumpsys', 'window', 'windows'],
-    ['shell', 'pidof', 'com.example.app'],
-    ['shell', 'pidof', 'com.example.app'],
-  ]);
-});
-
-test('closeAndroidApp waits until package process exits after force-stop', async () => {
-  const device: DeviceInfo = {
-    platform: 'android',
-    id: 'emulator-5554',
-    name: 'Pixel',
-    kind: 'emulator',
-    booted: true,
-  };
-  const calls: (readonly string[])[] = [];
-  let processPolls = 0;
-
-  await withAndroidAdbProvider(
-    {
-      exec: async (args) => {
-        calls.push(args);
-        if (args.join(' ') === 'shell dumpsys window windows') {
-          return {
-            stdout: 'mCurrentFocus=Window{43 u0 com.android.launcher/.Launcher}\n',
-            stderr: '',
-            exitCode: 0,
-          };
-        }
-        if (args.join(' ') === 'shell pidof com.example.app') {
-          processPolls += 1;
-          return {
-            stdout: processPolls === 1 ? '12345\n' : '',
-            stderr: '',
-            exitCode: processPolls === 1 ? 0 : 1,
-          };
-        }
-        return { stdout: '', stderr: '', exitCode: 0 };
-      },
-      reverse: {
-        ensure: async () => {},
-        remove: async () => {},
-        removeAllOwned: async () => {},
-      },
-    },
-    { serial: 'emulator-5554' },
-    async () => await closeAndroidApp(device, 'com.example.app'),
-  );
-
-  assert.deepEqual(calls, [
-    ['shell', 'am', 'force-stop', 'com.example.app'],
-    ['shell', 'dumpsys', 'window', 'windows'],
-    ['shell', 'pidof', 'com.example.app'],
-    ['shell', 'pidof', 'com.example.app'],
-    ['shell', 'pidof', 'com.example.app'],
-  ]);
 });
 
 test('openAndroidApp ensures Android reverse before localhost deep link launch', async () => {
@@ -520,6 +381,48 @@ test('openAndroidApp default launch uses -p package flag', async () => {
   });
 });
 
+test('openAndroidApp has am force-stop the resolved intent handler when terminating a running app', async () => {
+  await withFakeAdb(androidOpenFakeAdb, async ({ calls, device }) => {
+    await openAndroidApp(device, 'settings', { terminateRunningApp: true });
+    assert.deepEqual(calls, [
+      ['shell', 'am', 'start', '-W', '-S', '-a', 'android.settings.SETTINGS'],
+    ]);
+  });
+});
+
+test('openAndroidApp returns the package am start reports it launched', async () => {
+  const launched = (args: readonly string[]): FakeAdbResponse | undefined =>
+    args[2] === 'start'
+      ? 'Starting: Intent { act=android.settings.SETTINGS }\nStatus: ok\nLaunchState: COLD\nActivity: com.android.settings/.homepage.SettingsHomepageActivity\nTotalTime: 412'
+      : undefined;
+  await withFakeAdb(launched, async ({ device }) => {
+    assert.equal(await openAndroidApp(device, 'settings'), 'com.android.settings');
+  });
+  await withFakeAdb(androidOpenFakeAdb, async ({ device }) => {
+    assert.equal(await openAndroidApp(device, 'settings'), undefined);
+  });
+});
+
+test('openAndroidApp stops the bound package before an app-bound deep link when terminating', async () => {
+  await withFakeAdb(androidOpenFakeAdb, async ({ calls, device }) => {
+    await openAndroidApp(device, 'com.example.app', {
+      url: 'example://bottom-tabs',
+      terminateRunningApp: true,
+    });
+    assert.deepEqual(calls[0], ['shell', 'am', 'force-stop', 'com.example.app']);
+    assert.deepEqual(calls.at(-1)?.slice(0, 4), ['shell', 'am', 'start', '-W']);
+  });
+});
+
+test('openAndroidApp stops a resolved package before launching it when terminating a running app', async () => {
+  await withFakeAdb(androidOpenFakeAdb, async ({ calls, device }) => {
+    await openAndroidApp(device, 'com.example.app', { terminateRunningApp: true });
+    assert.deepEqual(calls[0], ['shell', 'am', 'force-stop', 'com.example.app']);
+    assert.deepEqual(calls.at(-1)?.slice(0, 4), ['shell', 'am', 'start', '-W']);
+    assert.equal(calls.filter((call) => call[2] === 'start').length, 1);
+  });
+});
+
 test('openAndroidApp appends launchArgs to am start when launching by package', async () => {
   await withFakeAdb(androidOpenFakeAdb, async ({ calls, device }) => {
     await openAndroidApp(device, 'com.example.app', {
@@ -575,6 +478,48 @@ test('openAndroidApp appends launchArgs to am start when activity override is se
         'debug',
       ],
     ]);
+  });
+});
+
+test('openAndroidApp refuses an activity outside the component grammar before any adb call', async () => {
+  const calls: (readonly string[])[] = [];
+  const device: DeviceInfo = { ...ANDROID_EMULATOR, booted: false };
+
+  for (const activity of [
+    '.Main;id',
+    '.Main $(id)',
+    'com.example.app/.Main`id`',
+    "com.example.app/.Main' -e x y",
+    'com.example.app/.Main\nreboot',
+    'com.example.app//.Main',
+    'com..example/.Main',
+    '9com.example/.Main',
+    '',
+  ]) {
+    await withAndroidAdbProvider(
+      {
+        exec: async (args) => {
+          calls.push(args);
+          return { stdout: '', stderr: '', exitCode: 0 };
+        },
+      },
+      { serial: device.id },
+      async () =>
+        await assertRejectsAppError(() => openAndroidApp(device, 'com.example.app', { activity }), {
+          code: 'INVALID_ARGS',
+          reason: 'invalid-android-activity-component',
+        }),
+    );
+  }
+  assert.deepEqual(calls, []);
+});
+
+test('openAndroidApp accepts a fully qualified nested-class activity component', async () => {
+  await withFakeAdb(androidOpenFakeAdb, async ({ calls, device }) => {
+    await openAndroidApp(device, 'com.example.app', {
+      activity: 'com.example.app/com.example.app.Outer$Inner_2',
+    });
+    assert.equal(calls.at(-1)?.at(-1), `'com.example.app/com.example.app.Outer$Inner_2'`);
   });
 });
 

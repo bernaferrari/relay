@@ -1,10 +1,14 @@
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
+import type { DaemonResponse } from '@agent-device/kernel/contracts';
 import type { RequestProgressSink } from '@agent-device/contracts/progress';
 import net from 'node:net';
 import { AppError, createRequestCanceledError } from '@agent-device/kernel/errors';
 import { loadNodeHttpRequester, readNodeHttpResponseBody } from '@agent-device/host-kit/transport';
-import type { DaemonRequest, DaemonResponse } from '../daemon/daemon-request.ts';
 import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
-import type { DaemonPaths, DaemonTransportPreference } from '../daemon-resolution.ts';
+import type {
+  DaemonPaths,
+  DaemonTransportPreference,
+} from '@agent-device/daemon-contracts/daemon-resolution';
 import {
   readDaemonHttpProgressResponse,
   readDaemonSocketProgressResponse,
@@ -248,10 +252,14 @@ export async function readRemoteDaemonHealth(
 }
 
 function daemonHealthEndpoint(info: DaemonInfo): string | null {
+  return daemonHttpEndpoint(info, 'health');
+}
+
+function daemonHttpEndpoint(info: DaemonInfo, route: 'health' | 'rpc'): string | null {
   return info.baseUrl
-    ? buildDaemonHttpUrl(info.baseUrl, 'health')
+    ? buildDaemonHttpUrl(info.baseUrl, route)
     : info.httpPort
-      ? `http://127.0.0.1:${info.httpPort}/health`
+      ? `http://127.0.0.1:${info.httpPort}/${route}`
       : null;
 }
 
@@ -360,7 +368,7 @@ function readHealthLink(parsed: Record<string, unknown>): RemoteDaemonHealthLink
 
 export async function sendRequest(
   info: DaemonInfo,
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   preference: DaemonTransportPreference,
   statePaths: DaemonPaths,
   timeoutMs: number | undefined,
@@ -383,7 +391,7 @@ export async function sendRequest(
 
 async function sendRequestWithFallback(
   info: DaemonInfo,
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   preference: DaemonTransportPreference,
   statePaths: DaemonPaths,
   timeoutMs: number | undefined,
@@ -417,7 +425,7 @@ async function sendRequestWithFallback(
 
 async function retryAfterRemoteInstanceMismatch(
   info: DaemonInfo,
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   statePaths: DaemonPaths,
   timeoutMs: number | undefined,
   deadline: number | undefined,
@@ -451,7 +459,7 @@ async function retryAfterRemoteInstanceMismatch(
 }
 
 function remainingRemoteRequestTimeoutMs(
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   timeoutMs: number | undefined,
   deadline: number | undefined,
   timedOutProbeMs?: number,
@@ -482,7 +490,7 @@ function isRemoteTransportFailure(error: unknown): boolean {
 
 async function sendRequestWithTransport(
   info: DaemonInfo,
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   statePaths: DaemonPaths,
   timeoutMs: number | undefined,
   transport: ResolvedDaemonTransport,
@@ -584,7 +592,7 @@ function handleTransportError(
 
 async function sendSocketRequest(
   info: DaemonInfo,
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   timeoutMs: number | undefined,
   options: SendRequestOptions,
 ): Promise<DaemonResponse> {
@@ -682,7 +690,7 @@ function requestTimeoutError(timeoutMs: number, requestId: string | undefined): 
 type TimeoutRequestFields = Omit<Parameters<typeof handleRequestTimeout>[0], 'info' | 'statePaths'>;
 
 function timeoutRequestContext(
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   remote: boolean,
   timeoutMs: number,
 ): TimeoutRequestFields {
@@ -715,17 +723,14 @@ function isRemoteInstanceMismatchResponse(
 
 async function sendHttpRequest(
   info: DaemonInfo,
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   statePaths: DaemonPaths,
   timeoutMs: number | undefined,
   options: SendRequestOptions,
 ): Promise<DaemonResponse> {
-  const rpcUrl = info.baseUrl
-    ? new URL(buildDaemonHttpUrl(info.baseUrl, 'rpc'))
-    : info.httpPort
-      ? new URL(`http://127.0.0.1:${info.httpPort}/rpc`)
-      : null;
-  if (!rpcUrl) throw daemonEndpointUnavailableError('http');
+  const rpcEndpoint = daemonHttpEndpoint(info, 'rpc');
+  if (!rpcEndpoint) throw daemonEndpointUnavailableError('http');
+  const rpcUrl = new URL(rpcEndpoint);
   const rpcPayload = JSON.stringify(buildHttpRpcPayload(req, { includeTokenParam: !info.baseUrl }));
   const headers: Record<string, string | number> = {
     'content-type': 'application/json',
@@ -757,6 +762,15 @@ async function sendHttpRequest(
       detachCallerAbort();
       reject(error);
     };
+    const handleBody = (body: string): void => {
+      handleDaemonHttpResponseBody(body, {
+        info,
+        req,
+        stateDir: statePaths.baseDir,
+        resolve: resolveOnce,
+        reject: rejectOnce,
+      });
+    };
     const request = transport.request(
       {
         protocol: rpcUrl.protocol,
@@ -786,15 +800,7 @@ async function sendHttpRequest(
             clearTimeout: () => {
               if (timeoutHandle) clearTimeout(timeoutHandle);
             },
-            handleResponseBody: (body) => {
-              handleDaemonHttpResponseBody(body, {
-                info,
-                req,
-                stateDir: statePaths.baseDir,
-                resolve: resolveOnce,
-                reject: rejectOnce,
-              });
-            },
+            handleResponseBody: handleBody,
           });
           return;
         }
@@ -809,13 +815,7 @@ async function sendHttpRequest(
         void responseBody
           .then((body) => {
             if (timeoutHandle) clearTimeout(timeoutHandle);
-            handleDaemonHttpResponseBody(body, {
-              info,
-              req,
-              stateDir: statePaths.baseDir,
-              resolve: resolveOnce,
-              reject: rejectOnce,
-            });
+            handleBody(body);
           })
           .catch((error: unknown) => {
             if (timeoutHandle) clearTimeout(timeoutHandle);

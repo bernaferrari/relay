@@ -51,6 +51,63 @@ extension RunnerTests {
     XCTAssertFalse(Self.isTopNavigationControlFrame(.infinite, in: window))
   }
 
+  func testTopNavigationBackCandidateAcceptsIOS27FloatingBarSystemBackButton() {
+    let window = CGRect(x: 0, y: 0, width: 466, height: 678)
+    let floatingBarBack = CGRect(x: 399, y: 175, width: 38, height: 38)
+
+    XCTAssertFalse(Self.isTopNavigationControlFrame(floatingBarBack, in: window))
+    XCTAssertTrue(
+      Self.isTopNavigationBackCandidateFrame(floatingBarBack, in: window, identifier: "BackButton")
+    )
+  }
+
+  func testTopNavigationBackCandidateRejectsKeywordOnlyMatchBelowHeaderBand() {
+    let window = CGRect(x: 0, y: 0, width: 466, height: 678)
+    let floatingBarBack = CGRect(x: 399, y: 175, width: 38, height: 38)
+
+    XCTAssertFalse(
+      Self.isTopNavigationBackCandidateFrame(floatingBarBack, in: window, identifier: "back-link")
+    )
+    XCTAssertFalse(
+      Self.isTopNavigationBackCandidateFrame(floatingBarBack, in: window, identifier: "")
+    )
+  }
+
+  func testTopNavigationBackCandidateBoundsSystemBackButtonToUpperWindow() {
+    // 40% of 932 is 372.8; the classic band ends at 180, so only the floating-bar bound decides.
+    let window = CGRect(x: 0, y: 0, width: 430, height: 932)
+
+    XCTAssertTrue(
+      Self.isTopNavigationBackCandidateFrame(
+        CGRect(x: 20, y: 348, width: 44, height: 44),
+        in: window,
+        identifier: "BackButton"
+      )
+    )
+    XCTAssertFalse(
+      Self.isTopNavigationBackCandidateFrame(
+        CGRect(x: 20, y: 356, width: 44, height: 44),
+        in: window,
+        identifier: "BackButton"
+      )
+    )
+    XCTAssertFalse(
+      Self.isTopNavigationBackCandidateFrame(.infinite, in: window, identifier: "BackButton")
+    )
+  }
+
+  func testTopNavigationBackCandidateKeepsClassicHeaderBandForKeywordMatches() {
+    let window = CGRect(x: 0, y: 0, width: 430, height: 932)
+
+    XCTAssertTrue(
+      Self.isTopNavigationBackCandidateFrame(
+        CGRect(x: 340, y: 84, width: 72, height: 44),
+        in: window,
+        identifier: "back-link"
+      )
+    )
+  }
+
   func testNavigationVisualVerificationSeparatesNoChangeFromNoSample() {
     XCTAssertEqual(
       Self.navigationVisualObservation(before: Data([1, 2, 3]), after: Data([1, 2, 4])),

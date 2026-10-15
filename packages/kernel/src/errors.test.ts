@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import {
   AppError,
+  appNotInstalledDetails,
   defaultHintForCode,
   discloseDispatch,
   discloseDispatchAfterSteps,
@@ -19,6 +20,7 @@ test('the pre-dispatch refusal reasons are the values consumers branch on', () =
   assert.deepEqual(PRE_DISPATCH_REFUSAL_REASONS, {
     sessionAppRequired: 'session_app_required',
     sessionOrDeviceSelectorRequired: 'session_or_device_selector_required',
+    appNotInstalled: 'app_not_installed',
   });
 });
 
@@ -34,6 +36,12 @@ for (const [label, details, code, message] of [
     sessionOrDeviceSelectorRequiredDetails(),
     'INVALID_ARGS',
     'clipboard requires an active session or an explicit device selector (e.g. --platform ios).',
+  ],
+  [
+    'appNotInstalled',
+    appNotInstalledDetails(),
+    'APP_NOT_INSTALLED',
+    'No app found matching "Maps"',
   ],
 ] as const) {
   test(`${label} refusal carries its reason and dispatched:no through normalize and the wire`, () => {
@@ -177,4 +185,21 @@ test('discloseDispatchAfterSteps keeps no only while no step of the series was d
   assert.equal(nested.details?.dispatchedSteps, 3);
   const plain = new Error('socket closed');
   assert.equal(discloseDispatchAfterSteps(plain, 4), plain);
+});
+
+test('bundled plugin errors preserve codes and details without changing subclass checks', async () => {
+  const copyPath = './errors.ts?plugin-copy';
+  const { AppError: PluginError } = await import(copyPath);
+  assert.notEqual(PluginError, AppError);
+  const foreign = new PluginError('INVALID_ARGS', 'bad plugin profile', { provider: 'example' });
+  assert.ok(foreign instanceof AppError);
+  const normalized = normalizeError(foreign);
+  assert.equal(normalized.code, 'INVALID_ARGS');
+  assert.equal(normalized.message, 'bad plugin profile');
+  assert.deepEqual(normalized.details, { provider: 'example' });
+  const ordinary = Object.assign(new Error('bad plugin profile'), { code: 'INVALID_ARGS' });
+  assert.equal(ordinary instanceof AppError, false);
+  class SpecificError extends AppError {}
+  assert.ok(new SpecificError('COMMAND_FAILED', 'specific') instanceof SpecificError);
+  assert.equal(foreign instanceof SpecificError, false);
 });

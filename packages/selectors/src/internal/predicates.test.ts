@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 import { createSnapshotVisibility } from '@agent-device/contracts/snapshot';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
-import { evaluateIsPredicate, normalizeIsPositionals } from './predicates.ts';
+import {
+  checkIsPredicate,
+  evaluateIsPredicate,
+  IS_PREDICATE_REQUIRED_MESSAGE,
+  IS_PREDICATE_USAGE_HINT,
+  normalizeIsPositionals,
+} from './predicates.ts';
 import { formatRole } from '@agent-device/kernel/snapshot';
 
 test('normalizeIsPositionals keeps canonical predicate-first arguments untouched', () => {
@@ -241,6 +247,27 @@ test('visible predicate does not use non-hittable Android layout ancestors for r
   assert.equal(result.pass, false);
 });
 
+test('editable predicate follows a published editable fact and infers from type without one', () => {
+  const editableAt = (node: Partial<SnapshotNode>) => {
+    const full: SnapshotNode = { index: 0, ref: 'e1', ...node };
+    return evaluateIsPredicate({
+      predicate: 'editable',
+      node: full,
+      visibility: createSnapshotVisibility([full]),
+      platform: 'android',
+    }).pass;
+  };
+
+  assert.equal(editableAt({ type: 'com.example.RichEditor', editable: true }), true);
+  assert.equal(editableAt({ type: 'android.widget.EditText', editable: false }), false);
+  assert.equal(
+    editableAt({ type: 'android.widget.EditText', editable: true, enabled: false }),
+    false,
+  );
+  assert.equal(editableAt({ type: 'android.widget.EditText' }), true);
+  assert.equal(editableAt({ type: 'com.example.RichEditor' }), false);
+});
+
 /** One capture whose two rows share a label: one on screen, one below the fold. */
 const SHARED_CAPTURE: SnapshotNode[] = [
   {
@@ -318,4 +345,19 @@ test('the text predicate never consults the visibility index', () => {
 
   assert.equal(match.pass, true);
   assert.deepEqual(materialized, { nodeMap: 0, viewportRects: 0 });
+});
+
+test('an unsupported is predicate always carries the usage hint', () => {
+  const refused = checkIsPredicate('nope');
+  expect(refused).toEqual({
+    ok: false,
+    code: 'INVALID_ARGS',
+    message: IS_PREDICATE_REQUIRED_MESSAGE,
+    hint: IS_PREDICATE_USAGE_HINT,
+  });
+});
+
+test('is predicates are admitted case-insensitively, matching what the daemon executes', () => {
+  expect(checkIsPredicate('TEXT')).toEqual({ ok: true, predicate: 'text' });
+  expect(checkIsPredicate('Visible')).toEqual({ ok: true, predicate: 'visible' });
 });

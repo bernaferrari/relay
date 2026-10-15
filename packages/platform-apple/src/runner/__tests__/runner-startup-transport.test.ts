@@ -2,11 +2,17 @@ import { afterEach, beforeEach, test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import type { ExecBackgroundResult } from '@agent-device/host-kit/command';
 import { appleRunnerTestHost } from '../test-host.ts';
-import { AppError } from '@agent-device/kernel/errors';
+import {
+  AppError,
+  createRequestCanceledError,
+  isRequestCanceledError,
+} from '@agent-device/kernel/errors';
 import { RunnerCommandAccounting, type RunnerSession } from '../runner-session-types.ts';
 import {
   iosDevice,
   iosSimulator,
+  RUNNER_ENDPOINT_FIXTURE,
+  runnerTransportResponse,
   stubSuccessfulFetch,
   usbmuxDeviceUnattachedError,
   xctestIosDevice,
@@ -38,16 +44,11 @@ beforeEach(() => {
   clearDeviceTunnelIpCache();
   mockRunCmd.mockReset();
   mockUsbmuxPostCommand.mockReset();
-  mockUsbmuxPostCommand.mockResolvedValue(new Response('{}'));
-  // mockRunCmd stands in for the two shell-out points a test can hit: the
-  // simulator curl fallback (host.runXcrun) and the physical-device tunnel
-  // lookup (control.resolveTunnel, reached through
-  // host.resolveIosPhysicalDeviceControl). No single test drives both, so one
-  // mock covers either shape a test's own mockImplementation/mockResolvedValue
-  // establishes. Backend classification (coredevice vs xctest) stays the real
-  // implementation; only resolveTunnel is faked.
+  mockUsbmuxPostCommand.mockResolvedValue(runnerTransportResponse());
+  // mockRunCmd stands in for the physical-device tunnel lookup (control.resolveTunnel, reached
+  // through host.resolveIosPhysicalDeviceControl). Backend classification (coredevice vs xctest)
+  // stays the real implementation; only resolveTunnel is faked.
   appleRunnerTestHost.update({
-    runXcrun: mockRunCmd,
     resolveIosPhysicalDeviceControl: (device) => ({
       ...appleRunnerTestHost.defaults().resolveIosPhysicalDeviceControl(device),
       resolveTunnel: mockRunCmd,
@@ -65,7 +66,7 @@ test('waitForRunner propagates request cancellation without fallback', async () 
     () =>
       waitForRunner(
         iosSimulator,
-        8100,
+        RUNNER_ENDPOINT_FIXTURE,
         { command: 'snapshot' },
         undefined,
         5_000,
@@ -83,13 +84,125 @@ test('waitForRunner propagates request cancellation without fallback', async () 
   );
 });
 
+test('waitForRunner discloses whether a canceled command could have been written', async () => {
+  const canceledBeforeAnyAttempt = AbortSignal.abort(createRequestCanceledError());
+  await assert.rejects(
+    () =>
+      waitForRunner(
+        iosSimulator,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'snapshot' },
+        undefined,
+        5_000,
+        undefined,
+        canceledBeforeAnyAttempt,
+      ),
+    (error: unknown) =>
+      isRequestCanceledError(error) && (error as AppError).details?.dispatched === 'no',
+  );
+
+  const controller = new AbortController();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          controller.abort(createRequestCanceledError());
+        }),
+    ),
+  );
+  await assert.rejects(
+    () =>
+      waitForRunner(
+        iosSimulator,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'snapshot' },
+        undefined,
+        5_000,
+        undefined,
+        controller.signal,
+      ),
+    (error: unknown) =>
+      isRequestCanceledError(error) && (error as AppError).details?.dispatched === 'unknown',
+  );
+});
+
+function refusedConnect(): Error {
+  return Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8100'), { code: 'ECONNREFUSED' });
+}
+
+function canceledWithDispatch(dispatched: string) {
+  return (error: unknown) =>
+    isRequestCanceledError(error) && (error as AppError).details?.dispatched === dispatched;
+}
+
+test('waitForRunner keeps no when usbmux is canceled while it is still connecting', async () => {
+  const controller = new AbortController();
+  mockUsbmuxPostCommand.mockImplementation(async () => {
+    controller.abort(createRequestCanceledError());
+    throw createRequestCanceledError({ dispatched: 'no' });
+  });
+
+  await assert.rejects(
+    () =>
+      waitForRunner(
+        xctestIosDevice,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'snapshot' },
+        undefined,
+        5_000,
+        undefined,
+        controller.signal,
+      ),
+    canceledWithDispatch('no'),
+  );
+});
+
+test('waitForRunner keeps no when a canceled network attempt was refused', async () => {
+  const controller = new AbortController();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      controller.abort(createRequestCanceledError());
+      throw refusedConnect();
+    }),
+  );
+
+  await assert.rejects(
+    () =>
+      waitForRunner(
+        iosSimulator,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'snapshot' },
+        undefined,
+        5_000,
+        undefined,
+        controller.signal,
+      ),
+    canceledWithDispatch('no'),
+  );
+});
+
 test('waitForRunner reuses cached physical-device tunnel IP across commands', async () => {
   mockUsbmuxPostCommand.mockRejectedValue(usbmuxDeviceUnattachedError());
   stubSuccessfulFetch();
   mockRunCmd.mockResolvedValue({ tunnelIp: 'fd00::123' });
 
-  await waitForRunner(iosDevice, 8100, { command: 'snapshot' }, undefined, 5_000);
-  await waitForRunner(iosDevice, 8100, { command: 'snapshot' }, undefined, 5_000);
+  await waitForRunner(
+    iosDevice,
+    RUNNER_ENDPOINT_FIXTURE,
+    { command: 'snapshot' },
+    undefined,
+    5_000,
+  );
+  await waitForRunner(
+    iosDevice,
+    RUNNER_ENDPOINT_FIXTURE,
+    { command: 'snapshot' },
+    undefined,
+    5_000,
+  );
 
   assert.equal(mockRunCmd.mock.calls.length, 1);
   const fetchCalls = vi.mocked(fetch).mock.calls;
@@ -98,63 +211,64 @@ test('waitForRunner reuses cached physical-device tunnel IP across commands', as
   assert.equal(fetchCalls[1]?.[0], 'http://[fd00::123]:8100/command');
 });
 
-test('waitForRunner keeps tunnel IP lookup request-local when no tunnel IP is available', async () => {
+test('waitForRunner never dials this Mac for a device whose tunnel IP is unknown', async () => {
   mockUsbmuxPostCommand.mockRejectedValue(usbmuxDeviceUnattachedError());
   stubSuccessfulFetch();
   mockRunCmd.mockResolvedValue({ tunnelIp: null });
 
-  await waitForRunner(iosDevice, 8100, { command: 'snapshot' }, undefined, 5_000);
+  await assert.rejects(
+    () =>
+      waitForRunner(iosDevice, RUNNER_ENDPOINT_FIXTURE, { command: 'snapshot' }, undefined, 100),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.details?.url, null);
+      return true;
+    },
+  );
 
+  // The lookup stays request-local: one devicectl probe, however many attempts the loop makes.
   assert.equal(mockRunCmd.mock.calls.length, 1);
-  assert.equal(vi.mocked(fetch).mock.calls[0]?.[0], 'http://127.0.0.1:8100/command');
+  assert.equal(vi.mocked(fetch).mock.calls.length, 0);
 });
 
-test('waitForRunner uses simulator fallback within the attempt for ready sessions', async () => {
+test('waitForRunner refuses a runner that does not declare its token rule', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => {
-      throw new Error('ECONNREFUSED');
-    }),
+    vi.fn(async () => new Response('{"ok":true}')),
   );
-  mockRunCmd.mockResolvedValue({ exitCode: 0, stdout: '{"ok":true}', stderr: '' });
 
-  const response = await waitForRunner(
+  const error = await waitForRunner(
     iosSimulator,
-    8100,
+    RUNNER_ENDPOINT_FIXTURE,
     { command: 'uptime' },
     undefined,
     5_000,
-    makeReadyRunnerSession(),
-  );
+  ).catch((error: unknown) => error);
 
-  assert.equal(await response.text(), '{"ok":true}');
+  assert.ok(error instanceof AppError);
+  assert.equal(error.details?.reason, 'runner_token_unsupported');
   assert.equal(vi.mocked(fetch).mock.calls.length, 1);
-  assert.equal(mockRunCmd.mock.calls.length, 1);
-  // mockRunCmd is wired directly to host.runXcrun, so the call already IS the
-  // xcrun invocation; only the constructed argument vector needs checking.
-  assert.deepEqual(mockRunCmd.mock.calls[0]?.[0]?.slice(0, 5), [
-    'simctl',
-    'spawn',
-    iosSimulator.id,
-    '/usr/bin/curl',
-    '-s',
-  ]);
+  const init = vi.mocked(fetch).mock.calls[0]?.[1];
+  assert.equal(
+    new Headers(init?.headers).get('X-Agent-Device-Runner-Token'),
+    'runner-token-fixture',
+  );
+  assert.equal(init?.redirect, 'error');
 });
 
-test('waitForRunner types a failed simulator fallback as a refused connection', async () => {
+test('waitForRunner types a simulator runner that never accepts as a refused connection', async () => {
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
-  mockRunCmd.mockResolvedValue({ exitCode: 7, stdout: '', stderr: 'curl: (7) Failed to connect' });
 
   await assert.rejects(
-    () => waitForRunner(iosSimulator, 8100, { command: 'uptime' }, undefined, 100),
+    () =>
+      waitForRunner(iosSimulator, RUNNER_ENDPOINT_FIXTURE, { command: 'uptime' }, undefined, 100),
     (error: unknown) => {
       const appError = error as AppError;
-      assert.equal(appError.message, 'Runner did not accept connection (simctl spawn)');
+      assert.equal(appError.message, 'Runner did not accept connection');
       assert.equal(appError.details?.runnerConnectFailureReason, 'runner_connect_refused');
       return true;
     },
   );
-  assert.equal(mockRunCmd.mock.calls.length, 1);
 });
 
 test('waitForRunner discloses no when the runner exited before any attempt could write', async () => {
@@ -165,7 +279,15 @@ test('waitForRunner discloses no when the runner exited before any attempt could
     child: { pid: 1234, exitCode: 65 } as ExecBackgroundResult['child'],
   };
   await assert.rejects(
-    () => waitForRunner(iosDevice, 8100, { command: 'tap', x: 1, y: 1 }, undefined, 100, session),
+    () =>
+      waitForRunner(
+        iosDevice,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'tap', x: 1, y: 1 },
+        undefined,
+        100,
+        session,
+      ),
     (error: unknown) => {
       assert.ok(error instanceof AppError);
       assert.equal(error.message, 'Runner did not accept connection (xcodebuild exited early)');
@@ -176,22 +298,28 @@ test('waitForRunner discloses no when the runner exited before any attempt could
   assert.equal(mockUsbmuxPostCommand.mock.calls.length, 0);
 });
 
-test('waitForRunner discloses unknown when an attempt may have written before a refused fallback', async () => {
+test('waitForRunner discloses unknown when an attempt may have written before it gave up', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockRejectedValue(new AppError('COMMAND_FAILED', 'Runner command deadline exceeded')),
   );
-  mockRunCmd.mockResolvedValue({ exitCode: 7, stdout: '', stderr: 'curl: (7) Failed to connect' });
 
   await assert.rejects(
-    () => waitForRunner(iosSimulator, 8100, { command: 'tap', x: 1, y: 1 }, undefined, 100),
+    () =>
+      waitForRunner(
+        iosSimulator,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'tap', x: 1, y: 1 },
+        undefined,
+        100,
+      ),
     (error: unknown) => {
       assert.ok(error instanceof AppError);
       assert.equal(error.details?.dispatched, 'unknown');
       return true;
     },
   );
-  assert.equal(mockRunCmd.mock.calls.length, 1);
+  assert.equal(mockRunCmd.mock.calls.length, 0);
 });
 
 test('waitForRunner wakes a simulator startup retry when the listener reports ready', async () => {
@@ -208,13 +336,13 @@ test('waitForRunner wakes a simulator startup retry when the listener reports re
     vi.fn(async () => {
       fetchAttempts += 1;
       if (fetchAttempts === 1) throw new Error('ECONNREFUSED');
-      return new Response('{}');
+      return runnerTransportResponse();
     }),
   );
 
   const response = waitForRunner(
     iosSimulator,
-    8100,
+    RUNNER_ENDPOINT_FIXTURE,
     { command: 'uptime' },
     undefined,
     5_000,
@@ -233,7 +361,7 @@ test('waitForRunner wakes a simulator startup retry when the listener reports re
   }
 });
 
-test('waitForRunner invalidates cached tunnel IP when localhost fallback succeeds', async () => {
+test('waitForRunner refreshes a cached tunnel IP that stopped answering', async () => {
   mockUsbmuxPostCommand.mockRejectedValue(usbmuxDeviceUnattachedError());
   const tunnelIps = ['fd00::123', 'fd00::456'];
   mockRunCmd.mockImplementation(async () => ({ tunnelIp: tunnelIps.shift() ?? null }));
@@ -248,20 +376,38 @@ test('waitForRunner invalidates cached tunnel IP when localhost fallback succeed
       if (url === 'http://[fd00::123]:8100/command') {
         staleTunnelFailed = true;
       }
-      return new Response('{}');
+      return runnerTransportResponse();
     }),
   );
 
-  await waitForRunner(iosDevice, 8100, { command: 'snapshot' }, undefined, 5_000);
-  await waitForRunner(iosDevice, 8100, { command: 'snapshot' }, undefined, 5_000);
-  await waitForRunner(iosDevice, 8100, { command: 'snapshot' }, undefined, 5_000);
+  await waitForRunner(
+    iosDevice,
+    RUNNER_ENDPOINT_FIXTURE,
+    { command: 'snapshot' },
+    undefined,
+    5_000,
+  );
+  await waitForRunner(
+    iosDevice,
+    RUNNER_ENDPOINT_FIXTURE,
+    { command: 'snapshot' },
+    undefined,
+    5_000,
+  );
+  await waitForRunner(
+    iosDevice,
+    RUNNER_ENDPOINT_FIXTURE,
+    { command: 'snapshot' },
+    undefined,
+    5_000,
+  );
 
   const fetchCalls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
   assert.equal(mockRunCmd.mock.calls.length, 2);
   assert.deepEqual(fetchCalls, [
     'http://[fd00::123]:8100/command',
     'http://[fd00::123]:8100/command',
-    'http://127.0.0.1:8100/command',
+    'http://[fd00::456]:8100/command',
     'http://[fd00::456]:8100/command',
   ]);
 });
@@ -278,7 +424,7 @@ test('waitForRunner preserves xcodebuild diagnostics when the runner exits durin
     sessionId: 'starting-device-session',
     device: xctestIosDevice,
     deviceId: xctestIosDevice.id,
-    port: 8100,
+    endpoint: { port: 8100, token: 'runner-token-fixture' },
     xctestrunPath: '/tmp/runner.xctestrun',
     jsonPath: '/tmp/runner.json',
     runnerLogPath,
@@ -296,7 +442,14 @@ test('waitForRunner preserves xcodebuild diagnostics when the runner exits durin
 
   await assert.rejects(
     () =>
-      waitForRunner(xctestIosDevice, 8100, { command: 'uptime' }, '/tmp/runner.log', 100, session),
+      waitForRunner(
+        xctestIosDevice,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'uptime' },
+        '/tmp/runner.log',
+        100,
+        session,
+      ),
     (error: unknown) => {
       const appError = error as AppError;
       assert.equal(appError.message, 'Runner did not accept connection (xcodebuild exited early)');
@@ -323,7 +476,7 @@ test('waitForRunner carries the disk-image state when the runner is still alive 
     sessionId: 'starting-device-session',
     device: xctestIosDevice,
     deviceId: xctestIosDevice.id,
-    port: 8100,
+    endpoint: { port: 8100, token: 'runner-token-fixture' },
     xctestrunPath: '/tmp/runner.xctestrun',
     jsonPath: '/tmp/runner.json',
     testPromise: new Promise(() => {}),
@@ -341,7 +494,14 @@ test('waitForRunner carries the disk-image state when the runner is still alive 
 
   await assert.rejects(
     () =>
-      waitForRunner(xctestIosDevice, 8100, { command: 'uptime' }, '/tmp/runner.log', 100, session),
+      waitForRunner(
+        xctestIosDevice,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'uptime' },
+        '/tmp/runner.log',
+        100,
+        session,
+      ),
     (error: unknown) => {
       const appError = error as AppError;
       assert.equal(appError.message, 'Runner did not accept connection');
@@ -362,7 +522,14 @@ test('waitForRunner reports the usbmux verdict for xctest devices without retryi
   stubSuccessfulFetch();
 
   await assert.rejects(
-    () => waitForRunner(xctestIosDevice, 8100, { command: 'snapshot' }, undefined, 5_000),
+    () =>
+      waitForRunner(
+        xctestIosDevice,
+        RUNNER_ENDPOINT_FIXTURE,
+        { command: 'snapshot' },
+        undefined,
+        5_000,
+      ),
     (error: unknown) => {
       const appError = error as AppError;
       assert.equal(appError.code, 'DEVICE_NOT_FOUND');
@@ -381,7 +548,13 @@ test('waitForRunner routes coredevice physical devices through usbmux first', as
   const fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 
-  const response = await waitForRunner(iosDevice, 8100, { command: 'snapshot' }, undefined, 5_000);
+  const response = await waitForRunner(
+    iosDevice,
+    RUNNER_ENDPOINT_FIXTURE,
+    { command: 'snapshot' },
+    undefined,
+    5_000,
+  );
 
   assert.equal(response.status, 200);
   assert.equal(fetchMock.mock.calls.length, 0);
@@ -394,7 +567,13 @@ test('waitForRunner falls back to the tunnel route inside the same attempt', asy
   stubSuccessfulFetch();
   mockRunCmd.mockResolvedValue({ tunnelIp: 'fd00::123' });
 
-  const response = await waitForRunner(iosDevice, 8100, { command: 'snapshot' }, undefined, 5_000);
+  const response = await waitForRunner(
+    iosDevice,
+    RUNNER_ENDPOINT_FIXTURE,
+    { command: 'snapshot' },
+    undefined,
+    5_000,
+  );
 
   assert.equal(response.status, 200);
   // One usbmux probe, then the tunnel endpoint — no retry round trip in between.
@@ -407,7 +586,7 @@ function makeReadyRunnerSession(): RunnerSession {
     sessionId: 'ready-session',
     device: iosSimulator,
     deviceId: iosSimulator.id,
-    port: 8100,
+    endpoint: { port: 8100, token: 'runner-token-fixture' },
     xctestrunPath: '/tmp/runner.xctestrun',
     jsonPath: '/tmp/runner.json',
     testPromise: Promise.resolve({ exitCode: 0, stdout: '', stderr: '' }),

@@ -10,7 +10,12 @@ import {
   appFileUploadForm,
   createHubUploadApp,
   postHubAppUpload,
+  readFlag,
+  requireConnectFlag,
+  requireConnectPlatform,
+  requireEnv,
   resolveHubAppReference,
+  resolveLocalAppArtifact,
   trimLeadingSlash,
   trimTrailingSlash,
 } from './webdriver-utils.ts';
@@ -206,6 +211,26 @@ test('the hub app resolver surfaces the grammar rejection of a malformed referen
   }
 });
 
+test('a whitespace-only credential is missing', () => {
+  assert.equal(requireEnv({ USER: 'u' }, 'USER', 'Hub'), 'u');
+  for (const env of [{}, { USER: '' }, { USER: ' \t' }]) {
+    assert.throws(
+      () => requireEnv(env, 'USER', 'Hub'),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.code === 'INVALID_ARGS' &&
+        error.message === 'Hub requires USER in the environment.',
+    );
+  }
+});
+
+test('only non-empty string flags are read', () => {
+  const req = { flags: { device: 'Pixel 8', empty: '', count: 3 } };
+  assert.equal(readFlag(req, 'device'), 'Pixel 8');
+  assert.equal(readFlag(req, 'empty'), undefined);
+  assert.equal(readFlag(req, 'count'), undefined);
+});
+
 test.skipIf(process.platform === 'win32')(
   'appFileUploadForm refuses a named pipe without reading it',
   async () => {
@@ -229,3 +254,29 @@ test.skipIf(process.platform === 'win32')(
     }
   },
 );
+
+test('connect readers refuse blank values and name the command that needs them', () => {
+  assert.equal(requireConnectFlag('Pixel 8', 'example', '--device <name>'), 'Pixel 8');
+  assert.throws(() => requireConnectFlag('  ', 'example', '--device <name>'), {
+    code: 'INVALID_ARGS',
+    message: 'connect example requires --device <name>.',
+  });
+  const flags = { json: false, help: false, version: false };
+  assert.equal(requireConnectPlatform({ ...flags, platform: 'ios' }, 'example'), 'ios');
+  assert.throws(() => requireConnectPlatform({ ...flags, platform: 'web' }, 'example'), {
+    message: 'connect example requires --platform ios|android.',
+  });
+});
+
+test('a local app artifact must be an existing file under the connect cwd', async () => {
+  const tempDir = await mkdtempForTest('webdriver-utils-artifact-');
+  await fs.writeFile(path.join(tempDir, 'app.apk'), 'apk');
+  assert.equal(
+    resolveLocalAppArtifact('./app.apk', tempDir, 'Example'),
+    path.join(tempDir, 'app.apk'),
+  );
+  assert.throws(() => resolveLocalAppArtifact('.', tempDir, 'Example'), {
+    code: 'INVALID_ARGS',
+    message: `Example app file not found: ${path.resolve(tempDir, '.')}`,
+  });
+});

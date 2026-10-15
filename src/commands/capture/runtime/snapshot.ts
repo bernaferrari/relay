@@ -10,6 +10,7 @@ import {
 import { AppError } from '@agent-device/kernel/errors';
 import { normalizeType } from '@agent-device/contracts/snapshot';
 import type {
+  PresentedSurface,
   SnapshotKeyboardBandFact,
   SnapshotNode,
   SnapshotState,
@@ -17,8 +18,11 @@ import type {
   SnapshotViewportSize,
   SnapshotVisibility,
 } from '@agent-device/kernel/snapshot';
-import type { BackendSnapshotResult } from '../../../backend.ts';
-import type { AgentDeviceRuntime, CommandSessionRecord } from '../../../runtime-contract.ts';
+import type { BackendSnapshotResult } from '@agent-device/contracts/backend';
+import type {
+  AgentDeviceRuntime,
+  CommandSessionRecord,
+} from '@agent-device/contracts/runtime-contract';
 import {
   buildSnapshotDiff,
   countSnapshotComparableLines,
@@ -27,6 +31,7 @@ import {
   renderSnapshotQualityWarnings,
   truncatedCaptureWarning,
 } from '@agent-device/capture-kit/quality-warnings';
+import { isLikelyStaleSnapshotDrop } from '@agent-device/capture-kit/snapshot-freshness';
 import { formatPostGestureOutcomeWarning } from '@agent-device/capture-kit/post-gesture-stability';
 import { buildSnapshotVisibility } from '@agent-device/capture-kit/snapshot-visibility';
 import { ANDROID_SYSTEM_SURFACE_DISCLOSURE } from '@agent-device/contracts/android-system-surface-disclosure';
@@ -63,6 +68,13 @@ export type SnapshotCommandResult = {
    * a zero. See `CaptureSnapshotResult.viewport` for what each producer measures.
    */
   viewport?: SnapshotViewportSize;
+  /**
+   * iOS: whether this capture read a modal presentation over the app (#3565), decided on the acquired
+   * tree before interactive filtering, compaction, depth, or scope. `'absent'` is read, never
+   * defaulted; a producer that could not decide says `'unknown'` and one that never classified — every
+   * non-iOS backend — publishes nothing.
+   */
+  presentedSurface?: PresentedSurface;
 } & PublicSnapshotCaptureAnnotations;
 
 type SnapshotCapture = {
@@ -107,6 +119,9 @@ export const snapshotCommand: RuntimeCommand<
       : {}),
     ...(capture.snapshot.keyboard ? { keyboard: capture.snapshot.keyboard } : {}),
     ...(capture.snapshot.viewport ? { viewport: capture.snapshot.viewport } : {}),
+    ...(capture.snapshot.presentedSurface
+      ? { presentedSurface: capture.snapshot.presentedSurface }
+      : {}),
     ...snapshotAppFields(capture),
   });
 };
@@ -115,6 +130,9 @@ export const diffSnapshotCommand: RuntimeCommand<
   DiffSnapshotCommandOptions,
   DiffSnapshotCommandResult
 > = async (runtime, options): Promise<DiffSnapshotCommandResult> => {
+  if (options.observeOnly === true) {
+    throw new AppError('INVALID_ARGS', 'observeOnly is supported by snapshot, not diff.');
+  }
   const capture = await captureRuntimeSnapshot(runtime, options);
   const flattenForDiff = options.interactiveOnly === true;
   const previousSnapshot = capture.session?.snapshot;
@@ -176,6 +194,7 @@ async function captureRuntimeSnapshot(
       scope: options.scope,
       raw: options.raw,
       customActions: options.customActions,
+      ...(options.observeOnly === undefined ? {} : { observeOnly: options.observeOnly }),
     },
   );
   const normalizedSnapshot = normalizeBackendSnapshot(result, runtime);
@@ -461,9 +480,4 @@ function formatFreshnessWarnings(
     ];
   }
   return freshness.reason === 'sharp-drop' ? [STALE_SNAPSHOT_DROP_WARNING] : [];
-}
-
-function isLikelyStaleSnapshotDrop(previousCount: number, currentCount: number): boolean {
-  if (previousCount < 12) return false;
-  return currentCount <= Math.floor(previousCount * 0.2);
 }

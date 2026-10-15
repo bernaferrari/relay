@@ -194,3 +194,135 @@ jobs:
     'a gate five levels down is still credited to the lane',
   );
 });
+
+test('a local reusable workflow is opened, so its gates belong to the calling lane', () => {
+  const lanes = planted({
+    '.github/workflows/planted.yml': `name: Planted
+on:
+  pull_request:
+jobs:
+  planted:
+    uses: ./.github/workflows/called.yml
+`,
+    '.github/workflows/called.yml': `name: Called
+on:
+  workflow_call:
+jobs:
+  called:
+    steps:
+      - uses: ./.github/actions/run-gate
+        with:
+          gate: layering
+`,
+  });
+  const caller = lanes.find((lane) => lane.workflow === 'planted.yml');
+  assert.deepEqual(caller?.gates, ['layering']);
+  assert.deepEqual(caller?.unsupported, []);
+  assert.ok(caller?.uses.includes('.github/workflows/called.yml'));
+});
+
+test('a remote or nested reusable workflow fails closed', () => {
+  const lanes = planted({
+    '.github/workflows/planted.yml': `name: Planted
+on:
+  pull_request:
+jobs:
+  remote:
+    uses: octo/repo/.github/workflows/called.yml@main
+  nested:
+    uses: ./.github/workflows/outer.yml
+`,
+    '.github/workflows/outer.yml': `name: Outer
+on:
+  workflow_call:
+jobs:
+  inner:
+    uses: ./.github/workflows/inner.yml
+`,
+  });
+  for (const job of ['remote', 'nested']) {
+    const lane = lanes.find((candidate) => candidate.label === `Planted / ${job}`);
+    assert.equal(lane?.unsupported.length, 1, `${job} must stay unsupported`);
+    assert.deepEqual(lane?.gates, []);
+  }
+});
+
+test("a reusable workflow's gate input resolves from the caller's with", () => {
+  const lanes = planted({
+    '.github/workflows/planted.yml': `name: Planted
+on:
+  pull_request:
+jobs:
+  planted:
+    uses: ./.github/workflows/called.yml
+    with:
+      gate: layering
+`,
+    '.github/workflows/called.yml': `name: Called
+on:
+  workflow_call:
+    inputs:
+      gate:
+        type: string
+jobs:
+  called:
+    steps:
+      - uses: ./.github/actions/run-gate
+        with:
+          gate: \${{ inputs.gate }}
+`,
+  });
+  assert.deepEqual(lanes.find((lane) => lane.workflow === 'planted.yml')?.gates, ['layering']);
+});
+
+test('a reusable workflow with no jobs fails closed', () => {
+  const lanes = planted({
+    '.github/workflows/planted.yml': `name: Planted
+on:
+  pull_request:
+jobs:
+  planted:
+    uses: ./.github/workflows/empty.yml
+`,
+    '.github/workflows/empty.yml': `name: Empty
+on:
+  workflow_call:
+`,
+  });
+  assert.equal(lanes.find((lane) => lane.workflow === 'planted.yml')?.unsupported.length, 1);
+});
+
+// Drafts are where agents iterate; a smoke lane that runs on them spends device
+// runners on heads nobody is reviewing, and one that misses `ready_for_review`
+// never runs on a draft marked ready until its next push. `converted_to_draft`
+// starts a skipped run whose concurrency group cancels the one in flight.
+test('device smoke lanes skip drafts and start when a draft is marked ready', () => {
+  const directory = path.join(repoRoot, '.github/workflows');
+  type Workflow = {
+    name: string;
+    on: { pull_request?: { types?: string[] } };
+    jobs: Record<string, { name?: string; if?: string }>;
+  };
+  const smokeLanes = fs
+    .readdirSync(directory)
+    .map((file) => parse(fs.readFileSync(path.join(directory, file), 'utf8')) as Workflow)
+    .flatMap((workflow) =>
+      Object.values(workflow.jobs)
+        .filter((job) => job.name === 'Smoke Tests' && workflow.on.pull_request)
+        .map((job) => ({ workflow, job })),
+    );
+  assert.deepEqual(smokeLanes.map(({ workflow }) => workflow.name).sort(), [
+    'Android',
+    'Linux',
+    'iOS',
+    'macOS',
+  ]);
+  for (const { workflow, job } of smokeLanes) {
+    assert.deepEqual(
+      workflow.on.pull_request?.types,
+      ['opened', 'synchronize', 'reopened', 'ready_for_review', 'converted_to_draft'],
+      workflow.name,
+    );
+    assert.equal(job.if, '${{ !github.event.pull_request.draft }}', workflow.name);
+  }
+});

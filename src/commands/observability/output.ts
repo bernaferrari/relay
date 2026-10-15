@@ -1,4 +1,4 @@
-import type { BackendNetworkEntry } from '../../backend.ts';
+import type { BackendNetworkEntry } from '@agent-device/contracts/backend';
 import type { NetworkIncludeMode } from '@agent-device/kernel/contracts';
 import type { NetworkEntry } from '@agent-device/contracts/observability';
 import type { CliOutput } from '../command-contract.ts';
@@ -91,7 +91,7 @@ function logsCliOutput(data: LogsCliResult): CliOutput {
     text: data.path,
     stderr: joinDefinedLines([
       formatKeyValueFields(data, ['active', 'state', 'backend', 'sizeBytes'] as const),
-      formatActionFields(data),
+      formatKeyValueFields(data, LOG_ACTION_FIELD_KEYS),
       data.hint,
       formatNotes(data.notes),
     ]),
@@ -277,18 +277,6 @@ function formatAudioArray(label: string, value: readonly number[] | undefined): 
     (item): item is number => typeof item === 'number' && Number.isFinite(item),
   );
   return numbers.length > 0 ? `${label}: [${numbers.join(', ')}]` : undefined;
-}
-
-function formatActionFields(data: LogsActionFields): string | undefined {
-  return (
-    LOG_ACTION_FIELD_KEYS.map((key) => formatActionField(key, data[key]))
-      .filter(Boolean)
-      .join(' ') || undefined
-  );
-}
-
-function formatActionField(key: string, value: true | number | null | undefined): string {
-  return value == null ? '' : `${key}=${value}`;
 }
 
 function joinDefinedWords(words: Array<string | undefined>): string {

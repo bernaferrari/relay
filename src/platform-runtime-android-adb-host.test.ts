@@ -11,8 +11,8 @@ import {
   parseAndroidAdbArgv,
   runAndroidHostAdb,
 } from '@agent-device/platform-android/mechanics';
-import { ANDROID_EMULATOR } from './__tests__/test-utils/device-fixtures.ts';
-import { mkdtempForTestSync } from './__tests__/test-utils/tmp-dir.ts';
+import { ANDROID_EMULATOR } from '@agent-device/test-kit/device-fixtures';
+import { mkdtempForTestSync } from '@agent-device/test-kit/tmp-dir';
 import './platform-runtime-android-adb-host.ts';
 
 const UNGUARDED_DEVICE_SHELL = {
@@ -129,10 +129,13 @@ test.skipIf(process.platform === 'win32')(
           'process.stdout.write(JSON.stringify(call));',
         ].join('\n'),
         async () => {
-          const provider = createLocalAndroidAdbProvider(ANDROID_EMULATOR, {
-            serverPort: 15_037,
-          });
-          const adb = provider.exec;
+          const local = createLocalAndroidAdbProvider(ANDROID_EMULATOR);
+          const serverPort = 15_037;
+          const adb: typeof local.exec = async (args, options) =>
+            await local.exec(args, { ...options, serverPort });
+          const provider = {
+            spawn: (args: readonly string[]) => local.spawn?.(args, { serverPort }),
+          };
           const serial = JSON.parse(
             (await adb(deviceShellArgv('adb', 'shell', ['id']))).stdout,
           ) as {

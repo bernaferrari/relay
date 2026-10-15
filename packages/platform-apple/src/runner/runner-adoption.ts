@@ -9,6 +9,7 @@ import {
   type RunnerHandoffRefusal,
 } from './apple-runner-platform.ts';
 import { sendRunnerCommandOnce } from './runner-transport.ts';
+import type { RunnerEndpoint } from './runner-contract.ts';
 import { runnerSimulatorSetPath } from './runner-device-set.ts';
 import {
   decodeRunnerResponseBody,
@@ -19,6 +20,7 @@ import {
   buildDetachedRunnerLease,
   buildRunnerLease,
   isLeaseRunnerProcessIntact,
+  leasedRunnerEndpoint,
   readRunnerLeaseForAdoption,
   verifyLeaseRunnerPidIdentity,
   writeRunnerLease,
@@ -114,7 +116,7 @@ export async function detachRunnerSessionsForShutdown(
         lane: outcome.lane,
         sessionId: session.sessionId,
         runnerPid: session.child.pid,
-        port: session.port,
+        port: session.endpoint.port,
         runnerLogPath: session.runnerLogPath,
       },
     });
@@ -155,6 +157,7 @@ function detachRunnerSessionForShutdown(session: RunnerSession): RunnerDetachOut
   } catch {
     return { detached: false, lane, reason: 'lease_write_failed' };
   }
+  session.listenerWatch?.close();
   // Only once the lease says the runner is handed over does this process give up its own sides of
   // the runner's log: until that write lands the session is still owned, and an owned session that
   // stopped following its runner's output is worse off than one that never handed anything off.
@@ -176,6 +179,8 @@ type RunnerAdoptionRefusal =
   | 'runner_pid_recycled'
   | 'expected_derived_unresolved'
   | 'artifact_fingerprint_mismatch'
+  /** The leased runner predates listener tokens, so it is cleaned up and replaced. */
+  | 'runner_token_missing'
   | 'probe_failed'
   /** The runner answered but its lease could not be re-stamped, so nothing may claim it. */
   | 'lease_write_failed'
@@ -220,6 +225,8 @@ export async function tryAdoptRunnerSessionFromLease(
   if (leaseVerdict.type === 'absent') return skip('lease_absent');
   if (leaseVerdict.type === 'refused') return skip(leaseVerdict.reason, leaseVerdict.lease);
   const lease = leaseVerdict.lease;
+  const endpoint = leasedRunnerEndpoint(lease);
+  if (!endpoint) return skip('runner_token_missing', lease);
   if (lease.simulatorSetPath !== runnerSimulatorSetPath(device)) {
     return skip('simulator_set_mismatch', lease);
   }
@@ -229,7 +236,7 @@ export async function tryAdoptRunnerSessionFromLease(
   if ('refusal' in fingerprint) return skip(fingerprint.refusal, lease);
   const runnerPid = leased.value;
   const expectedArtifact = fingerprint.value;
-  const probe = await probeRunnerAnswersUptime(device, lease.port, target.lane, options.budget);
+  const probe = await probeRunnerAnswersUptime(device, endpoint, target.lane, options.budget);
   if (probe !== 'answered') return skip(probe, lease);
   // The probe awaited network I/O — the xcodebuild can have exited and its pid
   // been recycled while the old port still answers. Re-verify before the
@@ -238,7 +245,7 @@ export async function tryAdoptRunnerSessionFromLease(
     return skip('runner_pid_recycled', lease);
   }
 
-  const session = buildAdoptedRunnerSession(device, lease, runnerPid, expectedArtifact);
+  const session = buildAdoptedRunnerSession(device, lease, endpoint, runnerPid, expectedArtifact);
   try {
     writeRunnerLease(session.lease);
   } catch {
@@ -310,7 +317,7 @@ function verifyLeaseArtifactFingerprint(
  */
 async function probeRunnerAnswersUptime(
   device: DeviceInfo,
-  port: number,
+  endpoint: RunnerEndpoint,
   lane: RunnerHandoffLane,
   budget: RunnerPhaseBudget | undefined,
 ): Promise<RunnerProbeOutcome> {
@@ -325,7 +332,7 @@ async function probeRunnerAnswersUptime(
   try {
     const response = await sendRunnerCommandOnce(
       device,
-      port,
+      endpoint,
       withRunnerCommandId({ command: 'uptime' }),
       timeoutMs,
       budget?.signal,
@@ -345,7 +352,7 @@ async function probeRunnerAnswersUptime(
       durationMs: Date.now() - startedAtMs,
       data: {
         deviceId: device.id,
-        port,
+        port: endpoint.port,
         lane,
         budgetCapMs: capMs,
         timeoutMs,
@@ -386,6 +393,7 @@ function resolveExpectedArtifact(
 function buildAdoptedRunnerSession(
   device: DeviceInfo,
   lease: RunnerLease,
+  endpoint: RunnerEndpoint,
   runnerPid: number,
   expectedArtifact: ExpectedRunnerArtifact,
 ): RunnerSession & { lease: RunnerLease } {
@@ -404,14 +412,14 @@ function buildAdoptedRunnerSession(
     sessionId,
     device,
     deviceId: device.id,
-    port: lease.port,
+    endpoint,
     xctestrunPath: lease.xctestrunPath,
     xctestrunArtifact: artifact,
     jsonPath: lease.jsonPath,
     testPromise: wait,
     child,
     // The runner appends to this file for its whole life, so the log the previous daemon handed over
-    // is still the one worth quoting; a lease from before #2681 has none (#2681).
+    // is still the one worth quoting (#2681).
     runnerLogPath: lease.runnerLogPath,
     // The probe already proved the runner answers commands.
     state: 'ready',
@@ -420,7 +428,7 @@ function buildAdoptedRunnerSession(
       device,
       sessionId,
       runnerPid,
-      port: lease.port,
+      endpoint,
       xctestrunPath: lease.xctestrunPath,
       cacheKey: expectedArtifact.cacheKey,
       jsonPath: lease.jsonPath,

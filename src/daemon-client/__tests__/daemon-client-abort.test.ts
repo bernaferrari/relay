@@ -8,22 +8,25 @@
  * the client rejects with the typed canceled-request error — and the daemon itself stays alive to
  * serve a follow-up request.
  */
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
+import type { DaemonResponse } from '@agent-device/kernel/contracts';
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { isRequestCanceledError } from '@agent-device/kernel/errors';
 import { getRequestSignal, isRequestCanceled } from '@agent-device/host-kit/request';
-import type { DaemonInvokeFn, DaemonRequest, DaemonResponse } from '../../daemon/daemon-request.ts';
-import { createDaemonHttpServer } from '../../daemon/server/http-server.ts';
-import { createSocketServer, listenNetServer } from '../../daemon/server/transport.ts';
+import { createDaemonHttpServer } from '@agent-device/daemon/testing/server/http-server';
+import { createSocketServer, listenNetServer } from '@agent-device/daemon/testing/server/transport';
 import { sendRequest } from '../daemon-client-transport.ts';
-import { resolveDaemonPaths } from '../../daemon-resolution.ts';
+import { resolveDaemonPaths } from '@agent-device/daemon-contracts/daemon-resolution';
 import {
   closeLoopbackServer,
   listenOnLoopback,
   trackLoopbackSockets,
   skipWhenLoopbackUnavailable,
-} from '../../__tests__/test-utils/loopback.ts';
-import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+} from '@agent-device/test-kit/loopback';
+import { mkdtempForTestSync } from '@agent-device/test-kit/tmp-dir';
+
+type WireInvokeFn = (req: DaemonWireRequest) => Promise<DaemonResponse>;
 
 const TOKEN = 'abort-signal-token';
 const STATE_PATHS = resolveDaemonPaths(mkdtempForTestSync('agent-device-client-abort-'));
@@ -38,8 +41,8 @@ type SeenRequest = {
 
 // `wait` models the long request the caller abandons; every other command answers immediately, so
 // the same handler also proves the daemon still serves requests after one was canceled.
-function canceledAwareHandler(seen: SeenRequest): DaemonInvokeFn {
-  return async (req: DaemonRequest): Promise<DaemonResponse> => {
+function canceledAwareHandler(seen: SeenRequest): WireInvokeFn {
+  return async (req: DaemonWireRequest): Promise<DaemonResponse> => {
     const requestId = req.meta?.requestId;
     seen.requestId = requestId;
     if (req.command !== 'wait') {

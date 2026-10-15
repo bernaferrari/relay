@@ -9,18 +9,17 @@ import {
   createAdReplayStepRuntime,
   type ReplayStepContext,
 } from './session-replay-runtime-engine-adapter.ts';
-import { prepareReplayPlan, routeMaestroReplay } from './session-replay-runtime-plan.ts';
+import { prepareReplayPlan, routeReplayBackend } from './session-replay-runtime-plan.ts';
 import {
   readReplayScriptSourceFile,
   REPLAY_SCRIPT_SOURCE_REQUIRED_MESSAGE,
 } from '@agent-device/replay-port/script-source';
 import { prepareReplaySession } from './session-replay-runtime-session.ts';
+import type { ReplayCommand, ReplayCoordinator } from '@agent-device/replay-port/command-types';
 import type {
-  ReplayCommand,
-  ReplayCoordinator,
   ReplaySessionState,
   ReplaySessionStore,
-} from '@agent-device/replay-port/command-types';
+} from '@agent-device/contracts/replay-backend';
 import { errorResponse, type DaemonResponse } from '@agent-device/kernel/contracts';
 
 /**
@@ -28,7 +27,7 @@ import { errorResponse, type DaemonResponse } from '@agent-device/kernel/contrac
  * session preparation, the engine step loop, and run completion — kept thin by extracting the
  * three cohesive pieces it drives into their own modules:
  *  - the plan-side helpers (`validateReplayBackendFlag`, `inspectReplayPlanManifest`,
- *    `resolveReplayPlanEntryIndex`, `routeMaestroReplay`, and `prepareReplayPlan` itself) live in
+ *    `resolveReplayPlanEntryIndex`, `routeReplayBackend`, and `prepareReplayPlan` itself) live in
  *    `session-replay-runtime-plan.ts`, alongside the digest/resume metadata helper that was
  *    already there.
  *  - session preparation (the R2 repair preflight, resume-state consumption, and save-script
@@ -41,7 +40,7 @@ import { errorResponse, type DaemonResponse } from '@agent-device/kernel/contrac
  * loop returns and never touches the step runtime itself.
  *
  * Coordinator ownership is unchanged by this split: `createReplayCoordinator` is still called
- * here, and only here — see `src/daemon/__tests__/replay-coordinator-ownership.test.ts` — every
+ * here, and only here — see `src/__tests__/daemon-composition/replay-coordinator-ownership.test.ts` — every
  * extracted module receives the already-constructed `ReplayCoordinator` as a parameter instead of
  * constructing its own.
  */
@@ -81,13 +80,13 @@ export async function runReplayCommand(command: ReplayCommand): Promise<DaemonRe
     if (isMaestroYamlPath(resolved) && req.flags?.replayBackend !== 'maestro') {
       return errorResponse('INVALID_ARGS', maestroBackendRequiredMessage('replay', resolved));
     }
-    const maestroResponse = await routeMaestroReplay({
+    const backendResponse = await routeReplayBackend({
       resolved,
       keepSession,
       coordinator,
       command,
     });
-    if (maestroResponse) return maestroResponse;
+    if (backendResponse) return backendResponse;
     const planPreparation = prepareReplayPlan({
       req,
       sessionName,

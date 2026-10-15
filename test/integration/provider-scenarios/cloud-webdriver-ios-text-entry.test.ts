@@ -1,12 +1,9 @@
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import {
-  CLOUD_WEBDRIVER_PROVIDERS,
-  createProviderWebDriver,
-} from '@agent-device/provider-webdriver';
+import { createBundledCloudWebDriverRuntimes } from '@agent-device/provider-webdriver';
 import type { DeviceLease } from '@agent-device/contracts/device';
 import { createProviderDeviceRuntimeRequestProviders } from '../../../src/provider-device-runtime.ts';
-import type { DaemonRequest } from '../../../src/daemon/daemon-request.ts';
 import { assertRpcOk } from './assertions.ts';
 import {
   createProviderScenarioHarness,
@@ -21,6 +18,7 @@ import {
   startCloudWebDriverTestServer,
   type StartedCloudWebDriverTestServer,
 } from './cloud-webdriver-test-server.ts';
+import { CLOUD_WEBDRIVER_PROVIDERS } from '@agent-device/provider-webdriver/providers';
 
 const WEBDRIVER_PROVIDER = CLOUD_WEBDRIVER_PROVIDERS.browserStack;
 const CLIENT_VERSION = '0.20.6-test';
@@ -156,9 +154,8 @@ test('cloud iOS fill lands text in the field it tapped', async () => {
     assert.equal(data.textEntryReadiness, 'focused-element');
     // The keys reached the focused field, not the void.
     assert.equal(server.fieldValues.email, 'user@example.com');
-    // Both pre-tap readings, the tap, then polling until focus lands. The keys
-    // come last — that ordering IS the fix.
     assert.deepEqual(textEntryTranscript(server), [
+      'keyboard',
       'keyboard',
       'active',
       'tap',
@@ -174,9 +171,12 @@ test('cloud iOS fill lands text in the field it tapped', async () => {
       { ...leaseFlags(lease.leaseId), snapshotInteractiveOnly: true },
       { meta: leaseMeta(lease.leaseId) },
     );
-    const nodes = assertRpcOk<{ nodes?: Array<{ identifier?: string; value?: string }> }>(
-      snapshot,
-    ).nodes;
+    const snapshotData = assertRpcOk<{
+      nodes?: Array<{ identifier?: string; value?: string }>;
+      keyboard?: { kind: string; visible?: boolean };
+    }>(snapshot);
+    assert.deepEqual(snapshotData.keyboard, { kind: 'visibility-only', visible: true });
+    const nodes = snapshotData.nodes;
     assert.equal(nodes?.find((node) => node.identifier === 'email')?.value, 'user@example.com');
   });
 }, 15_000);
@@ -254,17 +254,17 @@ function textEntryTranscript(server: FakeIosWebDriverServer): string[] {
 
 async function createCloudIosWorld() {
   const server = await FakeIosWebDriverServer.start();
-  const providerWebDriver = createProviderWebDriver({
+  const runtimes = createBundledCloudWebDriverRuntimes({
+    env: {
+      BROWSERSTACK_USERNAME: 'browser-user',
+      BROWSERSTACK_ACCESS_KEY: 'browser-key',
+      BROWSERSTACK_WEBDRIVER_ENDPOINT: `${server.url}/wd/hub/`,
+      BROWSERSTACK_SESSION_DETAILS_ENDPOINT: `${server.url}/app-automate/sessions`,
+    },
     clientVersion: CLIENT_VERSION,
     runHostCommand: async () => {
       throw new Error('BrowserStack scenario must not run host commands');
     },
-  });
-  const runtimes = providerWebDriver.createDefaultRuntimes({
-    BROWSERSTACK_USERNAME: 'browser-user',
-    BROWSERSTACK_ACCESS_KEY: 'browser-key',
-    BROWSERSTACK_WEBDRIVER_ENDPOINT: `${server.url}/wd/hub/`,
-    BROWSERSTACK_SESSION_DETAILS_ENDPOINT: `${server.url}/app-automate/sessions`,
   });
   const providers = createProviderDeviceRuntimeRequestProviders(runtimes);
   const daemon = await createProviderScenarioHarness({
@@ -462,7 +462,7 @@ function contains(
   );
 }
 
-function leaseFlags(leaseId?: string): DaemonRequest['flags'] {
+function leaseFlags(leaseId?: string): DaemonWireRequest['flags'] {
   return {
     platform: 'ios',
     tenant: 'team-a',
@@ -478,7 +478,7 @@ function leaseFlags(leaseId?: string): DaemonRequest['flags'] {
   };
 }
 
-function leaseMeta(leaseId?: string): DaemonRequest['meta'] {
+function leaseMeta(leaseId?: string): DaemonWireRequest['meta'] {
   return {
     tenantId: 'team-a',
     runId: 'run-a',

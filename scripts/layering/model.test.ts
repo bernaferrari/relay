@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { listSourceFiles } from './check.ts';
+import { workspaceSpecifierTargets } from './package-boundaries.ts';
 import {
   fieldClassificationDrift,
   findSessionStateWrites,
@@ -25,10 +26,31 @@ import {
   unclassifiedZones,
 } from './model.ts';
 
+test('parseImports rejects malformed source instead of returning an incomplete graph', () => {
+  assert.throws(
+    () => parseImports("import { Broken from './broken.ts';"),
+    /Cannot parse imports.*Expected/,
+  );
+});
+
+test('parseImports ignores import-like declarations inside comments and template text', () => {
+  const source = [
+    'const documentation = `',
+    "import { phantom } from './phantom.ts';",
+    "export { phantom } from './also-phantom.ts';",
+    '`;',
+    '/*',
+    "import './comment.ts';",
+    '*/',
+  ].join('\n');
+  assert.deepEqual(parseImports(source), []);
+});
+
 test('parseImports distinguishes value, type-only, dynamic, and value re-export edges', () => {
   const edges = parseImports(
     [
       "import value from './value.ts';",
+      "import './side-effect.ts';",
       "import type { TypeA } from './types.ts';",
       "import { type TypeB, type TypeC } from './more-types.ts';",
       "import { type TypeD, runtime } from './mixed.ts';",
@@ -42,6 +64,7 @@ test('parseImports distinguishes value, type-only, dynamic, and value re-export 
     edges.map(({ spec, dynamic, typeOnly }) => ({ spec, dynamic, typeOnly })),
     [
       { spec: './value.ts', dynamic: false, typeOnly: false },
+      { spec: './side-effect.ts', dynamic: false, typeOnly: false },
       { spec: './types.ts', dynamic: false, typeOnly: true },
       { spec: './more-types.ts', dynamic: false, typeOnly: true },
       { spec: './mixed.ts', dynamic: false, typeOnly: false },
@@ -50,6 +73,213 @@ test('parseImports distinguishes value, type-only, dynamic, and value re-export 
       { spec: './dynamic.ts', dynamic: true, typeOnly: false },
     ],
   );
+});
+
+test('parseImports records TSImportType edges separately from dynamic imports', () => {
+  const edges = parseImports(
+    [
+      "type Imported = import('./type-only.ts').Imported;",
+      "type Queried = typeof import('./type-query.ts').value;",
+      "type SameTarget = import('./same-target.ts').Target; void import('./same-target.ts');",
+      "type Nested = import('./nested.ts').namespace.SessionState;",
+      "type WholeModule = import('./whole-module.ts');",
+    ].join('\n'),
+  );
+
+  assert.deepEqual(
+    edges.map(({ spec, dynamic, typeOnly, line, symbols }) => ({
+      spec,
+      dynamic,
+      typeOnly,
+      line,
+      symbols,
+    })),
+    [
+      {
+        spec: './type-only.ts',
+        dynamic: false,
+        typeOnly: true,
+        line: 1,
+        symbols: ['Imported'],
+      },
+      {
+        spec: './type-query.ts',
+        dynamic: false,
+        typeOnly: true,
+        line: 2,
+        symbols: ['value'],
+      },
+      {
+        spec: './same-target.ts',
+        dynamic: true,
+        typeOnly: false,
+        line: 3,
+        symbols: [],
+      },
+      {
+        spec: './same-target.ts',
+        dynamic: false,
+        typeOnly: true,
+        line: 3,
+        symbols: ['Target'],
+      },
+      {
+        spec: './nested.ts',
+        dynamic: false,
+        typeOnly: true,
+        line: 4,
+        symbols: ['namespace'],
+      },
+      {
+        spec: './whole-module.ts',
+        dynamic: false,
+        typeOnly: true,
+        line: 5,
+        symbols: [],
+      },
+    ],
+  );
+
+  const resolved = resolveImportEdges(
+    new Map([
+      [
+        'src/core/consumer.ts',
+        "type Imported = import('../commands/target.ts').Target; void import('../commands/target.ts');",
+      ],
+      ['src/commands/target.ts', 'export type Target = unknown;'],
+    ]),
+  );
+  assert.deepEqual(
+    resolved.map(({ file, target, dynamic, typeOnly }) => ({ file, target, dynamic, typeOnly })),
+    [
+      {
+        file: 'src/core/consumer.ts',
+        target: 'src/commands/target.ts',
+        dynamic: true,
+        typeOnly: false,
+      },
+      {
+        file: 'src/core/consumer.ts',
+        target: 'src/commands/target.ts',
+        dynamic: false,
+        typeOnly: true,
+      },
+    ],
+  );
+});
+
+const RECORDED_IMPORT_TYPE_CASES = [
+  [
+    'packages/contracts/src/platform-runtime.ts',
+    'packages/contracts/src/device-shutdown-runtime.ts',
+    './device-shutdown-runtime.ts',
+    'DeviceShutdownRuntime',
+  ],
+  [
+    'packages/platform-apple/src/runner/runner-provider.ts',
+    'packages/platform-apple/src/runner/runner-artifact.ts',
+    './runner-artifact.ts',
+    'RunnerStartAdmission',
+  ],
+  [
+    'packages/daemon/src/execution/interaction/index.ts',
+    'packages/daemon/src/core/gesture-runtime.ts',
+    '../../core/gesture-runtime.ts',
+    'BoundGestureExecutor',
+  ],
+  [
+    'packages/daemon/src/execution/interaction/index.ts',
+    'packages/daemon/src/core/touch-runtime.ts',
+    '../../core/touch-runtime.ts',
+    'BoundTouchExecutor',
+  ],
+  [
+    'packages/daemon/src/execution/interaction/internal/interaction.ts',
+    'packages/contracts/src/android-observation.ts',
+    '@agent-device/contracts/android-observation',
+    'AndroidObservationAdapter',
+  ],
+  [
+    'packages/daemon/src/core/snapshot-runtime-binding.ts',
+    'packages/contracts/src/focus-runtime.ts',
+    '@agent-device/contracts/focus-runtime',
+    'FocusPointInput',
+  ],
+  [
+    'packages/daemon/src/core/snapshot-runtime-binding.ts',
+    'packages/contracts/src/interactor-types.ts',
+    '@agent-device/contracts/interactor-types',
+    'TypeTextBackendResult',
+  ],
+  [
+    'packages/daemon/src/core/snapshot-runtime-binding.ts',
+    'packages/contracts/src/type-text-runtime.ts',
+    '@agent-device/contracts/type-text-runtime',
+    'TypeTextInput',
+  ],
+  [
+    'src/sdk/artifacts.ts',
+    'packages/platform-android/src/mechanics.ts',
+    '@agent-device/platform-android/mechanics',
+    'resolveAndroidArchivePackageName',
+  ],
+] as const;
+
+test('the nine recorded TSImportType shapes resolve with source-side symbols', () => {
+  const cases = RECORDED_IMPORT_TYPE_CASES;
+  const sources = new Map<string, string>();
+  const exports = new Map<string, string>();
+  for (const [index, [file, target, spec, symbol]] of cases.entries()) {
+    const query = file === 'src/sdk/artifacts.ts' ? 'typeof ' : '';
+    sources.set(
+      file,
+      `${sources.get(file) ?? ''}type Dependency${index} = ${query}import('${spec}').${symbol};\n`,
+    );
+    sources.set(target, `export type ${symbol} = unknown;`);
+    if (spec.startsWith('@')) exports.set(spec, target);
+  }
+  assert.deepEqual(
+    resolveImportEdges(sources, exports).map(({ file, target, dynamic, typeOnly, symbols }) => ({
+      file,
+      target,
+      dynamic,
+      typeOnly,
+      symbols,
+    })),
+    cases.map(([file, target, , symbol]) => ({
+      file,
+      target,
+      dynamic: false,
+      typeOnly: true,
+      symbols: [symbol],
+    })),
+  );
+});
+
+test('the recorded production type dependencies resolve from their owning declarations', () => {
+  const sources = new Map(
+    listSourceFiles().map((file) => [file, readFileSync(path.resolve(file), 'utf8')]),
+  );
+  const edges = resolveImportEdges(sources, workspaceSpecifierTargets(process.cwd()));
+  for (const [recordedFile, target, , recordedSymbol] of RECORDED_IMPORT_TYPE_CASES) {
+    // #3304 moved the shutdown declaration to an ordinary type import in the operations module.
+    const movedShutdown = recordedFile === 'packages/contracts/src/platform-runtime.ts';
+    const file = movedShutdown
+      ? 'packages/contracts/src/platform-runtime-operations.ts'
+      : recordedFile;
+    const symbol = movedShutdown ? 'DeviceShutdownRuntimeOperations' : recordedSymbol;
+    assert.ok(
+      edges.some(
+        (edge) =>
+          edge.file === file &&
+          edge.target === target &&
+          !edge.dynamic &&
+          edge.typeOnly &&
+          edge.symbols.includes(symbol),
+      ),
+      `missing production type dependency: ${file} -> ${target} (${symbol})`,
+    );
+  }
 });
 
 test('parseImports detects multiline dynamic imports', () => {
@@ -62,7 +292,6 @@ test('parseImports detects multiline dynamic imports', () => {
       typeOnly: false,
       line: 1,
       symbols: [],
-      bindingResidue: false,
     },
   ]);
 });
@@ -77,7 +306,6 @@ test('parseImports resolves constant-template dynamic imports', () => {
       typeOnly: false,
       line: 1,
       symbols: [],
-      bindingResidue: false,
     },
   ]);
 });
@@ -94,13 +322,13 @@ test('parseImports captures destructured named bindings of dynamic imports, keye
   );
 
   assert.deepEqual(
-    edges.map(({ spec, symbols, bindingResidue }) => ({ spec, symbols, bindingResidue })),
+    edges.map(({ spec, symbols }) => ({ spec, symbols })),
     [
-      { spec: './dyn.ts', symbols: ['a', 'b'], bindingResidue: false },
-      { spec: './dyn.ts', symbols: [], bindingResidue: false },
-      { spec: './dyn.ts', symbols: [], bindingResidue: false },
-      { spec: './dyn.ts', symbols: ['a'], bindingResidue: true },
-      { spec: './dyn.ts', symbols: [], bindingResidue: true },
+      { spec: './dyn.ts', symbols: ['a', 'b'] },
+      { spec: './dyn.ts', symbols: [] },
+      { spec: './dyn.ts', symbols: [] },
+      { spec: './dyn.ts', symbols: ['a'] },
+      { spec: './dyn.ts', symbols: [] },
     ],
   );
 });
@@ -112,6 +340,7 @@ test('parseImports retains named source symbols without changing edge-kind detec
       "import type { TypeB as RenamedType } from './types.ts';",
       "export { reExport as publicName } from './re-export.ts';",
       "export type { ExportedType } from './exported-types.ts';",
+      "export * from './re-export-all.ts';",
       "import * as namespace from './namespace.ts';",
       "void import('./dynamic.ts');",
     ].join('\n'),
@@ -129,6 +358,7 @@ test('parseImports retains named source symbols without changing edge-kind detec
       { spec: './types.ts', dynamic: false, typeOnly: true, symbols: ['TypeB'] },
       { spec: './re-export.ts', dynamic: false, typeOnly: false, symbols: ['reExport'] },
       { spec: './exported-types.ts', dynamic: false, typeOnly: true, symbols: ['ExportedType'] },
+      { spec: './re-export-all.ts', dynamic: false, typeOnly: false, symbols: [] },
       { spec: './namespace.ts', dynamic: false, typeOnly: false, symbols: [] },
       { spec: './dynamic.ts', dynamic: true, typeOnly: false, symbols: [] },
     ],
@@ -285,12 +515,11 @@ test('ranked and unranked zones are disjoint and both non-empty', () => {
 test('classifyZone separates the ranked spine from intentionally-unranked zones', () => {
   assert.equal(classifyZone('contracts'), 'ranked');
   assert.equal(classifyZone('daemon-server'), 'ranked');
-  assert.equal(classifyZone('(root)'), 'unranked');
-  assert.equal(classifyZone('platform-runtime'), 'unranked');
   assert.equal(classifyZone('platforms'), 'unclassified');
   assert.equal(classifyZone('utils'), 'unclassified');
-  // Every satellite zone joined the spine; only the composition root stays out, because R2
-  // forbids daemon/ from importing commands/ so the files that wire them cannot be ranked.
+  // Every src/ zone is on the spine, `(root)` and the zones root modules declare included.
+  assert.equal(classifyZone('(root)'), 'ranked');
+  assert.equal(classifyZone('platform-runtime'), 'ranked');
   assert.equal(classifyZone('mcp'), 'ranked');
   assert.equal(classifyZone('screenshot-diff'), 'ranked');
   // A zone that is neither ranked nor listed peripheral must be flagged, never
@@ -302,7 +531,7 @@ test('every production zone is deliberately classified as ranked or unranked', (
   // Drift guard: a new src/<folder>/ (or a daemon-client/server split) forces a
   // deliberate ranked-vs-peripheral decision here instead of silently escaping
   // spine back-edge detection. If this fails, add the new zone to TARGET_DAG_RANK
-  // (ranked spine) or UNRANKED_ZONES (root/peripheral) in model.ts.
+  // (ranked spine) or UNRANKED_ZONES (peripheral) in model.ts.
   const productionFiles = listSourceFiles();
   assert.deepEqual(unclassifiedZones(productionFiles), []);
 
@@ -317,7 +546,7 @@ test('every production zone is deliberately classified as ranked or unranked', (
 
 test('listSourceFiles includes root-level src/*.ts production files', () => {
   const files = new Set(listSourceFiles());
-  for (const rootFile of ['src/cli.ts', 'src/runtime.ts', 'src/backend.ts']) {
+  for (const rootFile of ['src/cli.ts', 'src/runtime.ts', 'src/io.ts']) {
     assert.ok(files.has(rootFile), `expected ${rootFile} in analyzed source files`);
   }
   assert.ok(![...files].some((file) => file.endsWith('.test.ts')));
@@ -345,27 +574,39 @@ test('SessionState field names come from the declaration, not a hand-kept list',
 test('session-state writes are found by field, and non-daemon or undeclared names are not', () => {
   const writes = findSessionStateWrites(
     new Map([
-      ['src/daemon/ref-frame.ts', "session.refFrame = 'active';"],
-      ['src/daemon/session-snapshot.ts', 'session.snapshotGeneration += 1;'],
+      ['packages/daemon/src/core/ref-frame.ts', "session.refFrame = 'active';"],
+      ['packages/daemon/src/execution/session-snapshot.ts', 'session.snapshotGeneration += 1;'],
       // the store owns the record and may write anything on it
-      ['src/daemon/session-store.ts', "session.refFrame = 'expired';"],
+      ['packages/daemon/src/core/session-store.ts', "session.refFrame = 'expired';"],
       // a runner session outside the daemon is a different type that happens to share a name
       ['src/platforms/apple/runner-session.ts', 'session.refFrame = 1;'],
       // a local that is not a declared SessionState field
-      ['src/daemon/session-observability/internal/session-audio.ts', 'session.somethingElse = 1;'],
+      [
+        'packages/daemon/src/sessions/session-observability/internal/session-audio.ts',
+        'session.somethingElse = 1;',
+      ],
       // reads and comparisons are not writes
-      ['src/daemon/interaction/internal/find.ts', "if (session.refFrame === 'active') return;"],
+      [
+        'packages/daemon/src/execution/interaction/internal/find.ts',
+        "if (session.refFrame === 'active') return;",
+      ],
       // a write into a sub-object is not a write to the field itself
-      ['src/daemon/handlers/session-probe.ts', 'session.refFrame.inner = 1;'],
+      ['packages/daemon/src/sessions/handlers/session-probe.ts', 'session.refFrame.inner = 1;'],
       // a different binding that happens to have a matching property
-      ['src/daemon/session-lifecycle/internal/session-close.ts', "other.refFrame = 'expired';"],
+      [
+        'packages/daemon/src/sessions/session-lifecycle/internal/session-close.ts',
+        "other.refFrame = 'expired';",
+      ],
     ]),
     ['refFrame', 'snapshotGeneration'],
   );
 
   assert.deepEqual(
     writes.map(({ file, field }) => `${file}:${field}`),
-    ['src/daemon/ref-frame.ts:refFrame', 'src/daemon/session-snapshot.ts:snapshotGeneration'],
+    [
+      'packages/daemon/src/core/ref-frame.ts:refFrame',
+      'packages/daemon/src/execution/session-snapshot.ts:snapshotGeneration',
+    ],
   );
 });
 
@@ -384,7 +625,9 @@ test('every assignment form is a write, including the ones a regex forgets', () 
     'session\n  .refFrame = 1;',
   ];
   for (const form of forms) {
-    const writes = findSessionStateWrites(new Map([['src/daemon/probe.ts', form]]), ['refFrame']);
+    const writes = findSessionStateWrites(new Map([['packages/daemon/src/probe.ts', form]]), [
+      'refFrame',
+    ]);
     assert.deepEqual(
       writes.map(({ field }) => field),
       ['refFrame'],
@@ -395,7 +638,7 @@ test('every assignment form is a write, including the ones a regex forgets', () 
 
 test('a computed session write is reported rather than silently unattributed', () => {
   const writes = findSessionStateWrites(
-    new Map([['src/daemon/probe.ts', 'session[key] = 1;\nsession[`refFrame`] = 2;']]),
+    new Map([['packages/daemon/src/probe.ts', 'session[key] = 1;\nsession[`refFrame`] = 2;']]),
     ['refFrame'],
   );
   // `[computed]` has no entry in SESSION_STATE_FIELD_OWNERS, so R7 fails on it by
@@ -407,13 +650,13 @@ test('a computed session write is reported rather than silently unattributed', (
   assert.equal(SESSION_STATE_FIELD_OWNERS['[computed]'], undefined);
 });
 
-test('every declared session-state owner is a real file path under src/daemon', () => {
+test('every declared session-state owner is a real file path under packages/daemon', () => {
   for (const [field, owners] of Object.entries(SESSION_STATE_FIELD_OWNERS)) {
     assert.ok(owners.length > 0, `${field} must name at least one owner`);
     for (const owner of owners) {
       assert.match(
         owner,
-        /^src\/daemon\/.+\.ts$/,
+        /^packages\/daemon\/src\/.+\.ts$/,
         `${field} owner ${owner} must be a daemon module`,
       );
     }
@@ -429,7 +672,7 @@ test('a session write counts through an aliased binding, not only one named `ses
   const writes = findSessionStateWrites(
     new Map([
       [
-        'src/daemon/probe.ts',
+        'packages/daemon/src/probe.ts',
         [
           'nextSession.snapshotGeneration = 3;',
           'preEntrySession.refFrame = "active";',
@@ -453,7 +696,10 @@ test('every SessionState field is classified exactly once', () => {
   // R7 by being invisible to the scan, and the rule would silently stop covering part of the
   // type it claims to cover.
   const fields = sessionStateFields(
-    readFileSync(path.resolve(import.meta.dirname, '../../src/daemon/session-state.ts'), 'utf8'),
+    readFileSync(
+      path.resolve(import.meta.dirname, '../../packages/daemon/src/core/session-state.ts'),
+      'utf8',
+    ),
   );
   assert.deepEqual(fieldClassificationDrift(fields), []);
   assert.equal(
@@ -464,7 +710,10 @@ test('every SessionState field is classified exactly once', () => {
 
 test('classification drift is reported in all three directions', () => {
   const declared = sessionStateFields(
-    readFileSync(path.resolve(import.meta.dirname, '../../src/daemon/session-state.ts'), 'utf8'),
+    readFileSync(
+      path.resolve(import.meta.dirname, '../../packages/daemon/src/core/session-state.ts'),
+      'utf8',
+    ),
   );
 
   // Unclassified: a field added to SessionState and to neither table. This is the case the

@@ -1,12 +1,13 @@
 import { AppError } from '@agent-device/kernel/errors';
 import type { AppStateRuntimeResult } from '@agent-device/contracts/app-state-runtime';
-import { sleep } from '@agent-device/host-kit/retry';
+import { Deadline, sleep } from '@agent-device/host-kit/retry';
 import type { AppsFilter } from '@agent-device/contracts/device';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { isDeepLinkTarget } from '@agent-device/contracts/command';
 
 import { waitForAndroidBoot } from './emulator-lifecycle.ts';
 import { runAndroidShell } from './adb.ts';
+import type { AndroidAdbExecutorResult } from './adb-transport.ts';
 import {
   androidAdbResultError,
   createAndroidPortReverseManager,
@@ -22,7 +23,7 @@ import {
   parseAndroidLaunchablePackages,
   parseAndroidUserInstalledPackages,
 } from './app-parsers.ts';
-import { getAndroidAppState } from './window-state.ts';
+import { getAndroidAppState, getAndroidResumedActivity } from './window-state.ts';
 
 const ANDROID_LAUNCHER_CATEGORY = 'android.intent.category.LAUNCHER';
 const ANDROID_LEANBACK_CATEGORY = 'android.intent.category.LEANBACK_LAUNCHER';
@@ -157,50 +158,99 @@ export type OpenAndroidAppOptions = {
   activity?: string;
   appBundleId?: string;
   launchArgs?: string[];
+  /** Force-stops the app the target resolves to before starting it. */
+  terminateRunningApp?: boolean;
   url?: string;
 };
+
+const ANDROID_PACKAGE_NAME = String.raw`[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*`;
+const JAVA_IDENTIFIER = String.raw`[A-Za-z_$][A-Za-z0-9_$]*`;
+
+/**
+ * `am start -n` takes `<package>/<class>`: manifest package segments start with a letter, and class
+ * segments are Java identifiers, `$` included for a nested class. A bare class (`.Main` or `Main`)
+ * is resolved against the launched package.
+ */
+const ANDROID_ACTIVITY_COMPONENT = new RegExp(
+  `^(?:${ANDROID_PACKAGE_NAME}/)?\\.?${JAVA_IDENTIFIER}(?:\\.${JAVA_IDENTIFIER})*$`,
+);
+
+function requireAndroidActivityComponent(activity: string): void {
+  if (ANDROID_ACTIVITY_COMPONENT.test(activity)) return;
+  throw new AppError('INVALID_ARGS', `Invalid Android activity component: ${activity}`, {
+    reason: 'invalid-android-activity-component',
+    activity,
+    hint: 'Pass --activity as <package>/<Class>, .<Class>, or <Class>, using letters, digits, `_`, `.`, and `$`.',
+  });
+}
+
+/** The `am start -n` component for an activity override, refused unless it is a component name. */
+export function androidActivityComponent(packageName: string, activity: string): string {
+  requireAndroidActivityComponent(activity);
+  if (activity.includes('/')) return activity;
+  return `${packageName}/${activity.startsWith('.') ? activity : `.${activity}`}`;
+}
 
 function androidLaunchArgs(options: OpenAndroidAppOptions): string[] {
   return options.launchArgs ?? [];
 }
 
+/** Opens the target and returns the package `am start -W` reports it launched, when reported. */
 export async function openAndroidApp(
   device: DeviceInfo,
   app: string,
   optionsOrActivity?: OpenAndroidAppOptions | string,
-): Promise<void> {
+): Promise<string | undefined> {
+  return launchedAndroidPackage(await startAndroidApp(device, app, optionsOrActivity));
+}
+
+async function startAndroidApp(
+  device: DeviceInfo,
+  app: string,
+  optionsOrActivity?: OpenAndroidAppOptions | string,
+): Promise<AndroidAdbExecutorResult> {
+  const options = normalizeOpenAndroidAppOptions(optionsOrActivity);
+  const activity = options.activity;
+  if (activity !== undefined) requireAndroidActivityComponent(activity);
   if (!device.booted) {
     await waitForAndroidBoot(device.id);
   }
-  const options = normalizeOpenAndroidAppOptions(optionsOrActivity);
-  const activity = options.activity;
   const deepLinkTarget = app.trim();
   if (isDeepLinkTarget(deepLinkTarget)) {
-    await openAndroidDeepLink(device, deepLinkTarget, options);
-    return;
+    return await openAndroidDeepLink(device, deepLinkTarget, options);
   }
   if (options.url !== undefined) {
-    await openAndroidAppBoundDeepLink(device, app, options);
-    return;
+    return await openAndroidAppBoundDeepLink(device, app, options);
   }
   const resolved = await resolveAndroidApp(device, app);
   const launchCategory = resolveAndroidLauncherCategory(device);
   if (resolved.type === 'intent') {
-    await openAndroidIntent(device, resolved.value, options);
-    return;
+    return await openAndroidIntent(device, resolved.value, options);
   }
+  if (options.terminateRunningApp) await stopAndroidPackage(device, resolved.value);
   if (activity) {
-    await openAndroidPackageActivity(device, resolved.value, activity, launchCategory, options);
-    return;
+    return await openAndroidPackageActivity(
+      device,
+      resolved.value,
+      activity,
+      launchCategory,
+      options,
+    );
   }
-  await openAndroidPackage(device, resolved.value, launchCategory, options);
+  return await openAndroidPackage(device, resolved.value, launchCategory, options);
+}
+
+/** `am start -W` names the activity this launch resumed on its `Activity: <package>/<class>` line. */
+function launchedAndroidPackage(result: AndroidAdbExecutorResult): string | undefined {
+  const line = result.stdout.split('\n').find((entry) => entry.trim().startsWith('Activity:'));
+  return line?.split(':')[1]?.trim().split('/')[0] || undefined;
 }
 
 async function openAndroidDeepLink(
   device: DeviceInfo,
   target: string,
   options: OpenAndroidAppOptions,
-): Promise<void> {
+): Promise<AndroidAdbExecutorResult> {
   if (options.activity) {
     throw new AppError(
       'INVALID_ARGS',
@@ -208,7 +258,7 @@ async function openAndroidDeepLink(
     );
   }
   await ensureAndroidLocalhostReverse(device, target);
-  await runAndroidShell(device, [
+  return await runAndroidShell(device, [
     'am',
     'start',
     '-W',
@@ -225,7 +275,7 @@ async function openAndroidAppBoundDeepLink(
   device: DeviceInfo,
   app: string,
   options: OpenAndroidAppOptions,
-): Promise<void> {
+): Promise<AndroidAdbExecutorResult> {
   if (options.activity) {
     throw new AppError(
       'INVALID_ARGS',
@@ -238,7 +288,8 @@ async function openAndroidAppBoundDeepLink(
   }
   await ensureAndroidLocalhostReverse(device, deepLinkUrl);
   const resolved = await requireAndroidPackageForOpen(device, app, 'app-bound open');
-  await runAndroidShell(device, [
+  if (options.terminateRunningApp) await stopAndroidPackage(device, resolved);
+  return await runAndroidShell(device, [
     'am',
     'start',
     '-W',
@@ -256,11 +307,19 @@ async function openAndroidIntent(
   device: DeviceInfo,
   intent: string,
   options: OpenAndroidAppOptions,
-): Promise<void> {
+): Promise<AndroidAdbExecutorResult> {
   if (options.activity) {
     throw new AppError('INVALID_ARGS', 'Activity override requires a package name, not an intent');
   }
-  await runAndroidShell(device, ['am', 'start', '-W', '-a', intent, ...androidLaunchArgs(options)]);
+  return await runAndroidShell(device, [
+    'am',
+    'start',
+    '-W',
+    ...(options.terminateRunningApp ? ['-S'] : []),
+    '-a',
+    intent,
+    ...androidLaunchArgs(options),
+  ]);
 }
 
 async function openAndroidPackageActivity(
@@ -269,12 +328,10 @@ async function openAndroidPackageActivity(
   activity: string,
   launchCategory: string,
   options: OpenAndroidAppOptions,
-): Promise<void> {
-  const component = activity.includes('/')
-    ? activity
-    : `${packageName}/${activity.startsWith('.') ? activity : `.${activity}`}`;
+): Promise<AndroidAdbExecutorResult> {
+  const component = androidActivityComponent(packageName, activity);
   try {
-    await runAndroidShell(
+    return await runAndroidShell(
       device,
       buildAndroidActivityLaunchArgs(component, launchCategory, options),
     );
@@ -289,7 +346,7 @@ async function openAndroidPackage(
   packageName: string,
   launchCategory: string,
   options: OpenAndroidAppOptions,
-): Promise<void> {
+): Promise<AndroidAdbExecutorResult> {
   const primaryResult = await runAndroidShell(
     device,
     [
@@ -309,7 +366,7 @@ async function openAndroidPackage(
     { allowFailure: true },
   );
   if (primaryResult.exitCode === 0 && !isAmStartError(primaryResult.stdout, primaryResult.stderr)) {
-    return;
+    return primaryResult;
   }
   const component = await resolveAndroidLaunchComponent(device, packageName);
   if (!component) {
@@ -318,7 +375,10 @@ async function openAndroidPackage(
     }
     throw androidAdbResultError(`Failed to launch ${packageName}`, primaryResult);
   }
-  await runAndroidShell(device, buildAndroidActivityLaunchArgs(component, launchCategory, options));
+  return await runAndroidShell(
+    device,
+    buildAndroidActivityLaunchArgs(component, launchCategory, options),
+  );
 }
 
 function buildAndroidActivityLaunchArgs(
@@ -481,38 +541,121 @@ export async function openAndroidDevice(device: DeviceInfo): Promise<void> {
 }
 
 export async function closeAndroidApp(device: DeviceInfo, app: string): Promise<void> {
-  const trimmed = app.trim();
-  if (trimmed.toLowerCase() === 'settings') {
-    await runAndroidShell(device, ['am', 'force-stop', 'com.android.settings']);
-    await waitForAndroidPackageStopped(device, 'com.android.settings');
-    return;
-  }
-  const resolved = await resolveAndroidApp(device, app);
-  if (resolved.type === 'intent') {
-    throw new AppError('INVALID_ARGS', 'Close requires a package name, not an intent');
-  }
-  await runAndroidShell(device, ['am', 'force-stop', resolved.value]);
-  await waitForAndroidPackageStopped(device, resolved.value);
+  await stopAndroidPackage(device, await resolveAndroidPackageToEnd(device, app, 'Close'));
 }
 
+async function resolveAndroidPackageToEnd(
+  device: DeviceInfo,
+  app: string,
+  verb: 'Close' | 'Kill',
+): Promise<string> {
+  if (app.trim().toLowerCase() === 'settings') return 'com.android.settings';
+  const resolved = await resolveAndroidApp(device, app);
+  if (resolved.type === 'intent') {
+    throw new AppError('INVALID_ARGS', `${verb} requires a package name, not an intent`);
+  }
+  return resolved.value;
+}
+
+async function stopAndroidPackage(device: DeviceInfo, packageName: string): Promise<void> {
+  await runAndroidShell(device, ['am', 'force-stop', packageName]);
+  const expired = await waitForAndroidPackageStopped(device, packageName);
+  if (expired) throw androidCloseTimeoutError(packageName, expired);
+}
+
+/**
+ * System-initiated process death (`am kill`), which only reaps a background process, unlike
+ * `closeAndroidApp`'s `am force-stop`. A resumed target is refused, and a process that survives
+ * the kill fails rather than reading as success.
+ */
+export async function killAndroidApp(device: DeviceInfo, app: string): Promise<void> {
+  await killAndroidPackage(device, await resolveAndroidPackageToEnd(device, app, 'Kill'));
+}
+
+async function killAndroidPackage(device: DeviceInfo, packageName: string): Promise<void> {
+  const resumed = await getAndroidResumedActivity(device);
+  if (resumed.status === 'resumed' && resumed.package === packageName) {
+    throw new AppError('COMMAND_FAILED', `Cannot kill foreground app ${packageName}`, {
+      reason: 'android-kill-requires-background-app',
+      hint: 'Background the app before killApp (for example pressKey: Home): am kill only reaps background processes.',
+    });
+  }
+  if (resumed.status === 'unknown') {
+    throw new AppError(
+      'COMMAND_FAILED',
+      `Could not read resumed activity state before killing ${packageName}`,
+      {
+        reason: 'android-process-probe-unavailable',
+        hint: 'adb dumpsys did not answer; retry once the device is reachable.',
+      },
+    );
+  }
+  await runAndroidShell(device, ['am', 'kill', packageName]);
+  // Both fences run as on close, but a survivor is classified below rather than refused as a
+  // close timeout.
+  await waitForAndroidPackageNotForeground(device, packageName);
+  await waitForAndroidPackageProcessGone(device, packageName);
+  const process = await readAndroidPackageProcessState(device, packageName);
+  if (process === 'running') {
+    throw new AppError('COMMAND_FAILED', `am kill did not stop ${packageName}`, {
+      reason: 'android-kill-process-survived',
+      hint: 'The process survived am kill (for example a foreground service keeps it alive): use stopApp (am force-stop) to terminate it.',
+    });
+  }
+  if (process === 'unknown') {
+    throw new AppError('COMMAND_FAILED', `Could not read process state for ${packageName}`, {
+      reason: 'android-process-probe-unavailable',
+      hint: 'adb pidof did not answer; retry once the device is reachable.',
+    });
+  }
+}
+
+type AndroidStopFencePhase = 'foreground' | 'process';
+
+/** The fence that expired before the package stopped, or undefined once it stopped. */
 async function waitForAndroidPackageStopped(
   device: DeviceInfo,
   packageName: string,
-): Promise<void> {
-  await waitForAndroidPackageNotForeground(device, packageName);
-  await waitForAndroidPackageProcessGone(device, packageName);
+): Promise<AndroidStopFencePhase | undefined> {
+  if (!(await waitForAndroidPackageNotForeground(device, packageName))) return 'foreground';
+  if (!(await waitForAndroidPackageProcessGone(device, packageName))) return 'process';
+  return undefined;
+}
+
+function androidCloseTimeoutError(packageName: string, phase: AndroidStopFencePhase): AppError {
+  const message =
+    phase === 'foreground'
+      ? `Android app ${packageName} remained foreground after close`
+      : `Android app ${packageName} process remained running after close`;
+  return new AppError('COMMAND_FAILED', message, {
+    reason: 'android-app-close-timeout',
+    phase,
+    packageName,
+    timeoutMs:
+      phase === 'foreground' ? ANDROID_CLOSE_FOCUS_TIMEOUT_MS : ANDROID_CLOSE_PROCESS_TIMEOUT_MS,
+  });
 }
 
 async function waitForAndroidPackageNotForeground(
   device: DeviceInfo,
   packageName: string,
-): Promise<void> {
-  const deadline = Date.now() + ANDROID_CLOSE_FOCUS_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const foreground = await readAndroidForegroundApp(device);
-    if (foreground?.package !== packageName) return;
+): Promise<boolean> {
+  const deadline = Deadline.fromTimeoutMs(ANDROID_CLOSE_FOCUS_TIMEOUT_MS);
+  while (!deadline.isExpired()) {
+    const foreground = await probeBeforeDeadline(deadline, () => readAndroidForegroundApp(device));
+    if (!foreground) break;
+    if (foreground.value?.package !== packageName) return true;
     await sleep(ANDROID_CLOSE_FOCUS_POLL_MS);
   }
+  return false;
+}
+
+async function probeBeforeDeadline<T>(
+  deadline: Deadline,
+  probe: () => Promise<T>,
+): Promise<{ value: T } | undefined> {
+  const value = await probe();
+  return deadline.isExpired() ? undefined : { value };
 }
 
 async function readAndroidForegroundApp(device: DeviceInfo): Promise<AppStateRuntimeResult | null> {
@@ -523,23 +666,39 @@ async function readAndroidForegroundApp(device: DeviceInfo): Promise<AppStateRun
 async function waitForAndroidPackageProcessGone(
   device: DeviceInfo,
   packageName: string,
-): Promise<void> {
-  const deadline = Date.now() + ANDROID_CLOSE_PROCESS_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (!(await isAndroidPackageProcessRunning(device, packageName))) {
+): Promise<boolean> {
+  const deadline = Deadline.fromTimeoutMs(ANDROID_CLOSE_PROCESS_TIMEOUT_MS);
+  const probeProcessRunning = () =>
+    probeBeforeDeadline(
+      deadline,
+      async () => (await readAndroidPackageProcessState(device, packageName)) === 'running',
+    );
+  while (!deadline.isExpired()) {
+    const processRunning = await probeProcessRunning();
+    if (!processRunning) break;
+    if (!processRunning.value) {
       await sleep(ANDROID_CLOSE_PROCESS_GONE_STABLE_MS);
-      if (!(await isAndroidPackageProcessRunning(device, packageName))) return;
+      if (deadline.isExpired()) break;
+      const processStillRunning = await probeProcessRunning();
+      if (!processStillRunning) break;
+      if (!processStillRunning.value) return true;
     }
     await sleep(ANDROID_CLOSE_PROCESS_POLL_MS);
   }
+  return false;
 }
 
-async function isAndroidPackageProcessRunning(
+async function readAndroidPackageProcessState(
   device: DeviceInfo,
   packageName: string,
-): Promise<boolean> {
+): Promise<'running' | 'gone' | 'unknown'> {
   const result = await runAndroidShell(device, ['pidof', packageName], {
     allowFailure: true,
   });
-  return (result.stdout ?? '').trim().length > 0;
+  if ((result.stdout ?? '').trim().length > 0) return 'running';
+  // `pidof` exits 1 with empty streams when no process matches.
+  if ((result.exitCode === 0 || result.exitCode === 1) && (result.stderr ?? '').trim() === '') {
+    return 'gone';
+  }
+  return 'unknown';
 }

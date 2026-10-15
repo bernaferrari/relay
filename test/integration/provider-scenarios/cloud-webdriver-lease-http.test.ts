@@ -1,18 +1,15 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { test } from 'vitest';
-import {
-  CLOUD_WEBDRIVER_PROVIDERS,
-  createProviderWebDriver,
-} from '@agent-device/provider-webdriver';
+import { createBundledCloudWebDriverRuntimes } from '@agent-device/provider-webdriver';
 import { createProviderDeviceRuntimeRequestProviders } from '../../../src/provider-device-runtime.ts';
-import { createDaemonHttpServer } from '../../../src/daemon/server/http-server.ts';
+import { createDaemonHttpServer } from '@agent-device/daemon/testing/server/http-server';
 import { buildHttpRpcPayload } from '../../../src/daemon-client/daemon-client-rpc.ts';
 import {
   closeLoopbackServer,
   listenOnLoopback,
   skipWhenLoopbackUnavailable,
-} from '../../../src/__tests__/test-utils/loopback.ts';
+} from '@agent-device/test-kit/loopback';
 import { createProviderScenarioHarness, withProviderScenarioResource } from './harness.ts';
 import {
   CloudWebDriverTestServer,
@@ -21,6 +18,7 @@ import {
   startCloudWebDriverTestServer,
   type StartedCloudWebDriverTestServer,
 } from './cloud-webdriver-test-server.ts';
+import { CLOUD_WEBDRIVER_PROVIDERS } from '@agent-device/provider-webdriver/providers';
 
 const CLIENT_VERSION = '0.20.3-test';
 
@@ -37,18 +35,18 @@ test('lease_allocate over HTTP prepares the BrowserStack session end to end', as
   }
 
   await withProviderScenarioResource(FakeBrowserStackServer.start, async (server) => {
-    const providerWebDriver = createProviderWebDriver({
+    const runtimes = createBundledCloudWebDriverRuntimes({
+      env: {
+        BROWSERSTACK_USERNAME: 'browser-user',
+        BROWSERSTACK_ACCESS_KEY: 'browser-key',
+        BROWSERSTACK_WEBDRIVER_ENDPOINT: `${server.url}/wd/hub/`,
+        BROWSERSTACK_APP_UPLOAD_ENDPOINT: `${server.url}/app-automate/upload`,
+        BROWSERSTACK_SESSION_DETAILS_ENDPOINT: `${server.url}/app-automate/sessions`,
+      },
       clientVersion: CLIENT_VERSION,
       runHostCommand: async () => {
         throw new Error('BrowserStack scenario must not run host commands');
       },
-    });
-    const runtimes = providerWebDriver.createDefaultRuntimes({
-      BROWSERSTACK_USERNAME: 'browser-user',
-      BROWSERSTACK_ACCESS_KEY: 'browser-key',
-      BROWSERSTACK_WEBDRIVER_ENDPOINT: `${server.url}/wd/hub/`,
-      BROWSERSTACK_APP_UPLOAD_ENDPOINT: `${server.url}/app-automate/upload`,
-      BROWSERSTACK_SESSION_DETAILS_ENDPOINT: `${server.url}/app-automate/sessions`,
     });
     const providers = createProviderDeviceRuntimeRequestProviders(runtimes);
     const providerModules = runtimes.map((runtime) =>

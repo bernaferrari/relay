@@ -1,0 +1,20 @@
+import type { DaemonResponse } from '@agent-device/kernel/contracts';
+import { runBatch } from '@agent-device/command-registry/batch';
+import type { DaemonInvokeFn, DaemonRequest } from '../../core/daemon-request.ts';
+
+export async function runBatchCommands(
+  req: DaemonRequest,
+  sessionName: string,
+  invoke: DaemonInvokeFn,
+): Promise<DaemonResponse> {
+  return await runBatch(req, sessionName, async (stepRequest, context) => {
+    const step = stepRequest as DaemonRequest;
+    return await invoke({
+      ...step,
+      internal: {
+        ...step.internal,
+        executionPlan: { remainingSteps: context.remainingSteps },
+      },
+    });
+  });
+}

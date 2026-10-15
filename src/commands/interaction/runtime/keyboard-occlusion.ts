@@ -1,6 +1,7 @@
 import type {
   Point,
   Rect,
+  SnapshotAddressableNode,
   SnapshotKeyboardBandFact,
   SnapshotNode,
   SnapshotState,
@@ -33,7 +34,7 @@ import type { InteractionAction } from './interaction-resolution-request.ts';
  */
 export function assertTapTargetClearOfVisibleKeyboard(params: {
   nodes: SnapshotState['nodes'];
-  node: SnapshotNode;
+  node: SnapshotAddressableNode;
   action: InteractionAction;
   /** How the caller named the target, e.g. `Ref @e40` or `Selector text=Form`. */
   label: string;

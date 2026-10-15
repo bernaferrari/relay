@@ -22,6 +22,7 @@ import type {
 const state = vi.hoisted(() => ({
   constructorOptions: [] as Array<{ defaultHeaders?: Record<string, string> }>,
   androidCreateInputs: [] as unknown[],
+  clientCalls: [] as string[],
   assetList: vi.fn(async () => [
     {
       id: 'asset-example',
@@ -72,7 +73,17 @@ vi.mock('@limrun/api', () => ({
 vi.mock('@limrun/api/instance-client', () => ({
   createInstanceClient: vi.fn(async () => ({
     disconnect: state.disconnect,
-    setText: vi.fn(async () => undefined),
+    tap: vi.fn(async () => {
+      state.clientCalls.push('tap');
+    }),
+    pressKey: vi.fn(async (key: string, modifiers?: string[]) => {
+      state.clientCalls.push(
+        `pressKey:${key}${modifiers?.length ? `+${modifiers.join('+')}` : ''}`,
+      );
+    }),
+    setText: vi.fn(async (_target: unknown, text: string) => {
+      state.clientCalls.push(`setText:${text}`);
+    }),
     startAdbTunnel: vi.fn(async () => ({
       address: { address: '127.0.0.1', port: 62_001 },
       close: state.tunnelClose,
@@ -103,10 +114,7 @@ test('factory uses the injected Android and host adapters as its construction se
       name: 'metro',
     });
 
-    assert.deepEqual(state.constructorOptions[0]?.defaultHeaders, {
-      'x-agent-device-client': 'agent-device-cli',
-      'x-agent-device-version': 'test-version',
-    });
+    assert.equal(state.constructorOptions[0]?.defaultHeaders, undefined);
     assert.equal(fixture.createInteractor.mock.calls[0]?.[0], device);
     assert.equal(fixture.listApps.mock.calls[0]?.[1], 'all');
     assert.equal(fixture.getKeyboardState.mock.calls.length, 1);
@@ -126,6 +134,38 @@ test('factory uses the injected Android and host adapters as its construction se
     ['disconnect', '127.0.0.1:62001'],
   ]);
   assert.equal(state.tunnelClose.mock.calls.length, 1);
+});
+
+// The production text seam: `adbProvider.text` is what fillAndroid's provider-native branch
+// resolves through. A regression to the raw setText pass-through would leave the injector's own
+// tests green, so this pins the routing itself against the mocked instance client (#3358).
+test('the session adb text seam replaces the field on fill and appends on type', async () => {
+  state.clientCalls.length = 0;
+  const fixture = createContractFixture();
+  const runtime = createLimrunRuntime({ apiKey: 'lim_test_key' }, fixture.dependencies);
+
+  try {
+    const device = await allocateAndroidDevice(runtime);
+    const deviceSession = runtime.getDeviceSession(device);
+    assert.equal(deviceSession?.platform, 'android');
+    if (deviceSession?.platform !== 'android') throw new Error('Expected Android device session');
+    const text = deviceSession.adb.text;
+    if (!text) throw new Error('Expected the Limrun provider to declare its text injector');
+
+    await text({ action: 'fill', target: { x: 540, y: 220 }, text: 'jane@example.com' });
+    assert.deepEqual(state.clientCalls, [
+      'tap',
+      'pressKey:a+ctrl',
+      'pressKey:del',
+      'setText:jane@example.com',
+    ]);
+
+    state.clientCalls.length = 0;
+    await text({ action: 'type', text: 'appended' });
+    assert.deepEqual(state.clientCalls, ['setText:appended']);
+  } finally {
+    await runtime.shutdown();
+  }
 });
 
 test('allocation installs an exact uploaded asset before binding its application id', async () => {
@@ -307,7 +347,7 @@ function createContractFixture() {
     },
     host: {
       runAdb: async (invocation: AndroidAdbInvocation) => {
-        adbCalls.push(serializeAndroidAdbInvocation(invocation));
+        adbCalls.push([...serializeAndroidAdbInvocation(invocation)]);
         return { stdout: '', stderr: '', exitCode: 0 };
       },
       archiveDirectory: async () => undefined,

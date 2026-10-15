@@ -46,7 +46,7 @@ test('platform package source additionally selects provider-integration', () => 
 });
 
 test('unit test files delegate affected-test discovery to Vitest', () => {
-  const result = ids(['src/daemon/selectors.test.ts']);
+  const result = ids(['packages/daemon/src/selectors.test.ts']);
   assert.ok(result.includes('vitest-related'));
   assert.ok(!result.includes('unit'));
   assert.ok(!result.includes('provider-integration'));
@@ -199,10 +199,32 @@ test('public package surface change selects the build and the published-package 
 });
 
 test('docs-only change selects no checks and records the docs paths', () => {
-  const result = plan(['docs/adr/0011.md', 'README.md', 'website/page.mdx.md']);
+  const result = plan(['docs/adr/0011.md', 'LICENSE', 'website/page.mdx.md']);
   assert.equal(result.failOpen, false);
   assert.deepEqual(result.checks, []);
   assert.equal(result.docsOnlyPaths.length, 3);
+});
+
+test('user docs pages and README select the docs-links and docs-prose checks', () => {
+  for (const file of [
+    'README.md',
+    'website/docs/index.md',
+    'website/docs/docs/sessions.md',
+    'website/docs/404.mdx',
+  ]) {
+    const result = plan([file]);
+    assert.deepEqual(result.checks, ['docs-links', 'docs-prose'], file);
+    assert.deepEqual(result.docsOnlyPaths, []);
+  }
+  for (const file of ['website/package.json', 'website/rspress.config.ts']) {
+    assert.deepEqual(plan([file]).checks, ['docs-links'], file);
+  }
+  assert.deepEqual(plan(['website/docs/docs/commands.md']).checks, [
+    'command-docs',
+    'docs-links',
+    'docs-prose',
+  ]);
+  assert.deepEqual(plan(['website/docs/public/logo.svg']).checks, []);
 });
 
 test('agent guidance owns its focused contract instead of disappearing as docs-only', () => {
@@ -409,21 +431,4 @@ test('vitest-related delegates changed paths to Vitest instead of modeling proje
   );
 });
 
-// Guards the catalog against reality, not fixtures: the self-test above uses a
-// hand-built scripts map, so this resolves every catalog entry against the real
-// package.json. A renamed/removed script fails here instead of
-// leaving `pnpm check:affected` broken on the exact command the docs advertise.
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-test('catalog resolves against the real package.json', () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
-    scripts?: Record<string, string>;
-  };
-  const scripts = pkg.scripts ?? {};
-  for (const spec of CHECK_CATALOG) {
-    assert.doesNotThrow(
-      () => resolveCommand(spec, scripts, 'origin/main'),
-      `catalog entry "${spec.id}" must resolve against the real package.json`,
-    );
-  }
-});

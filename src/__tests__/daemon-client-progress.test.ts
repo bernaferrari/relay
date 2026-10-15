@@ -1,10 +1,12 @@
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
+import type { DaemonResponse } from '@agent-device/kernel/contracts';
 import type { RequestProgressEvent } from '@agent-device/contracts/progress';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { Socket } from 'node:net';
 import { test } from 'vitest';
-import type { DaemonRequest, DaemonResponse } from '../daemon/daemon-request.ts';
 import { readDaemonSocketProgressResponse } from '../daemon-client/daemon-client-progress.ts';
+import { beginStderrCapture } from './test-utils/stream-capture.ts';
 import { AppError } from '@agent-device/kernel/errors';
 
 type MockSocket = EventEmitter & {
@@ -33,7 +35,7 @@ function createMockSocket(): MockSocket {
 
 function readSocketProgressResponse(
   socket: MockSocket,
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   onProgress?: (event: RequestProgressEvent) => void,
 ): Promise<DaemonResponse> {
   let settled = false;
@@ -104,7 +106,7 @@ function replayTestEvent(event: RequestProgressEvent | undefined): ReplayTestPro
 
 test('readDaemonSocketProgressResponse forwards split progress lines before response envelopes', async () => {
   const socket = createMockSocket();
-  const req: DaemonRequest = {
+  const req: DaemonWireRequest = {
     session: 'default',
     command: 'test',
     positionals: ['/tmp/replays'],
@@ -112,16 +114,10 @@ test('readDaemonSocketProgressResponse forwards split progress lines before resp
     token: 'secret',
     meta: { requestId: 'req-socket-progress', requestProgress: 'replay-test' },
   };
-  let stderr = '';
   const events: RequestProgressEvent[] = [];
-  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const stderrCapture = beginStderrCapture();
 
   try {
-    (process.stderr as any).write = ((chunk: unknown) => {
-      stderr += String(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-
     const responsePromise = readSocketProgressResponse(socket, req, (event) => events.push(event));
     const progressLine = JSON.stringify({
       type: 'progress',
@@ -150,7 +146,7 @@ test('readDaemonSocketProgressResponse forwards split progress lines before resp
     assert.deepEqual(await responsePromise, { ok: true, data: { via: 'socket-progress' } });
     assert.equal(socket.encoding, 'utf8');
     assert.equal(socket.ended, true);
-    assert.equal(stderr, '');
+    assert.equal(stderrCapture.read(), '');
     assert.equal(events.length, 1);
     const event = events[0];
     assert.equal(event?.type, 'replay-test');
@@ -158,13 +154,13 @@ test('readDaemonSocketProgressResponse forwards split progress lines before resp
       assert.equal(event.title, 'Login flow');
     }
   } finally {
-    process.stderr.write = originalStderrWrite;
+    stderrCapture.restore();
   }
 });
 
 test('readDaemonSocketProgressResponse hands generic command progress to the sink, rendering none itself', async () => {
   const socket = createMockSocket();
-  const req: DaemonRequest = {
+  const req: DaemonWireRequest = {
     session: 'default',
     command: 'snapshot',
     positionals: [],
@@ -172,15 +168,9 @@ test('readDaemonSocketProgressResponse hands generic command progress to the sin
     token: 'secret',
     meta: { requestId: 'req-command-progress', requestProgress: 'command' },
   };
-  let stderr = '';
-  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const stderrCapture = beginStderrCapture();
 
   try {
-    (process.stderr as any).write = ((chunk: unknown) => {
-      stderr += String(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-
     const events: RequestProgressEvent[] = [];
     const responsePromise = readSocketProgressResponse(socket, req, (event) => events.push(event));
     socket.emit(
@@ -205,18 +195,18 @@ test('readDaemonSocketProgressResponse hands generic command progress to the sin
     assert.deepEqual(await responsePromise, { ok: true, data: { via: 'command-progress' } });
     // Rendering belongs to the sink the caller installs (the CLI's is
     // `createStderrCommandProgressSink`); the transport writes nothing itself.
-    assert.equal(stderr, '');
+    assert.equal(stderrCapture.read(), '');
     assert.deepEqual(events, [
       { type: 'command', status: 'progress', message: 'Building Apple runner...' },
     ]);
   } finally {
-    process.stderr.write = originalStderrWrite;
+    stderrCapture.restore();
   }
 });
 
 test('readDaemonSocketProgressResponse forwards replay progress events to the sink', async () => {
   const socket = createMockSocket();
-  const req: DaemonRequest = {
+  const req: DaemonWireRequest = {
     session: 'default',
     command: 'test',
     positionals: ['/tmp/replays'],
@@ -224,16 +214,10 @@ test('readDaemonSocketProgressResponse forwards replay progress events to the si
     token: 'secret',
     meta: { requestId: 'req-live-progress', requestProgress: 'replay-test' },
   };
-  let stderr = '';
   const events: RequestProgressEvent[] = [];
-  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const stderrCapture = beginStderrCapture();
 
   try {
-    (process.stderr as any).write = ((chunk: unknown) => {
-      stderr += String(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-
     const responsePromise = readSocketProgressResponse(socket, req, (event) => events.push(event));
     socket.emit(
       'data',
@@ -246,7 +230,7 @@ test('readDaemonSocketProgressResponse forwards replay progress events to the si
     );
 
     assert.deepEqual(await responsePromise, { ok: true, data: { via: 'socket-progress' } });
-    assert.equal(stderr, '');
+    assert.equal(stderrCapture.read(), '');
     assert.deepEqual(
       events.map((event) => replayTestEvent(event).status),
       ['progress', 'progress', 'pass'],
@@ -255,13 +239,13 @@ test('readDaemonSocketProgressResponse forwards replay progress events to the si
     assert.equal(replayTestEvent(events[1]).stepIndex, 4);
     assert.equal(replayTestEvent(events[2]).durationMs, 17_800);
   } finally {
-    process.stderr.write = originalStderrWrite;
+    stderrCapture.restore();
   }
 });
 
 test('readDaemonSocketProgressResponse renders nothing without a sink', async () => {
   const socket = createMockSocket();
-  const req: DaemonRequest = {
+  const req: DaemonWireRequest = {
     session: 'default',
     command: 'test',
     positionals: ['/tmp/replays'],
@@ -269,15 +253,9 @@ test('readDaemonSocketProgressResponse renders nothing without a sink', async ()
     token: 'secret',
     meta: { requestId: 'req-non-tty-progress', requestProgress: 'replay-test' },
   };
-  let stderr = '';
-  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  const stderrCapture = beginStderrCapture();
 
   try {
-    (process.stderr as any).write = ((chunk: unknown) => {
-      stderr += String(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-
     const responsePromise = readSocketProgressResponse(socket, req);
     const progress = JSON.stringify({
       type: 'progress',
@@ -324,15 +302,15 @@ test('readDaemonSocketProgressResponse renders nothing without a sink', async ()
     socket.emit('data', `${progress}\n${pass}\n${command}\n${responseLine}\n`);
 
     assert.deepEqual(await responsePromise, { ok: true, data: { via: 'socket-progress' } });
-    assert.equal(stderr, '');
+    assert.equal(stderrCapture.read(), '');
   } finally {
-    process.stderr.write = originalStderrWrite;
+    stderrCapture.restore();
   }
 });
 
 test('readDaemonSocketProgressResponse rejects invalid response lines with request context', async () => {
   const socket = createMockSocket();
-  const req: DaemonRequest = {
+  const req: DaemonWireRequest = {
     session: 'default',
     command: 'snapshot',
     positionals: [],

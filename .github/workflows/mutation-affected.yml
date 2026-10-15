@@ -1,4 +1,4 @@
-name: Mutation Affected
+name: Mutation Harness Canary
 
 # PR-side half of the decision-kernel mutation lane (issue #1415).
 #
@@ -8,28 +8,41 @@ name: Mutation Affected
 # Cost control: the kernel report that pays is the weekly sweep, so this lane
 # spends mutants on one thing only — proving the harness still runs end to end
 # when the harness itself changes. `select` therefore returns an empty matrix
-# unless the diff touches the lane's own sources. Selecting on derived kernel
-# ownership instead would run the full ten-shard sweep on 24 of the last 40
-# merged PRs.
+# unless the diff touches the lane's own sources (LANE_SOURCES). Selecting on
+# derived kernel ownership instead would run the full sweep on 24 of the last 40
+# merged PRs. A diff confined to LANE_DEPENDENCIES runs the self-test only; most
+# such diffs are unrelated workspace edits. Dispatch on the branch to spend the
+# canary (pass -f base=<parent> for a stacked branch):
+#   gh workflow run mutation-affected.yml --ref <branch>
 #
-# On a harness diff the matrix is the canary (`LANE_CANARY`, the registry's
-# cheapest real sweep — lane sources own no kernel, so derivation alone would
-# select nothing) plus any kernel that same diff reaches through the import
-# graph (scripts/mutation/ownership.ts): a kernel source, or a test that reaches
-# one. Selected modules are sharded like the weekly sweep, so the PR's wall
-# clock is one module rather than their sum.
+# On a harness diff the matrix is the canary (`LANE_CANARY`, selected by
+# observed end-to-end runtime within the job budget — lane sources own no kernel,
+# so derivation alone would select nothing) plus any kernel that same diff
+# reaches through the import graph (scripts/mutation/ownership.ts): a kernel
+# source, or a test that reaches one. Selected modules are sharded like the
+# weekly sweep, so the PR's wall clock is one module rather than their sum.
 
 on:
   pull_request:
     paths:
-      # Exactly `LANE_TOOLING` in scripts/mutation/run.ts plus this file — the
-      # only diffs that can produce a non-empty matrix, asserted both ways by
+      # Exactly `LANE_TOOLING` in scripts/mutation/run.ts, asserted both ways by
       # scripts/mutation/workflow.test.ts. A kernel or test path here would only
       # start a job that selects nothing.
       - 'scripts/mutation/**'
       - 'scripts/lib/**'
       - 'stryker.config.json'
+      - 'vitest.mutation.config.ts'
+      - 'vitest.config.ts'
+      - '.github/workflows/mutation-weekly.yml'
       - '.github/workflows/mutation-affected.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'packages/*/package.json'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Branch the diff is measured against
+        default: main
 
 permissions:
   contents: read
@@ -38,9 +51,13 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  MUTATION_BASE: origin/${{ github.event.pull_request.base.ref || inputs.base }}
+  MUTATION_SCOPE: ${{ github.event_name == 'workflow_dispatch' && '--with-dependencies' || '' }}
+
 jobs:
   select:
-    name: Select affected kernels
+    name: Select harness validation kernels
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -66,18 +83,19 @@ jobs:
           args: |
             --list-affected
             --base
-            origin/${{ github.event.pull_request.base.ref }}
+            ${{ env.MUTATION_BASE }}
+            ${{ env.MUTATION_SCOPE }}
 
       # The self-test and the derivation run before any mutant, so a failure here
       # would leave the lane with no envelope at all (#1430).
       - name: Record a failed lane envelope
-        if: failure()
+        if: failure() || cancelled()
         run: |
           pnpm gate mutation --affected --fail-envelope \
             "affected selection failed before any mutant ran (run ${{ github.run_id }})" || true
 
       - name: Upload selection envelope
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mutation-affected-select
@@ -97,12 +115,15 @@ jobs:
         include: ${{ fromJSON(needs.select.outputs.modules) }}
     steps:
       - name: Checkout
+        timeout-minutes: 1
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup toolchain
+        timeout-minutes: 2
         uses: ./.github/actions/setup-node-pnpm
 
       - name: Run mutants for ${{ matrix.name }}
+        timeout-minutes: 22
         uses: ./.github/actions/run-gate
         with:
           gate: mutation
@@ -113,7 +134,7 @@ jobs:
             ${{ matrix.shard || '' }}
 
       - name: Record a failed shard envelope
-        if: failure()
+        if: failure() || cancelled()
         run: |
           pnpm gate mutation --affected --modules ${{ matrix.module }} --fail-envelope \
             "shard ${{ matrix.name }} failed before producing a report (run ${{ github.run_id }})" || true
@@ -161,13 +182,13 @@ jobs:
             expected=$(echo '${{ needs.select.outputs.modules }}' | jq length)
             pnpm gate mutation-check --report-dir .tmp/mutation/shards --affected \
               --expect-shards "$expected" \
-              --base "origin/${{ github.event.pull_request.base.ref }}"
+              --base "$MUTATION_BASE" $MUTATION_SCOPE
           else
-            pnpm gate mutation-affected --base "origin/${{ github.event.pull_request.base.ref }}"
+            pnpm gate mutation-affected --base "$MUTATION_BASE" $MUTATION_SCOPE
           fi
 
       - name: Record a failed lane envelope
-        if: failure()
+        if: failure() || cancelled()
         run: |
           pnpm gate mutation --affected --fail-envelope \
             "affected report failed before producing a score table (run ${{ github.run_id }})" || true

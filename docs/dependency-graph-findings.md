@@ -74,8 +74,8 @@ type-only inversions, R7 pins SessionState field ownership, and the shared selec
   (`daemon/interaction/internal/interaction-common.ts`, step 3) and the recorder boundary
   (`session-action-recorder.ts`, step 4). The two-pass structure is two call sites, not a scattered
   concern.
-- Still outside every rule: **dynamic** import direction (0 inversions today, nothing watching),
-  and anything inside a zone.
+- Still outside every rule: **dynamic** import direction, out of scope by decision with the reason
+  recorded at R5 in `scripts/layering/check.ts` (#3280), and anything inside a zone.
 
 ## 0. Where the inversions ended up (and why 5 is the floor for now)
 
@@ -263,6 +263,16 @@ moving `DaemonRequest` is most of what §1's second cluster needs.
 
 ## 3. `(root)`: what is left is there for a reason
 
+> **Status after #3280:** the section below is historical. Every root module now declares its zone
+> in `scripts/layering/root-module-zones.ts`, `(root)` ranks above the spine and holds only
+> `bin.ts`, `cli.ts` and `daemon.ts`, and R80 asserts that the zone graph of static value imports is
+> acyclic. That reduces `(root)` in the logical graph only: the modules still live directly under
+> `src/`, and the declaration is a bridge whose rows go as groups move into zone folders or
+> packages. The physical moves remain outstanding, starting with #3294. Ranking the composition roots did not weaken R2: it still rejects a direct `daemon/` ->
+> `commands/` import, and the daemon reaches the command surface through the ranked
+> `command-runtime` zone, which the zone graph now shows instead of hiding. The SDK entries rank
+> above `daemon-client`, because the typed client they publish reaches the daemon through it.
+
 13 files: 11 published `package.json` entrypoints, the three executables (`bin.ts`, `cli.ts`,
 `daemon.ts`), and the composition roots — `runtime.ts`, `agent-device-client.ts`,
 `provider-device-runtime.ts`, `command-catalog.ts`.
@@ -314,6 +324,13 @@ lines in one flat directory whose _names_ carry a hierarchy the filesystem does 
 (14 723 lines), 16 `interaction-*`, 13 `record-*`, 5 `snapshot-*`. `daemon/` itself is another 103
 flat files.
 
+Since #3391 the zone has an enforced interior: R81 (`scripts/layering/daemon-layers.ts`) owns the
+manifest partitioning every production daemon file into five layers — `daemon-core` <
+`daemon-resources` < `daemon-execution` < `daemon-sessions` < `daemon-server` — and rejects any
+upward static value or type edge between them (dynamic cross-layer edges are reported, not
+rejected). The global spine rank stays 4 for all five, so this is the only direction claim inside
+the zone; the manifest is the living claim, restated here at risk of drift.
+
 Things that are **not** wrong, checked and ruled out:
 
 - **No copy-paste.** Zero 7-line windows repeat across three or more daemon files.
@@ -358,7 +375,8 @@ writing must be removed so the table cannot drift into fiction.
 to stop core/daemon from BRANCHING on platform." Four facets are live (`appLog`, `recording`,
 `perf`, provider gating); the branch count says the mechanism is right and unfinished. Worst
 offenders: `handlers/session-perf.ts` (12), `handlers/session-doctor-device.ts` (6),
-`handlers/session-replay-maestro-runtime.ts` (6), `handlers/session-state.ts` (5). Each is a
+`handlers/session-replay-maestro-runtime.ts` (6), `handlers/session-state.ts` (5; since deleted —
+its commands route straight to their handlers from the `session.ts` table). Each is a
 candidate facet, and each facet retired is a branch deleted in every command that shares it.
 
 ### 5c. Redundant edges: hub concentration, not debt

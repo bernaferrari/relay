@@ -9,9 +9,9 @@ import type {
 import { AppError } from '@agent-device/kernel/errors';
 import { SELECTOR_PIPELINE_POLICIES } from '@agent-device/selectors/selector-pipeline-policy';
 import type { Point } from '@agent-device/kernel/snapshot';
-import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
+import type { AgentDeviceRuntime, CommandContext } from '@agent-device/contracts/runtime-contract';
 import { isFillableType } from '@agent-device/contracts/snapshot';
-import { attachResolvedInteractionTarget } from '../../../core/interaction-outcome.ts';
+import { attachResolvedInteractionTarget } from '@agent-device/host-kit/interaction-outcome';
 import { toBackendContext } from '../../runtime-common.ts';
 import { toBackendResult, type RuntimeCommand } from '../../runtime-types.ts';
 import {
@@ -20,8 +20,12 @@ import {
   type PostActionObservationOptions,
 } from './post-action-observation.ts';
 import { resolveInteractionTarget, type InteractionTarget } from './resolution.ts';
+import { guardResolvedTargetAgainstMotion } from './moving-target-gate.ts';
 import { dispatchNativeRefInteraction } from './native-ref-interaction.ts';
-import type { ExpectedResolvedTarget } from './interaction-resolution-request.ts';
+import type {
+  ExpectedResolvedTarget,
+  ResolveInteractionTargetParams,
+} from './interaction-resolution-request.ts';
 
 export { focusCommand, hoverCommand, longPressCommand } from './gestures.ts';
 export type {
@@ -38,11 +42,6 @@ export type PressCommandOptions = CommandContext &
   RepeatedInput & {
     target: InteractionTarget;
     button?: ClickButton;
-    /**
-     * Polls for the target to exist and become actionable, capped at the promotedTarget row's
-     * maxTimeoutMs. Absent takes one attempt.
-     */
-    readinessTimeoutMs?: number;
     /** ADR 0012 step 4: replay-only post-resolution guard; see resolution.ts. */
     expectedResolvedTarget?: ExpectedResolvedTarget;
     /** #1654: a mutating `find`'s already-resolved node; see resolution.ts. */
@@ -147,19 +146,30 @@ async function tapCommand(
     : await maybeTapRefTarget(runtime, options, action);
   if (nativeRefTap) return nativeRefTap;
 
-  const resolved = await resolveInteractionTarget(runtime, options, {
+  // One request object for the resolution and for the re-resolutions #3471's gate may spend, so the
+  // second look is the same question asked again rather than a differently-configured one.
+  const resolutionRequest: ResolveInteractionTargetParams = {
     action,
     requireInteractive: true,
     pipeline: SELECTOR_PIPELINE_POLICIES.promotedTarget,
     captureEvidenceBaseline: observation.needsPreActionBaseline,
     expectedResolvedTarget: options.expectedResolvedTarget,
     preresolvedTarget: options.preresolvedTarget,
-    readinessTimeoutMs: options.readinessTimeoutMs,
-  });
+  };
+  const resolved = await resolveInteractionTarget(runtime, options, resolutionRequest);
   if (!runtime.backend.tap) {
     throw new AppError('UNSUPPORTED_OPERATION', 'tap is not supported by this backend');
   }
-  const point = requireResolvedPoint(resolved);
+  // The moving-target gate (#3471): after every pre-dispatch guard has accepted the target and
+  // before the device is touched. A press issued straight after an action that animated the UI can
+  // otherwise resolve a point the control has already vacated and report success on the vacancy.
+  const atRest = await guardResolvedTargetAgainstMotion(
+    runtime,
+    options,
+    resolutionRequest,
+    resolved,
+  );
+  const point = requireResolvedPoint(atRest);
   let backendResult;
   try {
     backendResult = await runtime.backend.tap(toBackendContext(runtime, options), point, {
@@ -174,16 +184,16 @@ async function tapCommand(
     // Resolution is complete before the backend call. Preserve it out of
     // band so a daemon-level failure corroboration can still record the same
     // target identity if the backend reports an ambiguous tap outcome.
-    attachResolvedInteractionTarget(error, resolved);
+    attachResolvedInteractionTarget(error, atRest);
     throw error;
   }
   const formattedBackendResult = toBackendResult(backendResult);
   return await applyPostActionObservation(
     runtime,
     options,
-    resolved,
+    atRest,
     {
-      ...resolved,
+      ...atRest,
       ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
     },
     observation,

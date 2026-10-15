@@ -20,11 +20,15 @@ import {
 import { normalizeBaseUrl } from './base-url.ts';
 import { runCmdDetached } from '@agent-device/host-kit/command';
 import {
+  confirmedProcessStopDetails,
+  describeUnconfirmedProcessStop,
   isProcessAlive,
   readProcessCommand,
   readProcessStartTime,
-  waitForProcessExit,
+  stopProcessAndConfirmExit,
+  type ConfirmedProcessStop,
 } from '@agent-device/host-kit/process';
+import { AppError } from '@agent-device/kernel/errors';
 
 const COMPANION_TUNNEL_TERM_TIMEOUT_MS = 1_000;
 const COMPANION_TUNNEL_KILL_TIMEOUT_MS = 1_000;
@@ -89,8 +93,8 @@ function hashString(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function normalizeOptionalString(input: string | undefined): string | undefined {
-  return input?.trim() ? input.trim() : undefined;
+function normalizeOptionalString(input: unknown): string | undefined {
+  return typeof input === 'string' && input.trim() ? input.trim() : undefined;
 }
 
 function readCompanionScope(input: unknown): CompanionTunnelScope | undefined {
@@ -154,19 +158,11 @@ function readCompanionState(statePath: string): CompanionTunnelState | null {
       command: typeof parsed.command === 'string' ? parsed.command : undefined,
       serverBaseUrl: parsed.serverBaseUrl,
       localBaseUrl: parsed.localBaseUrl,
-      launchUrl: normalizeOptionalString(
-        typeof parsed.launchUrl === 'string' ? parsed.launchUrl : undefined,
-      ),
-      registerPath: normalizeOptionalString(
-        typeof parsed.registerPath === 'string' ? parsed.registerPath : undefined,
-      ),
-      unregisterPath: normalizeOptionalString(
-        typeof parsed.unregisterPath === 'string' ? parsed.unregisterPath : undefined,
-      ),
+      launchUrl: normalizeOptionalString(parsed.launchUrl),
+      registerPath: normalizeOptionalString(parsed.registerPath),
+      unregisterPath: normalizeOptionalString(parsed.unregisterPath),
       devicePort: Number.isInteger(parsed.devicePort) ? Number(parsed.devicePort) : undefined,
-      session: normalizeOptionalString(
-        typeof parsed.session === 'string' ? parsed.session : undefined,
-      ),
+      session: normalizeOptionalString(parsed.session),
       bridgeScope: readCompanionScope(parsed.bridgeScope),
       tokenHash: parsed.tokenHash,
       consumers,
@@ -186,17 +182,9 @@ function touchCompanionState(statePath: string): void {
   fs.closeSync(fs.openSync(statePath, 'a'));
 }
 
-function clearCompanionState(statePath: string): void {
+function unlinkQuietly(filePath: string): void {
   try {
-    fs.unlinkSync(statePath);
-  } catch {
-    // best effort cleanup
-  }
-}
-
-function clearCompanionLog(logPath: string): void {
-  try {
-    fs.unlinkSync(logPath);
+    fs.unlinkSync(filePath);
   } catch {
     // best effort cleanup
   }
@@ -219,8 +207,8 @@ function clearCompanionArtifacts(
 ): void {
   const stateDir = path.dirname(paths.statePath);
   const logDir = path.dirname(paths.logPath);
-  clearCompanionState(paths.statePath);
-  clearCompanionLog(paths.logPath);
+  unlinkQuietly(paths.statePath);
+  unlinkQuietly(paths.logPath);
   removeDirectoryIfEmpty(stateDir);
   if (logDir !== stateDir) {
     removeDirectoryIfEmpty(logDir);
@@ -296,29 +284,69 @@ function withoutConsumer(
   };
 }
 
+/** Stops the recorded companion, throwing unless the host proves it left. */
 async function stopCompanionProcess(
   state: CompanionTunnelState,
   definition: CompanionTunnelDefinition,
+  paths: { statePath: string; logPath: string },
 ): Promise<void> {
-  if (!isProcessAlive(state.pid)) return;
-  const command = readProcessCommand(state.pid);
-  if (!command || !isCompanionTunnelCommand(command, definition)) return;
-  try {
-    process.kill(state.pid, 'SIGTERM');
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH' || code === 'EPERM') return;
-    throw error;
+  const outcome = await stopProcessAndConfirmExit(
+    {
+      pid: state.pid,
+      identity: {
+        startTime: state.startTime,
+        matches: (command) => isCompanionTunnelCommand(command, definition),
+      },
+    },
+    {
+      termTimeoutMs: COMPANION_TUNNEL_TERM_TIMEOUT_MS,
+      killTimeoutMs: COMPANION_TUNNEL_KILL_TIMEOUT_MS,
+    },
+  );
+  if (outcome.status === 'retained') {
+    throw companionStopFailure({ ...outcome, pid: state.pid }, definition, paths);
   }
-  if (await waitForProcessExit(state.pid, COMPANION_TUNNEL_TERM_TIMEOUT_MS)) return;
+}
+
+/** A companion whose exit could not be confirmed: state stays, so a retry stops the same process. */
+function companionStopFailure(
+  retained: { pid: number } & Extract<ConfirmedProcessStop, { status: 'retained' }>,
+  definition: CompanionTunnelDefinition,
+  paths: { statePath: string; logPath: string },
+): AppError {
+  // `identity-unverified` is the one verdict that cannot say "still running": the pid answers
+  // `kill(pid, 0)`, and on Windows an exited process does too while its object keeps handles.
+  const why =
+    retained.reason === 'identity-unverified'
+      ? `${definition.displayName} ${describeUnconfirmedProcessStop(retained.pid, `the ${definition.displayName} this profile started`)}. Stop it yourself, as its owner if needed.`
+      : `${definition.displayName} pid ${retained.pid} is still running${
+          retained.reason === 'exit-timeout'
+            ? `: it survived ${retained.signal}.`
+            : retained.errno === 'EPERM'
+              ? `: it refused ${retained.signal} (${retained.errno}), so it belongs to another user or was started with elevated privileges. Stop it as that user, e.g. \`sudo kill ${retained.pid}\`.`
+              : `: it refused ${retained.signal} (${retained.errno}).`
+        }`;
+  return new AppError('COMMAND_FAILED', why, {
+    ...confirmedProcessStopDetails(retained, retained.pid),
+    statePath: paths.statePath,
+    logPath: paths.logPath,
+    hint: `${paths.statePath} still tracks this pid, so a retry acts on that same companion instead of starting a second one.`,
+  });
+}
+
+/** Records a half-spawned companion a stop could not confirm, so a retry stops the same pid. */
+function persistUnstoppedCompanion(statePath: string, state: CompanionTunnelState): void {
   try {
-    process.kill(state.pid, 'SIGKILL');
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH' || code === 'EPERM') return;
-    throw error;
+    writeCompanionState(statePath, state);
+  } catch {
+    // A pid this host will not record cannot be tracked on a retry; the refusal names it, and the
+    // caller dispatches on that verdict.
   }
-  await waitForProcessExit(state.pid, COMPANION_TUNNEL_KILL_TIMEOUT_MS);
+}
+
+function setOrDelete(env: NodeJS.ProcessEnv, key: string, value: string | undefined): void {
+  if (value === undefined) delete env[key];
+  else env[key] = value;
 }
 
 function buildCompanionEnv(
@@ -338,31 +366,23 @@ function buildCompanionEnv(
   nextEnv[ENV_COMPANION_TUNNEL_SCOPE_TENANT_ID] = options.bridgeScope.tenantId;
   nextEnv[ENV_COMPANION_TUNNEL_SCOPE_RUN_ID] = options.bridgeScope.runId;
   nextEnv[ENV_COMPANION_TUNNEL_SCOPE_LEASE_ID] = options.bridgeScope.leaseId;
-  if (options.launchUrl?.trim()) {
-    nextEnv[ENV_COMPANION_TUNNEL_LAUNCH_URL] = options.launchUrl.trim();
-  } else {
-    delete nextEnv[ENV_COMPANION_TUNNEL_LAUNCH_URL];
-  }
-  if (options.registerPath?.trim()) {
-    nextEnv[ENV_COMPANION_TUNNEL_REGISTER_PATH] = options.registerPath.trim();
-  } else {
-    delete nextEnv[ENV_COMPANION_TUNNEL_REGISTER_PATH];
-  }
-  if (options.unregisterPath?.trim()) {
-    nextEnv[ENV_COMPANION_TUNNEL_UNREGISTER_PATH] = options.unregisterPath.trim();
-  } else {
-    delete nextEnv[ENV_COMPANION_TUNNEL_UNREGISTER_PATH];
-  }
-  if (options.devicePort !== undefined) {
-    nextEnv[ENV_COMPANION_TUNNEL_DEVICE_PORT] = String(options.devicePort);
-  } else {
-    delete nextEnv[ENV_COMPANION_TUNNEL_DEVICE_PORT];
-  }
-  if (options.session?.trim()) {
-    nextEnv[ENV_COMPANION_TUNNEL_SESSION] = options.session.trim();
-  } else {
-    delete nextEnv[ENV_COMPANION_TUNNEL_SESSION];
-  }
+  setOrDelete(nextEnv, ENV_COMPANION_TUNNEL_LAUNCH_URL, normalizeOptionalString(options.launchUrl));
+  setOrDelete(
+    nextEnv,
+    ENV_COMPANION_TUNNEL_REGISTER_PATH,
+    normalizeOptionalString(options.registerPath),
+  );
+  setOrDelete(
+    nextEnv,
+    ENV_COMPANION_TUNNEL_UNREGISTER_PATH,
+    normalizeOptionalString(options.unregisterPath),
+  );
+  setOrDelete(
+    nextEnv,
+    ENV_COMPANION_TUNNEL_DEVICE_PORT,
+    options.devicePort === undefined ? undefined : String(options.devicePort),
+  );
+  setOrDelete(nextEnv, ENV_COMPANION_TUNNEL_SESSION, normalizeOptionalString(options.session));
   return nextEnv;
 }
 
@@ -447,8 +467,10 @@ export async function ensureCompanionTunnel(
     };
   }
 
+  // Stopping before spawning is what keeps one bridge scope down to one companion: an unconfirmed
+  // exit aborts here instead of registering a second one beside the first.
   if (existing) {
-    await stopCompanionProcess(existing, options.definition);
+    await stopCompanionProcess(existing, options.definition, paths);
     clearCompanionArtifacts(paths, options.definition);
   }
 
@@ -458,8 +480,16 @@ export async function ensureCompanionTunnel(
     spawned = spawnCompanionProcess(options, paths.logPath);
     writeCompanionState(paths.statePath, withConsumer(spawned, consumerKey));
   } catch (error) {
+    // An unconfirmed exit of our own half-spawned companion outranks the spawn failure.
     if (spawned) {
-      await stopCompanionProcess(spawned, options.definition).catch(() => {});
+      try {
+        await stopCompanionProcess(spawned, options.definition, paths);
+      } catch (stopError) {
+        // The failure promises a retry stops the same pid, and the sentinel carries none.
+        persistUnstoppedCompanion(paths.statePath, spawned);
+        if (stopError instanceof AppError) stopError.cause = error;
+        throw stopError;
+      }
     }
     clearCompanionArtifacts(paths, options.definition);
     throw error;
@@ -492,7 +522,7 @@ export async function stopCompanionTunnel(
     writeCompanionState(paths.statePath, nextState);
     return { stopped: false, statePath: paths.statePath };
   }
-  await stopCompanionProcess(existing, options.definition);
+  await stopCompanionProcess(existing, options.definition, paths);
   clearCompanionArtifacts(paths, options.definition);
   return { stopped: true, statePath: paths.statePath };
 }

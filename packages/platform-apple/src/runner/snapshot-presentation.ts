@@ -1,3 +1,4 @@
+import { isHandheldAppleDevice, type DeviceInfo } from '@agent-device/kernel/device';
 import type {
   IosRunnerQualityPayloadFacts,
   IosSnapshotInput,
@@ -9,6 +10,7 @@ import {
   presentIosRunnerSnapshot,
   toIosSnapshotEngineErrorDetails,
 } from '@agent-device/capture-kit/ios-snapshot-engine';
+import { interpretIosNode } from '@agent-device/capture-kit/ios-node-interpretation';
 import { resolveIosViewportEvidenceFromRoots } from '@agent-device/capture-kit/ios-snapshot-acquisition';
 import { renderSnapshotQualityWarnings } from '@agent-device/capture-kit/quality-warnings';
 import {
@@ -20,14 +22,20 @@ import {
   buildIosSnapshotPresentationKey,
 } from '@agent-device/capture-kit/ios-snapshot-planning';
 import { AppError } from '@agent-device/kernel/errors';
-import { readSnapshotKeyboardBandFact } from '@agent-device/kernel/record';
+import {
+  isRecord,
+  readPresentedSurfaceFact,
+  readSnapshotKeyboardBandFact,
+} from '@agent-device/kernel/record';
 import { snapshotViewportSizeFrom } from '@agent-device/kernel/rect';
 import type {
+  PresentedSurface,
   RawSnapshotNode,
   SnapshotKeyboardBandFact,
   SnapshotQualityVerdict,
   SnapshotViewportSize,
   IosTargetActivation,
+  IosSnapshotObservation,
 } from '@agent-device/kernel/snapshot';
 import {
   iosSystemSurfaceHost,
@@ -35,6 +43,7 @@ import {
 } from '@agent-device/contracts/ios-system-surface';
 import { emitDiagnostic } from './host.ts';
 import { TARGET_ACTIVATION_WIRE_KEY, readTargetActivationFact } from './target-activation.ts';
+import { readSnapshotObservation } from '@agent-device/contracts/capture';
 
 export type AppleRunnerSnapshotResult = Readonly<{
   nodes?: RawSnapshotNode[];
@@ -44,16 +53,26 @@ export type AppleRunnerSnapshotResult = Readonly<{
   qualityPayload?: IosRunnerQualityPayloadFacts;
   runnerFatal?: boolean;
   systemSurface?: IosSystemSurfaceProvenance;
+  /**
+   * The runner's own answer about a modal presentation over the app (#3565), read from its capture
+   * payload. The runner classifies the acquisition it is about to present, and only publishes a
+   * reading it can support: a payload with no key is a capture the runner could not decide.
+   */
+  presentedSurface?: PresentedSurface;
   keyboard?: SnapshotKeyboardBandFact;
   /** Foreground repair this capture's own command had to perform (#2682). */
   targetActivation?: IosTargetActivation;
+  observation?: IosSnapshotObservation;
 }>;
 
 export function readAppleSnapshotResult(
   result: Record<string, unknown>,
+  device: Pick<DeviceInfo, 'platform' | 'appleOs' | 'target'>,
 ): AppleRunnerSnapshotResult {
   const systemSurface = readSystemSurfaceProvenance(result.systemSurface);
+  const presentedSurface = readPresentedSurfaceFact(result);
   const keyboard = readSnapshotKeyboardBandFact(result.keyboard);
+  const observation = readSnapshotObservation(result.observation);
   const targetActivation = readTargetActivationFact(result[TARGET_ACTIVATION_WIRE_KEY], (detail) =>
     emitDiagnostic({
       level: 'debug',
@@ -61,15 +80,23 @@ export function readAppleSnapshotResult(
       data: detail,
     }),
   );
+  const nodes = Array.isArray(result.nodes) ? (result.nodes as RawSnapshotNode[]) : undefined;
+  const qualityPayload = readQualityPayload(result.qualityPayload, systemSurface);
+  const interpret = (node: RawSnapshotNode) =>
+    interpretIosNode(node, { reactNativeValue: isHandheldAppleDevice(device) });
   return {
-    nodes: Array.isArray(result.nodes) ? (result.nodes as RawSnapshotNode[]) : undefined,
+    nodes: nodes?.map(interpret),
     truncated: typeof result.truncated === 'boolean' ? result.truncated : undefined,
     quality: readSnapshotQualityVerdict(result.snapshotQuality),
-    qualityPayload: readQualityPayload(result.qualityPayload, systemSurface),
+    qualityPayload: qualityPayload
+      ? { ...qualityPayload, nodes: qualityPayload.nodes.map(interpret) }
+      : qualityPayload,
     runnerFatal: result.runnerFatal === true,
     ...(keyboard ? { keyboard } : {}),
     ...(systemSurface ? { systemSurface } : {}),
+    ...(presentedSurface ? { presentedSurface } : {}),
     ...(targetActivation ? { targetActivation } : {}),
+    ...(observation ? { observation } : {}),
     message:
       typeof result.message === 'string' && result.message.trim().length > 0
         ? result.message
@@ -246,10 +273,6 @@ function runnerViewportEvidence(
 
 function rootNodes(nodes: readonly RawSnapshotNode[] | undefined): readonly RawSnapshotNode[] {
   return nodes?.filter((node) => node.parentIndex === undefined) ?? [];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function throwSnapshotEngineError(
