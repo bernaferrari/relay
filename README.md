@@ -85,7 +85,9 @@ Run the saved test on your local browser, an Android phone or emulator, or an iP
 simulator. Each step shows what happened and how long it took. When a check fails, Relay says
 what it **expected** and what it **saw**, next to the screenshot.
 
+<a href="./assets/readme/app-run.webp">
 <img alt="A Relay run: every step with its timing, and the screen it reached" src="./assets/readme/app-run.webp" width="100%" />
+</a>
 
 ### 3 · Review
 
@@ -93,14 +95,18 @@ Every run keeps lightweight evidence: screenshots, screen structure, an action t
 diagnostics, with video when motion matters. Accept what looks right, flag what doesn't, and
 the decision stays with the run.
 
-<img alt="Screenshot review in Relay, with capture details beside the image and compact review controls" src="./assets/readme/app-review.webp" width="1280" />
+<a href="./assets/readme/app-review.webp">
+<img alt="Screenshot review in Relay, with screenshot tools on the image and compact review controls" src="./assets/readme/app-review.webp" width="100%" />
+</a>
 
 ### 4 · Explore
 
 The Map keeps the screens you reached and the paths between them. Open a screen to inspect it,
 rename it, or use a known path in your next test.
 
-<img alt="Relay's Map showing the recorded path from Sign in to Workspace settings" src="./assets/readme/app-map.webp" width="1280" />
+<a href="./assets/readme/app-map.webp">
+<img alt="Relay's Map showing the recorded path from Sign in to Workspace settings" src="./assets/readme/app-map.webp" width="100%" />
+</a>
 
 ## For coding agents
 
