@@ -22,6 +22,7 @@ import { BrowserWorkspaceGrip } from "./browser-workspace-grip";
 import { BrowserWorkspaceGrid } from "./browser-workspace-grid";
 import { BrowserWorkspacePicker } from "./browser-workspace-picker";
 import { BrowserWorkspaceTile } from "./browser-workspace-tile";
+import { useBrowserWorkspaceFocus } from "./browser-workspace-focus";
 import { errorMessage } from "./recording-shared";
 
 export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
@@ -30,7 +31,7 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
   const [picker, setPicker] = useState(false);
   const [over, setOver] = useState<string>();
   const [announcement, setAnnouncement] = useState("");
-  const [focused, setFocused] = useState<string>();
+  const { focused, focus, container } = useBrowserWorkspaceFocus();
   const [issue, setIssue] = useState<string>();
   const [saving, setSaving] = useState(false);
   const spaces = useQuery({
@@ -89,6 +90,7 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
   const count = tiles?.length ?? 0;
   return (
     <section
+      ref={container}
       className="flex h-full min-h-0 min-w-0 flex-col overflow-auto px-4 py-4"
       aria-label="Browser workspace"
     >
@@ -106,7 +108,7 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
         </div>
         <div className="flex items-center gap-2">
           {focused ? (
-            <Button variant="outline" onClick={() => setFocused(undefined)}>
+            <Button variant="outline" onClick={(event) => focus(undefined, event.detail > 0)}>
               <Columns2 aria-hidden="true" />
               Show all
             </Button>
@@ -194,12 +196,14 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
               tile={tile}
               focused={focused === tile.id}
               hidden={Boolean(focused && focused !== tile.id)}
-              onFocus={() => setFocused((current) => (current === tile.id ? undefined : tile.id))}
+              onFocus={(event) =>
+                focus(focused === tile.id ? undefined : tile.id, event.detail > 0)
+              }
               onRemove={() => {
                 if (saving) return;
                 void save(tiles.filter((current) => current.id !== tile.id))
                   .then(() => {
-                    if (focused === tile.id) setFocused(undefined);
+                    if (focused === tile.id) focus(undefined);
                   })
                   .catch(() => undefined);
               }}
@@ -214,7 +218,7 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
           onClose={() => setPicker(false)}
           onAdd={async (tile) => {
             await save(admitBrowserTile(tiles ?? [], tile));
-            setFocused(undefined);
+            focus(undefined);
           }}
         />
       ) : null}

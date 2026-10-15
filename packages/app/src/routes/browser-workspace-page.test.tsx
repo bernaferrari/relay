@@ -37,6 +37,7 @@ afterEach(async () => {
   root = undefined;
   client?.clear();
   document.body.replaceChildren();
+  vi.restoreAllMocks();
 });
 const tiles: BrowserTile[] = ["Admin", "Member", "Guest", "Reviewer"].map((name, index) => ({
   id: name,
@@ -66,12 +67,15 @@ async function settle() {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 }
-async function click(label: string) {
+async function click(label: string, pointer = false) {
   const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (item) => item.getAttribute("aria-label") === label || item.textContent === label,
   );
   if (!button) throw new Error(`Missing ${label}`);
-  await act(async () => button.click());
+  await act(async () => {
+    if (pointer) button.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    else button.click();
+  });
   await settle();
 }
 async function setup(
@@ -120,6 +124,61 @@ async function setup(
   return { sessions, values, preview, render };
 }
 describe("tiled browser workspace", () => {
+  it("reverses expansion from its current position without reconnecting live browsers", async () => {
+    const { sessions, preview } = await setup();
+    const elements = [...document.querySelectorAll<HTMLElement>("[data-browser-tile]")];
+    const animations: { cancel: ReturnType<typeof vi.fn>; frames: Keyframe[] }[] = [];
+    let interrupted: DOMRect | undefined;
+    for (const [index, element] of elements.entries()) {
+      element.getBoundingClientRect = () => {
+        if (
+          element.dataset.browserTile === "Member" &&
+          interrupted &&
+          elements.some((tile) => tile.hidden)
+        )
+          return interrupted;
+        return elements.filter((tile) => !tile.hidden).length === 1
+          ? new DOMRect(0, 0, 1000, 700)
+          : new DOMRect((index % 2) * 500, Math.floor(index / 2) * 350, 500, 350);
+      };
+      element.animate = vi.fn((frames) => {
+        const animation = { cancel: vi.fn(), frames: frames as Keyframe[] };
+        animations.push(animation);
+        return animation as unknown as Animation;
+      });
+    }
+    await click("Expand Member", true);
+    expect(animations).toHaveLength(1);
+    expect(document.querySelectorAll("section[hidden]")).toHaveLength(3);
+    interrupted = new DOMRect(100, 50, 800, 600);
+    await click("Restore Member", true);
+    expect(animations[0]!.cancel).toHaveBeenCalledOnce();
+    expect(animations[2]!.frames[0]!.transform).toContain("translate(-400px, 50px)");
+    expect(document.querySelectorAll("section[hidden]")).toHaveLength(0);
+    expect(preview).toHaveBeenCalledTimes(4);
+    for (const session of sessions.values()) expect(session.close).not.toHaveBeenCalled();
+    await act(async () => root!.unmount());
+    root = undefined;
+    for (const animation of animations) expect(animation.cancel).toHaveBeenCalledOnce();
+  });
+  it("expands immediately when reduced motion is enabled", async () => {
+    vi.spyOn(window, "matchMedia").mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList);
+    await setup();
+    const animate = vi.fn();
+    for (const element of document.querySelectorAll<HTMLElement>("[data-browser-tile]")) {
+      element.getBoundingClientRect = () => new DOMRect(0, 0, 500, 350);
+      element.animate = animate;
+    }
+    await click("Expand Admin", true);
+    expect(document.querySelectorAll("section[hidden]")).toHaveLength(3);
+    await click("Show all", true);
+    expect(document.querySelectorAll("section[hidden]")).toHaveLength(0);
+    expect(animate).not.toHaveBeenCalled();
+  });
   it("keeps four exact identities mounted through expand, restore and column resizing", async () => {
     const { sessions, preview } = await setup();
     expect(preview.mock.calls).toEqual(

@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEventHandler } from "react";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
 import { Circle, Maximize2, Minimize2, X } from "lucide-react";
@@ -27,7 +27,7 @@ export function BrowserWorkspaceTile({
   tile: BrowserTile;
   focused: boolean;
   hidden: boolean;
-  onFocus(): void;
+  onFocus: MouseEventHandler<HTMLButtonElement>;
   onRemove(): void;
 }) {
   const { productService } = useRouteContext({ from: "__root__" });
@@ -102,7 +102,7 @@ export function BrowserWorkspaceTile({
       data-browser-tile={tile.id}
       aria-label={`${tile.name} · ${tile.accountName}`}
       hidden={hidden}
-      className={`${className} ${hidden ? "hidden" : "flex"} min-h-80 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background min-[761px]:min-h-0`}
+      className={`${className} ${hidden ? "hidden" : "flex"} relative min-h-80 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background data-[workspace-moving]:z-20 min-[761px]:min-h-0`}
     >
       <header className="grid min-h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 border-b border-border px-3">
         <div
