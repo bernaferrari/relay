@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { AppMapScenarioTestStep } from "@relay/protocol";
 import { failingStepFrame, plainRunReason as plainReason } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
+import { e2eRunVerdict } from "./e2e-run-verdict.js";
 
 export type RunVerdictStatus = "passed" | "failed" | "blocked" | "cancelled" | "running";
 
@@ -66,6 +67,8 @@ export function buildRunVerdict(
   authored?: { name?: string; steps: readonly AppMapScenarioTestStep[] },
 ): RunVerdict {
   const status = statusFor(run);
+  const imported = e2eRunVerdict(run, status);
+  if (imported) return imported;
   const intents = new Map<string, { title: string; kind?: "action" | "check" }>();
   for (const step of authored?.steps ?? []) {
     intents.set(step.id, {

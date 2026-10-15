@@ -13,6 +13,7 @@ import {
   runsRoot,
   exportTracePack,
   replayInputFromPersistedRun,
+  buildRunVerdict,
 } from "@relay/core";
 import { createE2EProjectService } from "./e2e-project-service.js";
 
@@ -114,6 +115,9 @@ test('delayed save',async({app,screen})=>{await app.open();await screen.getByRol
       assert.equal(first.runIds.length, 2);
       const run = await readPersistedRun(first.runIds[0]!);
       assert(run);
+      const verdict = buildRunVerdict(run);
+      assert.equal(verdict.status, "failed");
+      assert(verdict.steps.some((step) => step.status === "failed"));
       assert.equal(run.evidence?.channels.screenshot.entries, run.frames.length);
       assert.equal(run.frames[0]?.mime, "image/png");
       assert.throws(() => replayInputFromPersistedRun(run), /e2e project/);

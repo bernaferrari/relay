@@ -114,6 +114,35 @@ test("a declared missing checkpoint blocks acceptance even with no produced arti
   assert.equal(receipt.coverage.expected, 1);
   assert.equal(receipt.acceptance.state, "blocked");
 });
+
+test("partial re-import progress cannot discard a completed receipt after source cleanup", async () => {
+  const { run, root, output } = await fixture([
+    artifact("one.png", { id: "one" }),
+    artifact("two.png", { id: "two" }),
+  ]);
+  try {
+    await writeFile(join(run.artifactsRoot, "one.png"), "first image");
+    await writeFile(join(run.artifactsRoot, "two.png"), "second image");
+    const imported = await importFinishedRun(run, { directory: output }, signal());
+    await writeFile(
+      join(imported.directory, "import-progress.json"),
+      JSON.stringify({
+        reportHash: imported.receipt.reportHash,
+        artifacts: imported.receipt.artifacts.slice(0, 1),
+      }),
+    );
+    await rm(run.artifactsRoot, { recursive: true });
+    const { recoverImportedRun } = await import("./recover-import.js");
+    const recovered = await recoverImportedRun(output, run.report.run.id, signal());
+    assert.deepEqual(
+      recovered.receipt.artifacts.map((a) => a.state),
+      ["available", "available"],
+    );
+    assert.equal(recovered.receipt.acceptance.evidenceComplete, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 test("traversal, symlink escapes and incomplete redaction are denied", async () => {
   const { run, output, root } = await fixture([
     artifact("../secret"),

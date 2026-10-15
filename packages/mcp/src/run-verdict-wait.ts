@@ -53,18 +53,28 @@ export function compactRunSnapshot(value: unknown): unknown {
 export function agentVerdict(value: unknown): Record<string, unknown> {
   const verdict = object(value);
   const steps = (Array.isArray(verdict.steps) ? verdict.steps : []).map(object);
+  // Failures must survive bounding; preserve chronological order for the
+  // selected steps after reserving space for their diagnostic evidence.
+  const retained = new Set(
+    [...new Set([...steps.filter((step) => step.status === "failed"), ...steps])].slice(
+      0,
+      stepLimit,
+    ),
+  );
   return {
     ...Object.fromEntries(Object.entries(verdict).map(([key, item]) => [key, clip(item)])),
-    steps: steps.slice(0, stepLimit).map((step) =>
-      step.status === "failed"
-        ? Object.fromEntries(Object.entries(step).map(([key, item]) => [key, clip(item)]))
-        : {
-            id: step.id,
-            title: clip(step.title),
-            ...(step.kind ? { kind: step.kind } : {}),
-            status: step.status,
-          },
-    ),
+    steps: steps
+      .filter((step) => retained.has(step))
+      .map((step) =>
+        step.status === "failed"
+          ? Object.fromEntries(Object.entries(step).map(([key, item]) => [key, clip(item)]))
+          : {
+              id: step.id,
+              title: clip(step.title),
+              ...(step.kind ? { kind: step.kind } : {}),
+              status: step.status,
+            },
+      ),
     ...(steps.length > stepLimit ? { moreSteps: steps.length - stepLimit } : {}),
   };
 }
@@ -155,14 +165,19 @@ export async function withFailingStep(
       await context.invoker.invoke("run.verdict.get", { runId }, { signal: context.signal }),
     );
     const verdict = agentVerdict(result.verdict);
-    const steps = (verdict.steps as Record<string, unknown>[]) ?? [];
+    const sourceSteps = object(result.verdict).steps;
+    const failingStep = (Array.isArray(sourceSteps) ? sourceSteps.map(object) : []).find(
+      (step) => step.status === "failed",
+    );
     return {
       ...object(failure),
       verdict: {
         status: verdict.status,
         summary: verdict.summary,
         ...(verdict.reason ? { reason: verdict.reason } : {}),
-        failingStep: steps.find((step) => step.status === "failed") ?? null,
+        failingStep: failingStep
+          ? Object.fromEntries(Object.entries(failingStep).map(([key, item]) => [key, clip(item)]))
+          : null,
       },
     };
   } catch {

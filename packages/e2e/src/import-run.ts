@@ -79,17 +79,17 @@ export async function importFinishedRun(
   } finally {
     await rm(sourceCandidate, { force: true });
   }
-  let previousArtifacts: ImportedArtifact[] = [];
-  try {
-    const previous = JSON.parse(
-      await readFile(resolve(directory, "import-progress.json"), "utf8").catch(() =>
-        readFile(resolve(directory, "receipt.json"), "utf8"),
-      ),
-    );
-    if (previous.reportHash === reportHash && Array.isArray(previous.artifacts))
-      previousArtifacts = previous.artifacts;
-  } catch {
-    /* Missing or damaged receipts can be repaired from upstream evidence. */
+  // A partial retry is only a prefix; it must never replace the completed
+  // receipt's cache of already retained artifacts.
+  const previousArtifacts: ImportedArtifact[] = [];
+  for (const name of ["receipt.json", "import-progress.json"]) {
+    try {
+      const previous = JSON.parse(await readFile(resolve(directory, name), "utf8"));
+      if (previous.reportHash === reportHash && Array.isArray(previous.artifacts))
+        previousArtifacts.push(...previous.artifacts);
+    } catch {
+      /* Recover each valid receipt independently of missing/damaged progress. */
+    }
   }
   const artifacts: ImportedArtifact[] = [];
   const owners = [

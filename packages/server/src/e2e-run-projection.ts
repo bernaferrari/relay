@@ -60,10 +60,23 @@ export async function projectE2ERuns(input: {
               : {}),
             targetId: owner.targetId,
             upstreamStatus: owner.status,
+            finalAttempt: (owner.attempts.at(-1)?.index ?? -1) + 1,
           },
         },
       ];
       const finalAttempt = owner.attempts.at(-1);
+      const finalSteps = finalAttempt
+        ? "steps" in finalAttempt
+          ? finalAttempt.steps
+          : finalAttempt.members.flatMap((member) => member.steps)
+        : [];
+      const failure =
+        finalAttempt?.error ??
+        (finalAttempt && "members" in finalAttempt
+          ? finalAttempt.members.find((member) => member.error)?.error
+          : undefined) ??
+        finalSteps.find((step) => step.error)?.error;
+
       for (const attempt of owner.attempts) {
         for (const step of "steps" in attempt
           ? attempt.steps
@@ -83,8 +96,24 @@ export async function projectE2ERuns(input: {
               source.state !== "available" ||
               !source.path ||
               source.source.mediaType !== "image/png"
-            )
+            ) {
+              if (attempt.id === finalAttempt?.id && !imported.receipt.coverage.declared)
+                artifacts.push({
+                  kind: "capture-review",
+                  capturedAt: time(step.startedAt),
+                  data: {
+                    caption: step.label,
+                    checkpointId: source.source.id,
+                    stepId: step.id,
+                    invocation: owner.id,
+                    attempt: attempt.index + 1,
+                    configuration: { app: input.projectName, browser: owner.targetId },
+                    status: "missing",
+                    reason: source.reason ?? source.state,
+                  },
+                });
               continue;
+            }
             const path = `frames/${digest([owner.id, attempt.id, source.source.id])}.png`;
             await copyFile(join(imported.directory, source.path), join(dir, path));
             const bytes = await readFile(join(dir, path));
@@ -135,6 +164,8 @@ export async function projectE2ERuns(input: {
             frames: stepFrames,
             log: JSON.stringify({
               status: step.status,
+              api: step.api,
+              label: step.label,
               ...(step.error ? { error: step.error } : {}),
               source: step.source,
             }),
@@ -221,7 +252,13 @@ export async function projectE2ERuns(input: {
               ? "cancelled"
               : status === "skipped"
                 ? "harness-failure"
-                : "uncertain",
+                : failure?.category === "test"
+                  ? "product-failure"
+                  : failure &&
+                      ["configuration", "infrastructure", "internal"].includes(failure.category)
+                    ? "harness-failure"
+                    : "uncertain",
+        ...(failure ? { error: failure.message } : {}),
         attempts: owner.attempts.length,
         queuedAt: time(report.run.startedAt),
         startedAt: time(report.run.startedAt),
