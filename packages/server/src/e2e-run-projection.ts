@@ -78,76 +78,86 @@ export async function projectE2ERuns(input: {
         finalSteps.find((step) => step.error)?.error;
 
       for (const attempt of owner.attempts) {
-        for (const step of "steps" in attempt
-          ? attempt.steps
-          : attempt.members.flatMap((member) => member.steps)) {
-          const stepFrames: PersistedRun["frames"] = [];
-          const sources = imported.receipt.artifacts.filter(
-            (a) =>
-              a.ownerKind === kind &&
-              a.ownerId === owner.id &&
-              a.attemptId === attempt.id &&
-              a.source.kind === "screenshot" &&
-              a.source.producer.kind === "step" &&
-              a.source.producer.stepId === step.id,
-          );
-          for (const source of sources) {
-            if (
-              source.state !== "available" ||
-              !source.path ||
-              source.source.mediaType !== "image/png"
-            ) {
-              if (attempt.id === finalAttempt?.id && !imported.receipt.coverage.declared)
-                artifacts.push({
-                  kind: "capture-review",
-                  capturedAt: time(step.startedAt),
-                  data: {
-                    caption: step.label,
-                    checkpointId: source.source.id,
-                    stepId: step.id,
-                    invocation: owner.id,
-                    attempt: attempt.index + 1,
-                    configuration: { app: input.projectName, browser: owner.targetId },
-                    status: "missing",
-                    reason: source.reason ?? source.state,
-                  },
-                });
-              continue;
-            }
-            const path = `frames/${digest([owner.id, attempt.id, source.source.id])}.png`;
-            await copyFile(join(imported.directory, source.path), join(dir, path));
-            const bytes = await readFile(join(dir, path));
-            const frame = {
-              path,
-              caption: step.label,
-              mime: "image/png",
-              capturedAt: time(step.startedAt),
-              bytes: bytes.length,
-              stepId: step.id,
-              ...(bytes.length > 24 &&
-              bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-                ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
-                : {}),
-            };
-            frames.push(frame);
-            stepFrames.push(frame);
+        const attemptSteps =
+          "steps" in attempt ? attempt.steps : attempt.members.flatMap((member) => member.steps);
+        const framesByStep = new Map<string, PersistedRun["frames"]>();
+        const sources = imported.receipt.artifacts.filter(
+          (a) =>
+            a.ownerKind === kind &&
+            a.ownerId === owner.id &&
+            a.attemptId === attempt.id &&
+            a.source.kind === "screenshot",
+        );
+        for (const source of sources) {
+          const producer = source.source.producer;
+          const step =
+            producer.kind === "step"
+              ? attemptSteps.find((step) => step.id === producer.stepId)
+              : undefined;
+          const caption = step?.label ?? "Attempt screenshot";
+          const capturedAt = time(source.source.startedAt ?? step?.startedAt ?? attempt.startedAt);
+          if (
+            source.state !== "available" ||
+            !source.path ||
+            source.source.mediaType !== "image/png"
+          ) {
             if (attempt.id === finalAttempt?.id && !imported.receipt.coverage.declared)
               artifacts.push({
                 kind: "capture-review",
-                capturedAt: frame.capturedAt,
+                capturedAt,
                 data: {
-                  caption: step.label,
-                  mime: "image/png",
-                  framePath: path,
-                  imageSha256: source.sha256,
+                  caption,
                   checkpointId: source.source.id,
-                  stepId: step.id,
+                  ...(step ? { stepId: step.id } : {}),
                   invocation: owner.id,
                   attempt: attempt.index + 1,
                   configuration: { app: input.projectName, browser: owner.targetId },
+                  status: "missing",
+                  reason: source.reason ?? source.state,
                 },
               });
+            continue;
           }
+          const path = `frames/${digest([owner.id, attempt.id, source.source.id])}.png`;
+          await copyFile(join(imported.directory, source.path), join(dir, path));
+          const bytes = await readFile(join(dir, path));
+          const frame = {
+            path,
+            caption,
+            mime: "image/png",
+            capturedAt,
+            bytes: bytes.length,
+            ...(step ? { stepId: step.id } : {}),
+            ...(bytes.length > 24 &&
+            bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+              ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+              : {}),
+          };
+          frames.push(frame);
+          if (step) {
+            const stepFrames = framesByStep.get(step.id) ?? [];
+            stepFrames.push(frame);
+            framesByStep.set(step.id, stepFrames);
+          }
+          if (attempt.id === finalAttempt?.id && !imported.receipt.coverage.declared)
+            artifacts.push({
+              kind: "capture-review",
+              capturedAt: frame.capturedAt,
+              data: {
+                caption,
+                mime: "image/png",
+                framePath: path,
+                imageSha256: source.sha256,
+                checkpointId: source.source.id,
+                ...(step ? { stepId: step.id } : {}),
+                invocation: owner.id,
+                attempt: attempt.index + 1,
+                configuration: { app: input.projectName, browser: owner.targetId },
+              },
+            });
+        }
+        for (const step of attemptSteps) {
+          const stepFrames = framesByStep.get(step.id) ?? [];
           steps.push({
             id: step.id,
             index: steps.length,
