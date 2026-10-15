@@ -100,16 +100,16 @@ export async function applyBrowserPageTool(
           getComputedStyle(parent).visibility === "hidden"
         )
           continue;
-        const text = (node.textContent ?? "").toLocaleLowerCase(),
-          needle = query.toLocaleLowerCase();
-        let from = 0,
-          start: number;
-        while ((start = text.indexOf(needle, from)) !== -1 && matches.length < 1000) {
+        const text = node.textContent ?? "";
+        // Match against the original text so Unicode case folding cannot shift Range offsets.
+        const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "giu");
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(text)) && matches.length < 1000) {
+          const start = match.index;
           const range = document.createRange();
           range.setStart(node, start);
-          range.setEnd(node, start + query.length);
+          range.setEnd(node, start + match[0].length);
           matches.push(range);
-          from = start + query.length;
         }
       }
       const current = matches.length

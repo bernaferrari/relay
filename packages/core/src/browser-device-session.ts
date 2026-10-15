@@ -782,7 +782,7 @@ export async function controlBrowserDevice(
 }> {
   const state = stateForTarget(targetId);
   let resolvedClick: ResolvedBrowserClick | undefined;
-  let tools: BrowserPageToolResult | void;
+  const result: { tools?: BrowserPageToolResult } = {};
   const startedAt = performance.now();
   const operation = runBrowserMutationAdmission(targetId, async () => {
     if (state.capture) await state.capture;
@@ -795,7 +795,8 @@ export async function controlBrowserDevice(
         await beforeDispatch?.();
       },
       dispatch: async () => {
-        tools = await applyInput(state, input, resolvedClick);
+        const tools = await applyInput(state, input, resolvedClick);
+        if (tools) result.tools = tools;
       },
     });
   });
@@ -808,7 +809,7 @@ export async function controlBrowserDevice(
     ok: true,
     session: await projection(state),
     ...(resolvedClick ? { resolution: resolvedClick.resolution } : {}),
-    ...(tools ? { tools } : {}),
+    ...result,
   };
 }
 

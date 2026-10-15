@@ -75,7 +75,7 @@ export async function handleBrowserAuthRoute(context: BrowserAuthRouteContext): 
     await assertTargetControl(scope, targetId);
     const body = browserAuthenticationFixtureOperationInputSchemas[
       "target.browser-auth.import"
-    ].parse({ ...((await parseJsonBody(req)) as object), targetId });
+    ].parse({ ...((await parseJsonBody(req, 9 * 1024 * 1024)) as object), targetId });
     const fixture = await saveBrowserAuthenticationFixture({
       projectId: scope.projectId,
       targetId,

@@ -189,7 +189,9 @@ const frameBound = {
 } as const;
 
 export const browserDeviceInputSchema = z.discriminatedUnion("kind", [
-  ...browserPageToolShapes.map((schema) => schema.extend(frameBound).strict()),
+  browserPageToolShapes[0].extend(frameBound).strict(),
+  browserPageToolShapes[1].extend(frameBound).strict(),
+  browserPageToolShapes[2].extend(frameBound).strict(),
   z
     .object({
       ...frameBound,

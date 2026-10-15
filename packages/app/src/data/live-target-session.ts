@@ -764,6 +764,9 @@ export function createLiveTargetSession(input: {
               targetId: target.targetId,
               input: {
                 ...command,
+                ...(command.kind === "browser.find"
+                  ? { direction: command.direction ?? "first" }
+                  : {}),
                 sessionId: browserFrame.sessionId,
                 pageId: browserFrame.pageId,
                 expectedSequence: sequence,

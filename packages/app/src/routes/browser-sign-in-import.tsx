@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -37,6 +37,7 @@ export function BrowserSignInImport({
 }) {
   const query = useQueryClient(),
     id = useId();
+  const fileRequest = useRef(0);
   const [open, setOpen] = useState(false),
     [target, setTarget] = useState(spaceId ?? ""),
     [name, setName] = useState("");
@@ -53,6 +54,7 @@ export function BrowserSignInImport({
       onOpenChange={(next) => {
         if (pending) return;
         setOpen(next);
+        fileRequest.current++;
         if (next) {
           setState(undefined);
           setError(undefined);
@@ -124,6 +126,7 @@ export function BrowserSignInImport({
               disabled={pending}
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
+                const request = ++fileRequest.current;
                 setState(undefined);
                 setError(undefined);
                 if (!file) return;
@@ -134,15 +137,19 @@ export function BrowserSignInImport({
                 void file
                   .text()
                   .then((raw) => {
+                    if (request !== fileRequest.current) return;
                     const parsed = parseBrowserSessionImport(raw);
                     setState(parsed);
                     setName(
                       (current) => current || file.name.replace(/\.json$/iu, "").slice(0, 128),
                     );
                   })
-                  .catch((cause) =>
-                    setError(cause instanceof Error ? cause.message : "Couldn’t read this file."),
-                  );
+                  .catch(() => {
+                    if (request === fileRequest.current)
+                      setError(
+                        "Choose a supported browser cookie or Playwright storage-state JSON file.",
+                      );
+                  });
               }}
             />
           </Field>
