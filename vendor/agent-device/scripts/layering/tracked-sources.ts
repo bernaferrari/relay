@@ -20,7 +20,7 @@
 import { execFileSync } from 'node:child_process';
 
 // `src/**/*.ts` only matches NESTED files, so root-level `src/*.ts` (src/cli.ts,
-// src/backend.ts) needs its own pathspec or it silently drops out of every scan.
+// src/io.ts) needs its own pathspec or it silently drops out of every scan.
 // Workspace package sources are production files too (#1490 W0).
 const TRACKED_SOURCE_PATHSPECS = [
   'src/*.ts',
@@ -68,6 +68,12 @@ function listTrackedFiles(repoRoot: string, pathspecs: readonly string[]): strin
   });
   return out.split('\0').filter(Boolean);
 }
+
+/**
+ * The daemon package's source root, as every layering filter sees it. One constant so a
+ * rule cannot filter on a stale path when the daemon moves again (#3546 review).
+ */
+export const DAEMON_SOURCE_ROOT = 'packages/daemon/src/';
 
 /** Production sources only: test files and `__tests__/` trees are not layering subjects. */
 export function isProductionSourceFile(file: string): boolean {

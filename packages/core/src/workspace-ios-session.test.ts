@@ -428,6 +428,7 @@ test("recovery adopts a healthy testCommand listener instead of authorizing runn
     },
     probeLiveIosRunnerListener: async () => ({
       serial,
+      runnerToken: "relay-listener-fixture-token",
       runnerPid: 25365,
       port: 50937,
     }),

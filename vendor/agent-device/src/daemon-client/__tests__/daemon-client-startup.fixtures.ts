@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import { vi } from 'vitest';
 import { runCmdDetachedMonitored } from '@agent-device/host-kit/command';
 import { readVersion } from '@agent-device/host-kit/version';
-import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+import { mkdtempForTestSync } from '@agent-device/test-kit/tmp-dir';
 import { currentDaemonCodeSignature } from '../../__tests__/test-utils/daemon-http-fixture.ts';
 import { spawnRegisteredDaemonFixture } from '../../__tests__/test-utils/registered-daemon-fixture.ts';
-import type { DaemonPaths } from '../../daemon-resolution.ts';
+import type { DaemonPaths } from '@agent-device/daemon-contracts/daemon-resolution';
 
 const mockRunCmdDetached = vi.mocked(runCmdDetachedMonitored);
 
@@ -48,4 +48,13 @@ export function installSpawnedHttpDaemon(paths: DaemonPaths, httpPort: number): 
       options,
     );
   });
+}
+
+export function captureStderr(): { read(): string; restore(): void } {
+  let captured = '';
+  const write = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+    captured += String(chunk);
+    return true;
+  });
+  return { read: () => captured, restore: () => write.mockRestore() };
 }

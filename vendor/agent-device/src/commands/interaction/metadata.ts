@@ -21,7 +21,6 @@ import {
   SWIPE_REPETITION_MAX,
 } from '@agent-device/contracts/scroll-gesture';
 import { FIND_LOCATORS } from '@agent-device/selectors';
-import { commandAcceptsReadinessBudget } from '@agent-device/command-registry/registry';
 import {
   booleanField,
   elementTargetField,
@@ -57,10 +56,10 @@ const FIND_ACTION_VALUES = [
 
 const interactionCommandDescriptions = {
   click:
-    'Activate a UI target by snapshot ref, selector, or coordinates. Prefer a ref or selector after a snapshot; use coordinates only when semantic targeting is unavailable. This can change app state; use settle or verify to confirm the result without a follow-up snapshot.',
+    "Activate a UI target by snapshot ref, selector, or coordinates. Prefer a ref or selector after a snapshot; use coordinates only when semantic targeting is unavailable. This can change app state. Success means the click was dispatched, not that it landed: use settle or verify to confirm the result without a follow-up snapshot, or wait for the expected screen. A ref or selector target is re-checked for motion before dispatch when the session's previous action just animated the screen, and is dispatched at its resting position; one that has not stopped refuses with target_still_moving rather than acting where it was.",
   press:
-    'Short-press a UI target by snapshot ref, selector, or coordinates. Use longpress instead when the target requires a context-menu or hold gesture.',
-  fill: 'Replace text in a UI input selected by snapshot ref, selector, or coordinates. Pass an empty text to clear the field. Prefer refs or selectors after snapshot; use recordAs to keep sensitive text out of a recorded replay while sending it to the live app.',
+    "Short-press a UI target by snapshot ref, selector, or coordinates. Use longpress instead when the target requires a context-menu or hold gesture. Success means the press was dispatched, not that it landed: use settle or verify to confirm the result, or wait for the expected screen. A ref or selector target is re-checked for motion before dispatch when the session's previous action just animated the screen, and is dispatched at its resting position; one that has not stopped refuses with target_still_moving rather than acting where it was.",
+  fill: 'Replace text in a UI input selected by snapshot ref, selector, or coordinates. Pass an empty text to clear the field. Inspect unconfirmed evidence and assert the expected value or resulting screen before continuing. Prefer refs or selectors after snapshot; use recordAs to keep sensitive text out of a recorded replay while sending it to the live app.',
   longpress:
     'Hold a UI target by snapshot ref, selector, or coordinates to open a context menu or perform another hold gesture. Set durationMs when the default hold duration is unsuitable.',
   hover:
@@ -80,37 +79,12 @@ const interactionCommandDescriptions = {
 
 type InteractionCommandName = keyof typeof interactionCommandDescriptions;
 
-/**
- * The input field a command's `targetReadiness: 'budgeted'` descriptor trait entitles it to. Only
- * those commands declare `readinessTimeoutMs`; the common input reader refuses the key for every
- * command whose fields do not (`common-input-fields.ts`). Fails closed at module load for a command
- * without the trait, so a field map cannot advertise a budget its runtime never polls under.
- */
-function targetReadinessFields(command: InteractionCommandName) {
-  if (!commandAcceptsReadinessBudget(command)) {
-    throw new Error(`${command} does not declare targetReadiness: 'budgeted'`);
-  }
-  return {
-    readinessTimeoutMs: operatorField(
-      integerField(
-        "Operator-only: how long the command may poll for a target that does not exist yet, in milliseconds. Capped at the promotedTarget row's maxTimeoutMs; omitted takes the one-attempt resolution path.",
-        { min: 1 },
-      ),
-      {
-        operatorPath:
-          'Pass readinessTimeoutMs directly as CLI/Node.js command input; it is not exposed to model-facing tools.',
-      },
-    ),
-  };
-}
-
 const clickFields = {
   target: requiredField(interactionTargetField()),
   button: enumField(CLICK_BUTTONS, 'Pointer button for platforms that support mouse buttons.'),
   ...selectorSnapshotFields(),
   ...repeatedFields(),
   ...postActionObservationFields('click'),
-  ...targetReadinessFields('click'),
 };
 
 const pressFields = {
@@ -118,7 +92,6 @@ const pressFields = {
   ...selectorSnapshotFields(),
   ...repeatedFields(),
   ...postActionObservationFields('press'),
-  ...targetReadinessFields('press'),
 };
 
 const fillFields = {
@@ -132,6 +105,15 @@ const fillFields = {
   recordAs: stringField(
     'When script recording is armed, send text to the live app but publish it as ${VAR}. Use an uppercase replay variable name such as PASSWORD.',
   ),
+  textStdin: operatorField(
+    booleanField(
+      "Operator-only: text was read from the CLI's stdin, so it is kept out of diagnostics and recorded actions.",
+    ),
+    {
+      operatorPath:
+        'Pass --text-stdin on the CLI and pipe the text in; it is not exposed to model-facing tools.',
+    },
+  ),
   ...selectorSnapshotFields(),
   ...postActionObservationFields('fill'),
 };
@@ -141,7 +123,6 @@ const longPressFields = {
   durationMs: integerField('Long press duration in milliseconds.', { min: 0 }),
   ...selectorSnapshotFields(),
   ...postActionObservationFields('longpress'),
-  ...targetReadinessFields('longpress'),
 };
 
 const hoverFields = {

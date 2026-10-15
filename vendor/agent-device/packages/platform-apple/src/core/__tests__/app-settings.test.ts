@@ -25,10 +25,14 @@ const retryActual = await vi.importActual<typeof import('@agent-device/host-kit/
 );
 const simulatorActual = await vi.importActual<typeof import('../simulator.ts')>('../simulator.ts');
 
-import { setIosSetting } from '../app-settings.ts';
+import { IOS_NO_DATA_CONTAINER_REASON, setIosSetting } from '../app-settings.ts';
 import { withMockedMacOsHelper } from './macos-helper-test-utils.ts';
 import { ensureBootedSimulator } from '../simulator.ts';
-import { AppError, PRE_DISPATCH_REFUSAL_REASONS } from '@agent-device/kernel/errors';
+import {
+  AppError,
+  normalizeError,
+  PRE_DISPATCH_REFUSAL_REASONS,
+} from '@agent-device/kernel/errors';
 import { runCmd } from '@agent-device/host-kit/command';
 import { retryWithPolicy } from '@agent-device/host-kit/retry';
 import { assertRejectsAppError } from '../../__tests__/app-error.ts';
@@ -56,6 +60,18 @@ beforeEach(() => {
 const BOOTED_SIM_LIST_JSON = JSON.stringify({
   devices: { 'com.apple.CoreSimulator.SimRuntime.iOS-18-0': [{ udid: 'sim-1', state: 'Booted' }] },
 });
+
+const INSTALLED_APPS_JSON = JSON.stringify({
+  'com.apple.Maps': { CFBundleDisplayName: 'Maps' },
+  'com.apple.Preferences': { CFBundleDisplayName: 'Settings' },
+  'com.booking.app': { CFBundleDisplayName: 'Booking.com' },
+  'com.example.app': { CFBundleDisplayName: 'Example' },
+  'com.example.located': { CFBundleDisplayName: 'Located' },
+});
+
+function isSimctlListApps(args: string[]): boolean {
+  return args.join(' ') === 'simctl listapps sim-1';
+}
 
 function isSimctlListDevices(args: string[]): boolean {
   return (
@@ -353,6 +369,83 @@ test('setIosSetting appearance runs the simctl plan on the simulator udid and re
   );
 });
 
+// Production `simctl` answers an installed app with no data container (com.apple.Preferences on a
+// booted simulator, issue #3305) by exiting 0 and printing the literal `(null)`; the double carries
+// that exact answer so the old code reached readHostDirectory('(null)') and failed the way
+// production failed — an ENOENT crash instead of a refusal.
+test('setIosSetting clear-app-state refuses a system app whose simctl answer is (null) with the typed reason', async () => {
+  mockEnsureBootedSimulator.mockResolvedValue(undefined);
+
+  await withFakeAppleTool(
+    (args) => {
+      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
+      if (isSimctlListApps(args)) return INSTALLED_APPS_JSON;
+      if (args.join(' ') === 'simctl terminate sim-1 com.apple.Preferences') return '';
+      if (args.join(' ') === 'simctl get_app_container sim-1 com.apple.Preferences data') {
+        return '(null)\n';
+      }
+      return unexpectedArgs(args);
+    },
+    async ({ calls }) => {
+      const thrown = await setIosSetting(
+        IOS_TEST_SIMULATOR,
+        'clear-app-state',
+        'clear',
+        'com.apple.Preferences',
+      ).catch((error: unknown) => error);
+      assert.ok(thrown instanceof AppError);
+      assert.equal(thrown.code, 'UNSUPPORTED_OPERATION');
+      // The refusal is keyed on the typed reason, not on prose a driver must not match.
+      assert.equal(thrown.details?.reason, IOS_NO_DATA_CONTAINER_REASON);
+      assert.equal(thrown.details?.appBundleId, 'com.apple.Preferences');
+      assert.equal(thrown.details?.deviceId, 'sim-1');
+      // Normalization keeps the reason, hint, and typed details intact through the wire shape.
+      const normalized = normalizeError(thrown);
+      assert.equal(normalized.code, 'UNSUPPORTED_OPERATION');
+      assert.match(normalized.message, /com\.apple\.Preferences has no data container to clear/);
+      assert.match(normalized.hint ?? '', /Clear the app under test instead/);
+      assert.equal(normalized.details?.reason, IOS_NO_DATA_CONTAINER_REASON);
+      assert.equal(normalized.details?.appBundleId, 'com.apple.Preferences');
+
+      const flat = calls.map((args) => args.join(' '));
+      assert.equal(
+        flat.includes('simctl get_app_container sim-1 com.apple.Preferences data'),
+        true,
+        flat.join('; '),
+      );
+    },
+  );
+});
+
+// The closest negative: the message cannot be the trigger. An empty answer is the same "no
+// container" fact from the tool and takes the same typed refusal, while a real path must still be
+// cleared rather than refused (pinned by the fresh-install layout test below).
+test('setIosSetting clear-app-state refuses an empty container answer with the same typed reason', async () => {
+  mockEnsureBootedSimulator.mockResolvedValue(undefined);
+
+  await withFakeAppleTool(
+    (args) => {
+      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
+      if (isSimctlListApps(args)) return INSTALLED_APPS_JSON;
+      if (args.join(' ') === 'simctl terminate sim-1 com.apple.Preferences') return '';
+      if (args.join(' ') === 'simctl get_app_container sim-1 com.apple.Preferences data') {
+        return '';
+      }
+      return unexpectedArgs(args);
+    },
+    async () => {
+      await assertRejectsAppError(
+        () =>
+          setIosSetting(IOS_TEST_SIMULATOR, 'clear-app-state', 'clear', 'com.apple.Preferences'),
+        {
+          code: 'UNSUPPORTED_OPERATION',
+          reason: IOS_NO_DATA_CONTAINER_REASON,
+        },
+      );
+    },
+  );
+});
+
 test('setIosSetting clear-app-state leaves a fresh-install data container layout', async () => {
   const containerPath = await mkdtempForTest('agent-device-ios-clear-app-state-container-');
   const metadataFile = '.com.apple.mobile_container_manager.metadata.plist';
@@ -374,6 +467,7 @@ test('setIosSetting clear-app-state leaves a fresh-install data container layout
   await withFakeAppleTool(
     (args) => {
       if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
+      if (isSimctlListApps(args)) return INSTALLED_APPS_JSON;
       if (args.join(' ') === 'simctl terminate sim-1 com.example.app') return '';
       if (args.join(' ') === 'simctl get_app_container sim-1 com.example.app data') {
         return `${containerPath}\n`;
@@ -452,6 +546,7 @@ test('setIosSetting permission runs the simctl plan on the simulator udid and su
 
   await withFakeAppleTool(
     (args) => {
+      if (isSimctlListApps(args)) return INSTALLED_APPS_JSON;
       if (args.join(' ') === 'simctl privacy sim-1 revoke notifications com.example.app') {
         return { stderr: 'Failed to revoke access\nOperation not permitted', exitCode: 1 };
       }
@@ -468,9 +563,117 @@ test('setIosSetting permission runs the simctl plan on the simulator udid and su
           message: /does not support setting notifications permission/i,
         },
       );
-      assert.deepEqual(calls, [
-        ['simctl', 'privacy', 'sim-1', 'revoke', 'notifications', 'com.example.app'],
+      assert.deepEqual(calls.at(-1), [
+        'simctl',
+        'privacy',
+        'sim-1',
+        'revoke',
+        'notifications',
+        'com.example.app',
       ]);
+    },
+  );
+});
+
+function installedAppsTool(args: string[]): FakeAppleToolResponse {
+  if (isSimctlListApps(args)) return INSTALLED_APPS_JSON;
+  if (args[0] === 'simctl' && args[1] === 'privacy') return '';
+  return unexpectedArgs(args);
+}
+
+test('setIosSetting permission grants the bundle id a display name resolves to', async () => {
+  mockEnsureBootedSimulator.mockResolvedValue(undefined);
+
+  await withFakeAppleTool(installedAppsTool, async ({ calls }) => {
+    await setIosSetting(IOS_TEST_SIMULATOR, 'permission', 'grant', 'Maps', {
+      permissionTarget: 'photos',
+    });
+    assert.deepEqual(calls, [
+      ['simctl', 'listapps', 'sim-1'],
+      ['simctl', 'privacy', 'sim-1', 'grant', 'photos', 'com.apple.Maps'],
+    ]);
+  });
+});
+
+test('setIosSetting location grants an installed bundle id as named', async () => {
+  mockEnsureBootedSimulator.mockResolvedValue(undefined);
+
+  await withFakeAppleTool(installedAppsTool, async ({ calls }) => {
+    await setIosSetting(IOS_TEST_SIMULATOR, 'location', 'on', 'com.example.located');
+    assert.deepEqual(calls, [
+      ['simctl', 'listapps', 'sim-1'],
+      ['simctl', 'privacy', 'sim-1', 'grant', 'location', 'com.example.located'],
+    ]);
+  });
+});
+
+test('setIosSetting permission resolves a dotted display name instead of passing it through', async () => {
+  mockEnsureBootedSimulator.mockResolvedValue(undefined);
+
+  await withFakeAppleTool(installedAppsTool, async ({ calls }) => {
+    await setIosSetting(IOS_TEST_SIMULATOR, 'permission', 'grant', 'Booking.com', {
+      permissionTarget: 'camera',
+    });
+    assert.deepEqual(calls.at(-1), [
+      'simctl',
+      'privacy',
+      'sim-1',
+      'grant',
+      'camera',
+      'com.booking.app',
+    ]);
+  });
+});
+
+test.for([
+  { setting: 'permission', state: 'grant', app: 'Nowhere' },
+  { setting: 'location', state: 'off', app: 'Nowhere' },
+  { setting: 'clear-app-state', state: 'clear', app: 'Nowhere' },
+  { setting: 'permission', state: 'grant', app: 'com.example.uninstalled' },
+] as const)(
+  'setIosSetting $setting refuses $app, which resolves to no installed app, before changing anything',
+  async ({ setting, state, app }) => {
+    mockEnsureBootedSimulator.mockResolvedValue(undefined);
+
+    await withFakeAppleTool(installedAppsTool, async ({ calls }) => {
+      await assertRejectsAppError(
+        () =>
+          setIosSetting(IOS_TEST_SIMULATOR, setting, state, app, {
+            permissionTarget: 'photos',
+          }),
+        {
+          code: 'APP_NOT_INSTALLED',
+          reason: PRE_DISPATCH_REFUSAL_REASONS.appNotInstalled,
+          dispatched: 'no',
+          hint: /apps --all/,
+        },
+      );
+      assert.deepEqual(calls, [['simctl', 'listapps', 'sim-1']]);
+    });
+  },
+);
+
+test('setIosSetting permission keeps a failed app listing distinct from a missing app', async () => {
+  mockEnsureBootedSimulator.mockResolvedValue(undefined);
+
+  await withFakeAppleTool(
+    (args) =>
+      isSimctlListApps(args)
+        ? { stderr: 'CoreSimulator error', exitCode: 1 }
+        : unexpectedArgs(args),
+    async ({ calls }) => {
+      const thrown = await setIosSetting(
+        IOS_TEST_SIMULATOR,
+        'permission',
+        'grant',
+        'com.example.unlisted',
+        { permissionTarget: 'photos' },
+      ).catch((error: unknown) => error);
+      assert.ok(thrown instanceof AppError);
+      assert.equal(thrown.code, 'COMMAND_FAILED');
+      assert.notEqual(thrown.details?.reason, PRE_DISPATCH_REFUSAL_REASONS.appNotInstalled);
+      assert.equal(thrown.details?.dispatched, 'no');
+      assert.deepEqual(calls, [['simctl', 'listapps', 'sim-1']]);
     },
   );
 });

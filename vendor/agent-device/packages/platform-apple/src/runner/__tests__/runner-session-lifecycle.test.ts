@@ -136,7 +136,6 @@ import {
   executeRunnerCommandWithSession,
   invalidateRunnerSession,
   readRunnerSessionLiveness,
-  scheduleIosRunnerIdleStop,
   stopIosRunnerSession,
 } from '../runner-session.ts';
 
@@ -231,28 +230,22 @@ test('a startup publishes starting and its first answer publishes ready', async 
   assert.equal(hasLiveIosRunnerSession(device), true);
 });
 
-test('an idle stop moves a ready session through disposal to stopped', async () => {
-  const device = { ...IOS_SIMULATOR, id: 'runner-lifecycle-idle-stop' };
-  process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS = '1';
-  const session = await ensureRunnerSession(device, {});
-  mockWaitForRunner.mockResolvedValueOnce(runnerResponse({ nodes: [], truncated: false }));
-  await executeRunnerCommandWithSession(
-    device,
-    session,
-    { command: 'snapshot', appBundleId: 'com.example.demo' },
-    '/tmp/runner.log',
-    30_000,
-  );
+test('every launch mints its own listener token for the runner, the session, and the lease', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-lifecycle-token' };
+  const first = await ensureRunnerSession(device, {});
+  await stopIosRunnerSession(device.id);
+  const second = await ensureRunnerSession(device, {});
 
-  scheduleIosRunnerIdleStop(device.id);
-  await vi.waitFor(() => assert.equal(session.state, 'stopped'));
-
-  assert.equal(
-    readRunnerSessionLiveness(device.id),
-    null,
-    'the idle stop removes the session from the device registry',
+  assert.deepEqual(
+    mockPrepareXctestrunWithEnv.mock.calls.slice(-2).map(([, runnerEnv]) => runnerEnv),
+    [first, second].map(({ endpoint }) => ({
+      AGENT_DEVICE_RUNNER_PORT: String(endpoint.port),
+      AGENT_DEVICE_RUNNER_TOKEN: endpoint.token,
+    })),
   );
-  assert.equal(hasLiveIosRunnerSession(device), false);
+  assert.match(first.endpoint.token, /^[A-Za-z0-9_-]{32}$/);
+  assert.notEqual(first.endpoint.token, second.endpoint.token);
+  assert.equal(second.lease?.runnerToken, second.endpoint.token);
 });
 
 test('stopping the same registered runner twice tears it down once', async () => {
@@ -539,7 +532,7 @@ test('a command abandoned by a cancelled transport keeps the runner occupied', a
   // An answered queued exchange forgives the abandoned charge: the serial queue makes it evidence that
   // the abandoned handling ahead of it finished, and whatever is still draining is stamped onto that
   // very reply. An answer the runner serves inline forgives nothing (#2965); that case is pinned in
-  // `runner-recovery-wiring.test.ts`, where the probe reaches a real session.
+  // `runner-client-recovery-wiring.test.ts`, where the probe reaches a real session.
   await serveOneCommand(device, session);
   assert.equal(session.commandCharges.hasOutstandingCharges, false);
   assert.equal(await detachIosRunnerSessionsForShutdown(), 1);

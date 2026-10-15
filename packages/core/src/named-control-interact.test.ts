@@ -1,3 +1,5 @@
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
+import { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -5,7 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import type { Device } from "./device.js";
-import { pressNamedControl } from "./device.js";
+import {
+  pressNamedControl as nativePressNamedControl,
+  rememberTargetApplication,
+} from "./device.js";
 import {
   canVerifyIosScreenChange,
   interact,
@@ -15,6 +20,10 @@ import {
 import { runWithTargetContext } from "./target-context.js";
 import { IosXCTestSessionUnavailableError } from "./ios-device-adapter.js";
 import { setIosSessionHostRuntimeForTests } from "./workspace-ios-session.js";
+
+// Routing fixtures inject native replies; durable mutation admission has its own suite.
+const pressNamedControl: typeof nativePressNamedControl = (...args) =>
+  runWithIosSupervisionMode("test-optional", () => nativePressNamedControl(...args));
 
 function stubDevice(nodes: unknown[]): Device {
   const presses: unknown[] = [];
@@ -565,7 +574,11 @@ test("pressNamedControl resolves a unique id omitted from chrome-bounded snapsho
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const account = {
     identifier: "sidebar.accountSwitcher.button",
@@ -576,42 +589,45 @@ test("pressNamedControl resolves a unique id omitted from chrome-bounded snapsho
     rect: { x: 40, y: 120, width: 160, height: 36 },
   };
   const taps: Array<Record<string, unknown>> = [];
-  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
-    if (command.command === "querySelector") {
-      if (command.selectorValue === "ask.toolbar.textfield") {
+  const restore = setLiveIosRunnerCommandPostForTests(
+    catalogAwarePost(async (_listener, command) => {
+      if (command.command === "querySelector") {
+        if (command.selectorValue === "ask.toolbar.textfield") {
+          return {
+            ok: true,
+            data: { nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything" }] },
+          };
+        }
+        if (command.selectorValue === "sidebar.accountSwitcher.button") {
+          return { ok: true, data: { found: true, nodes: [account] } };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      if (command.command === "snapshot") {
+        assert.equal(command.depth, 0);
         return {
           ok: true,
-          data: { nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything" }] },
+          data: {
+            nodes: [
+              {
+                depth: 0,
+                type: "Application",
+                identifier: "ai.x.GrokApp",
+                rect: { x: 0, y: 0, width: 1112, height: 834 },
+              },
+            ],
+          },
         };
       }
-      if (command.selectorValue === "sidebar.accountSwitcher.button") {
-        return { ok: true, data: { found: true, nodes: [account] } };
+      if (command.command === "tap") {
+        taps.push(command);
+        return { ok: true, data: { message: "tapped" } };
       }
-      return { ok: true, data: { found: false, nodes: [] } };
-    }
-    if (command.command === "snapshot") {
-      assert.equal(command.depth, 0);
-      return {
-        ok: true,
-        data: {
-          nodes: [
-            {
-              depth: 0,
-              type: "Application",
-              identifier: "ai.x.GrokApp",
-              rect: { x: 0, y: 0, width: 1112, height: 834 },
-            },
-          ],
-        },
-      };
-    }
-    if (command.command === "tap") {
-      taps.push(command);
-      return { ok: true, data: { message: "tapped" } };
-    }
-    throw new Error(`unexpected ${String(command.command)}`);
-  });
+      throw new Error(`unexpected ${String(command.command)}`);
+    }),
+  );
   try {
+    await rememberTargetApplication("ai.x.GrokApp", { kind: "device", platform: "ios", serial });
     const result = await runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
       pressNamedControl(stubDevice([]), {
         identifier: "sidebar.accountSwitcher.button",
@@ -638,7 +654,11 @@ test("pressNamedControl resolves a unique label omitted from chrome-bounded snap
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const compose = {
     label: "grok-compose",
@@ -648,42 +668,45 @@ test("pressNamedControl resolves a unique label omitted from chrome-bounded snap
     rect: { x: 980, y: 760, width: 44, height: 44 },
   };
   const taps: Array<Record<string, unknown>> = [];
-  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
-    if (command.command === "querySelector") {
-      if (command.selectorKey === "label" && command.selectorValue === "grok-compose") {
-        return { ok: true, data: { found: true, nodes: [compose] } };
+  const restore = setLiveIosRunnerCommandPostForTests(
+    catalogAwarePost(async (_listener, command) => {
+      if (command.command === "querySelector") {
+        if (command.selectorKey === "label" && command.selectorValue === "grok-compose") {
+          return { ok: true, data: { found: true, nodes: [compose] } };
+        }
+        if (command.selectorValue === "ask.toolbar.textfield") {
+          return {
+            ok: true,
+            data: { nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything" }] },
+          };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
       }
-      if (command.selectorValue === "ask.toolbar.textfield") {
+      if (command.command === "snapshot") {
+        assert.equal(command.depth, 0);
         return {
           ok: true,
-          data: { nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything" }] },
+          data: {
+            nodes: [
+              {
+                depth: 0,
+                type: "Application",
+                identifier: "ai.x.GrokApp",
+                rect: { x: 0, y: 0, width: 1112, height: 834 },
+              },
+            ],
+          },
         };
       }
-      return { ok: true, data: { found: false, nodes: [] } };
-    }
-    if (command.command === "snapshot") {
-      assert.equal(command.depth, 0);
-      return {
-        ok: true,
-        data: {
-          nodes: [
-            {
-              depth: 0,
-              type: "Application",
-              identifier: "ai.x.GrokApp",
-              rect: { x: 0, y: 0, width: 1112, height: 834 },
-            },
-          ],
-        },
-      };
-    }
-    if (command.command === "tap") {
-      taps.push(command);
-      return { ok: true, data: { message: "tapped" } };
-    }
-    throw new Error(`unexpected ${String(command.command)}`);
-  });
+      if (command.command === "tap") {
+        taps.push(command);
+        return { ok: true, data: { message: "tapped" } };
+      }
+      throw new Error(`unexpected ${String(command.command)}`);
+    }),
+  );
   try {
+    await rememberTargetApplication("ai.x.GrokApp", { kind: "device", platform: "ios", serial });
     const result = await runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
       pressNamedControl(stubDevice([]), { label: "grok-compose" }),
     );

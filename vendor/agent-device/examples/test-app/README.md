@@ -18,6 +18,7 @@ It is intentionally small, but each surface is dense with durable accessibility 
 - `Settings`: switch rows, accordion content, loading and error states, retry flow, destructive-confirm modal
 - `Automation lab`: long-press, alert-result, app-event, app-state, appearance, orientation, permission-recovery, log canaries, a flattened (`accessible={true}`) text input, and an Apple Pay sheet hosted in `com.apple.PassbookUIService`
 - `WebView accessibility`: a deterministic semantic fixture plus live websites with varied HTML for native accessibility snapshot verification
+- `Perf lab`: seeded JavaScript render problems for `react-devtools profile`, one per scenario (see [Perf lab](#perf-lab))
 
 Navigation uses Expo Router native bottom tabs, so the tab bar itself is also part of the test surface.
 
@@ -213,10 +214,15 @@ pnpm test-app:ios -- --device "<device name>" --port 8082
 pnpm test-app:android -- --device "$ANDROID_DEVICE" --port 8082
 ```
 
-After the development build is installed, keep using the same native app. The
-current `agent-device open` CLI does not accept `--metro-host` or `--metro-port`;
-open the app normally, then use the Metro command surface for Metro-specific
-actions:
+After the development build is installed, keep using the same native app. On an
+iOS simulator, `open` points this expo-dev-client at a Metro server through its
+`exp+agent-device-test-app://expo-development-client/?url=...` launch URL:
+
+```bash
+agent-device open com.callstack.agentdevicelab --platform ios --metro-host 127.0.0.1 --metro-port 8082
+```
+
+Use the Metro command surface for Metro-specific actions:
 
 ```bash
 agent-device metro prepare --project-root examples/test-app --kind expo --port 8082 --public-base-url http://127.0.0.1:8082
@@ -228,6 +234,32 @@ print the runtime URLs. Use `metro reload` when Metro is already running and the
 installed development build is connected to that server. For Android local
 device/emulator runs, also run `adb reverse tcp:8082 tcp:8082` when the device
 needs host port forwarding.
+
+## Perf lab
+
+`agent-device-test-app://perf-lab?scenario=<id>` opens one seeded render problem. **Run** (`perf-run`) replays the slow interaction as a fixed burst and sets `perf-status` to `done`. Profile it with:
+
+```bash
+agent-device open "agent-device-test-app://perf-lab?scenario=memo-defeated" --platform android
+agent-device react-devtools profile start
+agent-device click 'id="perf-run"'
+agent-device wait 'id="perf-status" text="done"' 10000
+agent-device react-devtools profile stop
+```
+
+`profile stop` should report this finding first:
+
+| Scenario | Seeded problem | Expected finding |
+| --- | --- | --- |
+| `expensive-render` | `PriceHistoryChart` recomputes its trend on every render | `slow-render PriceHistoryChart` |
+| `memo-defeated` | `ContactList` passes a new callback and style object to memoized rows | `memo-defeated ContactRow` |
+| `context-cascade` | A fast-changing `unread` counter shares one context with the stable user name that badges read | `context-cascade AvatarBadge` |
+| `parent-cascade` | Typing re-renders every unmemoized result row | `parent-cascade ResultRow` |
+| `render-storm` | `LiveClock` sets state every 16 ms | `render-storm LiveClock` |
+| `effect-chain` | `FilteredContacts` copies derived state in an effect | `effect-chain FilteredContacts` |
+| `eager-list` | 1,200 tiles mount in one commit instead of a virtualized list; every Run mounts them afresh | `eager-mount ProductTile` |
+
+`src/screens/PerfLabScreen.tsx` imports only React and React Native, so it can be copied into a bare React Native app to check the profiler on other React Native versions.
 
 ## Local Agent Device suites
 

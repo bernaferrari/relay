@@ -60,7 +60,11 @@ test.each([
         markBooted: () => {},
         wasRecentlyObservedBooted: async () => false,
       },
-      androidEmulator: { discover: async () => [], launch: () => 1, terminate: async () => {} },
+      androidEmulator: {
+        discover: async () => [],
+        launch: async () => 1,
+        terminate: async () => {},
+      },
     },
   });
   const binding = await bindOrdinary(createAndroidPlatformRuntime(host), runtimeDevice);
@@ -215,22 +219,27 @@ test('Android refuses the action-button fact on every kind', async () => {
   }
 });
 
-test('Android refuses the fold fact on every kind', async () => {
-  for (const runtimeDevice of [
+test('Android admits the fold fact on emulators and refuses every other kind', async () => {
+  const emulator = await bindOrdinary(
+    createAndroidPlatformRuntime(androidNavigationHost()),
     ANDROID_EMULATOR,
+  );
+  expect(emulator.facts.operations.setFoldPose).toEqual({ available: true });
+  expect(emulator.operations.setFoldPose).toEqual(expect.any(Function));
+  for (const runtimeDevice of [
     { ...ANDROID_EMULATOR, kind: 'device' as const },
+    { ...ANDROID_EMULATOR, kind: 'simulator' as const },
     UNKNOWN_KIND_DEVICE,
   ]) {
     const binding = await bindOrdinary(
       createAndroidPlatformRuntime(androidNavigationHost()),
       runtimeDevice,
     );
-    // fold drives only foldable iPhone simulators; the Android emulator posture control is not
-    // driven yet.
-    expect(binding.facts.operations.setFoldPose).toEqual({
+    // The emulator console is the only Android posture control; a physical foldable is folded
+    // by hand, so this is the kind refusal rather than the touch gate `orientation` rides.
+    expect(binding.facts.operations.setFoldPose).toMatchObject({
       available: false,
-      reason: 'unsupported-platform-leaf',
-      hint: 'fold drives the hinge of a foldable iPhone simulator; the Android emulator posture control is not driven by agent-device yet.',
+      reason: 'unsupported-device-kind',
     });
     expect(binding.operations.setFoldPose).toBeUndefined();
   }

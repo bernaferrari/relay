@@ -10,6 +10,13 @@
 declare const KNOWN_APP_ERROR_CODES: readonly ['INVALID_ARGS', 'DEVICE_NOT_FOUND', 'DEVICE_IN_USE', 'TOOL_MISSING', 'APP_NOT_INSTALLED', 'UNSUPPORTED_PLATFORM', 'UNSUPPORTED_OPERATION', 'NOT_IMPLEMENTED', 'COMMAND_FAILED', 'SESSION_NOT_FOUND', 'UNAUTHORIZED', 'AMBIGUOUS_MATCH', 'REPLAY_DIVERGENCE', 'REPAIR_SESSION_EXPIRED', 'REPAIR_COMMIT_FAILED', 'UNKNOWN'];
 type KnownAppErrorCode = (typeof KNOWN_APP_ERROR_CODES)[number];
 type AppErrorCode = KnownAppErrorCode | (string & {});
+declare class AppError extends Error {
+  static [Symbol.hasInstance](value: unknown): boolean;
+  code: AppErrorCode;
+  details?: AppErrorDetails;
+  cause?: unknown;
+  constructor(code: AppErrorCode, message: string, details?: AppErrorDetails, cause?: unknown);
+}
 /**
  * Locator for one request's diagnostics record on the daemon host, in the
  * daemon's own vocabulary rather than as a filesystem path: `logPath` names
@@ -102,33 +109,7 @@ type NormalizedError = {
  * error representation because clients immediately rehydrate this wire shape
  * into `AppError` before rendering or handling it.
  */
-type DaemonError = {
-  code: string;
-  message: string;
-  cause?: ErrorCause;
-  hint?: string;
-  diagnosticId?: string;
-  /** Path on the DAEMON host. Meaningful to a local caller only (#1801). */
-  logPath?: string;
-  /** Why no readable path is named; set by the client, never by the daemon. */
-  logPathUnavailable?: string;
-  /**
-   * Additive locator (#1801) for the request diagnostics record `logPath`
-   * names, so a remote caller can fetch it over the daemon API instead of
-   * being handed a path on a filesystem it cannot read.
-   */
-  diagnosticsRecord?: DiagnosticsRecordRef;
-  details?: ErrorWireDetails;
-  /** Additive retry and platform-support signals; absent when not derivable. */
-  retriable?: boolean;
-  supportedOn?: string;
-};
-declare class AppError extends Error {
-  code: AppErrorCode;
-  details?: AppErrorDetails;
-  cause?: unknown;
-  constructor(code: AppErrorCode, message: string, details?: AppErrorDetails, cause?: unknown);
-}
+type DaemonError = NormalizedError;
 declare function isAgentDeviceError(err: unknown): err is AppError;
 type NormalizeErrorContext = {
   diagnosticId?: string;
@@ -206,7 +187,15 @@ type Point = {
   x: number;
   y: number;
 };
+type IosSnapshotObservation = {
+  mode: 'observe-only';
+  activationPerformed: false;
+  /** XCTest's report, not proof of foreground ownership (#2696). */
+  appState: 'runningForeground';
+  appStateSource: 'xcuiapplication-state';
+};
 type SnapshotOptions = {
+  observeOnly?: boolean;
   interactiveOnly?: boolean;
   depth?: number;
   scope?: string;
@@ -231,6 +220,7 @@ declare const SNAPSHOT_OPTION_FLAGS: {
   readonly depth: 'snapshotDepth';
   readonly scope: 'snapshotScope';
   readonly raw: 'snapshotRaw';
+  readonly observeOnly: 'snapshotObserveOnly';
   readonly customActions: 'snapshotCustomActions';
   readonly forceFull: 'snapshotForceFull';
   readonly includeHiddenContentHints: 'snapshotIncludeHiddenContentHints';
@@ -238,6 +228,7 @@ declare const SNAPSHOT_OPTION_FLAGS: {
 };
 type SnapshotOptionKey = keyof typeof SNAPSHOT_OPTION_FLAGS;
 type SnapshotOptionValues = {
+  observeOnly: boolean;
   interactiveOnly: boolean;
   depth: number;
   scope: string;
@@ -254,7 +245,7 @@ type SnapshotOptionFields<TKeys extends SnapshotOptionKey = SnapshotOptionKey> =
  * resolved against the session before capture, so seams that resolve it spread
  * this projection and then override that one key.
  */
-declare const SNAPSHOT_COMMAND_OPTION_KEYS: readonly ['interactiveOnly', 'depth', 'scope', 'raw', 'customActions', 'forceFull'];
+declare const SNAPSHOT_COMMAND_OPTION_KEYS: readonly ['observeOnly', 'interactiveOnly', 'depth', 'scope', 'raw', 'customActions', 'forceFull'];
 /**
  * The snapshot capture options a `snapshot`/`diff` request is stated in, in
  * every vocabulary that names them: the public SDK type, the internal request
@@ -262,6 +253,29 @@ declare const SNAPSHOT_COMMAND_OPTION_KEYS: readonly ['interactiveOnly', 'depth'
  * re-listing the same six keys.
  */
 type SnapshotCommandOptionFields = SnapshotOptionFields<(typeof SNAPSHOT_COMMAND_OPTION_KEYS)[number]>;
+/**
+ * The bounded, non-actionable description of the element that occludes a covered node. It carries
+ * only what the occlusion scan observed — presented role, an optional clipped accessible name, and
+ * the cover's rect — and deliberately no ref: the cover may be a container the snapshot never
+ * issues refs for, and naming it is diagnosis, not an invitation to target it.
+ */
+type SnapshotCoveringNode = {
+  /** The cover's presented role, from the same table the text presenter reads (`formatRole`). */
+  kind: string;
+  /** The cover's accessible name, trimmed and clipped to {@link SNAPSHOT_COVERING_LABEL_MAX_LENGTH}. */
+  label?: string;
+  /** The cover's positive rect as the scan measured it. */
+  rect?: Rect;
+};
+/** Evidence from an exact English React Native iOS value signature, not proof of its renderer. */
+type IosValueSemantics = {
+  source: 'react-native-ios-value-heuristic';
+  encoding: 'en';
+  role?: string;
+  checked?: boolean | 'mixed';
+  expanded?: boolean;
+  busy?: true;
+};
 type RawSnapshotNode = {
   index: number;
   type?: string;
@@ -269,6 +283,8 @@ type RawSnapshotNode = {
   subrole?: string;
   label?: string;
   value?: string;
+  /** Derived RN evidence; value and native type/role remain verbatim. Explicit facts take precedence. */
+  iosValueSemantics?: IosValueSemantics;
   /**
    * Android content description when it is not already the `label`. An Android node is
    * labelled by its text and falls back to the content description only when it has none,
@@ -307,12 +323,30 @@ type RawSnapshotNode = {
   parentIndex?: number;
   pid?: number;
   bundleId?: string;
+  /**
+   * Android status/navigation bar subtree membership, retained when ancestors are omitted.
+   * Shade headers, dialogs, and other SystemUI overlays are not bars. Absent means the
+   * producer did not establish bar membership.
+   */
+  systemBar?: 'status' | 'navigation';
   appName?: string;
   windowTitle?: string;
   surface?: string;
+  /** Evaluated keyboard ownership; omission means unevaluated. Survives ancestor removal. */
+  keyboardOwned?: boolean;
   hiddenContentAbove?: boolean;
   hiddenContentBelow?: boolean;
   interactionBlocked?: 'covered';
+  /**
+   * Bounded description of the element the geometric occlusion scan found drawing on top of this
+   * node, published together with `interactionBlocked: 'covered'` so a refusal can name the culprit
+   * instead of only the fact of coverage. Absent when the covered decision came from a
+   * backend-policy annotation that reports a boolean, and when the cover the scan found is an
+   * anonymous container no reader could recognize; both refusals keep the generic recovery rather
+   * than guessing a culprit. This is a description, not an authorization: it carries no ref and is
+   * never an actionable target.
+   */
+  coveredBy?: SnapshotCoveringNode;
   presentationHints?: string[];
   /**
    * Backend-minted ref for this node, when the capture backend already assigns a
@@ -333,42 +367,47 @@ type RawSnapshotNode = {
   actions?: string[];
 };
 /**
- * What a capture's producer can say about the software keyboard on screen, measured while the tree
- * was captured rather than rebuilt from it afterwards.
- *
- * A keyboard is its own system surface, so it never reaches the tree as a covering sibling of app
- * content, and a consumer that wants to refuse a tap behind it has to learn where it is from
- * somewhere (#2589). A producer that can measure the band directly — the Apple runner, from its
- * `app.keyboards` query, and the Android helper, from the input method window in the window list it
- * captures — publishes one fact per capture and says nothing else about it. A consumer therefore gets three
- * answers and no fourth: a band in the same space as every node rect, a proven absence, or a
- * producer that could not look.
- *
- * A producer that publishes nothing has declared nothing, so absence from a result means the same
- * thing as `unmeasurable` — which is why the field stays optional on every carrier, including the
- * three client-side paths that rebuild a state from a bare backend result (#2199). Those consumers
- * then derive the band from the tree they hold: the rule that stays for the producers that publish
- * no fact (#2660).
+ * Keyboard evidence observed during acquisition, in the capture's node coordinate space.
+ * `visible` is a measured frame; `derived` is a frame established by the shared docked-tree
+ * policy before projection; `visibility-only` is a boolean probe with no geometry;
+ * `tree-rejected` records rejected geometry evaluated against a usable viewport, with optional
+ * probe visibility; `unmeasurable` is unknown. `absent` requires an explicit absence observation.
+ * Missing keyboard nodes or an omitted fact never prove absence.
  */
-type SnapshotKeyboardBandFact =
-/** The band the keyboard occupies, in the same orientation space as this capture's node rects. */
-{
+type SnapshotKeyboardBandFact = {
   kind: 'visible';
   frame: Rect;
-} |
-/** The producer looked for the keyboard and found none. */
-{
+} | {
+  kind: 'derived';
+  derivation: 'docked-tree';
+  frame: Rect;
+} | {
+  kind: 'visibility-only';
+  visible: boolean;
+} | {
+  kind: 'tree-rejected';
+  derivation: 'docked-tree';
+  visible?: boolean;
+} | {
   kind: 'absent';
-} |
-/**
- * The producer cannot measure the band on this path, with a stable reason code. Typed rather than
- * inferred from absence so a log says which path failed to measure without the consumer having to
- * guess which producer it was talking to.
- */
-{
+} | {
   kind: 'unmeasurable';
   reason: string;
 };
+/**
+ * Whether this capture read a modal presentation over the app's own content (#3565).
+ *
+ * The capture producer owns this: an interactive capture, a full capture, a depth cut, and a scoped
+ * capture of ONE screen all answer the same value, because the fact is decided on the acquired tree
+ * before any of those projections runs. Settle's dismissal confirmation (#1831) arms on this value
+ * instead of reconstructing a presentation from the shape of a tree it happens to hold.
+ *
+ * `'absent'` is a positive reading, not a default: the producer walked every window it captured and
+ * every window showed only its own presentation container. Anything the producer could not read —
+ * a tree from a producer that reports no UIKit class facts, an unexplained extra container, a
+ * truncated capture — answers `'unknown'`, never `'absent'`.
+ */
+type PresentedSurface = 'presented' | 'absent' | 'unknown';
 /**
  * The box a capture's node rects are measured in, published beside them so a reader never has to
  * infer it from the tree (#3182). Two dimensions and no origin: the field answers "how big is the
@@ -401,15 +440,33 @@ type SnapshotViewportSizeBrand = {
   readonly [SNAPSHOT_VIEWPORT_SIZE_BRAND]: 'validated';
 };
 type SnapshotNode = RawSnapshotNode & {
-  ref: string;
+  /**
+   * The ref an agent addresses this node by, or absent when nothing can address it.
+   *
+   * A backend that mints its own refs (web/agent-browser) owns that namespace and can only act on
+   * the refs it minted, so {@link attachRefs} mints nothing into it — a node the backend left
+   * unaddressed stays ref-less in the tree, which is how on-screen-but-not-actionable content
+   * (static text, a status region) reaches a reader without ever being offered as a tap target.
+   * Backends that mint no refs (Apple, Android, Linux) keep dense `e${index}` numbering, so every
+   * node of their trees carries a ref, as before.
+   *
+   * Every consumer that offers a node as an address must read this as an absence rather than print
+   * one: a ref-less node is selectable by text and by `find`/`wait`/`get`, and refused as a target.
+   *
+   * A ref-less node also carries no `rect`. Producers that mint refs measure geometry for the refs
+   * they issued (see `RawSnapshotNode.ref`), and producers that mint none get dense numbering, so
+   * every node a geometry-requiring path can reach — promotion, the touch point, the covered and
+   * keyboard refusals — has a ref. That is why those paths print `node.ref` without a guard.
+   */
+  ref?: string;
   /**
    * Normalized role, from the same table the text presenter reads (`formatRole` below). `type`
    * stays the raw platform class; `kind` is the presenter's own answer, published so a `--json`
    * consumer gets the presented role without re-deriving it from `type` (#2656). `attachRefs` is
-   * the one production construction path and always sets it; optional here (rather than required
-   * like `ref`) only so the many hand-built `SnapshotNode` fixtures across the daemon/selector test
-   * suites that predate #2656 and never route through `attachRefs` do not all need updating for a
-   * field their assertions never read.
+   * the one production construction path and always sets it; optional here only so the many
+   * hand-built `SnapshotNode` fixtures across the daemon/selector test suites that predate #2656 and
+   * never route through `attachRefs` do not all need updating for a field their assertions never
+   * read. An absent `ref` is a real answer about the node; an absent `kind` is a fixture shortcut.
    */
   kind?: string;
   /**
@@ -530,10 +587,16 @@ type SnapshotState = {
    */
   iosSystemSurfaceBundleId?: string;
   /**
-   * iOS and Android: the keyboard band this capture's producer measured, when it measured one. The
-   * tap-path keyboard guard prefers this over the band it would otherwise derive from `nodes`,
-   * because a producer that can query the keyboard directly answers in the tree's own space and
-   * needs no geometry to be plausible (#2660). Absent means the guard measures the tree as before.
+   * iOS: whether this capture read a modal presentation over the app's own content (#3565), decided
+   * on the acquired tree before interactive filtering, compaction, depth, or scope, so every view of
+   * one screen carries one value. `'absent'` is read, never defaulted; an unreadable or unexplained
+   * capture answers `'unknown'`. Settle's presented-surface confirmation arms on this fact.
+   */
+  presentedSurface?: PresentedSurface;
+  /**
+   * iOS and Android: keyboard observations made during acquisition. Measured and derived frames
+   * take precedence over reconstruction from the presented tree. Visibility-only and unknown facts
+   * carry no band; missing nodes or an omitted fact never establish absence.
    */
   keyboard?: SnapshotKeyboardBandFact;
   /**
@@ -736,4 +799,4 @@ type JsonRpcRequestEnvelope<TParams = unknown> = {
   params?: TParams;
 };
 //#endregion
-export { normalizeError as $, Rect as A, SnapshotViewportSize as B, Platform as C, IosTargetActivation as D, AppleApplicationState as E, SnapshotOptions as F, AppErrorDetails as G, centerOfRect as H, SnapshotProvenance as I, KnownAppErrorCode as J, DaemonError as K, SnapshotQualityVerdict as L, SnapshotCommandOptionFields as M, SnapshotKeyboardBandFact as N, Point as O, SnapshotNode as P, normalizeAgentDeviceError as Q, SnapshotState as R, DeviceTarget as S, PublicPlatform as T, AppError as U, SnapshotVisibility as V, AppErrorCode as W, defaultHintForCode as X, NormalizedError as Y, isAgentDeviceError as Z, SessionIsolationMode as _, DaemonRequest as a, DeviceInfo as b, DaemonServerMode as c, JsonRpcRequestEnvelope as d, LeaseBackend as f, ResponseLevel as g, ResponseCost as h, DaemonLockPolicy as i, ScreenshotOverlayRef as j, RawSnapshotNode as k, DaemonTransportPreference as l, NetworkIncludeMode as m, DaemonArtifactType as n, DaemonResponse as o, LocalInstallSource as p, ErrorCause as q, DaemonInstallSource as r, DaemonResponseData as s, DaemonArtifact as t, JsonRpcId as u, SessionRuntimeHints as v, PlatformSelector as w, DeviceKind as x, AppleOS as y, SnapshotUnchanged as z };
+export { isAgentDeviceError as $, PresentedSurface as A, SnapshotState as B, Platform as C, IosSnapshotObservation as D, AppleApplicationState as E, SnapshotKeyboardBandFact as F, AppError as G, SnapshotViewportSize as H, SnapshotNode as I, DaemonError as J, AppErrorCode as K, SnapshotOptions as L, Rect as M, ScreenshotOverlayRef as N, IosTargetActivation as O, SnapshotCommandOptionFields as P, defaultHintForCode as Q, SnapshotProvenance as R, DeviceTarget as S, PublicPlatform as T, SnapshotVisibility as U, SnapshotUnchanged as V, centerOfRect as W, KnownAppErrorCode as X, ErrorCause as Y, NormalizedError as Z, SessionIsolationMode as _, DaemonRequest as a, DeviceInfo as b, DaemonServerMode as c, JsonRpcRequestEnvelope as d, normalizeAgentDeviceError as et, LeaseBackend as f, ResponseLevel as g, ResponseCost as h, DaemonLockPolicy as i, RawSnapshotNode as j, Point as k, DaemonTransportPreference as l, NetworkIncludeMode as m, DaemonArtifactType as n, DaemonResponse as o, LocalInstallSource as p, AppErrorDetails as q, DaemonInstallSource as r, DaemonResponseData as s, DaemonArtifact as t, normalizeError as tt, JsonRpcId as u, SessionRuntimeHints as v, PlatformSelector as w, DeviceKind as x, AppleOS as y, SnapshotQualityVerdict as z };

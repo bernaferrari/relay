@@ -1,3 +1,5 @@
+import { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -6,11 +8,14 @@ import { join } from "node:path";
 import { pressNamedControl, rememberTargetApplication, type Device } from "./device.js";
 import { runWithTargetContext } from "./target-context.js";
 import {
-  setLiveIosRunnerCommandPostForTests,
+  setLiveIosRunnerCommandPostForTests as setNativePost,
   type LiveIosRunnerCommand,
 } from "./ios-runner-listener-command.js";
 import type { SnapshotNode } from "./device-capabilities.js";
 import { namedControlObservationOptions } from "./named-control-observation.js";
+
+const setLiveIosRunnerCommandPostForTests: typeof setNativePost = (post) =>
+  setNativePost(post ? catalogAwarePost(post) : undefined);
 
 const application = {
   depth: 0,
@@ -67,7 +72,12 @@ async function withListener(
   process.env.RELAY_WORKSPACE_ROOT = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      ownerPid: process.pid,
+      port: 50937,
+    }),
   );
   const commands: LiveIosRunnerCommand[] = [];
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
@@ -93,7 +103,9 @@ async function withListener(
   } as unknown as Device;
   try {
     await rememberTargetApplication("ai.x.GrokApp", context);
-    await runWithTargetContext(context, () => run(device, commands));
+    await runWithIosSupervisionMode("test-optional", () =>
+      runWithTargetContext(context, () => run(device, commands)),
+    );
   } finally {
     restore();
     if (previousLeaseDir === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;

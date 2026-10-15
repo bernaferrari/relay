@@ -109,6 +109,16 @@ export const ACTION_FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     recorded: false,
   },
   {
+    key: 'textStdin',
+    names: ['--text-stdin'],
+    type: 'boolean',
+    usageLabel: '--text-stdin',
+    usageDescription:
+      'Fill: read the text from stdin (max 64 KiB, one trailing newline removed) instead of argv',
+    projectConfig: false,
+    recorded: false,
+  },
+  {
     key: 'durationMs',
     names: ['--duration-ms'],
     type: 'int',
@@ -200,7 +210,8 @@ export const ACTION_FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     type: 'int',
     min: 0,
     usageLabel: '--settle-quiet <ms>',
-    usageDescription: 'Settle: quiet window the UI must hold to count as settled (default 500ms)',
+    usageDescription:
+      'Settle: quiet window the UI must hold to count as settled (default 500ms; 300ms when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the --timeout settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window',
     projectConfig: true,
     recorded: false,
   },

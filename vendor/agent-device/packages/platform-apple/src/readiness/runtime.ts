@@ -3,7 +3,6 @@ import type { PlatformRuntimeHost } from '@agent-device/contracts/platform-runti
 import { isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { emitRequestProgress } from '@agent-device/host-kit/request';
-import { delegateManagedDeviceReadiness } from '@agent-device/provision-kit/managed-device-scope';
 import { scopeSimctlArgsForDevice } from '../core/simctl.ts';
 import { getSimulatorState } from '../simulator-state.ts';
 
@@ -37,7 +36,6 @@ export async function ensureAppleReady(
   options: AppleReadinessOptions = {},
 ): Promise<DeviceInfo> {
   signal.throwIfAborted();
-  if (await delegateManagedDeviceReadiness(device)) return { ...device, booted: true };
   if (isMacOs(device)) return { ...device, booted: true };
   if (device.kind === 'device') {
     await host.deviceReadiness.applePhysical.ensureConnected(device, signal);
@@ -146,17 +144,7 @@ async function waitForSimulatorBoot(
       exitCode: status.exitCode,
     });
   }
-  // The confirming listing runs inside the same budget, and a confirmation that lands after the
-  // deadline is still a timeout: the caller's budget is the contract, not the boot's outcome.
-  const state = await getSimulatorState(
-    host.appleTools,
-    device,
-    signal,
-    Math.min(LIST_TIMEOUT_MS, remainingBootBudgetMs(deadlineAtMs, device)),
-  );
-  if (state !== 'Booted') {
-    throw new AppError('COMMAND_FAILED', 'Simulator is still booting', { deviceId: device.id });
-  }
+  signal.throwIfAborted();
   if (Date.now() >= deadlineAtMs) throw bootDeadlineError(device);
 }
 
@@ -189,7 +177,7 @@ async function simulatorState(
 
 async function showSimulator(host: AppleReadinessHost, signal: AbortSignal): Promise<void> {
   await host.commands.run(
-    { executable: 'open', args: ['-a', 'Simulator'], allowFailure: true, timeoutMs: 10_000 },
+    { executable: 'open', args: ['-g', '-a', 'Simulator'], allowFailure: true, timeoutMs: 10_000 },
     signal,
   );
 }

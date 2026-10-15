@@ -5,6 +5,7 @@ import type { Deadline } from './host.ts';
 import type { RunnerXctestrunArtifact } from './runner-xctestrun.ts';
 import type { RunnerLease } from './runner-lease.ts';
 import type { IosRunnerDeviceStates } from './runner-error-classification.ts';
+import type { RunnerCommand, RunnerEndpoint } from './runner-contract.ts';
 
 /**
  * Where one runner process stands in the lifecycle of the session that owns it (#2662). The state
@@ -50,11 +51,19 @@ export type RunnerProcessHandle = {
   exitCode: number | null;
 };
 
+export type RunnerListenerWatch = {
+  lost: boolean;
+  ready: Promise<boolean>;
+  close(): void;
+};
+
+export type RunnerRetention = { cancel(): void };
+
 export type RunnerSession = {
   sessionId: string;
   device: DeviceInfo;
   deviceId: string;
-  port: number;
+  endpoint: RunnerEndpoint;
   xctestrunPath: string;
   xctestrunArtifact?: RunnerXctestrunArtifact;
   jsonPath: string;
@@ -79,6 +88,8 @@ export type RunnerSession = {
   readLogTail?: (maxBytes: number) => string;
   /** Moves only through {@link advanceRunnerSessionState}. */
   state: RunnerSessionState;
+  listenerWatch?: RunnerListenerWatch;
+  retention?: RunnerRetention;
   /** Wakes one startup retry when the listener becomes ready or its process exits. */
   startupRetryWake?: AbortSignal;
   /**
@@ -174,6 +185,8 @@ export function isRunnerMainThreadOccupied(
 export type RunnerDetachRefusal =
   /** The runner never answered a command, so nothing proves it serves requests (#2681). */
   | 'runner_never_served_a_command'
+  /** Idle retention depends on this daemon's timer and listener observation. */
+  | 'retained_idle'
   /** A command is still owed a response, so the runner is busy whatever its last report says (#2681). */
   | 'command_in_flight'
   /** The runner reported main-thread work still draining as of its last exchange. */
@@ -248,6 +261,15 @@ export class RunnerCommandAccounting {
   }
 
   /**
+   * Withdraw the charge of a send that provably wrote nothing — a refused connection, or a cancellation
+   * seen before the POST (`dispatched: no`). The runner holds no such command, canceled or not.
+   */
+  withdrawUnsent(commandId: string | undefined): void {
+    const index = this.findChargeIndex(commandId);
+    if (index !== -1) this.charges.splice(index, 1);
+  }
+
+  /**
    * Discharge an answered exchange, then forgive one abandoned charge sent before it — the serial
    * queue makes this answer evidence that the queued handling ahead of it finished, and any work still
    * draining is stamped on the reply itself. A run of dropped exchanges therefore keeps one residue
@@ -303,6 +325,40 @@ export class RunnerCommandAccounting {
   }
 }
 
+/**
+ * The runner journal vocabulary, so charge settlement, status recovery, and the drain of a canceled
+ * command cannot disagree about what a state means. `runner-swift-settlement-fixtures.ts` pins these
+ * names to `RunnerCommandLifecycleState`, and the recovery wiring rows are derived from that same
+ * declaration, so a state the runner gains has to be ruled here before it can decide a handoff.
+ *
+ * `completed` and `failed` close an entry — from the response's `ok` in `finish`, or a thrown error in
+ * `fail` — so execution ended. `accepted` and `started` are written as execution opens, so they share
+ * one in-flight verdict. `notAccepted` is what `status` reports for an id the journal never held,
+ * which this daemon cannot read as terminal.
+ */
+const RUNNER_TERMINAL_LIFECYCLE_STATES: ReadonlySet<string> = new Set(['completed', 'failed']);
+export const RUNNER_IN_FLIGHT_LIFECYCLE_STATES: ReadonlySet<string> = new Set([
+  'accepted',
+  'started',
+]);
+
+/**
+ * Discharges the abandoned charge terminal status proves landed (#2965). A status reply is served
+ * inline, so it is no evidence that queued work finished; this is the only place a status answer may
+ * settle a charge, and only the one its `statusCommandId` names.
+ *
+ * @returns whether the evidence paid a debt, or `undefined` when the state is not terminal and no
+ *   settlement was attempted.
+ */
+export function settleRunnerChargeForTerminalStatus(
+  session: Pick<RunnerSession, 'commandCharges'>,
+  command: Pick<RunnerCommand, 'commandId'>,
+  lifecycleState: string,
+): boolean | undefined {
+  if (!RUNNER_TERMINAL_LIFECYCLE_STATES.has(lifecycleState)) return undefined;
+  return session.commandCharges.settleTerminalEvidence(command.commandId);
+}
+
 /** Ids match exactly as sent. */
 function normalizeRunnerChargeId(commandId: string | undefined): string {
   return commandId?.trim() ?? '';
@@ -319,11 +375,12 @@ function normalizeRunnerChargeId(commandId: string | undefined): string {
  * command the next daemon sends it.
  */
 export function resolveRunnerDetachDecision(
-  session: Pick<RunnerSession, 'state' | 'runnerMainThreadBusy' | 'commandCharges'>,
+  session: Pick<RunnerSession, 'state' | 'runnerMainThreadBusy' | 'commandCharges' | 'retention'>,
 ): RunnerDetachDecision {
   if (session.state !== 'ready') {
     return { detach: false, reason: 'runner_never_served_a_command' };
   }
+  if (session.retention) return { detach: false, reason: 'retained_idle' };
   if (session.commandCharges.hasOutstandingCharges) {
     return { detach: false, reason: 'command_in_flight' };
   }

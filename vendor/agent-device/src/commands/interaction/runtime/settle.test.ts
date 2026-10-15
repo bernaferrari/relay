@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type { AgentDeviceBackend } from '../../../backend.ts';
 import type { SnapshotState } from '@agent-device/kernel/snapshot';
 import { createLocalArtifactAdapter } from '../../../io.ts';
-import {
-  createAgentDevice,
-  createMemorySessionStore,
-  localCommandPolicy,
-} from '../../../runtime.ts';
+import { createAgentDevice } from '../../../runtime.ts';
+import { localCommandPolicy } from '@agent-device/contracts/command-policy';
 import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import { ref, selector } from './selector-read-utils.ts';
 import { buildSettleTailEntries, NEVER_SETTLED_HINT } from './settle.ts';
@@ -18,6 +14,7 @@ import {
   welcomeSnapshot,
 } from './__tests__/settle-device-fixtures.ts';
 import { readSnapshotQualityVerdict } from '@agent-device/capture-kit/snapshot-quality-verdict';
+import { createMemorySessionStore } from '../../../command-runtime/runtime-factory.ts';
 
 // #1101 --settle: quiet-window settle loop composition on the interaction
 // commands. Budgets are injected (fake clock) — no real waiting.
@@ -159,7 +156,7 @@ test('press --settle pins an already-established private-ax observation backend'
       tap: async () => ({ ok: true }),
       fill: async () => ({ ok: true }),
       longPress: async () => ({ ok: true }),
-    } satisfies AgentDeviceBackend,
+    } satisfies import('@agent-device/contracts/backend').AgentDeviceBackend,
     artifacts: createLocalArtifactAdapter(),
     sessions: createMemorySessionStore([{ name: 'default', snapshot: established }]),
     policy: localCommandPolicy(),
@@ -242,32 +239,6 @@ test('a settled sparse capture directs agents away from invalid refs and selecto
   assert.equal(result.settle?.diff, undefined);
 });
 
-test('a broken settle capture never fails the action', async () => {
-  const before = buttonSnapshot();
-  let captures = 0;
-  const device = createSettleDevice({
-    stored: before,
-    captureSnapshot: () => {
-      captures += 1;
-      if (captures === 1) return { snapshot: before };
-      throw new Error('AX bridge crashed');
-    },
-  });
-
-  const result = await device.interactions.press(selector('label=Continue'), {
-    session: 'default',
-    settle: {},
-  });
-
-  // The press itself succeeded; the observation reports its own failure.
-  assert.equal(result.kind, 'selector');
-  const settle = result.settle;
-  assert.ok(settle);
-  assert.equal(settle.settled, false);
-  assert.equal(settle.diff, undefined);
-  assert.match(settle.hint ?? '', /Settle observation unavailable \(AX bridge crashed\)/);
-});
-
 test('--settle --verify shares the settle captures for evidence (zero extra captures)', async () => {
   const before = buttonSnapshot();
   const after = welcomeSnapshot();
@@ -310,7 +281,7 @@ test('longpress --settle rides the same observation path', async () => {
   const result = await device.interactions.longPress(ref('@e1'), {
     session: 'default',
     durationMs: 400,
-    settle: { quietMs: 100, timeoutMs: 1_000 },
+    settle: { quietMs: 100, timeoutMs: 2_000 },
   });
 
   assert.equal(result.kind, 'ref');
@@ -318,7 +289,7 @@ test('longpress --settle rides the same observation path', async () => {
   assert.ok(settle);
   assert.equal(settle.settled, true);
   assert.equal(settle.quietMs, 100);
-  assert.equal(settle.timeoutMs, 1_000);
+  assert.equal(settle.timeoutMs, 2_000);
   assert.ok(settle.diff);
 });
 

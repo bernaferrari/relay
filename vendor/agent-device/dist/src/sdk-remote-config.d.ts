@@ -107,9 +107,13 @@ type MetroReloadResult = ReloadMetroResult;
  */
 declare const PROVIDER_DEVICE_ORIENTATIONS: readonly ['portrait', 'landscape'];
 type ProviderDeviceOrientation = (typeof PROVIDER_DEVICE_ORIENTATIONS)[number];
+/** Device pool a hosted provider session is created in: physical devices or emulators/simulators. */
+declare const PROVIDER_DEVICE_TYPES: readonly ['real', 'virtual'];
+type ProviderDeviceType = (typeof PROVIDER_DEVICE_TYPES)[number];
 type CloudProviderProfileFields = {
   providerApp?: string;
   providerOsVersion?: string;
+  providerDeviceType?: ProviderDeviceType;
   providerProject?: string;
   providerBuild?: string;
   providerSessionName?: string;

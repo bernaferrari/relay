@@ -152,7 +152,11 @@ test("logical-bounds-only quarantined iPad snapshot masks retained semantic proo
   const serial = "logical-window-quarantined-ipad";
   await writeFile(
     join(root, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 57766 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 57766,
+    }),
   );
   const store = new TargetSupervisorStore(":memory:");
   const target = { id: serial, kind: "ios" } as const;
@@ -506,7 +510,11 @@ test("iOS capture adopts the LISTENER_READY runner instead of the bounded Copy p
   process.env.RELAY_WORKSPACE_ROOT = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 57051 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 57051,
+    }),
   );
   let sdkSnapshots = 0;
   const restore = setLiveIosRunnerCommandPostForTests(

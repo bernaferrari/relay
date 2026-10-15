@@ -16,11 +16,13 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 
 test('a kernel is owned by the mirrored test that imports it directly', () => {
   const deriver = ownershipDeriver(repoRoot);
-  assert.deepEqual(deriver.ownersOf('src/__tests__/kernel/errors-code-policy.test.ts'), [
+  assert.deepEqual(deriver.ownersOf('packages/kernel/src/errors-code-policy.test.ts'), [
     'kernel-errors',
   ]);
   assert.ok(
-    deriver.ownersOf('src/daemon/__tests__/ref-frame.test.ts').includes('daemon-ref-frame'),
+    deriver
+      .ownersOf('packages/daemon/src/core/__tests__/ref-frame.test.ts')
+      .includes('daemon-ref-frame'),
   );
   assert.ok(
     deriver
@@ -38,14 +40,22 @@ test('a kernel is owned by tests that reach it indirectly', () => {
     'daemon-error.test.ts exercises normalizeError but does not own kernel-errors',
   );
   assert.ok(
-    deriver.ownersOf('src/daemon/__tests__/back-runtime.test.ts').includes('scroll-edge-state'),
+    deriver
+      .ownersOf('packages/daemon/src/execution/__tests__/back-runtime.test.ts')
+      .includes('scroll-edge-state'),
     'back-runtime.test.ts exercises edge detection but does not own scroll-edge-state',
+  );
+});
+
+test('reachability includes its query root when the file is absent from the tracked graph', () => {
+  assert.deepEqual(
+    [...reachableFrom('src/untracked-fixture.ts', repoRoot)],
+    ['src/untracked-fixture.ts'],
   );
 });
 
 test('ownership is complete: every test reaching a kernel owns it', () => {
   const owned = ownedTestFiles(repoRoot);
-  const cache = new Map<string, string[]>();
   for (const module of KERNEL_MODULES) {
     const sources = mutatedSources(module, repoRoot);
     assert.ok(sources.length > 0, `${module.id} mutates nothing`);
@@ -55,7 +65,7 @@ test('ownership is complete: every test reaching a kernel owns it', () => {
       `${module.id} has no owning tests — its score cannot be attributed`,
     );
     for (const testFile of files) {
-      const reachable = reachableFrom(testFile, repoRoot, cache);
+      const reachable = reachableFrom(testFile, repoRoot);
       assert.ok(
         sources.some((source) => reachable.has(source)),
         `${testFile} owns ${module.id} without reaching it`,
@@ -76,7 +86,7 @@ test('non-kernel sources and non-tests are not owned', () => {
   );
   assert.ok(!isTestFile('packages/kernel/src/errors.ts'));
   assert.ok(!isTestFile('scripts/mutation/ownership.test.ts'));
-  assert.ok(isTestFile('src/__tests__/kernel/errors-code-policy.test.ts'));
+  assert.ok(isTestFile('packages/kernel/src/errors-code-policy.test.ts'));
 });
 
 test('derived selection unions source ownership with test reachability', () => {
@@ -84,7 +94,7 @@ test('derived selection unions source ownership with test reachability', () => {
     derivedAffectedModules(
       [
         'packages/selectors/src/internal/parse.ts',
-        'src/daemon/__tests__/ref-frame.test.ts',
+        'packages/daemon/src/core/__tests__/ref-frame.test.ts',
         'docs/agents/testing.md',
       ],
       repoRoot,

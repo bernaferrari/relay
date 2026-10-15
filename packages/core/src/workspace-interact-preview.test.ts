@@ -49,7 +49,12 @@ async function fixture(value: unknown, expectedState: string, remembered = true)
   process.env.RELAY_GO_IOS_BIN = "/usr/bin/false";
   await writeFile(
     join(directory, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      ownerPid: process.pid,
+      port: 50937,
+    }),
   );
   const png = new PNG({ width: 2224, height: 1668 });
   png.data.fill(255);

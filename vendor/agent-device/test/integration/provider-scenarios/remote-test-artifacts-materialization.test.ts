@@ -1,3 +1,4 @@
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -8,9 +9,8 @@ import type { ReplaySuiteResult } from '@agent-device/contracts/replay';
 import {
   cleanupDownloadableArtifact,
   trackDownloadableArtifact,
-} from '../../../src/daemon/artifact-tracking.ts';
-import type { DaemonRequest } from '../../../src/daemon/daemon-request.ts';
-import { createDaemonHttpServer } from '../../../src/daemon/server/http-server.ts';
+} from '@agent-device/daemon/testing/artifact-tracking';
+import { createDaemonHttpServer } from '@agent-device/daemon/testing/server/http-server';
 import { attachRemoteReplayTestArtifacts } from '@agent-device/replay-port/test-command';
 import {
   downloadRemoteArtifact,
@@ -20,7 +20,7 @@ import {
   closeLoopbackServer,
   listenOnLoopback,
   skipWhenLoopbackUnavailable,
-} from '../../../src/__tests__/test-utils/loopback.ts';
+} from '@agent-device/test-kit/loopback';
 
 const SUITE_INVOCATION_ID = 'cd5f9c01feec8d70';
 
@@ -37,7 +37,7 @@ test('the composed daemon and client path owners report the directory that was m
   fs.writeFileSync(path.join(daemonAttemptDir, 'replay.ad'), 'open "Demo"\n');
   fs.writeFileSync(path.join(daemonAttemptDir, 'result.txt'), 'status: passed\n');
 
-  const request: DaemonRequest = {
+  const request: DaemonWireRequest = {
     token: 'daemon-token',
     session: 'default',
     command: 'test',

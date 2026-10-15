@@ -3,6 +3,7 @@ import {
   getUnsupportedMacOsSettingMessage,
   parsePermissionAction,
   parseSettingState,
+  resolveSettingsApp,
   type ReadableSetting,
   type ReadSettingResult,
   type SettingOptions,
@@ -28,7 +29,7 @@ import { applySimctlSetting } from './simctl-settings.ts';
 import { readIosTextSize, setIosTextSize } from './settings-text-size.ts';
 import { requireHandheldAppleSimulatorLeaf } from './settings-leaf.ts';
 import { resolveIosApp } from './app-resolution.ts';
-import { buildSimctlArgsForDevice, runSimctlForDevice } from './simctl.ts';
+import { buildSimctlArgsForDevice, readSimctlContainerPath, runSimctlForDevice } from './simctl.ts';
 import {
   invalidateSimulatorStatusBarOverrideCache,
   rememberClearedStatusBarOverrides,
@@ -150,6 +151,7 @@ export async function setIosSetting(
         setting: normalized,
         state,
         appBundleId,
+        resolveApp: (app) => resolveIosSettingsApp(device, app),
         options,
       });
     default:
@@ -194,6 +196,30 @@ const FRESH_INSTALL_DATA_DIRECTORIES = [
   'tmp',
 ];
 
+/**
+ * `details.reason` of a `clear-app-state` refused because the installed app owns no data container.
+ * A driver branches on this rather than the prose: there is nothing to delete, so retrying cannot
+ * help. The motivating case ships inside the simulator runtime and cannot be uninstalled, so the
+ * hint may only point at recoveries a caller actually has: reset the simulator, or uninstall an
+ * app they installed themselves.
+ */
+export const IOS_NO_DATA_CONTAINER_REASON = 'app-no-data-container';
+
+const IOS_NO_DATA_CONTAINER_HINT =
+  'Clear the app under test instead. A runtime-shipped app keeps no data container, so this command has no app state to remove; to reset it, erase or recreate the simulator device, or uninstall and reinstall the app if you installed it yourself.';
+
+/** The agent-facing explanation for an app `simctl get_app_container` answers with no container for. */
+function iosNoDataContainerMessage(bundleId: string): string {
+  return `${bundleId} has no data container to clear. Apps shipped in the simulator runtime, such as system apps, own no data container, so there is no app state here to remove.`;
+}
+
+/** The installed app an app-scoped setting lands on, by bundle id or display name. */
+async function resolveIosSettingsApp(device: DeviceInfo, app: string): Promise<string> {
+  return await resolveSettingsApp(app, (target) =>
+    resolveIosApp(device, target, { installedOnly: true }),
+  );
+}
+
 async function clearIosSimulatorAppState(
   device: DeviceInfo,
   app: string,
@@ -205,7 +231,7 @@ async function clearIosSimulatorAppState(
     );
   }
 
-  const bundleId = await resolveIosApp(device, app);
+  const bundleId = await resolveIosSettingsApp(device, app);
   await ensureBootedSimulator(device);
   await closeIosApp(device, bundleId);
 
@@ -216,12 +242,17 @@ async function clearIosSimulatorAppState(
     `simctl get_app_container failed for ${bundleId}`,
   );
 
-  const containerPath = result.stdout.trim();
-  if (!containerPath) {
-    throw new AppError(
-      'COMMAND_FAILED',
-      `simctl get_app_container returned an empty data container path for ${bundleId}`,
-    );
+  // `simctl` answers an app with no data container by exiting 0 and printing nothing or the literal
+  // `(null)` — a system app is installed and running with nothing to delete. Both are the tool's own
+  // "no container" answer, refused here rather than handed to the host filesystem as a path.
+  const containerPath = readSimctlContainerPath(result.stdout);
+  if (containerPath === undefined) {
+    throw new AppError('UNSUPPORTED_OPERATION', iosNoDataContainerMessage(bundleId), {
+      reason: IOS_NO_DATA_CONTAINER_REASON,
+      appBundleId: bundleId,
+      deviceId: device.id,
+      hint: IOS_NO_DATA_CONTAINER_HINT,
+    });
   }
 
   const entries = await readHostDirectory(containerPath);

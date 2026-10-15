@@ -1,3 +1,4 @@
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,7 +17,7 @@ import { rememberTargetApplication, type Device, type SnapshotNode } from "./dev
 import { setLocalDeviceProvider } from "./device-factory.js";
 import { setIosAppOpenRuntimeForTests } from "./ios-app-open.js";
 import {
-  setLiveIosRunnerCommandPostForTests,
+  setLiveIosRunnerCommandPostForTests as setNativePost,
   type LiveIosRunnerCommand,
 } from "./ios-runner-listener-command.js";
 import { runRecipeStep } from "./recipe-runner.js";
@@ -70,6 +71,9 @@ async function withSavedStartup(
   options: { live?: boolean; missingAfterPrepare?: boolean; preparationError?: Error } = {},
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "relay-saved-ios-startup-"));
+  const setLiveIosRunnerCommandPostForTests: typeof setNativePost = (post) =>
+    setNativePost(post ? catalogAwarePost(post) : undefined);
+
   const serial = directory.split("/").at(-1)!;
   const context = { kind: "device", platform: "ios", serial } as const;
   const previousLease = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
@@ -119,7 +123,12 @@ async function withSavedStartup(
   const writeLease = () =>
     writeFile(
       join(directory, `${serial}.json`),
-      JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50937 }),
+      JSON.stringify({
+        runnerToken: "relay-listener-fixture-token",
+        runnerPid: process.pid,
+        ownerPid: process.pid,
+        port: 50937,
+      }),
     );
   if (options.live) await writeLease();
   const restoreHost = setIosSessionHostRuntimeForTests({
@@ -427,7 +436,10 @@ test("settled physical preparation is revalidated and prepared again after runne
       preparations += 1;
       live = true;
     },
-    probeLiveIosRunnerListener: async () => (live ? { serial, runnerPid: 123, port: 1 } : null),
+    probeLiveIosRunnerListener: async () =>
+      live
+        ? { serial, runnerToken: "relay-listener-fixture-token", runnerPid: 123, port: 1 }
+        : null,
   });
   resetIosRunnerState();
   try {

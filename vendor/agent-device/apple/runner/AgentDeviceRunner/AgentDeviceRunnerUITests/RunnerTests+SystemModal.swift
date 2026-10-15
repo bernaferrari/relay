@@ -11,6 +11,14 @@ extension RunnerTests {
     guard case .resolved(let resolvedModal) = resolveBlockingSystemModal(deadline: deadline) else {
       return nil
     }
+    return snapshotForBlockingSystemModal(resolvedModal, deadline: deadline)
+    #endif
+  }
+
+  func snapshotForBlockingSystemModal(
+    _ resolvedModal: ResolvedBlockingSystemModal,
+    deadline: Date = .distantFuture
+  ) -> DataPayload? {
     let modal = resolvedModal.root
     let actions = resolvedModal.actions
 
@@ -61,8 +69,17 @@ extension RunnerTests {
       nodes.append(contentNode)
     }
 
-    return DataPayload(nodes: nodes, truncated: false)
-    #endif
+    // The probe resolved a blocking modal over the app, so this payload states its own subject rather
+    // than leaving a reader to infer it from a tree that holds only the modal (#3565).
+    return Self.blockingSystemModalPayload(nodes: nodes)
+  }
+
+  /// The payload a resolved blocking system modal publishes: the modal's own tree, and the fact that
+  /// the modal is what it describes. The probe is the one capture that states `presented` without
+  /// reading a window structure — its tree holds only the modal, so nothing downstream could read the
+  /// presentation out of it (#3565). Split from the probe body because that body needs a device.
+  static func blockingSystemModalPayload(nodes: [PresentedNode]) -> DataPayload {
+    DataPayload(nodes: nodes, truncated: false, presentedSurface: .presented)
   }
 
   func firstBlockingSystemModal(
@@ -217,13 +234,14 @@ extension RunnerTests {
   ) -> PresentedNode {
     let label = (labelOverride ?? element.label).trimmingCharacters(in: .whitespacesAndNewlines)
     let identifier = (identifierOverride ?? element.identifier).trimmingCharacters(in: .whitespacesAndNewlines)
+    let value = element.value.map { String(describing: $0).trimmingCharacters(in: .whitespacesAndNewlines) }
     return SnapshotPresentation.singleElementRead(
       RawAXNode(
         index: index,
         type: type,
         label: label.isEmpty ? nil : label,
         identifier: identifier.isEmpty ? nil : identifier,
-        value: nil,
+        value: value.flatMap { $0.isEmpty ? nil : $0 },
         rect: SnapshotRect(element.frame),
         enabled: element.isEnabled,
         focused: nil,

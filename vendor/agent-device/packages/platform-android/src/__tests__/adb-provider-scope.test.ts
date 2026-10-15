@@ -4,6 +4,7 @@ import path from 'node:path';
 import { test } from 'vitest';
 import './test-utils/android-host-test-setup.ts';
 import { runCmd } from '@agent-device/host-kit/command';
+import { deviceShellArgv } from '@agent-device/kernel/device-shell';
 import { withAndroidAdbProvider } from '../adb-executor.ts';
 import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
 
@@ -29,7 +30,7 @@ test('withAndroidAdbProvider intercepts adb commands for the scoped serial', asy
     },
     { serial: device.id },
     async () =>
-      await runCmd('adb', ['-s', 'emulator-5554', 'shell', 'echo', 'ok'], {
+      await runCmd('adb', deviceShellArgv('adb', 'shell', ['echo', 'ok'], ['-s', device.id]), {
         allowFailure: true,
       }),
   );

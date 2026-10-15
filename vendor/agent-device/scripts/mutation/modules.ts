@@ -45,12 +45,13 @@ export const KERNEL_MODULES: readonly KernelModule[] = [
     label: 'Error retriability + hints',
     mutate: ['packages/kernel/src/errors.ts'],
     owns: ['packages/kernel/src/errors.ts'],
+    shards: 5,
   },
   {
     id: 'daemon-ref-frame',
     label: 'Ref-frame admission matrix (ADR 0014)',
-    mutate: ['src/daemon/ref-frame.ts'],
-    owns: ['src/daemon/ref-frame.ts'],
+    mutate: ['packages/daemon/src/core/ref-frame.ts'],
+    owns: ['packages/daemon/src/core/ref-frame.ts'],
   },
   {
     id: 'interaction-settle',
@@ -76,13 +77,12 @@ export const KERNEL_MODULES: readonly KernelModule[] = [
     mutate: [
       'packages/selectors/src/**/*.ts',
       '!packages/selectors/src/**/*.test.ts',
+      '!packages/selectors/src/**/*.fixtures.ts',
       '!packages/selectors/src/internal/__tests__/**',
     ],
     // Selector tests live under the owned package source, so the prefix covers them.
     owns: ['packages/selectors/src/'],
-    // ~1,280 mutants at the observed ~3s/mutant on a 2-core runner is ~64
-    // minutes in one job — past the acceptance budget and its own timeout.
-    shards: 4,
+    shards: 8,
   },
   {
     id: 'target-annotation-serde',
@@ -118,12 +118,11 @@ export function mutateGlobs(ids: readonly ModuleId[] = ALL_MODULE_IDS): string[]
 }
 
 /**
- * The module a lane-tooling change proves itself against. `kernel-errors` is the
- * cheapest real sweep in the registry (one file, ~183 mutants), so a change to
- * the harness or the config runs actual mutants end to end without paying for
- * the full sweep.
+ * The module a lane-tooling change proves itself against. Keep this to a real
+ * end-to-end sweep whose observed related-test scope fits the 30-minute job
+ * budget; mutant count alone does not capture replay cost.
  */
-export const LANE_CANARY: ModuleId = 'kernel-errors';
+export const LANE_CANARY: ModuleId = 'snapshot-occlusion';
 
 /** One mutation job: a module, optionally one slice of it. */
 export type ShardSpec = { name: string; module: ModuleId; shard?: string };

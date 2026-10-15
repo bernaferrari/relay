@@ -3,12 +3,15 @@ import { expect, test } from 'vitest';
 import { shutdownTargetUse } from '@agent-device/contracts/platform-runtime-operations';
 import { commandDescriptors } from '@agent-device/command-registry/registry';
 
-const sessionStateSource = readFileSync(
-  new URL('../daemon/handlers/session-state.ts', import.meta.url),
+const sessionShutdownSource = readFileSync(
+  new URL('../../packages/daemon/src/sessions/handlers/session-shutdown.ts', import.meta.url),
   'utf8',
 );
 const sessionCloseSource = readFileSync(
-  new URL('../daemon/session-lifecycle/internal/session-close.ts', import.meta.url),
+  new URL(
+    '../../packages/daemon/src/sessions/session-lifecycle/internal/session-close.ts',
+    import.meta.url,
+  ),
   'utf8',
 );
 const appleLifecycleSource = readFileSync(
@@ -42,9 +45,7 @@ test('shutdown descriptor declares one canonical runtime operation', () => {
 });
 
 test('canonical shutdown and close parity share one concrete teardown mechanic', () => {
-  const shutdownRoute = sessionStateSource.slice(
-    sessionStateSource.indexOf("if (req.command === 'shutdown')"),
-  );
+  const shutdownRoute = sessionShutdownSource;
   expect(shutdownRoute.match(/inspectFacts\(device\)/g)).toHaveLength(1);
   expect(shutdownRoute.match(/bindDevice\(device, shutdownTargetUse\)/g)).toHaveLength(1);
   expect(shutdownRoute).not.toContain('operations.ensureReady');

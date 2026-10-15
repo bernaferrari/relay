@@ -10,14 +10,19 @@ const EMPTY_STATEMENT_COVERAGE = { covered: 0, pct: 0, total: 0 };
 
 export function buildIntegrationProgressModel({ root = process.cwd() } = {}) {
   const coverageSummary = path.join(root, 'coverage/coverage-summary.json');
-  const handlerTestDir = path.join(root, 'src/daemon/handlers/__tests__');
+  const handlerTestDirs = [
+    path.join(root, 'packages/daemon/src/sessions/handlers/__tests__'),
+    path.join(root, 'packages/daemon/src/execution/handlers/__tests__'),
+  ];
   const providerScenarioDir = path.join(root, 'test/integration/provider-scenarios');
   const commandContractFiles = walkFiles(path.join(root, 'src/commands'), (file) =>
     isCommandContractSource(file),
   );
   const clientCommandMethods = readClientCommandMethods(commandContractFiles);
 
-  const handlerTests = walkFiles(handlerTestDir, (file) => file.endsWith('.test.ts'));
+  const handlerTests = handlerTestDirs.flatMap((dir) =>
+    walkFiles(dir, (file) => file.endsWith('.test.ts')),
+  );
   const providerScenarioTests = walkFiles(providerScenarioDir, (file) => file.endsWith('.test.ts'));
   const providerScenarioSources = walkFiles(providerScenarioDir, (file) => file.endsWith('.ts'));
   const providerScenarioSupportSources = providerScenarioSources.filter(
@@ -254,6 +259,7 @@ function summarizeProviderScenarioFlagExclusions() {
         'providerSessionId',
         'providerApp',
         'providerOsVersion',
+        'providerDeviceType',
         'providerProject',
         'providerBuild',
         'providerSessionName',
@@ -327,6 +333,7 @@ function summarizeProviderScenarioFlagExclusions() {
         'shardSplit',
         'searchPath',
         'stepsFile',
+        'textStdin',
         'proxyHost',
         'proxyPort',
         'stale',
@@ -370,6 +377,13 @@ function summarizeProviderScenarioFlagExclusions() {
       name: 'Apple simulator private-AX capture options',
       owner: 'runner XCTest unit, snapshot-lines, and snapshot-quality tests',
       keys: ['snapshotCustomActions'],
+    },
+    {
+      // Observe-only capture is admitted only for a local iOS runner session; provider-owned
+      // sessions refuse it before capture, so no provider scenario can reach the observed path.
+      name: 'local iOS observe-only snapshot',
+      owner: 'Apple interactor observe-only and runner XCTest dispatch tests',
+      keys: ['snapshotObserveOnly'],
     },
     {
       // The crop is daemon-level post-processing: the platform write happens first, then the

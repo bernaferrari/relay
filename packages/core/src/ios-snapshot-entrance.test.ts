@@ -19,7 +19,11 @@ test("requested entrance capture tags its actual query census without changing o
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = directory;
   await writeFile(
     join(directory, "entrance-ipad.json"),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const calls: Array<Record<string, unknown>> = [];
   let surface = false;

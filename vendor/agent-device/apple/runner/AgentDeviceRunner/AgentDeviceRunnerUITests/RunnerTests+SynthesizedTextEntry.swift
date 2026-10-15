@@ -246,15 +246,6 @@ extension RunnerTests {
     case stop
   }
 
-  /// What the field reads between a replacement's clear passes.
-  enum ClearedFieldRead: Equatable {
-    case text(String)
-    /// The field never exposes its value: a secure field.
-    case unreadable
-    /// The read could not answer, or no input resolves.
-    case unavailable
-  }
-
   /// How a replacing post's clear ended.
   enum SynthesizedClearOutcome: Equatable {
     case cleared
@@ -270,7 +261,7 @@ extension RunnerTests {
   /// answer ends the clear, so the post never types over text it could not see removed.
   static func clearForSynthesizedReplacement(
     clearOnce: () -> SynthesizedStepDispatch,
-    read: () -> ClearedFieldRead
+    read: () -> TextValueRead
   ) -> SynthesizedClearOutcome {
     for pass in 1...SynthesizedTextPlan.Step.maxClearPassCount {
       guard clearOnce() == .posted else { return .stopped }
@@ -522,24 +513,23 @@ extension RunnerTests {
   /// `awaitSynthesizedReplacementCommit` binds the real XCUI reads). The budget defaults to the
   /// shipped one, so only a test that is asking about time has to name it.
   ///
-  /// Only an exact match settles. A value with a hole in the middle ("ada@example" -> "aexample")
-  /// is the corruption this wait exists to catch, and `.replacement` mode has no formatter or
-  /// autocomplete carve-out: `isRepairableTextEntryMismatch` (RunnerTests+TextTyping.swift) treats
-  /// every `.replacement` mismatch as repairable, because `fill` owns the whole field via
-  /// select-all. A settled non-match is therefore always the wait's failure case.
+  /// This route has no element-bound baseline for unconfirmed evidence. Only exact read-back
+  /// confirms a commit; prefix progress extends the bounded wait without confirming the value.
   static func awaitSynthesizedReplacementCommitOutcome(
     expectedText: String,
     placeholder: String?,
-    fieldIsSecure: Bool = false,
+    fieldIsUnreadable: Bool = false,
     stallBudget: TimeInterval = TextEntryTiming.synthesizedCommitStallTimeout,
     ceiling: TimeInterval = TextEntryTiming.synthesizedCommitCeiling,
     now: () -> Date = { Date() },
-    observe: () -> String?,
+    observe: () -> TextValueRead,
     waitForNextObservation: () -> Void
   ) -> SynthesizedTextCommitOutcome {
-    // A secure field never exposes its value, so every read is nil and the wait could only expire.
-    // The element route leaves such a field unverified rather than failed; so does this one.
-    if fieldIsSecure {
+    // An unreadable field never exposes its value, so every read could only expire the wait. The
+    // element route leaves such a field unverified rather than failed; so does this one. A masked
+    // value appears only once the burst lands, so a read that turns unreadable mid-wait ends it
+    // the same way.
+    if fieldIsUnreadable {
       return .unobservable
     }
     // A placeholder-equal AX value cannot prove a commit: an input handler may clear the field
@@ -553,7 +543,15 @@ extension RunnerTests {
     // happens before condemning a commit is a read. Checking first would condemn a commit that
     // landed during the final poll sleep — the exact loaded-host timing this wait exists for.
     while true {
-      let observedText = observe()
+      let observedText: String?
+      switch observe() {
+      case .unreadable:
+        return .unobservable
+      case .text(let value):
+        observedText = value
+      case .unavailable:
+        observedText = nil
+      }
       if observedText == expectedText {
         return .settled
       }

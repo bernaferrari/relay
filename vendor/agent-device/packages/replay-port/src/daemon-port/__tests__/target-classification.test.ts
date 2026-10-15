@@ -6,7 +6,7 @@ import { computeTargetEvidence } from '@agent-device/selectors/target-evidence';
 import { buildSelectorChainForNode, resolveRecordedTarget } from '@agent-device/selectors';
 import { resolvePressRecordingTarget } from '@agent-device/selectors/press-retarget';
 import { classifyReplayTarget } from '../target-classification.ts';
-import { resolveUnverifiedWrapperControl } from '@agent-device/selectors/interaction-targeting';
+import { resolveElementReportedTwice } from '@agent-device/selectors/interaction-targeting';
 import {
   ELEMENT14_DISTINCT_SUBTREE_NODES,
   UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES,
@@ -44,7 +44,7 @@ test('classifyReplayTarget: real-capture fixture verifies by @ref when the tree 
     requireRect: true,
     allowDisambiguation: true,
   });
-  assertVerified(result, { winnerRef: winner.ref, matchCount: 1 });
+  assertVerified(result, { winnerRef: winner.ref!, matchCount: 1 });
 });
 
 test('classifyReplayTarget: real-capture fixture — a relabeled node is identity-mismatch (path 3)', async () => {
@@ -547,7 +547,7 @@ test('#1269 e2e: a demoted shared-id row rebinds by role+label after the shared-
     requireRect: true,
     allowDisambiguation: true,
   });
-  assertVerified(result, { winnerRef: expected.ref, matchCount: 1 });
+  assertVerified(result, { winnerRef: expected.ref!, matchCount: 1 });
 
   // Contrast — the reorder is genuinely hostile to the id path: the shared id
   // matches all four rows (no unique bind → resolution refuses), while the
@@ -627,7 +627,7 @@ test('#1280 e2e: a retargeted press on a row container rebinds its labeled desce
     requireRect: true,
     allowDisambiguation: true,
   });
-  assertVerified(result, { winnerRef: expected.ref, matchCount: 1 });
+  assertVerified(result, { winnerRef: expected.ref!, matchCount: 1 });
 
   // Contrast: recording the CONTAINER itself (no retarget) leaves a
   // role-only identity — every row's wrapper shares it — that a fail-closed
@@ -663,7 +663,7 @@ test('#1280 e2e: a retargeted press on a row container rebinds its labeled desce
 test('#2498 e2e: a read recorded on a collapsed wrapper chain verifies on the same tree', () => {
   const nodes = toSnapshotNodes(UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES);
   const reports = nodes.filter((node) => node.identifier === 'scoring_home_button');
-  const control = resolveUnverifiedWrapperControl(nodes, reports);
+  const control = resolveElementReportedTwice(nodes, reports);
   assert.ok(control, 'dispatch resolves the toolbar button, not the item host that reports it');
   const recorded = computeTargetEvidence({ node: control, preActionNodes: nodes });
   assert.ok(recorded);

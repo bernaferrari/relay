@@ -1,3 +1,4 @@
+import { encodeIosRunnerCommand, decodeIosRunnerReply } from "./ios-runner-listener-http.js";
 /**
  * Talk to a LISTENER_READY testCommand runner over usbmux without taking
  * the lease or spawning xcodebuild. Relay’s agent-device session is
@@ -700,26 +701,12 @@ export async function postLiveIosRunnerCommand(
   command: LiveIosRunnerCommand,
   timeoutMs: number,
 ): Promise<LiveIosRunnerCommandResult> {
+  const request = encodeIosRunnerCommand(listener.runnerToken, command);
   const socket = await openUsbmuxRunnerSocket(listener.serial, listener.port, timeoutMs);
   try {
-    const body = Buffer.from(JSON.stringify(command), "utf8");
-    const request = Buffer.concat([
-      Buffer.from(
-        `POST /command HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n`,
-        "utf8",
-      ),
-      body,
-    ]);
     await writeAll(socket, request);
     const raw = await readUntilClose(socket, timeoutMs);
-    const sep = raw.indexOf("\r\n\r\n");
-    if (sep < 0) throw new Error("Live XCTest listener returned no HTTP body");
-    const payload = raw
-      .subarray(sep + 4)
-      .toString("utf8")
-      .trim();
-    if (!payload) throw new Error("Live XCTest listener returned an empty snapshot");
-    return JSON.parse(payload) as LiveIosRunnerCommandResult;
+    return decodeIosRunnerReply(raw) as LiveIosRunnerCommandResult;
   } finally {
     socket.destroy();
   }

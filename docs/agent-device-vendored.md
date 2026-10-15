@@ -1,7 +1,8 @@
 # Vendored `agent-device`
 
-Relay uses a local fork of `agent-device` at `vendor/agent-device`, pulled from upstream release
-`v0.21.23`, commit `b8219f54ddfd2acf08a2f56a5dbcce917cc16d0c`.
+Relay uses a local fork of `agent-device` at `vendor/agent-device`, updated from upstream `main`
+at commit `35c21b618ace55f2313124190d5674ea174e6d8b` (package version `0.21.29-dev`, October 15, 2026).
+This pins a development snapshot; it is not an upstream release.
 The package is linked directly from `@relay/core`, so device behavior is editable and reviewable in
 this repository rather than hidden inside pnpm's patch store.
 
@@ -19,19 +20,22 @@ or Relay itself.
 
 The fork retains verified physical iOS field paste/copy, orientation-correct iPad screenshots,
 element-relative selector taps, scoped runner artifact cleanup, and serialization of local daemon
-acquisition. Updates keep upstream's daemon ownership and command trait declarations authoritative.
+acquisition. Adopted iOS listener commands use the lease’s private `runnerToken` and require
+the runner’s authentication response marker; tokenless older runners are not adopted.
+Updates keep upstream's daemon ownership and command trait declarations authoritative.
 
 ## Updating the fork
 
-The vendored tree is an upstream subtree. To inspect or pull a newer upstream release:
+The vendored tree is an upstream subtree. To inspect or pull a newer upstream revision (a release tag or pinned `main` commit):
 
 ```bash
 git remote add agent-device-upstream https://github.com/callstack/agent-device.git
-git fetch agent-device-upstream
-git subtree pull --prefix=vendor/agent-device agent-device-upstream <tag> --squash
+git fetch --no-tags agent-device-upstream <revision>
+git subtree merge --prefix=vendor/agent-device FETCH_HEAD --squash
 ```
 
-Resolve any intentional Relay changes in the vendored source, then run:
+Add the remote once. Fetching one revision without tags avoids collisions with Relay’s own release
+tags. Resolve any intentional Relay changes in the vendored source, then run:
 
 ```bash
 pnpm agent-device:install
@@ -43,8 +47,8 @@ pnpm agent-device:build
 ```bash
 cd vendor/agent-device
 pnpm typecheck
-npx vitest run --project unit-core        # hermetic suites
-npx vitest run --project apple-runner     # XCTest runner suites
+pnpm exec vitest run --project unit-core        # hermetic suites
+pnpm exec vitest run --project apple-runner     # XCTest runner suites
 pnpm check:xctest-selection
 pnpm build:xcuitest:ios
 ANDROID_HOME="$HOME/Library/Android/sdk" AGENT_DEVICE_ANDROID_BUILD_TOOLS=36.0.0 \

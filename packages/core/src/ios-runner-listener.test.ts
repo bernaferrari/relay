@@ -15,13 +15,19 @@ test("a live lease pid is a healthy testCommand listener", async () => {
   const serial = "listener-ipad";
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   try {
     const live = await probeLiveIosRunnerListener(serial, {
       AGENT_DEVICE_IOS_RUNNER_LEASE_DIR: dir,
     });
     assert.deepEqual(live, { serial, runnerPid: process.pid, port: 50937 });
+    assert.equal(live?.runnerToken, "relay-listener-fixture-token");
+    assert.ok(!JSON.stringify(live).includes("relay-listener-fixture-token"));
     assert.equal(isIosRunnerProcessAlive(process.pid), true);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -31,7 +37,10 @@ test("a live lease pid is a healthy testCommand listener", async () => {
 test("a dead lease pid is a missing runner, not a reboot", async () => {
   const dir = await mkdtemp(join(tmpdir(), "relay-ios-listener-dead-"));
   const serial = "dead-listener-ipad";
-  await writeFile(join(dir, `${serial}.json`), JSON.stringify({ runnerPid: 1, port: 1 }));
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerToken: "relay-listener-fixture-token", runnerPid: 1, port: 1 }),
+  );
   try {
     const lease = await readIosRunnerLease(serial, { AGENT_DEVICE_IOS_RUNNER_LEASE_DIR: dir });
     assert.equal(lease?.runnerPid, 1);
@@ -52,12 +61,32 @@ test("waitForIosRunnerListenerReady adopts the listener once the lease appears",
   setTimeout(() => {
     void writeFile(
       join(dir, `${serial}.json`),
-      JSON.stringify({ runnerPid: process.pid, port: 41000 }),
+      JSON.stringify({
+        runnerToken: "relay-listener-fixture-token",
+        runnerPid: process.pid,
+        port: 41000,
+      }),
     );
   }, 80);
   try {
     const live = await pending;
     assert.equal(live?.port, 41000);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a tokenless legacy runner is not a healthy adoption target", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-listener-auth-"));
+  const serial = "legacy-listener-ipad";
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ port: 50937, runnerPid: process.pid }),
+  );
+  try {
+    const env = { AGENT_DEVICE_IOS_RUNNER_LEASE_DIR: dir };
+    assert.ok(await readIosRunnerLease(serial, env), "legacy lease remains readable for cleanup");
+    assert.equal(await probeLiveIosRunnerListener(serial, env), null);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -195,6 +195,11 @@ export type CloseApplicationInput = Readonly<{
   surface: SessionSurface;
   /** A selector-only close establishes readiness inside its admitted lifecycle binding. */
   ensureReady?: boolean;
+  /**
+   * `kill` asks for system-initiated process death of the positional target (Maestro `killApp`);
+   * absent means an ordinary close. A backend without such a primitive closes normally.
+   */
+  mode?: 'kill';
   execution: ApplicationLifecycleExecution;
 }>;
 
@@ -391,12 +396,16 @@ export type AndroidApplicationTools = Readonly<{
     device: DeviceInfo,
     target: string | undefined,
     currentAppBundleId: string | undefined,
+    launchedAppBundleId: string | undefined,
   ): Promise<string | undefined>;
   resetFramePerfStats(device: DeviceInfo, appBundleId: string): Promise<void>;
   applyRuntimeHints(device: DeviceInfo, input: RuntimeHintsApplicationInput): Promise<void>;
   clearRuntimeHints(device: DeviceInfo, input: RuntimeHintsApplicationInput): Promise<void>;
   activateTestIme(device: DeviceInfo, input: Readonly<{ stateDir: string }>): Promise<void>;
-  restoreTestIme(device: DeviceInfo, input: Readonly<{ stateDir: string }>): Promise<void>;
+  restoreTestIme(
+    device: DeviceInfo,
+    input: Readonly<{ stateDir: string; shutdownTarget: boolean; signal: AbortSignal }>,
+  ): Promise<void>;
   recoverTestImeStartup(input: Readonly<{ stateDir: string }>): Promise<void>;
   hasTestImeRecoveryEvidence(stateDir: string): Promise<boolean>;
 }>;

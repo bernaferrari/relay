@@ -1,20 +1,24 @@
 import type { CliFlags } from '@agent-device/contracts/command';
+import { requireResolvedProfilePlatform } from '@agent-device/contracts/provider-profile-fields';
 import type { ProviderConnectionVerification } from '@agent-device/contracts/remote';
 import { verifyLimrunConnection } from '@agent-device/provider-limrun';
+import { leaseBackendForPlatform } from '@agent-device/kernel/contracts';
 import { AppError } from '@agent-device/kernel/errors';
-import { readBrowserStackCredentials } from '@agent-device/provider-webdriver/providers';
-import { providerWebDriver } from '../../provider-webdriver.ts';
 import { resolveRemoteConfigProfile } from '../../remote/remote-config.ts';
-import { readVersion } from '@agent-device/host-kit/version';
 import { type EnvMap } from '@agent-device/kernel/source-value';
 
 import { resolveCloudConnectProfile } from './cloud-profile.ts';
-import { resolveCloudWebDriverConnectProfile } from './cloud-webdriver-profile.ts';
 import { resolveLimrunConnectProfile } from './limrun-profile.ts';
 import { readLimrunCredentials } from '../../provider-limrun-credentials.ts';
 import { resolveProxyConnectProfile } from './proxy-profile.ts';
 import { profileToCliFlags } from '../remote-config-flags.ts';
 import { isConnectProviderName, type ConnectProvider } from './provider-policy.ts';
+import { bundledCloudWebDriverConnection } from '../../provider-webdriver.ts';
+import { withPluginConnection } from '../../plugins/load.ts';
+import type { PluginConnection } from '../../plugins/connection.ts';
+import { readMetroProfileFields } from './profile-fields.ts';
+import { buildConnectClientId } from './client-id.ts';
+import { persistAndResolveGeneratedProfile } from './generated-config.ts';
 
 type ConnectProfile = { flags: CliFlags; remoteConfigPath: string };
 type ResolvedConnectProfile = ConnectProfile & { provider?: ConnectProvider };
@@ -43,7 +47,10 @@ type ConnectProviderAdapter = {
   verify(context: Pick<AdapterContext, 'flags' | 'env'>): Promise<ConnectVerification>;
 };
 
-const CONNECT_PROVIDER_ADAPTERS = {
+/** Providers whose profile the CLI composes itself; every other provider supplies connection callbacks. */
+const CONNECT_PROVIDER_ADAPTERS: Readonly<
+  Record<'cloud' | 'proxy' | 'limrun', ConnectProviderAdapter>
+> = {
   cloud: {
     resolve: resolveCloudConnectProfile,
     verify: async () => ({
@@ -61,21 +68,27 @@ const CONNECT_PROVIDER_ADAPTERS = {
         'Proxy configuration saved. Access is checked by the first remote command.',
     }),
   },
-  browserstack: {
-    resolve: (context) =>
-      resolveCloudWebDriverConnectProfile({ provider: 'browserstack', ...context }),
-    verify: verifyBrowserStack,
-  },
-  'aws-device-farm': {
-    resolve: (context) =>
-      resolveCloudWebDriverConnectProfile({ provider: 'aws-device-farm', ...context }),
-    verify: verifyAwsDeviceFarm,
-  },
   limrun: {
     resolve: resolveLimrunConnectProfile,
     verify: verifyLimrun,
   },
-} satisfies Record<ConnectProvider, ConnectProviderAdapter>;
+};
+
+function builtinConnectAdapter(provider: string): ConnectProviderAdapter | undefined {
+  return Object.hasOwn(CONNECT_PROVIDER_ADAPTERS, provider)
+    ? CONNECT_PROVIDER_ADAPTERS[provider as keyof typeof CONNECT_PROVIDER_ADAPTERS]
+    : undefined;
+}
+
+/** Runs a provider's connection callbacks: a bundled provider in-process, otherwise its installed plugin. */
+async function withProviderConnection<T>(
+  provider: string,
+  env: EnvMap,
+  run: (connection: PluginConnection) => Promise<T>,
+): Promise<T> {
+  const bundled = bundledCloudWebDriverConnection(provider, env);
+  return bundled ? await run(bundled) : await withPluginConnection(provider, env, run);
+}
 
 export async function resolveConnectProviderProfile(options: {
   provider?: ConnectProvider;
@@ -100,18 +113,67 @@ export async function resolveConnectProviderProfile(options: {
         remoteConfig: resolved.resolvedPath,
       },
       remoteConfigPath: resolved.resolvedPath,
-      ...(isConnectProviderName(leaseProvider) ? { provider: leaseProvider } : {}),
+      ...(isConnectProviderName(leaseProvider, env) ? { provider: leaseProvider } : {}),
     };
   }
   const provider =
     options.provider ?? (shouldUseProxyConnectShortcut(options.flags) ? 'proxy' : 'cloud');
-  const profile = await CONNECT_PROVIDER_ADAPTERS[provider].resolve({
+  const context = {
     flags: options.flags,
     stateDir: options.stateDir,
     cwd,
     env,
-  });
+  };
+  const adapter = builtinConnectAdapter(provider);
+  const profile = adapter
+    ? await adapter.resolve(context)
+    : await withProviderConnection(
+        provider,
+        env,
+        async (connection) => await resolveProviderConnectionProfile(provider, connection, context),
+      );
   return { ...profile, provider };
+}
+
+/**
+ * The provider contributes its fields; the CLI adds identity, session defaults, Metro settings, and
+ * the lease backend its platform rents on unless the provider or the caller named one.
+ */
+async function resolveProviderConnectionProfile(
+  provider: string,
+  connection: PluginConnection,
+  context: AdapterContext,
+): Promise<ConnectProfile> {
+  const resolved = await connection.resolve(context);
+  if (resolved.profile.leaseProvider !== provider)
+    throw new AppError(
+      'INVALID_ARGS',
+      `Provider connection profile must select its declared provider: ${provider}`,
+    );
+  const clientId = buildConnectClientId(
+    provider,
+    context.stateDir,
+    context.flags.session,
+    resolved.profile.device,
+  );
+  return persistAndResolveGeneratedProfile({
+    ...context,
+    ...resolved,
+    provider,
+    profile: {
+      tenant: context.flags.tenant ?? provider,
+      sessionIsolation: context.flags.sessionIsolation ?? 'tenant',
+      runId: context.flags.runId ?? `${provider}-${clientId}`,
+      clientId,
+      target: context.flags.target ?? 'mobile',
+      session: context.flags.session,
+      stateDir: context.stateDir,
+      leaseBackend:
+        context.flags.leaseBackend ?? leaseBackendForPlatform(resolved.profile.platform),
+      ...readMetroProfileFields(context.flags),
+      ...resolved.profile,
+    },
+  });
 }
 
 export async function verifyResolvedConnectProvider(
@@ -125,55 +187,18 @@ export async function verifyResolvedConnectProvider(
         'Remote connection profile loaded. Access is checked by the first remote command.',
     };
   }
-  return await CONNECT_PROVIDER_ADAPTERS[resolved.provider].verify({
+  const context = {
     flags: resolved.flags,
     env: process.env,
-  });
-}
-
-async function verifyBrowserStack(
-  context: Pick<AdapterContext, 'flags' | 'env'>,
-): Promise<ConnectVerification> {
-  const { flags, env } = context;
-  const credentials = readBrowserStackCredentials(env);
-  return await providerWebDriver.verifyConnection({
-    provider: 'browserstack',
-    username: requiredResolvedValue(
-      credentials.username,
-      'BrowserStack profile missed BROWSERSTACK_USERNAME.',
-    ),
-    accessKey: requiredResolvedValue(
-      credentials.accessKey,
-      'BrowserStack profile missed BROWSERSTACK_ACCESS_KEY.',
-    ),
-    platform: requiredResolvedPlatform(flags.platform, 'BrowserStack'),
-    deviceName: requiredResolvedValue(flags.device, 'BrowserStack profile missed device.'),
-    osVersion: requiredResolvedValue(
-      flags.providerOsVersion,
-      'BrowserStack profile missed OS version.',
-    ),
-    app: requiredResolvedValue(flags.providerApp, 'BrowserStack profile missed app.'),
-  });
-}
-
-async function verifyAwsDeviceFarm(
-  context: Pick<AdapterContext, 'flags' | 'env'>,
-): Promise<ConnectVerification> {
-  const { flags } = context;
-  return await providerWebDriver.verifyConnection({
-    provider: 'aws-device-farm',
-    platform: requiredResolvedPlatform(flags.platform, 'AWS Device Farm'),
-    projectArn: requiredResolvedValue(
-      flags.awsProjectArn,
-      'AWS Device Farm profile missed project ARN.',
-    ),
-    deviceArn: requiredResolvedValue(
-      flags.awsDeviceArn,
-      'AWS Device Farm profile missed device ARN.',
-    ),
-    appArn: flags.awsAppArn,
-    region: flags.awsRegion,
-  });
+  };
+  const adapter = builtinConnectAdapter(resolved.provider);
+  return adapter
+    ? await adapter.verify(context)
+    : await withProviderConnection(
+        resolved.provider,
+        context.env,
+        async (connection) => await connection.verify(context),
+      );
 }
 
 async function verifyLimrun(
@@ -181,8 +206,7 @@ async function verifyLimrun(
 ): Promise<ConnectVerification> {
   return await verifyLimrunConnection({
     ...readLimrunCredentials(context.env),
-    clientVersion: readVersion(),
-    platform: requiredResolvedPlatform(context.flags.platform, 'Limrun'),
+    platform: requireResolvedProfilePlatform(context.flags.platform, 'Limrun'),
   });
 }
 
@@ -196,21 +220,4 @@ function shouldUseProxyConnectShortcut(flags: CliFlags): boolean {
   } catch {
     return false;
   }
-}
-
-function requiredResolvedValue<T>(value: T | undefined, message: string): T {
-  if (value !== undefined) return value;
-  throw new AppError('COMMAND_FAILED', message, {
-    hint: 'Reconnect to regenerate and validate the provider profile.',
-  });
-}
-
-function requiredResolvedPlatform(
-  platform: CliFlags['platform'],
-  service: string,
-): 'android' | 'ios' {
-  if (platform === 'android' || platform === 'ios') return platform;
-  throw new AppError('COMMAND_FAILED', `${service} profile missed a mobile platform.`, {
-    hint: 'Reconnect with --platform ios|android.',
-  });
 }

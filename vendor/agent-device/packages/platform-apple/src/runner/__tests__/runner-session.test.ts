@@ -117,9 +117,7 @@ vi.mock('../runner-xctestrun.ts', async () => {
 
 import {
   abortAllIosRunnerSessions,
-  cancelIosRunnerIdleStop,
   ensureRunnerSession,
-  scheduleIosRunnerIdleStop,
   executeRunnerCommandWithSession,
   readRunnerSessionLiveness,
   invalidateRunnerSession,
@@ -282,16 +280,14 @@ test('runner session starts xcodebuild through provider seams and reuses an aliv
   const reused = await ensureRunnerSession(device, {});
 
   assert.equal(reused, session);
-  assert.equal(session.port, 8123);
+  assert.equal(session.endpoint.port, 8123);
   assert.equal(session.xctestrunPath, '/tmp/session-runner.xctestrun');
   assert.equal(mockRunCmdBackground.mock.calls.length, 1);
   assert.equal(mockRunCmdBackground.mock.calls[0]?.[0], 'xcodebuild');
   const xcodebuildArgs = mockRunCmdBackground.mock.calls[0]?.[1];
   assert.ok(Array.isArray(xcodebuildArgs));
   assert.equal(xcodebuildArgs[xcodebuildArgs.indexOf('-derivedDataPath') + 1], '/tmp/derived');
-  assert.deepEqual(mockPrepareXctestrunWithEnv.mock.calls[0]?.[1], {
-    AGENT_DEVICE_RUNNER_PORT: '8123',
-  });
+  assert.equal(mockPrepareXctestrunWithEnv.mock.calls[0]?.[1]?.AGENT_DEVICE_RUNNER_PORT, '8123');
   assert.match(
     String(mockPrepareXctestrunWithEnv.mock.calls[0]?.[2] ?? ''),
     /^session-runner-session-start-sim-owner-\d+-[a-f0-9]{8}-8123$/,
@@ -404,76 +400,13 @@ test('runner session does not require Apple developer mode for iOS simulators', 
   assert.equal(mockRunAppleToolCommand.mock.calls.some(isDevToolsSecurityStatusCall), false);
 });
 
-test('idle stop tears down a retained runner after the idle window', async () => {
-  const device = { ...IOS_SIMULATOR, id: 'runner-session-idle-stop-sim' };
-  const previousIdleMs = process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS;
-  process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS = '40';
-  try {
-    await ensureRunnerSession(device, {});
-    scheduleIosRunnerIdleStop(device.id);
-
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    assert.equal(readRunnerSessionLiveness(device.id), null);
-  } finally {
-    cancelIosRunnerIdleStop(device.id);
-    if (previousIdleMs === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS;
-    else process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS = previousIdleMs;
-  }
-});
-
-test('any runner use cancels a pending idle stop', async () => {
-  const device = { ...IOS_SIMULATOR, id: 'runner-session-idle-cancel-sim' };
-  const previousIdleMs = process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS;
-  process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS = '40';
-  try {
-    await ensureRunnerSession(device, {});
-    scheduleIosRunnerIdleStop(device.id);
-    await ensureRunnerSession(device, {});
-
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    assert.ok(readRunnerSessionLiveness(device.id));
-  } finally {
-    cancelIosRunnerIdleStop(device.id);
-    if (previousIdleMs === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS;
-    else process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS = previousIdleMs;
-  }
-});
-
-test('idle stop is disabled when the window is zero', async () => {
-  const device = { ...IOS_SIMULATOR, id: 'runner-session-idle-disabled-sim' };
-  const previousIdleMs = process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS;
-  process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS = '0';
-  try {
-    await ensureRunnerSession(device, {});
-    scheduleIosRunnerIdleStop(device.id);
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    assert.ok(readRunnerSessionLiveness(device.id));
-  } finally {
-    cancelIosRunnerIdleStop(device.id);
-    if (previousIdleMs === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS;
-    else process.env.AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS = previousIdleMs;
-  }
-});
-
-test('runner session startup kills legacy ownerless xcodebuild before launching a new runner', async () => {
-  const device = { ...IOS_SIMULATOR, id: 'runner-session-startup-stale-sim' };
+test('runner session startup with no lease signals no xcodebuild before launching', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-startup-no-lease-sim' };
 
   await ensureRunnerSession(device, {});
 
-  const pkillCalls = mockRunAppleToolCommand.mock.calls.filter(isXcodebuildPkillCall);
-  assert.equal(pkillCalls.length, 2);
-  assert.deepEqual(pkillCalls[0]?.[1]?.slice(0, 2), ['-TERM', '-f']);
-  assert.deepEqual(pkillCalls[1]?.[1]?.slice(0, 2), ['-KILL', '-f']);
-  assert.match(
-    String(pkillCalls[0]?.[1]?.[2] ?? ''),
-    /xcodebuild\.\*test-without-building\.\*AgentDeviceRunner\\\.env\\\.session-runner-session-startup-stale-sim-\[0-9\]/,
-  );
-  const staleCleanupCallOrder = mockRunAppleToolCommand.mock.invocationCallOrder[0];
-  const runnerLaunchCallOrder = mockRunCmdBackground.mock.invocationCallOrder[0];
-  assert.ok(staleCleanupCallOrder !== undefined);
-  assert.ok(runnerLaunchCallOrder !== undefined);
-  assert.ok(staleCleanupCallOrder < runnerLaunchCallOrder);
+  assert.deepEqual(mockRunAppleToolCommand.mock.calls.filter(isXcodebuildPkillCall), []);
+  assert.equal(mockRunCmdBackground.mock.calls.length, 1);
 });
 
 test('runner session startup rejects live foreign runner lease', async () => {

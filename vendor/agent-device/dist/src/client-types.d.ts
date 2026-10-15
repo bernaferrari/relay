@@ -1,7 +1,8 @@
-import { B as SnapshotViewportSize, D as IosTargetActivation, E as AppleApplicationState, K as DaemonError, L as SnapshotQualityVerdict, M as SnapshotCommandOptionFields, N as SnapshotKeyboardBandFact, P as SnapshotNode, S as DeviceTarget, T as PublicPlatform, V as SnapshotVisibility, Y as NormalizedError, _ as SessionIsolationMode, a as DaemonRequest, f as LeaseBackend, g as ResponseLevel, i as DaemonLockPolicy, m as NetworkIncludeMode, o as DaemonResponse, r as DaemonInstallSource, s as DaemonResponseData, t as DaemonArtifact, v as SessionRuntimeHints, w as PlatformSelector, x as DeviceKind, y as AppleOS, z as SnapshotUnchanged } from "./sdk-contracts.js";
-import { n as GesturePointerCount, s as AppsFilter } from "./gesture-plan-types.js";
-import { A as BackMode, C as SwipePattern, D as FoldPose, E as DeviceRotation, O as FoldScreenCoordinateSpace, S as ScrollInputDirection, T as TransformGestureParams, _ as TextSizeCategory, c as SnapshotDiagnosticsSummary, d as MOBILE_PERMISSION_TARGETS, f as PermissionAction, i as AndroidSnapshotBackendMetadata, k as SetFoldPoseInput, l as SessionSurface, o as FindLocator, p as PermissionMode, r as CloudProviderSessionResult, s as ScreenshotResultData, t as AgentArtifactsResult, u as MACOS_PERMISSION_TARGETS, v as TvRemoteButton, w as SwipePreset, x as ScrollDirection, y as ScrollCommandResult } from "./cloud-artifacts.js";
+import { A as PresentedSurface, D as IosSnapshotObservation, E as AppleApplicationState, F as SnapshotKeyboardBandFact, H as SnapshotViewportSize, I as SnapshotNode, J as DaemonError, O as IosTargetActivation, P as SnapshotCommandOptionFields, S as DeviceTarget, T as PublicPlatform, U as SnapshotVisibility, V as SnapshotUnchanged, Z as NormalizedError, _ as SessionIsolationMode, a as DaemonRequest, f as LeaseBackend, g as ResponseLevel, i as DaemonLockPolicy, m as NetworkIncludeMode, o as DaemonResponse, r as DaemonInstallSource, s as DaemonResponseData, t as DaemonArtifact, v as SessionRuntimeHints, w as PlatformSelector, x as DeviceKind, y as AppleOS, z as SnapshotQualityVerdict } from "./sdk-contracts.js";
+import { t as AppsFilter } from "./app-inventory.js";
+import { A as SetFoldPoseInput, C as ScrollInputDirection, D as DeviceRotation, E as TransformGestureParams, O as FoldPose, S as ScrollDirection, T as SwipePreset, a as AndroidSnapshotBackendMetadata, b as ScrollCommandResult, c as ScreenshotResultData, d as MACOS_PERMISSION_TARGETS, f as MOBILE_PERMISSION_TARGETS, i as CloudProviderSessionResult, j as BackMode, k as FoldScreenCoordinateSpace, l as SnapshotDiagnosticsSummary, m as PermissionMode, p as PermissionAction, s as FindLocator, t as AgentArtifactsResult, u as SessionSurface, v as TextSizeCategory, w as SwipePattern, y as TvRemoteButton } from "./cloud-artifacts.js";
 import { _ as PressCommandResponseData, f as ClickCommandResponseData, g as LongPressCommandResponseData, h as HoverCommandResponseData, m as FindCommandResponseData, p as FillCommandResponseData, v as SettleObservation, y as ClickButton } from "./sdk-selectors.js";
+import { n as GesturePointerCount } from "./gesture-plan-types.js";
 import { a as RemoteConnectionProfileFields, c as MetroPrepareResult, i as CloudProviderProfileFields, l as MetroReloadOptions, s as MetroPrepareOptions, u as MetroReloadResult } from "./sdk-remote-config.js";
 import { t as BatchRunResult } from "./sdk-batch-runner.js";
 //#region packages/contracts/src/json.d.ts
@@ -57,7 +58,7 @@ type AgentDeviceClientConfig = RemoteConnectionProfileFields & CloudProviderProf
   iosXctestDerivedDataPath?: string;
   iosXctestEnvDir?: string;
 };
-type AgentDeviceRequestOverrides = Pick<AgentDeviceClientConfig, 'session' | 'lockPolicy' | 'lockPlatform' | 'requestId' | 'daemonBaseUrl' | 'daemonAuthToken' | 'daemonTransport' | 'daemonServerMode' | 'tenant' | 'sessionIsolation' | 'runId' | 'leaseId' | 'leaseBackend' | 'leaseProvider' | 'deviceKey' | 'clientId' | 'providerApp' | 'providerOsVersion' | 'providerProject' | 'providerBuild' | 'providerSessionName' | 'providerDeviceOrientation' | 'providerGeoLocation' | 'providerTimezone' | 'providerAppiumVersion' | 'providerLanguage' | 'providerLocale' | 'providerNetworkProfile' | 'providerCustomNetwork' | 'providerNoResignApp' | 'awsProjectArn' | 'awsDeviceArn' | 'awsAppArn' | 'awsRegion' | 'awsInteractionMode' | 'leaseTtlMs' | 'cwd' | 'debug' | 'cost' | 'responseLevel' | 'iosXctestrunFile' | 'iosXctestDerivedDataPath' | 'iosXctestEnvDir'> & {
+type AgentDeviceRequestOverrides = Pick<AgentDeviceClientConfig, 'session' | 'lockPolicy' | 'lockPlatform' | 'requestId' | 'daemonBaseUrl' | 'daemonAuthToken' | 'daemonTransport' | 'daemonServerMode' | 'tenant' | 'sessionIsolation' | 'runId' | 'leaseId' | 'leaseBackend' | 'leaseProvider' | 'deviceKey' | 'clientId' | 'providerApp' | 'providerOsVersion' | 'providerDeviceType' | 'providerProject' | 'providerBuild' | 'providerSessionName' | 'providerDeviceOrientation' | 'providerGeoLocation' | 'providerTimezone' | 'providerAppiumVersion' | 'providerLanguage' | 'providerLocale' | 'providerNetworkProfile' | 'providerCustomNetwork' | 'providerNoResignApp' | 'awsProjectArn' | 'awsDeviceArn' | 'awsAppArn' | 'awsRegion' | 'awsInteractionMode' | 'leaseTtlMs' | 'cwd' | 'debug' | 'cost' | 'responseLevel' | 'iosXctestrunFile' | 'iosXctestDerivedDataPath' | 'iosXctestEnvDir'> & {
   /**
    * Cancels this one call. Already aborted: the call rejects without sending anything
    * (`details.dispatched: 'no'`). Aborted in flight: the request's connection closes, the daemon
@@ -363,8 +364,9 @@ type SnapshotCaptureAnnotations = {
   warnings?: string[];
   /** The Apple runner re-activated the session app while serving this capture (#2682). */
   targetActivation?: IosTargetActivation;
+  observation?: IosSnapshotObservation;
 };
-type PublicSnapshotCaptureAnnotations = Pick<SnapshotCaptureAnnotations, 'androidSnapshot' | 'warnings' | 'targetActivation'> & {
+type PublicSnapshotCaptureAnnotations = Pick<SnapshotCaptureAnnotations, 'androidSnapshot' | 'warnings' | 'targetActivation' | 'observation'> & {
   snapshotQuality?: SnapshotQualityVerdict;
 };
 //#endregion
@@ -418,6 +420,13 @@ type CaptureSnapshotResult = {
    * screen size only; content-safe gesture bounds stay with #1821.
    */
   viewport?: SnapshotViewportSize;
+  /**
+   * iOS: whether the capture read a modal presentation over the app (#3565), decided on the acquired
+   * tree before interactive filtering, compaction, depth, or scope. `'absent'` is a positive reading;
+   * a capture whose producer could not decide — or did not speak — reports `'unknown'`, and absence
+   * of the field means a non-iOS producer or an older runner published nothing.
+   */
+  presentedSurface?: PresentedSurface;
   /**
    * Screenshot captured automatically when the semantic snapshot was sparse.
    * Remote clients receive a materialized local path through the daemon artifact channel.
@@ -500,7 +509,8 @@ type RepeatedPressOptions = {
  * Opt-in (#1101): after the action, wait for the UI to go quiet and return the
  * settled diff vs the pre-action tree (`settle` on the result) in the same
  * response. Best-effort — never fails the action. `settleQuietMs` tunes the
- * quiet window (default 500ms); `timeoutMs` bounds the settle wait (default
+ * quiet window (default 500ms, or 300ms when the settled tree comes from the iOS
+ * simulator snapshot bridge); `timeoutMs` bounds the settle wait (default
  * 10s) when `settle` is true. A bare `timeoutMs` without `settle` is ignored
  * for compatibility; `settleQuietMs` still requires `settle`.
  */
@@ -509,14 +519,7 @@ type SettleCommandOptions = {
   settleQuietMs?: number;
   timeoutMs?: number;
 };
-/**
- * How long a tap-shaped interaction may poll for a target that does not exist yet, capped at the
- * promotedTarget row's maxTimeoutMs. Never model- or CLI-writable; omitted means one attempt.
- */
-type ReadinessBudgetOptions = {
-  readinessTimeoutMs?: number;
-};
-type ClickOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & InteractionTarget & RepeatedPressOptions & SettleCommandOptions & ReadinessBudgetOptions & {
+type ClickOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & InteractionTarget & RepeatedPressOptions & SettleCommandOptions & {
   button?: ClickButton;
   /**
    * Opt-in (#1047): return cheap post-action evidence (AX digest, node counts,
@@ -525,10 +528,10 @@ type ClickOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & 
    */
   verify?: boolean;
 };
-type PressOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & InteractionTarget & RepeatedPressOptions & SettleCommandOptions & ReadinessBudgetOptions & {
+type PressOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & InteractionTarget & RepeatedPressOptions & SettleCommandOptions & {
   verify?: boolean;
 };
-type LongPressOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & InteractionTarget & SettleCommandOptions & ReadinessBudgetOptions & {
+type LongPressOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & InteractionTarget & SettleCommandOptions & {
   durationMs?: number;
 };
 type HoverOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & InteractionTarget & SettleCommandOptions;
@@ -582,6 +585,8 @@ type FillOptions = DeviceCommandBaseOptions & SelectorSnapshotCommandOptions & I
   delayMs?: number;
   /** Publish this fill value as `${VAR}` when script recording is armed. */
   recordAs?: string;
+  /** The text came from the CLI's stdin; keep it out of diagnostics and recorded actions. */
+  textStdin?: boolean;
   verify?: boolean;
 };
 type PinchOptions = DeviceCommandBaseOptions & {
@@ -619,12 +624,29 @@ type Lease = {
   heartbeatAt?: number;
   expiresAt?: number;
 };
+/**
+ * A session lease a daemon request ended. A reply to a request that ended leases lists them once in
+ * `endedLeases` at response level: in `data` on success, in `error.details` on failure. A `close`,
+ * a `batch` close step, a `replay` or `test` script's close, and `test` session cleanup each end the
+ * lease they close with, unless it was allocated with `retainOnClose`. A daemon older than this
+ * field omits it.
+ */
+type EndedLease = {
+  leaseId: string;
+  outcome: 'released';
+};
 type LeaseOptions = AgentDeviceRequestOverrides & AgentDeviceSelectionOptions & {
   ttlMs?: number;
 };
 type LeaseAllocateOptions = LeaseOptions & {
   tenant: string;
   runId: string;
+  /**
+   * The id for the new lease (16-128 hex characters), refused when the daemon already issued it;
+   * the client's configured `leaseId` is never sent here. Use the returned lease's `leaseId`: a daemon that predates this field mints its own,
+   * and a run that already holds a lease gets that lease back.
+   */
+  leaseId?: string;
   leaseBackend?: LeaseBackend;
   leaseProvider?: string;
   provider?: string;
@@ -954,8 +976,12 @@ type SettingsUpdateOptions = (DeviceCommandBaseOptions & {
   permission: PermissionTarget;
   mode?: PermissionMode;
   /**
-   * The app the permission changes, by bundle id or package name. Without it the app bound to
-   * the session is used; with it no app has to be running or open, because `simctl privacy` and
+   * The app the permission changes, by bundle id, package name, or app name, resolved as `open`
+   * resolves it: an iOS simulator matches display names and accepts only an installed bundle
+   * id, Android accepts only an installed package and matches other names against installed
+   * package names, and a Limrun iOS session resolves only the `settings` alias. One that
+   * resolves to nothing is refused with `app_not_installed`. Without it the app bound to the
+   * session is used; with it no app has to be running or open, because `simctl privacy` and
    * Android's `pm` need only the id. macOS permissions are host-level TCC grants, so naming an
    * app there is refused rather than dropped.
    */
@@ -1089,7 +1115,7 @@ type TriggerAppEventCommandResult = {
 //#region packages/contracts/src/app-state.d.ts
 /**
  * Closed result of the `appstate` command, grounded in the daemon handler's
- * success returns (src/daemon/handlers/session-state.ts `handleAppStateCommand`).
+ * success returns (packages/daemon/src/sessions/handlers/session-appstate.ts `handleAppStateCommand`).
  * A discriminated union on `platform`:
  *  - Apple (`ios` / `macos`) session state, with iOS-only device locators that
  *    the previous hand-written mirror omitted; and
@@ -1123,7 +1149,8 @@ type AppStateCommandResult = {
 //#region packages/contracts/src/device.d.ts
 /**
  * Closed result of the `boot` command. Mirrors the daemon handler's only
- * success return EXACTLY (src/daemon/handlers/session-state.ts) — the fixed
+ * success return EXACTLY (packages/daemon/src/sessions/handlers/session-boot.ts via
+ * session-device-status-response.ts) — the fixed
  * object literal `{ platform, target, device, id, kind, booted }` plus the
  * additive `appleOs` discriminant, emitted only for Apple devices.
  */
@@ -1146,7 +1173,8 @@ type BootCommandResult = {
 };
 /**
  * Closed result of the `shutdown` command. Mirrors the daemon handler's success
- * return EXACTLY (src/daemon/handlers/session-state.ts) — the fixed object
+ * return EXACTLY (packages/daemon/src/sessions/handlers/session-shutdown.ts via
+ * session-device-status-response.ts) — the fixed object
  * literal `{ platform, target, device, id, kind, shutdown }` plus the additive
  * `appleOs` discriminant (Apple devices only). The `shutdown` field is the raw
  * {@link TargetShutdownResult} returned by the bound `shutdownTarget` operation.
@@ -1518,7 +1546,7 @@ type TvRemoteCommandResult = {
 //#region packages/contracts/src/clipboard.d.ts
 /**
  * Closed result of the `clipboard` command. Mirrors the session runtime's
- * literal return exactly (`src/daemon/handlers/session-clipboard.ts`): a
+ * literal return exactly (`packages/daemon/src/execution/handlers/session-clipboard.ts`): a
  * discriminated union on `action`. `read` returns the clipboard `text`; `write`
  * reports the written `textLength` plus the `successText` message. The handler
  * spreads nothing else, so each branch is closed.
@@ -1541,7 +1569,7 @@ type ClipboardCommandResult = {
 //#region packages/contracts/src/keyboard.d.ts
 /**
  * Closed result of the `keyboard` command, grounded in the runtime operation
- * results projected by `src/daemon/keyboard-runtime.ts`.
+ * results projected by `packages/daemon/src/execution/keyboard-runtime.ts`.
  *
  * `platform` and `action` are always present; the remaining fields appear per
  * branch (Android `status`/`dismiss` carry the keyboard-state fields; `enter`
@@ -1885,4 +1913,4 @@ type AgentDeviceClient = {
   };
 };
 //#endregion
-export { NetworkOptions as $, AppTriggerEventOptions as $t, WaitCommandOptions as A, ElementTarget as At, GetOptions as B, FindSnapshotCommandOptions as Bt, HomeCommandOptions as C, isRecord as Cn, RotateGestureOptions as Ct, ReactNativeCommandOptions as D, SwipeOptions as Dt, PrepareCommandOptions as E, SwipeGestureOptions as Et, SessionCloseResult as F, CaptureDiffOptions as Ft, CommandRequestResult as G, AppDeployResult as Gt, IsStatePredicateOptions as H, AppCloseOptions as Ht, SessionSaveScriptOptions as I, CaptureScreenshotOptions as It, ReplayRunOptions as J, AppInstallOptions as Jt, BatchRunOptions as K, AppInstallFromSourceOptions as Kt, SessionSaveScriptResult as L, CaptureScreenshotResult as Lt, AlertAction as M, PointTarget as Mt, PermissionTarget as N, RefTarget as Nt, TvRemoteCommandOptions as O, TransformGestureOptions as Ot, SettingsUpdateOptions as P, SelectorTarget as Pt, LogsOptions as Q, AppPushOptions as Qt, FindBaseOptions as R, CaptureSnapshotOptions as Rt, FoldCommandOptions as S, JsonValue as Sn, RepeatedPressOptions as St, OrientationCommandOptions as T, SettleCommandOptions as Tt, IsTextPredicateOptions as U, AppCloseResult as Ut, IsOptions as V, SelectorSnapshotCommandOptions as Vt, RecordControlOptions as W, AppDeployOptions as Wt, AudioOptions as X, AppOpenOptions as Xt, ReplayTestOptions as Y, AppListOptions as Yt, EventsOptions as Z, AppOpenResult as Zt, AppStateCommandOptions as _, AgentDeviceSelectionOptions as _n, LongPressOptions as _t, WaitCommandResult as a, AgentDeviceCapabilitiesResult as an, HumanControlHoldOptions as at, ClipboardCommandOptions as b, JsonObject as bn, PressOptions as bt, DebugSymbolsOptions as c, AgentDeviceSessionDevice as cn, LeaseAllocateOptions as ct, PrepareCommandResult as d, StartupPerfSample as dn, ClickOptions as dt, DeviceSelectionMetadata as en, PerfOptions as et, ReplayCommandResult as f, AgentDeviceClientConfig as fn, DragOptions as ft, AlertCommandOptions as g, AgentDeviceRequestOverrides as gn, HoverOptions as gt, ActionButtonCommandOptions as h, AgentDeviceIdentifiers as hn, FocusOptions as ht, TraceCommandResult as i, MaterializationReleaseResult as in, HumanControlHold as it, WaitCommandTarget as j, InteractionTarget as jt, ViewportCommandOptions as k, TypeTextOptions as kt, DebugSymbolsResult as l, DeviceBootOptions as ln, LeaseOptions as lt, TriggerAppEventCommandResult as m, AgentDeviceDaemonTransportContext as mn, FlingOptions as mt, AgentDeviceCommandClient as n, DeviceSelectionSource as nn, TraceOptions as nt, DiffSnapshotCommandResult as o, AgentDeviceDevice as on, HumanControlHoldScope as ot, ReplaySuiteResult as p, AgentDeviceDaemonTransport as pn, FillOptions as pt, BatchStep as q, AppInstallFromSourceResult as qt, RecordingCommandResult as r, MaterializationReleaseOptions as rn, CloudArtifactsOptions as rt, DoctorCommandResult as s, AgentDeviceSession as sn, Lease as st, AgentDeviceClient as t, DeviceSelectionReason as tn, RecordOptions as tt, PushCommandResult as u, DeviceShutdownOptions as un, LeaseScopedOptions as ut, AppSwitcherCommandOptions as v, DeviceCommandBaseOptions as vn, PanOptions as vt, KeyboardCommandOptions as w, ScrollOptions as wt, DoctorCommandOptions as x, JsonPrimitive as xn, ReadinessBudgetOptions as xt, BackCommandOptions as y, TargetShutdownResult as yn, PinchOptions as yt, FindOptions as z, CaptureSnapshotResult as zt };
+export { NetworkOptions as $, AppTriggerEventOptions as $t, WaitCommandOptions as A, ElementTarget as At, GetOptions as B, FindSnapshotCommandOptions as Bt, HomeCommandOptions as C, isRecord as Cn, RotateGestureOptions as Ct, ReactNativeCommandOptions as D, SwipeOptions as Dt, PrepareCommandOptions as E, SwipeGestureOptions as Et, SessionCloseResult as F, CaptureDiffOptions as Ft, CommandRequestResult as G, AppDeployResult as Gt, IsStatePredicateOptions as H, AppCloseOptions as Ht, SessionSaveScriptOptions as I, CaptureScreenshotOptions as It, ReplayRunOptions as J, AppInstallOptions as Jt, BatchRunOptions as K, AppInstallFromSourceOptions as Kt, SessionSaveScriptResult as L, CaptureScreenshotResult as Lt, AlertAction as M, PointTarget as Mt, PermissionTarget as N, RefTarget as Nt, TvRemoteCommandOptions as O, TransformGestureOptions as Ot, SettingsUpdateOptions as P, SelectorTarget as Pt, LogsOptions as Q, AppPushOptions as Qt, FindBaseOptions as R, CaptureSnapshotOptions as Rt, FoldCommandOptions as S, JsonValue as Sn, RepeatedPressOptions as St, OrientationCommandOptions as T, SettleCommandOptions as Tt, IsTextPredicateOptions as U, AppCloseResult as Ut, IsOptions as V, SelectorSnapshotCommandOptions as Vt, RecordControlOptions as W, AppDeployOptions as Wt, AudioOptions as X, AppOpenOptions as Xt, ReplayTestOptions as Y, AppListOptions as Yt, EventsOptions as Z, AppOpenResult as Zt, AppStateCommandOptions as _, AgentDeviceSelectionOptions as _n, HoverOptions as _t, WaitCommandResult as a, AgentDeviceCapabilitiesResult as an, HumanControlHold as at, ClipboardCommandOptions as b, JsonObject as bn, PinchOptions as bt, DebugSymbolsOptions as c, AgentDeviceSessionDevice as cn, Lease as ct, PrepareCommandResult as d, StartupPerfSample as dn, LeaseScopedOptions as dt, DeviceSelectionMetadata as en, PerfOptions as et, ReplayCommandResult as f, AgentDeviceClientConfig as fn, ClickOptions as ft, AlertCommandOptions as g, AgentDeviceRequestOverrides as gn, FocusOptions as gt, ActionButtonCommandOptions as h, AgentDeviceIdentifiers as hn, FlingOptions as ht, TraceCommandResult as i, MaterializationReleaseResult as in, EndedLease as it, WaitCommandTarget as j, InteractionTarget as jt, ViewportCommandOptions as k, TypeTextOptions as kt, DebugSymbolsResult as l, DeviceBootOptions as ln, LeaseAllocateOptions as lt, TriggerAppEventCommandResult as m, AgentDeviceDaemonTransportContext as mn, FillOptions as mt, AgentDeviceCommandClient as n, DeviceSelectionSource as nn, TraceOptions as nt, DiffSnapshotCommandResult as o, AgentDeviceDevice as on, HumanControlHoldOptions as ot, ReplaySuiteResult as p, AgentDeviceDaemonTransport as pn, DragOptions as pt, BatchStep as q, AppInstallFromSourceResult as qt, RecordingCommandResult as r, MaterializationReleaseOptions as rn, CloudArtifactsOptions as rt, DoctorCommandResult as s, AgentDeviceSession as sn, HumanControlHoldScope as st, AgentDeviceClient as t, DeviceSelectionReason as tn, RecordOptions as tt, PushCommandResult as u, DeviceShutdownOptions as un, LeaseOptions as ut, AppSwitcherCommandOptions as v, DeviceCommandBaseOptions as vn, LongPressOptions as vt, KeyboardCommandOptions as w, ScrollOptions as wt, DoctorCommandOptions as x, JsonPrimitive as xn, PressOptions as xt, BackCommandOptions as y, TargetShutdownResult as yn, PanOptions as yt, FindOptions as z, CaptureSnapshotResult as zt };

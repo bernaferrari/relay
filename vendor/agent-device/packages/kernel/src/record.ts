@@ -1,6 +1,11 @@
 import { AppError } from '@agent-device/kernel/errors';
 import type { DeviceKind, DeviceTarget, PublicPlatform } from '@agent-device/kernel/device';
-import type { Point, Rect, SnapshotKeyboardBandFact } from '@agent-device/kernel/snapshot';
+import type {
+  Point,
+  PresentedSurface,
+  Rect,
+  SnapshotKeyboardBandFact,
+} from '@agent-device/kernel/snapshot';
 
 function readRequired<T>(
   record: Record<string, unknown>,
@@ -90,11 +95,10 @@ export function parseRect(value: unknown): Rect | undefined {
  * distinguished from one that measured and reported.
  *
  * A payload that cannot be placed is restated as `unmeasurable` naming where it failed, never dropped
- * and never trusted: silence would tell the tap guard the producer never looked. The reasons resolve
- * in a fixed order, least to most trusted: a value that is not an object is `malformed-fact`; an
- * unrecognized `kind` is `unrecognized-kind`; an `unmeasurable` that never named its failure is
- * `unreported-reason`; a `visible` whose frame is not a positive finite rect is
- * `invalid-visible-frame`.
+ * and never trusted: silence would tell the tap guard the producer never looked. Validation reasons
+ * identify the rejected shape: `malformed-fact`, `unrecognized-kind`, `unreported-reason`,
+ * `invalid-visibility-probe`, `unrecognized-derivation`, `invalid-visible-frame`, or
+ * `invalid-derived-frame`. They describe validation failures rather than levels of trust.
  */
 export function readSnapshotKeyboardBandFact(value: unknown): SnapshotKeyboardBandFact | undefined {
   if (value === undefined) return undefined;
@@ -105,22 +109,89 @@ export function readSnapshotKeyboardBandFact(value: unknown): SnapshotKeyboardBa
       ? { kind: 'unmeasurable', reason: value.reason }
       : { kind: 'unmeasurable', reason: 'unreported-reason' };
   }
-  if (value.kind === 'visible') {
-    const frame = parseRect(value.frame);
-    // Same rule as `isPositiveFiniteRect` in kernel/rect, inlined: this module is a leaf that
-    // many facades evaluate, and a rect import here would land in every one of their closures.
-    // The viewport re-read (#3182) is the other side of that seam and lives in kernel/rect as
-    // `readSnapshotViewportSize`, because a viewport IS a rect; readers take the rect module there.
-    const plottable =
-      frame !== undefined &&
-      [frame.x, frame.y, frame.width, frame.height].every(Number.isFinite) &&
-      frame.width > 0 &&
-      frame.height > 0;
-    return plottable
-      ? { kind: 'visible', frame }
-      : { kind: 'unmeasurable', reason: 'invalid-visible-frame' };
+  if (value.kind === 'tree-rejected') return readKeyboardTreeRejection(value);
+  if (value.kind === 'visibility-only') {
+    return typeof value.visible === 'boolean'
+      ? { kind: 'visibility-only', visible: value.visible }
+      : { kind: 'unmeasurable', reason: 'invalid-visibility-probe' };
+  }
+  if (value.kind === 'derived' && value.derivation !== 'docked-tree') {
+    return { kind: 'unmeasurable', reason: 'unrecognized-derivation' };
+  }
+  if (value.kind === 'visible' || value.kind === 'derived') {
+    return readKeyboardFrameFact(value.frame, value.kind);
   }
   return { kind: 'unmeasurable', reason: 'unrecognized-kind' };
+}
+
+function readKeyboardTreeRejection(value: Record<string, unknown>): SnapshotKeyboardBandFact {
+  if (value.derivation !== 'docked-tree') {
+    return { kind: 'unmeasurable', reason: 'unrecognized-derivation' };
+  }
+  if (value.visible !== undefined && typeof value.visible !== 'boolean') {
+    return { kind: 'unmeasurable', reason: 'invalid-visibility-probe' };
+  }
+  return {
+    kind: 'tree-rejected',
+    derivation: 'docked-tree',
+    ...(typeof value.visible === 'boolean' ? { visible: value.visible } : {}),
+  };
+}
+
+function readKeyboardFrameFact(
+  value: unknown,
+  kind: 'visible' | 'derived',
+): SnapshotKeyboardBandFact {
+  const frame = parseRect(value);
+  // Same rule as `isPositiveFiniteRect` in kernel/rect, inlined: this module is a leaf that
+  // many facades evaluate, and a rect import here would land in every one of their closures.
+  // The viewport re-read (#3182) is the other side of that seam and lives in kernel/rect as
+  // `readSnapshotViewportSize`, because a viewport IS a rect; readers take the rect module there.
+  const plottable =
+    frame !== undefined &&
+    [frame.x, frame.y, frame.width, frame.height].every(Number.isFinite) &&
+    frame.width > 0 &&
+    frame.height > 0;
+  if (!plottable) return { kind: 'unmeasurable', reason: `invalid-${kind}-frame` };
+  return kind === 'derived'
+    ? { kind: 'derived', derivation: 'docked-tree', frame }
+    : { kind: 'visible', frame };
+}
+
+/**
+ * The declared states, each keyed by its own name so a payload string is a state only when this table
+ * has that exact key. Keyed by `PresentedSurface`, so a state added to the vocabulary without a row
+ * here fails to compile instead of silently reading as `unknown`.
+ */
+const PRESENTED_SURFACE_BY_NAME: Readonly<Record<PresentedSurface, PresentedSurface>> = {
+  presented: 'presented',
+  absent: 'absent',
+  unknown: 'unknown',
+};
+
+/** The key a producer publishes its presented-surface fact under (#3565). */
+const PRESENTED_SURFACE_WIRE_KEY = 'presentedSurface';
+
+/**
+ * Reads a producer's presented-surface fact (#3565) out of a response or runner payload, shared by the
+ * Apple runner's wire reader and the Node client's. Taking the payload rather than the value is the
+ * point: reading a wire fact is a property lookup on data the producer controls, so it has to be
+ * own-property both ways. A missing key is the producer stating nothing and stays silence — and an
+ * inherited one is not silence's substitute, since a plain lookup walks to `Object.prototype`, where
+ * anything sharing the process could park `'absent'`, the one state that disarms the confirmation
+ * #1831 arms. A value under the fact's own key which is not one of the three states is restated as
+ * `'unknown'` rather than dropped: the reader cannot tell a malformed `'absent'` from a genuine one,
+ * and silence would leave a consumer arming a dismissal confirmation on nothing — the guessing this
+ * fact retires. Only a name in this table is trusted, so a payload naming `constructor` is not.
+ */
+export function readPresentedSurfaceFact(
+  payload: Record<string, unknown>,
+): PresentedSurface | undefined {
+  if (!Object.hasOwn(payload, PRESENTED_SURFACE_WIRE_KEY)) return undefined;
+  const value = payload[PRESENTED_SURFACE_WIRE_KEY];
+  return typeof value === 'string' && Object.hasOwn(PRESENTED_SURFACE_BY_NAME, value)
+    ? PRESENTED_SURFACE_BY_NAME[value as PresentedSurface]
+    : 'unknown';
 }
 
 export function parsePoint(value: unknown): Point | undefined {

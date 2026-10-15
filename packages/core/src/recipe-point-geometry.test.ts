@@ -76,7 +76,12 @@ async function withListener(
   process.env.RELAY_WORKSPACE_ROOT = directory;
   await writeFile(
     join(directory, `${context.serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      ownerPid: process.pid,
+      port: 50937,
+    }),
   );
   const commands: LiveIosRunnerCommand[] = [];
   let boundsResponse = async (): Promise<WindowResponse> => ({

@@ -36,6 +36,31 @@ export type KnownAppErrorCode = (typeof KNOWN_APP_ERROR_CODES)[number];
 // include a default branch.
 export type AppErrorCode = KnownAppErrorCode | (string & {});
 
+const APP_ERROR_BRAND = Symbol.for('agent-device.AppError');
+
+export class AppError extends Error {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    if (this !== AppError) return Function.prototype[Symbol.hasInstance].call(this, value);
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      (value as Record<symbol, unknown>)[APP_ERROR_BRAND] === true
+    );
+  }
+
+  code: AppErrorCode;
+  details?: AppErrorDetails;
+  cause?: unknown;
+
+  constructor(code: AppErrorCode, message: string, details?: AppErrorDetails, cause?: unknown) {
+    super(message);
+    Object.defineProperty(this, APP_ERROR_BRAND, { value: true });
+    this.code = code;
+    this.details = details;
+    this.cause = cause;
+  }
+}
+
 export function toAppErrorCode(
   code: string | undefined,
   fallback: AppErrorCode = 'COMMAND_FAILED',
@@ -136,6 +161,13 @@ export type NormalizedError = {
   details?: ErrorWireDetails;
 };
 
+/**
+ * The `matches`/`candidates` pair an `AMBIGUOUS_MATCH` producer puts on the
+ * wire. The cap on `candidates` is owned by the one builder that fills this
+ * shape (`elementMatchCandidateDetails` in capture-kit's line renderer), and
+ * `readErrorCandidateViews` computes the "+N more" marker from
+ * `matches - candidates.length`, so no consumer needs the constant itself.
+ */
 export type ElementMatchCandidateDetails = {
   candidates: string[];
   matches: number;
@@ -197,40 +229,7 @@ function readDeviceList(value: unknown): Array<{ id: string; name: string }> {
  * error representation because clients immediately rehydrate this wire shape
  * into `AppError` before rendering or handling it.
  */
-export type DaemonError = {
-  code: string;
-  message: string;
-  cause?: ErrorCause;
-  hint?: string;
-  diagnosticId?: string;
-  /** Path on the DAEMON host. Meaningful to a local caller only (#1801). */
-  logPath?: string;
-  /** Why no readable path is named; set by the client, never by the daemon. */
-  logPathUnavailable?: string;
-  /**
-   * Additive locator (#1801) for the request diagnostics record `logPath`
-   * names, so a remote caller can fetch it over the daemon API instead of
-   * being handed a path on a filesystem it cannot read.
-   */
-  diagnosticsRecord?: DiagnosticsRecordRef;
-  details?: ErrorWireDetails;
-  /** Additive retry and platform-support signals; absent when not derivable. */
-  retriable?: boolean;
-  supportedOn?: string;
-};
-
-export class AppError extends Error {
-  code: AppErrorCode;
-  details?: AppErrorDetails;
-  cause?: unknown;
-
-  constructor(code: AppErrorCode, message: string, details?: AppErrorDetails, cause?: unknown) {
-    super(message);
-    this.code = code;
-    this.details = details;
-    this.cause = cause;
-  }
-}
+export type DaemonError = NormalizedError;
 
 /** Rehydrate a daemon transport error into the error type used by local callers. */
 export function throwDaemonError(error: DaemonError): never {
@@ -275,6 +274,12 @@ export const PRE_DISPATCH_REFUSAL_REASONS = {
    * find a device for it; the command it asks for stays in the message.
    */
   sessionOrDeviceSelectorRequired: 'session_or_device_selector_required',
+  /**
+   * An app-scoped setting named an app that resolves to no installed app on the target, so nothing
+   * was granted, revoked, or cleared under that name. Recovery: run `apps` for the exact bundle id
+   * or package, or install the app, then retry.
+   */
+  appNotInstalled: 'app_not_installed',
 } as const;
 
 export type PreDispatchRefusalReason =
@@ -292,6 +297,16 @@ export function sessionAppRequiredDetails(): RefusalDetails<
 > {
   return {
     reason: PRE_DISPATCH_REFUSAL_REASONS.sessionAppRequired,
+    dispatched: 'no',
+  };
+}
+
+/** The details of an app-scoped setting refused because its named app resolves to no installed app. */
+export function appNotInstalledDetails(): RefusalDetails<
+  (typeof PRE_DISPATCH_REFUSAL_REASONS)['appNotInstalled']
+> {
+  return {
+    reason: PRE_DISPATCH_REFUSAL_REASONS.appNotInstalled,
     dispatched: 'no',
   };
 }

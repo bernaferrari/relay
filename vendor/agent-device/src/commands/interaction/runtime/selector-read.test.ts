@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type { AgentDeviceBackend, BackendSnapshotOptions } from '../../../backend.ts';
+import type { AgentDeviceBackend, BackendSnapshotOptions } from '@agent-device/contracts/backend';
 import { createLocalArtifactAdapter } from '../../../io.ts';
-import {
-  createAgentDevice,
-  createMemorySessionStore,
-  localCommandPolicy,
-  type CommandSessionStore,
-} from '../../../runtime.ts';
+import { createAgentDevice } from '../../../runtime.ts';
+import { localCommandPolicy } from '@agent-device/contracts/command-policy';
+import type { CommandSessionStore } from '@agent-device/contracts/runtime-contract';
 import { ref, selector } from './selector-read-utils.ts';
 import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import {
@@ -17,6 +14,7 @@ import {
 } from './__tests__/test-utils/index.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import { STALE_REF_HINT } from '@agent-device/selectors';
+import { createMemorySessionStore } from '../../../command-runtime/runtime-factory.ts';
 
 test('runtime get reads text from a selector target', async () => {
   const snapshot = selectorReadSnapshot();

@@ -18,7 +18,11 @@ test("iOS identifier presence does not queue a snapshot behind RUNNER_BUSY", asy
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   let snapshotCalls = 0;
   let findCalls = 0;

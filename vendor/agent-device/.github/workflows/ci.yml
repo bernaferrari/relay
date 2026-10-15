@@ -22,8 +22,11 @@ on:
 permissions:
   contents: read
 
+# Release and nightly publishing require green CI on the exact main commit, so a
+# main push never cancels or replaces another commit's run.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: >-
+    ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -298,6 +301,10 @@ jobs:
         uses: ./.github/actions/run-gate
         with: { gate: coverage-model }
 
+      - name: Test coverage-based CRAP report
+        uses: ./.github/actions/run-gate
+        with: { gate: coverage-crap-model }
+
       - name: Run coverage
         id: run-coverage
         env:
@@ -320,8 +327,11 @@ jobs:
       # Gated on the coverage step's own outcome (#1781 A5): when `Run coverage`
       # fails, lcov.info is never written, so this step would just re-report that
       # failure as its own red ("no lcov report") instead of a coverage verdict.
+      # `!cancelled()` keeps it running when an unrelated step around it failed;
+      # it still needs `run-coverage` success because without lcov there is no
+      # verdict — only the coverage step's own red.
       - name: Enforce changed-line coverage gate
-        if: steps.run-coverage.outcome == 'success' && github.event_name == 'pull_request'
+        if: ${{ !cancelled() && steps.run-coverage.outcome == 'success' && github.event_name == 'pull_request' }}
         env:
           AGENT_DEVICE_COVERAGE_WAIVER: ${{ contains(github.event.pull_request.labels.*.name, 'coverage-waiver') }}
         uses: ./.github/actions/run-gate
@@ -330,6 +340,31 @@ jobs:
           args: |
             --base
             ${{ github.event.pull_request.base.sha }}
+
+      # Blocking: scores the functions this PR touches against the coverage map the coverage step
+      # wrote, using the ceilings in `.fallowrc.json` and the CLI's `--max-crap` threshold, and
+      # fails the job when one is at or above the threshold, or when the map cannot be trusted to
+      # answer. `!cancelled()` keeps it running after a failed changed-line gate; it still needs
+      # `run-coverage` to have succeeded, because without a coverage map there is no verdict to
+      # report — only the coverage step's own red.
+      - name: Check coverage-based CRAP of touched functions
+        if: ${{ !cancelled() && steps.run-coverage.outcome == 'success' && github.event_name == 'pull_request' }}
+        uses: ./.github/actions/run-gate
+        with:
+          gate: coverage-crap
+          args: |
+            --base
+            ${{ github.event.pull_request.base.sha }}
+
+      # Report-only on main: the same scoring over every function is the backlog of untested
+      # complex code, which `main` carries on purpose, so it stays advisory.
+      - name: Report coverage-based CRAP for the whole repository
+        if: ${{ !cancelled() && steps.run-coverage.outcome == 'success' && github.event_name == 'push' }}
+        continue-on-error: true
+        uses: ./.github/actions/run-gate
+        with:
+          gate: coverage-crap
+          args: --all
 
   integration:
     name: Integration Tests

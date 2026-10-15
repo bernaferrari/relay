@@ -3,8 +3,8 @@
 ## Status
 
 Accepted (2026-09-20; the pose-settle rule amended 2026-09-21 under #2730; the touch-overlay
-export diagnosis corrected 2026-09-22 under #2707). Covers iPhone Duo (iOS 27.1, `iPhone19,4`) and
-any Apple device that reports more than one integrated CoreDevice display.
+export diagnosis corrected 2026-09-22 under #2707; the Android emulator pose added 2026-10-10). Covers iPhone Duo (iOS 27.1, `iPhone19,4`) and
+any Apple device that reports more than one integrated CoreDevice display, and, through the amendment below, foldable Android emulators.
 
 An iPhone Duo carries two integrated panels — Apple's **outer display** and **inner display** —
 and lights one of them at a time. Which one is lit is the device pose. Two independent facts
@@ -252,6 +252,8 @@ unverified, because the pose it ended in is not the one that was asked for.
 The attempt count, the per-read timeout, cancellation, and the open/closed end-stop
 rule are unchanged: an unsettled fold costs the same four hinge streams it always did.
 
+A first hinge read that returns no sample leaves the pose unconfirmed, whatever the cause: devicectl 651.13.5 (Xcode 27.1 RC build 27A9275) has no `device motion` subcommand, and an unreachable device prints no sample either. The HID command has already been delivered by then, so `fold` refuses with `fold-pose-dispatched-unverified`: sent, not confirmed, distinct from a pose the hinge contradicted. The read's own failure rides along as `hingeReadFailure`, so the cause is read from its stderr rather than assumed. When panel power decides a single lit panel, the error carries it as `screen` evidence; panel power cannot separate `half-open` from `open`, so it is never promoted to a verified pose. A no-sample read after an earlier sample is not this case and keeps its own reason.
+
 ## Pose is derived from panel power, and official control does not exist
 
 Apple ships fold state as an **app-side, read-only** API: `UIHinge.status`
@@ -378,6 +380,15 @@ The device-lane test reads each export's transform-applied size back through AVF
 `test/integration/support/recording-inspect.swift` reports `renderWidth`/`renderHeight` from the same
 `resolvedRenderSize` the overlay tool uses — so a `rot90` panel is compared upright rather than on its
 sideways coding grid, and no second MP4 geometry parser is added to the shipped packages.
+
+A quarter-turn transform can leave the upright frame outside a zero-origin composition canvas.
+The Duo inner capture has a `2006x2852` natural size and transform `[0, 1, -1, 0, 0, 0]`, which
+places its upright `2852x2006` bounds at `x=-2852`. Applying that transform without translating the
+bounds into the render canvas clips the source content and trips the compositor's all-black check
+(#2774). The overlay now derives its render size and origin translation from the same transformed
+bounds. Native export regressions cover an identity transform and both translated and
+negative-origin quarter turns, asserting upright source content, unchanged geometry, and drawn
+touches.
 
 ## Verified on a booted Duo
 
@@ -536,3 +547,21 @@ incorrect viewport, not an inner-panel delivery prohibition.
   hidden-sidebar recovery were checked; the simultaneous same-name simulator matrix remains open.
 - **Physical foldables.** Device Hub poses simulators only; the leaf fact refuses a physical device,
   and the hinge stream on one was not exercised.
+
+## Android emulators (amendment, 2026-10-10)
+
+The same `fold` command poses a foldable Android emulator, with the two facts of this ADR kept
+apart in the same way. There is no host display authority to consult: the emulator console's
+`posture <id>` moves the hinge sensor to the angle the AVD profile defines for the posture (0°, 90°,
+180° on the Pixel folds; 15°, 90°, 165° on the generic "7.6in Foldable"), and the pose is verified
+by polling `cmd device_state print-state` until the guest commits the posture's own device state
+(`CLOSED`, `HALF_OPENED`, `OPENED`), which is what `WindowManager`'s `FoldingFeature` derives from;
+the hinge sensor is read back for the reported angle, not judged. A `half-open` Android pose is
+therefore 90° on every profile seen so far, where the Duo's is 130°.
+
+Folding to the cover display can raise the keyguard (Android's "continue using apps on fold"
+setting, which emulator images do not honour); `fold` dismisses it, because every later capture
+would otherwise read the lock screen instead of the app. A profile that lists none of those device
+states has no hinge and is refused as `single-panel-device`, the typed reason a single-panel
+simulator gets. Keyframes and panel geometry stay Apple-only: the console poses only fixed
+postures, and Android reports the app window on its next snapshot rather than a panel.

@@ -1,19 +1,6 @@
-import { A as Rect, E as AppleApplicationState } from "./sdk-contracts.js";
+import { M as Rect } from "./sdk-contracts.js";
 import { a as PointerTrajectorySample, i as PointerTrajectory, o as SinglePointerGesturePlan, r as MultiTouchGesturePlan } from "./gesture-plan-types.js";
 import { Readable, Stream, Writable } from "node:stream";
-//#region packages/contracts/src/app-state-runtime.d.ts
-/** Neutral foreground identity returned by a selected platform/provider runtime. */
-type AppStateRuntimeResult = Readonly<{
-  package?: string;
-  activity?: string;
-  /**
-   * Apple: how the app named by the input is running, as a live runner reads it. It says nothing
-   * about which app is frontmost; a session app in a background state has left the foreground.
-   * Absent when no runner session is live to ask, so the read never starts one.
-   */
-  applicationState?: AppleApplicationState;
-}>;
-//#endregion
 //#region packages/platform-android/src/helper-artifacts.d.ts
 type AndroidImeHelperManifest = {
   name: 'android-ime-helper';
@@ -165,8 +152,10 @@ type AndroidTextInjectionRequest = {
   text: string;
   delayMs?: number;
   /**
-   * Present only for fill. Providers must make this target the focused/replaced
-   * input for the request, not inject into an unrelated currently focused field.
+   * Present only for fill. Providers must make this target the focused input AND replace its
+   * contents with `text`, not inject into an unrelated currently focused field and not insert at
+   * its cursor. An empty `text` is the clear request: the target must end up empty, and the
+   * provider may complete it without any text-set call of its own.
    */
   target?: {
     x: number;
@@ -224,4 +213,4 @@ declare function dismissAndroidKeyboardWithAdb(adb: AndroidAdbExecutor): Promise
 declare function readAndroidClipboardWithAdb(adb: AndroidAdbExecutor): Promise<string>;
 declare function writeAndroidClipboardWithAdb(adb: AndroidAdbExecutor, text: string): Promise<void>;
 //#endregion
-export { readAndroidClipboardWithAdb as a, AndroidAdbExecutor as c, AndroidAdbProvider as d, AndroidPortReverseEndpoint as f, getAndroidKeyboardStatusWithAdb as i, AndroidAdbExecutorOptions as l, AppStateRuntimeResult as m, AndroidKeyboardState as n, writeAndroidClipboardWithAdb as o, AndroidPortReverseProvider as p, dismissAndroidKeyboardWithAdb as r, AndroidInputOwner as s, AndroidKeyboardDismissResult as t, AndroidAdbExecutorResult as u };
+export { readAndroidClipboardWithAdb as a, AndroidAdbExecutor as c, AndroidAdbProvider as d, AndroidPortReverseEndpoint as f, getAndroidKeyboardStatusWithAdb as i, AndroidAdbExecutorOptions as l, AndroidTextInjectionRequest as m, AndroidKeyboardState as n, writeAndroidClipboardWithAdb as o, AndroidPortReverseProvider as p, dismissAndroidKeyboardWithAdb as r, AndroidInputOwner as s, AndroidKeyboardDismissResult as t, AndroidAdbExecutorResult as u };

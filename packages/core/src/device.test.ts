@@ -1001,7 +1001,11 @@ test("prefers a LISTENER_READY runner over the bounded SDK Copy probe", async ()
   process.env.RELAY_WORKSPACE_ROOT = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 57051 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 57051,
+    }),
   );
   let sdkSnapshots = 0;
   const restore = setLiveIosRunnerCommandPostForTests(
@@ -1091,7 +1095,11 @@ test("adopts a LISTENER_READY runner when the SDK session is missing", async () 
   process.env.RELAY_WORKSPACE_ROOT = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(
     catalogAwarePost(async (_listener, command) => {

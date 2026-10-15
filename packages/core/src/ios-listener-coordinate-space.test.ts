@@ -36,7 +36,11 @@ for (const route of ["snapshot", "ambiguous-identifier"] as const) {
     process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
     await writeFile(
       join(dir, `${serial}.json`),
-      JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+      JSON.stringify({
+        runnerToken: "relay-listener-fixture-token",
+        runnerPid: process.pid,
+        port: 50937,
+      }),
     );
     let captures = 0;
     const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {

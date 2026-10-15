@@ -28,7 +28,7 @@ test('commands topic includes concise command catalog entries', async () => {
   assert.doesNotMatch(usageText, /^ {2}rotate-gesture <degrees>/m);
   assert.match(usageText, /orientation <orientation>/);
   assert.match(usageText, /record start \[path\] \| record stop/);
-  assert.match(usageText, /trace start <path> \| trace stop <path>/);
+  assert.match(usageText, /trace start \[path\] \| trace stop \[path\]/);
 });
 
 test('gesture help documents selectors and pinned refs for both drag endpoints', async () => {
@@ -197,7 +197,7 @@ test('usageForCommand resolves workflow help topic', async () => {
   assert.match(help, /never a placeholder \(@ref, @eN, @Label_Name\)/);
   assert.match(
     help,
-    /iOS rejects a stale pinned ref -- refresh with snapshot -i or use a selector/,
+    /every platform rejects a stale pinned ref -- refresh with snapshot -i or use a selector/,
   );
   assert.match(help, /Known flow: batch --steps-file \.\/steps\.json \(help batch\)/);
   assert.match(help, /Shapes and platform quirks: help gestures/);
@@ -436,7 +436,23 @@ test('usageForCommand resolves remote help topic', async () => {
   assert.match(help, /AGENT_DEVICE_HTTP_AUTH_HOOK configured treats HTTP requests as remote/);
   assert.match(help, /host-path install sources are rejected/);
   assert.match(help, /uploaded artifacts remain supported/);
-  assert.match(help, /Limrun, BrowserStack, and AWS Device Farm through local provider profiles/);
+  assert.match(
+    help,
+    /Limrun, BrowserStack, AWS Device Farm, and TestMu AI through local provider profiles/,
+  );
+  assert.match(help, /plugins add @agent-device\/testmu/);
+  assert.match(help, /TestMu AI uses LT_USERNAME and LT_ACCESS_KEY/);
+  const testMuFlow = help.slice(
+    help.indexOf('TestMu AI virtual-device flow'),
+    help.indexOf('BrowserStack hosted-device flow'),
+  );
+  assert.match(testMuFlow, /--device "iPhone 16" --provider-os-version 18\.0/);
+  assert.match(
+    testMuFlow,
+    /connect testmu --provider-device-type real .*--provider-os-version 18 --provider-app \.\/MyApp\.ipa/,
+  );
+  assert.match(testMuFlow, /major OS version \(18, not 18\.0\)/);
+  assert.match(testMuFlow, /agent-device disconnect/);
   assert.match(help, /Limrun uses LIMRUN_API_KEY/);
   assert.match(help, /BrowserStack uses BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY/);
   assert.match(help, /Generated connection profiles store app\/device selectors and ARNs/);

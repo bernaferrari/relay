@@ -1,3 +1,4 @@
+import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ import {
 import { rememberTargetApplication } from "./device.js";
 import { setIosAppOpenRuntimeForTests } from "./ios-app-open.js";
 import {
-  setLiveIosRunnerCommandPostForTests,
+  setLiveIosRunnerCommandPostForTests as setNativePost,
   type LiveIosRunnerCommandResult,
 } from "./ios-runner-listener-command.js";
 import { runExpectScreenStep } from "./recipe-runner-screen.js";
@@ -53,6 +54,9 @@ async function withColdStartup(
   } = {},
 ): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "relay-cold-launch-"));
+  const setLiveIosRunnerCommandPostForTests: typeof setNativePost = (post) =>
+    setNativePost(post ? catalogAwarePost(post) : undefined);
+
   const serial = directory.split("/").at(-1)!;
   const context = { kind: "device", platform: "ios", serial } as const;
   const previousLease = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
@@ -61,7 +65,12 @@ async function withColdStartup(
   process.env.RELAY_WORKSPACE_ROOT = directory;
   await writeFile(
     join(directory, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      ownerPid: process.pid,
+      port: 50937,
+    }),
   );
   const events: string[] = [];
   const job: TestJob = {
@@ -109,7 +118,12 @@ async function withColdStartup(
           changeLease: () =>
             writeFile(
               join(directory, `${serial}.json`),
-              JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50938 }),
+              JSON.stringify({
+                runnerToken: "relay-listener-fixture-token",
+                runnerPid: process.pid,
+                ownerPid: process.pid,
+                port: 50938,
+              }),
             ),
           changeApplication: () => rememberTargetApplication("com.example.foreign", context),
         });

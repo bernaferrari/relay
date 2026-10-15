@@ -1,3 +1,4 @@
+import { resolveRemoteRequestDiagnosticsPath } from '@agent-device/daemon-contracts/session-artifact-paths';
 import { parseRawArgs, usage, usageForCommand } from './cli/parser/args.ts';
 import { suggestCommandFor } from './cli/parser/command-suggestions.ts';
 import {
@@ -7,7 +8,7 @@ import {
   throwDaemonError,
   type NormalizedError,
 } from '@agent-device/kernel/errors';
-import { resolveRemoteRequestDiagnosticsPath } from './daemon/session-artifact-paths.ts';
+import { resolveDaemonPaths } from '@agent-device/daemon-contracts/daemon-resolution';
 import { exitAfterFlush } from './cli/process-exit.ts';
 import { readVersion } from '@agent-device/host-kit/version';
 import { pathToFileURL } from 'node:url';
@@ -25,10 +26,8 @@ import {
   type AgentDeviceClientConfig,
   type AgentDeviceDaemonTransport,
 } from './agent-device-client.ts';
-import { materializeRemoteConnectionForCommand } from './cli/commands/connection-runtime.ts';
 import { tryRunClientBackedCommand } from './cli/commands/router.ts';
 import { runAgentCdpCommand } from './cli/commands/agent-cdp.ts';
-import { runReactDevtoolsCommand } from './cli/commands/react-devtools.ts';
 import { readCliBatchStepsJson } from './commands/batch/batch-steps.ts';
 import {
   createRequestId,
@@ -38,7 +37,6 @@ import {
   registerDiagnosticSensitiveValue,
   withDiagnosticsScope,
 } from '@agent-device/host-kit/diagnostics';
-import { resolveDaemonPaths } from './daemon-resolution.ts';
 import { applyDefaultPlatformBinding, resolveBindingSettings } from './cli/session-binding.ts';
 import { resolveCliOptions } from './cli/resolve-cli-options.ts';
 import { maybeRunUpgradeNotifier } from './cli/update-check.ts';
@@ -353,6 +351,7 @@ async function resolveRunContextOrExit(
 }
 
 async function runReactDevtoolsCli(ctx: CliRunContext, deps: CliDeps): Promise<number> {
+  const { runReactDevtoolsCommand } = await import('./cli/commands/react-devtools.ts');
   const { daemonAuthToken, ...directRequestFlags } = ctx.effectiveFlags;
   return await runReactDevtoolsCommand(ctx.positionals, {
     flags: {
@@ -408,6 +407,8 @@ async function resolveRemoteContext(ctx: CliRunContext, deps: CliDeps): Promise<
     const materializationClient = createAgentDeviceClient(buildClientConfig(ctx), {
       transport: createClientDaemonTransport(deps.sendToDaemon),
     });
+    const { materializeRemoteConnectionForCommand } =
+      await import('./cli/commands/connection-runtime.ts');
     const materialized = await materializeRemoteConnectionForCommand({
       command: ctx.command,
       flags: ctx.effectiveFlags,
@@ -457,6 +458,7 @@ function buildClientConfig(ctx: CliRunContext): AgentDeviceClientConfig {
     deviceKey: connection?.deviceKey,
     providerApp: currentFlags.providerApp,
     providerOsVersion: currentFlags.providerOsVersion,
+    providerDeviceType: currentFlags.providerDeviceType,
     providerProject: currentFlags.providerProject,
     providerBuild: currentFlags.providerBuild,
     providerSessionName: currentFlags.providerSessionName,
@@ -809,6 +811,29 @@ function hasExplicitMetroRuntimeOverrides(explicitFlagKeys: Set<FlagKey>): boole
   return false;
 }
 
+type CliDaemonTransportSetup = {
+  command: string;
+  flags: CliFlags;
+  replayTestReporterRuntime?: ReplayTestReporterRuntime;
+  commandProgress: CommandProgressState;
+  transport: CliDaemonTransport;
+};
+
+/**
+ * A remote connection reads each daemon reply for the leases its request ended, and forgets the
+ * stored lease when the reply names it.
+ */
+function createCliDaemonTransport(options: CliDaemonTransportSetup): AgentDeviceDaemonTransport {
+  const send = createCliProgressTransport(options);
+  if (!options.flags.remoteConfig) return send;
+  return async (req, context) => {
+    const response = await send(req, context);
+    const { forgetEndedProxyLease } = await import('./cli/connection/ended-lease.ts');
+    forgetEndedProxyLease(options.flags, response);
+    return response;
+  };
+}
+
 /**
  * The human CLI renders streamed progress itself: `test` hands its events to the
  * replay-test reporter, every other command streams `command` lines to stderr
@@ -816,13 +841,7 @@ function hasExplicitMetroRuntimeOverrides(explicitFlagKeys: Set<FlagKey>): boole
  * doctor summary does not repeat checks progress already printed). `--json` opts
  * out of progress entirely, so it installs no sink.
  */
-function createCliDaemonTransport(options: {
-  command: string;
-  flags: CliFlags;
-  replayTestReporterRuntime?: ReplayTestReporterRuntime;
-  commandProgress: CommandProgressState;
-  transport: CliDaemonTransport;
-}): AgentDeviceDaemonTransport {
+function createCliProgressTransport(options: CliDaemonTransportSetup): AgentDeviceDaemonTransport {
   const { command, flags, replayTestReporterRuntime, transport } = options;
   if (flags.json) return createClientDaemonTransport(transport);
   const onProgress =

@@ -30,7 +30,9 @@ export async function bundledAndroidSnapshotHelper(
     try {
       const files = await readdir(directory);
       const manifests = files.filter((name) =>
-        /^agent-device-android-snapshot-helper-[\d.]+\.manifest\.json$/u.test(name),
+        /^agent-device-android-snapshot-helper-\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\.manifest\.json$/u.test(
+          name,
+        ),
       );
       const apks = files.filter((name) =>
         /^agent-device-android-snapshot-helper-.*\.apk$/u.test(name),
@@ -44,7 +46,7 @@ export async function bundledAndroidSnapshotHelper(
       if (
         manifest.name !== "android-snapshot-helper" ||
         typeof manifest.version !== "string" ||
-        !/^\d+\.\d+\.\d+$/u.test(manifest.version) ||
+        !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u.test(manifest.version) ||
         manifest.assetName !== `agent-device-android-snapshot-helper-${manifest.version}.apk` ||
         manifest.assetName !== apks[0] ||
         manifest.packageName !== ANDROID_SNAPSHOT_HELPER_PACKAGE ||

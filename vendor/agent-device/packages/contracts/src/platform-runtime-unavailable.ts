@@ -221,9 +221,11 @@ export function createUnavailablePlatformRuntimeFacts(
       }),
       // The preferred text reading starts unavailable for every family, on the same sentinel as
       // capture: an owner that has a native reading declares it explicitly, and one that does not
-      // sends every text wait to the canonical tree.
+      // sends every text wait to the canonical tree. The live selector read starts unavailable for
+      // the same reason: an owner without it refuses on its bulk-tree verdict unchanged.
       ...selectorObservationRuntimeOperationFacts({
         findText: frozen.snapshot,
+        querySelector: frozen.snapshot,
       }),
       ...viewportRuntimeOperationFacts({ setViewport: frozen.viewport }),
       ...focusRuntimeOperationFacts({ focus: frozen.focus }),
@@ -277,11 +279,9 @@ export function createUnavailablePlatformRuntimeFacts(
   });
 }
 
-/** A managed local owner executes through its local family, so it reports the local mode. */
 function providerModeForOwner(owner: RuntimeOwnerRef): RuntimeProviderMode {
   switch (owner.kind) {
     case 'local-family':
-    case 'managed-local':
       return 'local';
     case 'provider-runtime':
       return 'provider-runtime';

@@ -11,7 +11,12 @@ test("the actual Relay catalog producer pins the native decoder request fixture"
   );
   const captured: Array<readonly [string, unknown]> = [];
   await queryIosSnapshotCatalogViaListener(
-    { serial: "fixture", port: 50937, runnerPid: process.pid },
+    {
+      serial: "fixture",
+      port: 50937,
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+    },
     async (_listener, command) => {
       captured.push(["ios-device.selector-catalog.chrome", command]);
       return emptyCatalogResult(command);

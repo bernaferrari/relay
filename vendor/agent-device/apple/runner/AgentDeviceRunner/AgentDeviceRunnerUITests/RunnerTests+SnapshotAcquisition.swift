@@ -357,23 +357,7 @@ extension RunnerTests {
     if uniqueCandidates.count < 2 { return [] }
 
     return uniqueCandidates.enumerated().map { offset, node in
-      RawAXNode(
-        index: startingIndex + offset,
-        type: node.type,
-        label: node.label,
-        identifier: node.identifier,
-        value: node.value,
-        placeholder: node.placeholder,
-        rect: node.rect,
-        enabled: node.enabled,
-        focused: node.focused,
-        selected: node.selected,
-        hittable: node.hittable,
-        depth: depth,
-        parentIndex: parentIndex,
-        hiddenContentAbove: nil,
-        hiddenContentBelow: nil
-      )
+      node.reindexed(index: startingIndex + offset, depth: depth, parentIndex: parentIndex)
     }
   }
 
@@ -441,7 +425,7 @@ extension RunnerTests {
     return node
   }
 
-  private func snapshotHasFocus(_ snapshot: XCUIElementSnapshot) -> Bool {
+  func snapshotHasFocus(_ snapshot: XCUIElementSnapshot) -> Bool {
     return focusBool(snapshot as! NSObject)
   }
 

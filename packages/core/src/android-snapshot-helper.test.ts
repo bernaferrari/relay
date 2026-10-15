@@ -74,6 +74,28 @@ test("snapshot helper selection requires one exact manifest and matching APK dig
   });
 });
 
+test("a pinned development helper retains exact filename, version and integrity checks", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-helper-dev-"));
+  const version = "0.21.29-dev";
+  const name = `agent-device-android-snapshot-helper-${version}.apk`;
+  const manifestPath = join(directory, name.replace(".apk", ".manifest.json"));
+  try {
+    await writeFile(join(directory, name), apk);
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, version, assetName: name }));
+    assert.equal((await bundledAndroidSnapshotHelper([directory]))?.version, version);
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, version: "0.21.29", assetName: name }),
+    );
+    assert.equal(await bundledAndroidSnapshotHelper([directory]), undefined);
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, version, assetName: name }));
+    await writeFile(join(directory, name), "corrupt bytes");
+    assert.equal(await bundledAndroidSnapshotHelper([directory]), undefined);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("current installed snapshot helper is observed without a new installation", async () => {
   const calls: string[][] = [];
   const execute: SnapshotHelperAdb = async (args) => {

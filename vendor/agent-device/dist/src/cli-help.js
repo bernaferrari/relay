@@ -1,5 +1,12 @@
-import{r as e}from"./rolldown-runtime.js";import{br as t}from"./sdk-batch.js";import{i as n}from"./catalog.js";import{r}from"./back-mode.js";import{C as i,P as a,c as o,w as s}from"./registry.js";import{a as c}from"./version.js";import{n as l,r as u}from"./command-schema.js";import{n as d}from"./cli-command-aliases.js";const f=[`Flows: launchApp (with clearState, permissions, and Apple-only launch arguments; permissions apply after state clearing but before launch, and a launchApp without permissions touches nothing — there is no silent all: allow default); setPermissions (mid-flow permission grants, denials, and resets; all resolves in the backend — one simctl call on iOS, the declared permissions on Android — with specific entries overriding after it); runFlow file/inline; runFlow.when and repeat.while conditions (platform, visible, notVisible, and true, all re-evaluated before every repeat iteration); onFlowStart/onFlowComplete; repeat with times, while, or both; and retry.`,`Interactions: tapOn, doubleTapOn, longPressOn, inputText on the focused element, eraseText, openLink, hideKeyboard, basic pressKey, and back; selector targets poll until available and support recursive index, childOf, above, below, leftOf, rightOf, containsChild, containsDescendants, points, and optional; outer command labels are metadata, not target selectors.`,'Assertions and navigation: assertVisible, assertNotVisible, assertTrue (literal values and ${VAR} lookups only; "", "false", "0", "null", and "undefined" are falsy, everything else is truthy), extendedWaitUntil, scroll, scrollUntilVisible, absolute/percentage/target swipe, takeScreenshot, waitForAnimationToEnd, clearState, and stopApp.',`Scripts: ordered runScript file/env scripts with http.post, json, and output variables; evalScript inline expressions run flow-scoped JavaScript and write output.* leaves for later steps.`],p=[`Permissions: every entry is one settings permission call, applied in order with all first; the step stops at the first entry the selected platform refuses, earlier entries stay applied, and the error names what landed. Android’s only allow level is while-in-use, so location: inuse and location: never mean allow and deny there, while location: always and photos: limited are Apple-only and fail. On iOS, which service a runtime changes is simctl privacy’s own verdict: current runtimes refuse a targeted notifications change and leave notifications untouched under all.`,`Runtime: iOS and Android only; launchApp.clearState and standalone clearState support Android and iOS simulators, launch arguments are Apple-only, and other standalone device utility/state commands are unsupported.`,"Expressions: evalScript and condition true: fields (runFlow.when and repeat.while share one evaluator) are evaluated as JavaScript (flow env and prior output leaves are string-typed); a true: field that is a boolean, a maestro.platform comparison, or plain literal text after ${VAR} lookups is decided without JavaScript, with the assertTrue falsy table for literal text. Other fields stay literal or ${VAR} lookup-only — assertTrue supports literals and bare lookups, and other expression-shaped payloads fail loud.",`Environment: flow env is the default, AD_VAR_* overrides it, and CLI -e KEY=VALUE wins over both.`,`Failure diagnostics: resolved targets and runFlow paths are rendered, while inputText payloads remain hidden; do not place secrets in diagnostic identifiers.`,`Trust: runScript, evalScript, and JavaScript condition true: fields execute flow scripts in-process via node:vm, which is not a security sandbox; runScript may make http.post network requests and its output keys cannot contain a dot. evalScript and true: fields that need JavaScript are refused outright for a flow accepted over the daemon’s remote HTTP surface, since that context can escape to the host.`,`Errors and tracking: unsupported commands and fields fail with source context when available; open a focused issue only when implementation work is planned.`];function m(){return[`Supported subset:`,...f.map(e=>`  - ${e}`),``,`Boundaries:`,...p.map(e=>`  - ${e}`)].join(`
-`)}function h(e){let t=e.endsWith(`?`),n=t?e.slice(0,-1):e;return t?`[${n}]`:`<${n}>`}function g(e){return r().filter(t=>t.key===e)}function _(e){if(!e.usageHidden)return e.usageLabel??e.names[0]}function v(e){return(e??[]).flatMap(e=>g(e).map(_).filter(e=>e!==void 0).map(e=>`[${e}]`))}function y(e,t){return[t.usageOverride??[e,...(t.positionalArgs??[]).map(h)].join(` `),...v(t.usageFlags??t.allowedFlags)].join(` `)}const b=`Wait failure contract:
+import{r as e}from"./rolldown-runtime.js";import{O as t,x as n}from"./back-mode.js";import{yr as r}from"./sdk-batch.js";import{O as i,V as a,f as o,k as s}from"./command-metadata.js";import{a as c}from"./version.js";import{n as l,r as u}from"./command-schema.js";import{n as d}from"./cli-command-aliases.js";const f=[`Flows: launchApp (with clearState, permissions, and Apple-only launch arguments; permissions apply after state clearing but before launch, and a launchApp without permissions touches nothing — there is no silent all: allow default); setPermissions (mid-flow permission grants, denials, and resets; all resolves in the backend — one simctl call on iOS, the declared permissions on Android — with specific entries overriding after it); runFlow file/inline; runFlow.when and repeat.while conditions (platform, visible, notVisible, and true, all re-evaluated before every repeat iteration); onFlowStart/onFlowComplete; repeat with times, while, or both; and retry.`,`Interactions: tapOn, doubleTapOn, longPressOn, inputText on the focused element, eraseText, openLink, hideKeyboard, basic pressKey, and back; selector targets poll until available and support recursive index, childOf, above, below, leftOf, rightOf, containsChild, containsDescendants, points, and optional; outer command labels are metadata, not target selectors.`,'Assertions and navigation: assertVisible, assertNotVisible, assertTrue (literal values and ${VAR} lookups only; "", "false", "0", "null", and "undefined" are falsy, everything else is truthy), extendedWaitUntil, scroll, scrollUntilVisible, absolute/percentage/target swipe, takeScreenshot, waitForAnimationToEnd, clearState, stopApp, and killApp (system-initiated process death: am kill on ADB-backed Android devices, which refuse a foreground target with android-kill-requires-background-app — background the app first, for example pressKey: Home — and fail a target whose process survives with android-kill-process-survived; iOS, Limrun, and WebDriver-provider backends run it as stopApp).',`Scripts: ordered runScript file/env scripts with http.post, json, and output variables; evalScript inline expressions run flow-scoped JavaScript and write output.* leaves for later steps.`],p=[`Permissions: every entry is one settings permission call, applied in order with all first; the step stops at the first entry the selected platform refuses, earlier entries stay applied, and the error names what landed. Android’s only allow level is while-in-use, so location: inuse and location: never mean allow and deny there, while location: always and photos: limited are Apple-only and fail. On iOS, which service a runtime changes is simctl privacy’s own verdict: current runtimes refuse a targeted notifications change and leave notifications untouched under all.`,`Runtime: iOS and Android only; launchApp.clearState and standalone clearState support Android and iOS simulators, launch arguments are Apple-only, and other standalone device utility/state commands are unsupported.`,"Expressions: evalScript and condition true: fields (runFlow.when and repeat.while share one evaluator) are evaluated as JavaScript (flow env and prior output leaves are string-typed); a true: field that is a boolean, a maestro.platform comparison, or plain literal text after ${VAR} lookups is decided without JavaScript, with the assertTrue falsy table for literal text. Other fields stay literal or ${VAR} lookup-only — assertTrue supports literals and bare lookups, and other expression-shaped payloads fail loud.",`Environment: flow env is the default, AD_VAR_* overrides it, and CLI -e KEY=VALUE wins over both.`,`Failure diagnostics: resolved targets and runFlow paths are rendered, while inputText payloads remain hidden; do not place secrets in diagnostic identifiers.`,`Trust: runScript, evalScript, and JavaScript condition true: fields execute flow scripts in-process via node:vm, which is not a security sandbox; runScript may make http.post network requests and its output keys cannot contain a dot. evalScript and true: fields that need JavaScript are refused outright for a flow accepted over the daemon’s remote HTTP surface, since that context can escape to the host.`,`Errors and tracking: unsupported commands and fields fail with source context when available; open a focused issue only when implementation work is planned.`];function m(){return[`Supported subset:`,...f.map(e=>`  - ${e}`),``,`Boundaries:`,...p.map(e=>`  - ${e}`)].join(`
+`)}const h={maestro:{id:`maestro`,help:{summary:`Supported Maestro YAML commands, grammar, and runtime boundaries`,body:`agent-device help maestro
+
+Run Maestro compatibility flows with replay <flow.yaml> --maestro or test <path> --maestro. Bind an iOS or Android target with --platform or an existing session.
+
+${m()}
+
+Unsupported syntax fails loudly rather than being skipped. Architecture, performance tradeoffs, and declared conformance divergences: https://github.com/callstack/agent-device/blob/main/docs/adr/0015-direct-maestro-engine.md
+Focused compatibility request: https://github.com/callstack/agent-device/issues/new`}}};function g(e){return h[e]}function _(e){let t=e.endsWith(`?`),n=t?e.slice(0,-1):e;return t?`[${n}]`:`<${n}>`}function v(e){return n().filter(t=>t.key===e)}function y(e){if(!e.usageHidden)return e.usageLabel??e.names[0]}function b(e){return(e??[]).flatMap(e=>v(e).map(y).filter(e=>e!==void 0).map(e=>`[${e}]`))}function x(e,t){return[t.usageOverride??[e,...(t.positionalArgs??[]).map(_)].join(` `),...b(t.usageFlags??t.allowedFlags)].join(` `)}const S=`Wait failure contract:
   Read --json error.details.reason.
   wait_target_absent: readable capture, no match.
   wait_target_present: absence timeout; details.matches/firstMatch.
@@ -10,7 +17,7 @@ import{r as e}from"./rolldown-runtime.js";import{br as t}from"./sdk-batch.js";im
   wait_runner_restart_exhausted: restart deadline -- retriable.
   wait_landmark_identity_mismatch: replay guard: selector matched, recorded identity differed.
   wait_stable_timeout: no stable UI -- not absence.
-`,x={"manual-qa":{summary:`Follow manual test scripts with exact interactions and verification`,body:`agent-device help manual-qa
+`,C={"manual-qa":{summary:`Follow manual test scripts with exact interactions and verification`,body:`agent-device help manual-qa
 
 Use this when asked to follow a manual QA script, test case, checklist, acceptance flow, or user-provided instructions.
 
@@ -48,11 +55,12 @@ Targets:
 Recovery:
   Network/typeahead result missing: wait text "Expected result" or wait <selector>.
   A target that should be gone/disappear: use wait absent <selector>; wait exists ... is rejected in favor of the plain selector wait.
-  Keyboard visible over the next target: an element whose center sits behind the keyboard is refused with tap_keyboard_occludes_target, because the touch would activate a key instead of the target. End editing first -- the app's own Done/Cancel control, or keyboard enter when submission is wanted -- then retry. A target whose center stays above the keys still presses; a raw coordinate behind the keyboard taps anyway and reports the reason in warning.
+  Keyboard visible over the next target: when a measured or derived keyboard frame covers an app target's dispatched tap point, the element is refused with tap_keyboard_occludes_target, because the touch would activate a key instead of the target. End editing first -- the app's own Done/Cancel control, or keyboard enter when submission is wanted -- then retry. Missing keyboard nodes never prove absence; a visibility-only probe cannot establish the covered area. An app target whose dispatched tap point stays above the keys passes this keyboard check; a raw coordinate behind the keyboard taps anyway and reports the reason in warning.
+  Target covered by other visible UI: refused with target_covered. When the occlusion scan identified the covering element, error.details.coveredBy and the hint name it (role, label, rect) so you know what to dismiss; the cover is diagnosis only -- never target its ref. Dismiss/close it or scroll the target clear, then retry.
   Sparse or recovered accessibility snapshot: use screenshot as visual truth, leave the bad screen if needed, then retry snapshot -i.
   Non-hittable success hint: verify with the settled diff or snapshot; retarget by a better ref/selector if the UI did not change.
 
-${b}`}},S={debugging:{summary:`Targeted failure evidence without dumping stale context`,body:`agent-device help debugging
+${S}`}},w={debugging:{summary:`Targeted failure evidence without dumping stale context`,body:`agent-device help debugging
 
 Use this when behavior fails, hangs, times out, throws alerts, or needs runtime evidence.
 
@@ -172,10 +180,10 @@ Stabilizers:
 Text-entry quirks:
   iOS Allow Paste cannot be exercised under XCUITest; prefill with clipboard write "some text" instead and test the system prompt manually.
   Android Gboard handwriting/stylus UI can capture text in an IME-owned input instead of the app field. If fill reports that input was captured by the keyboard/IME, use the diagnostic targetInput/actualInput details, inspect keyboard status/get if needed, and switch or disable handwriting outside the command plan before retrying. Do not keep retrying fill/type against the same field while the IME owns focus. If the exact target changes but app-owned formatting prevents raw equality, fill succeeds with verification: "unconfirmed" plus target-bound requested/before/after evidence; inspect that evidence instead of retrying the same mutation.
-  iOS accessibility-driven fill into a field whose accessibility value does not echo the typed text (an OTP input announcing "6 of 6 digits") succeeds with the same verification: "unconfirmed" evidence when that field's value moved off its post-clear baseline. Dropped characters and stale prefixes still fail, and the coordinate-driven fill route still requires an exact match. Confirm the code through the slots or the next screen; do not retry the fill or switch to per-character typing.
+  iOS accessibility-driven fill types the replacement once and never clears and retypes a read-back mismatch. Exact settled text confirms the entry. A value containing only characters in order from the post-clear value plus the request fails with TEXT_ENTRY_MISMATCH, including plain dropped characters and unchanged values; legitimate trimming or masks can also hit this limit ("5" into "$0.00" displaying "$0.05"). Other settled values return verification: "unconfirmed" with requested/before/after/target evidence, including grouping ("00 062 91 77" for "000629177"), currency ("$10.00" for "1000"), and OTP summaries. Missing, reordered, duplicated or stale text can also be unconfirmed, so assert the expected value with a value selector, get/is, or the resulting screen before continuing. For single-line fills ending in a submit key, any non-matching value observed on the same target succeeds unverified, including partial or cleared text; this exception skips dropped-character checks because the submit may change the field. Assert the resulting screen. Multiline fields compare newlines as content. Unreadable or removed fields remain unverified. The coordinate-driven fill route still requires an exact match. Only retry fill with --delay-ms 80 after TEXT_ENTRY_MISMATCH and inspection shows the field needs correction.
 
 React Native internals:
-  If the question is about React Native performance, profiling, props, state, hooks, render causes, slow components, or rerenders, use help react-devtools instead of inferring from screenshots or logs.`}},C={dogfood:{summary:`Exploratory QA workflow with reproducible evidence`,body:`agent-device help dogfood
+  If the question is about React Native performance, profiling, props, state, hooks, render causes, slow components, or rerenders, use help react-devtools instead of inferring from screenshots or logs.`}},T={dogfood:{summary:`Exploratory QA workflow with reproducible evidence`,body:`agent-device help dogfood
 
 Use this when asked to dogfood, exploratory test, bug hunt, QA, or find issues in an app.
 
@@ -268,10 +276,10 @@ Evidence:
 
 Report:
   Summarize what changed, exact validation commands, pass/fail observations, artifact paths, and residual risk.
-  If live validation is blocked, state the blocker, device/session, and exact next command needed.`}};function w(){return`agent-device <command> [args] [--json]
+  If live validation is blocked, state the blocker, device/session, and exact next command needed.`}};function E(){return`agent-device <command> [args] [--json]
 
 Automates iOS, Android, macOS, TV, and web apps for AI agents.
-All ${n().length} commands: agent-device help commands
+All ${t().length} commands: agent-device help commands
 
 Start:
   When starting a task with a known app, first run:
@@ -294,7 +302,7 @@ Loop:
 Targets:
   Copy refs exactly: @e12, @e12~s4. Keep @ and any ~sN pin; refs go stale
     after mutations. A literal @handle is label="@handle", not a bare ref.
-  Prefer refs, then id/label/role selectors. Selector keys: ${t.join(` `)}.
+  Prefer refs, then id/label/role selectors. Selector keys: ${r.join(` `)}.
   Coordinates are last resort: after snapshot -i shows no semantic target, or a
     sparse/AX-unavailable warning says its refs and selectors are invalid.
     Then screenshot, press <x> <y>, and re-snapshot on the changed screen.
@@ -319,21 +327,14 @@ Guides (agent-device help <topic>):
   react-native / react-devtools / cdp / tv / web / macos / remote
   physical-device / ios-system-ui / maestro
   foldable    iPhone Duo panels, the fold command, and why refs die on a pose change
-`}var T=e({buildCommandUsageText:()=>V,buildUsageText:()=>P,helpTopicIds:()=>U,resolveHelpTargetUsageText:()=>H});const E=[`Default config files: ~/.agent-device/config.json (or <AGENT_DEVICE_HOME>/config.json), ./agent-device.json (project-safe defaults only).`,`Use --config <path> or AGENT_DEVICE_CONFIG for explicit connection/provider defaults; project config cannot select endpoints or credentials.`],D=[{label:`AGENT_DEVICE_SESSION`,description:`Explicit session name`},{label:`AGENT_DEVICE_PLATFORM`,description:`Default platform binding`},{label:`AGENT_DEVICE_SCREENSHOT_SCALE`,description:`Default screenshot scale factor`},{label:`AGENT_DEVICE_SESSION_LOCK`,description:`Bound-session conflict mode`},{label:`AGENT_DEVICE_DAEMON_BASE_URL`,description:`Connect to remote daemon`},{label:`AGENT_DEVICE_DAEMON_AUTH_TOKEN`,description:`Remote daemon service/API token`},{label:`AGENT_DEVICE_CLOUD_BASE_URL`,description:`Bridge/control-plane API origin for cloud auth and /api-keys`}],O=[`agent-device open Settings --platform ios`,`agent-device open https://example.com --platform web`,`agent-device snapshot -i`,`agent-device fill @e3 "test@example.com"`,`agent-device replay ./session.ad`,`agent-device wait absent 'label="Loading..."' 3000`,`agent-device test ./suite --platform android`],k={commands:{summary:`Full command catalog, global flags, configuration, and environment`,body:`agent-device help commands`},...x,maestro:{summary:`Supported Maestro YAML commands, grammar, and runtime boundaries`,body:`agent-device help maestro
-
-Run Maestro compatibility flows with replay <flow.yaml> --maestro or test <path> --maestro. Bind an iOS or Android target with --platform or an existing session.
-
-${m()}
-
-Unsupported syntax fails loudly rather than being skipped. Architecture, performance tradeoffs, and declared conformance divergences: https://github.com/callstack/agent-device/blob/main/docs/adr/0015-direct-maestro-engine.md
-Focused compatibility request: https://github.com/callstack/agent-device/issues/new`},workflow:{summary:`Normal agent-device bootstrap, exploration, and validation loop`,body:`agent-device help workflow
+`}var D=e({buildCommandUsageText:()=>U,buildUsageText:()=>I,helpTopicIds:()=>G,resolveHelpTargetUsageText:()=>W});const O=[`Default config files: ~/.agent-device/config.json (or <AGENT_DEVICE_HOME>/config.json), ./agent-device.json (project-safe defaults only).`,`Use --config <path> or AGENT_DEVICE_CONFIG for explicit connection/provider defaults; project config cannot select endpoints or credentials.`],k=[{label:`AGENT_DEVICE_SESSION`,description:`Explicit session name`},{label:`AGENT_DEVICE_PLATFORM`,description:`Default platform binding`},{label:`AGENT_DEVICE_SCREENSHOT_SCALE`,description:`Default screenshot scale factor`},{label:`AGENT_DEVICE_SESSION_LOCK`,description:`Bound-session conflict mode`},{label:`AGENT_DEVICE_DAEMON_BASE_URL`,description:`Connect to remote daemon`},{label:`AGENT_DEVICE_DAEMON_AUTH_TOKEN`,description:`Remote daemon service/API token`},{label:`AGENT_DEVICE_CLOUD_BASE_URL`,description:`Bridge/control-plane API origin for cloud auth and /api-keys`}],A=[`agent-device open Settings --platform ios`,`agent-device open https://example.com --platform web`,`agent-device snapshot -i`,`agent-device fill @e3 "test@example.com"`,`agent-device replay ./session.ad`,`agent-device wait absent 'label="Loading..."' 3000`,`agent-device test ./suite --platform android`],j={commands:{summary:`Full command catalog, global flags, configuration, and environment`,body:`agent-device help commands`},...C,maestro:g(`maestro`).help,workflow:{summary:`Normal agent-device bootstrap, exploration, and validation loop`,body:`agent-device help workflow
 
 Command shapes, refs, selectors, waits, recovery, and platform limits for open -> snapshot -i -> settle -> verify -> close loop.
 
 Command shape:
   Command lines only -- no prose, numbering, fences, pipes, or grep/head/tail/jq; raw output carries refs/hints for the next step. Order: subcommand, positionals, flags: agent-device open com.example.app --session checkout --platform android --relaunch
   Chain confident consecutive steps with &&: press 'label="Search"' --settle && fill 'label="Search"' "query" --settle. Fall back to one command at a time when a step is uncertain (ambiguous match, network-backed result, unseen screen).
-  Refs look like @e12; use the exact ref from the latest snapshot -i, never a placeholder (@ref, @eN, @Label_Name). Pin with ~s<n> (press @e12~s4); iOS rejects a stale pinned ref -- refresh with snapshot -i or use a selector.
+  Refs look like @e12; use the exact ref from the latest snapshot -i, never a placeholder (@ref, @eN, @Label_Name). Pin with ~s<n> (press @e12~s4); every platform rejects a stale pinned ref -- refresh with snapshot -i or use a selector.
   close = agent-device close. App back is back; system back is back --system. Taps are press/click. type never takes --settle: run type, then diff snapshot to verify. Known flow: batch --steps-file ./steps.json (help batch).
   Gestures: scroll/swipe for lists/flicks; gesture pan|fling|pinch|rotate|transform|drag for multi-touch. Shapes and platform quirks: help gestures.
 
@@ -352,7 +353,7 @@ Snapshots and refs:
 
 Selectors:
   id="field-email", label="Allow", role=button label="Search" -- not bare role keys (button="Search"); no CSS selectors/--selector/--text/raw x-y when refs/selectors exist.
-  Mutating selector ambiguity: press/click/fill/longpress collapse duplicate accessibility wrappers only when every match is one ancestor-descendant chain resolving to the same actionable node. Matches in distinct subtrees fail with AMBIGUOUS_MATCH and a bounded candidate list; geometry never chooses a winner. Retry one printed candidate ref (pinned to refsGeneration) or narrow the selector with role/id/longer text. Read-only commands and replay suggestions retain their declared resolution policies.
+  Mutating selector ambiguity: press/click/fill/longpress collapse duplicate accessibility wrappers only when every match is one ancestor-descendant chain resolving to the same actionable node. Matches in distinct subtrees fail with AMBIGUOUS_MATCH and a bounded candidate list; geometry never chooses a winner. Retry one printed candidate ref (pinned to refsGeneration) or narrow the selector with role/id/longer text. Uniqueness-based reads (is except exists/absent, get attrs) share that failure shape.
   hittable: false on a resolved element does not block dispatch (iOS AX flags are unreliable on deep RN trees); press/fill/click return targetHittable: false plus a hint -- verify or re-target, not a failure.
 
 Text entry:
@@ -366,7 +367,7 @@ Session ordering:
   Stateful commands (open/press/fill/type/scroll/back/alert/replay/batch/close) run serially within one session. Parallelize only read-only commands, or separate sessions/devices.
 
 Read-only and waits:
-${b}
+${S}
   snapshot/get/is/find answer read-only questions; snapshot -i is for refs. --settle confirms local UI quieted; delayed results use wait text "Expected result" or wait <selector> instead of polling; strict disappearance uses wait absent <selector>.
   wait stable [quietMs] [timeoutMs] (defaults 500/10000) is the fallback for open/relaunch/navigation, or an intentionally-unsettled mutation -- not after a --settle whose diff already shows the change. Ambiguous find: add --first or --last.
 
@@ -408,6 +409,7 @@ Script paths are the caller's:
 Script line grammar:
   A .ad line is <command> [positional...] [flag...]. Whitespace splits tokens; a token quoted with " or ' is one argument, and single quotes keep a double quote literal, exactly as at the shell (press 'id="far"' is one selector). Values in double quotes are JSON strings (escape \\\\, \\", \\t, \\n). Values in single quotes are literal, as at the shell: a backslash keeps its own character and the only escape is \\' for an apostrophe. A script carries only the flags declared for that command and marked recorded, so the script form of a step matches the CLI form: scroll down --until 'id="x"', wait 'label="Sign in"' --raw. CLI-only spellings and per-request options are not part of a step: --settle, --verify, scroll --pixels/--duration-ms, and the device-selection flags (--platform, --serial, --device) are the common ones a script does not carry.
   Reaching an off-screen target is viewport-independent in a script the same way it is at the CLI: write scroll down --until <selector>, not a fixed scroll amount that passes on one screen size and fails on another.
+  press/click/longpress resolve their target once. Before interacting with a loading screen, add an explicit landmark wait: wait 'label="Continue"' 5000, then press 'label="Continue"'.
 
 Reusable open-to-destination scripts:
   Arm recording on the first open, perform the full journey, verify the destination with a selector-targeted wait, then publish without closing:
@@ -420,6 +422,9 @@ Reusable open-to-destination scripts:
     export AD_VAR_PASSWORD='<secret>'
     agent-device fill 'id="password"' "$AD_VAR_PASSWORD" --record-as PASSWORD
   The live app receives the value; recording state and the published script contain only \${PASSWORD}. Reuse the same name for repeated values; --record-as is fill-only, requires an armed recording, and is mutually exclusive with --no-record. Replay with AD_VAR_PASSWORD still set, or pass --env PASSWORD=<value>. Do not record passwords/tokens without --record-as; their literal text is written to the .ad target.
+  To keep the value out of the CLI's argv as well, pipe it in with --text-stdin instead of a text argument:
+    printf %s "$AD_VAR_PASSWORD" | agent-device fill 'id="password"' --text-stdin --record-as PASSWORD
+  --text-stdin reads at most 64 KiB, removes exactly one trailing newline, and refuses a terminal, empty input, invalid UTF-8, or an extra text argument. While recording is armed, --record-as publishes \${VAR} and --no-record leaves the step out; passing neither is an error. Without an armed recording the step is not recorded. It is not available inside batch steps.
 
 Replay divergence and repair:
   A failing replay/test step returns REPLAY_DIVERGENCE with a bounded report (screen digest, ranked selector suggestions, resume). Fix app state, then resume with replay --from <n> --plan-digest <sha256> (both from the report's resume field) to continue without re-running earlier steps; resume never re-executes skipped steps, so app state there is the caller's responsibility. --from is replay-only; test rejects it. The digest binds the script, includes, effective --platform/--target, and per-action runtime/identity; native .ad interpolation is late-bound so changing only its values keeps the digest, while Maestro environment substitution can change it.
@@ -518,7 +523,7 @@ Focus and visual truth:
   On Android TV and tvOS, if snapshot -i exposes a focused node, verify it with is focused <selector>.
   Use wait focused=true only when repeated snapshots preserve focus metadata for the app.
   If the app exposes only a surface view, or focus metadata is transient, use screenshot --overlay-refs, screenshot, or diff snapshot as visual truth and keep moving focus with tv-remote. On Vega OS, use the VVD display as visual truth until capture support lands.
-  Do not assume press/click @ref works on Android TV, tvOS, or Vega OS until the desired element is focused.`},...S,"react-devtools":{summary:`React Native performance, profiling, and component internals`,body:`agent-device help react-devtools
+  Do not assume press/click @ref works on Android TV, tvOS, or Vega OS until the desired element is focused.`},...w,"react-devtools":{summary:`React Native performance, profiling, and component internals`,body:`agent-device help react-devtools
 
 Use this for React Native performance/profiling and internals that the accessibility tree cannot expose: components, props, state, hooks, ownership, slow renders, and rerenders.
 
@@ -662,7 +667,7 @@ React Native dev loop:
   Multiple local worktrees can reuse one native iOS simulator build by running each worktree's dev server on a different port and opening the same installed app on different simulators with explicit runtime hints:
     agent-device open "React Navigation Example" --platform ios --device "iPhone 17" --session rn-a --metro-host 127.0.0.1 --metro-port 8081 --relaunch
     agent-device open "React Navigation Example" --platform ios --device "iPhone 17 Pro" --session rn-b --metro-host 127.0.0.1 --metro-port 8082 --relaunch
-  iOS simulator opens write React Native's per-simulator debug server settings before launch, so those ports do not conflict across simulators. Use separate sessions/devices, close both sessions when done, and rebuild only for native changes or dependency changes that affect the binary. One simulator cannot run two copies of the same bundle id.
+  iOS simulator opens write bare React Native's per-simulator debug server settings before launch. Detected Expo development clients receive their server URL through a launch link instead. Use separate sessions/devices, close both sessions when done, and rebuild only for native changes or dependency changes that affect the binary. One simulator cannot run two copies of the same bundle id.
   Expo Go/dev clients are host shells. Use provided project URLs, verify with snapshot -i after opening, and ask instead of inventing app ids or URLs. Help workflow owns the full Expo URL command shapes.
 
 Overlays and busy RN UIs:
@@ -747,7 +752,7 @@ Android physical-device prerequisites:
 Runner and daemon lifecycle (applies to simulators too):
   open without --relaunch is idempotent-foreground for an already-running app (it brings the process forward; it does not restart it). open --relaunch restarts the app; on iOS simulators this collapses to one simctl launch --terminate-running-process call instead of a separate terminate-then-launch.
   No runner read launches a session app that is not running: snapshot, wait, is, get, a reading find, and an interaction's leading reads (a gesture's viewport read, the capture that resolves a selector click/fill) answer the retriable APP_NOT_RUNNING instead of bare-launching over a launch SpringBoard still holds behind its deep-link confirmation. Only open, activate, and a command that mutates without a leading read bring a stopped app up.
-  close keeps a healthy iOS simulator XCTest runner warm by default so the next open on that simulator (same udid in the same simulator set) skips the runner build, unless --shutdown was requested, the session was recording, or the session held a device lease. A retained runner auto-stops after an idle window (default 5 minutes); set AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS to override, or 0 to disable idle stop and retain until daemon exit.
+  close keeps a healthy iOS simulator XCTest runner warm by default so the next open on that simulator (same udid in the same simulator set) skips the runner build, unless --shutdown was requested, the session was recording, or the session held a device lease. A retained runner auto-stops after an idle window (default 5 minutes); set AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS to override, or 0 to disable idle stop and retain until daemon exit. Only a ready runner with an observed listener is retained; close retires unfinished prewarm recovery. Losing the retained listener stops that generation, and daemon shutdown stops idle retained runners rather than handing them off without supervision.
   Each AGENT_DEVICE_STATE_DIR runs its own daemon. It self-exits after an idle window (default 5 minutes, matching the runner idle-stop default) once it has no open sessions, no in-flight requests, and no active recording; set AGENT_DEVICE_DAEMON_IDLE_TIMEOUT_MS to override, or 0 to disable idle reap.
   On a machine shared by several agents, set AGENT_DEVICE_SESSION_IDLE_TIMEOUT_MS to also expire an individual session that has taken a host-global device claim and then received no commands for that long; the claim is released and the next command on that session answers SESSION_NOT_FOUND with details.reason SESSION_IDLE_EXPIRED naming the window and the device. Off by default, because on a shared host "idle" and "thinking" are indistinguishable: only set it where an abandoned claim blocking every other agent is the worse failure. Sessions holding a remote lease or any active capture (recording, logs, audio, performance, or trace) are never expired this way.
   A stale iOS runner lease — its owner process dead, or its AGENT_DEVICE_STATE_DIR deleted — is reclaimed automatically instead of failing with "is already owned by another agent-device daemon". A live owner's runner is also reclaimed when the requesting daemon holds the host-global device claim for that device: claims are exclusive, so holding one proves the runner's owner released the device and merely kept the runner warm. The error remains only for owners outside claim arbitration (a pre-claims build, or daemons pointed at different claim stores).
@@ -789,17 +794,18 @@ Providers:
   Direct proxy: agent-device connect proxy --daemon-base-url <proxy-agent-device-url> stores the shared proxy profile and client identity.
   BrowserStack: agent-device connect browserstack verifies credentials, the exact device, and a bs:// app reference, then stores a local provider profile. It does not create an App Automate session.
   AWS Device Farm: agent-device connect aws-device-farm verifies credentials and the exact project, device, and optional app upload, then stores a local provider profile. It does not create a remote access session.
+  TestMu AI: agent-device connect testmu verifies credentials and the exact virtual device (emulator or simulator) or, with --provider-device-type real, real device and OS version, then stores a local provider profile. --provider-app takes an lt:// app reference, an https URL, or a local path: connect looks an lt:// id up among your uploads for that device pool, while URL and local sources are uploaded and validated when open creates the session. It does not create a hub session.
   Limrun: agent-device connect limrun verifies access to the selected iOS or Android instance service, then stores a local provider profile. It does not create an instance.
 
 After direct-provider connect:
   Read the printed Device, App, Next, and workflow-note lines. They are also available as verification/device/app/liveSession/nextSteps/notes in --json output.
-  BrowserStack and AWS Device Farm create the hosted session on open. open needs the installed package or bundle identifier, not the app artifact name or ARN.
+  BrowserStack, AWS Device Farm, and TestMu AI create the hosted session on open. open needs the installed package or bundle identifier, not the app artifact name, ARN, or lt:// id.
   Before provider allocation, apps lists compatible uploaded app assets without creating an instance when the selected provider exposes a catalog. open <exact-asset-name> creates the instance with that asset, resolves its installed app id, and launches it. install remains available when the app comes from a fresh local path or URL.
   AWS Device Farm cannot install after allocation. If connect reports no attached app, run its printed reconnect command, which includes --session <name> --force, before open.
   Do not run devices as a pre-open catalog probe for direct providers; it can allocate the deferred provider session. Limrun is the exception for apps: before allocation it lists uploaded assets for the selected platform.
 
 Device cloud interfaces:
-  CLI is the canonical bootstrap path: connect limrun/browserstack/aws-device-farm, then use normal open/snapshot/click/close/artifacts/disconnect commands.
+  CLI is the canonical bootstrap path: connect limrun/browserstack/aws-device-farm/testmu, then use normal open/snapshot/click/close/artifacts/disconnect commands.
   JavaScript can skip persisted connect state by passing leaseProvider plus provider fields to createAgentDeviceClient or per-command options.
   MCP exposes operational tools such as open, snapshot, click, close, and artifacts. It does not expose connect/disconnect; run CLI connect first in the same state dir before relying on MCP tools.
 
@@ -828,6 +834,20 @@ Cloud profile flow:
   agent-device open com.example.app
   agent-device snapshot
   agent-device disconnect
+
+TestMu AI virtual-device flow (emulators and simulators):
+  agent-device plugins add @agent-device/testmu
+  export LT_USERNAME=... LT_ACCESS_KEY=...
+  agent-device connect testmu --platform ios --device "iPhone 16" --provider-os-version 18.0 --provider-app lt://APP-id
+  agent-device open com.example.app
+  agent-device snapshot -i
+  agent-device close
+  agent-device artifacts --json
+  agent-device disconnect
+
+TestMu AI real-device flow:
+  agent-device connect testmu --provider-device-type real --platform ios --device "iPhone 16" --provider-os-version 18 --provider-app ./MyApp.ipa
+  Real iOS devices are listed by major OS version (18, not 18.0) and install a signed .ipa. Real and virtual devices have separate upload APIs, so pass an lt:// id uploaded for the pool you connect to.
 
 BrowserStack hosted-device flow:
   BROWSERSTACK_USERNAME=... BROWSERSTACK_ACCESS_KEY=...
@@ -877,16 +897,16 @@ Rules:
   Use connect without --remote-config when the cloud control plane owns the connection profile.
   Prefer connect --remote-config over --daemon-base-url, --tenant, --run-id, and --lease-id when using a local profile.
   Use agent-device proxy for direct tunnel access to a Mac you control. Expose the printed proxy URL through cloudflared/ngrok, then run agent-device connect proxy with the tunnel URL and printed token before normal commands.
-  Use Limrun, BrowserStack, and AWS Device Farm through local provider profiles; they do not accept a remote agent-device daemon URL.
-  Device cloud credentials must be available before the command starts. Limrun uses LIMRUN_API_KEY, or the LIM_*_INSTANCE_* variables for an existing instance. BrowserStack uses BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY. AWS Device Farm uses the AWS CLI credential chain, including CI-provided AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN, AWS profiles, or web identity role variables.
-  A local daemon keeps the Limrun and BrowserStack credentials it started with. When the shell holds different ones, the first command that allocates a lease refuses with reason provider-credentials-changed; run agent-device daemon stop with the same --state-dir, then rerun the command. A shell that sets none of them uses the daemon's. A daemon with an HTTP auth hook serves remote callers and does not compare.
+  Use Limrun, BrowserStack, AWS Device Farm, and TestMu AI through local provider profiles; they do not accept a remote agent-device daemon URL.
+  Device cloud credentials must be available before the command starts. Limrun uses LIMRUN_API_KEY, or the LIM_*_INSTANCE_* variables for an existing instance. BrowserStack uses BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY. TestMu AI uses LT_USERNAME and LT_ACCESS_KEY. AWS Device Farm uses the AWS CLI credential chain, including CI-provided AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN, AWS profiles, or web identity role variables.
+  A local daemon keeps the Limrun, BrowserStack, and TestMu AI credentials it started with. When the shell holds different ones, the first command that allocates a lease refuses with reason provider-credentials-changed; run agent-device daemon stop with the same --state-dir, then rerun the command. A shell that sets none of them uses the daemon's. A daemon with an HTTP auth hook serves remote callers and does not compare.
   Direct-provider connect performs read-only provider calls and saves active connection state only after verification succeeds. It never creates a device, instance, App Automate session, or AWS remote access session.
   connect without --session always creates a fresh remote session and prints that session in its next-step commands. Concurrent callers must pass the returned --session on every command; the ambient active connection is only a single-workflow convenience.
   To replace an existing connection, pass its returned session explicitly with --session <name> --force. --force without --session creates another fresh session and does not release or overwrite an unrelated active connection.
-  Prefer short-lived AWS role credentials in CI. Generated connection profiles store app/device selectors and ARNs, not Limrun API keys or instance tokens, BrowserStack access keys, or AWS credentials.
+  Prefer short-lived AWS role credentials in CI. Generated connection profiles store app/device selectors and ARNs, not Limrun API keys or instance tokens, BrowserStack or TestMu AI access keys, or AWS credentials.
   Limrun Android supports direct ADB port reverse for local Metro. Limrun iOS requires a public Metro/React DevTools URL because it cannot reach local host ports directly.
   After closing a device cloud session, run agent-device artifacts --json to retrieve provider video/log/dashboard URLs when the provider has made them available.
-  connect proxy stores the connection profile and client identity. Proxy device leases are acquired on open and expire after five minutes without commands; devices may inspect proxy inventory without allocating.
+  connect proxy stores the connection profile and client identity. Proxy device leases are acquired on open and expire after five minutes without commands; when a lease expires or is released, the daemon ends the session opened under it and frees its device; devices may inspect proxy inventory without allocating.
   Multiple agents can share one proxy when each uses connect proxy, open, commands, close, and disconnect.
   disconnect releases local connection state; close releases the active session and device lease.
   A busy direct-proxy device error means another agent owns the device until it closes or its inactivity lease expires.
@@ -928,7 +948,8 @@ Rules:
   Context menus are not ambient UI: secondary-click a visible target, then re-snapshot and use the new menu-item refs.
   Do not let iOS simulator-set scoping hide macOS desktop targets.
   Prefer refs/selectors over raw coordinates.
-  macOS snapshot rects are window-space; use current refs or overlay refs instead of guessing coordinates.`},web:{summary:`Minimal browser workflow with the managed web backend`,body:`agent-device help web
+  macOS snapshot rects are window-space; use current refs or overlay refs instead of guessing coordinates.
+  On the default XCTest backend a read (snapshot, get, find) of a session app that sits behind other windows is answered from where it sits, without raising the app; interactions and a window-level screenshot of that app still bring it forward.`},web:{summary:`Minimal browser workflow with the managed web backend`,body:`agent-device help web
 
 Use --platform web only for the minimal browser command loop exposed through agent-device.
 
@@ -975,33 +996,33 @@ Out of scope for agent-device web support:
 Rules:
   Do not claim web e2e CI exists unless a project workflow explicitly provides it.
   Do not use native mobile or desktop setup commands such as boot, apps, install, settings, alert, keyboard, perf, logs, or react-devtools for --platform web.
-  Keep browser plans session-scoped: open a URL, inspect refs, act on refs/selectors, verify with wait/get/is/snapshot, capture screenshot only when visual evidence is needed, then close.`},...C};function A(e,t,n){let r=n.endsWith(`?`),i=r?n.slice(0,-1):n,a=/^[a-z-]+(?:\|[a-z-]+)+$/i.test(i),o=a||t.usageOverride!==void 0&&t.usageOverride.startsWith(`${e} ${i}`);return r?a?`[${i}]`:o?i:`[${i}]`:o?i:`<${i}>`}function j(e,t){return t.listUsageOverride?t.listUsageOverride:[e,...(t.positionalArgs??[]).map(n=>A(e,t,n))].join(` `)}function M(){return w()}function N(){return`agent-device help commands
+  Keep browser plans session-scoped: open a URL, inspect refs, act on refs/selectors, verify with wait/get/is/snapshot, capture screenshot only when visual evidence is needed, then close.`},...T};function M(e,t,n){let r=n.endsWith(`?`),i=r?n.slice(0,-1):n,a=/^[a-z-]+(?:\|[a-z-]+)+$/i.test(i),o=a||t.usageOverride!==void 0&&t.usageOverride.startsWith(`${e} ${i}`);return r?a?`[${i}]`:o?i:`[${i}]`:o?i:`<${i}>`}function N(e,t){return t.listUsageOverride?t.listUsageOverride:[e,...(t.positionalArgs??[]).map(n=>M(e,t,n))].join(` `)}function P(){return E()}function F(){return`agent-device help commands
 
 Full command catalog. Use agent-device help <command> for exact flags and behavior.
 
-${B(n().map(e=>{let t=l(e);return{name:e,schema:t,usage:j(e,t)}}))}
+${H(t().map(e=>{let t=l(e);return{name:e,schema:t,usage:N(e,t)}}))}
 
-${L(`Device Selection (shared by device commands; help <command> lists each command's flags):`,F(i))}
+${z(`Device Selection (shared by device commands; help <command> lists each command's flags):`,L(i))}
 
-${L(`Global Flags:`,F(s))}
+${z(`Global Flags:`,L(s))}
 
-${z(`Configuration:`,E)}
+${V(`Configuration:`,O)}
 
-${R(`Environment:`,D)}
+${B(`Environment:`,k)}
 
-${z(`Examples:`,O)}
-`}function P(){return M()}function F(e){return r().filter(t=>e.has(t.key)&&t.usageLabel!==void 0&&t.usageDescription!==void 0)}function I(e,t){return t?e.map(e=>{let n=t[e.key];return n===void 0?e:{...e,usageDescription:n}}):e}function L(e,t){return R(e,t.map(e=>({label:e.usageLabel??``,description:e.usageDescription??``})))}function R(e,t){if(t.length===0)return`${e}\n  (none)`;let n=Math.max(...t.map(e=>Math.min(e.label.length,26)))+2,r=[e];for(let e of t){let t=e.label.length<=26?e.label.padEnd(n):`${e.label}  `;r.push(`  ${t}${e.description}`)}return r.join(`
-`)}function z(e,t){return t.length===0?`${e}\n  (none)`:[e,...t.map(e=>`  ${e}`)].join(`
-`)}function B(e){return R(`Commands:`,e.map(e=>({label:e.usage,description:e.schema.text.summary})))}function V(e){let t=W(e);if(t)return t;let n=u(e);if(!n)return null;let r=y(e,n),i=I(F(new Set(n.allowedFlags??[])),n.flagDescriptionOverrides),o=[];i.length>0&&o.push(L(`Command flags:`,i));let s=o.length>0?`\n\n${o.join(`
+${V(`Examples:`,A)}
+`}function I(){return P()}function L(e){return n().filter(t=>e.has(t.key)&&t.usageLabel!==void 0&&t.usageDescription!==void 0)}function R(e,t){return t?e.map(e=>{let n=t[e.key];return n===void 0?e:{...e,usageDescription:n}}):e}function z(e,t){return B(e,t.map(e=>({label:e.usageLabel??``,description:e.usageDescription??``})))}function B(e,t){if(t.length===0)return`${e}\n  (none)`;let n=Math.max(...t.map(e=>Math.min(e.label.length,26)))+2,r=[e];for(let e of t){let t=e.label.length<=26?e.label.padEnd(n):`${e.label}  `;r.push(`  ${t}${e.description}`)}return r.join(`
+`)}function V(e,t){return t.length===0?`${e}\n  (none)`:[e,...t.map(e=>`  ${e}`)].join(`
+`)}function H(e){return B(`Commands:`,e.map(e=>({label:e.usage,description:e.schema.text.summary})))}function U(e){let t=K(e);if(t)return t;let n=u(e);if(!n)return null;let r=x(e,n),i=R(L(new Set(n.allowedFlags??[])),n.flagDescriptionOverrides),o=[];i.length>0&&o.push(z(`Command flags:`,i));let s=o.length>0?`\n\n${o.join(`
 
 `)}`:``;return`Usage:
   agent-device ${r}
 
 ${a(n.text)}${s}
-`}function H(e){return V(d(e))}function U(){return Object.keys(k)}function W(e){let t=k[e];return t?`${G(e,e===`commands`?N():t.body)}
+`}function W(e){return U(d(e))}function G(){return Object.keys(j)}function K(e){let t=j[e];return t?`${q(e,e===`commands`?F():t.body)}
 
 Related:
   agent-device help <command>   command-specific flags
   agent-device help manual-qa   routine QA loop
   agent-device help workflow    full automation reference
-`:null}function G(e,t){let n=`agent-device help ${e}`;return t.startsWith(n)?`agent-device ${c()} — ${e}${t.slice(n.length)}`:t}export{H as i,T as n,U as r,P as t};
+`:null}function q(e,t){let n=`agent-device help ${e}`;return t.startsWith(n)?`agent-device ${c()} — ${e}${t.slice(n.length)}`:t}export{W as i,D as n,G as r,I as t};

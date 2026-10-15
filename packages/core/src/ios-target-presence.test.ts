@@ -53,6 +53,7 @@ async function withPresence(
     await writeFile(
       join(directory, `${serial}.json`),
       JSON.stringify({
+        runnerToken: "relay-listener-fixture-token",
         runnerPid: process.pid,
         ownerPid: process.pid,
         port: 50937,

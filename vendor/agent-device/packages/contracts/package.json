@@ -84,6 +84,10 @@
       "types": "./src/application-lifecycle-runtime-plan.ts",
       "default": "./src/application-lifecycle-runtime-plan.ts"
     },
+    "./artifact-adapter": {
+      "types": "./src/artifact-adapter.ts",
+      "default": "./src/artifact-adapter.ts"
+    },
     "./async-lifecycle": {
       "types": "./src/async-lifecycle.ts",
       "default": "./src/async-lifecycle.ts"
@@ -116,9 +120,17 @@
       "types": "./src/back-runtime.ts",
       "default": "./src/back-runtime.ts"
     },
+    "./backend": {
+      "types": "./src/backend.ts",
+      "default": "./src/backend.ts"
+    },
     "./backend-diagnostics": {
       "types": "./src/backend-diagnostics.ts",
       "default": "./src/backend-diagnostics.ts"
+    },
+    "./backend-snapshot-options": {
+      "types": "./src/backend-snapshot-options.ts",
+      "default": "./src/backend-snapshot-options.ts"
     },
     "./boot-failure": {
       "types": "./src/boot-failure.ts",
@@ -152,9 +164,21 @@
       "types": "./src/command-platform-execution.ts",
       "default": "./src/command-platform-execution.ts"
     },
+    "./command-policy": {
+      "types": "./src/command-policy.ts",
+      "default": "./src/command-policy.ts"
+    },
+    "./daemon-command-surface": {
+      "types": "./src/daemon-command-surface.ts",
+      "default": "./src/daemon-command-surface.ts"
+    },
     "./daemon-http": {
       "types": "./src/daemon-http.ts",
       "default": "./src/daemon-http.ts"
+    },
+    "./deploy-result-target": {
+      "types": "./src/deploy-result-target.ts",
+      "default": "./src/deploy-result-target.ts"
     },
     "./device": {
       "types": "./src/facades/device.ts",
@@ -288,10 +312,6 @@
       "types": "./src/logs-runtime-plan.ts",
       "default": "./src/logs-runtime-plan.ts"
     },
-    "./managed-device-allocation": {
-      "types": "./src/managed-device-allocation.ts",
-      "default": "./src/managed-device-allocation.ts"
-    },
     "./managed-web-backend": {
       "types": "./src/managed-web-backend.ts",
       "default": "./src/managed-web-backend.ts"
@@ -360,6 +380,10 @@
       "types": "./src/platform-runtime-unavailable.ts",
       "default": "./src/platform-runtime-unavailable.ts"
     },
+    "./runtime-contract": {
+      "types": "./src/runtime-contract.ts",
+      "default": "./src/runtime-contract.ts"
+    },
     "./runtime-contract-error": {
       "types": "./src/runtime-contract-error.ts",
       "default": "./src/runtime-contract-error.ts"
@@ -407,6 +431,10 @@
     "./replay": {
       "types": "./src/facades/replay.ts",
       "default": "./src/facades/replay.ts"
+    },
+    "./replay-backend": {
+      "types": "./src/replay-backend.ts",
+      "default": "./src/replay-backend.ts"
     },
     "./runner-lease-context": {
       "types": "./src/runner-lease-context.ts",

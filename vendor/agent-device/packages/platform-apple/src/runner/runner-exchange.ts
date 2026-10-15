@@ -1,4 +1,4 @@
-import { AppError } from '@agent-device/kernel/errors';
+import { AppError, isRequestCanceledError } from '@agent-device/kernel/errors';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { Deadline, emitDiagnostic, withDiagnosticTimer } from './host.ts';
 import {
@@ -6,7 +6,7 @@ import {
   RUNNER_STARTUP_TIMEOUT_MS,
   type RunnerConnectionSession,
 } from './runner-startup-transport.ts';
-import { sendRunnerCommandOnce } from './runner-transport.ts';
+import { sendRunnerCommandOnce, throwIfCanceledBeforeSend } from './runner-transport.ts';
 import {
   buildRunnerResponseError,
   decodeRunnerResponseBody,
@@ -17,6 +17,7 @@ import {
 } from './runner-contract.ts';
 import {
   resolveRunnerFatalErrorReason,
+  isRunnerCommandProvablyUnwritten,
   isRunnerMainThreadOccupiedError,
   isStructuredRunnerFailure,
 } from './runner-error-classification.ts';
@@ -31,16 +32,28 @@ import {
   enrichRunnerFailureFromLog,
   type RunnerLogAttempt,
 } from './runner-failure-diagnostics.ts';
-import { advanceRunnerSessionState, type RunnerSession } from './runner-session-types.ts';
+import {
+  advanceRunnerSessionState,
+  RUNNER_IN_FLIGHT_LIFECYCLE_STATES,
+  settleRunnerChargeForTerminalStatus,
+  type RunnerSession,
+} from './runner-session-types.ts';
 
 type RunnerExchangeSession = RunnerConnectionSession &
   Pick<
     RunnerSession,
-    'port' | 'commandCharges' | 'lastHealthyMutation' | 'runnerMainThreadBusy' | 'launchDeadline'
+    | 'endpoint'
+    | 'state'
+    | 'commandCharges'
+    | 'lastHealthyMutation'
+    | 'runnerMainThreadBusy'
+    | 'launchDeadline'
   >;
 
 const RUNNER_READY_PREFLIGHT_TIMEOUT_MS = 1_000;
 const RUNNER_PREFLIGHT_SKIP_FRESHNESS_MS = 5_000;
+const CANCELED_COMMAND_STATUS_TIMEOUT_MS = 1_000;
+const CANCELED_COMMAND_POLL_INTERVAL_MS = 100;
 
 type RunnerReadinessPreflightDecision =
   | {
@@ -72,6 +85,37 @@ type RunnerReadinessPreflightDecision =
  * charge stands for, so charging one would let it settle another command's debt (#2965).
  */
 export async function executeRunnerExchange(
+  device: DeviceInfo,
+  session: RunnerExchangeSession,
+  command: RunnerCommand,
+  logPath: string | undefined,
+  timeoutMs: number,
+  invalidateFatalSession: (reason: string) => Promise<void>,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
+  try {
+    return await exchangeWithRunner(
+      device,
+      session,
+      command,
+      logPath,
+      timeoutMs,
+      invalidateFatalSession,
+      signal,
+    );
+  } catch (error) {
+    // Whether it came from the preflight, the send, or the reply, a session-fatal failure stops the
+    // runner here: a runner that does not require the token must not keep listening.
+    const runnerFatalReason = resolveRunnerFatalErrorReason(error);
+    if (runnerFatalReason) {
+      session.lastHealthyMutation = undefined;
+      await invalidateFatalSession(runnerFatalReason);
+    }
+    throw error;
+  }
+}
+
+async function exchangeWithRunner(
   device: DeviceInfo,
   session: RunnerExchangeSession,
   command: RunnerCommand,
@@ -127,12 +171,7 @@ export async function executeRunnerExchange(
     return data;
   } catch (error) {
     const answered = recordUnansweredRunnerExchange(session, runnerCommand, error);
-    const runnerFatalReason = resolveRunnerFatalErrorReason(error);
-    if (runnerFatalReason) {
-      session.lastHealthyMutation = undefined;
-      await invalidateFatalSession(runnerFatalReason);
-      throw error;
-    }
+    if (resolveRunnerFatalErrorReason(error)) throw error;
     // A body-read or malformed-payload failure is transport-shaped too (the
     // runner died mid-response); structured runner failures carry a `runner`
     // detail and keep their recency — the runner proved it is alive by
@@ -252,11 +291,12 @@ async function sendRunnerCommandAfterPreflight(params: {
       }
     : { command: runnerCommand.command, commandId: runnerCommand.commandId };
 
+  throwIfCanceledBeforeSend(signal);
   // From here the runner holds our request, and a shutdown that hands it off would orphan a command
   // nobody is waiting for any more. A readiness probe is charged no more than the preflight's own
   // probe is: the runner serves it inline, so its reply says nothing about the queued work a charge
   // stands for, and charging it would let one probe settle another command's debt (#2965). The trait
-  // that names the probe is pinned to the runner's inline routing by `runner-readiness-routing.test.ts`.
+  // that names the probe is pinned to the runner's inline routing by `runner-command-traits-readiness-routing.test.ts`.
   const charged = !isRunnerReadinessProbeCommand(runnerCommand);
   if (charged) session.commandCharges.charge(runnerCommand.commandId);
   try {
@@ -266,7 +306,7 @@ async function sendRunnerCommandAfterPreflight(params: {
         if (readOnlyCommand) {
           return await waitForRunner(
             device,
-            session.port,
+            session.endpoint,
             runnerCommand,
             logPath,
             remainingMs,
@@ -276,7 +316,7 @@ async function sendRunnerCommandAfterPreflight(params: {
         }
         return await sendRunnerCommandOnce(
           device,
-          session.port,
+          session.endpoint,
           runnerCommand,
           remainingMs,
           signal,
@@ -285,9 +325,113 @@ async function sendRunnerCommandAfterPreflight(params: {
       diagnosticData,
     );
   } catch (error) {
-    if (charged) session.commandCharges.markAbandoned(runnerCommand.commandId);
+    if (charged) {
+      await settleFailedRunnerSend({ device, session, runnerCommand, deadline, signal, error });
+    }
     throw error;
   }
+}
+
+/**
+ * A send that provably wrote nothing withdraws its charge, whether or not it was canceled: a refused
+ * connection, or a cancellation the transport saw before its POST. Otherwise this process stopped waiting on
+ * a command the runner may hold, so the charge stays as abandoned, and a canceled request also waits
+ * out the command's execution before it settles (#3383).
+ */
+async function settleFailedRunnerSend(params: {
+  device: DeviceInfo;
+  session: RunnerExchangeSession;
+  runnerCommand: RunnerCommand;
+  deadline: Deadline;
+  signal: AbortSignal | undefined;
+  error: unknown;
+}): Promise<void> {
+  const { session, runnerCommand, signal, error } = params;
+  if (isRunnerCommandProvablyUnwritten(error)) {
+    session.commandCharges.withdrawUnsent(runnerCommand.commandId);
+    return;
+  }
+  session.commandCharges.markAbandoned(runnerCommand.commandId);
+  if (!isRequestCanceledError(signal?.reason) || session.state !== 'ready') return;
+  await drainCanceledRunnerCommand(params);
+}
+
+type CanceledRunnerCommandDrainOutcome =
+  | 'terminal'
+  | 'not_in_flight'
+  | 'status_unavailable'
+  | 'deadline_exceeded';
+
+/**
+ * Holds a canceled exchange until the runner's journal reports its command ended (#3383). The runner
+ * never sees the disconnect and runs the command to completion, so settling earlier would release the
+ * request's execution locks while the device is still doing the canceled work. Polls are bounded by the
+ * command's own remaining deadline rather than the aborted request signal; a drain that runs out of it
+ * leaves the charge abandoned.
+ */
+async function drainCanceledRunnerCommand(params: {
+  device: DeviceInfo;
+  session: RunnerExchangeSession;
+  runnerCommand: RunnerCommand;
+  deadline: Deadline;
+}): Promise<void> {
+  const { device, session, runnerCommand, deadline } = params;
+  const startedAtMs = Date.now();
+  let outcome: CanceledRunnerCommandDrainOutcome = 'deadline_exceeded';
+  let lifecycleState: string | undefined;
+  let polls = 0;
+  while (deadline.remainingMs() > 0) {
+    polls += 1;
+    try {
+      lifecycleState = await readRunnerCommandLifecycleState(
+        device,
+        session,
+        runnerCommand,
+        Math.min(CANCELED_COMMAND_STATUS_TIMEOUT_MS, deadline.remainingMs()),
+      );
+    } catch {
+      outcome = 'status_unavailable';
+      break;
+    }
+    if (settleRunnerChargeForTerminalStatus(session, runnerCommand, lifecycleState) !== undefined) {
+      outcome = 'terminal';
+      break;
+    }
+    if (!RUNNER_IN_FLIGHT_LIFECYCLE_STATES.has(lifecycleState)) {
+      outcome = 'not_in_flight';
+      break;
+    }
+    const waitMs = Math.min(CANCELED_COMMAND_POLL_INTERVAL_MS, deadline.remainingMs());
+    await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+  }
+  emitDiagnostic({
+    level: outcome === 'terminal' ? 'debug' : 'warn',
+    phase: 'ios_runner_canceled_command_drain',
+    durationMs: Date.now() - startedAtMs,
+    data: {
+      command: runnerCommand.command,
+      commandId: runnerCommand.commandId,
+      outcome,
+      lifecycleState,
+      polls,
+    },
+  });
+}
+
+async function readRunnerCommandLifecycleState(
+  device: DeviceInfo,
+  session: RunnerExchangeSession,
+  runnerCommand: RunnerCommand,
+  timeoutMs: number,
+): Promise<string> {
+  const response = await sendRunnerCommandOnce(
+    device,
+    session.endpoint,
+    { command: 'status', statusCommandId: runnerCommand.commandId },
+    timeoutMs,
+  );
+  const status = await parseRunnerResponse(response, session);
+  return typeof status.lifecycleState === 'string' ? status.lifecycleState : '';
 }
 
 async function runRunnerReadinessPreflight(params: {
@@ -311,7 +455,7 @@ async function runRunnerReadinessPreflight(params: {
       async () =>
         await waitForRunner(
           device,
-          session.port,
+          session.endpoint,
           withRunnerCommandId({ command: 'uptime' }),
           logPath,
           readinessTimeoutMs,
@@ -410,9 +554,8 @@ function resolveRunnerReadinessPreflightDecision(
   command: RunnerCommand,
 ): RunnerReadinessPreflightDecision {
   const readOnlyCommand = isReadOnlyRunnerCommand(command);
-  if (isRunnerReadinessPreflightExempt(command)) {
-    return { action: 'skip', reason: 'preflight_exempt_command' };
-  }
+  // Until a runner has answered, the `uptime` probe is what proves it requires the token, so no
+  // mutation reaches it first; the exemption below applies only to a runner that already answered.
   if (session.state !== 'ready') {
     if (readOnlyCommand) {
       return {
@@ -424,6 +567,9 @@ function resolveRunnerReadinessPreflightDecision(
       action: 'run',
       reason: 'startup',
     };
+  }
+  if (isRunnerReadinessPreflightExempt(command)) {
+    return { action: 'skip', reason: 'preflight_exempt_command' };
   }
   if (isRunnerReadinessProbeCommand(command)) {
     return {

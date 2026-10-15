@@ -17,6 +17,7 @@ import type {
   IosSnapshotComparisonIdentity,
 } from './ios-snapshot.ts';
 import type {
+  PresentedSurface,
   RawSnapshotNode,
   Point,
   Rect,
@@ -106,7 +107,7 @@ export const MAESTRO_NON_HITTABLE_FALLBACK_MESSAGE = 'tapped via non-hittable co
  * its only producer and the boundary that narrows it
  * (readTypeTextBackendResult, packages/platform-apple/src/interactions.ts) drops a
  * route it cannot name — so a Swift-side addition would silently vanish. The
- * route-parity test in packages/platform-apple/src/core/__tests__/interactions.test.ts
+ * route-parity test in packages/platform-apple/src/interactions.test.ts
  * reads the Swift sources and fails instead.
  */
 export const TEXT_ENTRY_ROUTES = [
@@ -266,9 +267,18 @@ export type SnapshotResult = Omit<BackendSnapshotResult, 'backend' | 'nodes'> & 
    */
   systemSurface?: IosSystemSurfaceProvenance;
   /**
-   * The keyboard band the producer measured while capturing, when it can measure one (#2660). A
-   * producer that publishes nothing measured nothing, so the tap-path guard keeps deriving the band
-   * from `nodes`; see {@link SnapshotKeyboardBandFact}.
+   * Whether this capture read a modal presentation over the app (#3565), computed by the producer on
+   * the acquired tree before any projection. Absent means the producer published no fact at all,
+   * which a consumer must treat as `'unknown'`.
+   */
+  presentedSurface?: PresentedSurface;
+  /**
+   * Keyboard evidence acquired with this tree: measured `visible`, policy-derived `derived`,
+   * additive `visibility-only`, rejected `tree-rejected`, proven `absent`, or unknown `unmeasurable` facts. Measured and
+   * derived frames survive projection and take precedence over tree reconstruction. Visibility-only
+   * facts carry no band; rejected acquisition geometry stays rejected. Other failed measurements or
+   * an omitted fact may use tree geometry, but missing nodes never prove absence.
+   * See {@link SnapshotKeyboardBandFact}.
    */
   keyboard?: SnapshotKeyboardBandFact;
   /**
@@ -285,6 +295,9 @@ export type SnapshotRuntimeAcquiredResult = Readonly<{
 
 export type SnapshotRuntimeResult = SnapshotResult | SnapshotRuntimeAcquiredResult;
 
+/** The application an owner's launch reports it started, when the launch names one. */
+export type ApplicationLaunchReport = Readonly<{ launchedAppBundleId?: string }>;
+
 export type Interactor = {
   open(
     app: string,
@@ -296,7 +309,7 @@ export type Interactor = {
       terminateRunningApp?: boolean;
       url?: string;
     },
-  ): Promise<void>;
+  ): Promise<ApplicationLaunchReport | void>;
   openDevice(): Promise<void>;
   close(app: string): Promise<void>;
   tap(x: number, y: number): Promise<Record<string, unknown> | void>;

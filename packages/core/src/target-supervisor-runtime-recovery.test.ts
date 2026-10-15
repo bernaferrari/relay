@@ -299,7 +299,11 @@ test("a healthy testCommand listener unquarantines without force and without run
   });
   await writeFile(
     join(leaseDir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const previousLeaseDir = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = leaseDir;

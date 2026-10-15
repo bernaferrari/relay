@@ -1,4 +1,10 @@
 // Real-scope same-device serialization guard for the concurrency torture lane
+
+import type { CommandFlags, DaemonWireRequest } from '@agent-device/contracts/command';
+import {
+  composedPlatformServicesFixture,
+  composedClaimRecoveryGatewayFixture,
+} from '../../../../src/__tests__/daemon-composition/platform-services-fixture.ts';
 // (#1416). The seeded sweep models the mutex GRANT (a seed cannot reproduce
 // `withKeyedLock`'s native microtask hand-off), so on its own it could stay
 // green if the PRODUCTION lock APPLICATION path regressed. This guard closes
@@ -15,23 +21,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createRequestExecutionScope } from '../../../../src/daemon/request-execution-scope.ts';
-import { LeaseRegistry } from '../../../../src/daemon/lease-registry.ts';
-import { SessionStore } from '../../../../src/daemon/session-store.ts';
-import { withTestDeviceInventoryProvider as withDeviceInventoryProvider } from '../../../../src/__tests__/test-utils/device-inventory-gateways.ts';
-import type { CommandFlags } from '@agent-device/contracts/command';
-import type { DaemonRequest } from '../../../../src/daemon/daemon-request.ts';
+import { createRequestExecutionScope } from '@agent-device/daemon/testing/request-execution-scope';
+import { LeaseRegistry } from '@agent-device/daemon/testing/lease-registry';
+import { SessionStore } from '@agent-device/daemon/testing/session-store';
+import { withTestDeviceInventoryProvider as withDeviceInventoryProvider } from '@agent-device/device-selection/inventory-gateways-fixtures';
 
 import { DEVICE_POOL } from './bindings.ts';
 
-function openRequest(sessionName: string, deviceId: string): DaemonRequest {
+function openRequest(sessionName: string, deviceId: string): DaemonWireRequest {
   return {
     command: 'open',
     positionals: [],
     token: 'torture',
     session: sessionName,
     flags: { platform: 'ios', udid: deviceId } as CommandFlags,
-  } as DaemonRequest;
+  } as DaemonWireRequest;
 }
 
 /**
@@ -65,6 +69,8 @@ export async function measureRealScopeMaxOverlap(concurrency: number): Promise<n
         const scopes = await Promise.all(
           Array.from({ length: concurrency }, (_, i) =>
             createRequestExecutionScope({
+              platformServices: composedPlatformServicesFixture(),
+              claimRecoveryGateway: composedClaimRecoveryGatewayFixture(),
               req: openRequest(`real-${i}`, device.id),
               sessionStore,
               leaseRegistry,

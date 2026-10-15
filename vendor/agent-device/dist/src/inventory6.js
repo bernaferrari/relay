@@ -1,1 +1,1 @@
-import{n as e}from"./device.js";function t(){return{discover:async()=>[e]}}export{t as createWebInventory};
+import{w as e}from"./tv-remote.js";function t(){return{discover:async()=>[e]}}export{t as createWebInventory};

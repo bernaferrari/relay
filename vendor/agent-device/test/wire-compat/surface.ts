@@ -43,16 +43,19 @@ const KERNEL_ERRORS = 'packages/kernel/src/errors.ts';
 const KERNEL_DEVICE = 'packages/kernel/src/device.ts';
 const REQUEST_PROGRESS = 'packages/contracts/src/request-progress.ts';
 const DAEMON_HTTP = 'packages/contracts/src/daemon-http.ts';
-const HTTP_ERRORS = 'src/daemon/http-errors.ts';
-const HTTP_SERVER = 'src/daemon/server/http-server.ts';
-const HTTP_INSTANCE_PRECONDITION = 'src/daemon/server/http-instance-precondition.ts';
-const UPLOAD_HTTP = 'src/daemon/upload-http.ts';
-const ARTIFACT_HTTP = 'src/daemon/downloadable-artifact-http.ts';
-const REQUEST_DIAGNOSTICS_HTTP = 'src/daemon/request-diagnostics-http.ts';
-const SESSION_TENANT_SCOPE = 'src/daemon/session-tenant-scope.ts';
-const HTTP_REQUEST_TARGET = 'src/daemon/http-request-target.ts';
+const HTTP_ERRORS = 'packages/daemon/src/server/http-errors.ts';
+const HTTP_SERVER = 'packages/daemon/src/server/http/http-server.ts';
+const HTTP_RPC_ENVELOPE = 'packages/daemon/src/server/http/http-rpc-envelope.ts';
+const HTTP_RPC_METHODS = 'packages/daemon/src/server/http/http-rpc-methods.ts';
+const HTTP_AUTHORIZATION = 'packages/daemon/src/server/http/http-authorization.ts';
+const HTTP_INSTANCE_PRECONDITION = 'packages/daemon/src/server/http/http-instance-precondition.ts';
+const UPLOAD_HTTP = 'packages/daemon/src/server/upload-http.ts';
+const ARTIFACT_HTTP = 'packages/daemon/src/server/downloadable-artifact-http.ts';
+const REQUEST_DIAGNOSTICS_HTTP = 'packages/daemon/src/server/request-diagnostics-http.ts';
+const SESSION_TENANT_SCOPE = 'packages/daemon/src/core/session-tenant-scope.ts';
+const HTTP_REQUEST_TARGET = 'packages/daemon/src/server/http-request-target.ts';
 const REMOTE_REQUEST_DIAGNOSTICS = 'src/remote/remote-request-diagnostics.ts';
-const PROGRESS_PROTOCOL = 'src/request-progress-protocol.ts';
+const PROGRESS_PROTOCOL = 'packages/daemon-contracts/src/request-progress-protocol.ts';
 const CLIENT_RPC = 'src/daemon-client/daemon-client-rpc.ts';
 const CLIENT_PROGRESS = 'src/daemon-client/daemon-client-progress.ts';
 const CLIENT_TRANSPORT = 'src/daemon-client/daemon-client-transport.ts';
@@ -163,9 +166,10 @@ export const WIRE_SURFACE: readonly WireSurfaceGroup[] = [
         'buildDaemonHttpAuthHeaders',
         'DAEMON_HTTP_TENANT_HEADER',
         'buildDaemonHttpTenantHeaders',
+        'isTenantOwnedSessionName',
       ),
       ...from(
-        HTTP_SERVER,
+        HTTP_AUTHORIZATION,
         'HttpAuthHookContext',
         'HttpAuthHookResult',
         'HttpAuthHook',
@@ -183,12 +187,7 @@ export const WIRE_SURFACE: readonly WireSurfaceGroup[] = [
       // is that rule; the namespace it takes says whether the caller's sessions
       // were partitioned at all, which is what the naming side keys off.
       ...from(REQUEST_DIAGNOSTICS_HTTP, 'RequestDiagnosticsHttpAuthorizer'),
-      ...from(
-        SESSION_TENANT_SCOPE,
-        'TenantSessionNamespace',
-        'isTenantOwnedSessionName',
-        'isTenantAddressableSessionName',
-      ),
+      ...from(SESSION_TENANT_SCOPE, 'TenantSessionNamespace', 'isTenantAddressableSessionName'),
     ],
   },
   {
@@ -228,10 +227,9 @@ export const WIRE_SURFACE: readonly WireSurfaceGroup[] = [
       ...from('packages/contracts/src/lease-scope.ts', 'LeaseRpcCommand'),
       // Producer side: the method vocabulary a released client sends, and the
       // projections that turn each method's params into a DaemonRequest.
+      ...from(HTTP_RPC_ENVELOPE, 'JsonRpcRequest', 'JsonRpcResponse'),
       ...from(
-        HTTP_SERVER,
-        'JsonRpcRequest',
-        'JsonRpcResponse',
+        HTTP_RPC_METHODS,
         'COMMAND_RPC_METHODS',
         'INSTALL_FROM_SOURCE_RPC_METHODS',
         'RELEASE_MATERIALIZED_PATHS_RPC_METHODS',
@@ -299,7 +297,7 @@ export const WIRE_SURFACE: readonly WireSurfaceGroup[] = [
         'serializeDaemonRpcResponseEnvelope',
       ),
       ...from(
-        HTTP_SERVER,
+        HTTP_RPC_ENVELOPE,
         'createRpcError',
         'sendJson',
         'writeProgressEnvelope',
@@ -323,7 +321,7 @@ export const WIRE_SURFACE: readonly WireSurfaceGroup[] = [
         'sendUploadedArtifactResponse',
       ),
       // The resumable-upload ticket the preflight response hands back.
-      ...from('src/daemon/resumable-upload.ts', 'BeginResumableUploadOptions'),
+      ...from('packages/daemon/src/server/resumable-upload.ts', 'BeginResumableUploadOptions'),
       // `NormalizedHttpError` is `ReturnType<typeof normalizeError>`, so the
       // function and its return type — not a type alias — are what fix the
       // REST error payload a released client parses.

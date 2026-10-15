@@ -1,4 +1,4 @@
-import { B as SnapshotViewportSize, L as SnapshotQualityVerdict, P as SnapshotNode, R as SnapshotState, T as PublicPlatform, j as ScreenshotOverlayRef, n as DaemonArtifactType } from "./sdk-contracts.js";
+import { B as SnapshotState, D as IosSnapshotObservation, H as SnapshotViewportSize, I as SnapshotNode, N as ScreenshotOverlayRef, T as PublicPlatform, n as DaemonArtifactType, z as SnapshotQualityVerdict } from "./sdk-contracts.js";
 import { v as SettleObservation } from "./sdk-selectors.js";
 //#region packages/contracts/src/back-mode.d.ts
 declare const BACK_MODES: readonly ['in-app', 'system'];
@@ -295,6 +295,7 @@ type BackendSnapshotResult = {
   };
   quality?: SnapshotQualityVerdict;
   warnings?: string[];
+  observation?: IosSnapshotObservation;
 };
 type AndroidSnapshotBackendMetadata = {
   backend: 'android-helper';
@@ -399,4 +400,4 @@ type CloudArtifactProvider = {
   listCloudArtifacts?: (query: CloudArtifactsQuery) => Promise<CloudArtifactsResult | undefined>;
 };
 //#endregion
-export { BackMode as A, SwipePattern as C, FoldPose as D, DeviceRotation as E, FoldScreenCoordinateSpace as O, ScrollInputDirection as S, TransformGestureParams as T, TextSizeCategory as _, BackendSnapshotResult as a, ScrollExecutionOptions as b, SnapshotDiagnosticsSummary as c, MOBILE_PERMISSION_TARGETS as d, PermissionAction as f, SettingOptions as g, ReadableSetting as h, AndroidSnapshotBackendMetadata as i, SetFoldPoseInput as k, SessionSurface as l, ReadSettingResult as m, CloudArtifactProvider as n, FindLocator as o, PermissionMode as p, CloudProviderSessionResult as r, ScreenshotResultData as s, AgentArtifactsResult as t, MACOS_PERMISSION_TARGETS as u, TvRemoteButton as v, SwipePreset as w, ScrollDirection as x, ScrollCommandResult as y };
+export { SetFoldPoseInput as A, ScrollInputDirection as C, DeviceRotation as D, TransformGestureParams as E, FoldPose as O, ScrollDirection as S, SwipePreset as T, SettingOptions as _, AndroidSnapshotBackendMetadata as a, ScrollCommandResult as b, ScreenshotResultData as c, MACOS_PERMISSION_TARGETS as d, MOBILE_PERMISSION_TARGETS as f, ReadableSetting as g, ReadSettingResult as h, CloudProviderSessionResult as i, BackMode as j, FoldScreenCoordinateSpace as k, SnapshotDiagnosticsSummary as l, PermissionMode as m, CloudArtifactProvider as n, BackendSnapshotResult as o, PermissionAction as p, CloudArtifactsResult as r, FindLocator as s, AgentArtifactsResult as t, SessionSurface as u, TextSizeCategory as v, SwipePattern as w, ScrollExecutionOptions as x, TvRemoteButton as y };

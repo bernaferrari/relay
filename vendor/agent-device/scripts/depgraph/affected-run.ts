@@ -1,7 +1,7 @@
 // `pnpm depgraph affected <path>` — the blast radius of one file in one query.
 //
 //   pnpm depgraph affected packages/host-kit/src/command.ts
-//   pnpm depgraph affected src/daemon/ref-frame.ts --json --limit 20
+//   pnpm depgraph affected packages/daemon/src/core/ref-frame.ts --json --limit 20
 //
 // Answers, from the sources of truth rather than a second copy of them:
 //   - dependents (direct / transitive, with a zone breakdown) — reverse reachability over the
@@ -19,11 +19,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
+import { deriveDaemonCommandDescriptors } from '@agent-device/command-registry/derive';
+import { commandDescriptors } from '@agent-device/command-registry/registry';
 import {
   INTERACTION_DISPATCH_PATHS,
   type InteractionPathId,
 } from '@agent-device/contracts/interaction-guarantees';
-import { DAEMON_COMMAND_DESCRIPTORS } from '../../src/daemon/daemon-command-registry.ts';
 import { parseArgs } from 'node:util';
 import { selectChecks, type CheckPlan } from '../check-affected/model.ts';
 import {
@@ -48,7 +49,7 @@ const USAGE =
   '  --json    unbounded machine-readable output\n' +
   '  --limit   entries per list in text output (default 10)\n';
 
-const HANDLER_CHAIN_FILE = 'src/daemon/request-handler-chain.ts';
+const HANDLER_CHAIN_FILE = 'packages/daemon/src/sessions/request-handler-chain.ts';
 
 /**
  * The live iOS coverage manifest (#1408) is consumed through the narrowest shape this query
@@ -141,19 +142,19 @@ function commandChains(repoRoot: string): CommandChain[] {
   const source = fs.readFileSync(path.join(repoRoot, HANDLER_CHAIN_FILE), 'utf8');
   const routeEntries = parseRouteEntries(source, HANDLER_CHAIN_FILE);
   const publicCommands = new Set<string>(Object.values(PUBLIC_COMMANDS));
-  return DAEMON_COMMAND_DESCRIPTORS.filter((descriptor) =>
-    publicCommands.has(descriptor.command),
-  ).map((descriptor) => {
-    const entry = routeEntries.get(descriptor.route);
-    if (!entry) {
-      throw new Error(
-        `no handler entry for daemon route "${descriptor.route}" — the route table in ` +
-          `${HANDLER_CHAIN_FILE} changed shape; update parseRouteEntries in ` +
-          `scripts/depgraph/affected-run.ts.`,
-      );
-    }
-    return { command: descriptor.command, route: descriptor.route, entry };
-  });
+  return deriveDaemonCommandDescriptors(commandDescriptors)
+    .filter((descriptor) => publicCommands.has(descriptor.command))
+    .map((descriptor) => {
+      const entry = routeEntries.get(descriptor.route);
+      if (!entry) {
+        throw new Error(
+          `no handler entry for daemon route "${descriptor.route}" — the route table in ` +
+            `${HANDLER_CHAIN_FILE} changed shape; update parseRouteEntries in ` +
+            `scripts/depgraph/affected-run.ts.`,
+        );
+      }
+      return { command: descriptor.command, route: descriptor.route, entry };
+    });
 }
 
 /** Flatten the ADR 0011 matrix into one row per (path, guarantee) cell that names a module. */

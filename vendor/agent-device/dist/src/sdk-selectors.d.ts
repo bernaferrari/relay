@@ -1,4 +1,4 @@
-import { A as Rect, C as Platform, P as SnapshotNode, R as SnapshotState, T as PublicPlatform, h as ResponseCost } from "./sdk-contracts.js";
+import { B as SnapshotState, C as Platform, I as SnapshotNode, M as Rect, T as PublicPlatform, h as ResponseCost } from "./sdk-contracts.js";
 //#region packages/contracts/src/fill-evidence.d.ts
 /**
  * The evidence a `fill` carries when it changed a field but could not confirm the text it sent.
@@ -15,11 +15,10 @@ type FillVerificationTarget = {
   rect: Rect;
 };
 /**
- * Target-bound evidence that a fill moved a field's content from `before` to `after` without raw
- * equality with `requested` being reachable, because app-owned formatting prevents it or the field's
- * accessibility value does not echo the typed text. Bound to the
- * {@link FillVerificationTarget} it was collected against so another field, or the same field after
- * it re-laid out, cannot borrow this evidence.
+ * Target-bound read-back evidence when a fill could not confirm the requested text. The observed
+ * value may reflect app-owned formatting or altered input; this evidence makes no correctness
+ * claim. Bound to the {@link FillVerificationTarget} it was collected against so a different
+ * field cannot borrow the observation.
  */
 type FillUnconfirmedVerification = {
   verification: 'unconfirmed';
@@ -78,14 +77,6 @@ type ResolutionDisclosure = {
 } | {
   source: 'direct-ios';
   kind: 'not-observed';
-};
-/**
- * The wait a successful press/click/longpress spent before its target appeared. Reported only when
- * more than one capture was needed, so its presence means the step would have failed without the wait.
- */
-type ReadinessWaitEvidence = {
-  polls: number;
-  waitedMs: number;
 };
 /**
  * A post-action capture that describes a DIFFERENT surface than the pre-action baseline (#2438): an
@@ -225,7 +216,6 @@ type TouchResponseDataBase = {
   evidence?: InteractionEvidence;
   settle?: SettleObservation;
   resolution?: ResolutionDisclosure;
-  readiness?: ReadinessWaitEvidence;
   cost?: ResponseCost;
   /** Direct iOS Maestro coordinate-fallback signals. */
   maestroNonHittableCoordinateFallbackAllowed?: boolean;
@@ -298,9 +288,10 @@ type FindCommandResponseData = {
   waitedMs?: number;
   text?: string;
   node?: SnapshotNode;
-  /** Every match of the read-only `list` action (#1625), each ref pinnable at `refsGeneration`. */
+  /** Every match of the read-only `list` action (#1625), each ref pinnable at `refsGeneration`. A
+   * match on content the capture's producer issued no ref for carries none: readable, not pinnable. */
   matches?: Array<{
-    ref: string;
+    ref?: string;
     node: SnapshotNode;
   }>;
   locator?: string;
@@ -340,11 +331,11 @@ type SelectorDiagnostics = {
  * The disclosure for an ambiguous selector that was resolved by the heuristic;
  * present only when the heuristic picked among N>1 matches (ADR 0012).
  */
-type SelectorDisambiguationDisclosure = {
+type SelectorDisambiguationDisclosure<TNode extends SnapshotNode = SnapshotNode> = {
   matchCount: number;
   tiebreak: DisambiguationTiebreak;
   /** Every losing matched node, document order, uncapped (response layer caps). */
-  alternatives: SnapshotNode[];
+  alternatives: TNode[];
 };
 /**
  * The options every selector lookup takes. Stated once here rather than inline
@@ -420,6 +411,10 @@ declare function findSelectorChainMatch(nodes: SnapshotState['nodes'], chain: Se
 //#endregion
 //#region packages/selectors/src/internal/node.d.ts
 declare function isNodeVisible(node: SnapshotNode): boolean;
+/**
+ * False for a disabled node. Otherwise the node's published `editable` fact decides, and the
+ * platform type decides only when the snapshot carries no such fact.
+ */
 declare function isNodeEditable(node: SnapshotNode, platform: Platform | PublicPlatform): boolean;
 //#endregion
 //#region packages/selectors/src/ast.d.ts

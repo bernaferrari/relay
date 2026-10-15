@@ -1,24 +1,26 @@
 import { AppError, discloseDispatch } from '@agent-device/kernel/errors';
 import type {
+  SnapshotAddressableNode,
   SnapshotKeyboardBandFact,
   SnapshotNode,
   SnapshotState,
 } from '@agent-device/kernel/snapshot';
-import { findNodeByRef, normalizeRef } from '@agent-device/kernel/snapshot';
+import { findNodeByRef, hasSnapshotRef, normalizeRef } from '@agent-device/kernel/snapshot';
 import { resolveRectCenter } from '@agent-device/kernel/rect-center';
 import type {
   AgentDeviceRuntime,
   CommandContext,
   CommandSessionRecord,
-} from '../../../runtime-contract.ts';
+} from '@agent-device/contracts/runtime-contract';
 import { STALE_REF_HINT } from '@agent-device/selectors';
 import type { InteractionSnapshot } from './interaction-snapshot-capture.ts';
 import { requireSnapshotSession } from './selector-read-shared.ts';
 import { findNodeByLabel } from '@agent-device/capture-kit/snapshot-node-lookup';
-import { surfaceScopedNodes } from './post-action-surface.ts';
+import { surfaceScopedNodes } from '@agent-device/capture-kit/snapshot-baseline';
 import type {
   InteractionTarget,
   PreresolvedInteractionTarget,
+  RefObservationSource,
   ResolvedInteractionTarget,
   SurfaceScopedNodes,
 } from '@agent-device/contracts/interaction';
@@ -43,6 +45,11 @@ type RefResolution = {
   resolved: ResolvedRefNode;
   /** The keyboard band the capture of `tree.nodes` measured, when it measured one (#2660). */
   keyboard?: SnapshotKeyboardBandFact;
+  /**
+   * Which tree `resolved.node` was read from, as the reconciliation decided it (ADR 0014 step 5).
+   * Absent for a caller-carried node (#1654), which no reconciliation of this module chose.
+   */
+  adoptedFrom?: RefObservationSource;
 };
 
 /**
@@ -62,20 +69,19 @@ function adoptPreresolvedRefTarget(
   const ref = normalizeRef(target.ref);
   if (!ref) throw new AppError('INVALID_ARGS', `Invalid ref: ${target.ref}`);
   const carriedRef = normalizeRef(preresolved.ref);
-  const nodeRef = preresolved.node.ref ? normalizeRef(preresolved.node.ref) : null;
-  if (carriedRef !== ref || nodeRef !== ref || !preresolved.nodes.includes(preresolved.node)) {
+  if (
+    carriedRef !== ref ||
+    !hasSnapshotRef(preresolved.node) ||
+    normalizeRef(preresolved.node.ref) !== ref ||
+    !preresolved.tree.nodes.includes(preresolved.node)
+  ) {
     throw new AppError(
       'COMMAND_FAILED',
       'Internal find target provenance does not match the interaction ref',
     );
   }
   return {
-    tree: {
-      nodes: preresolved.nodes,
-      ...(preresolved.iosSystemSurfaceBundleId
-        ? { surfaceBundleId: preresolved.iosSystemSurfaceBundleId }
-        : {}),
-    },
+    tree: preresolved.tree,
     ...(preresolved.keyboard ? { keyboard: preresolved.keyboard } : {}),
     resolved: buildRefResolution(ref, preresolved.node, 'exact'),
   };
@@ -90,6 +96,7 @@ async function readRefResolution(
   return {
     tree: surfaceScopedNodes(capture.snapshot),
     ...(capture.snapshot.keyboard ? { keyboard: capture.snapshot.keyboard } : {}),
+    ...(capture.adoptedFrom ? { adoptedFrom: capture.adoptedFrom } : {}),
     resolved: capture.resolved,
   };
 }
@@ -100,7 +107,7 @@ export async function resolveRefInteractionTarget(
   target: Extract<InteractionTarget, { kind: 'ref' }>,
   params: ResolveInteractionTargetParams,
 ): Promise<ResolvedInteractionTarget> {
-  const { tree, keyboard, resolved } = params.preresolvedTarget
+  const { tree, keyboard, resolved, adoptedFrom } = params.preresolvedTarget
     ? adoptPreresolvedRefTarget(target, params.preresolvedTarget)
     : await readRefResolution(runtime, options, target);
   const nodes = tree.nodes;
@@ -128,6 +135,7 @@ export async function resolveRefInteractionTarget(
     kind: 'ref',
     point,
     target: { kind: 'ref', ref: `@${resolved.ref}` },
+    ...(adoptedFrom ? { adoptedFrom } : {}),
     ...describeResolvedInteractionNode(
       runtime,
       visibleNode,
@@ -138,11 +146,18 @@ export async function resolveRefInteractionTarget(
   };
 }
 
+/** What the frame model decided for one `@ref`: the node to act on, the tree it came from, and why. */
+type RefObservationReconciliation = InteractionSnapshot & {
+  resolved: ResolvedRefNode;
+  /** Which of the candidate trees `resolved.node` was read from: what the rule chose. */
+  adoptedFrom: RefObservationSource;
+};
+
 async function resolveSnapshotForRef(
   runtime: AgentDeviceRuntime,
   options: CommandContext,
   target: Extract<InteractionTarget, { kind: 'ref' }>,
-): Promise<InteractionSnapshot & { resolved: ResolvedRefNode }> {
+): Promise<RefObservationReconciliation> {
   const { session, snapshot: frameTree } = await requireSnapshotSession(runtime, options.session);
 
   const fallbackLabel = target.fallbackLabel ?? '';
@@ -180,11 +195,14 @@ function reconcileFreshObservation(params: {
   target: Extract<InteractionTarget, { kind: 'ref' }>;
   fallbackLabel: string;
   authorized: ResolvedRefNode;
-}): InteractionSnapshot & { resolved: ResolvedRefNode } {
+}): RefObservationReconciliation {
   const { session, frameTree, target, fallbackLabel, authorized } = params;
   const observation = session.snapshot;
-  if (!observation || observation === frameTree) {
-    return { snapshot: frameTree, resolved: authorized };
+  if (!observation) {
+    return { snapshot: frameTree, resolved: authorized, adoptedFrom: 'authorized-frame' };
+  }
+  if (observation === frameTree) {
+    return { snapshot: frameTree, resolved: authorized, adoptedFrom: 'observation' };
   }
   const observed = tryResolveRefNode(observation.nodes, target.ref, { fallbackLabel });
   if (
@@ -194,9 +212,9 @@ function reconcileFreshObservation(params: {
       readNodeLocalIdentity(observed.resolved.node),
     )
   ) {
-    return { snapshot: observation, resolved: observed.resolved };
+    return { snapshot: observation, resolved: observed.resolved, adoptedFrom: 'observation' };
   }
-  return { snapshot: frameTree, resolved: authorized };
+  return { snapshot: frameTree, resolved: authorized, adoptedFrom: 'authorized-frame' };
 }
 
 /** The runtime-ref resolver: `exact` for a resolved `@ref`, `label-fallback` for trailing-label recovery. */
@@ -258,7 +276,9 @@ function refMissRefusal(
   return discloseDispatch(refusal, 'no');
 }
 
-function isUsableResolvedNode(node: SnapshotNode | null | undefined): node is SnapshotNode {
+function isUsableResolvedNode(
+  node: SnapshotNode | null | undefined,
+): node is SnapshotAddressableNode {
   if (!node) return false;
-  return resolveRectCenter(node.rect) !== null;
+  return hasSnapshotRef(node) && resolveRectCenter(node.rect) !== null;
 }

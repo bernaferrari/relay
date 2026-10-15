@@ -1,0 +1,1 @@
+function e(e){return e===`android-instance`||e===`ios-instance`}export{e as t};

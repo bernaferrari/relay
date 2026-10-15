@@ -67,7 +67,12 @@ async function fixture(
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = directory;
   await writeFile(
     join(directory, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      ownerPid: process.pid,
+      port: 50937,
+    }),
   );
   const path = join(directory, "supervisors.sqlite");
   const store = new TargetSupervisorStore(path, options);

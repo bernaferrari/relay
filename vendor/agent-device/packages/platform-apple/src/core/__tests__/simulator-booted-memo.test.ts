@@ -3,7 +3,6 @@ import type { DeviceInfo } from '@agent-device/kernel/device';
 import {
   ensureBootedSimulator,
   markSimulatorBooted,
-  shutdownSimulator,
   SIMULATOR_BOOTED_MEMO_TTL_MS,
   wasSimulatorRecentlyObservedBooted,
 } from '../simulator.ts';
@@ -62,27 +61,6 @@ test('ensureBootedSimulator skips the state listing within the booted memo TTL',
   expect(countSimctlListCalls()).toBe(2);
 });
 
-test('shutdownSimulator invalidates the booted memo', async () => {
-  await ensureBootedSimulator(simulator);
-  expect(countSimctlListCalls()).toBe(1);
-
-  await shutdownSimulator(simulator);
-
-  await ensureBootedSimulator(simulator);
-  expect(countSimctlListCalls()).toBe(2);
-});
-
-test('shutdownSimulator forwards cancellation to the native simctl command', async () => {
-  const controller = new AbortController();
-
-  await shutdownSimulator(simulator, controller.signal);
-
-  expect(mockRunXcrun).toHaveBeenCalledWith(
-    ['simctl', 'shutdown', simulator.id],
-    expect.objectContaining({ signal: controller.signal }),
-  );
-});
-
 test('markSimulatorBooted seeds the memo so the first boot check skips the listing', async () => {
   markSimulatorBooted(simulator);
 
@@ -100,16 +78,24 @@ test('booted memo is scoped per simulator set path', async () => {
   expect(countSimctlListCalls()).toBe(2);
 });
 
-test.sequential('process memo test setup clears simulator boot memo: seed', async () => {
-  markSimulatorBooted(simulator);
+test(
+  'process memo test setup clears simulator boot memo: seed',
+  { concurrent: false },
+  async () => {
+    markSimulatorBooted(simulator);
 
-  await ensureBootedSimulator(simulator);
+    await ensureBootedSimulator(simulator);
 
-  expect(countSimctlListCalls()).toBe(0);
-});
+    expect(countSimctlListCalls()).toBe(0);
+  },
+);
 
-test.sequential('process memo test setup clears simulator boot memo: verify', async () => {
-  await ensureBootedSimulator(simulator);
+test(
+  'process memo test setup clears simulator boot memo: verify',
+  { concurrent: false },
+  async () => {
+    await ensureBootedSimulator(simulator);
 
-  expect(countSimctlListCalls()).toBe(1);
-});
+    expect(countSimctlListCalls()).toBe(1);
+  },
+);

@@ -1,4 +1,9 @@
-import type { Point, SnapshotKeyboardBandFact, SnapshotNode } from '@agent-device/kernel/snapshot';
+import type {
+  PresentedSurface,
+  Point,
+  SnapshotKeyboardBandFact,
+  SnapshotNode,
+} from '@agent-device/kernel/snapshot';
 import type { ResponseCost } from '@agent-device/kernel/contracts';
 import type { ClickButton } from './click-button.ts';
 import type { FillUnconfirmedVerification } from './fill-evidence.ts';
@@ -96,7 +101,7 @@ export type RecordingTargetOverride = {
  * captured itself, handed to the interaction leaf so the leaf does not resolve
  * the same `@ref` a second time.
  *
- * The sole producer is a mutating `find` (`src/daemon/interaction/internal/find.ts`): it
+ * The sole producer is a mutating `find` (`packages/daemon/src/execution/interaction/internal/find.ts`): it
  * captures, matches by locator, promotes to a hittable ancestor, and mints
  * `@eN` off the node it chose — then re-enters the interaction leaf. Without
  * this channel the leaf repeated an in-memory `@eN` lookup after find had
@@ -119,16 +124,14 @@ export type PreresolvedInteractionTarget = {
   ref: string;
   /** The node the caller resolved, after the caller's own promotion. */
   node: SnapshotNode;
-  /** The tree `node` came from — the guards read its siblings for occlusion/viewport. */
-  nodes: SnapshotNode[];
   /**
-   * The in-place iOS system surface `nodes` describes (#2438), absent for ordinary app content.
-   * Travels with the tree so the adopting consumer's post-action comparison knows which surface
-   * its baseline came from.
+   * The tree `node` came from, minted by `surfaceScopedNodes` from the caller's capture. The guards
+   * read its siblings for occlusion/viewport, and the adopting leaf's post-action baseline is this
+   * value as-is, so the surface (#2438) and presentation (#3565) facts travel with the nodes.
    */
-  iosSystemSurfaceBundleId?: string;
+  tree: SurfaceScopedNodes;
   /**
-   * The keyboard band the capture of `nodes` measured, carried so the adopting consumer's keyboard
+   * The keyboard band the capture of `tree` measured, carried so the adopting consumer's keyboard
    * guard reads the same band the tree was captured with instead of re-deriving one (#2660).
    */
   keyboard?: SnapshotKeyboardBandFact;
@@ -148,7 +151,17 @@ export type SurfaceScopedNodes = {
   nodes: SnapshotNode[];
   /** Bundle id of the in-place iOS system surface; absent for ordinary app content. */
   surfaceBundleId?: string;
+  /**
+   * Whether the producer that captured these nodes read a modal presentation over the app (#3565).
+   * The settle baseline is carried in this type, so the fact has to travel with the nodes: a consumer
+   * that arms #1831's dismissal confirmation reads it here instead of guessing from the tree.
+   * Absent means the capture's producer published no fact.
+   */
+  presentedSurface?: PresentedSurface;
 };
+
+/** Which tree a resolved `@ref`'s node was read from (ADR 0014 step 5). */
+export type RefObservationSource = 'observation' | 'authorized-frame';
 
 export type ResolvedInteractionTarget =
   | {
@@ -168,6 +181,16 @@ export type ResolvedInteractionTarget =
       resolution?: ResolutionDisclosure;
       recordingTarget?: RecordingTargetOverride;
       preAction?: SurfaceScopedNodes;
+      /**
+       * ADR 0014 step 5: which tree the dispatched node was read from, reported by the
+       * reconciliation that chose it. `'observation'` means the session's newest capture, so the
+       * node's rect is a position that capture measured; `'authorized-frame'` means the older tree
+       * the ref was authorized against, whose rect says nothing about where the target sits now.
+       * Reported rather than re-derived downstream from node or rect identity, so no caller can
+       * disagree with the rule after the rule has decided. Absent on a node a caller carried in
+       * (#1654), which no reconciliation chose.
+       */
+      adoptedFrom?: RefObservationSource;
     }
   | {
       kind: 'selector';
@@ -181,17 +204,7 @@ export type ResolvedInteractionTarget =
       resolution?: ResolutionDisclosure;
       recordingTarget?: RecordingTargetOverride;
       preAction?: SurfaceScopedNodes;
-      readiness?: ReadinessWaitEvidence;
     };
-
-/**
- * The wait a successful press/click/longpress spent before its target appeared. Reported only when
- * more than one capture was needed, so its presence means the step would have failed without the wait.
- */
-export type ReadinessWaitEvidence = {
-  polls: number;
-  waitedMs: number;
-};
 
 /**
  * A post-action capture that describes a DIFFERENT surface than the pre-action baseline (#2438): an
@@ -283,10 +296,10 @@ export type SettleParams = {
  */
 export type FindReadResult =
   | { kind: 'found'; found: true; waitedMs?: number }
-  | { kind: 'text'; ref: string; text: string; node: SnapshotNode }
-  | { kind: 'attrs'; ref: string; node: SnapshotNode }
+  | { kind: 'text'; ref?: string; text: string; node: SnapshotNode }
+  | { kind: 'attrs'; ref?: string; node: SnapshotNode }
   /** #1625: the read-only inspection surface — every match, never a tap. */
-  | { kind: 'list'; matches: Array<{ ref: string; node: SnapshotNode }> };
+  | { kind: 'list'; matches: Array<{ ref?: string; node: SnapshotNode }> };
 
 export type SettleObservation = {
   settled: boolean;
@@ -364,7 +377,6 @@ type TouchResponseDataBase = {
   evidence?: InteractionEvidence;
   settle?: SettleObservation;
   resolution?: ResolutionDisclosure;
-  readiness?: ReadinessWaitEvidence;
   cost?: ResponseCost;
   /** Direct iOS Maestro coordinate-fallback signals. */
   maestroNonHittableCoordinateFallbackAllowed?: boolean;
@@ -513,8 +525,9 @@ export type FindCommandResponseData = {
   waitedMs?: number;
   text?: string;
   node?: SnapshotNode;
-  /** Every match of the read-only `list` action (#1625), each ref pinnable at `refsGeneration`. */
-  matches?: Array<{ ref: string; node: SnapshotNode }>;
+  /** Every match of the read-only `list` action (#1625), each ref pinnable at `refsGeneration`. A
+   * match on content the capture's producer issued no ref for carries none: readable, not pinnable. */
+  matches?: Array<{ ref?: string; node: SnapshotNode }>;
   locator?: string;
   query?: string;
   x?: number;

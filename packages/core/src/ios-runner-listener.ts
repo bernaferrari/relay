@@ -3,6 +3,7 @@
  * XCTest session. Recover must adopt it, not kill it, and must not treat a
  * missing tree as “reboot the iPad”.
  */
+import { isIosRunnerListenerToken } from "./ios-runner-listener-http.js";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,8 @@ export type LiveIosRunnerListener = {
   serial: string;
   runnerPid: number;
   port: number;
+  /** Private listener credential; omitted from enumeration and serialized diagnostics. */
+  runnerToken?: string;
   /** Owning process from the lease; absent on pre-owner leases. */
   ownerPid?: number;
 };
@@ -41,18 +44,27 @@ export async function readIosRunnerLease(
 ): Promise<LiveIosRunnerListener | null> {
   try {
     const raw = await readFile(resolveIosRunnerLeasePath(serial, env), "utf8");
-    const doc = JSON.parse(raw) as { runnerPid?: unknown; port?: unknown; ownerPid?: unknown };
+    const doc = JSON.parse(raw) as {
+      runnerPid?: unknown;
+      port?: unknown;
+      ownerPid?: unknown;
+      runnerToken?: unknown;
+    };
     const runnerPid = Number(doc.runnerPid);
     const port = Number(doc.port);
     const ownerPid = Number(doc.ownerPid);
     if (!Number.isInteger(runnerPid) || runnerPid <= 0) return null;
     if (!Number.isInteger(port) || port <= 0) return null;
-    return {
+    const listener: LiveIosRunnerListener = {
       serial,
       runnerPid,
       port,
       ...(Number.isInteger(ownerPid) && ownerPid > 0 ? { ownerPid } : {}),
     };
+    if (isIosRunnerListenerToken(doc.runnerToken)) {
+      Object.defineProperty(listener, "runnerToken", { value: doc.runnerToken });
+    }
+    return listener;
   } catch {
     return null;
   }
@@ -68,7 +80,7 @@ export async function probeLiveIosRunnerListener(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<LiveIosRunnerListener | null> {
   const lease = await readIosRunnerLease(serial, env);
-  if (!lease) return null;
+  if (!lease?.runnerToken) return null;
   if (!isIosRunnerProcessAlive(lease.runnerPid)) return null;
   // A runner detached from a dead owner still holds that owner's XCTest app
   // context; its listener answers new sessions with empty trees. Only a live

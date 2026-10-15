@@ -113,7 +113,9 @@ export const SYSTEM_COMMAND_OUTPUT_SCHEMAS = {
     {
       action: constSchema('fold'),
       pose: enumSchema(FOLD_POSES),
-      hingeAngleDegrees: numberSchema('Hinge angle CoreDevice read back after the pose settled.'),
+      hingeAngleDegrees: numberSchema(
+        'Hinge angle read back after the pose settled: from CoreDevice on iOS, from the emulator hinge sensor on Android.',
+      ),
       screen: objectSchema(
         {
           display: stringSchema('CoreDevice name of the panel the device now lights.'),
@@ -192,7 +194,7 @@ export const SYSTEM_COMMAND_OUTPUT_SCHEMAS = {
       ),
       objectSchema(
         {
-          platform: constSchema('android'),
+          platform: enumSchema(['android', 'harmonyos']),
           package: stringSchema(),
           activity: stringSchema(),
         },
@@ -234,7 +236,7 @@ export const SYSTEM_COMMAND_OUTPUT_SCHEMAS = {
 >;
 
 const appStateCommandDescription =
-  'Show foreground app/activity (Android; iOS answers per command)';
+  'Show foreground app/activity (Android and HarmonyOS; iOS and macOS answer per session)';
 const backCommandDescription =
   'Navigate back in the app or through system navigation. Use in-app for the app navigation stack and system when the platform back behavior is required.';
 const homeCommandDescription =
@@ -246,10 +248,10 @@ const foldGuidance = {
   unsupportedScope: 'UNSUPPORTED_OPERATION and reason unsupported-device-scope',
 } as const;
 
-const foldCommandDescription = `Fold or unfold a foldable iPhone simulator (iPhone Duo) into the closed, half-open, or open pose, or follow timestamped angle keyframes, by sending a ${foldGuidance.hingeEvent}, then read the hinge angle back from CoreDevice to confirm it. A pose change moves the app to a different panel with a different point size, so every ref and coordinate from before it is stale: re-snapshot after this command. Taps, long presses, and scrolling target the app window on its current panel in closed, half-open, and open poses. Simulator-only; requires the iOS simulator SDK; ${foldGuidance.permissions} A simulator scoped to a non-default simulator set is refused with ${foldGuidance.unsupportedScope}; run fold against a simulator in the default set.`;
+const foldCommandDescription = `Fold or unfold a foldable iPhone simulator (iPhone Duo) or a foldable Android emulator into the closed, half-open, or open pose. iOS sends a ${foldGuidance.hingeEvent}, then reads the hinge angle back from CoreDevice to confirm it, and can follow timestamped angle keyframes; Android sets the emulator console posture, then confirms the device state the guest commits and reports the hinge angle the AVD profile defines for that posture, and dismisses the lock screen a fold to the cover display can raise. On iOS a pose change moves the app to a different panel with a different point size; on Android a fold to or from closed moves the app between the cover and inner displays, and any pose change can reshape the app window, whose size the next snapshot reports. Either way every ref and coordinate from before it is stale: re-snapshot after this command. Taps, long presses, and scrolling target the app window on its current panel in closed, half-open, and open poses. Simulator and emulator only; iOS requires the iOS simulator SDK; ${foldGuidance.permissions} A simulator scoped to a non-default simulator set is refused with ${foldGuidance.unsupportedScope}; run fold against a simulator in the default set.`;
 
 export const foldableHelpTopic = {
-  summary: 'Foldable Apple devices: panels, pose, and which screen you are on',
+  summary: 'Foldable devices: panels, pose, and which screen you are on',
   body: `agent-device help foldable
 
 A foldable Apple device (iPhone Duo) carries two integrated panels, which Apple calls the outer display and the inner display. Only one is lit at a time, and which one is lit is the device pose.
@@ -261,11 +263,12 @@ Screens are handled for you:
 
 Changing the pose:
   agent-device fold closed | half-open | open
-  fold sends a private HID hinge event inside the selected simulator and then reads the hinge angle back from CoreDevice until it agrees: closed is 0 degrees, open is 180, and half-open is any angle between them (requested at 130 degrees). An angle in that interval only proves the category, so half-open is reported once two consecutive readings both fall inside it and agree within 0.5 degrees. The response reports the verified pose, the hinge angle, and the panel the device now lights with its native panel point size, marked coordinateSpace "native-panel". That point size is the panel's own geometry, not the next snapshot's viewport, so it cannot place a tap: the active app window can differ (a 669x951 inner panel hosts a 951x669 window). A hinge whose last reading is some other pose fails with COMMAND_FAILED and reason fold-pose-unverified, naming the angle CoreDevice still reports; a hinge seen half-open but never at rest fails with reason fold-pose-unsettled, naming the observed and previous angles. A single-panel simulator fails with UNSUPPORTED_OPERATION. A simulator scoped to a non-default set with --ios-simulator-device-set is refused before any hinge is touched, with ${foldGuidance.unsupportedScope}: the HID send honors the set, but CoreDevice's display inventory and hinge-angle readback resolve a scoped simulator as not found, so the pose could not be verified. Run fold without --ios-simulator-device-set (in the default set).
+  fold sends a private HID hinge event inside the selected simulator and then reads the hinge angle back from CoreDevice until it agrees: closed is 0 degrees, open is 180, and half-open is any angle between them (requested at 130 degrees). An angle in that interval only proves the category, so half-open is reported once two consecutive readings both fall inside it and agree within 0.5 degrees. The response reports the verified pose, the hinge angle, and the panel the device now lights with its native panel point size, marked coordinateSpace "native-panel". That point size is the panel's own geometry, not the next snapshot's viewport, so it cannot place a tap: the active app window can differ (a 669x951 inner panel hosts a 951x669 window). A hinge whose last reading is some other pose fails with COMMAND_FAILED and reason fold-pose-unverified, naming the angle CoreDevice still reports; a hinge seen half-open but never at rest fails with reason fold-pose-unsettled, naming the observed and previous angles; a first hinge-angle read that returns no sample (for example a devicectl without device motion) fails with reason fold-pose-dispatched-unverified, meaning the pose was sent but cannot be confirmed; hingeReadFailure holds the read's own failure details, and screen holds the lit panel's size when panel power decides one panel, so take a screenshot or snapshot to check. A single-panel simulator fails with UNSUPPORTED_OPERATION. A simulator scoped to a non-default set with --ios-simulator-device-set is refused before any hinge is touched, with ${foldGuidance.unsupportedScope}: the HID send honors the set, but CoreDevice's display inventory and hinge-angle readback resolve a scoped simulator as not found, so the pose could not be verified. Run fold without --ios-simulator-device-set (in the default set).
   Expect a fold to take 10-16 seconds: each hinge read is a five-second devicectl stream, and half-open waits for the hinge to stop moving. Re-snapshot after every fold; refs and coordinates from before it are stale, and the command's message says so.
   Timed motion: fold --keyframes '[{"atMs":0,"angle":0},{"atMs":5000,"angle":180}]'. Use 2–64 frames starting at 0ms, increasing integer timestamps up to 60000ms, and angles from 0 to 180. The last timestamp sets motion duration, excluding setup and verification. Equal angles hold; cancellation stops motion. See the fold examples in the command and Node API documentation for trajectories.
 
   Requirements: an iOS simulator session on a foldable device and an Xcode toolchain with the iOS simulator SDK and foldable HID support (verified on Xcode 27.1). ${foldGuidance.permissions} The command runs a small helper through simctl spawn for the session UDID; the helper is built once per Fold.m source hash and Xcode toolchain, cached under ~/.agent-device/fold-helper, and rebuilt only when the source or the toolchain changes. Build or dispatch failures are reported without a UI fallback. The app under test reads the resulting pose as UIHinge.status.
+  Android emulators: fold sets the posture through the emulator console (adb emu posture 1|2|3), then reads adb shell cmd device_state print-state until the guest commits CLOSED, HALF_OPENED, or OPENED, and reports the hinge sensor's angle, which the AVD profile defines per posture: 0, 90 and 180 degrees on the Pixel folds, 15, 90 and 165 on the generic 7.6in Foldable. Folding to the cover display can raise Android's "Swipe up to continue" lock screen; fold dismisses it so the app stays reachable. An emulator profile without those device states (a phone) fails with UNSUPPORTED_OPERATION and reason single-panel-device, and a physical device is refused. Keyframes are not supported on Android, and the response carries no panel geometry: re-snapshot after every fold.
   If a task asserts behavior for more than one pose, fold to each pose and re-snapshot, and report which poses the run covered.`,
 } as const;
 
@@ -525,8 +528,8 @@ const orientationCommandFacet = defineCommandFacet({
 const foldCommandFacet = defineCommandFacet({
   name: FOLD_COMMAND_NAME,
   text: {
-    summary: 'Fold or unfold a foldable iPhone simulator',
-    cliDetail: `iPhone Duo simulators only. Sends a ${foldGuidance.hingeEvent} and confirms the hinge angle through CoreDevice; refs and coordinates do not survive a pose change.`,
+    summary: 'Fold or unfold a foldable iPhone simulator or Android emulator',
+    cliDetail: `iPhone Duo simulators and foldable Android emulators. iOS sends a ${foldGuidance.hingeEvent} and confirms the hinge angle through CoreDevice; Android sets the emulator console posture and confirms the device state. Refs and coordinates do not survive a pose change.`,
   },
   metadata: foldCommandMetadata,
   run: (client, input) => client.command.fold(input),

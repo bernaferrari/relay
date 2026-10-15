@@ -161,7 +161,7 @@ test('host.runAdb carries addressing apart from payload and routes through the h
   const result = await withAndroidHostAdbTransport(
     async (invocation, options) => {
       seen.push({
-        args: serializeAndroidAdbInvocation(invocation),
+        args: [...serializeAndroidAdbInvocation(invocation)],
         payload: invocation.command,
         ...(options ? { options } : {}),
       });
@@ -258,6 +258,7 @@ test('Limrun iOS settings evaluate the Apple simctl plan module on the first set
     setting: 'permission',
     state: 'grant',
     appBundleId: 'com.example.app',
+    resolveApp: async (app: string) => app,
     options: { permissionTarget: 'photos', permissionMode: 'limited' },
   } as const;
 

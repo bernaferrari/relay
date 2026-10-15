@@ -73,6 +73,11 @@
       },
       {
         "type": "custom-link",
+        "label": "Run Maestro flows",
+        "link": "/docs/run-maestro-flows"
+      },
+      {
+        "type": "custom-link",
         "label": "Debugging & Profiling",
         "link": "/docs/debugging-profiling"
       }
@@ -87,6 +92,11 @@
         "type": "custom-link",
         "label": "Node.js API",
         "link": "/docs/client-api"
+      },
+      {
+        "type": "custom-link",
+        "label": "Build an integration",
+        "link": "/docs/build-an-integration"
       },
       {
         "type": "custom-link",
@@ -120,6 +130,11 @@
       },
       {
         "type": "custom-link",
+        "label": "TestMu AI",
+        "link": "/docs/testmu"
+      },
+      {
+        "type": "custom-link",
         "label": "Limrun",
         "link": "/docs/limrun"
       }
@@ -142,7 +157,7 @@
       },
       {
         "type": "custom-link",
-        "label": "Migrating Gestures",
+        "label": "Rewrite Old Gesture Commands",
         "link": "/docs/migrating-gestures"
       }
     ]

@@ -6,7 +6,7 @@ import {
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { isIosFamily } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
-import type { Interactor, RunnerContext } from './interactor-types.ts';
+import type { ApplicationLaunchReport, Interactor, RunnerContext } from './interactor-types.ts';
 import type {
   ApplicationLifecycleExecution,
   ApplicationLifecycleProviderInteractorResolver,
@@ -142,7 +142,7 @@ export async function invokeApplicationOpen(
     execution: ApplicationLifecycleExecution;
     terminateRunningApp?: boolean;
   }>,
-): Promise<void> {
+): Promise<ApplicationLaunchReport | void> {
   const { device, positionals, execution } = params;
   assertOpenPositionals(positionals);
   const app = positionals[0];
@@ -152,11 +152,8 @@ export async function invokeApplicationOpen(
     return;
   }
   assertOpenDeviceSupport(device, execution);
-  if (url !== undefined) {
-    await invokeApplicationUrlOpen(params, app, url);
-    return;
-  }
-  await invokeApplicationTargetOpen(params, app);
+  if (url !== undefined) return await invokeApplicationUrlOpen(params, app, url);
+  return await invokeApplicationTargetOpen(params, app);
 }
 
 type DirectOpenParameters = Readonly<{
@@ -200,7 +197,7 @@ async function invokeApplicationUrlOpen(
   params: DirectOpenParameters,
   app: string,
   url: string,
-): Promise<void> {
+): Promise<ApplicationLaunchReport | void> {
   if (isDeepLinkTarget(app)) {
     throw new AppError(
       'INVALID_ARGS',
@@ -213,7 +210,7 @@ async function invokeApplicationUrlOpen(
   if (params.execution.launchConsole) {
     throw new AppError('INVALID_ARGS', LAUNCH_CONSOLE_DIRECT_APP_ONLY_MESSAGE);
   }
-  await params.interactor.open(app, {
+  return await params.interactor.open(app, {
     activity: params.execution.activity,
     appBundleId: params.appBundleId,
     launchArgs: params.execution.launchArgs ? [...params.execution.launchArgs] : undefined,
@@ -225,7 +222,7 @@ async function invokeApplicationUrlOpen(
 async function invokeApplicationTargetOpen(
   params: DirectOpenParameters,
   app: string,
-): Promise<void> {
+): Promise<ApplicationLaunchReport | void> {
   const { execution, interactor } = params;
   if (execution.launchConsole && isDeepLinkTarget(app)) {
     throw new AppError('INVALID_ARGS', LAUNCH_CONSOLE_DIRECT_APP_ONLY_MESSAGE);
@@ -239,7 +236,7 @@ async function invokeApplicationTargetOpen(
     }
     await interactor.setSetting('clear-app-state', 'clear', app);
   }
-  await interactor.open(app, {
+  return await interactor.open(app, {
     activity: execution.activity,
     appBundleId: params.appBundleId,
     launchConsole: execution.launchConsole,
@@ -379,4 +376,28 @@ export async function invokeApplicationClose(
     return;
   }
   await interactor.close(app);
+}
+
+/**
+ * The lifecycle binding of an owner whose interactor drives open and close directly: resolve the
+ * local interactor for the device, then dispatch through {@link bindDirectApplicationLifecycle}.
+ */
+export function bindLocalDirectApplicationLifecycle(
+  params: Readonly<{
+    owner: string;
+    openTargetIdentity: DirectOpenTargetIdentity;
+    host: Readonly<{ resolve: LocalApplicationLifecycleInteractorResolver }>;
+    device: DeviceInfo;
+    signal: AbortSignal;
+  }>,
+): ApplicationLifecycleRuntimeOperations {
+  return bindDirectApplicationLifecycle({
+    owner: params.owner,
+    openTargetIdentity: params.openTargetIdentity,
+    binding: bindLocalApplicationLifecycleInteractor({
+      device: params.device,
+      signal: params.signal,
+      resolveInteractor: params.host.resolve,
+    }),
+  });
 }

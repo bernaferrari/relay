@@ -11,7 +11,7 @@ import { resolveSelectorPipeline } from '@agent-device/selectors/selector-pipeli
 import { SELECTOR_PIPELINE_POLICIES } from '@agent-device/selectors/selector-pipeline-policy';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
 import { createSnapshotVisibility } from '@agent-device/contracts/snapshot';
-import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
+import type { AgentDeviceRuntime, CommandContext } from '@agent-device/contracts/runtime-contract';
 import { AppError, isRequestCanceledError } from '@agent-device/kernel/errors';
 import type { SelectorTarget } from '@agent-device/contracts/interaction';
 import { INTERACTION_ERROR_REASONS } from '@agent-device/selectors/interaction-error';
@@ -22,6 +22,7 @@ import {
   type CapturedSnapshot,
   type SelectorSnapshotOptions,
   captureSelectorSnapshot,
+  observationReadFailure,
 } from './selector-read-shared.ts';
 import { deriveSelectorCapturePolicy } from './selector-capture-policy.ts';
 import { absenceCaptureOptionRefusal } from '@agent-device/selectors/absence-observation';
@@ -151,17 +152,15 @@ async function resolveAssertedPredicate(
     },
   );
   if (outcome.kind !== 'target') {
-    throw new AppError(
-      'COMMAND_FAILED',
-      formatSelectorFailure(selectorExpression, [], { unique: true }),
-      {
-        command: 'is',
-        reason: INTERACTION_ERROR_REASONS.selectorNotFound,
+    throw observationReadFailure({
+      outcome,
+      selectorExpression,
+      command: 'is',
+      details: {
         predicate: predicate,
         selector: selectorExpression,
-        hint: selectorFailureHint([]),
       },
-    );
+    });
   }
   const result = evaluateIsPredicate({
     predicate,

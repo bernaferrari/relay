@@ -1,5 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import type {
+  CloseApplicationFinalizationInput,
+  CloseApplicationInput,
   LocalApplicationInteractorHost,
   OpenApplicationInput,
 } from '@agent-device/contracts/application-lifecycle-runtime';
@@ -8,6 +10,16 @@ import type { Interactor, SnapshotOptions } from '@agent-device/contracts/intera
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError, createRequestCanceledError } from '@agent-device/kernel/errors';
 import { bindAndroidApplicationLifecycle } from './lifecycle.ts';
+import { closeAndroidApp, killAndroidApp } from './app-lifecycle.ts';
+import { withAndroidAdbProvider } from './adb-executor.ts';
+import { bindAndroidAdbHostStub } from './adb-host.fixtures.ts';
+
+vi.mock('./app-lifecycle.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./app-lifecycle.ts')>()),
+  killAndroidApp: vi.fn(async () => {}),
+}));
+
+const mockKillAndroidApp = vi.mocked(killAndroidApp);
 
 const device: DeviceInfo = {
   platform: 'android',
@@ -19,11 +31,15 @@ const device: DeviceInfo = {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
+  mockKillAndroidApp.mockClear();
 });
 
 type LifecycleFixture = Readonly<{
   calls: string[];
+  framePerfResets: string[];
+  launchReports: Array<string | undefined>;
   lifecycle: ReturnType<typeof bindAndroidApplicationLifecycle>;
 }>;
 
@@ -31,18 +47,35 @@ function createLifecycle(
   params: Readonly<{
     snapshot?: (options: SnapshotOptions) => Promise<unknown>;
     openedAppBundleId?: string;
+    launchedAppBundleId?: string;
     signal?: AbortSignal;
+    restoreTestIme?: (
+      device: DeviceInfo,
+      input: Readonly<{ stateDir: string; shutdownTarget: boolean; signal: AbortSignal }>,
+    ) => Promise<void>;
+    shutdownTarget?: () => Promise<unknown>;
+    close?: Interactor['close'];
   }> = {},
 ): LifecycleFixture {
   const calls: string[] = [];
+  const framePerfResets: string[] = [];
+  const launchReports: Array<string | undefined> = [];
   const localInteractors: LocalApplicationInteractorHost = {
     resolve: async () =>
       ({
-        open: async (app: string) => {
-          calls.push(`open:${app}`);
+        open: async (app: string, options?: { terminateRunningApp?: boolean }) => {
+          calls.push(`open:${app}${options?.terminateRunningApp ? ' (terminate running)' : ''}`);
+          return {
+            launchedAppBundleId: app.includes('://')
+              ? 'com.example.follow-up'
+              : params.launchedAppBundleId,
+          };
         },
         openDevice: async () => {},
-        close: async () => {},
+        close: async (app: string) => {
+          calls.push(`close:${app}`);
+          await params.close?.(app);
+        },
         setSetting: async () => {},
         snapshot: async (options: SnapshotOptions) => {
           calls.push(`observe:${options.appBundleId}`);
@@ -56,17 +89,28 @@ function createLifecycle(
       android: { ensureReady: async () => ({ ...device, booted: true }) },
     },
     deviceShutdown: {
-      android: { shutdownTarget: async () => undefined },
+      android: {
+        shutdownTarget: async () => await (params.shutdownTarget?.() ?? Promise.resolve(undefined)),
+      },
     },
     androidApplications: {
       resolveOpenTarget: async () => ({}),
-      inferOpenedAppBundleId: async () =>
-        'openedAppBundleId' in params ? params.openedAppBundleId : 'com.example.app',
-      resetFramePerfStats: async () => {},
+      inferOpenedAppBundleId: async (
+        _device: DeviceInfo,
+        _target: string | undefined,
+        _current: string | undefined,
+        launchedAppBundleId: string | undefined,
+      ) => {
+        launchReports.push(launchedAppBundleId);
+        return 'openedAppBundleId' in params ? params.openedAppBundleId : 'com.example.app';
+      },
+      resetFramePerfStats: async (_device: DeviceInfo, appBundleId: string) => {
+        framePerfResets.push(appBundleId);
+      },
       applyRuntimeHints: async () => {},
       clearRuntimeHints: async () => {},
       activateTestIme: async () => {},
-      restoreTestIme: async () => {},
+      restoreTestIme: params.restoreTestIme ?? (async () => {}),
       recoverTestImeStartup: async () => {},
       hasTestImeRecoveryEvidence: async () => false,
     },
@@ -85,7 +129,7 @@ function createLifecycle(
     device,
     signal: params.signal ?? new AbortController().signal,
   });
-  return { calls, lifecycle };
+  return { calls, framePerfResets, launchReports, lifecycle };
 }
 
 function openInput(overrides: Partial<OpenApplicationInput> = {}): OpenApplicationInput {
@@ -104,6 +148,43 @@ function openInput(overrides: Partial<OpenApplicationInput> = {}): OpenApplicati
     ...overrides,
   };
 }
+
+test('relaunch refuses to open or observe after the Android process close fence expires', async () => {
+  vi.useFakeTimers();
+  bindAndroidAdbHostStub({});
+  const { calls, lifecycle } = createLifecycle({
+    close: async (app) => await closeAndroidApp(device, app),
+  });
+  await withAndroidAdbProvider(
+    {
+      exec: async (args) => ({
+        stdout:
+          args[1] === 'pidof'
+            ? '12345\n'
+            : args[1] === 'dumpsys'
+              ? 'mCurrentFocus=Window{43 u0 com.android.launcher/.Launcher}\n'
+              : '',
+        stderr: '',
+        exitCode: 0,
+      }),
+    },
+    { serial: device.id },
+    async () => {
+      const rejection = expect(
+        lifecycle.openApplication(openInput({ relaunch: true })),
+      ).rejects.toMatchObject({
+        code: 'COMMAND_FAILED',
+        details: {
+          reason: 'android-app-close-timeout',
+          phase: 'process',
+          packageName: 'com.example.app',
+        },
+      });
+      await Promise.all([rejection, vi.runAllTimersAsync()]);
+    },
+  );
+  expect(calls).toEqual(['close:com.example.app']);
+});
 
 test('preserves a runtime launch URL duration after the admitted Android follow-up open', async () => {
   const { calls, lifecycle } = createLifecycle();
@@ -212,4 +293,175 @@ test('an app open whose launched package cannot be identified reports it unident
 
   expect(calls).toEqual(['open:Example']);
   expect(outcome.timing.postOpenObservation).toBe('app-unidentified');
+});
+
+function finalizationInput(
+  overrides: Partial<CloseApplicationFinalizationInput> = {},
+): CloseApplicationFinalizationInput {
+  return {
+    appBundleId: 'com.example.app',
+    surface: 'app',
+    retainRunner: false,
+    stateDir: '/state',
+    ...overrides,
+  };
+}
+
+function closeInput(overrides: Partial<CloseApplicationInput> = {}): CloseApplicationInput {
+  return {
+    positionals: ['com.example.app'],
+    appBundleId: 'com.example.app',
+    surface: 'app',
+    execution: {},
+    ...overrides,
+  };
+}
+
+test('an Android relaunch closes the requested package before opening it', async () => {
+  const { calls, lifecycle } = createLifecycle({ openedAppBundleId: 'com.android.settings' });
+
+  await lifecycle.openApplication(
+    openInput({
+      target: 'com.android.settings',
+      positionals: ['com.android.settings'],
+      appBundleId: 'com.android.settings',
+      relaunch: true,
+    }),
+  );
+
+  expect(calls.slice(0, 2)).toEqual(['close:com.android.settings', 'open:com.android.settings']);
+});
+
+test('an Android intent relaunch has the launch terminate its handler and records the resumed owner', async () => {
+  const { calls, framePerfResets, lifecycle } = createLifecycle({
+    openedAppBundleId: 'com.android.settings',
+  });
+
+  const outcome = await lifecycle.openApplication(
+    openInput({
+      target: 'settings',
+      positionals: ['settings'],
+      appBundleId: undefined,
+      relaunch: true,
+    }),
+  );
+
+  expect(calls).toEqual(['open:settings (terminate running)', 'observe:com.android.settings']);
+  expect(framePerfResets).toEqual(['com.android.settings']);
+  expect(outcome.appBundleId).toBe('com.android.settings');
+});
+
+test('the owner inference receives the package the primary launch reported', async () => {
+  const { launchReports, lifecycle } = createLifecycle({
+    launchedAppBundleId: 'com.android.settings',
+  });
+
+  await lifecycle.openApplication(
+    openInput({
+      target: 'settings',
+      positionals: ['settings'],
+      appBundleId: undefined,
+      runtimeLaunchUrl: 'example://after-open',
+    }),
+  );
+
+  expect(launchReports).toEqual(['com.android.settings']);
+});
+
+test('an Android intent relaunch that resumes no app closes nothing and stays unidentified', async () => {
+  const { calls, lifecycle } = createLifecycle({ openedAppBundleId: undefined });
+
+  const outcome = await lifecycle.openApplication(
+    openInput({
+      target: 'settings',
+      positionals: ['settings'],
+      appBundleId: undefined,
+      relaunch: true,
+    }),
+  );
+
+  expect(calls).toEqual(['open:settings (terminate running)']);
+  expect(outcome.appBundleId).toBeUndefined();
+  expect(outcome.timing.postOpenObservation).toBe('app-unidentified');
+});
+
+test('close --shutdown restores the keyboard and only then kills the emulator (#3318)', async () => {
+  const sequence: string[] = [];
+  let finishRestore: () => void = () => {};
+  const { lifecycle } = createLifecycle({
+    restoreTestIme: async (_device, input) => {
+      sequence.push(`restore:${input.shutdownTarget}`);
+      await new Promise<void>((resolve) => {
+        finishRestore = resolve;
+      });
+      sequence.push('restored');
+    },
+    shutdownTarget: async () => {
+      sequence.push('shutdown');
+      return { success: true, exitCode: 0, stdout: '', stderr: '' };
+    },
+  });
+
+  let settled = false;
+  const finalizing = lifecycle
+    .finalizeApplicationClose(finalizationInput({ shutdownTarget: true }))
+    .then((result) => {
+      settled = true;
+      return result ?? {};
+    });
+  await vi.waitFor(() => expect(sequence).toEqual(['restore:true']));
+  await Promise.resolve();
+  // The kill must wait on the awaited restore, which absorbs the settings-provider flush window.
+  expect(settled).toBe(false);
+  expect(sequence).toEqual(['restore:true']);
+  finishRestore();
+
+  const result = await finalizing;
+  expect(sequence).toEqual(['restore:true', 'restored', 'shutdown']);
+  expect(result.shutdown).toMatchObject({ success: true });
+});
+
+test('an ordinary close tells the restore no emulator kill is coming', async () => {
+  const sequence: string[] = [];
+  const { lifecycle } = createLifecycle({
+    restoreTestIme: async (_device, input) => {
+      sequence.push(`restore:${input.shutdownTarget}`);
+    },
+    shutdownTarget: async () => {
+      sequence.push('shutdown');
+      return { success: true, exitCode: 0, stdout: '', stderr: '' };
+    },
+  });
+
+  const result = await lifecycle.finalizeApplicationClose(finalizationInput());
+
+  expect(sequence).toEqual(['restore:false']);
+  expect(result).toEqual({});
+});
+
+test('kill mode kills the target without resolving an interactor', async () => {
+  const { calls, lifecycle } = createLifecycle();
+
+  await lifecycle.closeApplication(closeInput({ mode: 'kill' }));
+
+  expect(calls).toEqual([]);
+  expect(mockKillAndroidApp).toHaveBeenCalledExactlyOnceWith(device, 'com.example.app');
+});
+
+test('a close without a mode force-stops through the interactor', async () => {
+  const { calls, lifecycle } = createLifecycle();
+
+  await lifecycle.closeApplication(closeInput());
+
+  expect(calls).toEqual(['close:com.example.app']);
+  expect(mockKillAndroidApp).not.toHaveBeenCalled();
+});
+
+test('kill mode without any target fails instead of reading as success', async () => {
+  const { lifecycle } = createLifecycle();
+
+  await expect(
+    lifecycle.closeApplication(closeInput({ mode: 'kill', positionals: [] })),
+  ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+  expect(mockKillAndroidApp).not.toHaveBeenCalled();
 });

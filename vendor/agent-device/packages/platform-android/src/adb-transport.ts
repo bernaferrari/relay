@@ -1,4 +1,7 @@
-import { relayDeviceShellArgvWithoutOptions } from '@agent-device/kernel/device-shell';
+import {
+  relayDeviceShellArgvWithOptions,
+  relayDeviceShellArgvWithoutOptions,
+} from '@agent-device/kernel/device-shell';
 import { AppError } from '@agent-device/kernel/errors';
 import type { Readable, Stream, Writable } from 'node:stream';
 import type { Rect } from '@agent-device/kernel/snapshot';
@@ -140,8 +143,10 @@ export type AndroidTextInjectionRequest = {
   text: string;
   delayMs?: number;
   /**
-   * Present only for fill. Providers must make this target the focused/replaced
-   * input for the request, not inject into an unrelated currently focused field.
+   * Present only for fill. Providers must make this target the focused input AND replace its
+   * contents with `text`, not inject into an unrelated currently focused field and not insert at
+   * its cursor. An empty `text` is the clear request: the target must end up empty, and the
+   * provider may complete it without any text-set call of its own.
    */
   target?: {
     x: number;
@@ -191,7 +196,6 @@ export type AndroidAdbProvider = AndroidAdbProviderBase & AndroidTouchCapabiliti
 
 export type AndroidAdbProviderScopeOptions = {
   serial: string;
-  serverPort?: number;
 };
 
 export type ScopedAndroidAdbBackgroundTransport =
@@ -310,14 +314,8 @@ export type AndroidAdbInvocation = Readonly<{
   rawArgv?: readonly string[];
 }>;
 
-export function androidAdbSerialTarget(
-  serial: string,
-  serverPort?: number,
-): Readonly<AndroidAdbTarget> {
-  return {
-    selector: { kind: 'serial', serial },
-    server: serverPort === undefined ? { kind: 'ambient' } : { kind: 'port', port: serverPort },
-  };
+export function androidAdbSerialTarget(serial: string): Readonly<AndroidAdbTarget> {
+  return { selector: { kind: 'serial', serial }, server: { kind: 'ambient' } };
 }
 
 /** Addressing for a server-level command: it selects no device and names no private adb server. */
@@ -345,16 +343,15 @@ export function adoptAndroidAdbSerial(
  * The only place adb global options are emitted for an invocation whose addressing was rewritten.
  * `command` is appended, never re-parsed.
  */
-export function serializeAndroidAdbInvocation(invocation: AndroidAdbInvocation): string[] {
-  if (invocation.rawArgv) return [...invocation.rawArgv];
+export function serializeAndroidAdbInvocation(invocation: AndroidAdbInvocation): readonly string[] {
+  if (invocation.rawArgv) return relayDeviceShellArgvWithOptions([], invocation.rawArgv);
   const { target, command } = invocation;
   const serialized: string[] = [];
   if (target.server.kind === 'port') serialized.push('-P', String(target.server.port));
   if (target.selector.kind === 'serial') serialized.push('-s', target.selector.serial);
   if (target.hostGlobals) serialized.push(...target.hostGlobals);
   if (target.waitFor) serialized.push(target.waitFor);
-  serialized.push(...command);
-  return serialized;
+  return relayDeviceShellArgvWithOptions(serialized, command);
 }
 
 const OWNED_OPTIONS: Readonly<Record<string, 'serial' | 'server'>> = {
@@ -483,7 +480,7 @@ function androidAdbOwnedServerPort(invocation: AndroidAdbInvocation): number | u
 /**
  * Reconciles the two channels an adb server port arrives on: the addressing this layer owns, and
  * the per-call option an SDK caller can still pass. An owned port is not overridable — a caller
- * cannot move a managed lease onto another adb server by naming one.
+ * cannot move an addressed invocation onto another adb server by naming one.
  */
 export function requireAndroidAdbServerPort(
   invocation: AndroidAdbInvocation,
@@ -531,13 +528,13 @@ export function androidAdbPayloadWithoutSerial(
   }
 }
 
-/** Managed (ADR 0021) transport: the lease owns a private adb server. */
+/** Private-server transport: the caller names its own adb server port (`serverPort`). */
 export type AndroidManagedAdbServer = Readonly<{ port: number }>;
 
 /**
  * Adopts `invocation` for one managed adb server. The command travels by reference, so a payload
  * authored upstream is the same array that reaches the spawn boundary. Addressing is rewritten
- * wherever the lease adds something the caller left unsaid, and refused wherever the caller named
+ * wherever the private server adds something the caller left unsaid, and refused wherever the caller named
  * a server of their own — see {@link requireManagedAndroidAdbAddressing}.
  */
 export function applyManagedAndroidAdbServer(
@@ -567,10 +564,7 @@ export function requireManagedAndroidAdbSerial(
 }
 
 /** A selection naming another device is a conflict; a request that names none is not. */
-export function requireUnconflictedAndroidAdbSelector(
-  selector: AndroidAdbSelector,
-  serial: string,
-): void {
+function requireUnconflictedAndroidAdbSelector(selector: AndroidAdbSelector, serial: string): void {
   if (selector.kind === 'serial' && selector.serial !== serial) throw transportMismatch('device');
 }
 
@@ -579,14 +573,11 @@ export function requireUnconflictedAndroidAdbSelector(
  * server but the one it holds.
  *
  * A `-P` naming a different server is refused here, before anything is dispatched, rather than
- * rewritten onto the lease's server. A caller who asked for 5037 and got 15038 would otherwise
+ * rewritten onto the private server. A caller who asked for 5037 and got 15038 would otherwise
  * read a successful exit as evidence about 5037, which is the one answer a private server must not
  * give. A `-P` naming this server, or none at all, is the ordinary case.
  */
-export function requireManagedAndroidAdbAddressing(
-  target: AndroidAdbTarget,
-  managedPort: number,
-): void {
+function requireManagedAndroidAdbAddressing(target: AndroidAdbTarget, managedPort: number): void {
   if (target.hostGlobals) throw transportMismatch('target');
   requireSameAndroidAdbServer(
     managedPort,
@@ -631,7 +622,7 @@ export function lowerAndroidAdbInvocation<Options extends AndroidAdbServerOption
   invocation: AndroidAdbInvocation,
   options: Options | undefined,
   environment: Record<string, string | undefined>,
-): { args: string[]; options: Omit<Options, 'serverPort'> } {
+): { args: readonly string[]; options: Omit<Options, 'serverPort'> } {
   const { serverPort: _requestedServerPort, ...execOptions } = options ?? ({} as Options);
   const port = requireAndroidAdbServerPort(invocation, options);
   const resolved =

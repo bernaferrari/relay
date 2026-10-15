@@ -8,6 +8,7 @@ import { isProductionSourceFile } from '../layering/tracked-sources.ts';
 
 const WALKED_SOURCE = /^(?:src|packages\/[^/]+\/src)\/.*\.ts$/;
 const WALKED_MANIFEST = /^packages\/[^/]+\/package\.json$/;
+const WALKED_JSON_MODULE = /^(?:src|packages\/[^/]+\/src)\/.*\.json$/;
 
 function git(repoRoot: string, args: readonly string[], input = ''): Buffer {
   return execFileSync('git', [...args], {
@@ -42,16 +43,66 @@ export function headCommit(repoRoot: string): string {
   return git(repoRoot, ['rev-parse', 'HEAD']).toString('utf8').trim();
 }
 
-/** Files renamed since `base`, current path -> path at `base`, so a rename is not a new entry. */
-export function renamedSince(repoRoot: string, base: string): ReadonlyMap<string, string> {
+/**
+ * Files renamed between `base` and `head` (the working tree unless a commit is given),
+ * head path -> base path, so a rename is not a new entry. The explicit rename limit keeps
+ * inexact detection on regardless of the clone's `diff.renameLimit` config — a bulk move
+ * with edits (the daemon extraction) is exactly the inexact case the ratchets must see.
+ */
+export function renamedSince(
+  repoRoot: string,
+  base: string,
+  head?: string,
+): ReadonlyMap<string, string> {
   const renamed = new Map<string, string>();
-  const status = git(repoRoot, ['diff', '--name-status', '-M', '--diff-filter=R', '-z', base]);
+  const status = git(repoRoot, [
+    '-c',
+    'diff.renameLimit=0',
+    'diff',
+    '--name-status',
+    '-M',
+    '--diff-filter=R',
+    '-z',
+    base,
+    ...(head ? [head] : []),
+  ]);
   const fields = status.toString('utf8').split('\0');
   for (let index = 0; index + 2 < fields.length; index += 3) {
     const [from, to] = [fields[index + 1], fields[index + 2]];
     if (from && to) renamed.set(to, from);
   }
   return renamed;
+}
+
+/**
+ * Production source paths tracked at `base` but gone from the working tree. The diff requests
+ * rename pairing explicitly (`--find-renames`, so a `diff.renames=false` gitconfig cannot
+ * weaken it), and --diff-filter=D drops the paired ones, so this lists only the deletions that
+ * pairing did NOT absorb -- a moved-and-rewritten module the detector could not pair, which
+ * `renamedSince`
+ * answers by detection and therefore misses. The split tolerance reads these paths' content
+ * through `movedFromDeletedSource`: two or more statements shared with ONE deleted source is a
+ * move signal, so a verbatim transplant stays non-novel; one shared statement is tolerated as
+ * coincidence, and a statement-by-statement rewrite evades a textual match. This probe is the
+ * reinforcement -- containment is what structurally refuses a dropped-and-swapped base module
+ * (#3298 review). And the pairing itself is load-bearing: it keeps a split's re-homed hub OUT
+ * of this list (paired to its closest part), while disabling it (--no-renames, or the gitconfig
+ * the explicit flag overrides) would put the hub here, making the split's own parts share two
+ * statements with "deleted source" and refusing the very extraction the tolerance exists for.
+ */
+export function deletedSourcesSince(repoRoot: string, base: string): string[] {
+  const status = git(repoRoot, [
+    'diff',
+    '--name-only',
+    '--find-renames',
+    '--diff-filter=D',
+    '-z',
+    base,
+  ]);
+  return status
+    .toString('utf8')
+    .split('\0')
+    .filter((file) => file !== '' && WALKED_SOURCE.test(file) && isProductionSourceFile(file));
 }
 
 /** A carried entry must have been a source the base closure walker could actually read. */
@@ -77,15 +128,18 @@ function listCommittedTree(repoRoot: string, treeish: string): string[] {
 
 /**
  * The sources this reader serves, split by kind: production TypeScript under `src/` and
- * `packages/<pkg>/src/`, and workspace package manifests. One definition, so a consumer reading
- * a committed tree cannot classify it differently from the walker.
+ * `packages/<pkg>/src/`, JSON modules a source there can import, and workspace package
+ * manifests. One definition, so a consumer reading a committed tree cannot classify it
+ * differently from the walker.
  */
 function committedSourceSet(tracked: readonly string[]): {
   sources: string[];
+  jsonModules: string[];
   manifests: string[];
 } {
   return {
     sources: tracked.filter((file) => WALKED_SOURCE.test(file) && isProductionSourceFile(file)),
+    jsonModules: tracked.filter((file) => WALKED_JSON_MODULE.test(file)),
     manifests: tracked.filter((file) => WALKED_MANIFEST.test(file)),
   };
 }
@@ -152,16 +206,21 @@ function directoriesOf(files: ReadonlySet<string>): Set<string> {
 
 /**
  * The walker's view of `treeish`: tracked paths from one `git ls-tree`, and every source the
- * walker can reach (production TypeScript under `src/` and `packages/<pkg>/src/`, package
- * manifests) from ONE `git cat-file --batch` fed those paths up front -- two processes for the
- * whole tree, never one per file. A read outside that set is a widening request, not a fallback.
+ * walker can reach (production TypeScript and JSON modules under `src/` and
+ * `packages/<pkg>/src/`, package manifests) from ONE `git cat-file --batch` fed those paths up
+ * front -- two processes for the whole tree, never one per file. A read outside that set is a
+ * widening request, not a fallback.
  */
 export function createCommittedSourceTree(repoRoot: string, treeish: string): SourceTreeReader {
   const listing = listCommittedTree(repoRoot, treeish);
   const tracked = new Set(listing);
   const directories = directoriesOf(tracked);
-  const { sources, manifests } = committedSourceSet(listing);
-  const contents = readCommittedBlobs(repoRoot, treeish, [...sources, ...manifests]);
+  const { sources, jsonModules, manifests } = committedSourceSet(listing);
+  const contents = readCommittedBlobs(repoRoot, treeish, [
+    ...sources,
+    ...jsonModules,
+    ...manifests,
+  ]);
   const relative = (file: string) => path.relative(repoRoot, file).split(path.sep).join('/');
   return {
     exists: (file) => tracked.has(relative(file)) || directories.has(relative(file)),

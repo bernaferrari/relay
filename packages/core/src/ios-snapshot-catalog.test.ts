@@ -31,7 +31,11 @@ async function withListener(
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = directory;
   await writeFile(
     join(directory, "catalog-ipad.json"),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => post(command));
   try {

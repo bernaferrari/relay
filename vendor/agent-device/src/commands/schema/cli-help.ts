@@ -1,9 +1,5 @@
 import { listCliCommandNames } from '@agent-device/command-registry/catalog';
-import {
-  formatMaestroCompatibilityReference,
-  MAESTRO_COMPATIBILITY_ADR_URL,
-  MAESTRO_COMPATIBILITY_ISSUE_URL,
-} from '@agent-device/maestro';
+import { getReplayBackendDeclaration } from '@agent-device/replay-port/replay-backend-declarations';
 import { normalizeCliCommandAlias } from '@agent-device/command-registry/cli-command-aliases';
 import { helpBody } from '@agent-device/command-registry/command-text';
 import {
@@ -67,17 +63,7 @@ const HELP_TOPICS = {
     body: 'agent-device help commands',
   },
   ...manualQaHelpTopics,
-  maestro: {
-    summary: 'Supported Maestro YAML commands, grammar, and runtime boundaries',
-    body: `agent-device help maestro
-
-Run Maestro compatibility flows with replay <flow.yaml> --maestro or test <path> --maestro. Bind an iOS or Android target with --platform or an existing session.
-
-${formatMaestroCompatibilityReference()}
-
-Unsupported syntax fails loudly rather than being skipped. Architecture, performance tradeoffs, and declared conformance divergences: ${MAESTRO_COMPATIBILITY_ADR_URL}
-Focused compatibility request: ${MAESTRO_COMPATIBILITY_ISSUE_URL}`,
-  },
+  maestro: getReplayBackendDeclaration('maestro').help,
   workflow: {
     summary: 'Normal agent-device bootstrap, exploration, and validation loop',
     body: `agent-device help workflow
@@ -87,7 +73,7 @@ Command shapes, refs, selectors, waits, recovery, and platform limits for open -
 Command shape:
   Command lines only -- no prose, numbering, fences, pipes, or grep/head/tail/jq; raw output carries refs/hints for the next step. Order: subcommand, positionals, flags: agent-device open com.example.app --session checkout --platform android --relaunch
   Chain confident consecutive steps with &&: press 'label="Search"' --settle && fill 'label="Search"' "query" --settle. Fall back to one command at a time when a step is uncertain (ambiguous match, network-backed result, unseen screen).
-  Refs look like @e12; use the exact ref from the latest snapshot -i, never a placeholder (@ref, @eN, @Label_Name). Pin with ~s<n> (press @e12~s4); iOS rejects a stale pinned ref -- refresh with snapshot -i or use a selector.
+  Refs look like @e12; use the exact ref from the latest snapshot -i, never a placeholder (@ref, @eN, @Label_Name). Pin with ~s<n> (press @e12~s4); every platform rejects a stale pinned ref -- refresh with snapshot -i or use a selector.
   close = agent-device close. App back is back; system back is back --system. Taps are press/click. type never takes --settle: run type, then diff snapshot to verify. Known flow: batch --steps-file ./steps.json (help batch).
   Gestures: scroll/swipe for lists/flicks; gesture pan|fling|pinch|rotate|transform|drag for multi-touch. Shapes and platform quirks: help gestures.
 
@@ -106,7 +92,7 @@ Snapshots and refs:
 
 Selectors:
   id="field-email", label="Allow", role=button label="Search" -- not bare role keys (button="Search"); no CSS selectors/--selector/--text/raw x-y when refs/selectors exist.
-  Mutating selector ambiguity: press/click/fill/longpress collapse duplicate accessibility wrappers only when every match is one ancestor-descendant chain resolving to the same actionable node. Matches in distinct subtrees fail with AMBIGUOUS_MATCH and a bounded candidate list; geometry never chooses a winner. Retry one printed candidate ref (pinned to refsGeneration) or narrow the selector with role/id/longer text. Read-only commands and replay suggestions retain their declared resolution policies.
+  Mutating selector ambiguity: press/click/fill/longpress collapse duplicate accessibility wrappers only when every match is one ancestor-descendant chain resolving to the same actionable node. Matches in distinct subtrees fail with AMBIGUOUS_MATCH and a bounded candidate list; geometry never chooses a winner. Retry one printed candidate ref (pinned to refsGeneration) or narrow the selector with role/id/longer text. Uniqueness-based reads (is except exists/absent, get attrs) share that failure shape.
   hittable: false on a resolved element does not block dispatch (iOS AX flags are unreliable on deep RN trees); press/fill/click return targetHittable: false plus a hint -- verify or re-target, not a failure.
 
 Text entry:
@@ -166,6 +152,7 @@ Script paths are the caller's:
 Script line grammar:
   A .ad line is <command> [positional...] [flag...]. Whitespace splits tokens; a token quoted with " or ' is one argument, and single quotes keep a double quote literal, exactly as at the shell (press 'id="far"' is one selector). Values in double quotes are JSON strings (escape \\\\, \\", \\t, \\n). Values in single quotes are literal, as at the shell: a backslash keeps its own character and the only escape is \\' for an apostrophe. A script carries only the flags declared for that command and marked recorded, so the script form of a step matches the CLI form: scroll down --until 'id="x"', wait 'label="Sign in"' --raw. CLI-only spellings and per-request options are not part of a step: --settle, --verify, scroll --pixels/--duration-ms, and the device-selection flags (--platform, --serial, --device) are the common ones a script does not carry.
   Reaching an off-screen target is viewport-independent in a script the same way it is at the CLI: write scroll down --until <selector>, not a fixed scroll amount that passes on one screen size and fails on another.
+  press/click/longpress resolve their target once. Before interacting with a loading screen, add an explicit landmark wait: wait 'label="Continue"' 5000, then press 'label="Continue"'.
 
 Reusable open-to-destination scripts:
   Arm recording on the first open, perform the full journey, verify the destination with a selector-targeted wait, then publish without closing:
@@ -178,6 +165,9 @@ Reusable open-to-destination scripts:
     export AD_VAR_PASSWORD='<secret>'
     agent-device fill 'id="password"' "$AD_VAR_PASSWORD" --record-as PASSWORD
   The live app receives the value; recording state and the published script contain only \${PASSWORD}. Reuse the same name for repeated values; --record-as is fill-only, requires an armed recording, and is mutually exclusive with --no-record. Replay with AD_VAR_PASSWORD still set, or pass --env PASSWORD=<value>. Do not record passwords/tokens without --record-as; their literal text is written to the .ad target.
+  To keep the value out of the CLI's argv as well, pipe it in with --text-stdin instead of a text argument:
+    printf %s "$AD_VAR_PASSWORD" | agent-device fill 'id="password"' --text-stdin --record-as PASSWORD
+  --text-stdin reads at most 64 KiB, removes exactly one trailing newline, and refuses a terminal, empty input, invalid UTF-8, or an extra text argument. While recording is armed, --record-as publishes \${VAR} and --no-record leaves the step out; passing neither is an error. Without an armed recording the step is not recorded. It is not available inside batch steps.
 
 Replay divergence and repair:
   A failing replay/test step returns REPLAY_DIVERGENCE with a bounded report (screen digest, ranked selector suggestions, resume). Fix app state, then resume with replay --from <n> --plan-digest <sha256> (both from the report's resume field) to continue without re-running earlier steps; resume never re-executes skipped steps, so app state there is the caller's responsibility. --from is replay-only; test rejects it. The digest binds the script, includes, effective --platform/--target, and per-action runtime/identity; native .ad interpolation is late-bound so changing only its values keeps the digest, while Maestro environment substitution can change it.
@@ -441,7 +431,7 @@ React Native dev loop:
   Multiple local worktrees can reuse one native iOS simulator build by running each worktree's dev server on a different port and opening the same installed app on different simulators with explicit runtime hints:
     agent-device open "React Navigation Example" --platform ios --device "iPhone 17" --session rn-a --metro-host 127.0.0.1 --metro-port 8081 --relaunch
     agent-device open "React Navigation Example" --platform ios --device "iPhone 17 Pro" --session rn-b --metro-host 127.0.0.1 --metro-port 8082 --relaunch
-  iOS simulator opens write React Native's per-simulator debug server settings before launch, so those ports do not conflict across simulators. Use separate sessions/devices, close both sessions when done, and rebuild only for native changes or dependency changes that affect the binary. One simulator cannot run two copies of the same bundle id.
+  iOS simulator opens write bare React Native's per-simulator debug server settings before launch. Detected Expo development clients receive their server URL through a launch link instead. Use separate sessions/devices, close both sessions when done, and rebuild only for native changes or dependency changes that affect the binary. One simulator cannot run two copies of the same bundle id.
   Expo Go/dev clients are host shells. Use provided project URLs, verify with snapshot -i after opening, and ask instead of inventing app ids or URLs. Help workflow owns the full Expo URL command shapes.
 
 Overlays and busy RN UIs:
@@ -530,7 +520,7 @@ Android physical-device prerequisites:
 Runner and daemon lifecycle (applies to simulators too):
   open without --relaunch is idempotent-foreground for an already-running app (it brings the process forward; it does not restart it). open --relaunch restarts the app; on iOS simulators this collapses to one simctl launch --terminate-running-process call instead of a separate terminate-then-launch.
   No runner read launches a session app that is not running: snapshot, wait, is, get, a reading find, and an interaction's leading reads (a gesture's viewport read, the capture that resolves a selector click/fill) answer the retriable APP_NOT_RUNNING instead of bare-launching over a launch SpringBoard still holds behind its deep-link confirmation. Only open, activate, and a command that mutates without a leading read bring a stopped app up.
-  close keeps a healthy iOS simulator XCTest runner warm by default so the next open on that simulator (same udid in the same simulator set) skips the runner build, unless --shutdown was requested, the session was recording, or the session held a device lease. A retained runner auto-stops after an idle window (default 5 minutes); set AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS to override, or 0 to disable idle stop and retain until daemon exit.
+  close keeps a healthy iOS simulator XCTest runner warm by default so the next open on that simulator (same udid in the same simulator set) skips the runner build, unless --shutdown was requested, the session was recording, or the session held a device lease. A retained runner auto-stops after an idle window (default 5 minutes); set AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS to override, or 0 to disable idle stop and retain until daemon exit. Only a ready runner with an observed listener is retained; close retires unfinished prewarm recovery. Losing the retained listener stops that generation, and daemon shutdown stops idle retained runners rather than handing them off without supervision.
   Each AGENT_DEVICE_STATE_DIR runs its own daemon. It self-exits after an idle window (default 5 minutes, matching the runner idle-stop default) once it has no open sessions, no in-flight requests, and no active recording; set AGENT_DEVICE_DAEMON_IDLE_TIMEOUT_MS to override, or 0 to disable idle reap.
   On a machine shared by several agents, set AGENT_DEVICE_SESSION_IDLE_TIMEOUT_MS to also expire an individual session that has taken a host-global device claim and then received no commands for that long; the claim is released and the next command on that session answers SESSION_NOT_FOUND with details.reason SESSION_IDLE_EXPIRED naming the window and the device. Off by default, because on a shared host "idle" and "thinking" are indistinguishable: only set it where an abandoned claim blocking every other agent is the worse failure. Sessions holding a remote lease or any active capture (recording, logs, audio, performance, or trace) are never expired this way.
   A stale iOS runner lease — its owner process dead, or its AGENT_DEVICE_STATE_DIR deleted — is reclaimed automatically instead of failing with "is already owned by another agent-device daemon". A live owner's runner is also reclaimed when the requesting daemon holds the host-global device claim for that device: claims are exclusive, so holding one proves the runner's owner released the device and merely kept the runner warm. The error remains only for owners outside claim arbitration (a pre-claims build, or daemons pointed at different claim stores).
@@ -581,17 +571,18 @@ Providers:
   Direct proxy: agent-device connect proxy --daemon-base-url <proxy-agent-device-url> stores the shared proxy profile and client identity.
   BrowserStack: agent-device connect browserstack verifies credentials, the exact device, and a bs:// app reference, then stores a local provider profile. It does not create an App Automate session.
   AWS Device Farm: agent-device connect aws-device-farm verifies credentials and the exact project, device, and optional app upload, then stores a local provider profile. It does not create a remote access session.
+  TestMu AI: agent-device connect testmu verifies credentials and the exact virtual device (emulator or simulator) or, with --provider-device-type real, real device and OS version, then stores a local provider profile. --provider-app takes an lt:// app reference, an https URL, or a local path: connect looks an lt:// id up among your uploads for that device pool, while URL and local sources are uploaded and validated when open creates the session. It does not create a hub session.
   Limrun: agent-device connect limrun verifies access to the selected iOS or Android instance service, then stores a local provider profile. It does not create an instance.
 
 After direct-provider connect:
   Read the printed Device, App, Next, and workflow-note lines. They are also available as verification/device/app/liveSession/nextSteps/notes in --json output.
-  BrowserStack and AWS Device Farm create the hosted session on open. open needs the installed package or bundle identifier, not the app artifact name or ARN.
+  BrowserStack, AWS Device Farm, and TestMu AI create the hosted session on open. open needs the installed package or bundle identifier, not the app artifact name, ARN, or lt:// id.
   Before provider allocation, apps lists compatible uploaded app assets without creating an instance when the selected provider exposes a catalog. open <exact-asset-name> creates the instance with that asset, resolves its installed app id, and launches it. install remains available when the app comes from a fresh local path or URL.
   AWS Device Farm cannot install after allocation. If connect reports no attached app, run its printed reconnect command, which includes --session <name> --force, before open.
   Do not run devices as a pre-open catalog probe for direct providers; it can allocate the deferred provider session. Limrun is the exception for apps: before allocation it lists uploaded assets for the selected platform.
 
 Device cloud interfaces:
-  CLI is the canonical bootstrap path: connect limrun/browserstack/aws-device-farm, then use normal open/snapshot/click/close/artifacts/disconnect commands.
+  CLI is the canonical bootstrap path: connect limrun/browserstack/aws-device-farm/testmu, then use normal open/snapshot/click/close/artifacts/disconnect commands.
   JavaScript can skip persisted connect state by passing leaseProvider plus provider fields to createAgentDeviceClient or per-command options.
   MCP exposes operational tools such as open, snapshot, click, close, and artifacts. It does not expose connect/disconnect; run CLI connect first in the same state dir before relying on MCP tools.
 
@@ -620,6 +611,20 @@ Cloud profile flow:
   agent-device open com.example.app
   agent-device snapshot
   agent-device disconnect
+
+TestMu AI virtual-device flow (emulators and simulators):
+  agent-device plugins add @agent-device/testmu
+  export LT_USERNAME=... LT_ACCESS_KEY=...
+  agent-device connect testmu --platform ios --device "iPhone 16" --provider-os-version 18.0 --provider-app lt://APP-id
+  agent-device open com.example.app
+  agent-device snapshot -i
+  agent-device close
+  agent-device artifacts --json
+  agent-device disconnect
+
+TestMu AI real-device flow:
+  agent-device connect testmu --provider-device-type real --platform ios --device "iPhone 16" --provider-os-version 18 --provider-app ./MyApp.ipa
+  Real iOS devices are listed by major OS version (18, not 18.0) and install a signed .ipa. Real and virtual devices have separate upload APIs, so pass an lt:// id uploaded for the pool you connect to.
 
 BrowserStack hosted-device flow:
   BROWSERSTACK_USERNAME=... BROWSERSTACK_ACCESS_KEY=...
@@ -669,16 +674,16 @@ Rules:
   Use connect without --remote-config when the cloud control plane owns the connection profile.
   Prefer connect --remote-config over --daemon-base-url, --tenant, --run-id, and --lease-id when using a local profile.
   Use agent-device proxy for direct tunnel access to a Mac you control. Expose the printed proxy URL through cloudflared/ngrok, then run agent-device connect proxy with the tunnel URL and printed token before normal commands.
-  Use Limrun, BrowserStack, and AWS Device Farm through local provider profiles; they do not accept a remote agent-device daemon URL.
-  Device cloud credentials must be available before the command starts. Limrun uses LIMRUN_API_KEY, or the LIM_*_INSTANCE_* variables for an existing instance. BrowserStack uses BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY. AWS Device Farm uses the AWS CLI credential chain, including CI-provided AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN, AWS profiles, or web identity role variables.
-  A local daemon keeps the Limrun and BrowserStack credentials it started with. When the shell holds different ones, the first command that allocates a lease refuses with reason provider-credentials-changed; run agent-device daemon stop with the same --state-dir, then rerun the command. A shell that sets none of them uses the daemon's. A daemon with an HTTP auth hook serves remote callers and does not compare.
+  Use Limrun, BrowserStack, AWS Device Farm, and TestMu AI through local provider profiles; they do not accept a remote agent-device daemon URL.
+  Device cloud credentials must be available before the command starts. Limrun uses LIMRUN_API_KEY, or the LIM_*_INSTANCE_* variables for an existing instance. BrowserStack uses BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY. TestMu AI uses LT_USERNAME and LT_ACCESS_KEY. AWS Device Farm uses the AWS CLI credential chain, including CI-provided AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_SESSION_TOKEN, AWS profiles, or web identity role variables.
+  A local daemon keeps the Limrun, BrowserStack, and TestMu AI credentials it started with. When the shell holds different ones, the first command that allocates a lease refuses with reason provider-credentials-changed; run agent-device daemon stop with the same --state-dir, then rerun the command. A shell that sets none of them uses the daemon's. A daemon with an HTTP auth hook serves remote callers and does not compare.
   Direct-provider connect performs read-only provider calls and saves active connection state only after verification succeeds. It never creates a device, instance, App Automate session, or AWS remote access session.
   connect without --session always creates a fresh remote session and prints that session in its next-step commands. Concurrent callers must pass the returned --session on every command; the ambient active connection is only a single-workflow convenience.
   To replace an existing connection, pass its returned session explicitly with --session <name> --force. --force without --session creates another fresh session and does not release or overwrite an unrelated active connection.
-  Prefer short-lived AWS role credentials in CI. Generated connection profiles store app/device selectors and ARNs, not Limrun API keys or instance tokens, BrowserStack access keys, or AWS credentials.
+  Prefer short-lived AWS role credentials in CI. Generated connection profiles store app/device selectors and ARNs, not Limrun API keys or instance tokens, BrowserStack or TestMu AI access keys, or AWS credentials.
   Limrun Android supports direct ADB port reverse for local Metro. Limrun iOS requires a public Metro/React DevTools URL because it cannot reach local host ports directly.
   After closing a device cloud session, run agent-device artifacts --json to retrieve provider video/log/dashboard URLs when the provider has made them available.
-  connect proxy stores the connection profile and client identity. Proxy device leases are acquired on open and expire after five minutes without commands; devices may inspect proxy inventory without allocating.
+  connect proxy stores the connection profile and client identity. Proxy device leases are acquired on open and expire after five minutes without commands; when a lease expires or is released, the daemon ends the session opened under it and frees its device; devices may inspect proxy inventory without allocating.
   Multiple agents can share one proxy when each uses connect proxy, open, commands, close, and disconnect.
   disconnect releases local connection state; close releases the active session and device lease.
   A busy direct-proxy device error means another agent owns the device until it closes or its inactivity lease expires.
@@ -724,7 +729,8 @@ Rules:
   Context menus are not ambient UI: secondary-click a visible target, then re-snapshot and use the new menu-item refs.
   Do not let iOS simulator-set scoping hide macOS desktop targets.
   Prefer refs/selectors over raw coordinates.
-  macOS snapshot rects are window-space; use current refs or overlay refs instead of guessing coordinates.`,
+  macOS snapshot rects are window-space; use current refs or overlay refs instead of guessing coordinates.
+  On the default XCTest backend a read (snapshot, get, find) of a session app that sits behind other windows is answered from where it sits, without raising the app; interactions and a window-level screenshot of that app still bring it forward.`,
   },
   web: {
     summary: 'Minimal browser workflow with the managed web backend',

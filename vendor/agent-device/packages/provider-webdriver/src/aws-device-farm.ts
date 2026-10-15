@@ -5,16 +5,83 @@ import {
   type AwsDeviceFarmArtifact,
   type AwsDeviceFarmArtifactGroup,
 } from './aws-device-farm-artifacts.ts';
-import type {
-  CloudWebDriverPlatform,
-  CloudWebDriverRuntimeOptions,
-  CloudWebDriverPrepareSession,
-} from './runtime.ts';
-import type { DeviceLease, LeaseLifecycleContext } from '@agent-device/contracts/device';
+import type { CloudWebDriverPlatform, CloudWebDriverPrepareSession } from './runtime.ts';
+import type { LeaseLifecycleContext } from '@agent-device/contracts/device';
+import type { ProviderProfileFieldDeclaration } from '@agent-device/contracts/provider-profile-fields';
+import { PROVIDER_PROFILE_FIELD_FLAGS } from '@agent-device/contracts/remote';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { AppError } from '@agent-device/kernel/errors';
 import type { RunHostCommand } from './dependencies.ts';
-import { releaseOnFailure, resolveLeaseValue, type LeaseValue } from './webdriver-utils.ts';
+import { CLOUD_WEBDRIVER_PROVIDERS } from './providers.ts';
+import { releaseOnFailure } from './webdriver-utils.ts';
+
+export const AWS_DEVICE_FARM_PROFILE_FIELDS: ProviderProfileFieldDeclaration = {
+  provider: CLOUD_WEBDRIVER_PROVIDERS.awsDeviceFarm,
+  label: 'AWS Device Farm',
+  fields: {
+    providerApp: 'refused',
+    providerOsVersion: 'refused',
+    providerDeviceType: 'refused',
+    providerProject: 'refused',
+    providerBuild: 'refused',
+    providerSessionName: 'consumed',
+    providerDeviceOrientation: 'refused',
+    providerGeoLocation: 'refused',
+    providerTimezone: 'refused',
+    providerAppiumVersion: 'refused',
+    providerLanguage: 'refused',
+    providerLocale: 'refused',
+    providerNetworkProfile: 'refused',
+    providerCustomNetwork: 'refused',
+    providerNoResignApp: 'refused',
+    awsProjectArn: 'consumed',
+    awsDeviceArn: 'consumed',
+    awsAppArn: 'consumed',
+    awsRegion: 'consumed',
+    awsInteractionMode: 'consumed',
+  },
+};
+
+/** Each selector reads its flag first, then the agent-device variable, then the AWS CLI one. */
+const AWS_SELECTOR_VARIABLES = {
+  awsProjectArn: ['AGENT_DEVICE_AWS_DEVICE_FARM_PROJECT_ARN', 'AWS_DEVICE_FARM_PROJECT_ARN'],
+  awsDeviceArn: ['AGENT_DEVICE_AWS_DEVICE_FARM_DEVICE_ARN', 'AWS_DEVICE_FARM_DEVICE_ARN'],
+  awsAppArn: ['AGENT_DEVICE_AWS_DEVICE_FARM_APP_ARN', 'AWS_DEVICE_FARM_APP_ARN'],
+  awsRegion: ['AWS_REGION', 'AWS_DEFAULT_REGION'],
+} as const;
+export type AwsDeviceFarmSelector = keyof typeof AWS_SELECTOR_VARIABLES;
+
+export function readAwsDeviceFarmSelectorFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  selector: AwsDeviceFarmSelector,
+): string | undefined {
+  return AWS_SELECTOR_VARIABLES[selector]
+    .map((name) => env[name])
+    .find((value): value is string => Boolean(value));
+}
+
+/** The flag value, else the environment; a missing selector names both places it can come from. */
+export function requireAwsDeviceFarmSelector(
+  value: string | undefined,
+  env: Readonly<Record<string, string | undefined>>,
+  selector: AwsDeviceFarmSelector,
+  consumer: string,
+): string {
+  const resolved = value ?? readAwsDeviceFarmSelectorFromEnv(env, selector);
+  if (resolved) return resolved;
+  throw new AppError(
+    'INVALID_ARGS',
+    `${consumer} requires ${PROVIDER_PROFILE_FIELD_FLAGS[selector]} <arn> or ${AWS_SELECTOR_VARIABLES[selector][1]}.`,
+  );
+}
+
+export function readAwsDeviceFarmInteractionMode(
+  req: LeaseLifecycleContext,
+): AwsCreateRemoteAccessSessionInput['interactionMode'] {
+  const value = req.flags?.awsInteractionMode;
+  if (value === 'INTERACTIVE' || value === 'NO_VIDEO' || value === 'VIDEO_ONLY') return value;
+  return undefined;
+}
 
 export const AWS_DEVICE_FARM_CAPABILITY_OVERRIDES = {
   install: {
@@ -36,6 +103,10 @@ export {
   type AwsDeviceFarmArtifact,
   type AwsDeviceFarmArtifactGroup,
 } from './aws-device-farm-artifacts.ts';
+
+export function readAwsDeviceFarmRegionFromArn(arn: string): string | undefined {
+  return /^arn:[^:]+:devicefarm:([^:]+):/.exec(arn)?.[1];
+}
 
 export type AwsDeviceFarmRemoteAccessSession = {
   arn: string;
@@ -72,25 +143,16 @@ export type AwsCreateRemoteAccessSessionInput = {
 };
 
 export type AwsDeviceFarmWebDriverRuntimeOptions = {
-  clientVersion: string;
+  client: AwsDeviceFarmClient;
   projectArn: string;
   deviceArn: string;
-  region?: string;
-  platform?: CloudWebDriverPlatform;
-  deviceName?: string;
+  platform: CloudWebDriverPlatform;
+  deviceName: string;
   appArn?: string;
-  sessionName?: LeaseValue<string>;
-  webdriverCapabilities?:
-    | Record<string, unknown>
-    | ((lease: DeviceLease) => Record<string, unknown>);
-  client?: AwsDeviceFarmClient;
+  sessionName?: string;
   pollIntervalMs?: number;
   startupTimeoutMs?: number;
   interactionMode?: AwsCreateRemoteAccessSessionInput['interactionMode'];
-  configuration?: AwsCreateRemoteAccessSessionInput['configuration'];
-  deviceId?: CloudWebDriverRuntimeOptions['deviceId'];
-  requestPolicy?: CloudWebDriverRuntimeOptions['requestPolicy'];
-  prepareSession?: CloudWebDriverRuntimeOptions['prepareSession'];
 };
 
 export type AwsCliDeviceFarmClientOptions = {
@@ -134,25 +196,15 @@ export function createAwsCliDeviceFarmClient(
 }
 
 export function createAwsDeviceFarmPrepareSession(
-  options: Required<
-    Pick<
-      AwsDeviceFarmWebDriverRuntimeOptions,
-      'client' | 'platform' | 'deviceName' | 'projectArn' | 'deviceArn'
-    >
-  > &
-    Omit<
-      AwsDeviceFarmWebDriverRuntimeOptions,
-      'client' | 'platform' | 'deviceName' | 'clientVersion'
-    >,
+  options: AwsDeviceFarmWebDriverRuntimeOptions,
 ): CloudWebDriverPrepareSession {
   return async ({ lease, req, base }) => {
     const remoteAccess = await options.client.createRemoteAccessSession({
       projectArn: options.projectArn,
       deviceArn: options.deviceArn,
       appArn: options.appArn,
-      name: resolveLeaseValue(options.sessionName, lease) ?? `agent-device-${lease.leaseId}`,
+      name: options.sessionName ?? `agent-device-${lease.leaseId}`,
       interactionMode: options.interactionMode,
-      configuration: options.configuration,
     });
     // The ARN is a billed session from here on; any failure short of RUNNING
     // must stop it before surfacing, or it bills until AWS reaps it.
@@ -173,20 +225,17 @@ export function createAwsDeviceFarmPrepareSession(
       throw error;
     }
     const deviceName = running.device?.name ?? options.deviceName;
-    const configured =
-      typeof options.webdriverCapabilities === 'function'
-        ? options.webdriverCapabilities(lease)
-        : (options.webdriverCapabilities ?? {});
     const awsDefaults = options.platform === 'android' ? { 'appium:autoLaunch': false } : {};
     return {
       ...base,
       endpoint,
       platform: options.platform,
       deviceName,
-      webdriverCapabilities: buildCloudWebDriverBaseCapabilities(options.platform, deviceName, {
-        ...awsDefaults,
-        ...configured,
-      }),
+      webdriverCapabilities: buildCloudWebDriverBaseCapabilities(
+        options.platform,
+        deviceName,
+        awsDefaults,
+      ),
       cleanup: async () => {
         await options.client.stopRemoteAccessSession(running.arn);
         return { awsDeviceFarmSessionArn: running.arn };

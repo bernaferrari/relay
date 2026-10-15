@@ -71,6 +71,9 @@ enum CommandLaunchPolicy: Equatable {
   /// enforced on iOS only: `notRunningRefusal` is `#if os(iOS)`, the platform that can read an app's
   /// state without launching it. Off iOS these commands keep the activation route they had before
   /// this axis existed, and no refusal can occur there.
+  /// On macOS the policy also decides the foreground question: a read of an app that is running
+  /// behind other windows is served in place without raising it, while a stopped app keeps the
+  /// activating route's launch (#3254; record in #3338).
   case existingApp
   /// Brings the app forward, which bare-launches it when it is not running.
   case mayLaunch
@@ -249,6 +252,7 @@ struct Command: Codable {
   let interactiveOnly: Bool?
   let preferredBackend: String?
   let customActions: Bool?
+  let observeOnly: Bool?
   let depth: Int?
   let scope: String?
   let raw: Bool?
@@ -447,6 +451,11 @@ struct DataPayload: Codable {
   var snapshotQuality: SnapshotQuality?
   /// Set when the capture describes an in-place system surface, not the app itself (#2438).
   var systemSurface: SystemSurfaceProvenancePayload?
+  /// Whether this capture read a modal presentation over the app's own content (#3565). The runner's
+  /// accessibility tree reports no UIKit class names, so a runner capture states `presented` from
+  /// positive evidence and `unknown` otherwise; `absent` belongs to a producer that can read window
+  /// structure, and a tier that classified nothing publishes no key at all.
+  var presentedSurface: PresentedSurface?
   /// The keyboard band this capture measured, when the tier that answered reads keyboards at all
   /// (#2660). Absent means the query-sweep or private-AX tier answered, and the daemon's tap guard
   /// keeps deriving the band from the tree.
@@ -510,6 +519,7 @@ struct DataPayload: Codable {
   var failedStepIndex: Int?
   var sequenceResults: [SequenceStepResult]?
   var targetActivation: TargetActivationFactPayload?
+  var observation: SnapshotObservationPayload?
   /// Present on a screenshot the runner captured from a display it resolved, alongside the
   /// `message` path or `imageBase64` payload that carries the image itself (#2728).
   var screenshotMetadata: ScreenshotMetadataPayload?
@@ -549,6 +559,13 @@ struct KeyboardBandFactPayload: Codable, Equatable {
 struct SystemSurfaceProvenancePayload: Codable {
   let bundleId: String
   let kind: String
+}
+
+struct SnapshotObservationPayload: Codable {
+  var mode = "observe-only"
+  var activationPerformed = false
+  let appState: String
+  var appStateSource = "xcuiapplication-state"
 }
 
 struct SnapshotQualityPayload: Codable {

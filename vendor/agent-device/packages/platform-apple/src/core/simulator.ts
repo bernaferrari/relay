@@ -5,26 +5,14 @@ import { Deadline, retryWithPolicy } from '@agent-device/host-kit/retry';
 
 import { createTtlMemo } from '@agent-device/kernel/ttl-memo';
 import { bootFailureHint, classifyBootFailure } from '@agent-device/provision-kit/boot-diagnostics';
-import { createScopedProvider } from '@agent-device/kernel/scoped-provider';
 
 import {
   IOS_BOOT_TIMEOUT_MS,
   IOS_SIMCTL_LIST_TIMEOUT_MS,
-  IOS_SIMULATOR_FOCUS_TIMEOUT_MS,
+  IOS_SIMULATOR_SHOW_TIMEOUT_MS,
 } from './config.ts';
 import { buildSimctlArgsForDevice, readSimctlDeviceState } from './simctl.ts';
 import { runAppleToolCommand, runXcrun } from './tool-provider.ts';
-
-const simulatorReadiness = createScopedProvider<
-  ((device: DeviceInfo) => Promise<void>) | undefined
->(undefined);
-
-export async function withSimulatorReadiness<T>(
-  ensureReady: (device: DeviceInfo) => Promise<void>,
-  task: () => Promise<T>,
-): Promise<T> {
-  return await simulatorReadiness.run(ensureReady, task);
-}
 
 type SimulatorCommandOptions = {
   signal?: AbortSignal;
@@ -56,10 +44,6 @@ export function markSimulatorBooted(device: DeviceInfo): void {
   simulatorBootedMemo.set(simulatorBootedMemoKey(device), true);
 }
 
-function clearSimulatorBootedMemo(device: DeviceInfo): void {
-  simulatorBootedMemo.delete(simulatorBootedMemoKey(device));
-}
-
 export function requireSimulatorDevice(device: DeviceInfo, command: string): void {
   if (device.kind !== 'simulator') {
     throw new AppError('UNSUPPORTED_OPERATION', `${command} is only supported on iOS simulators`);
@@ -67,10 +51,10 @@ export function requireSimulatorDevice(device: DeviceInfo, command: string): voi
 }
 
 export async function openIosSimulatorApp(options: SimulatorCommandOptions = {}): Promise<void> {
-  await runAppleToolCommand('open', ['-a', 'Simulator'], {
+  await runAppleToolCommand('open', ['-g', '-a', 'Simulator'], {
     allowFailure: true,
     signal: options.signal,
-    timeoutMs: IOS_SIMULATOR_FOCUS_TIMEOUT_MS,
+    timeoutMs: IOS_SIMULATOR_SHOW_TIMEOUT_MS,
   });
 }
 
@@ -80,13 +64,6 @@ export async function ensureBootedSimulator(
 ): Promise<void> {
   if (device.kind !== 'simulator') return;
   options.signal?.throwIfAborted();
-  const ensureReady = simulatorReadiness.resolve();
-  if (ensureReady) {
-    await ensureReady(device);
-    options.signal?.throwIfAborted();
-    return;
-  }
-
   const state = wasSimulatorRecentlyObservedBooted(device)
     ? 'Booted'
     : await getSimulatorState(device, options.signal);
@@ -110,6 +87,17 @@ export async function ensureBootedSimulator(
         exitCode: number;
       }
     | undefined;
+
+  // The retry policy, the deadline classifier, and the final rethrow classify the same failure
+  // against the same captured output. Either capture may still be absent when a classifier runs
+  // — an early boot failure has no bootstatus — so the fallback order reads them live here.
+  const classifyAttempt = (error: unknown) =>
+    classifyBootFailure({
+      error,
+      stdout: bootStatusResult?.stdout ?? bootResult?.stdout,
+      stderr: bootStatusResult?.stderr ?? bootResult?.stderr,
+      context: { platform: 'ios', phase: 'boot' },
+    });
 
   try {
     await retryWithPolicy(
@@ -163,12 +151,7 @@ export async function ensureBootedSimulator(
         maxDelayMs: 2000,
         jitter: 0.2,
         shouldRetry: (error) => {
-          const reason = classifyBootFailure({
-            error,
-            stdout: bootStatusResult?.stdout ?? bootResult?.stdout,
-            stderr: bootStatusResult?.stderr ?? bootResult?.stderr,
-            context: { platform: 'ios', phase: 'boot' },
-          });
+          const reason = classifyAttempt(error);
           return reason !== 'IOS_BOOT_TIMEOUT' && reason !== 'CI_RESOURCE_STARVATION_SUSPECTED';
         },
       },
@@ -176,22 +159,11 @@ export async function ensureBootedSimulator(
         deadline,
         phase: 'boot',
         signal: options.signal,
-        classifyReason: (error) =>
-          classifyBootFailure({
-            error,
-            stdout: bootStatusResult?.stdout ?? bootResult?.stdout,
-            stderr: bootStatusResult?.stderr ?? bootResult?.stderr,
-            context: { platform: 'ios', phase: 'boot' },
-          }),
+        classifyReason: classifyAttempt,
       },
     );
   } catch (error) {
-    const reason = classifyBootFailure({
-      error,
-      stdout: bootStatusResult?.stdout ?? bootResult?.stdout,
-      stderr: bootStatusResult?.stderr ?? bootResult?.stderr,
-      context: { platform: 'ios', phase: 'boot' },
-    });
+    const reason = classifyAttempt(error);
 
     throw new AppError('COMMAND_FAILED', 'iOS simulator failed to boot', {
       platform: 'ios',
@@ -207,26 +179,6 @@ export async function ensureBootedSimulator(
 
   markSimulatorBooted(device);
   await openIosSimulatorApp({ signal: options.signal });
-}
-
-export async function shutdownSimulator(
-  device: DeviceInfo,
-  signal?: AbortSignal,
-): Promise<{
-  success: boolean;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}> {
-  clearSimulatorBootedMemo(device);
-  const args = buildSimctlArgsForDevice(device, ['shutdown', device.id]);
-  const result = await runXcrun(args, { allowFailure: true, timeoutMs: 15_000, signal });
-  return {
-    success: result.exitCode === 0,
-    exitCode: result.exitCode,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
 }
 
 async function getSimulatorState(device: DeviceInfo, signal?: AbortSignal): Promise<string | null> {

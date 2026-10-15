@@ -8,12 +8,11 @@ vi.mock('@agent-device/host-kit/command', async (importOriginal) => ({
   runCmdDetachedMonitored: vi.fn(),
 }));
 
-import { resolveDaemonPaths } from '../../daemon-resolution.ts';
+import { resolveDaemonPaths } from '@agent-device/daemon-contracts/daemon-resolution';
 import { sendToDaemon } from '../daemon-client.ts';
 import { ensureDaemon } from '../daemon-client-lifecycle.ts';
-import { closeLoopbackServer, supportsLoopbackBind } from '../../__tests__/test-utils/loopback.ts';
+import { closeLoopbackServer, supportsLoopbackBind } from '@agent-device/test-kit/loopback';
 import {
-  captureStderr,
   currentDaemonCodeSignature,
   startHttpDaemonFixture,
 } from '../../__tests__/test-utils/daemon-http-fixture.ts';
@@ -26,6 +25,7 @@ import { runCmdDetachedMonitored } from '@agent-device/host-kit/command';
 import { sleep } from '@agent-device/host-kit/retry';
 import { readVersion } from '@agent-device/host-kit/version';
 import {
+  captureStderr,
   installSpawnedHttpDaemon,
   makeTempStateDir,
   writeUnreachableDaemonInfo,

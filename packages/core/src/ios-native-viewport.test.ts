@@ -1,3 +1,4 @@
+import type { LiveIosRunnerListener } from "./ios-runner-listener.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -22,7 +23,12 @@ const receipt = (width = 1112, height = 834) => ({
   geometrySource: "xcui-window-frame",
   bounds: { x: 0, y: 0, width, height },
 });
-const listener = { serial, port: 1234, runnerPid: 123 };
+const listener: LiveIosRunnerListener = {
+  serial,
+  port: 1234,
+  runnerToken: "relay-listener-fixture-token",
+  runnerPid: 123,
+};
 
 test("expired capture facts use one current logical window receipt, including rotation", async () => {
   const target = { targetId: serial, platform: "ios" as const };

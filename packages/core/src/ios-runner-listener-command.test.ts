@@ -100,7 +100,11 @@ test("a live listener snapshot adopts the testCommand port instead of requiring 
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const commands: unknown[] = [];
   const restore = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
@@ -175,7 +179,11 @@ test("a live listener tap uses label/id on the testCommand port", async () => {
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
     assert.equal(listener.port, 50937);
@@ -207,7 +215,11 @@ test("a live listener type uses the focused field on the testCommand port", asyn
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const commands: unknown[] = [];
   const restore = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
@@ -242,7 +254,11 @@ test("a live listener type with an explicit selector does not invent a Grok comp
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
     assert.equal(command.command, "type");
@@ -272,7 +288,11 @@ test("a generic failed live listener type preserves its failure without an uncha
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
     if (command.command === "querySelector") {
@@ -318,7 +338,11 @@ test("a listener snapshot of Copy probe is rejected so recapture cannot learn th
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 57051 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 57051,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
     assert.equal(listener.port, 57051);
@@ -360,7 +384,11 @@ test("a listener snapshot failure uses the runner message, not [object Object]",
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
     if (command.command === "querySelector") {
@@ -397,7 +425,11 @@ test("identifier presence uses the adopted listener instead of SDK find", async 
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
     assert.equal(command.command, "querySelector");
@@ -446,7 +478,11 @@ test("a RUNNER_BUSY identifier query fails closed instead of falling through to 
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   let snapshotCalls = 0;
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
@@ -529,7 +565,11 @@ test("ambiguous same-id listener query ranks the header close as present", async
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
     if (command.command === "querySelector") {
@@ -569,7 +609,11 @@ test("ambiguous same-id listener tap ranks then synth-taps the header close", as
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const taps: Array<Record<string, unknown>> = [];
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
@@ -616,7 +660,11 @@ test("ambiguous different-location same-id stays unresolved", async () => {
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
     if (command.command === "querySelector" || command.command === "tap") {
@@ -681,7 +729,11 @@ test("identifier query returns unique home chrome omitted from the bounded compo
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const model = {
     identifier: "toolbar.model.selector.button",
@@ -722,7 +774,11 @@ test("listener snapshot chrome includes unique SuperGrok labels omitted from the
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const compose = {
     label: "grok-compose",
@@ -794,7 +850,11 @@ test("listener snapshot chrome queries unique attach-sheet ids omitted from home
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const camera = {
     identifier: "ask.toolbar.add.menu.camera",
@@ -889,7 +949,11 @@ test("listener snapshot chrome queries only requested attach-sheet ids when + is
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const camera = {
     identifier: "ask.toolbar.add.menu.camera",
@@ -963,7 +1027,11 @@ test("listener snapshot chrome projects Home from the shared census and omits un
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const idQueries: string[] = [];
   const labelQueries: string[] = [];
@@ -1083,7 +1151,11 @@ test("requested chrome inspect queries only the tap target, not the home catalog
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const compose = {
     label: "grok-compose",
@@ -1155,7 +1227,11 @@ test("listener snapshot chrome queries unique sidebar ids omitted from home n=7"
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const gear = {
     identifier: "sidebar.settings.button",
@@ -1225,7 +1301,11 @@ test("listener snapshot chrome skips attach-sheet ids when unique sidebar gear i
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const gear = {
     identifier: "sidebar.settings.button",
@@ -1296,7 +1376,11 @@ test("label query returns unique chrome omitted from the bounded composer snapsh
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+    }),
   );
   const compose = {
     label: "grok-compose",

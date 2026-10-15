@@ -86,6 +86,7 @@ export type CliFlags = CloudProviderProfileFields &
     snapshotScope?: string;
     snapshotRaw?: boolean;
     snapshotCustomActions?: boolean;
+    snapshotObserveOnly?: boolean;
     snapshotForceFull?: boolean;
     artifact?: string;
     dsym?: string;
@@ -104,6 +105,8 @@ export type CliFlags = CloudProviderProfileFields &
     delayMs?: number;
     /** Fill: publish the live text as a late-bound ${VAR} in a recorded .ad script. */
     recordAs?: string;
+    /** Fill: the text came from the CLI's stdin rather than argv; keep it out of logs and scripts. */
+    textStdin?: boolean;
     durationMs?: number;
     keyframes?: string;
     holdMs?: number;

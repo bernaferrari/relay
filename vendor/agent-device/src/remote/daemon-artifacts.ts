@@ -1,7 +1,13 @@
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
+import type { DaemonArtifact, DaemonResponse } from '@agent-device/kernel/contracts';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  buildRemoteTempArtifactDirPath,
+  buildRemoteTempArtifactPath,
+} from '@agent-device/contracts/daemon-http';
 import { AppError } from '@agent-device/kernel/errors';
-import type { DaemonArtifact, DaemonRequest, DaemonResponse } from '../daemon/daemon-request.ts';
+import { leaseScopeFromRequest } from '@agent-device/contracts/lease-scope';
 import {
   appendRecordingExtensionWhenMissing,
   recordingExtensionForPlatform,
@@ -22,14 +28,14 @@ export type DaemonArtifactEndpoint = {
 
 export type PreparedRemoteRequest = {
   positionals: string[];
-  flags?: DaemonRequest['flags'];
-  installSource?: NonNullable<DaemonRequest['meta']>['installSource'];
+  flags?: DaemonWireRequest['flags'];
+  installSource?: NonNullable<DaemonWireRequest['meta']>['installSource'];
   uploadedArtifactId?: string;
   clientArtifactPaths?: Record<string, string>;
 };
 
 export async function prepareRemoteRequestArtifacts(
-  req: Omit<DaemonRequest, 'token'>,
+  req: Omit<DaemonWireRequest, 'token'>,
   info: DaemonArtifactEndpoint,
   signal: AbortSignal,
 ): Promise<PreparedRemoteRequest> {
@@ -88,7 +94,7 @@ export async function prepareRemoteRequestArtifacts(
  * see is refused here instead of appearing to succeed. Tracked for the return-the-healed-script
  * response plumbing.
  */
-function assertRemoteDaemonSupportsSaveScript(req: Omit<DaemonRequest, 'token'>): void {
+function assertRemoteDaemonSupportsSaveScript(req: Omit<DaemonWireRequest, 'token'>): void {
   if (req.flags?.saveScript === undefined) return;
   throw new AppError(
     'INVALID_ARGS',
@@ -101,7 +107,7 @@ function assertRemoteDaemonSupportsSaveScript(req: Omit<DaemonRequest, 'token'>)
 }
 
 async function prepareRemoteInstallPackage(
-  req: Omit<DaemonRequest, 'token'>,
+  req: Omit<DaemonWireRequest, 'token'>,
   info: DaemonArtifactEndpoint,
   positionals: string[],
   onProgress: UploadProgressSink | undefined,
@@ -123,17 +129,18 @@ async function prepareRemoteInstallPackage(
     baseUrl: info.baseUrl!,
     token: info.token,
     platform: req.flags?.platform,
+    leaseId: leaseScopeFromRequest(req).leaseId,
     onProgress,
     signal,
   });
 }
 
 function applyRemoteArtifactCommand(
-  req: Omit<DaemonRequest, 'token'>,
+  req: Omit<DaemonWireRequest, 'token'>,
   positionals: string[],
-  flags: DaemonRequest['flags'] | undefined,
+  flags: DaemonWireRequest['flags'] | undefined,
   clientArtifactPaths: Record<string, string>,
-): DaemonRequest['flags'] | undefined {
+): DaemonWireRequest['flags'] | undefined {
   const remoteArtifact = prepareRemoteArtifactCommand(req, positionals);
   if (!remoteArtifact) return flags;
   if (remoteArtifact.positionalIndex !== undefined && remoteArtifact.positionalPath !== undefined) {
@@ -149,10 +156,10 @@ function applyRemoteArtifactCommand(
 }
 
 function applyRemoteArtifactFlag(
-  flags: DaemonRequest['flags'] | undefined,
+  flags: DaemonWireRequest['flags'] | undefined,
   flagKey: string,
   flagPath: string | undefined,
-): DaemonRequest['flags'] | undefined {
+): DaemonWireRequest['flags'] | undefined {
   if (flagPath === undefined) return flags;
   return { ...(flags ?? {}), [flagKey]: flagPath };
 }
@@ -179,12 +186,12 @@ function createPreparedRemoteRequest(
 }
 
 async function prepareRemoteInstallSource(
-  req: Omit<DaemonRequest, 'token'>,
+  req: Omit<DaemonWireRequest, 'token'>,
   info: DaemonArtifactEndpoint,
   onProgress: UploadProgressSink | undefined,
   signal: AbortSignal,
 ): Promise<{
-  installSource: NonNullable<DaemonRequest['meta']>['installSource'];
+  installSource: NonNullable<DaemonWireRequest['meta']>['installSource'];
   uploadedArtifactId?: string;
 } | null> {
   const source = req.meta?.installSource;
@@ -222,6 +229,7 @@ async function prepareRemoteInstallSource(
     baseUrl: info.baseUrl!,
     token: info.token,
     platform: req.flags?.platform,
+    leaseId: leaseScopeFromRequest(req).leaseId,
     onProgress,
     signal,
   });
@@ -235,7 +243,7 @@ async function prepareRemoteInstallSource(
 }
 
 function prepareRemoteArtifactCommand(
-  req: Omit<DaemonRequest, 'token'>,
+  req: Omit<DaemonWireRequest, 'token'>,
   positionals: string[],
 ): {
   field: string;
@@ -296,30 +304,30 @@ function prepareRemoteArtifactCommand(
   return null;
 }
 
-function resolveClientArtifactOutputRoot(req: Omit<DaemonRequest, 'token'>): string {
+function resolveClientArtifactOutputRoot(req: Omit<DaemonWireRequest, 'token'>): string {
   const requested = req.flags?.artifactsDir;
   const rawPath = hasNonEmptyString(requested) ? requested : DEFAULT_TEST_ARTIFACTS_ROOT;
   return resolveAbsoluteClientPath(rawPath, req.meta?.cwd);
 }
 
-function recordingFallbackExtension(req: Omit<DaemonRequest, 'token'>): string {
+function recordingFallbackExtension(req: Omit<DaemonWireRequest, 'token'>): string {
   return recordingExtensionForPlatform(req.flags?.platform);
 }
 
-function recordingHasRequestedClientPath(req: Omit<DaemonRequest, 'token'>): boolean {
+function recordingHasRequestedClientPath(req: Omit<DaemonWireRequest, 'token'>): boolean {
   return hasNonEmptyString(req.positionals?.[1]) || hasNonEmptyString(req.flags?.out);
 }
 
 function normalizeRecordingClientArtifactPath(
   localPath: string,
-  req: Omit<DaemonRequest, 'token'>,
+  req: Omit<DaemonWireRequest, 'token'>,
 ): string {
   if (req.flags?.platform !== 'web') return localPath;
   return appendRecordingExtensionWhenMissing(localPath, recordingFallbackExtension(req));
 }
 
 function resolveClientArtifactOutputPath(
-  req: Omit<DaemonRequest, 'token'>,
+  req: Omit<DaemonWireRequest, 'token'>,
   field: 'path' | 'outPath',
   fallbackExtension: string,
   positionalIndex: number = 0,
@@ -341,40 +349,9 @@ function hasNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-const REMOTE_TEMP_DIR = '/tmp';
-
-/** The daemon-host temp path a remote client names for an artifact it downloads afterwards. */
-function buildRemoteTempArtifactPath(prefix: string, extension: string): string {
-  const safeExtension = extension.startsWith('.') ? extension : `.${extension}`;
-  return path.posix.join(REMOTE_TEMP_DIR, `${remoteTempArtifactStem(prefix)}${safeExtension}`);
-}
-
-/** A directory temp path — unlike `buildRemoteTempArtifactPath`, no extension is ever appended. */
-function buildRemoteTempArtifactDirPath(prefix: string): string {
-  return path.posix.join(REMOTE_TEMP_DIR, remoteTempArtifactStem(prefix));
-}
-
-/** Whether `value` has the shape `buildRemoteTempArtifactPath(prefix, extension)` returns. */
-export function isRemoteTempArtifactPath(
-  value: string,
-  prefix: string,
-  extension: string,
-): boolean {
-  const stem = path.posix.basename(value, extension);
-  return (
-    value === path.posix.join(REMOTE_TEMP_DIR, `${stem}${extension}`) &&
-    stem.startsWith(`agent-device-${prefix}-`) &&
-    /^\d+-[a-z0-9]+$/.test(stem.slice(`agent-device-${prefix}-`.length))
-  );
-}
-
-function remoteTempArtifactStem(prefix: string): string {
-  return `agent-device-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 export async function materializeRemoteArtifacts(
   info: DaemonArtifactEndpoint,
-  req: DaemonRequest,
+  req: DaemonWireRequest,
   response: Extract<DaemonResponse, { ok: true }>,
 ): Promise<DaemonResponse> {
   const artifacts = Array.isArray(response.data?.artifacts) ? response.data.artifacts : [];
@@ -412,7 +389,7 @@ export async function materializeRemoteArtifacts(
   return { ok: true, data: nextData };
 }
 
-function resolveMaterializedArtifactPath(artifact: DaemonArtifact, req: DaemonRequest): string {
+function resolveMaterializedArtifactPath(artifact: DaemonArtifact, req: DaemonWireRequest): string {
   if (artifact.localPath && artifact.localPath.trim().length > 0) {
     return artifact.localPath;
   }
@@ -429,7 +406,7 @@ type DownloadRemoteArtifactParams = {
   token: string;
   artifactId: string;
   destinationPath: string;
-  requestScope: DaemonRequest['meta'];
+  requestScope: DaemonWireRequest['meta'];
   timeoutMs?: number;
   /** Whether `destinationPath` is a caller-owned root rather than one file to create. */
   isDirectory?: boolean;

@@ -29,7 +29,8 @@ function sameListener(a: LiveIosRunnerListener, b: LiveIosRunnerListener | null)
     a.serial === b.serial &&
     a.runnerPid === b.runnerPid &&
     a.ownerPid === b.ownerPid &&
-    a.port === b.port,
+    a.port === b.port &&
+    a.runnerToken === b.runnerToken,
   );
 }
 

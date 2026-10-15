@@ -144,6 +144,7 @@ export type RunnerCommand = {
    * because no other backend can carry them.
    */
   customActions?: boolean;
+  observeOnly?: boolean;
   depth?: number;
   scope?: string;
   raw?: boolean;
@@ -299,6 +300,7 @@ const RUNNER_ERROR_CODE_DISPATCH: ReadonlyMap<string, DispatchDisclosure> = new 
   [RUNNER_BUSY_RUNNER_CODE, 'no'],
   [RUNNER_WEDGED_RUNNER_CODE, 'no'],
   [APP_NOT_RUNNING_RUNNER_CODE, 'no'],
+  ['OBSERVATION_UNAVAILABLE', 'no'],
   [SCROLL_KEYBOARD_OCCLUDES_SURFACE_RUNNER_CODE, 'no'],
   [ALERT_NOT_FOUND_RUNNER_CODE, 'no'],
   ...[...RUNNER_SCREEN_CAPTURE_REFUSAL_RUNNER_CODES].map((code) => [code, 'no'] as const),
@@ -459,4 +461,41 @@ function createRunnerCommandId(): string {
 export function assertRunnerRequestActive(requestId: string | undefined): void {
   if (!isRequestCanceled(requestId)) return;
   throw createRequestCanceledError();
+}
+
+// ── Listener endpoint and token ─────────────────────────────────────────────────────────────────
+const RUNNER_TOKEN_HEADER = 'X-Agent-Device-Runner-Token';
+const RUNNER_TOKEN_ENFORCED_HEADER = 'X-Agent-Device-Runner-Auth';
+const RUNNER_TOKEN_BYTES = 24;
+export const RUNNER_TOKEN_UNSUPPORTED_REASON = 'runner_token_unsupported';
+
+/** How to reach one runner generation: its listener port and the token it requires. */
+export type RunnerEndpoint = Readonly<{ port: number; token: string }>;
+
+export function mintRunnerToken(): string {
+  return crypto.randomBytes(RUNNER_TOKEN_BYTES).toString('base64url');
+}
+
+/** What the runner reads at launch to open its listener; see `RunnerTests+Environment.swift`. */
+export function runnerListenerEnv(endpoint: RunnerEndpoint): Record<string, string> {
+  return {
+    AGENT_DEVICE_RUNNER_PORT: String(endpoint.port),
+    AGENT_DEVICE_RUNNER_TOKEN: endpoint.token,
+  };
+}
+
+export function runnerRequestHeaders(endpoint: RunnerEndpoint): Record<string, string> {
+  return { 'Content-Type': 'application/json', [RUNNER_TOKEN_HEADER]: endpoint.token };
+}
+
+/**
+ * Passes a reply only from a runner that declares it requires the token. A runner built before the
+ * token existed listens without one, so it is refused rather than driven.
+ */
+export function requireTokenEnforcingRunner(response: Response): Response {
+  if (response.headers.get(RUNNER_TOKEN_ENFORCED_HEADER) === 'required') return response;
+  throw new AppError('COMMAND_FAILED', 'XCTest runner does not require a listener token', {
+    reason: RUNNER_TOKEN_UNSUPPORTED_REASON,
+    hint: 'Rebuild the runner with this agent-device version. A configured iosXctestrunFile must come from the same version.',
+  });
 }

@@ -6,19 +6,20 @@ import net from 'node:net';
 import { readProcessStartTime } from '@agent-device/host-kit/process';
 import { readVersion } from '@agent-device/host-kit/version';
 import { sendToDaemon } from '../daemon-client.ts';
-import { resolveDaemonPaths } from '../../daemon-resolution.ts';
+import { resolveDaemonPaths } from '@agent-device/daemon-contracts/daemon-resolution';
 import { currentDaemonCodeSignature } from '../../__tests__/test-utils/daemon-http-fixture.ts';
 import {
   closeLoopbackServer,
   listenOnLoopback,
   supportsLoopbackBind,
-} from '../../__tests__/test-utils/loopback.ts';
-import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+} from '@agent-device/test-kit/loopback';
+import { mkdtempForTestSync } from '@agent-device/test-kit/tmp-dir';
 
 const DEVELOPER_DIR = '/Applications/Xcode.app/Contents/Developer';
 
-test.sequential.for([DEVELOPER_DIR, '', undefined])(
+test.for([DEVELOPER_DIR, '', undefined])(
   'sendToDaemon forwards local DEVELOPER_DIR (%s) and strips remote developerDir',
+  { concurrent: false },
   async (developerDir, t) => {
     if (!(await supportsLoopbackBind())) {
       t.skip('loopback listeners are not permitted in this environment');

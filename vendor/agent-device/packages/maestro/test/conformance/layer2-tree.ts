@@ -2,10 +2,8 @@ import type { SnapshotNode, SnapshotState } from '@agent-device/kernel/snapshot'
 import { attachSnapshotClickabilityEvidence } from '@agent-device/contracts/capture';
 import type { MaestroSelector } from '../../src/internal/program-ir.ts';
 import { resolveMaestroTargetFromSnapshot } from '../../src/internal/runtime-targets.ts';
-import {
-  rankMaestroCandidates,
-  selectMaestroPositionMatches,
-} from '../../src/internal/runtime-target-ranking.ts';
+import { rankMaestroCandidates } from '../../src/internal/runtime-target-ranking.ts';
+import { resolveMaestroPositionForTest } from '../../src/internal/runtime-target-ranking.fixtures.ts';
 
 export type Layer2TreeVector = {
   id: string;
@@ -24,6 +22,7 @@ export type Layer2TreeVector = {
   intermediateRelation?: 'below' | 'above' | 'leftOf' | 'rightOf';
   intermediate?: string[];
   clickableFirstMatches?: string[];
+  tapPoint?: { x: number; y: number };
 };
 
 export type Layer2TreeResult = {
@@ -46,7 +45,7 @@ export function checkLayer2TreeVector(vector: Layer2TreeVector): Layer2TreeResul
   const actualSelected = resolution.ok ? [vector.nodes[resolution.node.index]?.key ?? ''] : [];
   const expectedSelected = vector.selected === undefined ? [] : [vector.selected];
   const actualIntermediate = vector.intermediateRelation
-    ? selectMaestroPositionMatches(
+    ? resolveMaestroPositionForTest(
         snapshot,
         vector.intermediateRelation,
         vector.selector[vector.intermediateRelation]!,

@@ -66,6 +66,7 @@ export const RUNTIME_OPERATION_NAMES = [
   'prepareAppleRunner',
   'prepareApplicationOpen',
   'copyClipboard',
+  'querySelector',
   'readAlert',
   'readClipboard',
   'pasteClipboard',

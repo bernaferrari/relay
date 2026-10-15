@@ -39,6 +39,7 @@ export {
   localIdentitiesEqual,
   matchesAncestryPrefix,
   matchesLocalIdentity,
+  nodeRectByIdentity,
   readNodeLocalIdentity,
   readNodeStructuralDenotation,
   siblingOrdinal,
@@ -60,14 +61,19 @@ export {
 
 export {
   isMaestroYamlPath,
+  isReplayBackendId,
   maestroBackendRequiredMessage,
   resolveReplayFormat,
+  unsupportedReplayBackendMessage,
+  type ReplayBackendId,
 } from './internal/format.ts';
 
 export {
   inferFillText,
+  isSensitiveFillText,
   readRecordedInputVariableName,
   recordedInputPlaceholder,
+  sensitiveFillPlaceholder,
   validateRecordedInputVariableName,
 } from './internal/recorded-input.ts';
 

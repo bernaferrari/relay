@@ -1,16 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type { AgentDeviceBackend, BackendSnapshotOptions } from '../../../backend.ts';
+import type { AgentDeviceBackend, BackendSnapshotOptions } from '@agent-device/contracts/backend';
 import { createLocalArtifactAdapter } from '../../../io.ts';
-import {
-  createAgentDevice,
-  createMemorySessionStore,
-  localCommandPolicy,
-} from '../../../runtime.ts';
+import { createAgentDevice } from '../../../runtime.ts';
+import { localCommandPolicy } from '@agent-device/contracts/command-policy';
 import { selector } from './selector-read-utils.ts';
 import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import { createSelectorDevice, selectorReadSnapshot } from './__tests__/test-utils/index.ts';
 import { AppError } from '@agent-device/kernel/errors';
+import { createMemorySessionStore } from '../../../command-runtime/runtime-factory.ts';
 
 test('runtime selectors forward public snapshot options to backend capture', async () => {
   const snapshot = selectorReadSnapshot();

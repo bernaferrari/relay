@@ -10,6 +10,8 @@ dist/*
 !dist/src/
 !dist/src/**
 coverage/
+# rspress output; `pnpm check:doc-links` builds it in the checkout
+website/doc_build/
 .tmp/
 # Per-project agent-device output: test artifacts, metro and tunnel logs
 /.agent-device/

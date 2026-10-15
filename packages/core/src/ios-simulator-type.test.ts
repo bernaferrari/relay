@@ -15,7 +15,12 @@ test("simulator typing never posts through the physical usbmux listener", async 
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, port: 50937, ownerPid: process.pid }),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 50937,
+      ownerPid: process.pid,
+    }),
   );
   const typed: string[] = [];
   let listenerPosts = 0;

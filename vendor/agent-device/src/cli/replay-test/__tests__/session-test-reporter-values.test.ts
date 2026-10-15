@@ -1,3 +1,6 @@
+import type { DaemonWireRequest } from '@agent-device/contracts/command';
+import type { DaemonResponse } from '@agent-device/kernel/contracts';
+import { daemonPlatformServicesFixture } from '@agent-device/daemon/testing/__tests__/platform-services-fixture';
 // Characterization of the shipped reporter contract across the scheduler seam (#1478 P3).
 //
 // P3 moves the scheduler into `packages/replay-test` and makes attempt identity
@@ -11,8 +14,9 @@
 // ADR 0012 attempts a post-failure screen digest through the narrow snapshot interactor seam;
 // these fixtures model no runner, so reject that leaf capture deterministically.
 import { expect, test, vi } from 'vitest';
+import { testCreateCommandSurface } from '../../../__tests__/daemon-composition/command-surface-fixture.ts';
 
-vi.mock('../../../daemon/snapshot-interactor-capture.ts', () => ({
+vi.mock('@agent-device/daemon/testing/snapshot-interactor-capture', () => ({
   captureSnapshotWithInteractor: vi.fn(async () => {
     throw new Error('no device runner available in this test');
   }),
@@ -22,11 +26,10 @@ import fs from 'node:fs';
 
 import path from 'node:path';
 import type { ReplaySuiteResult } from '@agent-device/contracts/replay';
-import { handleSessionCommands } from '../../../daemon/handlers/__tests__/session-command-harness.ts';
-import { SessionStore } from '../../../daemon/session-store.ts';
-import type { DaemonRequest, DaemonResponse } from '../../../daemon/daemon-request.ts';
+import { handleSessionCommands } from '@agent-device/daemon/testing/handlers/__tests__/session-command-harness';
+import { SessionStore } from '@agent-device/daemon/testing/session-store';
 import { withRequestProgressSink } from '@agent-device/host-kit/request';
-import { withTestDeviceInventoryProvider as withDeviceInventoryProvider } from '../../../__tests__/test-utils/device-inventory-gateways.ts';
+import { withTestDeviceInventoryProvider as withDeviceInventoryProvider } from '@agent-device/device-selection/inventory-gateways-fixtures';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import {
   getReplayTestReporterExitCode,
@@ -34,7 +37,7 @@ import {
   runReplayTestReporters,
 } from '../reporters/registry.ts';
 import type { ReplayTestReporter, ReplayTestReporterContext } from '../reporters/types.ts';
-import { mkdtempForTestSync } from '../../../__tests__/test-utils/tmp-dir.ts';
+import { mkdtempForTestSync } from '@agent-device/test-kit/tmp-dir';
 
 type RecordedHook = {
   hook: 'onSuiteStart' | 'onTestStart' | 'onTestStep' | 'onTestResult' | 'onSuiteEnd';
@@ -91,8 +94,8 @@ async function runSuiteThroughReporter(params: {
   root: string;
   requestId: string;
   inputs?: string[];
-  flags?: DaemonRequest['flags'];
-  invoke: (req: DaemonRequest) => Promise<DaemonResponse>;
+  flags?: DaemonWireRequest['flags'];
+  invoke: (req: DaemonWireRequest) => Promise<DaemonResponse>;
   devices?: DeviceInfo[];
 }): Promise<{ hooks: RecordedHook[]; suite: ReplaySuiteResult; exitCode: number }> {
   const { reporter, hooks } = createRecordingReporter();
@@ -102,6 +105,8 @@ async function runSuiteThroughReporter(params: {
       (event) => runReplayTestReporterProgress(reporters, event, reporterContext),
       async () =>
         await handleSessionCommands({
+          createCommandSurface: testCreateCommandSurface,
+          platformServices: daemonPlatformServicesFixture(),
           req: {
             token: 't',
             session: 'default',

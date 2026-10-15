@@ -9,10 +9,7 @@ import {
   runXcrun,
 } from './host.ts';
 import type { ExecBackgroundResult } from '@agent-device/host-kit/command';
-import {
-  buildRunnerSessionXctestrunDeviceCleanupPattern,
-  buildRunnerSessionXctestrunPathCleanupPattern,
-} from './runner-artifact-env.ts';
+import { buildRunnerSessionXctestrunPathCleanupPattern } from './runner-artifact-env.ts';
 import { isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
 import { cleanupTempFile } from './runner-io.ts';
 import { waitForRunner } from './runner-startup-transport.ts';
@@ -65,6 +62,8 @@ export async function disposeRunnerSession(
 ): Promise<void> {
   // From here the session is going away: it still owns the lease and the process is still up, so
   // it can answer a request, and it must not be chosen for new work while it is being taken down.
+  session.retention?.cancel();
+  session.listenerWatch?.close();
   advanceRunnerSessionState(session, 'draining');
   let processExitHandled = false;
   if (options.graceful !== false) {
@@ -97,6 +96,8 @@ export async function abortRunnerSessionsAndPrepProcesses(
   const macOsSessions = activeSessions.filter((session) => isMacOs(session.device));
   const otherSessions = activeSessions.filter((session) => !isMacOs(session.device));
   for (const session of activeSessions) {
+    session.retention?.cancel();
+    session.listenerWatch?.close();
     advanceRunnerSessionState(session, 'draining');
   }
   await signalRunnerSessions(otherSessions, 'SIGINT');
@@ -154,7 +155,7 @@ async function shutdownRunnerSessionGracefully(session: RunnerSession): Promise<
   try {
     await waitForRunner(
       session.device,
-      session.port,
+      session.endpoint,
       withRunnerCommandId({
         command: 'shutdown',
       } as RunnerCommand),
@@ -362,10 +363,9 @@ async function killRunnerProcessTree(
 
 async function killRunnerXcodebuildProcesses(target: RunnerXcodebuildCleanupTarget): Promise<void> {
   const { deviceId } = target;
-  const pattern = `xcodebuild.*test-without-building.*${
-    buildRunnerSessionXctestrunPathCleanupPattern(target.xctestrunPath) ??
-    buildRunnerSessionXctestrunDeviceCleanupPattern(deviceId)
-  }`;
+  const artifactPattern = buildRunnerSessionXctestrunPathCleanupPattern(target.xctestrunPath);
+  if (!artifactPattern) return;
+  const pattern = `xcodebuild.*test-without-building.*${artifactPattern}`;
   for (const signal of ['TERM', 'KILL'] as const) {
     try {
       await runAppleToolCommand('pkill', [`-${signal}`, '-f', pattern], {
