@@ -20,6 +20,7 @@ import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PageLoading } from "./recording-shared";
+import { BrowserWorkspacePage } from "./browser-workspace-page";
 import { PairedWorkspacePanel } from "./paired-workspace-panel";
 
 function displayHost(url: string): string {
@@ -30,7 +31,16 @@ function displayHost(url: string): string {
   }
 }
 
-export function EnvironmentsPage() {
+export function EnvironmentsPage(): import("react").ReactElement {
+  const search = useLocation({ select: (state) => state.search as Record<string, unknown> });
+  return search.view === "workspace" || search.view === "paired" ? (
+    <BrowserWorkspacePage key={String(search.view)} paired={search.view === "paired"} />
+  ) : (
+    <BrowserLibraryPage />
+  );
+}
+
+function BrowserLibraryPage() {
   const { browserSpacesService, queryClient, platform } = useRouteContext({ from: "__root__" });
   const paired = usePairedConfigurationWorkspace(platform);
   const navigate = useNavigate();
@@ -119,6 +129,13 @@ export function EnvironmentsPage() {
         description="Saved browsers you can open, record on, and sign into."
         actions={
           <>
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<Link to="/environments" search={{ view: "workspace" }} />}
+            >
+              Workspace
+            </Button>
             {continuation ? (
               <Button
                 variant="ghost"
@@ -288,23 +305,7 @@ export function EnvironmentsPage() {
           spaces={spaces.data}
           accountsByBrowser={accountsByBrowser}
           onSave={paired.save}
-          onOpenLive={(plan) =>
-            browserSpacesService.openSpace({
-              spaceId: plan.browserId,
-              ...(plan.signedOut
-                ? { account: { kind: "signed-out" as const } }
-                : plan.accountReference || (plan.accountId && plan.accountRevision)
-                  ? {
-                      account: {
-                        kind: "fixture" as const,
-                        reference:
-                          plan.accountReference ??
-                          `authfx:${plan.accountId}:${plan.accountRevision}`,
-                      },
-                    }
-                  : {}),
-            })
-          }
+          onOpenWorkspace={() => navigate({ to: "/environments", search: { view: "paired" } })}
         />
       ) : null}
       {!spaces.isPending && !spaces.error && spaces.data?.length === 0 ? (

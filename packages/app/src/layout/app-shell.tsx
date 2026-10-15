@@ -43,6 +43,9 @@ export function AppShell({ platform }: { platform: Platform }) {
   const immersive =
     routeContract && "chrome" in routeContract && routeContract.chrome === "immersive";
   const runWorkspace = /^\/runs\/[^/]+$/.test(location.pathname);
+  const browserWorkspace =
+    location.pathname === "/environments" &&
+    ["workspace", "paired"].includes(String((location.search as Record<string, unknown>).view));
   const parentPath = parentPathForPath(location.pathname);
   const source = returnDestination((location.search as Record<string, unknown>).returnTo);
   const canGoBack = historyAvailability.canGoBack || Boolean(source || parentPath);
@@ -153,6 +156,17 @@ export function AppShell({ platform }: { platform: Platform }) {
             <ChevronLeft aria-hidden="true" />
           </Button>
 
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="[-webkit-app-region:no-drag] size-9"
+            aria-label="Go forward"
+            onClick={() => router.history.forward()}
+            disabled={!historyAvailability.canGoForward}
+          >
+            <ChevronRight aria-hidden="true" />
+          </Button>
+
           <div className="ml-auto inline-flex items-center gap-0.5">
             <ActivityCenterButton />
           </div>
@@ -161,7 +175,8 @@ export function AppShell({ platform }: { platform: Platform }) {
           id="main-content"
           className={classNames(
             " min-h-0 min-w-0 flex-1 bg-card focus:outline-none",
-            runWorkspace && "min-[721px]:overflow-hidden [scrollbar-gutter:auto]",
+            (runWorkspace || browserWorkspace) &&
+              "min-[721px]:overflow-hidden [scrollbar-gutter:auto]",
             immersive
               ? "overflow-hidden"
               : "overflow-auto overscroll-contain min-[861px]:mx-2 min-[861px]:mb-2 min-[861px]:rounded-xl",

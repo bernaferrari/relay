@@ -9,7 +9,6 @@ import type {
   ProductBrowserSpace,
 } from "../data/browser-spaces-product-service";
 import {
-  openPairedWorkspaceInLive,
   pairedWorkspaceSummary,
   type PairedConfigurationRow,
   type PairedConfigurationWorkspace,
@@ -20,19 +19,13 @@ export function PairedWorkspacePanel({
   spaces,
   accountsByBrowser,
   onSave,
-  onOpenLive,
+  onOpenWorkspace,
 }: {
   workspace: PairedConfigurationWorkspace;
   spaces: readonly ProductBrowserSpace[];
   accountsByBrowser: Readonly<Record<string, readonly ProductBrowserAuthFixture[]>>;
+  onOpenWorkspace: () => Promise<unknown>;
   onSave: (workspace: PairedConfigurationWorkspace) => Promise<void>;
-  onOpenLive: (plan: {
-    browserId: string;
-    accountId?: string;
-    accountRevision?: string;
-    accountReference?: string;
-    signedOut?: true;
-  }) => Promise<unknown>;
 }) {
   const [name, setName] = useState("");
   const [browserId, setBrowserId] = useState(spaces[0]?.id ?? "");
@@ -68,7 +61,7 @@ export function PairedWorkspacePanel({
   });
 
   const openLive = useMutation({
-    mutationFn: () => openPairedWorkspaceInLive({ workspace, openSpace: onOpenLive }),
+    mutationFn: onOpenWorkspace,
   });
 
   return (
@@ -108,9 +101,11 @@ export function PairedWorkspacePanel({
           </ul>
         </div>
       ) : null}
-      {openLive.data ? (
-        <p className="text-sm text-muted-foreground" role="status">
-          Opened {openLive.data.plan.map((row) => row.name).join(", ")}.
+      {openLive.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {openLive.error instanceof Error
+            ? openLive.error.message
+            : "Could not open this workspace."}
         </p>
       ) : null}
       <form

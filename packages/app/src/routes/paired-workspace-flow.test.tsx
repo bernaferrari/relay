@@ -207,24 +207,23 @@ describe("saved Browser and Account workspace", () => {
       for (const root of roots.splice(0)) root.unmount();
     });
     document.body.replaceChildren();
-    await render(platform, browserService(openSpace));
+    const { history } = await render(platform, browserService(openSpace));
 
     expect(document.body.textContent).toContain("3 saved");
     expect(document.body.textContent).toContain("Admin desktop");
     expect(document.body.textContent).toContain("Chrome · chromium");
     expect(document.body.textContent).toContain("Admin");
     await click("Open all side by side");
-    expect(openSpace.mock.calls.map((call) => call[0])).toEqual([
-      {
-        spaceId: "chrome-1",
-        account: { kind: "fixture", reference: `authfx:${adminFixtureId}:1` },
-      },
-      {
-        spaceId: "firefox-1",
-        account: { kind: "fixture", reference: `authfx:${memberFixtureId}:1` },
-      },
-      { spaceId: "webkit-1", account: { kind: "signed-out" } },
-    ]);
-    expect(document.body.textContent).toContain("Opened Admin desktop, Member desktop, Signed out");
+    expect(history.location.search).toBe("?view=paired");
+    expect(openSpace).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('section[aria-label="Admin desktop · Admin"]')).toHaveLength(
+      1,
+    );
+    expect(document.querySelectorAll('section[aria-label="Member desktop · Member"]')).toHaveLength(
+      1,
+    );
+    expect(document.querySelectorAll('section[aria-label="Signed out · Signed out"]')).toHaveLength(
+      1,
+    );
   });
 });

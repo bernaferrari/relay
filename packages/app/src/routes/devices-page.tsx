@@ -476,6 +476,13 @@ export function DevicesPage() {
           description="Open a device or browser and control it freely. Record a test when you’re ready."
           actions={
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={<Link to="/environments" search={{ view: "workspace" }} />}
+              >
+                Browser workspace
+              </Button>
               {!devices.isError ? (
                 <Button
                   variant="ghost"

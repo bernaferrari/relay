@@ -62,6 +62,7 @@ export function LiveTargetCanvas({
   inputScope,
   recoveryAction,
   issueAction,
+  browserFit = "width",
   directBrowser = targetPlatform === "browser" || Boolean(browserContext),
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -87,6 +88,7 @@ export function LiveTargetCanvas({
   recoveryAction?: ReactNode;
   issueAction?: ReactNode;
   directBrowser?: boolean;
+  browserFit?: "width" | "contain";
 }) {
   const [text, setText] = useState("");
   const [tap, setTap] = useState<TapFeedback>();
@@ -292,7 +294,9 @@ export function LiveTargetCanvas({
       <div
         className={
           directBrowser
-            ? "relative flex min-h-0 items-start justify-center overflow-auto bg-muted/40 p-4"
+            ? browserFit === "contain"
+              ? "relative flex min-h-0 items-center justify-center overflow-hidden bg-muted/40 p-3"
+              : "relative flex min-h-0 items-start justify-center overflow-auto bg-muted/40 p-4"
             : rail && !fullscreen.expanded
               ? "relative flex min-h-80 flex-1 items-center justify-center overflow-hidden bg-muted/40"
               : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
@@ -302,7 +306,7 @@ export function LiveTargetCanvas({
           ref={attachCanvas}
           data-slot="capture-live-target"
           className={
-            directBrowser
+            directBrowser && browserFit === "width"
               ? "my-auto block h-auto w-full shrink-0 rounded-lg shadow-md ring-1 ring-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
               : "h-full max-h-full max-w-full min-h-0 min-w-0 touch-none object-contain"
           }
