@@ -58,7 +58,7 @@ test("page tools find visible literal text, wrap matches, zoom across navigation
     assert.equal(await page.evaluate(() => document.documentElement.style.zoom), "1.5");
     await page.goto(`${base}/two`);
     await page.waitForFunction(() => document.documentElement.style.zoom === "1.5");
-    await page.evaluate(() => history.pushState({}, "", "/three"));
+    await page.evaluate(() => window.history.pushState({}, "", "/three"));
     const history = (await applyBrowserPageTool(page, { kind: "browser.history" })).history!;
     assert.deepEqual(
       history.map((row) => row.url),

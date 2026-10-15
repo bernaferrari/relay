@@ -26,6 +26,7 @@ import {
   ChevronUp,
   ChevronDown,
   Camera,
+  LoaderCircle,
 } from "lucide-react";
 
 export function BrowserPageTools({
@@ -43,6 +44,7 @@ export function BrowserPageTools({
     [query, setQuery] = useState("");
   const [find, setFind] = useState<BrowserPageToolResult["find"]>(),
     [zoom, setZoom] = useState(1);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<BrowserPageToolResult["history"]>(),
     [filter, setFilter] = useState("");
   const [pending, setPending] = useState(false),
@@ -61,7 +63,6 @@ export function BrowserPageTools({
       if (result.find) setFind(result.find);
       if (result.zoom !== undefined) setZoom(result.zoom);
       if (result.history) {
-        setFilter("");
         setHistory(result.history);
       }
     } catch {
@@ -69,6 +70,12 @@ export function BrowserPageTools({
     } finally {
       if (request === latest.current) setPending(false);
     }
+  }
+  function openHistory() {
+    setHistory(undefined);
+    setFilter("");
+    setHistoryOpen(true);
+    void run({ kind: "browser.history" });
   }
   function changeZoom(factor: number) {
     void run({
@@ -81,6 +88,8 @@ export function BrowserPageTools({
     setQuery("");
     setFind(undefined);
     void run({ kind: "browser.find", query: "" });
+    const page = scope.current?.parentElement?.querySelector("canvas");
+    (page ?? scope.current?.querySelector("input"))?.focus();
   }
   useEffect(() => {
     if (finding) input.current?.focus();
@@ -103,7 +112,7 @@ export function BrowserPageTools({
         if (event.key.toLowerCase() === "f") {
           setFinding(true);
           input.current?.focus();
-        } else if (historyShortcut) void run({ kind: "browser.history" });
+        } else if (historyShortcut) openHistory();
         else changeZoom(event.key === "0" ? 1 : zoom + (event.key === "-" ? -0.1 : 0.1));
       }
     };
@@ -150,40 +159,39 @@ export function BrowserPageTools({
           <DropdownMenuItem onClick={() => setFinding(true)}>
             <Search aria-hidden="true" /> Find on page
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void run({ kind: "browser.history" })}>
+          <DropdownMenuItem onClick={openHistory}>
             <History aria-hidden="true" /> History
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <div role="group" aria-label="Page zoom" className="flex items-center gap-1 px-2 py-1">
             <span className="mr-auto text-sm">Zoom</span>
-            <Button
-              size="icon-sm"
-              variant="ghost"
+            <DropdownMenuItem
+              render={<Button type="button" size="icon-sm" variant="ghost" />}
+              closeOnClick={false}
               aria-label="Zoom out"
               disabled={pending || zoom <= 0.25}
               onClick={() => changeZoom(zoom - 0.1)}
             >
               <Minus aria-hidden="true" />
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="w-14"
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              render={<Button type="button" size="sm" variant="ghost" className="w-14" />}
+              closeOnClick={false}
               aria-label="Reset zoom"
               disabled={pending}
               onClick={() => changeZoom(1)}
             >
               <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              render={<Button type="button" size="icon-sm" variant="ghost" />}
+              closeOnClick={false}
               aria-label="Zoom in"
               disabled={pending || zoom >= 3}
               onClick={() => changeZoom(zoom + 0.1)}
             >
               <Plus aria-hidden="true" />
-            </Button>
+            </DropdownMenuItem>
           </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={screenshot}>
@@ -257,7 +265,7 @@ export function BrowserPageTools({
           </Button>
         </div>
       ) : null}
-      {error ? (
+      {error && !historyOpen ? (
         <p
           role="status"
           className="absolute top-full inset-x-3 z-30 rounded-lg border border-border bg-popover px-3 py-2 text-xs text-destructive shadow-sm"
@@ -266,9 +274,9 @@ export function BrowserPageTools({
         </p>
       ) : null}
       <Dialog
-        open={history !== undefined}
+        open={historyOpen}
         onOpenChange={(open) => {
-          if (!open) setHistory(undefined);
+          setHistoryOpen(open);
         }}
       >
         <DialogContent>
@@ -281,7 +289,29 @@ export function BrowserPageTools({
             placeholder="Search history"
           />
           <div className="max-h-80 overflow-y-auto">
-            {matches?.length ? (
+            {history === undefined ? (
+              error ? (
+                <div className="grid justify-items-center gap-2 py-6">
+                  <p role="alert" className="text-sm text-muted-foreground">
+                    Couldn’t load history.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={openHistory} disabled={pending}>
+                    Try again
+                  </Button>
+                </div>
+              ) : (
+                <p
+                  role="status"
+                  className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground"
+                >
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-4 animate-spin motion-reduce:animate-none"
+                  />{" "}
+                  Loading history…
+                </p>
+              )
+            ) : matches?.length ? (
               matches.map((row, index) => (
                 <Button
                   key={`${row.url}:${index}`}
@@ -289,7 +319,7 @@ export function BrowserPageTools({
                   className="h-auto w-full justify-start text-left"
                   onClick={() => {
                     void navigate(row.url).then((sent) => {
-                      if (sent) setHistory(undefined);
+                      if (sent) setHistoryOpen(false);
                     });
                   }}
                 >

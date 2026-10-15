@@ -45,7 +45,10 @@ export function BrowserSignInImport({
     [error, setError] = useState<string>(),
     [pending, setPending] = useState(false);
   const domains = [
-    ...new Set(state?.cookies.map((cookie) => cookie.domain.replace(/^\./u, "")) ?? []),
+    ...new Set([
+      ...(state?.cookies.map((cookie) => cookie.domain.replace(/^\./u, "")) ?? []),
+      ...(state?.origins.map((row) => new URL(row.origin).hostname) ?? []),
+    ]),
   ];
   if (!service.importAuthenticationFixture) return null;
   return (
@@ -155,7 +158,10 @@ export function BrowserSignInImport({
           </Field>
           {state ? (
             <p className="text-xs text-muted-foreground">
-              {state.cookies.length} cookies
+              {state.cookies.length} {state.cookies.length === 1 ? "cookie" : "cookies"}
+              {state.origins.length
+                ? ` · ${state.origins.length} site${state.origins.length === 1 ? "" : "s"}`
+                : ""}
               {domains.length
                 ? ` · ${domains.slice(0, 4).join(", ")}${domains.length > 4 ? "…" : ""}`
                 : ""}

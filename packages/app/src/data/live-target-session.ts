@@ -23,7 +23,6 @@ import type {
 } from "@relay/protocol";
 import type { StepTarget } from "@relay/protocol";
 import {
-  BROWSER_DEVICE_BINARY_FRAME_CONTENT_TYPE,
   MAX_BROWSER_DEVICE_BINARY_FRAME_BYTES,
   MAX_BROWSER_DEVICE_BINARY_METADATA_BYTES,
 } from "@relay/protocol";

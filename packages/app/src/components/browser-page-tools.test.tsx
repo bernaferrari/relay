@@ -83,3 +83,62 @@ it("scopes browser shortcuts, debounces Find and clears it on Escape", async () 
     vi.useRealTimers();
   }
 });
+
+it("opens history immediately and keeps the filter typed while entries load", async () => {
+  const host = document.createElement("section");
+  document.body.append(host);
+  const root = createRoot(host),
+    send = vi.fn(async () => true);
+  let resolveHistory!: (value: { history: { url: string; title: string }[] }) => void;
+  const history = new Promise<{ history: { url: string; title: string }[] }>((resolve) => {
+    resolveHistory = resolve;
+  });
+  try {
+    await act(async () =>
+      root.render(
+        <BrowserAddressBar
+          url="http://example.test"
+          disabled={false}
+          send={send}
+          tools={async () => history}
+        />,
+      ),
+    );
+    const address = host.querySelector<HTMLInputElement>('input[aria-label="Web address"]')!;
+    address.focus();
+    await act(async () => {
+      address.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "h", ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    });
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("Loading history…");
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search history"]')!;
+    expect(input.disabled).toBe(false);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "second",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      resolveHistory({
+        history: [
+          { title: "First page", url: "http://example.test/first" },
+          { title: "Second page", url: "http://example.test/second" },
+        ],
+      }),
+    );
+    expect(input.value).toBe("second");
+    expect(document.body.textContent).not.toContain("First page");
+    const second = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((row) =>
+      row.textContent?.includes("Second page"),
+    )!;
+    await act(async () => second.click());
+    expect(send).toHaveBeenLastCalledWith({ kind: "navigate", url: "http://example.test/second" });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
