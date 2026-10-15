@@ -58,9 +58,8 @@ describe("CaptureReviewPanel selection", () => {
     );
     expect(host.textContent).toContain("Look for: Save is visible");
     expect(document.querySelector('[data-slot="popover-content"]')).toBeNull();
-    const details = [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Capture details"),
-    )!;
+    const details = host.querySelector<HTMLButtonElement>('[aria-label="Capture details"]')!;
+    expect(details.closest('[aria-label="Screenshot tools"]')).not.toBeNull();
     await act(async () => details.click());
     const metadata = document.querySelector('[data-slot="popover-content"]')!;
     expect(metadata.querySelector("dl")?.textContent).toContain("Full imageframes/001.png");
@@ -426,6 +425,9 @@ it("keeps bulk selection out of screenshot browsing until requested", () => {
   expect(host.querySelector('[aria-label="Selected screenshot"]')?.textContent).not.toContain(
     "Pending review",
   );
+  const list = host.querySelector('[aria-label="Screenshots for review"]')!;
+  const toolbar = host.querySelector('[aria-label="Screenshot selection"]')!;
+  const siblingCount = list.parentElement!.children.length;
   const button = [...host.querySelectorAll("button")].find(
     (node) => node.textContent === "Select screenshots",
   )!;
@@ -434,14 +436,15 @@ it("keeps bulk selection out of screenshot browsing until requested", () => {
   const checkbox = host.querySelector<HTMLElement>('[role="checkbox"]')!;
   act(() => checkbox.click());
   expect(checkbox.getAttribute("aria-checked")).toBe("true");
+  expect(toolbar.textContent).toContain("1 selected");
+  expect(list.parentElement!.children.length).toBe(siblingCount);
+  expect(host.querySelector('[aria-label="Capture details"]')).toBeNull();
   act(() =>
     checkbox.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
   );
   expect(selectCapture).not.toHaveBeenCalled();
   act(() =>
-    [...host.querySelectorAll("button")]
-      .find((node) => node.textContent === "Done selecting")!
-      .click(),
+    host.querySelector<HTMLButtonElement>('[aria-label="Cancel screenshot selection"]')!.click(),
   );
   expect(host.querySelector('[role="checkbox"]')).toBeNull();
 });

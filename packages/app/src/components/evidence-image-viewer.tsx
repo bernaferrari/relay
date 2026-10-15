@@ -9,7 +9,7 @@ import {
   DialogTrigger,
 } from "@relay/ui-react/components/dialog";
 import { Expand, Minus, Plus } from "lucide-react";
-import { useState, type CSSProperties } from "react";
+import { useState, type ReactNode, type CSSProperties } from "react";
 import type { ReportEvidenceItem } from "../data/run-product-service";
 
 /** Opens the exact saved frame. Scaling never substitutes another step's image. */
@@ -17,10 +17,12 @@ export function EvidenceImageViewer({
   frame,
   onError,
   className,
+  details,
 }: {
   frame: ReportEvidenceItem;
   onError(): void;
   className?: string;
+  details?: ReactNode;
 }) {
   const [zoom, setZoom] = useState(0);
   const [open, setOpen] = useState(false);
@@ -41,87 +43,93 @@ export function EvidenceImageViewer({
           setNaturalSize({ src: frame.media!.src, width: event.currentTarget.naturalWidth })
         }
       />
-      <Dialog
-        open={open}
-        onOpenChange={(value) => {
-          setOpen(value);
-          if (!value) setZoom(0);
-        }}
-      >
-        <DialogTrigger
-          render={
-            <Button
-              className="absolute right-3 top-3"
-              variant="secondary"
-              size="icon-sm"
-              aria-label="Inspect screenshot"
-              title="Inspect screenshot"
+      <div className="absolute right-3 top-3 flex items-center gap-1" aria-label="Screenshot tools">
+        {details}
+        <Dialog
+          open={open}
+          onOpenChange={(value) => {
+            setOpen(value);
+            if (!value) setZoom(0);
+          }}
+        >
+          <DialogTrigger
+            render={
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                aria-label="Inspect screenshot"
+                title="Inspect screenshot"
+              >
+                <Expand aria-hidden="true" />
+              </Button>
+            }
+          />
+          <DialogContent className="flex h-[92dvh] w-[96vw] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+            <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border py-4 pr-14 pl-5">
+              <div className="min-w-0">
+                <DialogTitle className="text-sm">{frame.title}</DialogTitle>
+                <DialogDescription className="mt-1 text-xs">
+                  Saved screenshot · zoom in to inspect details
+                </DialogDescription>
+              </div>
+              <div className="flex items-center gap-1" aria-label="Screenshot zoom">
+                <Button
+                  size="sm"
+                  variant={zoom === 0 ? "secondary" : "ghost"}
+                  onClick={() => setZoom(0)}
+                >
+                  Fit
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Zoom out"
+                  disabled={zoom === 0}
+                  onClick={() => setZoom((value) => Math.max(0, value - 1))}
+                >
+                  <Minus aria-hidden="true" />
+                </Button>
+                <span className="min-w-12 text-center text-xs tabular-nums" aria-live="polite">
+                  {zoom === 0 ? "Fit" : `${zoom * 100}%`}
+                </span>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Zoom in"
+                  disabled={zoom === 4 || !imageWidth}
+                  onClick={() => setZoom((value) => Math.min(4, value + 1))}
+                >
+                  <Plus aria-hidden="true" />
+                </Button>
+              </div>
+            </header>
+            <div
+              className={`min-h-0 flex-1 overflow-auto bg-muted/20 p-4 ${zoom === 0 ? "flex items-center justify-center" : ""}`}
+              tabIndex={0}
+              role="region"
+              aria-label="Screenshot inspection area"
             >
-              <Expand aria-hidden="true" />
-            </Button>
-          }
-        />
-        <DialogContent className="flex h-[92dvh] w-[96vw] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
-          <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border py-4 pr-14 pl-5">
-            <div className="min-w-0">
-              <DialogTitle className="text-sm">{frame.title}</DialogTitle>
-              <DialogDescription className="mt-1 text-xs">
-                Saved screenshot · zoom in to inspect details
-              </DialogDescription>
+              <ReportImage
+                media={frame.media}
+                alt={frame.title}
+                width={frame.media.width}
+                height={frame.media.height}
+                className={
+                  zoom === 0
+                    ? "max-h-full max-w-full object-contain"
+                    : "w-(--zoom-width) max-w-none"
+                }
+                style={
+                  zoom
+                    ? ({ "--zoom-width": `${imageWidth! * zoom}px` } as CSSProperties)
+                    : undefined
+                }
+                onError={onError}
+              />
             </div>
-            <div className="flex items-center gap-1" aria-label="Screenshot zoom">
-              <Button
-                size="sm"
-                variant={zoom === 0 ? "secondary" : "ghost"}
-                onClick={() => setZoom(0)}
-              >
-                Fit
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Zoom out"
-                disabled={zoom === 0}
-                onClick={() => setZoom((value) => Math.max(0, value - 1))}
-              >
-                <Minus aria-hidden="true" />
-              </Button>
-              <span className="min-w-12 text-center text-xs tabular-nums" aria-live="polite">
-                {zoom === 0 ? "Fit" : `${zoom * 100}%`}
-              </span>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Zoom in"
-                disabled={zoom === 4 || !imageWidth}
-                onClick={() => setZoom((value) => Math.min(4, value + 1))}
-              >
-                <Plus aria-hidden="true" />
-              </Button>
-            </div>
-          </header>
-          <div
-            className={`min-h-0 flex-1 overflow-auto bg-muted/20 p-4 ${zoom === 0 ? "flex items-center justify-center" : ""}`}
-            tabIndex={0}
-            role="region"
-            aria-label="Screenshot inspection area"
-          >
-            <ReportImage
-              media={frame.media}
-              alt={frame.title}
-              width={frame.media.width}
-              height={frame.media.height}
-              className={
-                zoom === 0 ? "max-h-full max-w-full object-contain" : "w-(--zoom-width) max-w-none"
-              }
-              style={
-                zoom ? ({ "--zoom-width": `${imageWidth! * zoom}px` } as CSSProperties) : undefined
-              }
-              onError={onError}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      </div>
     </>
   );
 }

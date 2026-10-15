@@ -16,6 +16,7 @@ import { Check, Circle, CircleAlert, Play, Pause, ChevronLeft, ChevronRight } fr
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { framePathsForTraceStep, type ProductRunReportOverview } from "../data/run-product-service";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
+import { CaptureDetails } from "./run-capture-details";
 import { CaptureReviewPanel } from "./run-capture-review-panel";
 import { initialRunPanel, timelineStateLabel, type RunPanel } from "./run-workbench-presentation";
 import { selectRunCaptureFrames } from "./run-capture-selection";
@@ -361,6 +362,16 @@ export function RunWorkbench({
                   actionBounds={showingCapture ? undefined : step.actionBounds}
                   beforeFramePath={showingCapture ? undefined : step.beforeFramePath}
                   fill
+                  detailsForFrame={(frame) => {
+                    const matches = reviewItems.filter((item) => item.framePath === frame.id);
+                    const item =
+                      showingCapture && selectedReview && matches.includes(selectedReview)
+                        ? selectedReview
+                        : matches.length === 1
+                          ? matches[0]
+                          : undefined;
+                    return item ? <CaptureDetails item={item} /> : undefined;
+                  }}
                   reviewControlsForFrame={(frame) => {
                     const matches = frame
                       ? reviewItems.filter(

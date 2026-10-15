@@ -2,19 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
-import { Info, SquareCheck } from "lucide-react";
+import { X, SquareCheck } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import {
   captureReviewAdvanceIndex,
   decidedByReference,
   captureReviewQueueFrameKey,
   captureReviewQueueItemKey,
   destIdentityReviewItems,
-  formatCaptureReviewConfiguration,
   formatCaptureReviewCoverageSummary,
-  formatCaptureReviewObservedSession,
   planCaptureReviewScreenLabel,
   type CaptureReviewAction,
   type CaptureReviewConfiguration,
@@ -22,6 +19,7 @@ import {
   type CaptureReviewQueue,
 } from "@relay/protocol";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
+import { CaptureDetails } from "./run-capture-details";
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReportImage } from "../components/report-image";
 import type { ReportEvidenceItem } from "../data/run-product-service";
@@ -140,10 +138,6 @@ export function CaptureReviewPanel({
         (item) => item.id === captureReviewQueueFrameKey({ ...selected, ...selectedMeta }),
       )
     : undefined;
-  const configuration = [
-    ...formatCaptureReviewConfiguration(selected?.configuration ?? fallbackConfiguration),
-    ...formatCaptureReviewObservedSession(selected?.observed),
-  ];
   const bulkItems = destItems.filter((item) => {
     const key = captureReviewQueueItemKey({ ...item, ...planFields(item) });
     return selectedIds.has(key) && reviewable(item);
@@ -246,20 +240,45 @@ export function CaptureReviewPanel({
           </div>
         ) : null}
         {!showImage && canSelect ? (
-          <Button
-            size="sm"
-            variant={selecting ? "secondary" : "outline"}
-            className="min-h-11 w-full justify-center"
-            aria-pressed={selecting}
-            disabled={busy}
-            onClick={() => {
-              setSelecting(!selecting);
-              setSelectedIds(new Set());
-            }}
-          >
-            <SquareCheck className="size-4" />
-            {selecting ? "Done selecting" : "Select screenshots"}
-          </Button>
+          <div className="flex h-11 min-w-0 items-center gap-1" aria-label="Screenshot selection">
+            {bulkItems.length ? (
+              <>
+                <CaptureReviewDecisions
+                  busy={busy}
+                  bulkCount={bulkItems.length}
+                  onReview={(action, note) => onReviewMany!(action, bulkItems, note)}
+                />
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="size-10 shrink-0"
+                  aria-label="Cancel screenshot selection"
+                  disabled={busy}
+                  onClick={() => {
+                    setSelecting(false);
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  <X aria-hidden="true" />
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant={selecting ? "secondary" : "outline"}
+                className="h-11 w-full justify-center"
+                aria-pressed={selecting}
+                disabled={busy}
+                onClick={() => {
+                  setSelecting(!selecting);
+                  setSelectedIds(new Set());
+                }}
+              >
+                <SquareCheck className="size-4" />
+                {selecting ? "Cancel selection" : "Select screenshots"}
+              </Button>
+            )}
+          </div>
         ) : null}
         {nextPendingIndex !== undefined ? (
           <Button
@@ -276,13 +295,6 @@ export function CaptureReviewPanel({
           >
             Next unreviewed
           </Button>
-        ) : null}
-        {onReviewMany && !showImage && bulkItems.length > 0 ? (
-          <CaptureReviewDecisions
-            busy={busy}
-            bulkCount={bulkItems.length}
-            onReview={(action, note) => onReviewMany(action, bulkItems, note)}
-          />
         ) : null}
         <ul
           className={
@@ -412,46 +424,6 @@ export function CaptureReviewPanel({
           selected.lookFor !== caption(selected, selectedIndex) ? (
             <p className="text-sm text-muted-foreground">Look for: {selected.lookFor}</p>
           ) : null}
-          {selected.framePath ||
-          selectedMeta.runId ||
-          configuration.length ||
-          selected.caption !== caption(selected, selectedIndex) ? (
-            <div className="order-last border-t border-border/60 pt-3">
-              <Popover>
-                <PopoverTrigger
-                  render={
-                    <Button variant="outline" size="sm" className="min-h-11 w-full justify-start" />
-                  }
-                >
-                  <Info className="size-4 text-muted-foreground" />
-                  Capture details
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  side="top"
-                  className="max-h-[70dvh] w-80 max-w-[calc(100vw-2rem)] overflow-auto p-4"
-                >
-                  <h3 className="text-sm font-medium">Capture details</h3>
-                  <dl className="grid gap-3 text-xs leading-5">
-                    {[
-                      ["Configuration", configuration.join(" · ")],
-                      ["Capture", selected.caption],
-                      ["Run", selectedMeta.runId],
-                      ["Full image", selected.framePath],
-                      ["Attempt", selected.attempt ? String(selected.attempt) : undefined],
-                    ].map(([label, value]) =>
-                      value ? (
-                        <div key={label} className="space-y-0.5">
-                          <dt className="text-muted-foreground">{label}</dt>
-                          <dd className="wrap-anywhere">{value}</dd>
-                        </div>
-                      ) : null,
-                    )}
-                  </dl>
-                </PopoverContent>
-              </Popover>
-            </div>
-          ) : null}
           {(showImage && (selected.status !== "pending" || !onReview)) ||
           selected.status === "missing" ||
           selectedMeta.blocked ? (
@@ -493,6 +465,9 @@ export function CaptureReviewPanel({
               <EvidenceImageViewer
                 key={frame.id}
                 frame={frame}
+                details={
+                  <CaptureDetails item={selected} fallbackConfiguration={fallbackConfiguration} />
+                }
                 onError={() => undefined}
                 className="max-h-[min(70vh,42rem)] w-full max-w-full object-contain"
               />

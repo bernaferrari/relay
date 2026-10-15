@@ -77,13 +77,16 @@ export function CaptureReviewDecisions({
       }
       aria-busy={busy || saving}
     >
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className="flex min-h-10 items-center justify-between gap-2">
         {reviewStatus === "accepted" || status || bulkCount || disabled ? (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+          <p
+            className="flex min-w-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground"
+            role="status"
+          >
             {busy || saving ? (
               "Saving decision…"
             ) : bulkCount ? (
-              `${bulkCount} ${bulkCount === 1 ? "screenshot" : "screenshots"} selected`
+              `${bulkCount} selected`
             ) : unavailable ? (
               "Load the screenshot to review it"
             ) : reviewStatus === "accepted" ? (
@@ -95,22 +98,33 @@ export function CaptureReviewDecisions({
             )}
           </p>
         ) : null}
-        <div className={prominent ? "flex w-full items-center gap-1" : "flex items-center gap-1"}>
+        <div
+          className={
+            prominent ? "flex w-full items-center gap-1" : "flex shrink-0 items-center gap-1"
+          }
+        >
           {reviewStatus !== "accepted" ? (
             <Button
-              size={prominent ? "lg" : "sm"}
-              className={prominent ? "min-h-10 flex-1" : "min-h-10"}
+              size={bulkCount ? "icon-sm" : prominent ? "lg" : "sm"}
+              className={bulkCount ? "size-10" : prominent ? "min-h-10 flex-1" : "min-h-10"}
               variant={prominent ? "default" : "secondary"}
               disabled={disabled}
               onClick={() => void submit("accept")}
             >
-              <Check className="size-4" aria-hidden="true" /> Looks correct
+              <Check className="size-4" aria-hidden="true" />
+              <span className={bulkCount ? "sr-only" : undefined}>Looks correct</span>
               <span className="sr-only">{suffix}</span>
             </Button>
           ) : null}
           <Button
-            size={prominent ? "lg" : "sm"}
-            className={prominent && reviewStatus === "accepted" ? "min-h-10 flex-1" : "min-h-10"}
+            size={bulkCount ? "icon-sm" : prominent ? "lg" : "sm"}
+            className={
+              bulkCount
+                ? "size-10"
+                : prominent && reviewStatus === "accepted"
+                  ? "min-h-10 flex-1"
+                  : "min-h-10"
+            }
             variant={prominent ? "outline" : "ghost"}
             disabled={disabled}
             aria-expanded={reportOpen}
@@ -120,7 +134,8 @@ export function CaptureReviewDecisions({
               setError(undefined);
             }}
           >
-            <Flag className="size-4" aria-hidden="true" /> Report issue
+            <Flag className="size-4" aria-hidden="true" />
+            <span className={bulkCount ? "sr-only" : undefined}>Report issue</span>
             <span className="sr-only">{suffix}</span>
           </Button>
           <DropdownMenu>
@@ -153,43 +168,55 @@ export function CaptureReviewDecisions({
           </DropdownMenu>
         </div>
       </div>
-      {reportOpen ? (
-        <form
-          className="grid gap-3 border-t border-border/60 pt-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit("report-issue");
-          }}
-        >
-          <label htmlFor={noteId} className="text-sm font-medium">
-            What looks wrong? <span className="font-normal text-muted-foreground">(optional)</span>
-          </label>
-          <Textarea
-            id={noteId}
-            aria-label="Issue note"
-            autoFocus
-            value={note}
-            disabled={disabled}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="Describe the issue in this screenshot…"
-          />
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent>
+          <DialogTitle>Report an issue</DialogTitle>
+          <DialogDescription>
+            Describe what looks wrong in {bulkCount ? "these screenshots" : "this screenshot"}.
+          </DialogDescription>
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit("report-issue");
+            }}
+          >
+            <label htmlFor={noteId} className="text-sm font-medium">
+              What looks wrong?{" "}
+              <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <Textarea
+              id={noteId}
+              aria-label="Issue note"
+              autoFocus
+              value={note}
               disabled={disabled}
-              onClick={() => setReportOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" size="sm" disabled={disabled}>
-              Save issue{suffix}
-            </Button>
-          </div>
-        </form>
-      ) : null}
-      {error ? (
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="Describe the issue in this screenshot…"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={disabled}
+                onClick={() => setReportOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={disabled}>
+                Save issue{suffix}
+              </Button>
+            </div>
+            {error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
+          </form>
+        </DialogContent>
+      </Dialog>
+      {error && !reportOpen ? (
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>

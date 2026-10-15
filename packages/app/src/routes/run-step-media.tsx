@@ -16,6 +16,7 @@ export function StepMedia({
   controls,
   masks,
   reviewControlsForFrame,
+  detailsForFrame,
 }: {
   frames: readonly ReportEvidenceItem[];
   unlinked?: boolean;
@@ -24,6 +25,7 @@ export function StepMedia({
   beforeFramePath?: string;
   controls?: ReactNode;
   masks?: readonly CaptureReviewMask[];
+  detailsForFrame?: (frame: ReportEvidenceItem) => ReactNode;
   reviewControlsForFrame?: (frame: ReportEvidenceItem | undefined) => ReactNode;
 }) {
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
@@ -91,6 +93,7 @@ export function StepMedia({
           <EvidenceImageViewer
             key={frame.id}
             frame={frame}
+            details={detailsForFrame?.(frame)}
             className={fill ? "h-full w-full object-contain object-top" : undefined}
             onError={() => setFailed(true)}
           />
@@ -125,7 +128,7 @@ export function StepMedia({
         )}
       </div>
       {reviewControls ? (
-        <div className="shrink-0 border-t border-border/40 bg-background/20 px-4 py-4">
+        <div className="shrink-0 border-t border-border/40 bg-background/20 px-3 py-1.5">
           {reviewControls}
         </div>
       ) : null}

@@ -100,10 +100,10 @@ describe("screenshot issue note", () => {
     )!;
     await act(async () => disclosure.click());
     expect(onReview).not.toHaveBeenCalled();
-    const input = host.querySelector<HTMLTextAreaElement>('[aria-label="Issue note"]');
+    const input = document.querySelector<HTMLTextAreaElement>('[aria-label="Issue note"]');
     if (!input) throw new Error("issue note missing");
     await typeNote(input, "Save overlaps the description");
-    const report = [...host.querySelectorAll("button")].find((button) =>
+    const report = [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Save issue"),
     );
     if (!report) throw new Error("report issue missing");
@@ -112,6 +112,9 @@ describe("screenshot issue note", () => {
     });
     expect(onReview).toHaveBeenCalledWith("report-issue", "Save overlaps the description");
     expect(input.value).toBe("Save overlaps the description");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Your decision wasn’t saved",
+    );
 
     onReview.mockResolvedValueOnce(true);
     await act(async () => {
