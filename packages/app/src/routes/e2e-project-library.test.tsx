@@ -132,7 +132,7 @@ it("requires explicit project trust, displays authoritative source, and opens re
     await act(async () => {});
     expect(document.body.textContent).toContain("Evidence imported");
   });
-  expect(document.body.textContent).toContain("1 captures produced");
+  expect(document.body.textContent).toContain("1 capture produced");
   expect(document.body.textContent).toContain("1 pending review");
   expect(document.querySelector('a[href="/runs/retained"]')?.textContent).toBe(
     "Account settings · web",

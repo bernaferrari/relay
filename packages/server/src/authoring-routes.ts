@@ -1,4 +1,4 @@
-import { disposeAuthoringScreenshots, pixelFingerprint } from "./authoring-observation.js";
+import { pixelFingerprint } from "./authoring-observation.js";
 import {
   captureAuthoringObservation,
   authoringObservationDependencies,
@@ -6,7 +6,6 @@ import {
 } from "./authoring-observation.js";
 export { captureAuthoringObservation } from "./authoring-observation.js";
 import { InputNotDispatchedError } from "@relay/core";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type http from "node:http";
 import {
@@ -23,9 +22,7 @@ import {
   currentOperationContext,
   describeRecipeStep,
   IosMutationOutcomeUnknownError,
-  isBlankScreenshot,
   listDevices,
-  observeVisualScreenFingerprint,
   proposeAuthoringRawOptimizations,
   runRecipeStep,
   resolveIosLaunchBundleId,
@@ -99,70 +96,20 @@ function latestRevisionOf(session: AuthoringSession): AuthoringSession {
   };
 }
 
-/**
- * Retain current selectors for Android/browser replay endpoints. iOS keeps an
- * immediate pixels-only endpoint because its delayed XCTest query cannot
- * establish current geometry after a mutation.
- */
+/** Replay endpoints become saved map sources. Capture the same coherent
+ * observation as recording so a successful review retains executable controls
+ * and iOS logical bounds. Stale/unavailable semantics remain unproven. */
 export async function captureAuthoringReplayActionEndpoint(
   session: AuthoringSession,
   dependencies: AuthoringObservationDependencies = authoringObservationDependencies,
 ): Promise<CapturedAuthoringObservation> {
-  // Android's independent capture transports and browser DOM snapshots use
-  // the normal observation path. Persist a fresh tree with each endpoint so
-  // edited actions can become an executable map path on that exact profile.
-  if (session.target.kind === "browser" || session.target.platform === "android") {
+  const captured = await captureAuthoringObservation(session, dependencies);
+  if (session.target.platform === "ios" && captured.proof?.pixels.bracket?.status === "changed") {
+    // The action has already committed. Observe once more after a moving
+    // visual bracket; never repeat the input or promote the stale tree.
     return captureAuthoringObservation(session, dependencies);
   }
-  const device = await dependencies.resolveDevice(session);
-  return runWithTargetContext(targetContext(session.target), async () => {
-    let screenshot: ScreenshotPayload | undefined;
-    try {
-      screenshot = await dependencies.captureScreenshot(device);
-      const screenshotBytes = Buffer.from(screenshot.base64, "base64");
-      if (isBlankScreenshot(screenshotBytes)) {
-        throw new Error(
-          "The device returned a blank replay endpoint screenshot. Recover or relaunch the app before trying again; no action proof was saved.",
-        );
-      }
-      const fingerprint =
-        observeVisualScreenFingerprint(screenshotBytes) ??
-        createHash("sha256").update(screenshotBytes).digest("hex");
-      return {
-        capturedAt: screenshot.capturedAt,
-        targetId: session.target.targetId,
-        fingerprint,
-        proof: {
-          schemaVersion: 1,
-          captureOrder: "pixels-first",
-          pixels: {
-            status: "captured",
-            capturedAt: screenshot.capturedAt,
-            fingerprint,
-            ...(screenshot.width !== undefined ? { width: screenshot.width } : {}),
-            ...(screenshot.height !== undefined ? { height: screenshot.height } : {}),
-          },
-          // Do not reuse or query AX here. A later normal observation may carry
-          // current semantics, but this immediate action endpoint is honest
-          // pixels-only evidence even when the platform still has a tree cached.
-          semantics: { status: "unavailable", capturedAt: screenshot.capturedAt },
-        },
-        capture: {
-          snapshotSource: "pixels-only",
-          inspectable: false,
-          visualFingerprint: fingerprint,
-        },
-        ...(screenshot.foregroundApp ? { foregroundApp: screenshot.foregroundApp } : {}),
-        ...(screenshot.width !== undefined && screenshot.height !== undefined
-          ? { bounds: { width: screenshot.width, height: screenshot.height } }
-          : {}),
-        screenshotCapturedAt: screenshot.capturedAt,
-        screenshot: { data: screenshotBytes, mime: screenshot.mime },
-      };
-    } finally {
-      await disposeAuthoringScreenshots(screenshot);
-    }
-  });
+  return captured;
 }
 
 export function createAuthoringRuntime(

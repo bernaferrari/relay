@@ -992,3 +992,33 @@ test("goal façade covers inspection, reproduction, exploration, and promotion r
     "/goal/goal%2F1/promote",
   ]);
 });
+
+test("manual input keeps a short acknowledgement budget without shortening verified interactions", async (t) => {
+  const budgets: number[] = [];
+  t.mock.method(AbortSignal, "timeout", (ms: number) => {
+    budgets.push(ms);
+    return new AbortController().signal;
+  });
+  let requests = 0;
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async () => {
+        requests++;
+        return new Response(JSON.stringify({ ok: true }));
+      },
+    },
+  );
+  const input = { serial: "ipad", kind: "point" as const, x: 10, y: 20 };
+  await client.invoke("target.interact", input);
+  await client.invoke("target.interact", { ...input, verification: "acknowledgement" });
+  assert.deepEqual(budgets, [180_000, 20_000]);
+  assert.equal(requests, 2);
+});

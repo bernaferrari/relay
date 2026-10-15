@@ -241,6 +241,7 @@ test("launches an arbitrary app through the leased target session", async () => 
   const root = await mkdtemp(join(tmpdir(), "relay-target-launch-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
+  let snapshots = 0;
   const launched: Array<{
     serial: string;
     platform: "android" | "ios" | "browser";
@@ -284,22 +285,25 @@ test("launches an arbitrary app through the leased target session", async () => 
       launchApp: async (input) => {
         launched.push(input);
       },
-      captureSnapshot: async () => ({
-        serial: "ipad-1",
-        capturedAt: 1,
-        nodes: [
-          {
-            type: "Application",
-            label: "Settings",
-            hittable: true,
-            rect: { x: 0, y: 0, width: 834, height: 1112 },
-          },
-        ],
-        interactive: [],
-        inspectable: true,
-        source: "sdk" as const,
-        screenIdentity: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
-      }),
+      captureSnapshot: async () => {
+        snapshots++;
+        return {
+          serial: "ipad-1",
+          capturedAt: 1,
+          nodes: [
+            {
+              type: "Application",
+              label: "Settings",
+              hittable: true,
+              rect: { x: 0, y: 0, width: 834, height: 1112 },
+            },
+          ],
+          interactive: [],
+          inspectable: true,
+          source: "sdk" as const,
+          screenIdentity: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
+        };
+      },
     },
   });
   try {
@@ -337,6 +341,19 @@ test("launches an arbitrary app through the leased target session", async () => 
     );
     assert.equal(Number.isFinite(body.launched.launchedAt), true);
     assert.deepEqual(body.observed, { app: "Settings", matched: true });
+    const previousSnapshots = snapshots;
+    const acknowledgement = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
+      method: "POST",
+      headers: headers("target.app.launch"),
+      body: JSON.stringify({ serial: "ipad-1", app: "Settings", waitForForeground: false }),
+    });
+    assert.equal(acknowledgement.status, 200);
+    assert.equal(
+      snapshots,
+      previousSnapshots,
+      "interactive launch does not block on an accessibility scan",
+    );
+    assert.deepEqual((await acknowledgement.json()).observed, { matched: false });
     const browserResponse = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
       method: "POST",
       headers: headers("target.app.launch"),
@@ -355,7 +372,7 @@ test("launches an arbitrary app through the leased target session", async () => 
       body: JSON.stringify({ serial: "browser-1", app: "javascript:alert(1)" }),
     });
     assert.equal(invalid.status, 400);
-    assert.equal(launched.length, 3);
+    assert.equal(launched.length, 4);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

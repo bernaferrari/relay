@@ -220,12 +220,21 @@ export function workflowVersionForAuthoringSession(session: AuthoringSession): s
   )}`;
 }
 
+function failedRecordingStart(session: AuthoringSession): boolean {
+  return (
+    session.state === "cancelled" &&
+    !session.take &&
+    Boolean(session.error) &&
+    session.workflowMutation?.action !== "authoring-cancel"
+  );
+}
+
 function phaseForSession(session: AuthoringSession): AuthorTestSnapshot["phase"] {
   if (session.state === "recording" || session.state === "committing") return "running";
   if (session.state === "preparing" || session.state === "ready") return "paused";
   if (session.state === "reviewing") return "paused";
   if (session.state === "committed") return "succeeded";
-  if (session.state === "failed") return "failed";
+  if (session.state === "failed" || failedRecordingStart(session)) return "failed";
   return "cancelled";
 }
 
@@ -388,10 +397,12 @@ function problemsForSession(
       retryable: false,
     });
   }
-  if (session.state === "failed") {
+  if (session.state === "failed" || failedRecordingStart(session)) {
     problems.push({
       code: "operation-unavailable",
-      title: "The recording workflow failed",
+      title: failedRecordingStart(session)
+        ? "Couldn’t start recording"
+        : "The recording workflow failed",
       detail: session.error ?? "The canonical Authoring Session ended with an error.",
       recovery: "Inspect the target and canonical session, then cancel or begin a new recording.",
       retryable: false,

@@ -461,3 +461,17 @@ test("failed replay identifies the fourth reviewed action instead of the adapter
     undefined,
   );
 });
+
+test("a recording cancelled during failed preparation retains its cause", () => {
+  const failed = {
+    ...structuredClone(session),
+    state: "cancelled" as const,
+    take: undefined,
+    error: "Semantic inspection is quarantined",
+  };
+  const snapshot = snapshotFromAuthoringSession({ frozen, session: failed });
+  assert.equal(snapshot.stage, "cancelled");
+  assert.equal(snapshot.phase, "failed");
+  assert.equal(snapshot.problems[0]?.detail, failed.error);
+  assert.deepEqual(snapshot.allowedNextActions, ["inspect"]);
+});

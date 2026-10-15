@@ -614,7 +614,9 @@ export function NewTestPage() {
         ) : null}
         {setupMode === "detailed" && setupOpen ? (
           <NewTestDetailedSetup
-            deviceOnly={deviceOnly}
+            deviceOnly={
+              deviceOnly || Boolean(requestedTargetId && selectedTarget?.kind === "device")
+            }
             startsFromPath={startsFromPath}
             pathSummary={pathContext.data ?? undefined}
             apps={apps.data ?? []}

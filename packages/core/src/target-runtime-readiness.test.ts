@@ -15,6 +15,8 @@ import {
   targetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
 
+import { TargetSupervisorStore, runWithTargetSupervisorStore } from "./target-supervisor-store.js";
+
 const ipad = {
   serial: "ipad-1",
   platform: "ios" as const,
@@ -520,4 +522,30 @@ test("a semantic tree begun after an input fence can become current", () => {
   const semantic = targetRuntimeReadiness(ipad, 3).semanticControl;
   assert.equal(semantic.freshness, "current");
   assert.equal(semantic.invalidated, undefined);
+});
+
+test("quarantine blocks semantic recording admission while retaining independent pixels", () => {
+  const store = new TargetSupervisorStore(":memory:");
+  try {
+    runWithTargetSupervisorStore(store, () => {
+      recordTargetPixelCapture(ipad, { at: 100 });
+      recordTargetSemanticSnapshot(ipad, {
+        inspectable: true,
+        at: 100,
+        nodes: [{ label: "Settings", rect: { x: 0, y: 0, width: 30, height: 30 } }],
+      });
+      store.transition(
+        { id: ipad.serial, kind: "ios" },
+        { kind: "operator.quarantined", reason: "Repeated inspection failures" },
+      );
+      const readiness = targetRuntimeReadiness(ipad, 101);
+      assert.equal(readiness.previewPixels.state, "proven");
+      assert.equal(readiness.semanticControl.state, "unavailable");
+      assert.equal(targetExecutionReadiness({ ...ipad, readiness }).runnable, false);
+      store.transition({ id: ipad.serial, kind: "ios" }, { kind: "operator.human-cleared" });
+      assert.equal(targetRuntimeReadiness(ipad, 102).semanticControl.state, "proven");
+    });
+  } finally {
+    store.close();
+  }
 });

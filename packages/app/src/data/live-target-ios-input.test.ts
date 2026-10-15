@@ -53,7 +53,10 @@ describe("canonical iOS preview input", () => {
       await live.input({ kind: "touch", action: "up", x: 1366, y: 512 });
       expect(invoke.mock.calls).toEqual([
         ["target.snapshot.capture", { serial: "ipad", logicalBoundsOnly: true }],
-        ["target.interact", { serial: "ipad", kind: "point", x: 683, y: 256 }],
+        [
+          "target.interact",
+          { serial: "ipad", kind: "point", x: 683, y: 256, verification: "acknowledgement" },
+        ],
       ]);
     } finally {
       live.close();
@@ -129,7 +132,10 @@ describe("canonical iOS preview input", () => {
       await live.input({ kind: "touch", action: "up", x: 1366, y: 512 });
       expect(invoke.mock.calls).toEqual([
         ["target.snapshot.capture", { serial: "ipad", logicalBoundsOnly: true }],
-        ["target.interact", { serial: "ipad", kind: "point", x: 683, y: 256 }],
+        [
+          "target.interact",
+          { serial: "ipad", kind: "point", x: 683, y: 256, verification: "acknowledgement" },
+        ],
       ]);
     } finally {
       live.close();

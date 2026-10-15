@@ -181,11 +181,12 @@ function copyProblem(problem: WorkflowProblem): WorkflowProblem {
   if (problem.sourceCode === "raw-evidence-recapture-required") {
     return {
       code: problem.code,
-      title: "The starting screen needs a fresh capture",
+      title: "A recorded screen needs a fresh capture",
       detail: "Relay does not have enough saved screen information to run this test safely.",
-      recovery: "Open the test, record its starting screen again, then save it.",
+      recovery: "Open the test and recapture the affected screen before running again.",
       retryable: false,
       sourceCode: problem.sourceCode,
+      ...(problem.sourceStepId ? { sourceStepId: boundedString(problem.sourceStepId) } : {}),
     };
   }
   return {

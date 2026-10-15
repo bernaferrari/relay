@@ -339,6 +339,7 @@ export async function handleTargetRuntimeRoute(context: {
       serial?: unknown;
       app?: unknown;
       relaunch?: unknown;
+      waitForForeground?: unknown;
     };
     const serial = typeof body.serial === "string" ? body.serial.trim() : "";
     const app = typeof body.app === "string" ? body.app.trim() : "";
@@ -390,10 +391,12 @@ export async function handleTargetRuntimeRoute(context: {
       throw error;
     }
     let observed = summarizeLaunchedForeground(app, undefined);
-    try {
-      observed = summarizeLaunchedForeground(app, await runtime.captureSnapshot({ serial }));
-    } catch {
-      observed = { matched: false };
+    if (body.waitForForeground !== false) {
+      try {
+        observed = summarizeLaunchedForeground(app, await runtime.captureSnapshot({ serial }));
+      } catch {
+        observed = { matched: false };
+      }
     }
     json(response, 200, {
       launched: { serial, app, platform: device.platform, launchedAt: Date.now() },

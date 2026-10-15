@@ -2427,3 +2427,19 @@ test("same-screen merge is discoverable and rejects scroll evidence or unknown m
   assert.throws(() => definition.input.parse({ ...input, mode: "guess" }), /mode/);
   assert.throws(() => definition.input.parse({ ...input, surfaceImport: {} }), /cannot be used/);
 });
+
+test("interactive input and launch can acknowledge without claiming foreground or visual proof", () => {
+  const launch = { serial: "ipad", app: "Grok", waitForForeground: false };
+  assert.deepEqual(operationDefinition("target.app.launch").input.parse(launch), launch);
+  const interaction = {
+    serial: "ipad",
+    kind: "point",
+    x: 1,
+    y: 2,
+    verification: "acknowledgement",
+  };
+  assert.deepEqual(operationDefinition("target.interact").input.parse(interaction), interaction);
+  assert.throws(() =>
+    operationDefinition("target.interact").input.parse({ ...interaction, verification: "pass" }),
+  );
+});

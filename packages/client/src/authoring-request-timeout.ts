@@ -22,6 +22,11 @@ export function authoringRequestTimeout(
   input: unknown,
   acknowledgementMs: number,
 ): number | undefined {
+  if (
+    id === "target.interact" &&
+    (input as OperationInput<"target.interact">).verification === "acknowledgement"
+  )
+    return acknowledgementMs;
   let interaction: AuthoringInteraction | undefined;
   if (id === "authoring.session.interact") {
     interaction = (input as OperationInput<"authoring.session.interact">).interaction;

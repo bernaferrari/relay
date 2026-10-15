@@ -330,6 +330,7 @@ export function NewTestDetailedSetup({
                 status={previewStatus}
                 issue={previewIssue}
                 busy={previewBusy || admission.busy}
+                busyLabel={admission.busy ? "Starting recording…" : undefined}
                 targetTitle={targetLabel(selectedTarget).title}
                 targetDetail={targetLabel(selectedTarget).detail}
                 browserContext={browserContext}

@@ -1330,6 +1330,17 @@ describe("record, review, replay, and save", () => {
     expect(button("Start recording").disabled).toBe(true);
   });
 
+  it("hides browser creation when a native device was selected by a direct link", async () => {
+    const fake = fakeService();
+    await renderJourney(
+      "/tests/new?app=app-1&target=emulator-5554",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(button("Phone or tablet").getAttribute("aria-pressed")).toBe("true");
+    expect(document.body.textContent).not.toContain("New browser");
+  });
+
   it("opens setup with a starting app carried from the device", async () => {
     const fake = fakeService();
     const connect = vi.fn(fake.service.connect);
@@ -2972,6 +2983,29 @@ describe("record, review, replay, and save", () => {
     expect(fake.service.cancel).toHaveBeenCalledOnce();
     expect(history.location.pathname).toBe("/tests");
     expect(new URLSearchParams(history.location.search).get("app")).toBe("app-1");
+  });
+
+  it("keeps a failed recording start visible after its session is cancelled", async () => {
+    const failed = state("cancelled", []);
+    failed.snapshot!.phase = "failed";
+    failed.snapshot!.problems = [
+      {
+        code: "operation-unavailable",
+        title: "Couldn’t start recording",
+        detail: "Semantic inspection is quarantined",
+        recovery: "Reconnect the device before starting another recording.",
+        retryable: false,
+      },
+    ];
+    const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
+    const { history } = await renderJourney(
+      "/recordings/workflow-1",
+      fakeService({ ...failed, recovery: failed.snapshot!.problems[0]! }).service,
+      storage.platform,
+    );
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
+    expect(document.body.textContent).toContain("Semantic inspection is quarantined");
+    expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
   });
 
   it("cancelled recording falls back to All apps when canonical app identity is absent", async () => {

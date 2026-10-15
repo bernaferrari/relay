@@ -407,6 +407,12 @@ describe("Devices", () => {
   });
   it("keeps a connected iPad visible when labels are unavailable, without recovery or input", async () => {
     const service = fakeDeviceService();
+    service.launchApp = vi.fn(async (serial: string, app: string): Promise<ProductLaunchedApp> => ({
+      serial,
+      app,
+      platform: "ios",
+      launchedAt: 1,
+    }));
     const ipad = productDevice("ipad", "Design iPad", "needs-attention", "ios");
     ipad.device.connectionState = "connected";
     service.get = async () => ipad;
@@ -428,6 +434,8 @@ describe("Devices", () => {
     expect(preview.service.connect).not.toHaveBeenCalled();
     expect(service.recoveryCalls).toEqual([]);
     expect(service.checkControl).toHaveBeenCalledExactlyOnceWith("ipad", "ios");
+    await click(button("Open app"));
+    expect(document.querySelector<HTMLInputElement>("#device-app-identifier")).not.toBeNull();
   });
   it("opens a searched installed iOS app once and shows delivery progress", async () => {
     const service = fakeDeviceService();
@@ -454,6 +462,7 @@ describe("Devices", () => {
       "ipad",
       "com.apple.TestFlight",
       false,
+      { waitForForeground: false },
     );
     expect(document.body.textContent).toContain("Opening app…");
     await act(async () =>
@@ -467,6 +476,8 @@ describe("Devices", () => {
     );
     await settle();
     expect(document.body.textContent).not.toContain("Opening app…");
+    await click(button("Open app"));
+    expect(document.body.textContent).not.toContain("Launch requested for");
   });
   it("hands an acknowledged iOS launch to test setup once while loading the installed app picker", async () => {
     const service = fakeDeviceService();
@@ -820,9 +831,9 @@ describe("Devices", () => {
     expect(launchCalls).toEqual([{ deviceId: "ipad", app: "com.example.shop", relaunch: true }]);
     expect(button("Reconnect").disabled).toBe(false);
     await click(button("Open app"));
-    expect(document.body.textContent).toContain("Launch requested");
-    expect(document.body.textContent).toContain(
-      "Launch requested for com.example.shop on Design iPad.",
+    expect(document.body.textContent).not.toContain("Launch requested");
+    expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value?.trim()).toBe(
+      "com.example.shop",
     );
   });
 

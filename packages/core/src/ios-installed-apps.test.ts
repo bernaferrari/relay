@@ -21,6 +21,11 @@ test("physical app inventory is one metadata read and hides system helpers", asy
         app("com.apple.MBHelperApp", "Settings", { SBAppTags: ["hidden"] }),
         app("com.apple.Preferences", "Settings"),
         app("com.apple.TestFlight", "TestFlight"),
+        app("com.apple.BluetoothUIService", "BluetoothUIService", { ApplicationType: "Hidden" }),
+        app("com.apple.business", "BusinessExtensionsWrapper", {
+          LSApplicationLaunchProhibited: true,
+        }),
+        app("com.example.background", "Background helper", { SBLaunchSuspendedAlways: true }),
         app("com.example.widget", "Widget", { CFBundlePackageType: "XPC!" }),
       ]),
     };

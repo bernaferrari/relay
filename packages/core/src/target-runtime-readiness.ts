@@ -236,7 +236,19 @@ export function targetRuntimeReadiness(
     );
   return {
     previewPixels: resolve("previewPixels"),
-    semanticControl: resolve("semanticControl"),
+    semanticControl:
+      target.platform === "ios" &&
+      currentTargetSupervisorStore()?.health(supervisedTarget(target)).overall === "quarantined"
+        ? {
+            ...unavailable("semanticControl", "probe-failed"),
+            lastError: {
+              at: observedAt,
+              reason: "probe-failed",
+              message:
+                "Screen inspection is paused after repeated failures. Reconnect the device before recording.",
+            },
+          }
+        : resolve("semanticControl"),
     evidenceCapture: resolve("evidenceCapture"),
   };
 }

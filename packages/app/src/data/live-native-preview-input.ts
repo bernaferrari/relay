@@ -78,7 +78,13 @@ export async function sendIosPreviewInput(
       throw new RecordingInputNotSentError(
         "The iOS preview supports complete taps, not individual touch phases.",
       );
-    await client.invoke("target.interact", { serial, kind: "point", x: value.x, y: value.y });
+    await client.invoke("target.interact", {
+      serial,
+      kind: "point",
+      x: value.x,
+      y: value.y,
+      verification: "acknowledgement",
+    });
     return true;
   }
   if (

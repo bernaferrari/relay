@@ -48,6 +48,12 @@ export async function listIosInstalledApps(
     const id = row.CFBundleIdentifier ?? key;
     if (typeof id !== "string" || !id.includes(".")) continue;
     validEntries++;
+    if (
+      row.ApplicationType === "Hidden" ||
+      row.LSApplicationLaunchProhibited === true ||
+      row.SBLaunchSuspendedAlways === true
+    )
+      continue;
     if (Array.isArray(row.SBAppTags) && row.SBAppTags.includes("hidden")) continue;
     if (typeof row.CFBundlePackageType === "string" && row.CFBundlePackageType !== "APPL") continue;
     const label = row.CFBundleDisplayName ?? row.CFBundleName;

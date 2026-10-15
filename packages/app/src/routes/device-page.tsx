@@ -106,7 +106,10 @@ export function DevicePage() {
       serial: string;
       app: string;
       relaunch: boolean;
-    }) => input.service.launchApp!(input.serial, input.app, input.relaunch),
+    }) =>
+      input.service.launchApp!(input.serial, input.app, input.relaunch, {
+        waitForForeground: false,
+      }),
     onSuccess: (result, input) => {
       if (
         currentLaunchTarget.current.service !== input.service ||
@@ -312,7 +315,13 @@ export function DevicePage() {
   }
 
   return (
-    <Sheet open={appControlsOpen} onOpenChange={setAppControlsOpen}>
+    <Sheet
+      open={appControlsOpen}
+      onOpenChange={(open) => {
+        if (open && !iosAppLaunch.isPending) iosAppLaunch.reset();
+        setAppControlsOpen(open);
+      }}
+    >
       <WorkbenchPage className="flex h-full min-h-0 flex-col !pb-4 [&>header]:shrink-0">
         <PageHeader
           crumbs={[{ label: "Devices", to: "/devices" }, { label: device.data?.name ?? "Device" }]}
@@ -321,7 +330,9 @@ export function DevicePage() {
           actions={
             <>
               {showDeviceControls ? (
-                <SheetTrigger render={<Button />}>Open app</SheetTrigger>
+                <SheetTrigger render={<Button disabled={recover.isPending || liveBusy} />}>
+                  Open app
+                </SheetTrigger>
               ) : null}
               {recordingContinuation ? (
                 <Button
@@ -635,7 +646,7 @@ export function DevicePage() {
                     </section>
                   ) : null}
                   {device.data.platform === "ios" &&
-                  device.data.runnable &&
+                  deviceLivePreviewAvailable(device.data) &&
                   deviceService.launchApp ? (
                     <IOSAppLaunchForm
                       deviceName={device.data.name}

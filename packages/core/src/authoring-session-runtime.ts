@@ -40,9 +40,8 @@ export type AuthoringRuntime = {
    * runtimes keep the final-only replay path instead of inventing links. */
   replayAction?(session: AuthoringSession, action: AuthoringAction): Promise<void>;
   /**
-   * Captures the endpoint after one replayed action. Android/browser retain a
-   * fresh tree for later map execution. iOS captures immediate pixels without
-   * waiting for XCTest; delayed geometry must never become current proof.
+   * Captures a coherent endpoint after one replayed action for later map
+   * execution. iOS brackets its tree with pixels; stale geometry stays unproven.
    */
   observeReplayActionEndpoint?(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
   /** Allow asynchronous application and system UI to settle before Relay

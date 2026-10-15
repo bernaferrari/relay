@@ -54,7 +54,12 @@ export type DeviceProductService = {
   ): Promise<ProductDeviceRecovery>;
   /** Launch is supported only for attached Android/iOS devices by the
    * canonical target operation; managed browsers remain a separate target. */
-  launchApp?(deviceId: string, app: string, relaunch?: boolean): Promise<ProductLaunchedApp>;
+  launchApp?(
+    deviceId: string,
+    app: string,
+    relaunch?: boolean,
+    options?: { waitForForeground?: boolean },
+  ): Promise<ProductLaunchedApp>;
   listInstalledApps?(serial: string): Promise<readonly ProductInstalledApp[]>;
   checkControl?(serial: string, platform: "android" | "ios"): Promise<NativeLiveControl>;
   listAppLocales?(serial: string, packageName: string): Promise<ProductAppLocales>;
@@ -298,7 +303,7 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
       const result = await (await client()).invoke("target.recover", { serial, reason });
       return result.recovery;
     },
-    async launchApp(deviceId, app, relaunch) {
+    async launchApp(deviceId, app, relaunch, options) {
       const device = (await listDevices({ targetKind: "device", targetId: deviceId })).find(
         (candidate) => candidate.id === deviceId || candidate.serial === deviceId,
       );
@@ -313,6 +318,9 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
       ).invoke("target.app.launch", {
         serial: device.serial,
         app: name,
+        ...(options?.waitForForeground === undefined
+          ? {}
+          : { waitForForeground: options.waitForForeground }),
         ...(relaunch === undefined ? {} : { relaunch }),
       });
       return { ...result.launched, observed: result.observed };

@@ -461,7 +461,7 @@ test("iOS keeps usable pixels but marks a tree stale when the closing bracket ca
   assert.equal(observation.nodes?.[0]?.label, "Settings");
 });
 
-test("replay action endpoint captures pixels without querying or trusting accessibility", async () => {
+test("replay action endpoint retains pixels when accessibility is unavailable", async () => {
   const operations: string[] = [];
   const session = {
     target: { kind: "device", platform: "ios", targetId: "ipad-a" },
@@ -474,7 +474,20 @@ test("replay action endpoint captures pixels without querying or trusting access
     },
     async captureSnapshot() {
       operations.push("snapshot");
-      throw new Error("a fast replay endpoint must not read AX");
+      return {
+        serial: "ipad-a",
+        capturedAt: 12,
+        nodes: [],
+        interactive: [],
+        inspectable: false,
+        source: "pixels-only",
+        screenIdentity: {
+          schemaVersion: 1,
+          fingerprint: "unavailable",
+          nodes: [],
+          volatileSignals: [],
+        },
+      };
     },
     async captureScreenshot() {
       operations.push("screenshot");
@@ -491,7 +504,7 @@ test("replay action endpoint captures pixels without querying or trusting access
     },
   });
 
-  assert.deepEqual(operations, ["device", "screenshot"]);
+  assert.deepEqual(operations, ["device", "screenshot", "snapshot"]);
   assert.equal(observation.proof?.captureOrder, "pixels-first");
   assert.deepEqual(observation.proof?.semantics, { status: "unavailable", capturedAt: 12 });
   assert.deepEqual(observation.capture, {
@@ -499,8 +512,12 @@ test("replay action endpoint captures pixels without querying or trusting access
     inspectable: false,
     visualFingerprint: observation.fingerprint,
   });
-  assert.equal(observation.nodes, undefined);
-  assert.deepEqual(observation.bounds, { width: 1194, height: 834 });
+  assert.deepEqual(observation.nodes, []);
+  assert.equal(
+    observation.bounds,
+    undefined,
+    "raster dimensions must not become logical input bounds",
+  );
 });
 
 test("browser replay endpoints retain a fresh raw DOM snapshot for later map execution", async () => {
@@ -553,7 +570,20 @@ test("replay action endpoint disposes the temporary raster after copying its byt
         return {} as Device;
       },
       async captureSnapshot() {
-        throw new Error("replay endpoints must remain pixels-only");
+        return {
+          serial: "ipad-replay-cleanup",
+          capturedAt: 12,
+          nodes: [],
+          interactive: [],
+          inspectable: false,
+          source: "pixels-only",
+          screenIdentity: {
+            schemaVersion: 1,
+            fingerprint: "unavailable",
+            nodes: [],
+            volatileSignals: [],
+          },
+        };
       },
       async captureScreenshot() {
         const bytes = Buffer.from("replay-durable-pixels");

@@ -1,3 +1,4 @@
+import { RecordingUnavailable } from "./recording-unavailable";
 import { ScanLine } from "lucide-react";
 import { AuthoringWorkspace } from "./authoring-workspace";
 import { RecordTestHeader } from "./record-test-header";
@@ -220,12 +221,23 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
         queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
         queryClient.setQueryData<string | null>(recordingQueryKeys.reconciledPointer, null);
       }
+      // A failed preparation also cancels its native session. Keep its cause
+      // visible instead of treating that cleanup as a person cancelling.
+      if (snapshot.phase === "failed") return;
       void navigate({
         to: "/tests",
         search: snapshot.frozen?.appMapId ? { app: snapshot.frozen.appMapId } : {},
       });
     });
-  }, [navigate, platform, queryClient, snapshot?.stage, snapshot?.frozen?.appMapId, workflowId]);
+  }, [
+    navigate,
+    platform,
+    queryClient,
+    snapshot?.stage,
+    snapshot?.phase,
+    snapshot?.frozen?.appMapId,
+    workflowId,
+  ]);
 
   function saveCheckpoint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -544,20 +556,12 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
       <div className="flex min-h-0 flex-col overflow-auto">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
         {(recording.isError || recording.data?.recovery) && !previewAvailable ? (
-          <div className="m-auto grid w-full max-w-sm justify-items-center gap-3 px-6 py-10 text-center">
-            <h2 className="text-lg font-semibold">Relay session unavailable</h2>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Reconnect to reopen your recording and saved steps.
-            </p>
-            <div className="flex gap-2">
-              <Button disabled={recording.isFetching} onClick={() => void recording.refetch()}>
-                {recording.isFetching ? "Reconnecting…" : "Reconnect"}
-              </Button>
-              <Button variant="outline" onClick={() => void navigate({ to: "/tests" })}>
-                Back to tests
-              </Button>
-            </div>
-          </div>
+          <RecordingUnavailable
+            recovery={recording.data?.recovery}
+            failedTarget={snapshot?.phase === "failed" ? snapshot.frozen?.target : undefined}
+            refreshing={recording.isFetching}
+            onRefresh={() => void recording.refetch()}
+          />
         ) : null}
 
         {!recording.isPending && snapshot && previewAvailable ? (
@@ -603,6 +607,11 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                         />
                       }
                       busy={liveInputBusy || action.isPending || !allowed.has("record")}
+                      busyLabel={
+                        action.isPending && action.variables?.action === "stop"
+                          ? "Finishing recording…"
+                          : undefined
+                      }
                       targetTitle={
                         targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title
                       }

@@ -305,16 +305,18 @@ test("compile diagnostics use public recovery language while preserving their so
         recovery: "Repair the reviewed test evidence or selector, then start a new workflow.",
         retryable: false,
         sourceCode: "raw-evidence-recapture-required",
+        sourceStepId: "open-keyboard",
       },
     ],
   });
   const journey = createProductRunJourney({ jobs: jobsFor({ started: blocked }) });
   const state = await journey.start({ testId: "test-1" });
 
-  assert.equal(state.recovery?.title, "The starting screen needs a fresh capture");
+  assert.equal(state.recovery?.title, "A recorded screen needs a fresh capture");
   assert.match(state.recovery?.detail ?? "", /run this Test safely/i);
-  assert.match(state.recovery?.recovery ?? "", /record its starting screen again/i);
+  assert.match(state.recovery?.recovery ?? "", /recapture the affected screen/i);
   assert.equal(state.recovery?.sourceCode, "raw-evidence-recapture-required");
+  assert.equal(state.recovery?.sourceStepId, "open-keyboard");
   assert.doesNotMatch(JSON.stringify(state), /immutable raw accessibility|offline geometry/u);
 });
 

@@ -620,6 +620,7 @@ export function createLiveTargetSession(input: {
         await input.client.invoke("target.interact", {
           serial: target.targetId,
           kind: "identifier",
+          ...(target.platform === "ios" ? { verification: "acknowledgement" as const } : {}),
           identifier: binding.identifier,
         });
         return;
@@ -628,6 +629,7 @@ export function createLiveTargetSession(input: {
         await input.client.invoke("target.interact", {
           serial: target.targetId,
           kind: "label",
+          ...(target.platform === "ios" ? { verification: "acknowledgement" as const } : {}),
           label: binding.label,
         });
         return;
@@ -636,6 +638,7 @@ export function createLiveTargetSession(input: {
         await input.client.invoke("target.interact", {
           serial: target.targetId,
           kind: "text-match",
+          ...(target.platform === "ios" ? { verification: "acknowledgement" as const } : {}),
           match: binding.text,
         });
         return;

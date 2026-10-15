@@ -280,7 +280,7 @@ export type SpecificOperationMap = {
     };
   };
   "target.app.launch": {
-    input: { serial: string; app: string; relaunch?: boolean };
+    input: { serial: string; app: string; relaunch?: boolean; waitForForeground?: boolean };
     output: {
       launched: {
         serial: string;

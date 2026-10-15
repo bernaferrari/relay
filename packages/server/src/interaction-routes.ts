@@ -219,10 +219,11 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
         "body.kind required (identifier|label|point|ref|find|text-match|swipe|key|type|replace)",
       );
     }
-    const { serial, preview, laneId, ...rest } = body as InteractInput & {
+    const { serial, preview, laneId, verification, ...rest } = body as InteractInput & {
       serial?: string;
       preview?: unknown;
       laneId?: string;
+      verification?: "screen-change" | "acknowledgement";
     };
     const resolved = await applyLaneToInteractOrThrow({
       projectId: scope.projectId,
@@ -246,6 +247,9 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
     try {
       result = await interact(interaction, {
         serial: resolved.serial,
+        // Manual control observes its result in the live stream. Test and agent
+        // calls retain screen-change verification unless explicitly requested.
+        verifyIosScreenChange: verification !== "acknowledgement",
         // Project scope is required to resolve a saved browser fixture; every
         // interact carries its request scope so the exact-configuration
         // session can be reused instead of silently reopened anonymous.

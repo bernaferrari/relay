@@ -113,6 +113,12 @@ export const targetOperationInputSchemas = {
       ...targetReference,
       app: text("App name, package, or bundle identifier"),
       relaunch: z.boolean().optional(),
+      waitForForeground: z
+        .boolean()
+        .optional()
+        .describe(
+          "Defaults to true. False returns the launch acknowledgement without waiting for a foreground inspection; observed.matched remains false.",
+        ),
     })
     .strict(),
   "target.interact": z
@@ -132,6 +138,12 @@ export const targetOperationInputSchemas = {
         "replace",
       ]),
       preview: z.boolean().optional().describe("If true, resolve or annotate only — no commit tap"),
+      verification: z
+        .enum(["screen-change", "acknowledgement"])
+        .optional()
+        .describe(
+          "Defaults to screen-change for iOS taps. Interactive control may request acknowledgement only; this does not verify a test checkpoint or retry uncertain input.",
+        ),
       identifier: z
         .string()
         .min(1)

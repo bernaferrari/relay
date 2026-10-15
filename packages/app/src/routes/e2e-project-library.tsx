@@ -238,7 +238,8 @@ export function E2EProjectLibrary({
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm text-muted-foreground">
-                  {current.tests.length} configured Test cases
+                  {current.tests.length} configured{" "}
+                  {current.tests.length === 1 ? "Test case" : "Test cases"}
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -384,10 +385,13 @@ function Execution({
       {execution.availableCaptures !== undefined ? (
         <p className="text-sm text-muted-foreground">
           {execution.requiredCaptures === undefined
-            ? `${execution.availableCaptures} captures produced`
+            ? `${execution.availableCaptures} ${execution.availableCaptures === 1 ? "capture" : "captures"} produced`
             : `${execution.availableCaptures} of ${execution.requiredCaptures} required captures available`}{" "}
-          · {execution.pendingReview ?? 0} pending review · {execution.accepted ?? 0} accepted ·{" "}
-          {execution.issues ?? 0} issues
+          {execution.pendingReview ? ` · ${execution.pendingReview} pending review` : ""}
+          {execution.accepted ? ` · ${execution.accepted} accepted` : ""}
+          {execution.issues
+            ? ` · ${execution.issues} ${execution.issues === 1 ? "issue" : "issues"}`
+            : ""}
         </p>
       ) : null}
       {execution.error ? <p className="text-sm text-destructive">{execution.error}</p> : null}
