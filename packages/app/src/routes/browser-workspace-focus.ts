@@ -20,8 +20,7 @@ export function useBrowserWorkspaceFocus() {
   const container = useRef<HTMLElement>(null);
   const motion = useRef<Motion>({ active: new Map() });
 
-  function focus(next?: string, animate = false) {
-    if (next === focused) return;
+  function prepare(animate = true) {
     const state = motion.current;
     const before = new Map<string, Frame>();
     if (animate && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -41,6 +40,11 @@ export function useBrowserWorkspaceFocus() {
     // continue from what the user sees instead of jumping to an old endpoint.
     cancelMotion(state);
     state.before = before.size ? before : undefined;
+  }
+
+  function focus(next?: string, animate = false) {
+    if (next === focused) return;
+    prepare(animate);
     setFocused(next);
   }
 
@@ -69,6 +73,8 @@ export function useBrowserWorkspaceFocus() {
           easing: "cubic-bezier(0.455, 0.03, 0.515, 0.955)",
         },
       );
+      // Cancellation is expected when another layout change interrupts this one.
+      void animation.finished?.catch(() => undefined);
       state.active.set(element, animation);
       const finish = () => {
         if (state.active.get(element) !== animation) return;
@@ -78,7 +84,7 @@ export function useBrowserWorkspaceFocus() {
       animation.onfinish = finish;
       animation.oncancel = finish;
     }
-  }, [focused]);
+  });
 
   useEffect(() => {
     const state = motion.current;
@@ -93,5 +99,5 @@ export function useBrowserWorkspaceFocus() {
     };
   }, []);
 
-  return { focused, focus, container };
+  return { focused, focus, prepare, container };
 }

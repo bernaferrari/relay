@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
@@ -11,16 +11,27 @@ import {
   admitBrowserTile,
   pairedBrowserTiles,
   moveBrowserTile,
-  parseBrowserTiles,
   type BrowserTile,
 } from "../data/browser-workspace";
 import {
   PAIRED_CONFIGURATION_STORAGE_KEY,
   parsePairedConfigurationWorkspace,
 } from "../data/paired-configuration";
-import { BrowserWorkspaceGrip } from "./browser-workspace-grip";
+import {
+  browserLayoutGeometry,
+  defaultBrowserLayout,
+  dockBrowser,
+  FULL_BROWSER_RECT,
+  resizeBrowserSplit,
+  reorderBrowserLayout,
+  restoreBrowserLayout,
+  type BrowserLayout,
+} from "../data/browser-workspace-layout";
+import { parseBrowserWorkspace } from "../data/browser-workspace-state";
+import { BrowserWorkspaceGrip, type BrowserDockTarget } from "./browser-workspace-grip";
 import { BrowserWorkspaceGrid } from "./browser-workspace-grid";
 import { BrowserWorkspacePicker } from "./browser-workspace-picker";
+import { BrowserWorkspaceDropPreview } from "./browser-workspace-drop-preview";
 import { BrowserWorkspaceTile } from "./browser-workspace-tile";
 import { useBrowserWorkspaceFocus } from "./browser-workspace-focus";
 import { errorMessage } from "./recording-shared";
@@ -29,9 +40,14 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
   const { browserSpacesService, platform } = useRouteContext({ from: "__root__" });
   const [tiles, setTiles] = useState<BrowserTile[]>();
   const [picker, setPicker] = useState(false);
-  const [over, setOver] = useState<string>();
+  const [over, setOver] = useState<BrowserDockTarget>();
+  const [dragging, setDragging] = useState<string>();
+  const previewElement = useRef<HTMLDivElement>(null);
+  const previewBefore = useRef<DOMRect | undefined>(undefined);
+  const [layout, setLayout] = useState<BrowserLayout>();
+  const savedLayout = useRef<BrowserLayout | undefined>(undefined);
   const [announcement, setAnnouncement] = useState("");
-  const { focused, focus, container } = useBrowserWorkspaceFocus();
+  const { focused, focus, prepare, container } = useBrowserWorkspaceFocus();
   const [issue, setIssue] = useState<string>();
   const [saving, setSaving] = useState(false);
   const spaces = useQuery({
@@ -47,10 +63,17 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
       const raw = await platform.storage.get(
         paired ? PAIRED_CONFIGURATION_STORAGE_KEY : BROWSER_WORKSPACE_KEY,
       );
-      const next = paired
+      const pairedTiles = paired
         ? pairedBrowserTiles(parsePairedConfigurationWorkspace(raw))
-        : parseBrowserTiles(raw);
-      if (!disposed) setTiles(next);
+        : undefined;
+      const next = pairedTiles
+        ? { tiles: pairedTiles, layout: defaultBrowserLayout(pairedTiles.map((tile) => tile.id)) }
+        : parseBrowserWorkspace(raw);
+      if (!disposed) {
+        setTiles(next.tiles);
+        setLayout(next.layout);
+        savedLayout.current = next.layout;
+      }
     })().catch((error: unknown) => {
       if (!disposed)
         setLoadIssue(
@@ -63,13 +86,36 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
       disposed = true;
     };
   }, [paired, platform, loadAttempt]);
-  async function save(next: BrowserTile[]) {
+  async function save(
+    next: BrowserTile[],
+    nextLayout = restoreBrowserLayout(
+      layout,
+      next.map((tile) => tile.id),
+    ),
+    animate = false,
+    optimistic = false,
+  ) {
     setSaving(true);
     setIssue(undefined);
-    try {
-      await platform.storage.set(BROWSER_WORKSPACE_KEY, JSON.stringify(next));
+    const previousLayout = savedLayout.current;
+    const commit = () => {
+      prepare(animate);
       setTiles(next);
+      setLayout(nextLayout);
+    };
+    if (optimistic) commit();
+    try {
+      await platform.storage.set(
+        BROWSER_WORKSPACE_KEY,
+        JSON.stringify({ version: 2, tiles: next, layout: nextLayout }),
+      );
+      if (!optimistic) commit();
+      savedLayout.current = nextLayout;
     } catch (error) {
+      if (optimistic) {
+        prepare(true);
+        setLayout(previousLayout);
+      }
       setIssue("Couldn’t save this workspace. Free up browser storage and try again.");
       throw error;
     } finally {
@@ -79,7 +125,16 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
   function move(sourceId: string, targetId: string) {
     if (!tiles || saving || sourceId === targetId) return;
     const next = moveBrowserTile(tiles, sourceId, targetId);
-    void save(next)
+    void save(
+      next,
+      layout
+        ? reorderBrowserLayout(
+            layout,
+            tiles.map((tile) => tile.id),
+            next.map((tile) => tile.id),
+          )
+        : defaultBrowserLayout(next.map((tile) => tile.id)),
+    )
       .then(() =>
         setAnnouncement(
           `${next.find((tile) => tile.id === sourceId)?.name} moved to position ${next.findIndex((tile) => tile.id === sourceId) + 1}.`,
@@ -87,6 +142,25 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
       )
       .catch(() => undefined);
   }
+  function dock(sourceId: string, target: BrowserDockTarget) {
+    if (!layout || !tiles || saving) return;
+    const next = dockBrowser(layout, sourceId, target.targetId, target.side);
+    if (next === layout) return;
+    void save(tiles, next, true, true)
+      .then(() =>
+        setAnnouncement(
+          `${tiles.find((tile) => tile.id === sourceId)?.name} moved ${target.side === "top" ? "above" : target.side === "bottom" ? "below" : `to the ${target.side} of`} ${tiles.find((tile) => tile.id === target.targetId)?.name}.`,
+        ),
+      )
+      .catch(() => undefined);
+  }
+  const geometry = browserLayoutGeometry(layout);
+  const destination =
+    layout && dragging && over
+      ? browserLayoutGeometry(dockBrowser(layout, dragging, over.targetId, over.side)).tiles[
+          dragging
+        ]
+      : undefined;
   const count = tiles?.length ?? 0;
   return (
     <section
@@ -176,17 +250,36 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
         {announcement}
       </span>
       {count ? (
-        <BrowserWorkspaceGrid count={count} focused={Boolean(focused)}>
+        <BrowserWorkspaceGrid
+          layout={layout}
+          focused={Boolean(focused)}
+          onResize={(path, ratio, persist) => {
+            if (!layout || !tiles || saving) return;
+            const next = resizeBrowserSplit(layout, path, ratio);
+            setLayout(next);
+            if (persist) void save(tiles, next).catch(() => setLayout(savedLayout.current));
+          }}
+        >
           {tiles?.map((tile, index) => (
             <BrowserWorkspaceTile
               key={tile.id}
-              className={`${count === 3 && index === 0 && !focused ? "min-[761px]:row-span-2" : ""} ${over === tile.id ? "ring-2 ring-primary" : ""}`}
+              rect={focused ? FULL_BROWSER_RECT : (geometry.tiles[tile.id] ?? FULL_BROWSER_RECT)}
+              dragging={dragging === tile.id}
               grip={
                 <BrowserWorkspaceGrip
+                  id={tile.id}
                   name={tile.name}
                   disabled={saving || Boolean(focused) || count < 2}
-                  onHover={setOver}
-                  onDrop={(targetId) => move(tile.id, targetId)}
+                  onDrag={(active, cancelled) => {
+                    if (!active && cancelled) prepare(true);
+                    setDragging(active ? tile.id : undefined);
+                  }}
+                  onHover={(target) => {
+                    if (over?.targetId === target?.targetId && over?.side === target?.side) return;
+                    previewBefore.current = previewElement.current?.getBoundingClientRect();
+                    setOver(target);
+                  }}
+                  onDrop={(target) => dock(tile.id, target)}
                   onMove={(offset) => {
                     const target = tiles[Math.max(0, Math.min(count - 1, index + offset))];
                     if (target) move(tile.id, target.id);
@@ -209,6 +302,15 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
               }}
             />
           ))}
+          {destination && over ? (
+            <BrowserWorkspaceDropPreview
+              elementRef={previewElement}
+              before={previewBefore.current}
+              rect={destination}
+              side={over.side}
+              name={tiles?.find((tile) => tile.id === over.targetId)?.name ?? "browser"}
+            />
+          ) : null}
         </BrowserWorkspaceGrid>
       ) : null}
       {picker ? (

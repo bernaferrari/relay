@@ -229,12 +229,25 @@ summary:focus-visible {
   );
 }
 @utility ember-glow {
-  background: radial-gradient(closest-side, var(--ribbon-orange), var(--ribbon-pink) 45%, transparent);
+  background: radial-gradient(
+    closest-side,
+    var(--ribbon-orange),
+    var(--ribbon-pink) 45%,
+    transparent
+  );
 }
 @utility paper-grid {
   background-image:
-    linear-gradient(to right, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      color-mix(in oklch, var(--foreground) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--foreground) 5%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 32px 32px;
 }
 @utility fade-hero {

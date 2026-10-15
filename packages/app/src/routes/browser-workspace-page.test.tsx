@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BrowserWorkspacePage } from "./browser-workspace-page";
 import { BROWSER_WORKSPACE_KEY, type BrowserTile } from "../data/browser-workspace";
+import { browserLayoutGeometry } from "../data/browser-workspace-layout";
 import type { LiveTargetSession, LiveTargetSnapshot } from "../data/live-target-session";
 const context = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock("@tanstack/react-router", () => ({
@@ -124,6 +125,97 @@ async function setup(
   return { sessions, values, preview, render };
 }
 describe("tiled browser workspace", () => {
+  async function beginDock() {
+    const grip = document.querySelector<HTMLButtonElement>('button[aria-label="Move Guest"]')!;
+    const target = document.querySelector<HTMLElement>('[data-browser-tile="Member"]')!;
+    grip.setPointerCapture = vi.fn();
+    grip.hasPointerCapture = () => true;
+    grip.releasePointerCapture = vi.fn();
+    target.getBoundingClientRect = () => new DOMRect(500, 0, 500, 350);
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
+    await act(async () =>
+      grip.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerId: 1,
+          clientX: 200,
+          clientY: 400,
+        }),
+      ),
+    );
+    await act(async () =>
+      grip.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 750, clientY: 4 }),
+      ),
+    );
+    return grip;
+  }
+  it("previews all four inset borders, docks vertically, and restores the saved layout without reconnecting", async () => {
+    const { sessions, values, preview, render } = await setup();
+    const canvases = [...document.querySelectorAll("canvas")];
+    const grip = await beginDock();
+    const destination = document.querySelector('[data-dock-side="top"]')!;
+    expect(destination.textContent).toBe("Above Member");
+    expect((destination as HTMLElement).style.getPropertyValue("--dock-left")).toContain("12px");
+    expect(destination.className).toContain("border-2");
+    expect(grip.getAttribute("aria-pressed")).toBe("true");
+    await act(async () =>
+      grip.dispatchEvent(
+        new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 750, clientY: 4 }),
+      ),
+    );
+    await settle();
+    expect(document.querySelector("[data-dock-side]")).toBeNull();
+    const stored = JSON.parse(values.get(BROWSER_WORKSPACE_KEY)!);
+    const positions = browserLayoutGeometry(stored.layout).tiles;
+    expect(positions.Guest!.y + positions.Guest!.height).toBe(positions.Member!.y);
+    expect([...document.querySelectorAll("canvas")]).toEqual(canvases);
+    expect(preview).toHaveBeenCalledTimes(4);
+    for (const session of sessions.values()) {
+      expect(session.close).not.toHaveBeenCalled();
+      expect(session.input).not.toHaveBeenCalled();
+    }
+    await act(async () => root!.render(<span />));
+    await render();
+    expect(
+      document
+        .querySelector<HTMLElement>('[data-browser-tile="Member"]')!
+        .style.getPropertyValue("--tile-top"),
+    ).toContain(`${positions.Member!.y}%`);
+    expect(preview).toHaveBeenCalledTimes(8);
+  });
+  it("cancels a docking gesture with Escape and preserves the existing layout on storage failure", async () => {
+    const { values, sessions } = await setup({ storageError: true });
+    const original = values.get(BROWSER_WORKSPACE_KEY);
+    let grip = await beginDock();
+    await act(async () =>
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(document.querySelector("[data-dock-side]")).toBeNull();
+    expect(grip.getAttribute("aria-pressed")).toBe("false");
+    await act(async () =>
+      grip.dispatchEvent(
+        new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 750, clientY: 4 }),
+      ),
+    );
+    expect(values.get(BROWSER_WORKSPACE_KEY)).toBe(original);
+    grip = await beginDock();
+    await act(async () =>
+      grip.dispatchEvent(
+        new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 750, clientY: 4 }),
+      ),
+    );
+    await settle();
+    expect(document.body.textContent).toContain("Couldn’t save this workspace");
+    expect(values.get(BROWSER_WORKSPACE_KEY)).toBe(original);
+    expect(
+      document
+        .querySelector<HTMLElement>('[data-browser-tile="Member"]')!
+        .style.getPropertyValue("--tile-top"),
+    ).toBe("calc(0% + 0px)");
+    for (const session of sessions.values()) expect(session.close).not.toHaveBeenCalled();
+  });
+
   it("reverses expansion from its current position without reconnecting live browsers", async () => {
     const { sessions, preview } = await setup();
     const elements = [...document.querySelectorAll<HTMLElement>("[data-browser-tile]")];
@@ -217,7 +309,7 @@ describe("tiled browser workspace", () => {
     await click("Remove Guest from workspace");
     expect(sessions.get("Guest")!.close).toHaveBeenCalledOnce();
     expect(sessions.get("Admin")!.close).not.toHaveBeenCalled();
-    expect(JSON.parse(values.get(BROWSER_WORKSPACE_KEY)!)).toEqual(
+    expect(JSON.parse(values.get(BROWSER_WORKSPACE_KEY)!).tiles).toEqual(
       tiles.filter((tile) => tile.id !== "Guest"),
     );
     await act(async () =>
