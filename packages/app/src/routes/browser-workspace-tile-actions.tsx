@@ -77,12 +77,12 @@ export function BrowserWorkspaceTileActions({
         >
           <MoreHorizontal aria-hidden="true" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="min-w-44 whitespace-nowrap">
           <DropdownMenuItem disabled={!ready} render={<Link to="/tests/new" search={search} />}>
             <Circle aria-hidden="true" /> Record test
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onRemove}>
-            <X aria-hidden="true" /> Remove from workspace
+            <X aria-hidden="true" /> Remove
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
