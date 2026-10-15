@@ -20,6 +20,10 @@ vi.mock("../data/review-product-service", async (importOriginal) => {
     ...actual,
     createReviewProductService: (platform: Platform) => ({
       ...actual.createReviewProductService(platform),
+      pendingCount: async (input: { appMapId?: string } = {}) => {
+        inbox.appMapIds.push(input.appMapId);
+        return inbox.count;
+      },
       inbox: async (input: { appMapId?: string } = {}) => {
         inbox.appMapIds.push(input.appMapId);
         return {

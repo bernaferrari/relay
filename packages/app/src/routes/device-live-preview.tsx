@@ -19,6 +19,7 @@ export function DeviceLivePreview({
   canvas,
   onCanvasChange,
   target,
+  inputScope,
   browserContext,
   status,
   issue,
@@ -36,6 +37,7 @@ export function DeviceLivePreview({
   canvas: RefObject<HTMLCanvasElement | null>;
   onCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
   target?: { name: string; detail: string };
+  inputScope?: string;
   browserContext?: LiveTargetBrowserContext;
   status: LiveTargetStatus;
   issue?: string;
@@ -98,6 +100,7 @@ export function DeviceLivePreview({
       ) : null}
       <div className="min-h-0 flex-1">
         <LiveTargetCanvas
+          inputScope={inputScope}
           canvasRef={canvas}
           onCanvasChange={onCanvasChange}
           status={pending || reconnecting ? "connecting" : status}

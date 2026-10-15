@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -72,6 +72,143 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
+  it("retains normal typing while the previous key awaits acknowledgement", async () => {
+    const sent: LiveTargetInput[] = [];
+    let finish!: (delivered: boolean) => void;
+    function Harness() {
+      const [busy, setBusy] = useState(false);
+      return (
+        <LiveTargetCanvas
+          canvasRef={{ current: null }}
+          status="streaming"
+          busy={busy}
+          targetTitle="Browser"
+          targetDetail=""
+          targetPlatform="browser"
+          recording={false}
+          send={async (input) => {
+            sent.push(input);
+            setBusy(true);
+            const result = await new Promise<boolean>((resolve) => {
+              finish = resolve;
+            });
+            setBusy(false);
+            return result;
+          }}
+        />
+      );
+    }
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(<Harness />);
+    });
+    const canvas = host.querySelector("canvas")!;
+    await act(async () => {
+      canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    });
+    await act(async () => {
+      canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "b", bubbles: true }));
+      canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true }));
+    });
+    expect(sent).toHaveLength(1);
+    await act(async () => {
+      finish(true);
+    });
+    expect(sent).toHaveLength(2);
+    await act(async () => {
+      finish(false);
+    });
+    expect(sent).toHaveLength(2);
+    expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Text to recover"]')?.value).toBe(
+      "bc",
+    );
+  });
+
+  it("ignores a tap starting outside the fitted image but allows an inside drag to its edge", async () => {
+    const send = vi.fn().mockResolvedValue(true);
+    const host = mountCanvas([{ title: "iPad", detail: "", targetPlatform: "ios", send }]);
+    const canvas = host.querySelector("canvas")!;
+    canvas.width = 100;
+    canvas.height = 200;
+    canvas.setPointerCapture = vi.fn();
+    canvas.getBoundingClientRect = () => new DOMRect(20, 30, 200, 200);
+    await act(async () => {
+      canvas.dispatchEvent(
+        new PointerEvent("pointerdown", { clientX: 40, clientY: 80, bubbles: true }),
+      );
+      canvas.dispatchEvent(
+        new PointerEvent("pointerup", { clientX: 40, clientY: 80, bubbles: true }),
+      );
+    });
+    expect(send).not.toHaveBeenCalled();
+    await act(async () => {
+      canvas.dispatchEvent(
+        new PointerEvent("pointerdown", { clientX: 100, clientY: 80, bubbles: true }),
+      );
+      canvas.dispatchEvent(
+        new PointerEvent("pointerup", { clientX: 40, clientY: 80, bubbles: true }),
+      );
+    });
+    expect(send).toHaveBeenCalledExactlyOnceWith({
+      kind: "scroll",
+      x: 30,
+      y: 50,
+      scrollX: -30,
+      scrollY: 0,
+    });
+  });
+
+  it("never sends buffered text to a replacement preview session", async () => {
+    let finish!: (delivered: boolean) => void;
+    const send = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    const render = (scope: string) => (
+      <LiveTargetCanvas
+        canvasRef={{ current: null }}
+        status="streaming"
+        busy={false}
+        targetTitle="Same device name"
+        inputScope={scope}
+        targetDetail=""
+        targetPlatform="browser"
+        send={send}
+        recording={false}
+      />
+    );
+    await act(async () => {
+      root.render(render("first"));
+    });
+    const canvas = host.querySelector("canvas")!;
+    await act(async () => {
+      for (const key of ["a", "b"])
+        canvas.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    });
+    await act(async () => {
+      root.render(render("replacement"));
+    });
+    await act(async () => {
+      finish(true);
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Text to recover"]')?.value).toBe(
+      "b",
+    );
+    await act(async () => {
+      canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true }));
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
   it.each(["sent", "not-delivered", "rejected"] as const)(
     "anchors tap feedback through resize and preserves the %s outcome",
     async (outcome) => {
@@ -202,8 +339,14 @@ describe("LiveTargetCanvas", () => {
     canvas.width = 500;
     canvas.height = 1000;
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 1000 }) as DOMRect;
+    const wheelEvent = (deltaY: number) => {
+      const event = new WheelEvent("wheel", { bubbles: true, deltaY, deltaX: 0 });
+      // happy-dom's WheelEvent omits inherited mouse coordinates.
+      Object.defineProperties(event, { clientX: { value: 100 }, clientY: { value: 400 } });
+      return event;
+    };
     await act(async () => {
-      canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 200 }));
+      canvas.dispatchEvent(wheelEvent(200));
       host.querySelector<HTMLButtonElement>('[aria-label="Fullscreen live control"]')!.click();
       await vi.advanceTimersByTimeAsync(200);
     });
@@ -212,13 +355,13 @@ describe("LiveTargetCanvas", () => {
       host.querySelector<HTMLButtonElement>('[aria-label="Exit fullscreen"]')!.click();
     });
     await act(async () => {
-      canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -200 }));
+      canvas.dispatchEvent(wheelEvent(-200));
       await vi.advanceTimersByTimeAsync(200);
     });
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("uses direct keyboard input for browsers and retains mobile text entry", () => {
+  it("uses direct keyboard input for browsers and retains mobile text entry", async () => {
     const send = vi.fn().mockResolvedValue(true);
     const host = mountCanvas([
       { title: "Browser", detail: "", targetPlatform: "browser", send },
@@ -227,7 +370,7 @@ describe("LiveTargetCanvas", () => {
     ]);
     expect(host.querySelectorAll('input[placeholder="Type into the app"]')).toHaveLength(2);
     const canvas = host.querySelector("canvas")!;
-    act(() => {
+    await act(async () => {
       canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
       canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });

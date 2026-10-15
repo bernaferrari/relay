@@ -583,6 +583,10 @@ describe("Devices", () => {
       } as unknown as RecordingProductService,
     });
     expect(previews).toBe(1);
+    const record = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (link) => link.textContent?.trim() === "Record test",
+    )!;
+    expect(new URL(record.href).searchParams.get("targetKind")).toBe("browser");
     expect(document.body.textContent).not.toContain("Opening the live device");
   });
 

@@ -135,10 +135,11 @@ describe("iOS continuous preview freshness", () => {
       const rejected = expect(pending).rejects.toThrow("current iOS preview frame");
       await flush();
       await vi.advanceTimersByTimeAsync(IOS_PREVIEW_FRAME_MAX_AGE_MS);
-      finish({ bounds: { width: 1112, height: 834 } });
+      finish({ bounds: { width: 1112, height: 834 }, boundsSource: "current-window" });
       await rejected;
       expect(view.invoke).toHaveBeenCalledExactlyOnceWith("target.snapshot.capture", {
         serial: "ipad",
+        logicalBoundsOnly: true,
       });
       expect(onInteraction).not.toHaveBeenCalled();
     },

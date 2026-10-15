@@ -29,6 +29,7 @@ import {
   type CSSProperties,
 } from "react";
 import { useLivePreviewFullscreen } from "./use-live-preview-fullscreen";
+import { useLiveKeyboardQueue } from "./use-live-keyboard-queue";
 import type {
   LiveTargetBrowserContext,
   LiveTargetInput,
@@ -58,6 +59,7 @@ export function LiveTargetCanvas({
   toolbar,
   showTargetDetails = true,
   targetPlatform,
+  inputScope,
   recoveryAction,
   issueAction,
   directBrowser = targetPlatform === "browser" || Boolean(browserContext),
@@ -81,6 +83,7 @@ export function LiveTargetCanvas({
   toolbar?: ReactNode;
   showTargetDetails?: boolean;
   targetPlatform?: string;
+  inputScope?: string;
   recoveryAction?: ReactNode;
   issueAction?: ReactNode;
   directBrowser?: boolean;
@@ -104,6 +107,12 @@ export function LiveTargetCanvas({
   );
   const streaming = status === "streaming";
   const interactive = streaming && inputEnabled;
+  const keyboard = useLiveKeyboardQueue({
+    enabled: interactive,
+    busy,
+    scope: inputScope ?? browserContext?.sessionId ?? targetTitle,
+    send,
+  });
   const help =
     helpText !== ""
       ? (helpText ??
@@ -128,6 +137,18 @@ export function LiveTargetCanvas({
     return () => clearTimeout(timer);
   }, [tap]);
 
+  function insideFrame(event: { clientX: number; clientY: number }): boolean {
+    const canvas = canvasRef.current;
+    if (!canvas?.width || !canvas.height) return false;
+    const rect = containedFrameRect(canvas.getBoundingClientRect(), canvas.width, canvas.height);
+    return (
+      event.clientX >= rect.left &&
+      event.clientX < rect.left + rect.width &&
+      event.clientY >= rect.top &&
+      event.clientY < rect.top + rect.height
+    );
+  }
+
   function point(event: { clientX: number; clientY: number }): Point {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -151,7 +172,8 @@ export function LiveTargetCanvas({
   }
 
   function pointerDown(event: PointerEvent<HTMLCanvasElement>) {
-    if (!interactive || busy) return;
+    pointerStart.current = undefined;
+    if (!interactive || busy || !insideFrame(event)) return;
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
     pointerStart.current = point(event);
@@ -180,7 +202,7 @@ export function LiveTargetCanvas({
   }
 
   function wheelTarget(event: WheelEvent<HTMLCanvasElement>) {
-    if (!interactive || busy) return;
+    if (!interactive || busy || !insideFrame(event)) return;
     event.preventDefault();
     const origin = point(event);
     const pending = wheel.current ?? { point: origin, x: 0, y: 0 };
@@ -207,30 +229,29 @@ export function LiveTargetCanvas({
   }
 
   function keyTarget(event: KeyboardEvent<HTMLCanvasElement>) {
-    if (!interactive || busy || composing.current || event.metaKey || event.ctrlKey || event.altKey)
-      return;
+    if (!interactive || composing.current || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === "Enter") {
       event.preventDefault();
-      void send({ kind: "key", key: "enter" });
+      keyboard.enqueue({ kind: "key", key: "enter" });
       return;
     }
     if (event.key === "Backspace") {
       event.preventDefault();
-      void send({ kind: "key", key: "backspace" });
+      keyboard.enqueue({ kind: "key", key: "backspace" });
       return;
     }
     if (event.key.length === 1) {
       event.preventDefault();
-      void send({ kind: "key", key: "enter", text: event.key });
+      keyboard.enqueue({ kind: "key", key: "enter", text: event.key });
     }
   }
 
   function pasteTarget(event: ClipboardEvent<HTMLCanvasElement>) {
-    if (!interactive || (busy && !directBrowser)) return;
+    if (!interactive) return;
     const value = event.clipboardData.getData("text");
     if (!value) return;
     event.preventDefault();
-    void send({ kind: "key", key: "enter", text: value });
+    keyboard.enqueue({ kind: "key", key: "enter", text: value });
   }
 
   function typeText() {
@@ -303,8 +324,8 @@ export function LiveTargetCanvas({
           }}
           onCompositionEnd={(event) => {
             composing.current = false;
-            if (!interactive || busy || !event.data) return;
-            void send({ kind: "key", key: "enter", text: event.data });
+            if (!interactive || !event.data) return;
+            keyboard.enqueue({ kind: "key", key: "enter", text: event.data });
           }}
         />
         {!streaming ? (
@@ -491,6 +512,25 @@ export function LiveTargetCanvas({
               </>
             ) : null}
           </div>
+        </div>
+      ) : null}
+      {keyboard.recovery !== undefined ? (
+        <div role="alert" className="grid gap-2 border-t border-border p-3 text-sm">
+          <p>Typing stopped. Check the app before continuing; this text may be partly entered.</p>
+          <textarea
+            aria-label="Text to recover"
+            readOnly
+            value={keyboard.recovery}
+            className="max-h-24 min-h-12 w-full rounded-md border border-input bg-background p-2 text-base"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="justify-self-start"
+            onClick={keyboard.clearRecovery}
+          >
+            Continue typing
+          </Button>
         </div>
       ) : null}
       {help ? (

@@ -404,15 +404,16 @@ async function interactWithLiveTarget() {
   });
   await settle();
   await act(async () => {
-    canvas.dispatchEvent(
-      new WheelEvent("wheel", {
-        bubbles: true,
-        cancelable: true,
-        clientX: 80,
-        clientY: 100,
-        deltaY: 30,
-      }),
-    );
+    const wheel = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 80,
+      clientY: 100,
+      deltaY: 30,
+      deltaX: 0,
+    });
+    Object.defineProperties(wheel, { clientX: { value: 80 }, clientY: { value: 100 } });
+    canvas.dispatchEvent(wheel);
     await new Promise((resolve) => setTimeout(resolve, 160));
   });
   await settle();

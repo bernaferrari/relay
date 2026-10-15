@@ -190,6 +190,19 @@ async function settle() {
 }
 
 describe("shell overlays", () => {
+  it("skips to the main region without replacing the current route", async () => {
+    const history = await renderShell({ initialEntries: ["/devices"], devices: [] });
+    const skip = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (link) => link.textContent === "Skip to content",
+    )!;
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(async () => {
+      skip.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(true);
+    expect(history.location.pathname).toBe("/devices");
+    expect(document.activeElement?.id).toBe("main-content");
+  });
   it("resolves a directly linked run from its own record even when the cached list misses it", async () => {
     let resolveRun!: (run: ProductRunDetail) => void;
     const runDetail = new Promise<ProductRunDetail>((resolve) => {

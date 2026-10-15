@@ -371,7 +371,7 @@ export function DevicePage() {
                           ? { app: recordingContinuation.appId }
                           : {}),
                         target: target.data?.targetId ?? device.data.serial,
-                        targetKind: "device",
+                        targetKind: device.data.platform === "browser" ? "browser" : "device",
                         ...(appIdentifier ? { originApplication: appIdentifier } : {}),
                       }}
                     />
@@ -442,6 +442,7 @@ export function DevicePage() {
           <div className="flex min-h-0 flex-1 flex-col gap-3">
             {deviceLivePreviewAvailable(device.data) ? (
               <DeviceLivePreview
+                inputScope={`${device.data.id}:${liveAttempt}:${browserContext?.sessionId ?? "native"}`}
                 platform={device.data.platform}
                 canvas={canvas}
                 onCanvasChange={onCanvasChange}

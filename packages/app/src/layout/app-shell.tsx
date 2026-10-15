@@ -68,6 +68,10 @@ export function AppShell({ platform }: { platform: Platform }) {
       <a
         className="bg-primary text-primary-foreground fixed left-1/2 top-2 z-50 inline-flex min-h-11 -translate-x-1/2 -translate-y-[160%] items-center rounded-md px-3 py-2 focus:translate-y-0"
         href="#main-content"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById("main-content")?.focus({ preventScroll: true });
+        }}
       >
         Skip to content
       </a>

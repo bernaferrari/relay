@@ -37,7 +37,12 @@ describe("mapClusters", () => {
     );
     expect(clusters).toHaveLength(1);
     expect(clusters[0]!.screenIds.sort()).toEqual(["about", "home", "settings"]);
-    expect(clusters[0]!.bounds).toEqual({ minX: -10, minY: -10, maxX: 1018, maxY: 378 });
+    expect(clusters[0]!.bounds).toEqual({
+      minX: -10,
+      minY: -10,
+      maxX: 800 + PORTRAIT_NODE.width + 10,
+      maxY: PORTRAIT_NODE.height + 10,
+    });
   });
 
   it("names the screen nothing inside leads to", () => {
