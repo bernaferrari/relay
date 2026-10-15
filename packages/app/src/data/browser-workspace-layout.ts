@@ -165,3 +165,71 @@ export function reorderBrowserLayout(
     second: reorderBrowserLayout(layout.second, previous, next),
   };
 }
+
+/** Dock to the outside of the entire layout, rather than nesting inside one tile. */
+export function dockBrowserToEdge(
+  layout: BrowserLayout,
+  source: string,
+  side: DockSide,
+): BrowserLayout {
+  if (!browserLayoutGeometry(layout).tiles[source]) return layout;
+  const remaining = remove(layout, source);
+  if (!remaining) return layout;
+  const before = side === "left" || side === "top";
+  return split(
+    side === "left" || side === "right" ? "horizontal" : "vertical",
+    before ? source : remaining,
+    before ? remaining : source,
+  );
+}
+
+export type BrowserArrangement = "grid" | "columns" | "rows";
+export function arrangeBrowsers(
+  ids: readonly string[],
+  arrangement: BrowserArrangement,
+): BrowserLayout | undefined {
+  if (arrangement === "grid") return defaultBrowserLayout(ids);
+  if (ids.length < 2) return ids[0];
+  const middle = Math.ceil(ids.length / 2);
+  return {
+    axis: arrangement === "columns" ? "horizontal" : "vertical",
+    ratio: (middle / ids.length) * 100,
+    first: arrangeBrowsers(ids.slice(0, middle), arrangement)!,
+    second: arrangeBrowsers(ids.slice(middle), arrangement)!,
+  };
+}
+
+/** Direction follows the visible splits, even after arbitrary nested docking. */
+export function neighboringBrowser(
+  layout: BrowserLayout,
+  id: string,
+  direction: DockSide,
+): string | undefined {
+  const tiles = browserLayoutGeometry(layout).tiles;
+  const source = tiles[id];
+  if (!source) return undefined;
+  const horizontal = direction === "left" || direction === "right";
+  const forward = direction === "right" || direction === "bottom";
+  const along = horizontal ? "x" : "y",
+    across = horizontal ? "y" : "x";
+  const length = horizontal ? "width" : "height",
+    crossLength = horizontal ? "height" : "width";
+  const candidates = Object.entries(tiles).filter(
+    ([other, rect]) =>
+      other !== id &&
+      (forward
+        ? rect[along] >= source[along] + source[length] - 0.01
+        : rect[along] + rect[length] <= source[along] + 0.01),
+  );
+  function score(rect: BrowserRect) {
+    const overlap =
+      Math.min(source[across] + source[crossLength], rect[across] + rect[crossLength]) -
+      Math.max(source[across], rect[across]);
+    return (
+      (overlap > 0 ? 0 : 1000) +
+      Math.abs(rect[along] + rect[length] / 2 - source[along] - source[length] / 2) +
+      Math.abs(rect[across] + rect[crossLength] / 2 - source[across] - source[crossLength] / 2) / 10
+    );
+  }
+  return candidates.sort((a, b) => score(a[1]) - score(b[1]))[0]?.[0];
+}

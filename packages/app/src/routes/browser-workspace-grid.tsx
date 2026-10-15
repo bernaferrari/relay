@@ -28,18 +28,21 @@ export function BrowserWorkspaceGrid({
       {children}
       {splits.map((split, index) => {
         const horizontal = split.axis === "horizontal";
+        const boundaryX = split.x + (horizontal ? (split.width * split.ratio) / 100 : 0);
+        const boundaryY = split.y + (horizontal ? 0 : (split.height * split.ratio) / 100);
         const style = {
-          "--divider-left": `${split.x + (horizontal ? (split.width * split.ratio) / 100 : 0)}%`,
-          "--divider-top": `${split.y + (horizontal ? 0 : (split.height * split.ratio) / 100)}%`,
-          "--divider-width": `${split.width}%`,
-          "--divider-height": `${split.height}%`,
+          "--divider-left": `calc(${boundaryX}% + ${(12 * boundaryX) / 100 - (horizontal ? 6 : 0)}px)`,
+          "--divider-top": `calc(${boundaryY}% + ${(12 * boundaryY) / 100 - (horizontal ? 0 : 6)}px)`,
+          "--divider-width": `calc(${split.width}% - ${12 * (1 - split.width / 100)}px)`,
+          "--divider-height": `calc(${split.height}% - ${12 * (1 - split.height / 100)}px)`,
         } as CSSProperties;
         function ratioAt(x: number, y: number) {
           const bounds = container.current!.getBoundingClientRect();
           const frame = drag.current ?? split;
           return horizontal
-            ? ((((x - bounds.left) / bounds.width) * 100 - frame.x) / frame.width) * 100
-            : ((((y - bounds.top) / bounds.height) * 100 - frame.y) / frame.height) * 100;
+            ? ((((x - bounds.left + 6) / (bounds.width + 12)) * 100 - frame.x) / frame.width) * 100
+            : ((((y - bounds.top + 6) / (bounds.height + 12)) * 100 - frame.y) / frame.height) *
+                100;
         }
         return (
           <div

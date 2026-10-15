@@ -128,9 +128,10 @@ describe("tiled browser workspace", () => {
   async function beginDock() {
     const grip = document.querySelector<HTMLButtonElement>('button[aria-label="Move Guest"]')!;
     const target = document.querySelector<HTMLElement>('[data-browser-tile="Member"]')!;
-    grip.setPointerCapture = vi.fn();
-    grip.hasPointerCapture = () => true;
-    grip.releasePointerCapture = vi.fn();
+    const header = grip.closest("header")!;
+    header.setPointerCapture = vi.fn();
+    header.hasPointerCapture = () => true;
+    header.releasePointerCapture = vi.fn();
     target.getBoundingClientRect = () => new DOMRect(500, 0, 500, 350);
     vi.spyOn(document, "elementFromPoint").mockReturnValue(target);
     await act(async () =>
@@ -155,10 +156,13 @@ describe("tiled browser workspace", () => {
     const canvases = [...document.querySelectorAll("canvas")];
     const grip = await beginDock();
     const destination = document.querySelector('[data-dock-side="top"]')!;
-    expect(destination.textContent).toBe("Above Member");
+    expect(destination.getAttribute("aria-label")).toBe("Guest: above Member");
     expect((destination as HTMLElement).style.getPropertyValue("--dock-left")).toContain("12px");
     expect(destination.className).toContain("border-2");
     expect(grip.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      document.querySelector<HTMLElement>('[data-browser-tile="Guest"]')!.style.transform,
+    ).toContain("translate(550px, -396px)");
     await act(async () =>
       grip.dispatchEvent(
         new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 750, clientY: 4 }),

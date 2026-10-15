@@ -1,9 +1,12 @@
 /** @jsxImportSource react */
 import { useEffect, useRef, useState, type CSSProperties, type MouseEventHandler } from "react";
-import { Link, useRouteContext } from "@tanstack/react-router";
+import { useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import { Circle, Maximize2, Minimize2, X } from "lucide-react";
 import type { BrowserRect } from "../data/browser-workspace-layout";
+import {
+  BrowserWorkspaceHeader,
+  type BrowserWorkspaceHeaderProps,
+} from "./browser-workspace-header";
 import { BrowserAddressBar } from "../components/browser-address-bar";
 import type { BrowserTile } from "../data/browser-workspace";
 import type {
@@ -11,6 +14,7 @@ import type {
   LiveTargetSession,
   LiveTargetSnapshot,
 } from "../data/live-target-session";
+import { BrowserWorkspaceTileActions } from "./browser-workspace-tile-actions";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { errorMessage } from "./recording-shared";
 
@@ -23,9 +27,9 @@ export function BrowserWorkspaceTile({
   className = "",
   rect,
   dragging,
-  grip,
+  controls,
 }: {
-  grip: import("react").ReactNode;
+  controls: Omit<BrowserWorkspaceHeaderProps, "id" | "name" | "leading" | "actions">;
   className?: string;
   rect: BrowserRect;
   dragging?: boolean;
@@ -106,10 +110,10 @@ export function BrowserWorkspaceTile({
     <section
       style={
         {
-          "--tile-left": `calc(${rect.x}% + ${rect.x > 0.01 ? 6 : 0}px)`,
-          "--tile-top": `calc(${rect.y}% + ${rect.y > 0.01 ? 6 : 0}px)`,
-          "--tile-width": `calc(${rect.width}% - ${(rect.x > 0.01 ? 6 : 0) + (rect.x + rect.width < 99.99 ? 6 : 0)}px)`,
-          "--tile-height": `calc(${rect.height}% - ${(rect.y > 0.01 ? 6 : 0) + (rect.y + rect.height < 99.99 ? 6 : 0)}px)`,
+          "--tile-left": `calc(${rect.x}% + ${(12 * rect.x) / 100}px)`,
+          "--tile-top": `calc(${rect.y}% + ${(12 * rect.y) / 100}px)`,
+          "--tile-width": `calc(${rect.width}% - ${12 * (1 - rect.width / 100)}px)`,
+          "--tile-height": `calc(${rect.height}% - ${12 * (1 - rect.height / 100)}px)`,
         } as CSSProperties
       }
       data-browser-tile={tile.id}
@@ -118,62 +122,31 @@ export function BrowserWorkspaceTile({
       hidden={hidden}
       className={`${className} ${hidden ? "hidden" : "flex"} @container min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-background data-[workspace-moving]:z-20 data-[dragging]:pointer-events-none data-[dragging]:z-40 data-[dragging]:opacity-90 data-[dragging]:shadow-2xl absolute top-(--tile-top) left-(--tile-left) h-(--tile-height) w-(--tile-width)`}
     >
-      <header className="grid min-h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 border-b border-border px-3">
-        <div
-          className="min-w-0 flex-1 truncate text-sm font-medium"
-          title={`${tile.name} · ${tile.accountName}`}
-        >
-          {tile.name}{" "}
-          {!["New profile", "Current session", tile.name].includes(tile.accountName) ? (
-            <span className="font-normal text-muted-foreground">· {tile.accountName}</span>
-          ) : null}
-        </div>
-        {grip}
-        <div className="flex items-center justify-end gap-0.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="gap-1.5 px-2 text-xs"
-            nativeButton={false}
-            aria-label={`Record ${tile.name}`}
-            disabled={busy || snapshot?.status !== "streaming"}
-            render={
-              <Link
-                to="/tests/new"
-                search={{
-                  target: tile.browserId,
-                  ...(tile.identity?.authenticationFixtureId
-                    ? { account: tile.identity.authenticationFixtureId }
-                    : tile.identity?.signedOut
-                      ? { account: "" }
-                      : {}),
-                }}
-              />
-            }
+      <BrowserWorkspaceHeader
+        {...controls}
+        id={tile.id}
+        name={tile.name}
+        leading={
+          <div
+            className="min-w-0 flex-1 truncate text-sm font-medium"
+            title={`${tile.name} · ${tile.accountName}`}
           >
-            <Circle className="size-2 fill-destructive text-destructive" aria-hidden="true" />
-            <span className="@max-[380px]:hidden">Record</span>
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8"
-            aria-label={focused ? `Restore ${tile.name}` : `Expand ${tile.name}`}
-            onClick={onFocus}
-          >
-            {focused ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8"
-            aria-label={`Remove ${tile.name} from workspace`}
-            onClick={onRemove}
-          >
-            <X aria-hidden="true" />
-          </Button>
-        </div>
-      </header>
+            {tile.name}{" "}
+            {!["New profile", "Current session", tile.name].includes(tile.accountName) ? (
+              <span className="font-normal text-muted-foreground">· {tile.accountName}</span>
+            ) : null}
+          </div>
+        }
+        actions={
+          <BrowserWorkspaceTileActions
+            tile={tile}
+            focused={focused}
+            ready={!busy && snapshot?.status === "streaming"}
+            onFocus={onFocus}
+            onRemove={onRemove}
+          />
+        }
+      />
       <BrowserAddressBar
         url={snapshot?.browserContext?.pageUrl}
         disabled={busy || snapshot?.status !== "streaming"}

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   browserDockSide,
+  arrangeBrowsers,
+  neighboringBrowser,
   browserLayoutGeometry,
   defaultBrowserLayout,
   dockBrowser,
+  dockBrowserToEdge,
   reorderBrowserLayout,
   resizeBrowserSplit,
   restoreBrowserLayout,
@@ -99,6 +102,38 @@ describe("directional browser docking", () => {
         ).tiles,
       ),
     ).toHaveLength(4);
+  });
+  it("docks to a full workspace edge instead of forcing another nested split", () => {
+    for (const side of ["left", "right", "top", "bottom"] as const) {
+      const layout = dockBrowserToEdge(defaultBrowserLayout(ids)!, "Guest", side);
+      const { tiles } = browserLayoutGeometry(layout);
+      expect(Object.keys(tiles).sort()).toEqual([...ids].sort());
+      expect(side === "left" || side === "right" ? tiles.Guest!.height : tiles.Guest!.width).toBe(
+        100,
+      );
+      expect(restoreBrowserLayout(layout, ids)).toEqual(layout);
+    }
+  });
+  it("balances presets and follows visible neighbors rather than fixed array offsets", () => {
+    const columns = arrangeBrowsers(ids, "columns")!;
+    expect(
+      Object.values(browserLayoutGeometry(columns).tiles).every(
+        (rect) => rect.width === 25 && rect.height === 100,
+      ),
+    ).toBe(true);
+    expect(neighboringBrowser(columns, "Member", "right")).toBe("Guest");
+    expect(neighboringBrowser(columns, "Member", "top")).toBeUndefined();
+    const rows = arrangeBrowsers(ids, "rows")!;
+    expect(
+      Object.values(browserLayoutGeometry(rows).tiles).every(
+        (rect) => rect.height === 25 && rect.width === 100,
+      ),
+    ).toBe(true);
+    expect(neighboringBrowser(rows, "Member", "bottom")).toBe("Guest");
+    expect(neighboringBrowser(rows, "Member", "left")).toBeUndefined();
+    expect(
+      Object.keys(browserLayoutGeometry(arrangeBrowsers(ids.slice(0, 3), "columns")).tiles),
+    ).toHaveLength(3);
   });
   it("uses all four edges even for very wide or tall targets", () => {
     expect(browserDockSide(500, 2, 1000, 100)).toBe("top");

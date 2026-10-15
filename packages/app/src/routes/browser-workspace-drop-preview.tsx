@@ -12,12 +12,14 @@ const label: Record<DockSide, string> = {
 export function BrowserWorkspaceDropPreview({
   side,
   name,
+  sourceName,
   rect,
   before,
   elementRef,
 }: {
   side: DockSide;
   name: string;
+  sourceName: string;
   rect: BrowserRect;
   before?: DOMRect;
   elementRef: RefObject<HTMLDivElement | null>;
@@ -52,19 +54,25 @@ export function BrowserWorkspaceDropPreview({
     <div
       ref={elementRef}
       data-dock-side={side}
+      role="img"
+      aria-label={`${sourceName}: ${label[side].toLowerCase()} ${name}`}
       style={
         {
-          "--dock-left": `calc(${rect.x}% + ${rect.x > 0.01 ? 12 : 6}px)`,
-          "--dock-top": `calc(${rect.y}% + ${rect.y > 0.01 ? 12 : 6}px)`,
-          "--dock-width": `calc(${rect.width}% - ${(rect.x > 0.01 ? 6 : 0) + (rect.x + rect.width < 99.99 ? 6 : 0) + 12}px)`,
-          "--dock-height": `calc(${rect.height}% - ${(rect.y > 0.01 ? 6 : 0) + (rect.y + rect.height < 99.99 ? 6 : 0) + 12}px)`,
+          "--dock-left": `calc(${rect.x}% + ${(12 * rect.x) / 100 + 6}px)`,
+          "--dock-top": `calc(${rect.y}% + ${(12 * rect.y) / 100 + 6}px)`,
+          "--dock-width": `calc(${rect.width}% - ${12 * (1 - rect.width / 100) + 12}px)`,
+          "--dock-height": `calc(${rect.height}% - ${12 * (1 - rect.height / 100) + 12}px)`,
         } as CSSProperties
       }
-      className="pointer-events-none absolute top-(--dock-top) left-(--dock-left) z-50 flex h-(--dock-height) w-(--dock-width) items-center justify-center rounded-lg border-2 border-primary bg-primary/15"
+      className="pointer-events-none absolute top-(--dock-top) left-(--dock-left) z-50 h-(--dock-height) w-(--dock-width) overflow-hidden rounded-xl border-2 border-primary/70 bg-primary/10"
     >
-      <span className="max-w-full truncate rounded-md bg-background/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
-        {label[side]} {name}
-      </span>
+      <div className="relative flex h-11 items-center border-b border-primary/20 bg-primary/10 px-3">
+        <span className="max-w-2/3 truncate text-sm font-medium text-foreground">{sourceName}</span>
+        <span
+          className="absolute top-1/2 left-1/2 h-1 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/40"
+          aria-hidden="true"
+        />
+      </div>
     </div>
   );
 }
