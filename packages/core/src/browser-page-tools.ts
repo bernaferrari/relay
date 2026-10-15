@@ -43,10 +43,12 @@ export async function applyBrowserPageTool(
 ): Promise<BrowserPageToolResult> {
   const state = stateFor(page);
   if (command.kind === "browser.zoom") {
-    await page.evaluate((factor) => {
-      document.documentElement.style.zoom = String(factor);
-    }, command.factor);
-    state.zoom = command.factor;
+    if (command.factor !== undefined) {
+      await page.evaluate((factor) => {
+        document.documentElement.style.zoom = String(factor);
+      }, command.factor);
+      state.zoom = command.factor;
+    }
     return { zoom: state.zoom };
   }
   if (command.kind === "browser.history") {

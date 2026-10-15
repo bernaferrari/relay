@@ -8,11 +8,12 @@ import { RecordingInputNotSentError } from "./recording-input-outcome";
 
 /** Manual page tools use the same painted-frame and supervised input contract as taps. */
 export function createLiveBrowserTools(
-  client: RelayClient,
+  client: Pick<RelayClient, "invoke">,
   targetId: string,
   current: () => { closed: boolean; frame: BrowserDeviceFrame | undefined },
 ) {
-  return async (command: BrowserPageTool) => {
+  let tail: Promise<unknown> = Promise.resolve();
+  async function execute(command: BrowserPageTool) {
     const { closed, frame } = current();
     if (closed || !frame)
       throw new RecordingInputNotSentError("Wait for the browser preview to connect.");
@@ -34,5 +35,10 @@ export function createLiveBrowserTools(
     )
       await new Promise((resolve) => setTimeout(resolve, 25));
     return result.tools ?? {};
+  }
+  return (command: BrowserPageTool) => {
+    const next = tail.then(() => execute(command));
+    tail = next.catch(() => undefined);
+    return next;
   };
 }

@@ -37,8 +37,10 @@ export const browserImportedStorageSchema = z
   })
   .strict()
   .superRefine((state, context) => {
-    if (JSON.stringify(state).length > 8 * 1024 * 1024)
+    if (new TextEncoder().encode(JSON.stringify(state)).byteLength > 8 * 1024 * 1024)
       context.addIssue({ code: "custom", message: "The sign-in file must be smaller than 8 MB." });
+    if (!state.cookies.length && !state.origins.length)
+      context.addIssue({ code: "custom", message: "The file contains no saved sign-in state." });
     if (state.origins.some((row) => !/^https?:\/\//u.test(row.origin)))
       context.addIssue({ code: "custom", message: "Sign-in origins must use HTTP or HTTPS." });
   });
@@ -46,7 +48,8 @@ export type BrowserImportedStorage = z.infer<typeof browserImportedStorageSchema
 
 /** Accept browser cookie exports and Playwright state; discard exporter-specific fields. */
 export function parseBrowserSessionImport(raw: string): BrowserImportedStorage {
-  if (raw.length > 8 * 1024 * 1024) throw new Error("Choose a sign-in file smaller than 8 MB.");
+  if (new TextEncoder().encode(raw).byteLength > 8 * 1024 * 1024)
+    throw new Error("Choose a sign-in file smaller than 8 MB.");
   let value: unknown;
   try {
     value = JSON.parse(raw);

@@ -5,7 +5,10 @@ export const browserPageToolShapes = [
     query: z.string().max(512),
     direction: z.enum(["first", "next", "previous"]).default("first"),
   }),
-  z.object({ kind: z.literal("browser.zoom"), factor: z.number().finite().min(0.25).max(3) }),
+  z.object({
+    kind: z.literal("browser.zoom"),
+    factor: z.number().finite().min(0.25).max(3).optional(),
+  }),
   z.object({ kind: z.literal("browser.history") }),
 ] as const;
 export const browserPageToolSchema = z.discriminatedUnion("kind", browserPageToolShapes);

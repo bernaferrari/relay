@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import { access } from "node:fs/promises";
 import test from "node:test";
 import { chromium } from "playwright-core";
 import { applyBrowserPageTool, observeBrowserPageTools } from "./browser-page-tools.js";
 
-test("page tools find visible literal text, wrap matches, zoom across navigation and retain tab history", async () => {
+test("page tools find visible literal text, wrap matches, zoom across navigation and retain tab history", async (t) => {
+  const executablePath =
+    process.env.RELAY_TEST_CHROME_PATH ??
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  try {
+    await access(executablePath);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   const server = http.createServer((req, res) => {
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.end(

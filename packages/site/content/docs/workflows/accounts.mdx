@@ -17,6 +17,17 @@ This guide covers **website accounts**. For native apps, use the account already
 
 The saved session can contain sensitive cookies or tokens. Use a test account and keep the workspace private. Do not paste credentials into a Test description or Data set.
 
+## Import an existing sign-in
+
+In **Browsers**, choose **Import cookies**, or open a saved browser and use **Import cookies** in its Accounts section.
+
+1. Choose the Relay browser that will own the account.
+2. Select a browser cookie-export JSON file or a Playwright storage-state JSON file, up to 8 MB.
+3. Check the listed domains and give the account a name.
+4. Choose **Import sign-in**, then open the saved account to confirm its identity.
+
+Relay stores the session encrypted on the Relay host. Import creates a saved account; it does not replace the account currently open in another browser. Relay does not read or decrypt Chrome, Safari, or other personal browser profiles automatically.
+
 ## Use it in a Test or Plan
 
 Select the saved account in the Test's run setup, or in the Plan's account setup. Confirm the website, browser or device, and account together before starting.

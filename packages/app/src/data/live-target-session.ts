@@ -1,3 +1,4 @@
+import { decodeBinaryFrame } from "./live-browser-frame";
 import type { TalkBackCaptureResult } from "./talkback-overlay";
 import { createLiveBrowserTools } from "./live-browser-tools";
 import { reviewAndroidTalkBack } from "@relay/protocol";
@@ -9,7 +10,7 @@ import {
   nativePreviewNeedsLogicalCoordinates,
   sendIosPreviewInput,
 } from "./live-native-preview-input";
-import { ApiError, type BinaryResource, type RelayClient } from "@relay/client";
+import { ApiError, type RelayClient } from "@relay/client";
 import type {
   BrowserPageTool,
   BrowserPageToolResult,
@@ -25,7 +26,6 @@ import {
   BROWSER_DEVICE_BINARY_FRAME_CONTENT_TYPE,
   MAX_BROWSER_DEVICE_BINARY_FRAME_BYTES,
   MAX_BROWSER_DEVICE_BINARY_METADATA_BYTES,
-  browserDeviceBinaryFrameMetadataSchema,
 } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
@@ -99,12 +99,6 @@ type Client = Pick<RelayClient, "invoke" | "binaryResource" | "openStream"> & {
   readonly connection: ServerConnection;
 };
 
-type BinaryFrameMetadata = {
-  session: BrowserDeviceSession;
-  frame: Omit<BrowserDeviceFrame, "base64">;
-  gap?: { afterSequence: number; currentSequence: number; dropped: number };
-};
-
 const FRAME_MAX_BYTES = 18 * 1024 * 1024;
 const STREAM_CONNECT_ATTEMPTS = 3;
 
@@ -154,45 +148,6 @@ function base64ToBytes(value: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;
-}
-
-function decodeBinaryFrame(resource: BinaryResource): {
-  metadata: BinaryFrameMetadata;
-  bytes: Uint8Array;
-} {
-  if (resource.headers.get("x-relay-browser-device-transport") !== "binary") {
-    throw new Error("Live browser frame omitted its transport marker");
-  }
-  if (
-    resource.headers.get("content-type")?.split(";", 1)[0] !==
-    BROWSER_DEVICE_BINARY_FRAME_CONTENT_TYPE
-  ) {
-    throw new Error("Live browser frame has an unsupported content type");
-  }
-  if (resource.bytes.byteLength < 4) throw new Error("Live browser frame envelope is truncated");
-  const metadataLength = new DataView(
-    resource.bytes.buffer,
-    resource.bytes.byteOffset,
-    4,
-  ).getUint32(0);
-  if (metadataLength > MAX_BROWSER_DEVICE_BINARY_METADATA_BYTES) {
-    throw new Error("Live browser frame metadata exceeds its bounded size");
-  }
-  const frameOffset = 4 + metadataLength;
-  if (frameOffset > resource.bytes.byteLength) {
-    throw new Error("Live browser frame metadata length exceeds its body");
-  }
-  const metadata = browserDeviceBinaryFrameMetadataSchema.parse(
-    JSON.parse(new TextDecoder().decode(resource.bytes.subarray(4, frameOffset))),
-  );
-  const bytes = resource.bytes.subarray(frameOffset);
-  if (bytes.byteLength > MAX_BROWSER_DEVICE_BINARY_FRAME_BYTES) {
-    throw new Error("Live browser frame exceeds its bounded size");
-  }
-  if (bytes.byteLength !== metadata.frame.bytes) {
-    throw new Error("Live browser frame length does not match its metadata");
-  }
-  return { metadata, bytes };
 }
 
 /** The 16-byte Relay video packet envelope used by the existing target stream. */

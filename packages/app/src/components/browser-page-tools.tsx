@@ -94,13 +94,16 @@ export function BrowserPageTools({
     const key = (event: KeyboardEvent) => {
       if (!scope.current?.parentElement?.contains(document.activeElement) || disabled) return;
       const modifier = event.metaKey || event.ctrlKey;
-      if (modifier && ["f", "F", "y", "Y", "+", "=", "-", "0"].includes(event.key)) {
+      const historyShortcut =
+        (event.metaKey && event.key.toLowerCase() === "y") ||
+        (event.ctrlKey && event.key.toLowerCase() === "h");
+      if ((modifier && ["f", "F", "+", "=", "-", "0"].includes(event.key)) || historyShortcut) {
         event.preventDefault();
         event.stopPropagation();
         if (event.key.toLowerCase() === "f") {
           setFinding(true);
           input.current?.focus();
-        } else if (event.key.toLowerCase() === "y") void run({ kind: "browser.history" });
+        } else if (historyShortcut) void run({ kind: "browser.history" });
         else changeZoom(event.key === "0" ? 1 : zoom + (event.key === "-" ? -0.1 : 0.1));
       }
     };
@@ -125,7 +128,11 @@ export function BrowserPageTools({
   );
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (open) void run({ kind: "browser.zoom" });
+        }}
+      >
         <DropdownMenuTrigger
           render={
             <Button
@@ -161,12 +168,12 @@ export function BrowserPageTools({
             <Button
               size="sm"
               variant="ghost"
-              className="w-14 tabular-nums"
+              className="w-14"
               aria-label="Reset zoom"
               disabled={pending}
               onClick={() => changeZoom(1)}
             >
-              {Math.round(zoom * 100)}%
+              <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
             </Button>
             <Button
               size="icon-sm"
@@ -279,14 +286,14 @@ export function BrowserPageTools({
                 <Button
                   key={`${row.url}:${index}`}
                   variant="ghost"
-                  className="h-auto w-full justify-start py-2 text-left"
+                  className="h-auto w-full justify-start text-left"
                   onClick={() => {
                     void navigate(row.url).then((sent) => {
                       if (sent) setHistory(undefined);
                     });
                   }}
                 >
-                  <span className="min-w-0">
+                  <span className="min-w-0 py-1">
                     <span className="block truncate">{row.title || row.url}</span>
                     <span className="block truncate text-xs text-muted-foreground">{row.url}</span>
                   </span>

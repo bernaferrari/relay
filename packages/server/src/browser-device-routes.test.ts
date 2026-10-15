@@ -124,6 +124,35 @@ test(
         }),
         (error) => error instanceof ApiError && error.status === 403,
       );
+      const importInput = {
+        targetId: target.id,
+        name: "Imported synthetic account",
+        confirm: true as const,
+        storageState: {
+          cookies: [
+            {
+              name: "session",
+              value: "import-secret-canary",
+              domain: "127.0.0.1",
+              path: "/",
+              expires: -1,
+              httpOnly: true,
+              secure: false,
+              sameSite: "Lax" as const,
+            },
+          ],
+          origins: [],
+        },
+      };
+      await assert.rejects(
+        agentClient.invoke("target.browser-auth.import", importInput),
+        (error) => error instanceof ApiError && error.status === 403,
+      );
+      const imported = await client.invoke("target.browser-auth.import", importInput);
+      assert.equal(imported.fixture.createdBy, "human:browser-device-route-test");
+      assert.equal(imported.fixture.cookieCount, 1);
+      assert.equal(imported.fixture.targetId, target.id);
+      assert.doesNotMatch(JSON.stringify(imported), /import-secret-canary/u);
       const first = await client.invoke("target.browser-device.frame", { targetId: target.id });
       assert.equal(first.frame.sequence, 1);
       assert.equal(first.frame.sessionId, opened.session.sessionId);
@@ -369,6 +398,45 @@ test(
           .frame;
       }
       assert.match(submitted.pageUrl, /submitted\?q=hello/);
+      const toolBinding = {
+        sessionId: submitted.sessionId,
+        pageId: submitted.pageId,
+        expectedSequence: submitted.sequence,
+        interaction: "direct" as const,
+      };
+      const found = await client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: { ...toolBinding, kind: "browser.find", query: "Continue", direction: "first" },
+      });
+      assert.equal(found.tools?.find?.total, 1);
+      await assert.rejects(
+        client.invoke("target.browser-device.control", {
+          targetId: target.id,
+          input: { ...toolBinding, kind: "browser.zoom", factor: 1.5 },
+        }),
+        (error) => error instanceof ApiError && error.status === 409,
+      );
+      const toolFrame = (
+        await client.invoke("target.browser-device.frame", { targetId: target.id })
+      ).frame;
+      const zoom = await client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: {
+          ...toolBinding,
+          expectedSequence: toolFrame.sequence,
+          kind: "browser.zoom",
+          factor: 1.5,
+        },
+      });
+      assert.equal(zoom.tools?.zoom, 1.5);
+      const historyFrame = (
+        await client.invoke("target.browser-device.frame", { targetId: target.id })
+      ).frame;
+      const history = await client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: { ...toolBinding, expectedSequence: historyFrame.sequence, kind: "browser.history" },
+      });
+      assert.ok(history.tools?.history?.some((row) => row.url === `${startUrl}/submitted?q=hello`));
       const revokedAuthentication = await client.invoke("target.browser-auth.revoke", {
         targetId: target.id,
         reference: savedAuthentication.fixture.reference,
