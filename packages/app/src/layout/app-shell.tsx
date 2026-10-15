@@ -92,7 +92,7 @@ export function AppShell({ platform }: { platform: Platform }) {
               title="Show or hide navigation"
               className="[-webkit-app-region:no-drag] size-8 shrink-0"
             />
-            <div className="[-webkit-app-region:no-drag] inline-flex items-center gap-px">
+            <div className="[-webkit-app-region:no-drag] inline-flex items-center">
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -145,28 +145,29 @@ export function AppShell({ platform }: { platform: Platform }) {
           ].join(" ")}
         >
           <SidebarTrigger className="[-webkit-app-region:no-drag]" aria-label="Open navigation" />
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="[-webkit-app-region:no-drag] size-9"
-            aria-label="Go back"
-            onClick={goBack}
-            disabled={!canGoBack}
-          >
-            <ChevronLeft aria-hidden="true" />
-          </Button>
+          <div className="[-webkit-app-region:no-drag] inline-flex items-center">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="[-webkit-app-region:no-drag] size-9"
+              aria-label="Go back"
+              onClick={goBack}
+              disabled={!canGoBack}
+            >
+              <ChevronLeft aria-hidden="true" />
+            </Button>
 
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="[-webkit-app-region:no-drag] size-9"
-            aria-label="Go forward"
-            onClick={() => router.history.forward()}
-            disabled={!historyAvailability.canGoForward}
-          >
-            <ChevronRight aria-hidden="true" />
-          </Button>
-
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="[-webkit-app-region:no-drag] size-9"
+              aria-label="Go forward"
+              onClick={() => router.history.forward()}
+              disabled={!historyAvailability.canGoForward}
+            >
+              <ChevronRight aria-hidden="true" />
+            </Button>
+          </div>
           <div className="ml-auto inline-flex items-center gap-0.5">
             <ActivityCenterButton />
           </div>

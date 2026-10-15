@@ -1,6 +1,5 @@
 /** @jsxImportSource react */
 import { useRef } from "react";
-import { GripHorizontal } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 
 export function BrowserWorkspaceGrip({
@@ -29,7 +28,7 @@ export function BrowserWorkspaceGrip({
     <Button
       size="icon"
       variant="ghost"
-      className="h-9 w-10 shrink-0 touch-none cursor-grab active:cursor-grabbing"
+      className="group h-11 w-16 shrink-0 touch-none cursor-grab active:cursor-grabbing"
       aria-label={`Move ${name}`}
       title="Drag to reorder. Use arrow keys to move."
       disabled={disabled}
@@ -42,6 +41,7 @@ export function BrowserWorkspaceGrip({
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.preventDefault();
+        event.currentTarget.focus({ preventScroll: true });
         start.current = { x: event.clientX, y: event.clientY };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
@@ -66,7 +66,10 @@ export function BrowserWorkspaceGrip({
         onHover();
       }}
     >
-      <GripHorizontal className="size-5 text-muted-foreground" aria-hidden="true" />
+      <span
+        className="h-1.5 w-10 rounded-full bg-muted-foreground/50 transition-colors group-hover:bg-muted-foreground group-active:bg-foreground group-focus-visible:bg-foreground"
+        aria-hidden="true"
+      />
     </Button>
   );
 }
