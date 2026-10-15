@@ -20,6 +20,7 @@ import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PageLoading } from "./recording-shared";
+import { BrowserSignInImport } from "./browser-sign-in-import";
 import { BrowserWorkspacePage } from "./browser-workspace-page";
 import { PairedWorkspacePanel } from "./paired-workspace-panel";
 
@@ -136,6 +137,7 @@ function BrowserLibraryPage() {
             >
               Workspace
             </Button>
+            <BrowserSignInImport service={browserSpacesService} spaces={spaces.data ?? []} />
             {continuation ? (
               <Button
                 variant="ghost"

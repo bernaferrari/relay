@@ -10,6 +10,8 @@ import {
 } from "./live-native-preview-input";
 import { ApiError, type BinaryResource, type RelayClient } from "@relay/client";
 import type {
+  BrowserPageTool,
+  BrowserPageToolResult,
   AuthoringInteraction,
   AuthoringTarget,
   BrowserDeviceFrame,
@@ -87,6 +89,7 @@ export type LiveTargetSession = {
   /** Start transport and paint the newest frames into the supplied canvas. */
   mount(canvas: LiveTargetMount): () => void;
   input(input: LiveTargetInput): Promise<void>;
+  browserTools?(command: BrowserPageTool): Promise<BrowserPageToolResult>;
   setAccessibilityInspection?(enabled: boolean): void;
   close(): void;
 };
@@ -751,6 +754,29 @@ export function createLiveTargetSession(input: {
       };
     },
     input: send,
+    ...(target.kind === "browser" && !input.onInteraction
+      ? {
+          browserTools: async (command: BrowserPageTool) => {
+            if (closed || !browserFrame)
+              throw new RecordingInputNotSentError("Wait for the browser preview to connect.");
+            const sequence = browserFrame.sequence;
+            const result = await input.client.invoke("target.browser-device.control", {
+              targetId: target.targetId,
+              input: {
+                ...command,
+                sessionId: browserFrame.sessionId,
+                pageId: browserFrame.pageId,
+                expectedSequence: sequence,
+                interaction: "direct",
+              },
+            });
+            const deadline = Date.now() + 3000;
+            while (!closed && browserFrame?.sequence === sequence && Date.now() < deadline)
+              await new Promise((resolve) => setTimeout(resolve, 25));
+            return result.tools ?? {};
+          },
+        }
+      : {}),
     setAccessibilityInspection(enabled) {
       inspectAccessibility = enabled;
     },

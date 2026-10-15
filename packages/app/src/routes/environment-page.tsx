@@ -1,3 +1,4 @@
+import { BrowserSignInImport } from "./browser-sign-in-import";
 /** @jsxImportSource react */
 import {
   Dialog,
@@ -383,17 +384,24 @@ export function EnvironmentPage() {
               >
                 Accounts
               </h2>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setAccountName("");
-                  saveAccount.reset();
-                  setAccountOpen(true);
-                }}
-              >
-                <Plus aria-hidden="true" /> Save current sign-in
-              </Button>
+              <div className="flex items-center gap-2">
+                <BrowserSignInImport
+                  service={browserSpacesService}
+                  spaces={spaces.data ?? []}
+                  spaceId={profileId}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setAccountName("");
+                    saveAccount.reset();
+                    setAccountOpen(true);
+                  }}
+                >
+                  <Plus aria-hidden="true" /> Save current sign-in
+                </Button>
+              </div>
             </div>
             {fixtures.isPending ? <PageLoading label="Loading accounts…" /> : null}
             {currentAccounts.length ? (

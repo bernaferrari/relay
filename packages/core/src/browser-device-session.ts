@@ -1,3 +1,5 @@
+import { applyBrowserPageTool, observeBrowserPageTools } from "./browser-page-tools.js";
+import type { BrowserPageToolResult } from "@relay/protocol";
 import { waitForBrowserContent } from "./browser-readiness.js";
 import { createHash } from "node:crypto";
 import type { Locator, Page } from "playwright-core";
@@ -161,6 +163,7 @@ function attachPage(state: SessionState, page: Page, kind: "page" | "popup" = "p
   state.pageKinds.set(id, state.pageKinds.get(id) ?? kind);
   if (state.attached.has(page)) return id;
   state.attached.add(page);
+  observeBrowserPageTools(page);
   page.on("crash", () => {
     state.status = "crashed";
     state.issue = "The browser page crashed. Reload or reopen the Browser Device.";
@@ -582,12 +585,18 @@ async function applyInput(
   state: SessionState,
   input: BrowserDeviceInput,
   resolvedClick?: ResolvedBrowserClick,
-): Promise<void> {
+): Promise<BrowserPageToolResult | void> {
   const page = assertInput(state, input);
   // Fail closed before dispatch: a rejected or uncertain Playwright mutation
   // still requires a new observation before any later input.
   state.needsFreshFrame = true;
   state.runtime.markMutation();
+  if (
+    input.kind === "browser.find" ||
+    input.kind === "browser.zoom" ||
+    input.kind === "browser.history"
+  )
+    return applyBrowserPageTool(page, input);
   if (input.kind === "click") {
     if (resolvedClick) await resolvedClick.dispatch();
     else await page.mouse.click(input.x, input.y);
@@ -769,9 +778,11 @@ export async function controlBrowserDevice(
   ok: true;
   session: BrowserDeviceRuntimeSession;
   resolution?: BrowserDeviceInputResolution;
+  tools?: BrowserPageToolResult;
 }> {
   const state = stateForTarget(targetId);
   let resolvedClick: ResolvedBrowserClick | undefined;
+  let tools: BrowserPageToolResult | void;
   const startedAt = performance.now();
   const operation = runBrowserMutationAdmission(targetId, async () => {
     if (state.capture) await state.capture;
@@ -783,7 +794,9 @@ export async function controlBrowserDevice(
         if (input.kind === "click") resolvedClick = await resolveBrowserClick(state, input);
         await beforeDispatch?.();
       },
-      dispatch: () => applyInput(state, input, resolvedClick),
+      dispatch: async () => {
+        tools = await applyInput(state, input, resolvedClick);
+      },
     });
   });
   try {
@@ -795,6 +808,7 @@ export async function controlBrowserDevice(
     ok: true,
     session: await projection(state),
     ...(resolvedClick ? { resolution: resolvedClick.resolution } : {}),
+    ...(tools ? { tools } : {}),
   };
 }
 

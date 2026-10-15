@@ -1,3 +1,4 @@
+import { browserPageToolResultSchema } from "./browser-page-tools.js";
 import * as z from "zod/v4";
 import { everydayOperationOutputSchemas } from "./everyday-operation-output-schemas.js";
 import { browserCaseProfileSchema, browserEnvironmentInputSchema } from "./browser-case-profile.js";
@@ -738,6 +739,7 @@ export const workspaceTargetOperationOutputSchemas = {
       ok: z.literal(true),
       session: browserDeviceSessionSchema,
       resolution: browserDeviceInputResolutionSchema.optional(),
+      tools: browserPageToolResultSchema.optional(),
     })
     .strict(),
   "target.browser-auth.import": z

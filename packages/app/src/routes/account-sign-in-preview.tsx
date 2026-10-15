@@ -94,6 +94,11 @@ export function AccountSignInPreview({
       aria-label="Sign-in browser"
     >
       <BrowserAddressBar
+        tools={
+          session.current?.browserTools
+            ? (command) => session.current!.browserTools!(command)
+            : undefined
+        }
         url={snapshot.browserContext?.pageUrl ?? opened.url}
         disabled={!ready || disabled}
         send={input.send}

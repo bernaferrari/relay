@@ -70,7 +70,7 @@ async function settle() {
 }
 async function click(label: string, pointer = false) {
   const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => item.getAttribute("aria-label") === label || item.textContent === label,
+    (item) => item.getAttribute("aria-label") === label || item.textContent?.trim() === label,
   );
   if (!button) throw new Error(`Missing ${label}`);
   await act(async () => {

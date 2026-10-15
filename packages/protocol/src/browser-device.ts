@@ -1,3 +1,4 @@
+import { browserPageToolShapes } from "./browser-page-tools.js";
 import * as z from "zod/v4";
 import { browserCaseProfileSchema, browserEnvironmentInputSchema } from "./browser-case-profile.js";
 import { browserDeviceTelemetrySchema } from "./browser-device-telemetry.js";
@@ -188,6 +189,7 @@ const frameBound = {
 } as const;
 
 export const browserDeviceInputSchema = z.discriminatedUnion("kind", [
+  ...browserPageToolShapes.map((schema) => schema.extend(frameBound).strict()),
   z
     .object({
       ...frameBound,

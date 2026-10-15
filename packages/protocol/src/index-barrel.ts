@@ -126,3 +126,5 @@ export * from "./run-reason.js";
 export * from "./failing-step-frame.js";
 
 export * from "./browser-session-import.js";
+
+export * from "./browser-page-tools.js";

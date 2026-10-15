@@ -1,9 +1,10 @@
 /** @jsxImportSource react */
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, RotateCw } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import type { LiveTargetInput } from "../data/live-target-session";
+import { BrowserPageTools } from "./browser-page-tools";
+import type { LiveTargetSession, LiveTargetInput } from "../data/live-target-session";
 
 export function browserAddress(value: string): string {
   const address = value.trim();
@@ -22,9 +23,11 @@ export function BrowserAddressBar({
   disabled,
   send,
   trailing,
+  tools,
 }: {
   url?: string;
   trailing?: ReactNode;
+  tools?: LiveTargetSession["browserTools"];
   disabled: boolean;
   send: (input: LiveTargetInput) => Promise<boolean>;
 }) {
@@ -32,6 +35,7 @@ export function BrowserAddressBar({
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const errorId = useId();
+  const scope = useRef<HTMLFormElement>(null);
   async function navigate(input: LiveTargetInput) {
     setPending(true);
     try {
@@ -45,7 +49,8 @@ export function BrowserAddressBar({
   }
   return (
     <form
-      className="shrink-0 px-3 py-2"
+      ref={scope}
+      className="relative shrink-0 px-3 py-2"
       aria-label="Browser navigation"
       onSubmit={(event) => {
         event.preventDefault();
@@ -104,6 +109,22 @@ export function BrowserAddressBar({
             }
           }}
         />
+        {tools ? (
+          <BrowserPageTools
+            scope={scope}
+            disabled={disabled || pending}
+            command={tools}
+            navigate={async (url) => {
+              if (disabled || pending) return false;
+              setPending(true);
+              try {
+                return await send({ kind: "navigate", url });
+              } finally {
+                setPending(false);
+              }
+            }}
+          />
+        ) : null}
         {trailing}
       </div>
       {error ? (

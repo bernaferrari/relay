@@ -453,6 +453,11 @@ export function DevicePage() {
           <div className="flex min-h-0 flex-1 flex-col gap-3">
             {deviceLivePreviewAvailable(device.data) ? (
               <DeviceLivePreview
+                browserTools={
+                  session.current?.browserTools
+                    ? (command) => session.current!.browserTools!(command)
+                    : undefined
+                }
                 inputScope={`${device.data.id}:${liveAttempt}:${browserContext?.sessionId ?? "native"}`}
                 platform={device.data.platform}
                 canvas={canvas}

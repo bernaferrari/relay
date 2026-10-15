@@ -442,6 +442,7 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
         ok: true,
         session: await withOwnership(scope, result.session),
         ...(result.resolution ? { resolution: result.resolution } : {}),
+        ...(result.tools ? { tools: result.tools } : {}),
       });
     } catch (error) {
       if (error instanceof BrowserDeviceInputOverloadedError) {

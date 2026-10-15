@@ -16,6 +16,7 @@ import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkba
 
 export function DeviceLivePreview({
   platform,
+  browserTools,
   canvas,
   onCanvasChange,
   target,
@@ -34,6 +35,7 @@ export function DeviceLivePreview({
   talkBack,
 }: {
   platform: string;
+  browserTools?: LiveTargetSession["browserTools"];
   canvas: RefObject<HTMLCanvasElement | null>;
   onCanvasChange?: (canvas: HTMLCanvasElement | null) => void;
   target?: { name: string; detail: string };
@@ -93,6 +95,7 @@ export function DeviceLivePreview({
       </div>
       {platform === "browser" ? (
         <BrowserAddressBar
+          tools={browserTools}
           url={browserContext?.pageUrl}
           disabled={busy || status !== "streaming"}
           send={send}
