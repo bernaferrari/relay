@@ -11,7 +11,7 @@ import {
 } from "@relay/ui-react/components/dialog";
 import { Field, FieldLabel, FieldError } from "@relay/ui-react/components/field";
 import { Input } from "@relay/ui-react/components/input";
-import { FileCode, FolderOpen, Play, RefreshCw, Square } from "lucide-react";
+import { ChevronRight, FileCode, FolderOpen, Play, RefreshCw, Square } from "lucide-react";
 import type { E2EExecution } from "@relay/protocol";
 import { createE2EProjectService } from "../data/e2e-project-service";
 
@@ -184,39 +184,47 @@ export function E2EProjectLibrary({
         </DialogContent>
       </Dialog>
       {visible && matches.length ? (
-        <section className="mt-6" aria-label="e2e projects">
+        <section className="mt-4" aria-label="e2e projects">
           <h2 className="mb-2 text-sm font-medium text-muted-foreground">Code projects</h2>
-          <ul className="divide-y rounded-xl border">
-            {matches.map((project) => (
-              <li key={project.id}>
-                <button
-                  className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring"
-                  onClick={() => {
-                    setSelected(project.id);
-                    setExecutionId(undefined);
-                    run.reset();
-                    refresh.reset();
-                    readSource.reset();
-                    stop.reset();
-                    retry.reset();
-                  }}
-                >
-                  <FolderOpen className="size-4 text-muted-foreground" />
-                  <span className="grid min-w-0 gap-1">
-                    <span className="font-medium">{project.name}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      e2e ·{" "}
-                      {
-                        new Set(
-                          project.tests.map((test) => JSON.stringify([test.file, test.titlePath])),
-                        ).size
-                      }{" "}
-                      Tests · {new Set(project.tests.map((test) => test.target)).size} targets
+          <ul className="overflow-hidden divide-y rounded-lg border border-border">
+            {matches.map((project) => {
+              const testCount = new Set(
+                project.tests.map((test) => JSON.stringify([test.file, test.titlePath])),
+              ).size;
+              const targetCount = new Set(project.tests.map((test) => test.target)).size;
+              return (
+                <li key={project.id}>
+                  <button
+                    className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+                    onClick={() => {
+                      setSelected(project.id);
+                      setExecutionId(undefined);
+                      run.reset();
+                      refresh.reset();
+                      readSource.reset();
+                      stop.reset();
+                      retry.reset();
+                    }}
+                  >
+                    <FolderOpen
+                      aria-hidden="true"
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
+                    <span className="grid min-w-0 flex-1 gap-0.5 sm:flex sm:items-center sm:justify-between sm:gap-3">
+                      <span className="truncate text-sm font-medium">{project.name}</span>
+                      <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+                        e2e · {testCount} {testCount === 1 ? "test" : "tests"} · {targetCount}{" "}
+                        {targetCount === 1 ? "target" : "targets"}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              </li>
-            ))}
+                    <ChevronRight
+                      aria-hidden="true"
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -262,7 +270,7 @@ export function E2EProjectLibrary({
                 </div>
               </div>
               {error ? <FieldError>{error.message}</FieldError> : null}
-              <ul className="divide-y rounded-xl border">
+              <ul className="overflow-hidden divide-y rounded-lg border border-border">
                 {current.tests.map((test) => (
                   <li
                     key={test.id}

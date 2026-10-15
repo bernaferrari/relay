@@ -216,13 +216,16 @@ export function TestsPage() {
               Open project
             </Button>
             {/* One main action per tab: plans are created where plans are listed. */}
-            {view === "plans" ? <NewPlanDialog {...(app ? { appId: app } : {})} /> : null}
-            <Button
-              nativeButton={false}
-              render={<Link to="/tests/new" search={{ app: app || undefined }} />}
-            >
-              <Plus aria-hidden="true" /> New test
-            </Button>
+            {view === "plans" ? (
+              <NewPlanDialog {...(app ? { appId: app } : {})} />
+            ) : (
+              <Button
+                nativeButton={false}
+                render={<Link to="/tests/new" search={{ app: app || undefined }} />}
+              >
+                <Plus aria-hidden="true" /> New test
+              </Button>
+            )}
           </>
         }
       />
@@ -232,16 +235,6 @@ export function TestsPage() {
         failing={failing.length}
         inProgress={inProgress}
         onShowFailing={() => updateSearch({ result: "failed", view: "tests" })}
-      />
-
-      <E2EProjectLibrary
-        open={e2eOpen}
-        onOpenChange={setE2EOpen}
-        search={deferredQuery}
-        onCount={setCodeTestCount}
-        visible={view === "tests" && !app}
-        initialProjectId={typeof search.e2eProject === "string" ? search.e2eProject : undefined}
-        onProjectClose={() => updateSearch({ e2eProject: undefined })}
       />
 
       <Tabs
@@ -285,6 +278,16 @@ export function TestsPage() {
               />
             </div>
           )}
+
+          <E2EProjectLibrary
+            open={e2eOpen}
+            onOpenChange={setE2EOpen}
+            search={deferredQuery}
+            onCount={setCodeTestCount}
+            visible={view === "tests" && !app}
+            initialProjectId={typeof search.e2eProject === "string" ? search.e2eProject : undefined}
+            onProjectClose={() => updateSearch({ e2eProject: undefined })}
+          />
 
           {tests.isPending ? <PageLoading label="Loading tests…" /> : null}
           <RecordingProblem
