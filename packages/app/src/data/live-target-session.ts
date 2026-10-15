@@ -1,4 +1,5 @@
 import type { TalkBackCaptureResult } from "./talkback-overlay";
+import { createLiveBrowserTools } from "./live-browser-tools";
 import { reviewAndroidTalkBack } from "@relay/protocol";
 import { RecordingInputNotSentError } from "./recording-input-outcome";
 import { drawJpeg } from "./live-target-jpeg";
@@ -756,28 +757,10 @@ export function createLiveTargetSession(input: {
     input: send,
     ...(target.kind === "browser" && !input.onInteraction
       ? {
-          browserTools: async (command: BrowserPageTool) => {
-            if (closed || !browserFrame)
-              throw new RecordingInputNotSentError("Wait for the browser preview to connect.");
-            const sequence = browserFrame.sequence;
-            const result = await input.client.invoke("target.browser-device.control", {
-              targetId: target.targetId,
-              input: {
-                ...command,
-                ...(command.kind === "browser.find"
-                  ? { direction: command.direction ?? "first" }
-                  : {}),
-                sessionId: browserFrame.sessionId,
-                pageId: browserFrame.pageId,
-                expectedSequence: sequence,
-                interaction: "direct",
-              },
-            });
-            const deadline = Date.now() + 3000;
-            while (!closed && browserFrame?.sequence === sequence && Date.now() < deadline)
-              await new Promise((resolve) => setTimeout(resolve, 25));
-            return result.tools ?? {};
-          },
+          browserTools: createLiveBrowserTools(input.client, target.targetId, () => ({
+            closed,
+            frame: browserFrame,
+          })),
         }
       : {}),
     setAccessibilityInspection(enabled) {

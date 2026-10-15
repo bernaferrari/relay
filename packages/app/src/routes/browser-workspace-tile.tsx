@@ -148,11 +148,7 @@ export function BrowserWorkspaceTile({
         }
       />
       <BrowserAddressBar
-        tools={
-          session.current?.browserTools
-            ? (command) => session.current!.browserTools!(command)
-            : undefined
-        }
+        tools={session.current?.browserTools}
         url={snapshot?.browserContext?.pageUrl}
         disabled={busy || snapshot?.status !== "streaming"}
         send={send}
