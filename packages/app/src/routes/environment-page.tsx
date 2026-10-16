@@ -29,7 +29,14 @@ import {
   useNavigate,
   useRouteContext,
 } from "@tanstack/react-router";
-import { ChevronRight, MoreHorizontal, Plus, RotateCcw } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+} from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { FormPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
@@ -38,6 +45,7 @@ import { BrowserLaneTabs } from "../components/browser-lane-tabs";
 import { PageLoading } from "./recording-shared";
 import { productLinkClassName } from "../lib/class-names";
 import type { ProductBrowserAuthFixture } from "../data/browser-spaces-product-service";
+import { PersonAvatar, tintFor } from "./browsers-side-by-side";
 
 const routeApi = getRouteApi("/environments/$profileId");
 
@@ -184,43 +192,63 @@ export function EnvironmentPage() {
     readiness.data?.target.checks.filter((check) => check.status === "fail") ?? [];
   const warningChecks =
     readiness.data?.target.checks.filter((check) => check.status === "warning") ?? [];
-  const currentAccounts = fixtures.data?.filter((fixture) => fixture.revokedAt === undefined) ?? [];
-  const inactiveAccounts =
-    fixtures.data?.filter((fixture) => fixture.revokedAt !== undefined) ?? [];
+  // One browser is one identity: its newest active sign-in. Anything older is history.
+  const activeAccounts = [
+    ...(fixtures.data?.filter((fixture) => fixture.revokedAt === undefined) ?? []),
+  ].sort((a, b) => b.createdAt - a.createdAt);
+  const currentAccounts = activeAccounts.slice(0, 1);
+  const inactiveAccounts = [
+    ...activeAccounts.slice(1),
+    ...(fixtures.data?.filter((fixture) => fixture.revokedAt !== undefined) ?? []),
+  ];
 
   function accountRow(fixture: ProductBrowserAuthFixture) {
     const status = signInStatus(fixture);
+    const active = fixture.revokedAt === undefined;
     return (
-      <li
-        className="flex items-center gap-4 border-t border-border py-2.5 first:border-t-0 first:pt-0"
-        key={fixture.reference}
-      >
-        <span className="min-w-0 flex-1">
-          <strong className="block text-sm font-medium wrap-anywhere">{fixture.name}</strong>
-          {status ? <small className="text-xs text-muted-foreground">{status}</small> : null}
+      <li className="flex items-center gap-3 px-4 py-3" key={fixture.reference}>
+        <PersonAvatar name={fixture.name} />
+        <span className="grid min-w-0 flex-1">
+          <strong className="truncate text-sm font-medium">{fixture.name}</strong>
+          <small
+            className={`text-xs ${status ? "text-warning-foreground" : "text-muted-foreground"}`}
+          >
+            {status ??
+              `Saved ${new Date(fixture.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+          </small>
         </span>
-        {fixture.revokedAt === undefined ? (
-          <span className="flex shrink-0 items-center">
+        {active ? (
+          <span className="flex shrink-0 items-center gap-1">
             <Button
               size="sm"
               variant="ghost"
               onClick={() => refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })}
               disabled={refreshAccount.isPending}
-              title="Save this browser's current sign-in over the stored one"
+              title="Replace it with the sign-in open in this browser right now"
             >
-              Update sign-in
+              <RefreshCw aria-hidden="true" /> Update
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                revokeAccount.reset();
-                setRevokeFixture(fixture);
-              }}
-              disabled={revokeAccount.isPending}
-            >
-              Revoke
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button size="icon-sm" variant="ghost" aria-label={`More for ${fixture.name}`} />
+                }
+              >
+                <MoreHorizontal aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" sideOffset={6}>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => {
+                    revokeAccount.reset();
+                    setRevokeFixture(fixture);
+                  }}
+                  disabled={revokeAccount.isPending}
+                >
+                  Revoke sign-in
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </span>
         ) : null}
       </li>
@@ -255,11 +283,34 @@ export function EnvironmentPage() {
       ) : null}
       {space ? (
         <>
-          <PageHeader
-            crumbs={[{ label: "Browsers", to: "/environments" }, { label: space.name }]}
-            title={space.name}
-            description={displayHost(space.startUrl)}
-            actions={
+          <Link
+            to="/environments"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" /> Browsers
+          </Link>
+          <header className="mt-3 mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <span
+                aria-hidden="true"
+                className={`grid size-12 shrink-0 place-items-center rounded-xl text-lg font-semibold ${tintFor(displayHost(space.startUrl))}`}
+              >
+                {displayHost(space.startUrl)
+                  .replace(/^www\./u, "")
+                  .charAt(0)
+                  .toUpperCase() || "?"}
+              </span>
+              <div className="grid min-w-0 gap-0.5">
+                <h1 className="truncate font-display text-3xl leading-9 font-semibold tracking-[-0.025em]">
+                  {space.name}
+                </h1>
+                <p className="truncate text-sm text-muted-foreground">
+                  {displayHost(space.startUrl)}
+                  {space.environment?.locale ? ` · ${space.environment.locale}` : ""}
+                </p>
+              </div>
+            </div>
+            {
               <div className="flex items-center gap-2">
                 {continuation ? (
                   <Button
@@ -287,7 +338,7 @@ export function EnvironmentPage() {
                   </Button>
                 ) : null}
                 <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
-                  {open.isPending ? "Opening…" : "Open in Relay"}
+                  {open.isPending ? "Opening…" : "Open browser"}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -309,7 +360,7 @@ export function EnvironmentPage() {
                 </DropdownMenu>
               </div>
             }
-          />
+          </header>
           {open.error || openExternal.error || openLane.error ? (
             <FieldError>
               {(open.error ?? openExternal.error ?? openLane.error) instanceof Error
@@ -373,57 +424,96 @@ export function EnvironmentPage() {
             onOpen={(tab) => openLane.mutate(tab.laneId)}
           />
 
-          <section
-            className="mt-6 border-t border-border pt-5"
-            aria-labelledby="environment-account-title"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h2
-                id="environment-account-title"
-                className="text-sm font-medium text-muted-foreground"
-              >
-                Accounts
-              </h2>
+          <section className="mt-8 grid gap-3" aria-labelledby="environment-account-title">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="grid gap-0.5">
+                <h2 id="environment-account-title" className="text-base font-semibold">
+                  Sign-in
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  This browser opens signed in as this account, and tests start from it.
+                </p>
+              </div>
               <div className="flex items-center gap-2">
                 <BrowserSignInImport
                   service={browserSpacesService}
                   spaces={spaces.data ?? []}
                   spaceId={profileId}
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setAccountName("");
-                    saveAccount.reset();
-                    setAccountOpen(true);
-                  }}
-                >
-                  <Plus aria-hidden="true" /> Save current sign-in
-                </Button>
+                {currentAccounts.length ? null : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setAccountName("");
+                      saveAccount.reset();
+                      setAccountOpen(true);
+                    }}
+                  >
+                    <Plus aria-hidden="true" /> Save sign-in
+                  </Button>
+                )}
               </div>
             </div>
             {fixtures.isPending ? <PageLoading label="Loading accounts…" /> : null}
             {currentAccounts.length ? (
-              <ul data-slot="environment-accounts" className="mt-2 grid list-none p-0">
+              <ul
+                data-slot="environment-accounts"
+                className="grid list-none divide-y divide-border overflow-hidden rounded-xl border border-border bg-card p-0"
+              >
                 {currentAccounts.map(accountRow)}
               </ul>
             ) : !fixtures.isPending ? (
-              <p className="mt-2 text-sm leading-5 text-muted-foreground">
-                Save the account currently open in this browser to reuse it in tests.
-              </p>
+              // First time: three plain steps, with the two buttons that do them.
+              <div className="grid gap-4 rounded-xl border border-dashed border-border p-5">
+                <ol className="grid list-none gap-3 p-0 sm:grid-cols-3">
+                  {[
+                    ["Open the browser", "Relay opens it with its own clean profile."],
+                    ["Sign in to an account", "Use the site normally, like Admin or Member."],
+                    ["Save it here", "Name it, like Admin. Tests start signed in."],
+                  ].map(([title, detail], index) => (
+                    <li key={title} className="flex gap-3">
+                      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-medium tabular-nums">
+                        {index + 1}
+                      </span>
+                      <span className="grid gap-0.5">
+                        <span className="text-sm font-medium">{title}</span>
+                        <span className="text-xs leading-relaxed text-muted-foreground">
+                          {detail}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => open.mutate()} disabled={open.isPending}>
+                    {open.isPending ? "Opening…" : "Open browser"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setAccountName("");
+                      saveAccount.reset();
+                      setAccountOpen(true);
+                    }}
+                  >
+                    Save sign-in
+                  </Button>
+                </div>
+              </div>
             ) : null}
             {inactiveAccounts.length ? (
               <Collapsible key={profileId} className="mt-3 border-t border-border">
                 <CollapsibleTrigger
-                  aria-label={`Inactive accounts, ${inactiveAccounts.length}`}
+                  aria-label={`Earlier sign-ins, ${inactiveAccounts.length}`}
                   className="group flex min-h-11 w-full items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
                 >
                   <ChevronRight
                     className="size-4 shrink-0 group-aria-expanded:rotate-90"
                     aria-hidden="true"
                   />
-                  <span>Inactive accounts</span>
+                  <span>Earlier sign-ins</span>
                   <span className="text-xs tabular-nums">{inactiveAccounts.length}</span>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
@@ -482,9 +572,9 @@ export function EnvironmentPage() {
 
           <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
             <DialogContent showCloseButton={false}>
-              <DialogTitle>Save account</DialogTitle>
+              <DialogTitle>Save sign-in</DialogTitle>
               <DialogDescription>
-                Open the browser, sign in, then save it under a name.
+                Sign in inside this browser first, then name the account, like Admin.
               </DialogDescription>
               <form onSubmit={submitAccount}>
                 <Field>

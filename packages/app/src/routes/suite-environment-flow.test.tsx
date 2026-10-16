@@ -563,11 +563,18 @@ describe("Suite and Environment routes", () => {
     expect(document.querySelector("#suite-run-setup")?.textContent).not.toContain("Run test");
   });
 
-  it("creates a browser with labeled fields and opens its canonical detail route", async () => {
+  it("creates a browser from just its website and opens it right away", async () => {
     const created = { ...space, id: "space-2", name: "New staging" };
     const create = vi.fn(async () => created);
     const { history } = await render("/environments?view=new", {
-      browserService: browserService({ createSpace: create }),
+      browserService: browserService({
+        createSpace: create,
+        openSpace: async () => ({
+          targetId: "space-2",
+          name: "New staging",
+          url: created.startUrl,
+        }),
+      }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Browsers");
     expect(document.querySelector('[data-slot="page-context"]')).toBeNull();
@@ -575,19 +582,19 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).not.toContain("Fresh browser each session");
     expect(document.body.textContent).not.toContain("Open →");
 
-    await fill("space-name", "New staging");
-    await fill("space-url", "https://new.example.test");
-    expect(document.querySelector('label[for="space-name"]')?.textContent).toBe("Name");
+    // Only the website is asked for; the name comes from it.
+    expect(document.getElementById("space-name")).toBeNull();
+    await fill("space-url", "new.example.test");
     expect(document.querySelector('label[for="space-url"]')?.textContent).toBe("Website");
     expect(document.body.textContent).not.toContain("Keep this browser profile");
     expect(document.body.textContent).not.toContain("Keep data if you need");
-    await clickButton("Create browser");
+    await clickButton("Open browser");
     expect(create).toHaveBeenCalledWith({
-      name: "New staging",
+      name: "new.example.test",
       startUrl: "https://new.example.test",
       profileRetention: "retain",
     });
-    expect(history.location.pathname).toBe("/environments/space-2");
+    expect(history.location.pathname).toBe("/devices/space-2");
   });
 
   it("collapses revoked account history while expired accounts keep their repair actions", async () => {
@@ -597,6 +604,8 @@ describe("Suite and Environment routes", () => {
       reference: "authfx:expired:1",
       name: "Expired member",
       expiresAt: Date.now() - 1_000,
+      // Newest, so it is this browser's sign-in; the older one moves to history.
+      createdAt: 2,
     };
     const revoked = Array.from({ length: 14 }, (_, index) => ({
       ...fixture,
@@ -615,22 +624,22 @@ describe("Suite and Environment routes", () => {
       }),
     });
 
+    // One browser, one sign-in: the newest. An expired one keeps its repair actions.
     const accounts = document.querySelector('[data-slot="environment-accounts"]')!;
-    expect(accounts.querySelectorAll("li")).toHaveLength(2);
-    expect(accounts.textContent).toContain("Staging account");
-    const expiredRow = [...accounts.querySelectorAll("li")].find((row) =>
-      row.textContent?.includes("Expired member"),
-    )!;
+    expect(accounts.querySelectorAll("li")).toHaveLength(1);
+    const expiredRow = accounts.querySelector("li")!;
+    expect(expiredRow.textContent).toContain("Expired member");
     expect(expiredRow.textContent).toContain("Expired");
-    expect([...expiredRow.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
-      "Update sign-in",
-      "Revoke",
-    ]);
+    expect(
+      [...expiredRow.querySelectorAll("button")].map(
+        (button) => button.textContent?.trim() || button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Update", "More for Expired member"]);
     const history = document.querySelector<HTMLButtonElement>(
-      'button[aria-label="Inactive accounts, 14"]',
+      'button[aria-label="Earlier sign-ins, 15"]',
     )!;
-    expect(history.textContent).toContain("Inactive accounts");
-    expect(history.textContent).toContain("14");
+    expect(history.textContent).toContain("Earlier sign-ins");
+    expect(history.textContent).toContain("15");
     expect(history.getAttribute("aria-expanded")).toBe("false");
     expect(document.body.textContent).not.toContain("Historical account");
 
@@ -638,11 +647,16 @@ describe("Suite and Environment routes", () => {
     await settle();
     expect(history.getAttribute("aria-expanded")).toBe("true");
     const historyList = document.querySelector('[data-slot="environment-inactive-accounts"]')!;
-    expect(historyList.querySelectorAll("li")).toHaveLength(14);
+    expect(historyList.querySelectorAll("li")).toHaveLength(15);
+    expect(historyList.textContent).toContain("Staging account");
     expect(historyList.textContent).toContain("Historical account 1");
     expect(historyList.textContent).toContain("Historical account 14");
     expect(historyList.textContent).toContain("Revoked");
-    expect(historyList.querySelector("button")).toBeNull();
+    // Revoked sign-ins are history only: no actions.
+    const revokedRows = [...historyList.querySelectorAll("li")].filter((row) =>
+      row.textContent?.includes("Historical account"),
+    );
+    expect(revokedRows.every((row) => row.querySelector("button") === null)).toBe(true);
 
     await act(async () => history.click());
     await settle();
@@ -676,7 +690,7 @@ describe("Suite and Environment routes", () => {
       }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Staging browser");
-    expect(document.querySelector('[data-slot="breadcrumbs"]')?.textContent).toContain("Browsers");
+    expect(document.querySelector('a[href="/environments"]')?.textContent).toContain("Browsers");
     expect(document.body.textContent).toContain("Staging account");
     expect(document.querySelector('[data-slot="environment-accounts"]')?.textContent).not.toContain(
       "Available",
@@ -691,19 +705,28 @@ describe("Suite and Environment routes", () => {
     expect(calls.open).toBe(1);
     expect(openExternal).not.toHaveBeenCalled();
 
-    await clickButton("Open in Relay");
+    await clickButton("Open browser");
     expect(calls.open).toBe(2);
     expect(history.location.pathname).toBe(`/devices/${space.id}`);
     await act(async () => {
       history.back();
     });
 
-    await clickButton("Save current sign-in");
-    await fill("account-fixture-name", "QA member");
-    await clickButton("Save");
-    expect(calls.save).toEqual([{ spaceId: "space-1", name: "QA member" }]);
+    // A browser has one sign-in: "Save sign-in" gives way to Update once one exists.
+    expect(
+      [...document.querySelectorAll("button")].some(
+        (button) => button.textContent?.trim() === "Save sign-in",
+      ),
+    ).toBe(false);
+    await clickButton("Update");
 
-    await clickButton("Revoke");
+    const rowMenu = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="More for Staging account"]',
+    );
+    if (!rowMenu) throw new Error("Account menu missing");
+    await act(async () => rowMenu.click());
+    await settle();
+    await clickButton("Revoke sign-in");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "existing run evidence",
     );

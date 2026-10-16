@@ -4,6 +4,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
+import { SelectField } from "../components/filter-select";
+import { browserLabel } from "./browsers-side-by-side";
 import {
   Dialog,
   DialogContent,
@@ -30,7 +32,6 @@ export function BrowserWorkspacePicker({
   const available = spaces.filter((space) => !used.includes(space.id));
   const [creating, setCreating] = useState(available.length === 0);
   const [browserId, setBrowserId] = useState(available[0]?.id ?? "");
-  const [account, setAccount] = useState("current");
   const [name, setName] = useState("");
   const [url, setUrl] = useState(spaces[0]?.startUrl ?? "");
   const selected = available.find((space) => space.id === browserId);
@@ -42,6 +43,9 @@ export function BrowserWorkspacePicker({
   const validFixtures = (fixtures.data ?? []).filter(
     (fixture) => !fixture.revokedAt && (!fixture.expiresAt || fixture.expiresAt > Date.now()),
   );
+  // One browser is one identity: open as its saved sign-in, else as its current session.
+  const account =
+    [...validFixtures].sort((a, b) => b.createdAt - a.createdAt)[0]?.reference ?? "current";
   const add = useMutation({
     mutationFn: async () => {
       let space = selected;
@@ -82,8 +86,6 @@ export function BrowserWorkspacePicker({
     },
     onSuccess: onClose,
   });
-  const selectClass =
-    "h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring";
   return (
     <Dialog
       open
@@ -91,12 +93,19 @@ export function BrowserWorkspacePicker({
         if (!open && !add.isPending) onClose();
       }}
     >
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogTitle>Add browser</DialogTitle>
-        <DialogDescription>Each profile keeps its own cookies and sign-in.</DialogDescription>
-        <div className="flex gap-2" role="group" aria-label="Profile source">
+        <DialogDescription>
+          Each browser keeps its own cookies and sign-in, so each one can be a different account.
+        </DialogDescription>
+        <div
+          role="group"
+          aria-label="Browser source"
+          className="flex w-fit gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5"
+        >
           <Button
-            variant={creating ? "ghost" : "secondary"}
+            size="sm"
+            variant="ghost"
             aria-pressed={!creating}
             disabled={!available.length || add.isPending}
             onClick={() => {
@@ -104,10 +113,11 @@ export function BrowserWorkspacePicker({
               add.reset();
             }}
           >
-            Existing profile
+            Saved browser
           </Button>
           <Button
-            variant={creating ? "secondary" : "ghost"}
+            size="sm"
+            variant="ghost"
             aria-pressed={creating}
             disabled={add.isPending}
             onClick={() => {
@@ -115,7 +125,7 @@ export function BrowserWorkspacePicker({
               add.reset();
             }}
           >
-            New profile
+            New browser
           </Button>
         </div>
         <form
@@ -125,83 +135,83 @@ export function BrowserWorkspacePicker({
             if (!add.isPending) add.mutate();
           }}
         >
-          {creating ? (
-            <>
-              <label className="grid gap-1.5 text-sm font-medium">
-                Profile name
-                <Input
-                  autoFocus
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="e.g. Admin"
-                  disabled={add.isPending}
-                  required
-                />
-              </label>
-              <label className="grid gap-1.5 text-sm font-medium">
-                Website
-                <Input
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  placeholder="https://your-app.com"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  disabled={add.isPending}
-                  required
-                />
-              </label>
-            </>
-          ) : (
-            <>
-              <label className="grid gap-1.5 text-sm font-medium">
-                Profile
-                <select
-                  className={selectClass}
+          {/* Both choices are two fields of the same shape, so switching never moves the dialog. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {creating ? (
+              <>
+                <div className="grid min-w-0 gap-1.5">
+                  <label
+                    htmlFor="workspace-new-name"
+                    className="text-xs font-medium text-foreground"
+                  >
+                    Name
+                  </label>
+                  <Input
+                    id="workspace-new-name"
+                    autoFocus
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="For example, Admin"
+                    disabled={add.isPending}
+                    required
+                  />
+                </div>
+                <div className="grid min-w-0 gap-1.5">
+                  <label
+                    htmlFor="workspace-new-url"
+                    className="text-xs font-medium text-foreground"
+                  >
+                    Website
+                  </label>
+                  <Input
+                    id="workspace-new-url"
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    placeholder="https://your-app.com"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    disabled={add.isPending}
+                    required
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="grid min-w-0 gap-1.5 sm:col-span-2">
+                <SelectField
+                  label="Browser"
                   value={browserId}
                   disabled={add.isPending}
-                  onChange={(event) => {
-                    setBrowserId(event.target.value);
-                    setAccount("current");
-                  }}
-                >
-                  {available.map((space) => (
-                    <option key={space.id} value={space.id}>
-                      {space.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1.5 text-sm font-medium">
-                Account
-                <select
-                  className={selectClass}
-                  value={account}
-                  disabled={add.isPending}
-                  onChange={(event) => setAccount(event.target.value)}
-                >
-                  <option value="current">Keep current session</option>
-                  <option value="signed-out">Signed out</option>
-                  {validFixtures.map((fixture) => (
-                    <option key={fixture.reference} value={fixture.reference}>
-                      {fixture.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {fixtures.error ? (
-                <p className="text-sm text-destructive" role="alert">
-                  Couldn’t load saved sign-ins.{" "}
-                  <button
-                    type="button"
-                    className="underline"
-                    onClick={() => void fixtures.refetch()}
-                  >
-                    Try again
-                  </button>
-                </p>
-              ) : null}
-            </>
-          )}
+                  options={available.map((space) => ({
+                    value: space.id,
+                    label: browserLabel(space, spaces),
+                  }))}
+                  onValueChange={setBrowserId}
+                />
+              </div>
+            )}
+          </div>
+          {/* One line in both modes keeps the dialog still when switching. */}
+          <p className="-mt-2 flex min-h-5 items-center gap-1.5 text-xs text-muted-foreground">
+            {creating ? (
+              "A fresh browser with its own profile. Sign in once and it remembers."
+            ) : (
+              <>
+                {account === "current"
+                  ? "Opens with its current sign-in"
+                  : account === "signed-out"
+                    ? "Opens signed out"
+                    : `Opens as ${validFixtures.find((item) => item.reference === account)?.name ?? "saved sign-in"}`}
+              </>
+            )}
+          </p>
+          {!creating && fixtures.error ? (
+            <p className="text-sm text-destructive" role="alert">
+              Couldn’t load saved sign-ins.{" "}
+              <button type="button" className="underline" onClick={() => void fixtures.refetch()}>
+                Try again
+              </button>
+            </p>
+          ) : null}
           {add.error ? (
             <p role="alert" className="text-sm text-destructive">
               {add.error instanceof BrowserWorkspaceError

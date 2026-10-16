@@ -22,7 +22,14 @@ import { usePairedConfigurationWorkspace } from "../data/use-paired-configuratio
 import { PageLoading } from "./recording-shared";
 import { BrowserSignInImport } from "./browser-sign-in-import";
 import { BrowserWorkspacePage } from "./browser-workspace-page";
-import { PairedWorkspacePanel } from "./paired-workspace-panel";
+import { websiteName } from "./new-test-browser-setup";
+import {
+  SideBySide,
+  PersonAvatar,
+  browserHost,
+  browserLabel,
+  tintFor,
+} from "./browsers-side-by-side";
 
 function displayHost(url: string): string {
   try {
@@ -81,12 +88,17 @@ function BrowserLibraryPage() {
     (spaces.data ?? []).map((space, index) => [space.id, accountQueries[index]?.data ?? []]),
   );
   const create = useMutation({
-    mutationFn: () =>
-      browserSpacesService.createSpace({
-        name,
-        startUrl,
+    // Only the website matters up front; the name comes from it and can change later.
+    mutationFn: () => {
+      const address = /^[a-z][a-z\d+.-]*:\/\//iu.test(startUrl.trim())
+        ? startUrl.trim()
+        : `https://${startUrl.trim()}`;
+      return browserSpacesService.createSpace({
+        name: name.trim() || websiteName(address),
+        startUrl: address,
         profileRetention: "retain",
-      }),
+      });
+    },
     onSuccess: async (space) => {
       await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
       setOpen(false);
@@ -107,7 +119,11 @@ function BrowserLibraryPage() {
           },
         });
       } else {
-        await navigate({ to: "/environments/$profileId", params: { profileId: space.id } });
+        // Straight into the browser: sign in there now, save the sign-in later.
+        const session = await browserSpacesService.openSpace(space.id).catch(() => undefined);
+        await (session
+          ? navigate({ to: "/devices/$deviceId", params: { deviceId: session.targetId } })
+          : navigate({ to: "/environments/$profileId", params: { profileId: space.id } }));
       }
     },
   });
@@ -127,16 +143,9 @@ function BrowserLibraryPage() {
     <LibraryPage className="max-w-5xl">
       <PageHeader
         title="Browsers"
-        description="Saved browsers you can open, record on, and sign into."
+        description="Browsers Relay opens for you. Sign in once in each; tests reuse those sign-ins."
         actions={
           <>
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={<Link to="/environments" search={{ view: "workspace" }} />}
-            >
-              Workspace
-            </Button>
             <BrowserSignInImport service={browserSpacesService} spaces={spaces.data ?? []} />
             {continuation ? (
               <Button
@@ -181,30 +190,20 @@ function BrowserLibraryPage() {
               <DialogContent showCloseButton={false}>
                 <DialogTitle>New browser</DialogTitle>
                 <DialogDescription>
-                  Opens a browser you can record on and sign into.
+                  Relay opens a fresh browser for this website. Sign in there and it remembers.
                 </DialogDescription>
                 <form onSubmit={submit} className="grid gap-5">
-                  <Field>
-                    <FieldLabel htmlFor="space-name">Name</FieldLabel>
-                    <Input
-                      id="space-name"
-                      value={name}
-                      onChange={(event) => setName(event.currentTarget.value)}
-                      placeholder="For example, Staging member"
-                      autoComplete="off"
-                    />
-                  </Field>
                   <Field>
                     <FieldLabel htmlFor="space-url">Website</FieldLabel>
                     <Input
                       id="space-url"
-                      type="url"
                       inputMode="url"
                       value={startUrl}
                       onChange={(event) => setStartUrl(event.currentTarget.value)}
-                      placeholder="https://staging.example.com"
+                      placeholder="staging.example.com"
                       autoCapitalize="none"
                       autoCorrect="off"
+                      autoFocus
                     />
                   </Field>
                   {create.error ? (
@@ -240,9 +239,9 @@ function BrowserLibraryPage() {
                     <Button
                       type="submit"
                       variant="default"
-                      disabled={!name.trim() || !startUrl.trim() || create.isPending}
+                      disabled={!startUrl.trim() || create.isPending}
                     >
-                      {create.isPending ? "Creating…" : "Create browser"}
+                      {create.isPending ? "Opening…" : "Open browser"}
                     </Button>
                   </div>
                 </form>
@@ -266,49 +265,102 @@ function BrowserLibraryPage() {
         />
       ) : null}
       {spaces.data?.length ? (
-        <ul
-          className="mb-6 list-none overflow-hidden rounded-lg border border-border bg-card p-0"
-          aria-label="Browsers"
-        >
-          {spaces.data.map((space) => (
-            <li className="border-b border-border last:border-b-0" key={space.id}>
-              <Link
-                className="flex min-h-20 w-full items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                to="/environments/$profileId"
-                params={{ profileId: space.id }}
-                search={continuation ? { returnTo: rawReturnTo } : undefined}
-              >
-                <span
-                  className="grid size-9 place-items-center rounded-md border border-border bg-muted text-muted-foreground"
-                  aria-hidden="true"
+        <div className="grid gap-10">
+          <SideBySide
+            workspace={paired.workspace}
+            spaces={spaces.data}
+            accountsByBrowser={accountsByBrowser}
+            onSave={paired.save}
+            onOpen={() => navigate({ to: "/environments", search: { view: "paired" } })}
+            onNewBrowser={() => {
+              reset();
+              setOpen(true);
+            }}
+          />
+          <section aria-labelledby="browser-list-title" className="grid gap-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 id="browser-list-title" className="text-sm font-semibold">
+                Browsers{" "}
+                <span className="ml-1 text-muted-foreground tabular-nums">
+                  {spaces.data.length}
+                </span>
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Each one remembers its own sign-ins, cookies, and settings.
+              </p>
+            </div>
+            <ul
+              className="grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2 xl:grid-cols-3"
+              aria-label="Browsers"
+            >
+              {spaces.data.map((space) => {
+                const signedInAs = [...(accountsByBrowser[space.id] ?? [])]
+                  .filter((account) => !account.revokedAt)
+                  .sort((a, b) => b.createdAt - a.createdAt)[0]?.name;
+                const site = browserHost(space.startUrl);
+                return (
+                  <li key={space.id}>
+                    <Link
+                      className="group grid h-full gap-4 rounded-xl border border-border bg-card p-4 transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      to="/environments/$profileId"
+                      params={{ profileId: space.id }}
+                      search={continuation ? { returnTo: rawReturnTo } : undefined}
+                    >
+                      <span className="flex min-w-0 items-center gap-3">
+                        <span
+                          aria-hidden="true"
+                          className={`grid size-10 shrink-0 place-items-center rounded-lg text-sm font-semibold ${tintFor(site)}`}
+                        >
+                          {site
+                            .replace(/^www\./u, "")
+                            .charAt(0)
+                            .toUpperCase() || "?"}
+                        </span>
+                        <span className="grid min-w-0 flex-1">
+                          <strong className="truncate text-sm font-medium">
+                            {browserLabel(space, spaces.data)}
+                          </strong>
+                          <small className="truncate text-xs text-muted-foreground">
+                            {site}
+                            {space.environment?.locale ? ` · ${space.environment.locale}` : ""}
+                          </small>
+                        </span>
+                        <ChevronRight
+                          className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                          aria-hidden="true"
+                        />
+                      </span>
+                      {/* One browser, one identity: say who it opens as. */}
+                      <span className="flex min-h-6 items-center gap-2 text-xs text-muted-foreground">
+                        <PersonAvatar name={signedInAs ?? "Signed out"} size="sm" />
+                        {signedInAs ? (
+                          <span className="truncate">
+                            Signed in as{" "}
+                            <span className="font-medium text-foreground">{signedInAs}</span>
+                          </span>
+                        ) : (
+                          "Signed out"
+                        )}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    reset();
+                    setOpen(true);
+                  }}
+                  className="flex h-full min-h-28 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                 >
-                  <Globe2 className="size-4" />
-                </span>
-                <span className="grid min-w-0 flex-1 gap-0.5">
-                  <strong className="text-sm font-medium wrap-anywhere">{space.name}</strong>
-                  <small className="text-xs text-muted-foreground wrap-anywhere">
-                    {space.environment?.locale
-                      ? `${displayHost(space.startUrl)} · ${space.environment.locale}`
-                      : displayHost(space.startUrl)}
-                  </small>
-                </span>
-                <ChevronRight
-                  className="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {spaces.data?.length ? (
-        <PairedWorkspacePanel
-          workspace={paired.workspace}
-          spaces={spaces.data}
-          accountsByBrowser={accountsByBrowser}
-          onSave={paired.save}
-          onOpenWorkspace={() => navigate({ to: "/environments", search: { view: "paired" } })}
-        />
+                  <Plus className="size-4" aria-hidden="true" /> New browser
+                </button>
+              </li>
+            </ul>
+          </section>
+        </div>
       ) : null}
       {!spaces.isPending && !spaces.error && spaces.data?.length === 0 ? (
         <EmptyState

@@ -148,6 +148,17 @@ export async function startManagedBrowser(
   }
   if (!create) throw new TypeError("Relay could not start a browser in this host.");
   const startUrl = normalizeWebsite(browserUrl);
+  // Reuse the quick browser already made for this website; one per recording piled up.
+  const existing =
+    typeof service.listSpaces === "function"
+      ? (await service.listSpaces()).find(
+          (space) => space.profileRetention === "ephemeral" && space.startUrl === startUrl,
+        )
+      : undefined;
+  if (existing) {
+    if (open) return (await open(existing.id)).targetId;
+    return existing.id;
+  }
   const created = await create({
     name: websiteName(startUrl),
     startUrl,
@@ -187,9 +198,10 @@ function normalizeWebsite(value: string): string {
   }
 }
 
+/** Host with its port, so local sites like 127.0.0.1:8791 and :8793 stay distinguishable. */
 export function websiteName(url: string): string {
   try {
-    return new URL(url).hostname || "Browser";
+    return new URL(url).host || "Browser";
   } catch {
     return "Browser";
   }

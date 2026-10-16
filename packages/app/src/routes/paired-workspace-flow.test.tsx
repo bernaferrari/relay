@@ -160,6 +160,31 @@ async function choose(label: string, option: string) {
   await settle();
 }
 
+async function clickInDialog(label: string) {
+  const dialog = document.querySelector('[role="dialog"]');
+  const button = [...(dialog?.querySelectorAll("button") ?? [])].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  if (!(button instanceof HTMLButtonElement)) throw new Error(`Dialog button not found: ${label}`);
+  await act(async () => button.click());
+  await settle();
+}
+
+async function chooseNth(label: string, index: number, option: string) {
+  const trigger = document.querySelectorAll<HTMLButtonElement>(`button[aria-label="${label}"]`)[
+    index
+  ];
+  if (!trigger) throw new Error(`${label} ${index} not found`);
+  await act(async () => trigger.click());
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (candidate) => candidate.textContent?.trim() === option,
+  );
+  if (!item) throw new Error(`Option not found: ${label} / ${option}`);
+  await act(async () => item.click());
+  await settle();
+}
+
 async function click(label: string) {
   const button = [...document.querySelectorAll("button")].find(
     (candidate) => candidate.textContent?.trim() === label,
@@ -177,7 +202,7 @@ afterEach(async () => {
 });
 
 describe("saved Browser and Account workspace", () => {
-  it("persists named pairs across restart and opens those exact pairs in Live", async () => {
+  it("saves accounts side by side across restart and opens those exact pairs in Live", async () => {
     const platform = platformWithStorage();
     const openSpace = vi.fn(async (input: { spaceId?: string } | string) => {
       const spaceId = typeof input === "string" ? input : input.spaceId;
@@ -185,22 +210,12 @@ describe("saved Browser and Account workspace", () => {
     });
     await render(platform, browserService(openSpace));
 
-    await fill("Combination name", "Admin desktop");
-    await choose("Browser", "Chrome");
-    await choose("Signed in as", "Admin");
-    await click("Add");
-    await fill("Combination name", "Member desktop");
-    await choose("Browser", "Firefox");
-    await choose("Signed in as", "Member");
-    await click("Add");
-    await fill("Combination name", "Signed out");
-    await choose("Browser", "WebKit");
-    await choose("Signed in as", "Signed out");
-    await click("Add");
+    // Each new slot gets the next free browser, which brings its own saved sign-in.
+    await click("Choose accounts");
+    for (let index = 0; index < 3; index += 1) await clickInDialog("Add an account");
+    await clickInDialog("Save");
 
-    expect(document.body.textContent).toContain("Admin desktop");
-    expect(document.body.textContent).toContain("Member desktop");
-    expect(document.body.textContent).toContain("Signed out");
+    expect(document.body.textContent).toContain("3 of 4 accounts");
     expect(platform.storage.get(PAIRED_CONFIGURATION_STORAGE_KEY)).toContain(adminFixtureId);
 
     await act(async () => {
@@ -209,21 +224,18 @@ describe("saved Browser and Account workspace", () => {
     document.body.replaceChildren();
     const { history } = await render(platform, browserService(openSpace));
 
-    expect(document.body.textContent).toContain("3 saved");
-    expect(document.body.textContent).toContain("Admin desktop");
-    expect(document.body.textContent).toContain("Chrome · chromium");
-    expect(document.body.textContent).toContain("Admin");
-    await click("Open all side by side");
+    // The saved accounts survive a restart and show in the preview grid.
+    const preview = document.querySelector('[aria-label="Accounts side by side"]')!;
+    expect(document.body.textContent).toContain("3 of 4 accounts");
+    expect(preview.textContent).toContain("Admin");
+    expect(preview.textContent).toContain("Member");
+    expect(preview.textContent).toContain("Signed out");
+    expect(preview.textContent).toContain("Chrome");
+    await click("Open side by side");
     expect(history.location.search).toBe("?view=paired");
     expect(openSpace).not.toHaveBeenCalled();
-    expect(document.querySelectorAll('section[aria-label="Admin desktop · Admin"]')).toHaveLength(
-      1,
-    );
-    expect(document.querySelectorAll('section[aria-label="Member desktop · Member"]')).toHaveLength(
-      1,
-    );
-    expect(document.querySelectorAll('section[aria-label="Signed out · Signed out"]')).toHaveLength(
-      1,
-    );
+    expect(document.querySelectorAll('section[aria-label="Chrome · Admin"]')).toHaveLength(1);
+    expect(document.querySelectorAll('section[aria-label="Firefox · Member"]')).toHaveLength(1);
+    expect(document.querySelectorAll('section[aria-label="WebKit · Signed out"]')).toHaveLength(1);
   });
 });

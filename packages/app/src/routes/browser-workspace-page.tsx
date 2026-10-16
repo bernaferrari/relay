@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import { Columns2, Plus } from "lucide-react";
+import { ChevronLeft, Columns2, Plus } from "lucide-react";
 import {
   BROWSER_WORKSPACE_KEY,
   BrowserWorkspaceError,
@@ -223,20 +223,28 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
   return (
     <section
       ref={container}
-      className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-4 py-4"
+      className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-5 py-3"
       aria-label="Browser workspace"
     >
       <header className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
+        {/* Same hierarchy as other focused views: labelled back, hairline, title. */}
         <div className="flex min-w-0 items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
+            className="-ml-2"
             nativeButton={false}
             render={<Link to="/environments" />}
           >
-            Browsers
+            <ChevronLeft aria-hidden="true" /> Browsers
           </Button>
-          <h1 className="text-lg font-semibold">Workspace</h1>
+          <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
+          <h1 className="text-base font-semibold tracking-tight">Side by side</h1>
+          {count ? (
+            <span className="text-sm text-muted-foreground tabular-nums">
+              {count} {count === 1 ? "browser" : "browsers"}
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           {count > 1 ? (
