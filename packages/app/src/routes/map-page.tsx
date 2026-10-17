@@ -360,7 +360,7 @@ export function MapPage() {
                       ))}
                   </ul>
                 ) : (
-                  <p className="rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
+                  <p className="rounded-lg bg-muted/40 p-5 text-sm text-muted-foreground">
                     No proposal needs a decision.
                   </p>
                 )}

@@ -47,14 +47,19 @@ import { deviceQueryKeys, type ProductDevice } from "../data/device-product-serv
 import { readSetupContinuation } from "../data/setup-continuation";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { PageLoading, RecordingProblem, RefreshProblem } from "./recording-shared";
+import { BrowserCards, NewBrowserDialog, useBrowserAccounts } from "./browser-library";
+import { BrowserSignInImport } from "./browser-sign-in-import";
+import { SideBySide } from "./browsers-side-by-side";
+import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 
 function searchState(value: unknown): {
   status?: string;
   returnTo?: string;
   q?: string;
+  view?: string;
 } {
   return value && typeof value === "object"
-    ? (value as { status?: string; returnTo?: string; q?: string })
+    ? (value as { status?: string; returnTo?: string; q?: string; view?: string })
     : {};
 }
 
@@ -408,7 +413,10 @@ function AvailableSection({
 }
 
 export function DevicesPage() {
-  const { deviceService, browserSpacesService } = useRouteContext({ from: "__root__" });
+  const { deviceService, browserSpacesService, platform } = useRouteContext({
+    from: "__root__",
+  });
+  const paired = usePairedConfigurationWorkspace(platform);
   const spaces = useQuery({
     queryKey: browserCatalogQueryKey,
     queryFn: () => browserSpacesService.listSpaces(),
@@ -422,6 +430,18 @@ export function DevicesPage() {
   const rawSearch = useLocation({ select: (state) => state.search });
   const search = searchState(rawSearch);
   const continuation = readSetupContinuation(search.returnTo);
+  const newBrowserOpen = search.view === "new";
+  function setNewBrowserOpen(open: boolean) {
+    void navigate({
+      to: "/devices",
+      search: (previous: Record<string, unknown>) => ({
+        ...previous,
+        view: open ? "new" : undefined,
+      }),
+      replace: true,
+    });
+  }
+  const accountsByBrowser = useBrowserAccounts(spaces.data ?? []);
   const [query, setQuery] = useState(search.q ?? "");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const devices = useQuery({
@@ -473,16 +493,10 @@ export function DevicesPage() {
       >
         <PageHeader
           title="Devices"
-          description="Open a device or browser and control it freely. Record a test when you’re ready."
+          description="Phones, tablets, and browsers Relay can control. Record a test when you’re ready."
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={<Link to="/environments" search={{ view: "workspace" }} />}
-              >
-                Browser workspace
-              </Button>
+              <BrowserSignInImport service={browserSpacesService} spaces={spaces.data ?? []} />
               {!devices.isError ? (
                 <Button
                   variant="ghost"
@@ -498,15 +512,7 @@ export function DevicesPage() {
                   />
                 </Button>
               ) : null}
-              <Button
-                nativeButton={false}
-                render={
-                  <Link
-                    to="/environments"
-                    search={{ view: "new", ...(continuation ? { returnTo: search.returnTo } : {}) }}
-                  />
-                }
-              >
+              <Button onClick={() => setNewBrowserOpen(true)}>
                 <Plus aria-hidden="true" /> New browser
               </Button>
             </div>
@@ -585,22 +591,7 @@ export function DevicesPage() {
             <EmptyState
               title="No Devices yet"
               detail="Connect a phone or tablet, or start a Browser."
-              action={
-                <Button
-                  nativeButton={false}
-                  render={
-                    <Link
-                      to="/environments"
-                      search={{
-                        view: "new",
-                        ...(continuation ? { returnTo: search.returnTo } : {}),
-                      }}
-                    />
-                  }
-                >
-                  New browser
-                </Button>
-              }
+              action={<Button onClick={() => setNewBrowserOpen(true)}>New browser</Button>}
             />
           </div>
         ) : null}
@@ -633,15 +624,66 @@ export function DevicesPage() {
                     canStartEmulator={visibleDevices.some(isNotRunning)}
                   />
                 );
+              if (title === "Browsers") {
+                const ids = new Set(devicesInSection.map((device) => device.id));
+                const shown = (spaces.data ?? []).filter((space) => ids.has(space.id));
+                // Browsers Relay sees but didn't create here still belong in the grid.
+                const others = devicesInSection.filter((device) => !sites.has(device.id));
+                if (!shown.length && !others.length && deferredQuery) return null;
+                return (
+                  <section key={title} aria-labelledby="browser-list-title" className="grid gap-3">
+                    <div className="flex min-h-9 items-baseline justify-between gap-3 px-1">
+                      <h2 id="browser-list-title" className="text-sm font-semibold">
+                        Browsers{" "}
+                        <span className="ml-1 font-normal text-muted-foreground tabular-nums">
+                          {shown.length + others.length}
+                        </span>
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        Each one keeps its own sign-in, cookies, and settings.
+                      </p>
+                    </div>
+                    <BrowserCards
+                      spaces={shown}
+                      allSpaces={spaces.data ?? []}
+                      accountsByBrowser={accountsByBrowser}
+                      returnTo={continuation ? search.returnTo : undefined}
+                      onNewBrowser={deferredQuery ? undefined : () => setNewBrowserOpen(true)}
+                    >
+                      {others.map((device) => (
+                        <DeviceRow
+                          key={device.id}
+                          device={device}
+                          returnTo={continuation ? search.returnTo : undefined}
+                          stale={spaces.isError}
+                        />
+                      ))}
+                    </BrowserCards>
+                    {spaces.data?.length && !deferredQuery ? (
+                      <div className="mt-3">
+                        <SideBySide
+                          workspace={paired.workspace}
+                          spaces={spaces.data}
+                          accountsByBrowser={accountsByBrowser}
+                          onSave={paired.save}
+                          onOpen={() =>
+                            navigate({ to: "/environments", search: { view: "paired" } })
+                          }
+                          onNewBrowser={() => setNewBrowserOpen(true)}
+                        />
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              }
               if (!devicesInSection.length) return null;
               return (
                 <DeviceSection
                   key={title}
                   title={title}
                   devices={devicesInSection}
-                  stale={title === "Browsers" ? spaces.isError : devices.isError}
+                  stale={devices.isError}
                   returnTo={continuation ? search.returnTo : undefined}
-                  groupBrowsers={title === "Browsers"}
                   searchActive={Boolean(deferredQuery)}
                 />
               );
@@ -692,6 +734,11 @@ export function DevicesPage() {
             })()}
           </div>
         ) : null}
+        <NewBrowserDialog
+          open={newBrowserOpen}
+          onOpenChange={setNewBrowserOpen}
+          continuation={continuation}
+        />
       </LibraryPage>
     </BrowserSitesContext.Provider>
   );

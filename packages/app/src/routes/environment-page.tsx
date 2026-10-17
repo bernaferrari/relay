@@ -38,7 +38,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { FormPage, PageHeader } from "../components/page-layout";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { BrowserLaneTabs } from "../components/browser-lane-tabs";
@@ -178,7 +178,7 @@ export function EnvironmentPage() {
           },
         });
       } else {
-        await navigate({ to: "/environments" });
+        await navigate({ to: "/devices" });
       }
     },
   });
@@ -256,7 +256,7 @@ export function EnvironmentPage() {
   }
 
   return (
-    <FormPage>
+    <LibraryPage className="max-w-5xl">
       {spaces.isPending ? <PageLoading label="Loading browser…" /> : null}
       {spaces.error ? (
         <RecoveryState
@@ -275,8 +275,8 @@ export function EnvironmentPage() {
           title="Browser not found"
           detail="It may have been removed from this workspace."
           action={
-            <Link className={productLinkClassName} to="/environments">
-              Back to browsers
+            <Link className={productLinkClassName} to="/devices">
+              Back to devices
             </Link>
           }
         />
@@ -284,10 +284,10 @@ export function EnvironmentPage() {
       {space ? (
         <>
           <Link
-            to="/environments"
+            to="/devices"
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
-            <ChevronLeft className="size-4" aria-hidden="true" /> Browsers
+            <ChevronLeft className="size-4" aria-hidden="true" /> Devices
           </Link>
           <header className="mt-3 mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-4">
@@ -351,7 +351,7 @@ export function EnvironmentPage() {
                       onClick={() => openExternal.mutate()}
                       disabled={openExternal.isPending}
                     >
-                      {openExternal.isPending ? "Opening…" : "Open browser window"}
+                      {openExternal.isPending ? "Opening…" : "Open in a separate window"}
                     </DropdownMenuItem>
                     <DropdownMenuItem variant="destructive" onClick={() => setRemoveOpen(true)}>
                       Remove
@@ -644,6 +644,6 @@ export function EnvironmentPage() {
           </Dialog>
         </>
       ) : null}
-    </FormPage>
+    </LibraryPage>
   );
 }

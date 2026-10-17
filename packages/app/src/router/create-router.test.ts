@@ -12,7 +12,6 @@ const platform: Platform = {
 
 const deepLinks = [
   "/apps",
-  "/accounts",
   "/apps/app-1/map",
   "/tests",
   "/tests/new",
@@ -57,6 +56,12 @@ describe("React router", () => {
     await router.load();
     expect(router.state.location.pathname).toBe("/tests");
     expect(router.state.status).toBe("idle");
+  });
+
+  it("redirects the retired Accounts page to Devices", async () => {
+    const router = testRouter(["/accounts"]);
+    await router.load();
+    expect(router.state.location.pathname).toBe("/devices");
   });
 
   it("redirects the retired Evidence tab to Results", async () => {

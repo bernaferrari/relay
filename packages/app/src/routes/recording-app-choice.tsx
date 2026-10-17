@@ -102,8 +102,17 @@ export function RecordingAppChoice({
           </div>
         </div>
       ) : (
-        <div className="flex min-w-0 items-end gap-2 [&>div]:min-w-0 [&>div]:flex-1">
+        <div
+          className={
+            value
+              ? // The app is usually already chosen in the sidebar: say where the test is saved, quietly.
+                "flex min-w-0 items-center gap-1 text-xs text-muted-foreground [&_[data-slot=select-trigger]]:h-7 [&_[data-slot=select-trigger]]:min-w-0 [&_[data-slot=select-trigger]]:border-transparent [&_[data-slot=select-trigger]]:bg-transparent [&_[data-slot=select-trigger]]:px-1.5 [&_[data-slot=select-trigger]]:font-medium [&_[data-slot=select-trigger]]:text-foreground [&_[data-slot=select-trigger]]:shadow-none [&_[data-slot=select-trigger]:hover]:bg-muted"
+              : "flex min-w-0 items-end gap-2 [&>div]:min-w-0 [&>div]:flex-1"
+          }
+        >
+          {value ? <span className="shrink-0">Saves to</span> : null}
           <SelectField
+            compact={Boolean(value)}
             label="App"
             disabled={disabled}
             value={value}

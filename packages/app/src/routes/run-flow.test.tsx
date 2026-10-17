@@ -1440,7 +1440,7 @@ describe("Run and report", () => {
     await settle();
 
     expect(history.location.pathname).toBe("/runs/run-1");
-    expect(document.body.textContent).toContain("Automation running · Relay is in control");
+    expect(document.body.textContent).toContain("Running again · Relay is driving");
   });
 
   it("surfaces a terminal replay with no report id as an unavailable result", async () => {
@@ -1514,7 +1514,7 @@ describe("Run and report", () => {
     );
     expect(document.body.textContent).toContain("Could not check replay progress");
     await click(button("Try again"));
-    expect(document.body.textContent).toContain("Automation running");
+    expect(document.body.textContent).toContain("Running again");
     expect(document.body.textContent).not.toContain("Could not check replay progress");
     expect(history.location.pathname).toBe("/runs/run-1");
     expect(starts).toBe(0);
@@ -1537,10 +1537,10 @@ describe("Run and report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(button("Stop automation"));
+    await click(button("Stop and take over"));
     expect(document.body.textContent).toContain("Could not stop the replay");
-    expect(document.body.textContent).toContain("Automation running");
-    await click(button("Stop automation"));
+    expect(document.body.textContent).toContain("Running again");
+    await click(button("Stop and take over"));
     expect(document.body.textContent).toContain("Replay cancelled");
     expect(document.body.textContent).not.toContain("Could not stop the replay");
     expect(cancellations).toBe(2);

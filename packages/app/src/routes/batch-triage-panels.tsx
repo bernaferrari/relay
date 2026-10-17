@@ -91,8 +91,8 @@ export function BatchFailureClusters({
                   <p className="text-sm leading-5 text-foreground">{copy.repair}</p>
                 ) : null}
                 {copy.repair ? (
-                  <Link to="/environments" className="text-sm font-medium text-primary">
-                    Open saved browsers
+                  <Link to="/devices" className="text-sm font-medium text-primary">
+                    Open browsers
                   </Link>
                 ) : null}
                 {copy.repairTestId ? (

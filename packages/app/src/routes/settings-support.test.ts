@@ -70,8 +70,8 @@ it("fails closed when the OpenRouter judge key is missing from the payload", () 
     checks: [{ id: "relay", label: "Relay runner", status: "ready", detail: "Ready" }],
   });
   expect(checks[0]?.status).toBe("needs-attention");
-  expect(checks[0]?.detail).toMatch(/OPENROUTER_API_KEY/u);
-  expect(checks[0]?.detail).toMatch(/never pass silently/u);
+  expect(checks[0]?.detail).toMatch(/OpenRouter key/u);
+  expect(checks[0]?.detail).toMatch(/instead of passing/u);
 });
 
 it("is ready only when OPENROUTER_API_KEY is configured", () => {

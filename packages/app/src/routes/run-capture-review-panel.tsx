@@ -352,7 +352,7 @@ export function CaptureReviewPanel({
                     />
                   ) : (
                     <span
-                      className={`flex shrink-0 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground ${gallery ? "aspect-4/3 w-full" : "h-16 w-20"}`}
+                      className={`flex shrink-0 items-center justify-center rounded-md bg-muted/40 ring-1 ring-inset ring-border/60 text-xs text-muted-foreground ${gallery ? "aspect-4/3 w-full" : "h-16 w-20"}`}
                     >
                       {blocked ? "Blocked" : "Missing"}
                     </span>

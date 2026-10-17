@@ -234,9 +234,9 @@ export function BrowserWorkspacePage({ paired = false }: { paired?: boolean }) {
             size="sm"
             className="-ml-2"
             nativeButton={false}
-            render={<Link to="/environments" />}
+            render={<Link to="/devices" />}
           >
-            <ChevronLeft aria-hidden="true" /> Browsers
+            <ChevronLeft aria-hidden="true" /> Devices
           </Button>
           <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
           <h1 className="text-base font-semibold tracking-tight">Side by side</h1>

@@ -9,7 +9,14 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { classNames } from "../lib/class-names";
 import type { Platform } from "../platform/types";
 import { parentPathForPath, routeContractForPath } from "../router/route-contract";
@@ -25,7 +32,8 @@ import {
   updateHistoryAvailability,
 } from "./app-shell-history";
 
-export function AppShell({ platform }: { platform: Platform }) {
+/** `children` replaces the routed page, e.g. to keep the shell around a root error. */
+export function AppShell({ platform, children }: { platform: Platform; children?: ReactNode }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(true);
   const commandReturnFocus = useRef<HTMLElement | null>(null);
@@ -185,7 +193,7 @@ export function AppShell({ platform }: { platform: Platform }) {
           data-run-workspace={runWorkspace || undefined}
           tabIndex={-1}
         >
-          <Outlet />
+          {children ?? <Outlet />}
         </main>
         {!immersive ? <MobileNavigation /> : null}
       </div>

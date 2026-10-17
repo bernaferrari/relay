@@ -44,42 +44,45 @@ export function RunStoryFailure({
       <div className="flex items-start gap-2 text-sm">
         <CircleX className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
         <div className="grid min-w-0 gap-0.5">
-          {/* Name the action that failed; the step it belongs to is context. */}
-          <p className="font-semibold">
-            {couldNotRun
-              ? "Relay couldn’t finish this run"
-              : action && action.label !== step.title
-                ? `${action.label} failed`
-                : `${step.title} failed`}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {couldNotRun ? (
-              <>
-                {report.category ? `${report.category} · ` : ""}Stopped at step {stepNumber}
+          {couldNotRun ? (
+            <>
+              {/* Where it stopped, why, and what that means — nothing repeated. */}
+              <p className="font-semibold">
+                Stopped at step {stepNumber}
                 {action ? ` · ${action.label}` : ""}
-              </>
-            ) : (
-              <>
+              </p>
+              {reason ? <p className="text-foreground/80 wrap-anywhere">{reason}</p> : null}
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {report.category ? `${report.category} problem` : "Relay or the device stopped"} —
+                not a verdict on your app.
+              </p>
+            </>
+          ) : (
+            <>
+              {/* Name the action that failed; the step it belongs to is context. */}
+              <p className="font-semibold">
+                {action && action.label !== step.title
+                  ? `${action.label} failed`
+                  : `${step.title} failed`}
+              </p>
+              <p className="text-xs text-muted-foreground">
                 Step {stepNumber}
                 {action && action.label !== step.title ? ` · ${step.title}` : ""}
-              </>
-            )}
-          </p>
-          {!couldNotRun && action?.expected && action.state === "failed" ? (
-            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-              <dt className="text-muted-foreground">Expected</dt>
-              <dd>{action.expected}</dd>
-              <dt className="text-muted-foreground">Saw</dt>
-              <dd>{action.observed ?? action.detail ?? "Nothing was recorded for this check."}</dd>
-            </dl>
-          ) : reason ? (
-            <p className="mt-1 text-foreground/80">{reason}</p>
-          ) : null}
-          {couldNotRun ? (
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Results after this point aren’t a verdict on your app.
-            </p>
-          ) : null}
+              </p>
+              {action?.expected && action.state === "failed" ? (
+                <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                  <dt className="text-muted-foreground">Expected</dt>
+                  <dd>{action.expected}</dd>
+                  <dt className="text-muted-foreground">Saw</dt>
+                  <dd>
+                    {action.observed ?? action.detail ?? "Nothing was recorded for this check."}
+                  </dd>
+                </dl>
+              ) : reason ? (
+                <p className="mt-1 text-foreground/80">{reason}</p>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
       {(couldNotRun ? rawCause : action?.failure?.technicalDetail) ? (

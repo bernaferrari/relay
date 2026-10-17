@@ -10,7 +10,7 @@ export type OpenRouterJudgeSetup = {
 };
 
 export const OPENROUTER_JUDGE_NOT_CONFIGURED =
-  "Add an OpenRouter key in Settings (or set OPENROUTER_API_KEY) so Relay can run plain-English steps and judge screenshots. Until then, those steps say they couldn’t run — they never pass silently.";
+  "Add an OpenRouter key in Settings › Advanced so Relay can run plain-English steps and check screenshots. Until then, those steps say they couldn’t run instead of passing.";
 
 const OPENROUTER_JUDGE_CONFIGURED =
   "OpenRouter key found. Relay can run plain-English steps and judge screenshots.";

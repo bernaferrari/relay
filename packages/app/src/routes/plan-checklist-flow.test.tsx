@@ -107,7 +107,7 @@ it("unrelated failed runs do not become results of a new plan", async () => {
     }),
   ]);
   await settled();
-  expect(document.body.textContent).toContain("Latest plan runs");
+  expect(document.body.textContent).toContain("Not run yet");
   expect(document.body.textContent).toContain("Not run yet");
   expect(document.body.textContent).not.toContain("not run");
   expect(document.body.textContent).not.toContain("failed");

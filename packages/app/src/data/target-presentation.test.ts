@@ -37,7 +37,7 @@ describe("target presentation", () => {
     }));
     const options = await presentReadyTargets(client([], browsers), [targets[1]!]);
     expect(options).toEqual([
-      { ...targets[1], name: "127.0.0.1:8793 · Browser 2", detail: "Managed browser" },
+      { ...targets[1], name: "127.0.0.1:8793 · Browser 2", detail: "127.0.0.1:8793" },
     ]);
   });
 
@@ -56,7 +56,7 @@ describe("target presentation", () => {
       "Pixel 9 Pro",
     ]);
     expect(options[2]?.detail).toBe("Android 15 · Emulator");
-    expect(options[0]?.detail).toBe("Managed browser");
+    expect(options[0]?.detail).toBe("Browser");
     expect(options.some(({ targetId }) => targetId === "not-ready")).toBe(false);
   });
 
@@ -68,11 +68,7 @@ describe("target presentation", () => {
     ];
     const options = await presentReadyTargets(client(devices), targets);
 
-    expect(options.map(({ name }) => name)).toEqual([
-      "Managed browser 1",
-      "Managed browser 2",
-      "Android emulator",
-    ]);
+    expect(options.map(({ name }) => name)).toEqual(["Browser 1", "Browser 2", "Android emulator"]);
     expect(options.map(({ name }) => name).join("")).not.toMatch(/browser-one|emulator-5554/u);
   });
 });

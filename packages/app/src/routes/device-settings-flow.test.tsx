@@ -695,7 +695,7 @@ describe("Devices", () => {
     await renderPath("/devices/ipad");
 
     const crumbs = document.querySelector('[data-slot="breadcrumbs"]');
-    expect(crumbs?.className).toContain("text-xs");
+    expect(crumbs?.textContent).toBe("Devices");
     expect(crumbs?.className).not.toContain("mb-3");
     expect(crumbs?.querySelector("a")?.className).not.toContain("min-h-11");
     expect(document.querySelector("h1")?.textContent).toBe("Design iPad");
@@ -1230,7 +1230,7 @@ describe("Settings", () => {
     expect(document.body.textContent).toContain("dev.relay.lab-server is not loaded");
     expect(document.body.textContent).toContain("Apple Development is not enough");
     expect(document.body.textContent).toContain("AI steps and checks");
-    expect(document.body.textContent).toContain("OPENROUTER_API_KEY");
+    expect(document.body.textContent).toContain("OpenRouter key");
     expect(document.body.textContent).toContain("Android devices");
     expect(document.body.textContent).toContain("Install Platform Tools, then reopen Relay.");
     expect(document.body.textContent).not.toContain("Relay has the local support it needs.");
@@ -1279,8 +1279,8 @@ describe("Settings", () => {
       .find((heading) => heading.textContent === "AI steps and checks")
       ?.closest("div");
     expect(row?.textContent).toContain("Needs attention");
-    expect(row?.textContent).toContain("OPENROUTER_API_KEY");
-    expect(row?.textContent).toContain("never pass silently");
+    expect(row?.textContent).toContain("OpenRouter key");
+    expect(row?.textContent).toContain("instead of passing");
     expect(row?.textContent).not.toContain("is set");
   });
 

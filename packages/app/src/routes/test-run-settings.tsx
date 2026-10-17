@@ -267,7 +267,7 @@ export function TestRunSettings({
             Runs as {selectedProfile.account.name} using its saved browser sign-in.
             <Link
               className={productLinkClassName}
-              to="/environments"
+              to="/devices"
               search={{ returnTo: runSetupContinuation(testId) }}
             >
               Refresh sign-in

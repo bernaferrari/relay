@@ -20,6 +20,13 @@ export function PlanResultSummary({ states }: { states: readonly RunState[] }) {
     .map((state) => `${counts.get(state)} ${runStateLabel(state).toLowerCase()}`)
     .join(", ");
   if (!states.length) return null;
+  // A bar with nothing in it reads as broken; say it plainly instead.
+  if (ordered.length === 1 && ordered[0] === "not-run")
+    return (
+      <span className="text-xs text-muted-foreground" title={description}>
+        Not run yet
+      </span>
+    );
   return (
     <span className="grid gap-1.5" title={description} aria-label={description}>
       <span className="flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">

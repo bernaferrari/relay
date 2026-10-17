@@ -93,14 +93,18 @@ export function RunReport({
     report.outcome === "uncertain" ||
     report.outcome === "harness-failure";
   const heading = resultHeading(report.outcome);
+  // "Draft issue" sits with the other run actions, not alone under the step list.
   const actions = (
-    <RunReportActions
-      report={report}
-      testId={testId}
-      runService={runService}
-      embedded={embedded}
-      canInvestigate={canInvestigate}
-    />
+    <>
+      {canInvestigate ? <IssueDraftButton source={{ kind: "run", report }} /> : null}
+      <RunReportActions
+        report={report}
+        testId={testId}
+        runService={runService}
+        embedded={embedded}
+        canInvestigate={canInvestigate}
+      />
+    </>
   );
   const failureNotice = failure ? (
     <Dialog>
@@ -178,7 +182,6 @@ export function RunReport({
             }
             selectedStepIndex={selectedStepIndex}
             failureNotice={failureNotice}
-            footer={canInvestigate ? <IssueDraftButton source={{ kind: "run", report }} /> : null}
             renderEvidence={(section) => <EvidencePreview section={section} />}
             onSelectStep={(index) => {
               const selected = report.timeline[index];

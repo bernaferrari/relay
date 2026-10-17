@@ -48,8 +48,6 @@ const fixtures = [
   { id: "home-populated", heading: "Tests" },
   { id: "apps-list", heading: "Apps" },
   { id: "apps-error", heading: "Apps" },
-  { id: "app-accounts", heading: "Accounts" },
-  { id: "app-accounts-error", heading: "Accounts" },
   { id: "prerecord-ready", heading: "New test" },
   { id: "prerecord-connecting", heading: "New test" },
   { id: "prerecord-failure", heading: "New test" },
@@ -67,7 +65,7 @@ const fixtures = [
   { id: "report-evidence", heading: "Complete checkout", evidenceMedia: true },
   { id: "batch-completed", heading: "Checkout across saved accounts", batch: true },
   { id: "suite-detail", heading: "Release smoke" },
-  { id: "environments-list", heading: "Browsers" },
+  { id: "environments-list", heading: "Devices" },
   { id: "environment-detail", heading: "Checkout staging" },
   { id: "devices", heading: "Devices" },
   { id: "tests-library", heading: "Tests" },
@@ -399,7 +397,7 @@ async function assertLayout(page, fixture, viewport) {
     );
     if (!loaded) throw new Error("Report evidence fixture did not load its direct image preview");
   }
-  if (["apps-list", "app-versions", "app-accounts"].includes(fixture.id)) {
+  if (["apps-list", "app-versions"].includes(fixture.id)) {
     const copy = await page.locator("#main-content").innerText();
     if (/isn't available here yet|placeholder/iu.test(copy)) {
       throw new Error(`${fixture.id}/${viewport.id} rendered placeholder copy`);
@@ -501,7 +499,7 @@ async function run(options) {
         await page.getByRole("heading", { level: 1, name: fixture.heading }).waitFor({
           timeout: 5_000,
         });
-        if (["apps-error", "app-versions-error", "app-accounts-error"].includes(fixture.id)) {
+        if (["apps-error", "app-versions-error"].includes(fixture.id)) {
           await page.getByRole("alert").waitFor({ timeout: START_TIMEOUT_MS });
         }
         await page.addStyleTag({

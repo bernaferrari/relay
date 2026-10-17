@@ -216,10 +216,20 @@ export function storyFromReport(input: {
           : {}),
     });
   }
+  // "Getting ready" only makes sense before real steps; with no step joins at
+  // all, everything Relay did is simply the run's steps.
+  const joined = order.some((id) => id !== "run" && id !== "finish");
   return order.map((id) => {
     const group = groups.get(id)!;
     const durationMs = group.actions.reduce((total, action) => total + (action.durationMs ?? 0), 0);
-    return { ...group, state: combine(group.actions.map((action) => action.state)), durationMs };
+    return {
+      ...group,
+      ...(id === "run" && !joined && !input.unjoinedTitle && !input.stepTitles?.run
+        ? { title: "Steps" }
+        : {}),
+      state: combine(group.actions.map((action) => action.state)),
+      durationMs,
+    };
   });
 }
 

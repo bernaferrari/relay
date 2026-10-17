@@ -38,7 +38,7 @@ export function RecordingWaitPicker({
         Wait before this step
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent showCloseButton={false} className="sm:max-w-md">
           <DialogTitle>Wait for a control</DialogTitle>
           <DialogDescription>
             Continue when a control appears or disappears. If the condition is not met before the

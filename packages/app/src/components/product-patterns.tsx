@@ -12,7 +12,7 @@ import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Check,
-  ChevronRight,
+  ChevronLeft,
   CircleDashed,
   CircleHelp,
   ListChecks,
@@ -38,53 +38,36 @@ export type BreadcrumbItem =
   | { label: string; to: "/tests/$testId"; params: { testId: string }; search?: { app?: string } }
   | { label: string };
 
+/**
+ * One way back everywhere: "‹ Parent". The page title already names where you
+ * are, so a trail ending in the current page only repeats it.
+ */
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
+  const parent = [...items].reverse().find((item) => "to" in item);
+  if (!parent || !("to" in parent)) return null;
+  const className =
+    "-ml-1 inline-flex items-center gap-1 text-sm leading-5 text-muted-foreground hover:text-foreground";
+  const content = (
+    <>
+      <ChevronLeft className="size-4" aria-hidden="true" />
+      {parent.label}
+    </>
+  );
   return (
-    <nav
-      data-slot="breadcrumbs"
-      className="text-xs leading-4 text-muted-foreground"
-      aria-label="Breadcrumb"
-    >
-      <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
-        {items.map((item, index) => {
-          const current = index === items.length - 1;
-          return (
-            <li className="inline-flex min-w-0 items-center gap-1.5" key={`${item.label}:${index}`}>
-              {index ? (
-                <ChevronRight
-                  className="size-3 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              ) : null}
-              {"to" in item && item.to === "/tests/$testId" ? (
-                <Link
-                  className="inline-flex items-center text-muted-foreground hover:text-foreground"
-                  to={item.to}
-                  params={item.params}
-                  search={"search" in item ? item.search : undefined}
-                >
-                  {item.label}
-                </Link>
-              ) : "to" in item ? (
-                <Link
-                  className="inline-flex items-center text-muted-foreground hover:text-foreground"
-                  to={item.to}
-                  search={"search" in item ? item.search : undefined}
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <span
-                  className="overflow-hidden text-ellipsis whitespace-nowrap"
-                  aria-current={current ? "page" : undefined}
-                >
-                  {item.label}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+    <nav data-slot="breadcrumbs" aria-label="Breadcrumb">
+      {parent.to === "/tests/$testId" ? (
+        <Link className={className} to={parent.to} params={parent.params} search={parent.search}>
+          {content}
+        </Link>
+      ) : (
+        <Link
+          className={className}
+          to={parent.to}
+          search={"search" in parent ? parent.search : undefined}
+        >
+          {content}
+        </Link>
+      )}
     </nav>
   );
 }

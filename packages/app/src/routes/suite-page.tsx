@@ -418,7 +418,7 @@ export function SuitePage() {
                     <span className="grid gap-0.5">
                       <span className="font-medium">Try one combination first</span>
                       <span className="text-xs text-muted-foreground">
-                        Check it, then continue with the other {plannedCases - 1}. Recommended.
+                        Recommended. If it passes, run the other {plannedCases - 1}.
                       </span>
                     </span>
                   </label>
@@ -445,7 +445,7 @@ export function SuitePage() {
                       {preview.data.checkCount} {preview.data.checkCount === 1 ? "run" : "runs"}
                       {preview.data.expectedScreenshots === undefined
                         ? ""
-                        : ` · about ${preview.data.expectedScreenshots} screenshots`}
+                        : ` · about ${preview.data.expectedScreenshots} screenshots to review`}
                     </span>
                   ) : null}
                   {!previewBlockers.length && preview.data?.execution?.detail ? (

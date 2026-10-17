@@ -93,7 +93,7 @@ export function BrowserWorkspacePicker({
         if (!open && !add.isPending) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <DialogTitle>Add browser</DialogTitle>
         <DialogDescription>
           Each browser keeps its own cookies and sign-in, so each one can be a different account.

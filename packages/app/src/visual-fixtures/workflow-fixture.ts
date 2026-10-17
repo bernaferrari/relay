@@ -152,7 +152,7 @@ export function createWorkflowFixture(store: Store) {
       selectedTarget: target,
     }),
     presentTargets: async () => [
-      { ...target, name: "Checkout browser", detail: "Managed browser · Ready" },
+      { ...target, name: "Checkout browser", detail: "checkout.example · Ready" },
     ],
     begin: async () => {
       data.stage = "recording";
@@ -249,10 +249,10 @@ export function createWorkflowFixture(store: Store) {
     getTest: async () => test() as never,
     listTestRuns: async () => [],
     listTargets: async () => [
-      { ...target, name: "Checkout browser", detail: "Managed browser · Ready" },
+      { ...target, name: "Checkout browser", detail: "checkout.example · Ready" },
     ],
     presentTargets: async () => [
-      { ...target, name: "Checkout browser", detail: "Managed browser · Ready" },
+      { ...target, name: "Checkout browser", detail: "checkout.example · Ready" },
     ],
     start: async () => {
       data.runAttempts += 1;

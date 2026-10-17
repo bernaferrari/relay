@@ -76,7 +76,7 @@ export function RunThumb({
         />
       ) : (
         <span
-          className={`flex size-full items-center justify-center rounded-md text-muted-foreground ${runId ? "border border-dashed border-border bg-muted/20" : "bg-muted/40"}`}
+          className={`flex size-full items-center justify-center rounded-md bg-muted/40 text-muted-foreground ring-1 ring-inset ring-border/60 ${loading ? "animate-pulse motion-reduce:animate-none" : ""}`}
           title={
             !runId
               ? "Test plan"

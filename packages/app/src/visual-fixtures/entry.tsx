@@ -105,7 +105,7 @@ const defaultRecordingService = {
   }),
   presentTargets: async () =>
     prerecord || populatedHome
-      ? [{ ...previewTarget, name: "Checkout browser", detail: "Managed browser · Ready" }]
+      ? [{ ...previewTarget, name: "Checkout browser", detail: "checkout.example · Ready" }]
       : [],
   inspect: async () =>
     fixture === "recording-active"
@@ -343,7 +343,6 @@ const mapService: MapProductService = {
 const appResourcesService: AppResourcesProductService = {
   createApp: async (name) => ({ id: "created-app", name }),
   listBrowserAccounts: async () => {
-    if (fixture === "app-accounts-error") throw new Error("Relay is offline");
     return [
       {
         target: { id: "checkout-browser", name: "Checkout browser" },
@@ -434,7 +433,7 @@ const defaultRunService = {
       platform: "browser" as const,
       targetId: "checkout-browser",
       name: "Golden Chromium — Checkout staging",
-      detail: "Managed browser · Ready",
+      detail: "checkout.example · Ready",
     },
     {
       kind: "device" as const,

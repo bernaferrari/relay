@@ -321,7 +321,9 @@ export function NewTestDetailedSetup({
                       ? "Connecting…"
                       : inputFailure
                         ? "Reconnect preview"
-                        : "Connect device"}
+                        : selectedTarget.kind === "browser"
+                          ? "Reconnect browser"
+                          : "Connect device"}
                   </Button>
                 ) : null}
               </div>

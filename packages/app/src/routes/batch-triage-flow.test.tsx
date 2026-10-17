@@ -369,7 +369,7 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("QA bug, not a pass");
     expect(document.body.textContent).toContain("must appear here as a finding");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
-    expect(document.body.textContent).toContain("Check accounts");
+    expect(document.body.textContent).toContain("Check browser sign-ins");
     // Findings never offer a reference (baseline) decision.
     expect(document.body.textContent).not.toContain("Use as new reference");
     // Review ownership controls appear once a case is selected.

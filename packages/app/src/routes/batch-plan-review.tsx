@@ -89,8 +89,8 @@ export function BatchFindingsLead({
         title={empty[0]}
         detail={empty[1]}
         action={
-          <Link className={findingsLinkClass} to="/accounts">
-            Check accounts
+          <Link className={findingsLinkClass} to="/devices">
+            Check browser sign-ins
           </Link>
         }
       />

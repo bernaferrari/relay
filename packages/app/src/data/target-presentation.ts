@@ -61,7 +61,11 @@ export async function presentReadyTargets(
     return {
       ...target,
       name: catalogName ?? fallback,
-      detail: targetDetail(target, device),
+      detail: targetDetail(
+        target,
+        device,
+        catalog.find((candidate) => candidate.id === target.targetId)?.browser?.startUrl,
+      ),
     };
   });
 
@@ -104,13 +108,20 @@ function looksLikeMachineIdentifier(value: string): boolean {
 }
 
 function fallbackName(target: AuthoringTarget): string {
-  if (target.kind === "browser") return "Managed browser";
+  if (target.kind === "browser") return "Browser";
   if (target.platform === "ios") return "iOS device";
   return /^emulator(?:-|$)/iu.test(target.targetId) ? "Android emulator" : "Android device";
 }
 
-function targetDetail(target: AuthoringTarget, device?: DeviceSummary): string {
-  if (target.kind === "browser") return "Managed browser";
+function targetDetail(target: AuthoringTarget, device?: DeviceSummary, startUrl?: string): string {
+  // A browser is known by the website it opens, not by how Relay runs it.
+  if (target.kind === "browser") {
+    try {
+      return startUrl ? new URL(startUrl).host : "Browser";
+    } catch {
+      return "Browser";
+    }
+  }
   const kind =
     target.platform === "ios"
       ? "iOS"

@@ -20,7 +20,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { recordingQueryKeys } from "../data/recording-queries";
 import {
@@ -438,12 +438,12 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
               }
               onClick={() => leaveDraft.mutate()}
             >
-              <ArrowLeft aria-hidden="true" />{" "}
+              <ChevronLeft aria-hidden="true" />{" "}
               {leaveDraft.isPending
                 ? "Saving draft…"
                 : productService.saveDraft && !saved
                   ? "Save draft"
-                  : "Back to tests"}
+                  : "Tests"}
             </Button>
           ) : null
         }

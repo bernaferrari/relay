@@ -300,7 +300,7 @@ describe("shell overlays", () => {
     expect(history.location.search).toBe("?app=checkout");
   });
 
-  it("puts free device control beside tests and runs, with account setup below Map", async () => {
+  it("puts free device control beside tests and runs, and finds sign-ins in Devices", async () => {
     const history = await renderShell({ initialEntries: ["/tests"] });
     const sidebar = document.querySelector('[aria-label="Relay navigation"]')!;
     const labels = [...sidebar.querySelectorAll("a, button")]
@@ -308,8 +308,8 @@ describe("shell overlays", () => {
       .filter((text) =>
         ["Tests", "Review", "Results", "Runs", "Map", "Accounts", "Devices"].includes(text ?? ""),
       );
-    expect(labels).toEqual(["Tests", "Runs", "Devices", "Map", "Accounts"]);
-    expect(sidebar.querySelector('[aria-label="Setup"] a[href="/accounts"]')).not.toBeNull();
+    expect(labels).toEqual(["Tests", "Runs", "Devices", "Map"]);
+    expect(sidebar.querySelector('a[href="/accounts"]')).toBeNull();
     expect(sidebar.querySelector('a[href="/review"]')).toBeNull();
     expect(sidebar.querySelector('a[href="/sessions"]')).toBeNull();
     expect(sidebar.querySelector('a[href="/changes"]')).toBeNull();
@@ -324,7 +324,7 @@ describe("shell overlays", () => {
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]')!;
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(input, "Accounts");
+      setter?.call(input, "sign-ins");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await settle();
@@ -332,11 +332,11 @@ describe("shell overlays", () => {
       ...document.querySelectorAll<HTMLElement>(
         '[role="listbox"][aria-label="Commands"] [role="option"]',
       ),
-    ].find((option) => option.textContent?.includes("Accounts"));
+    ].find((option) => option.textContent?.includes("Devices"));
     expect(accountsCommand).toBeTruthy();
     await act(async () => accountsCommand!.click());
     await settle();
-    expect(history.location.pathname).toBe("/accounts");
+    expect(history.location.pathname).toBe("/devices");
   });
 
   it("shows running work and links to all runs", async () => {
@@ -551,7 +551,7 @@ describe("shell overlays", () => {
     await settle();
     expect(document.body.textContent).toContain("Test search is unavailable");
     expect(document.body.textContent).not.toContain("No matching commands");
-    expect(document.body.textContent).toContain("Open Tests");
+    expect(document.body.textContent).toContain("Your tests and test plans");
     expect(document.querySelector('button[type="button"]')?.textContent).not.toBeUndefined();
   });
 

@@ -2836,7 +2836,7 @@ describe("record, review, replay, and save", () => {
       document.querySelector<HTMLInputElement>("#review-action-intent")!,
       "Unsaved instruction",
     );
-    await click(button("Back to tests"));
+    await click(button("Tests"));
     expect(document.body.textContent).toContain("Save the instruction before closing this draft");
     expect(document.body.textContent).not.toContain("when the connection returns");
     expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1);
@@ -2904,7 +2904,7 @@ describe("record, review, replay, and save", () => {
       fake.service,
       storage.platform,
     );
-    await click(button("Back to tests"));
+    await click(button("Tests"));
     expect(history.location.pathname).toBe("/tests");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
     expect(fake.calls).not.toContain("approve");
@@ -2920,7 +2920,7 @@ describe("record, review, replay, and save", () => {
     fake.service.inspect = async () => {
       throw new TypeError("Failed to fetch");
     };
-    await click(button("Back to tests"));
+    await click(button("Tests"));
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
     expect(document.body.textContent).toContain("Could not confirm the draft save");
     expect(document.body.textContent).not.toContain("when the connection returns");

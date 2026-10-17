@@ -540,7 +540,7 @@ describe("Suite and Environment routes", () => {
       }),
     });
 
-    expect(document.body.textContent).toContain("Check it, then continue with the other 1.");
+    expect(document.body.textContent).toContain("Recommended. If it passes, run the other 1.");
     expect(document.body.textContent).not.toContain("2 cases ready");
     expect(document.body.textContent).toContain("Multi-environment execution is unavailable.");
   });
@@ -576,8 +576,8 @@ describe("Suite and Environment routes", () => {
         }),
       }),
     });
-    expect(document.querySelector("h1")?.textContent).toBe("Browsers");
-    expect(document.querySelector('[data-slot="page-context"]')).toBeNull();
+    expect(document.querySelector("h1")?.textContent).toBe("Devices");
+    expect(history.location.pathname).toBe("/devices");
     expect(document.body.textContent).toContain("Staging browser");
     expect(document.body.textContent).not.toContain("Fresh browser each session");
     expect(document.body.textContent).not.toContain("Open →");
@@ -690,7 +690,7 @@ describe("Suite and Environment routes", () => {
       }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Staging browser");
-    expect(document.querySelector('a[href="/environments"]')?.textContent).toContain("Browsers");
+    expect(document.querySelector('a[href="/devices"]')?.textContent).toContain("Devices");
     expect(document.body.textContent).toContain("Staging account");
     expect(document.querySelector('[data-slot="environment-accounts"]')?.textContent).not.toContain(
       "Available",
@@ -701,7 +701,7 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).not.toContain("cookie");
     expect(document.body.textContent).not.toContain("← Back to recording");
     await clickButton("More");
-    await clickButton("Open browser window");
+    await clickButton("Open in a separate window");
     expect(calls.open).toBe(1);
     expect(openExternal).not.toHaveBeenCalled();
 
@@ -737,7 +737,7 @@ describe("Suite and Environment routes", () => {
     await clickButton("Remove");
     await clickButton("Remove browser");
     expect(calls.remove).toBe(1);
-    expect(history.location.pathname).toBe("/environments");
+    expect(history.location.pathname).toBe("/devices");
   });
 
   it("schedules the plan daily on the first selected browser", async () => {

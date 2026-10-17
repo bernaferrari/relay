@@ -72,6 +72,14 @@ export function TestEditorStepOutline({
   headerAside?: ReactNode;
 }) {
   const compileBlockNotice = uniquePlatformBlockNotice(stepPlatformBlockers);
+  const readinessOf = (entry: StepEntry) =>
+    stepReadinessLabel(entry.step, {
+      productName: test.name,
+      originEvidenceMissing,
+      platformBlocker: stepPlatformBlockers?.[entry.step.id],
+    })
+      .split(" · ")[0]!
+      .replace(/^Ready$/, "");
   return (
     <section className="min-w-0" aria-labelledby="test-steps-title">
       {/* Narrow windows name the list (and show save state) in the view switcher bar. */}
@@ -137,13 +145,7 @@ export function TestEditorStepOutline({
                       {displayTitles?.[entry.step.id] ?? entry.step.intent}
                     </strong>
                     {(() => {
-                      const readiness = stepReadinessLabel(entry.step, {
-                        productName: test.name,
-                        originEvidenceMissing,
-                        platformBlocker: stepPlatformBlockers?.[entry.step.id],
-                      })
-                        .split(" · ")[0]!
-                        .replace(/^Ready$/, "");
+                      const readiness = readinessOf(entry);
                       // A step that can't run yet blocks the whole Test; say so in warning tone.
                       return (
                         <small className="mt-0.5 flex items-center gap-1 overflow-hidden text-xs text-muted-foreground break-words empty:hidden">
@@ -158,7 +160,8 @@ export function TestEditorStepOutline({
                       );
                     })()}
                   </span>
-                  <StepOutcomeMark stepId={entry.step.id} />
+                  {/* A past pass means nothing once the step needs setup again. */}
+                  {readinessOf(entry) ? <span /> : <StepOutcomeMark stepId={entry.step.id} />}
                   <ChevronRight
                     className={`size-3.5 text-muted-foreground ${selectedStepId === entry.step.id && selectedEditor ? "rotate-90" : ""}`}
                     aria-hidden="true"

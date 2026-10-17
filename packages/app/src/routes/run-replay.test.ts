@@ -13,11 +13,11 @@ describe("replay completion", () => {
     expect(replayPauseLabel("paused", false)).toBe(
       "Replay paused; waiting for the current operation to continue.",
     );
-    expect(replayPauseLabel("running", true)).toBe("Automation running · Relay is in control");
+    expect(replayPauseLabel("running", true)).toBe("Running again · Relay is driving");
   });
 
   it("names takeover only while automation is running", () => {
-    expect(replayStopLabel("running", false)).toBe("Stop automation");
+    expect(replayStopLabel("running", false)).toBe("Stop and take over");
     expect(replayStopLabel("paused", false)).toBe("Stop replay");
     expect(replayStopLabel("running", true)).toBe("Stopping…");
   });

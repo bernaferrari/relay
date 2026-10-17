@@ -169,7 +169,7 @@ export function CaptureReviewDecisions({
         </div>
       </div>
       <Dialog open={reportOpen} onOpenChange={setReportOpen}>
-        <DialogContent>
+        <DialogContent showCloseButton={false}>
           <DialogTitle>Report an issue</DialogTitle>
           <DialogDescription>
             Describe what looks wrong in {bulkCount ? "these screenshots" : "this screenshot"}.

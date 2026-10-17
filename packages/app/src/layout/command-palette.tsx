@@ -39,7 +39,7 @@ const workspaceCommands: readonly Command[] = [
   ...primaryDestinations.map((destination) => ({
     id: destination.to.slice(1),
     group: "Go to" as const,
-    label: `Open ${destination.label}`,
+    label: destination.label,
     detail: destination.detail,
     href: destination.to,
     icon: destination.icon,
@@ -48,8 +48,8 @@ const workspaceCommands: readonly Command[] = [
   {
     id: "apps",
     group: "Go to",
-    label: "Manage apps",
-    detail: "Builds, accounts, and coverage",
+    label: "Apps",
+    detail: "Every app, its tests, and its last run",
     href: "/apps",
     icon: AppWindow,
   },
@@ -66,7 +66,7 @@ const workspaceCommands: readonly Command[] = [
     id: "failed-runs",
     group: "Actions",
     label: "Review failed runs",
-    detail: "Open failure-first run history",
+    detail: "Runs that failed, newest first",
     href: "/runs?view=failed",
     icon: History,
     keywords: "reports failures",

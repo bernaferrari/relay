@@ -8,6 +8,7 @@ import {
   createRouter,
   redirect,
   type AsyncRouteComponent,
+  type ErrorComponentProps,
   type RouterHistory,
 } from "@tanstack/react-router";
 import { createElement, type ComponentType } from "react";
@@ -91,7 +92,6 @@ function lazyNamedRoute<TModule extends Record<string, unknown>, TName extends k
 
 const NotFoundPage = lazyNamedRoute(() => import("../routes/not-found-page"), "NotFoundPage");
 const AppsPage = lazyNamedRoute(() => import("../routes/apps-page"), "AppsPage");
-const AppAccountsPage = lazyNamedRoute(() => import("../routes/accounts-page"), "AppAccountsPage");
 const MapPage = lazyNamedRoute(() => import("../routes/map-page"), "MapPage");
 const TestsPage = lazyNamedRoute(() => import("../routes/tests-page"), "TestsPage");
 const NewTestPage = lazyNamedRoute(() => import("../routes/new-test-page"), "NewTestPage");
@@ -143,12 +143,23 @@ export type AppRouterContext = {
 const rootRoute = createRootRouteWithContext<AppRouterContext>()({
   beforeLoad: ({ location }) => assertAllowedRouteSearch(location.pathname, location.search),
   component: RootLayout,
+  // Even a root-level failure keeps the sidebar, so people never lose their place.
+  errorComponent: RootError,
   notFoundComponent: NotFoundPage,
 });
 
 function RootLayout() {
   const { platform } = rootRoute.useRouteContext();
   return <AppShell platform={platform} />;
+}
+
+function RootError(props: ErrorComponentProps) {
+  const { platform } = rootRoute.useRouteContext();
+  return (
+    <AppShell platform={platform}>
+      <RouteErrorPage {...props} />
+    </AppShell>
+  );
 }
 
 function RoutePending() {
@@ -187,7 +198,10 @@ const appsRoute = createRoute({
 const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/accounts",
-  component: AppAccountsPage,
+  // Sign-ins live with their browsers in Devices (one browser, one account).
+  beforeLoad: () => {
+    throw redirect({ to: "/devices", replace: true });
+  },
 });
 const appMapRoute = createRoute({
   getParentRoute: () => rootRoute,

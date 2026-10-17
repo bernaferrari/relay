@@ -213,7 +213,7 @@ export function TestsPage() {
         actions={
           <>
             <Button variant="outline" onClick={() => setE2EOpen(true)}>
-              Open project
+              Import code tests
             </Button>
             {/* One main action per tab: plans are created where plans are listed. */}
             {view === "plans" ? (

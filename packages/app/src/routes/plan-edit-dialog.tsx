@@ -90,11 +90,11 @@ export function PlanEditDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
+        className="max-h-[min(760px,calc(100vh-32px))] overflow-y-auto sm:max-w-lg"
       >
         <DialogTitle>Edit plan</DialogTitle>
         <DialogDescription>Removing a test from this plan does not delete it.</DialogDescription>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} className="grid gap-5">
           <Field>
             <FieldLabel htmlFor="edit-suite-name">Plan name</FieldLabel>
             <Input
@@ -121,53 +121,61 @@ export function PlanEditDialog({
                 : "Every captured image waits for a person. Looks correct does not create a future reference."}
             </p>
           </Field>
-          <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto p-1">
+          <div className="grid gap-5">
             <fieldset>
-              <legend>Tests</legend>
-              {editor.data?.tests.map((test) => (
-                <ChoiceLabel
-                  key={test.id}
-                  className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                >
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
-                      {test.name}
-                    </span>
-                    <span className="truncate text-xs leading-snug text-muted-foreground">
-                      {productTestStatusLabel(test.status, test.name)}
-                    </span>
-                  </span>
-                  <Checkbox
-                    checked={testIds.has(test.id)}
-                    onCheckedChange={(checked) => toggle(setTestIds, test.id, checked === true)}
-                  />
-                </ChoiceLabel>
-              ))}
-            </fieldset>
-            {editor.data?.dataSets.length ? (
-              <fieldset>
-                <legend>Data sets</legend>
-                {editor.data.dataSets.map((dataSet) => (
+              <legend className="mb-2 text-sm font-medium">Tests</legend>
+              <div className="grid divide-y divide-border rounded-lg border border-border">
+                {editor.data?.tests.map((test) => (
                   <ChoiceLabel
-                    key={dataSet.id}
-                    className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                    key={test.id}
+                    className="flex w-full min-w-0 cursor-pointer flex-row-reverse items-center justify-end gap-3 px-3 py-2.5 transition-colors outline-none hover:bg-muted/50 has-[:focus-visible]:bg-muted/50"
                   >
                     <span className="grid min-w-0 flex-1 gap-0.5">
                       <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
-                        {dataSet.name}
+                        {test.name}
                       </span>
                       <span className="truncate text-xs leading-snug text-muted-foreground">
-                        {dataSet.optionCount} saved {dataSet.optionCount === 1 ? "value" : "values"}
+                        {productTestStatusLabel(test.status, test.name)}
                       </span>
                     </span>
                     <Checkbox
-                      checked={variableIds.has(dataSet.id)}
-                      onCheckedChange={(checked) =>
-                        toggle(setVariableIds, dataSet.id, checked === true)
-                      }
+                      checked={testIds.has(test.id)}
+                      onCheckedChange={(checked) => toggle(setTestIds, test.id, checked === true)}
                     />
                   </ChoiceLabel>
                 ))}
+              </div>
+            </fieldset>
+            {editor.data?.dataSets.length ? (
+              <fieldset>
+                <legend className="mb-1 text-sm font-medium">Repeat with data</legend>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Each test runs once per value you pick.
+                </p>
+                <div className="grid divide-y divide-border rounded-lg border border-border">
+                  {editor.data.dataSets.map((dataSet) => (
+                    <ChoiceLabel
+                      key={dataSet.id}
+                      className="flex w-full min-w-0 cursor-pointer flex-row-reverse items-center justify-end gap-3 px-3 py-2.5 transition-colors outline-none hover:bg-muted/50 has-[:focus-visible]:bg-muted/50"
+                    >
+                      <span className="grid min-w-0 flex-1 gap-0.5">
+                        <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
+                          {dataSet.name}
+                        </span>
+                        <span className="truncate text-xs leading-snug text-muted-foreground">
+                          {dataSet.optionCount} saved{" "}
+                          {dataSet.optionCount === 1 ? "value" : "values"}
+                        </span>
+                      </span>
+                      <Checkbox
+                        checked={variableIds.has(dataSet.id)}
+                        onCheckedChange={(checked) =>
+                          toggle(setVariableIds, dataSet.id, checked === true)
+                        }
+                      />
+                    </ChoiceLabel>
+                  ))}
+                </div>
               </fieldset>
             ) : null}
           </div>

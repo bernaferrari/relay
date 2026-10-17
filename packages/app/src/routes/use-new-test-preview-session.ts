@@ -51,7 +51,10 @@ export function useNewTestPreviewSession({
         if (!disposed)
           listener.current({
             status: "degraded",
-            issue: "The device preview could not connect. Reopen the preview to try again.",
+            issue:
+              target.kind === "browser"
+                ? "The browser preview couldn’t connect. Reconnect to try again."
+                : "The device preview couldn’t connect. Reconnect to try again.",
           });
       });
     return () => {

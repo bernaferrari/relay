@@ -264,9 +264,11 @@ export function RunStoryView({
                     state={step.state}
                     heading={
                       <div className="flex items-start gap-2 px-2 py-1.5">
-                        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-xs tabular-nums text-muted-foreground">
-                          {index + 1}
-                        </span>
+                        {steps.length > 1 ? (
+                          <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center text-xs tabular-nums text-muted-foreground">
+                            {index + 1}
+                          </span>
+                        ) : null}
                         <span className="min-w-0 flex-1 text-sm font-semibold leading-6">
                           {step.title}
                         </span>

@@ -124,7 +124,7 @@ export function PlanChecklist({
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-1">
         <div className="grid gap-0.5">
           <h2 id="plan-checklist-title" className="text-sm font-semibold text-foreground">
-            Latest plan runs
+            Tests
           </h2>
           {runs.isSuccess && latest.size ? (
             <span className="w-64 max-w-full">

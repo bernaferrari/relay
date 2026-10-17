@@ -42,7 +42,7 @@ export function SelectField({
       <div className={compact ? className : `grid min-w-0 gap-1.5 ${className ?? ""}`}>
         {compact ? null : <Label className="text-xs font-medium text-foreground">{label}</Label>}
         <div
-          className="flex h-8 items-center rounded-lg border border-dashed border-input px-2.5 text-sm text-muted-foreground"
+          className="flex h-8 items-center rounded-lg border border-input bg-muted/30 px-2.5 text-sm text-muted-foreground"
           aria-label={label}
         >
           {placeholder ?? "None available"}

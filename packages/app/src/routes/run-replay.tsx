@@ -37,14 +37,14 @@ export function replayPauseLabel(status: string | undefined, waitingForHuman: bo
   if (status === "paused" && waitingForHuman) return "Paused · You have control";
   if (status === "paused") return "Replay paused; waiting for the current operation to continue.";
   if (status === "queued") return "Replay queued. It starts when the device or browser is free…";
-  if (status === "running") return "Automation running · Relay is in control";
+  if (status === "running") return "Running again · Relay is driving";
   return "Replaying the saved steps…";
 }
 
 /** Stopping a running replay is the explicit takeover. */
 export function replayStopLabel(status: string | undefined, pending: boolean): string {
   if (pending) return "Stopping…";
-  if (status === "running") return "Stop automation";
+  if (status === "running") return "Stop and take over";
   return "Stop replay";
 }
 

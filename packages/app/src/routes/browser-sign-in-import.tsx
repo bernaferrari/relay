@@ -69,7 +69,7 @@ export function BrowserSignInImport({
       <DialogTrigger render={<Button variant="outline" size="sm" disabled={!spaces.length} />}>
         <Upload aria-hidden="true" /> Import cookies
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent showCloseButton={false}>
         <DialogTitle>Import sign-in</DialogTitle>
         <DialogDescription>
           Choose a browser cookie export or Playwright storage-state JSON. Sign-ins are stored

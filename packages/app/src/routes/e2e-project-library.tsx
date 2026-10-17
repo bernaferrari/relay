@@ -141,11 +141,11 @@ export function E2EProjectLibrary({
           if (!add.isPending) onOpenChange(value);
         }}
       >
-        <DialogContent>
-          <DialogTitle>Open an e2e project</DialogTitle>
+        <DialogContent showCloseButton={false}>
+          <DialogTitle>Import code tests</DialogTitle>
           <DialogDescription>
-            Use the project’s installed e2e 0.20.0 and existing configuration. Configuration and
-            Tests run as local code; open a project you trust. This pilot supports web engines.
+            Point Relay at a project that uses e2e 0.20 for the web. Its tests and config run as
+            code on this computer, so only import projects you trust.
           </DialogDescription>
           <form
             className="grid gap-4"

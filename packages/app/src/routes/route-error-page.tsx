@@ -5,7 +5,7 @@ import { RefreshCw } from "lucide-react";
 
 export function RouteErrorPage({ reset }: ErrorComponentProps) {
   return (
-    <section className="flex min-h-dvh flex-1 items-center justify-center p-8" role="alert">
+    <section className="flex min-h-full flex-1 items-center justify-center p-8" role="alert">
       <div className="w-full max-w-sm">
         <RefreshCw className="mb-4 size-5 text-muted-foreground" aria-hidden="true" />
         <h1 className="text-lg font-semibold tracking-tight">This page couldn’t load</h1>

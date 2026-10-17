@@ -3,8 +3,6 @@ export const definitions = {
   "home-populated": { path: "/tests" },
   "apps-list": { path: "/apps" },
   "apps-error": { path: "/apps" },
-  "app-accounts": { path: "/accounts" },
-  "app-accounts-error": { path: "/accounts" },
   "prerecord-ready": { path: "/tests/new?app=checkout-app" },
   "prerecord-connecting": { path: "/tests/new?app=checkout-app" },
   "prerecord-failure": { path: "/tests/new?app=checkout-app" },

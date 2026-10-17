@@ -17,9 +17,9 @@ import { CircleHelp, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { useCurrentAppScope } from "./use-current-app-scope";
 import { ReviewCount } from "./review-count";
-import { everydayDestinations, utilityDestinations } from "./primary-destinations";
+import { everydayDestinations } from "./primary-destinations";
 
-type DestinationItem = (typeof everydayDestinations)[number] | (typeof utilityDestinations)[number];
+type DestinationItem = (typeof everydayDestinations)[number];
 
 export function isSidebarItemActive(pathname: string, itemPath: `/${string}`) {
   const sidebar = routeContractForPath(pathname)?.sidebar;
@@ -103,18 +103,6 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           </SidebarMenu>
         </nav>
       </AppSwitcher>
-      <div className="my-1.5 border-t border-border/70" role="separator" />
-      <SidebarMenu className="m-0 grid list-none gap-0.5 p-0" aria-label="Setup">
-        {utilityDestinations.map((item) => (
-          <SidebarDestinationLink
-            key={item.to}
-            item={item}
-            pathname={pathname}
-            app={selectedApp}
-            onNavigate={closeMobileNavigation}
-          />
-        ))}
-      </SidebarMenu>
       <SidebarFooter className="mt-auto px-0 pb-0 pt-2.5">
         <nav
           className="flex flex-col gap-0.5 border-t border-border pt-2.5"

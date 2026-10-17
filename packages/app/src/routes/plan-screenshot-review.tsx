@@ -264,7 +264,7 @@ export function PlanScreenshotJourney({
                 const status = screenshotStatus(item);
                 const empty = !frame?.media;
                 const ring = !isReviewable(item)
-                  ? "border border-dashed border-border ring-0 bg-transparent hover:border-foreground/30"
+                  ? "bg-muted/40 ring-1 ring-inset ring-border/60 hover:ring-foreground/30"
                   : status.tone === "bad"
                     ? "ring-1 ring-destructive/70"
                     : "ring-1 ring-border hover:ring-foreground/30";

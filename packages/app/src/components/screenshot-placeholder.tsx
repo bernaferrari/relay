@@ -26,7 +26,7 @@ export function ScreenshotPlaceholder({
     >
       <div
         aria-hidden="true"
-        className={`grid aspect-[4/3] place-items-center rounded-xl border border-dashed border-border bg-card/60 ${small ? "w-28" : "w-44"}`}
+        className={`grid aspect-[4/3] place-items-center rounded-xl bg-muted/40 ring-1 ring-inset ring-border/60 ${small ? "w-28" : "w-44"}`}
       >
         <span className="grid gap-1.5 justify-items-center text-muted-foreground/70">
           <ImageOff className={small ? "size-4" : "size-5"} />

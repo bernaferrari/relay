@@ -115,6 +115,44 @@ export function SideBySide({
   const open = useMutation({ mutationFn: onOpen });
   const rows = workspace.rows.slice(0, MAX_ACCOUNTS);
   const slots = Array.from({ length: MAX_ACCOUNTS }, (_, index) => rows[index]);
+  const editor = (
+    <AccountsEditor
+      open={editing}
+      onOpenChange={setEditing}
+      workspace={workspace}
+      spaces={spaces}
+      accountsByBrowser={accountsByBrowser}
+      onSave={onSave}
+      onNewBrowser={onNewBrowser}
+    />
+  );
+  // Nothing chosen yet: a quiet invitation, not a big empty grid and a disabled button.
+  if (!rows.length)
+    return (
+      <section
+        aria-labelledby="side-by-side-title"
+        className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4"
+      >
+        <span
+          aria-hidden="true"
+          className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
+        >
+          <Columns2 className="size-5" />
+        </span>
+        <div className="grid min-w-0 flex-1 gap-0.5">
+          <h2 id="side-by-side-title" className="text-sm font-semibold">
+            Compare accounts side by side
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Open up to four browsers at once, each signed in as a different account.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => setEditing(true)}>
+          Choose accounts
+        </Button>
+        {editor}
+      </section>
+    );
   return (
     <section
       aria-labelledby="side-by-side-title"
@@ -131,18 +169,16 @@ export function SideBySide({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button disabled={!rows.length || open.isPending} onClick={() => open.mutate()}>
+          <Button disabled={open.isPending} onClick={() => open.mutate()}>
             <Columns2 aria-hidden="true" />
             {open.isPending ? "Opening…" : "Open side by side"}
           </Button>
           <Button variant="outline" onClick={() => setEditing(true)}>
-            {rows.length ? "Edit accounts" : "Choose accounts"}
+            Edit accounts
           </Button>
-          {rows.length ? (
-            <span className="text-xs text-muted-foreground">
-              {rows.length} of {MAX_ACCOUNTS} accounts
-            </span>
-          ) : null}
+          <span className="text-xs text-muted-foreground">
+            {rows.length} of {MAX_ACCOUNTS} accounts
+          </span>
         </div>
         {open.error ? (
           <p role="alert" className="text-sm text-destructive">
@@ -194,15 +230,7 @@ export function SideBySide({
         )}
       </div>
 
-      <AccountsEditor
-        open={editing}
-        onOpenChange={setEditing}
-        workspace={workspace}
-        spaces={spaces}
-        accountsByBrowser={accountsByBrowser}
-        onSave={onSave}
-        onNewBrowser={onNewBrowser}
-      />
+      {editor}
     </section>
   );
 }
@@ -237,6 +265,14 @@ function AccountsEditor({
   const [drafts, setDrafts] = useState<Draft[]>(() => draftsFrom(workspace));
   const used = new Set(drafts.map((draft) => draft.browserId));
   const free = spaces.filter((space) => !used.has(space.id));
+  const original = draftsFrom(workspace);
+  const changed =
+    drafts.length !== original.length ||
+    drafts.some(
+      (draft, index) =>
+        draft.browserId !== original[index]?.browserId ||
+        draft.accountId !== original[index]?.accountId,
+    );
   const save = useMutation({
     mutationFn: async () => {
       const rows = drafts.flatMap((draft): PairedConfigurationRow[] => {
@@ -301,7 +337,7 @@ function AccountsEditor({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl" showCloseButton={false}>
         <DialogTitle>Accounts side by side</DialogTitle>
         <DialogDescription>
           Pick up to four browsers. Each one opens with its own saved sign-in, so each is a
@@ -390,7 +426,7 @@ function AccountsEditor({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button disabled={save.isPending} onClick={() => save.mutate()}>
+          <Button disabled={!changed || save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Saving…" : "Save"}
           </Button>
         </div>
