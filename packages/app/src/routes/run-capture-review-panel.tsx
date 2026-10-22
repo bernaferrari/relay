@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
-import { X, SquareCheck } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import {
@@ -188,7 +188,7 @@ export function CaptureReviewPanel({
       }}
     >
       <div className="grid min-w-0 gap-3">
-        {showCoverage ? (
+        {showCoverage && !(!showImage && canSelect) ? (
           <p className="px-1 text-xs tabular-nums text-muted-foreground">
             {captureReviewSummaryLine(queue)}
           </p>
@@ -240,7 +240,7 @@ export function CaptureReviewPanel({
           </div>
         ) : null}
         {!showImage && canSelect ? (
-          <div className="flex h-11 min-w-0 items-center gap-1" aria-label="Screenshot selection">
+          <div className="flex h-9 min-w-0 items-center gap-1" aria-label="Screenshot selection">
             {bulkItems.length ? (
               <>
                 <CaptureReviewDecisions
@@ -263,24 +263,45 @@ export function CaptureReviewPanel({
                 </Button>
               </>
             ) : (
-              <Button
-                size="sm"
-                variant={selecting ? "secondary" : "outline"}
-                className="h-11 w-full justify-center"
-                aria-pressed={selecting}
-                disabled={busy}
-                onClick={() => {
-                  setSelecting(!selecting);
-                  setSelectedIds(new Set());
-                }}
-              >
-                <SquareCheck className="size-4" />
-                {selecting ? "Cancel selection" : "Select screenshots"}
-              </Button>
+              <>
+                {/* One quiet row: what's left to review, then the two ways to act on it. */}
+                <p className="min-w-0 flex-1 truncate px-1 text-xs tabular-nums text-muted-foreground">
+                  {selecting
+                    ? "Choose screenshots to review together"
+                    : (() => {
+                        const left = destItems.filter((item) => item.status === "pending").length;
+                        return left ? `${left} to review` : "All reviewed";
+                      })()}
+                </p>
+                {!selecting && nextPendingIndex !== undefined ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      onSelect(nextPendingIndex);
+                      if (gallery) setLayout("detail");
+                    }}
+                  >
+                    Next unreviewed
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-pressed={selecting}
+                  disabled={busy}
+                  onClick={() => {
+                    setSelecting(!selecting);
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  {selecting ? "Done" : "Select"}
+                </Button>
+              </>
             )}
           </div>
         ) : null}
-        {nextPendingIndex !== undefined ? (
+        {nextPendingIndex !== undefined && !(!showImage && canSelect) ? (
           <Button
             className="w-fit"
             variant="ghost"

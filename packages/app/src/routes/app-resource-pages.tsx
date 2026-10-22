@@ -16,7 +16,7 @@ export function AppResourceFrame({
   children: React.ReactNode;
 }) {
   return (
-    <LibraryPage className="max-w-5xl">
+    <LibraryPage>
       <PageHeader title={title} description={description} actions={action} />
       {children}
     </LibraryPage>

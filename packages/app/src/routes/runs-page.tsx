@@ -139,7 +139,7 @@ export function RunsPage() {
 
   return (
     <LibraryPage
-      className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
+      className="flex min-h-full flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader

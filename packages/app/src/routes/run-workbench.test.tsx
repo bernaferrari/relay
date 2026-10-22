@@ -468,7 +468,7 @@ describe("RunWorkbench", () => {
     // Bulk selection stays out of screenshot browsing until requested.
     act(() =>
       [...host.querySelectorAll("button")]
-        .find((item) => item.textContent === "Select screenshots")!
+        .find((item) => item.textContent === "Select")!
         .click(),
     );
     await act(async () => {
@@ -525,8 +525,7 @@ describe("RunWorkbench", () => {
       "Screenshots",
     );
     expect(host.querySelector('[role="tabpanel"]')).not.toBeNull();
-    expect(host.textContent).toContain("2/2 captured");
-    expect(host.textContent).toContain("2 screenshots awaiting review");
+    expect(host.textContent).toContain("2 to review");
     expect(host.textContent).not.toContain("passed");
     const previous = host.querySelector<HTMLButtonElement>('[aria-label="Previous screenshot"]')!;
     const next = host.querySelector<HTMLButtonElement>('[aria-label="Next screenshot"]')!;

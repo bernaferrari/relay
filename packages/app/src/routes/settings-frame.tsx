@@ -92,7 +92,7 @@ export function SettingsFrame({
   }, [category, section]);
 
   return (
-    <LibraryPage className="max-w-5xl">
+    <LibraryPage>
       <PageHeader
         context="Settings"
         title={copy.title}

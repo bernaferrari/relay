@@ -429,7 +429,7 @@ it("keeps bulk selection out of screenshot browsing until requested", () => {
   const toolbar = host.querySelector('[aria-label="Screenshot selection"]')!;
   const siblingCount = list.parentElement!.children.length;
   const button = [...host.querySelectorAll("button")].find(
-    (node) => node.textContent === "Select screenshots",
+    (node) => node.textContent === "Select",
   )!;
   act(() => button.click());
   expect(host.querySelectorAll('[role="checkbox"]')).toHaveLength(2);

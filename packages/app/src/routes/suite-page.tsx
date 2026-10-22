@@ -260,7 +260,7 @@ export function SuitePage() {
   const runningCases = executionMode === "pilot" ? Math.min(1, plannedCases) : plannedCases;
 
   return (
-    <LibraryPage className="max-w-5xl">
+    <LibraryPage>
       {suite.isPending ? <PageLoading label="Loading plan…" /> : null}
       {suite.error ? (
         <RecoveryState

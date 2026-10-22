@@ -68,7 +68,7 @@ export function AppsPage() {
   }
 
   return (
-    <LibraryPage className="max-w-5xl">
+    <LibraryPage>
       <PageHeader
         title="Apps"
         description="Tests and results for each app."

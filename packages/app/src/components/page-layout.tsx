@@ -8,7 +8,8 @@ function Page({ pattern, className = "", ...props }: PageProps & { pattern: stri
   return (
     <section
       {...props}
-      className={`mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 ${pattern === "library" ? "max-w-7xl" : pattern === "form" ? "max-w-5xl" : "max-w-none"} ${className}`}
+      // One width per pattern, never overridden per page: titles must not jump between pages.
+      className={`mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 ${pattern === "library" ? "max-w-6xl" : pattern === "form" ? "max-w-3xl" : "max-w-none"} ${className}`}
       data-page-pattern={pattern}
     />
   );
@@ -54,29 +55,33 @@ export function PageHeader({
           {eyebrow}
         </div>
       ) : null}
+      {/* Title and its description stay together; actions sit beside them and,
+          when space runs out, wrap below both instead of splitting them. */}
       <div
         data-slot="page-title-row"
-        className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-3 ${eyebrow ? "mt-1" : ""}`}
+        className={`flex flex-wrap items-start justify-between gap-x-6 gap-y-3 ${eyebrow ? "mt-1" : ""}`}
       >
-        <h1
-          className={`${titleHidden ? "sr-only" : ""} min-w-0 min-w-60 flex-1 font-display text-3xl leading-9 font-semibold tracking-[-0.025em] wrap-anywhere`}
-        >
-          {title}
-        </h1>
+        <div className="min-w-60 flex-1">
+          <h1
+            className={`${titleHidden ? "sr-only" : ""} min-w-0 font-display text-3xl leading-9 font-semibold tracking-[-0.025em] wrap-anywhere`}
+          >
+            {title}
+          </h1>
+          {description ? (
+            <p
+              data-slot="page-description"
+              className="mt-1.5 max-w-prose text-sm leading-5 text-muted-foreground"
+            >
+              {description}
+            </p>
+          ) : null}
+        </div>
         {actions ? (
-          <div data-slot="page-actions" className="flex flex-wrap items-center gap-2">
+          <div data-slot="page-actions" className="flex flex-wrap items-center gap-2 pt-0.5">
             {actions}
           </div>
         ) : null}
       </div>
-      {description ? (
-        <p
-          data-slot="page-description"
-          className="mt-1.5 max-w-prose text-sm leading-5 text-muted-foreground"
-        >
-          {description}
-        </p>
-      ) : null}
       {children ? <div className="mt-4 min-w-0">{children}</div> : null}
     </header>
   );

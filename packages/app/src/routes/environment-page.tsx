@@ -256,7 +256,7 @@ export function EnvironmentPage() {
   }
 
   return (
-    <LibraryPage className="max-w-5xl">
+    <LibraryPage>
       {spaces.isPending ? <PageLoading label="Loading browser…" /> : null}
       {spaces.error ? (
         <RecoveryState

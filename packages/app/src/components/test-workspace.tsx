@@ -55,19 +55,23 @@ export function TestWorkspaceHeader({
           {context}
         </div>
       ) : null}
+      {/* One header for tests and runs: title on the left; the result sits beside
+          the actions, so "what happened" and "what to do next" read together. */}
       <div className="grid min-w-0 grid-cols-1 items-center gap-x-5 gap-y-3 @4xl/header:grid-cols-[minmax(0,1fr)_auto]">
         <h1 className="min-w-0 text-xl leading-snug font-semibold tracking-tight break-words">
           {title}
         </h1>
-        {actions ? (
-          <div className="flex min-h-8 max-w-full flex-wrap items-center gap-2">{actions}</div>
+        {actions || children ? (
+          <div className="flex min-h-8 max-w-full flex-wrap items-center gap-2">
+            {children ? (
+              <div className="mr-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted-foreground">
+                {children}
+              </div>
+            ) : null}
+            {actions}
+          </div>
         ) : null}
       </div>
-      {children ? (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          {children}
-        </div>
-      ) : null}
     </header>
   );
 }

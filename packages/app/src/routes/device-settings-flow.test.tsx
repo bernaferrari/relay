@@ -234,6 +234,15 @@ async function settle() {
   }
 }
 
+/** Wait for a condition instead of a fixed number of ticks (lazy routes load on their own time). */
+async function until(condition: () => boolean, timeoutMs = 2_000) {
+  const started = Date.now();
+  while (!condition()) {
+    if (Date.now() - started > timeoutMs) throw new Error("Timed out waiting for the page");
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 10))));
+  }
+}
+
 async function click(element: HTMLElement) {
   await act(async () => element.click());
   await settle();
@@ -507,6 +516,7 @@ describe("Devices", () => {
       (link) => link.textContent?.trim() === "Record test",
     )!;
     await click(record);
+    await until(() => Boolean(document.querySelector("#device-app-identifier")));
     expect(document.querySelector<HTMLInputElement>("#device-app-identifier")?.value).toBe("Grok");
     expect(button("Start recording").disabled).toBe(true);
     await act(async () => preview.ready());

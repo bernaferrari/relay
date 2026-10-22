@@ -206,7 +206,7 @@ export function TestsPage() {
     view === "plans" ? "Search plans" : view === "drafts" ? "Search drafts" : "Search tests";
 
   return (
-    <LibraryPage className="max-w-5xl" onClickCapture={returnFocus.onClickCapture}>
+    <LibraryPage onClickCapture={returnFocus.onClickCapture}>
       <PageHeader
         title="Tests"
         description="Flows you recorded once and can run again any time."
