@@ -31,18 +31,15 @@ Click through your app once. Relay replays it on web, Android, and iOS, and show
 
 </div>
 
-## Catch a bug. Prove the repair.
+## Catch a bug. Prove the fix.
 
-The demo website ships with a real layout bug: the **Save** button covers the team-seats count.
-Relay records a check, catches the overlap, the site is repaired, and the **same saved test**
-runs again to prove it.
+Record a checkout once. When a change slides **Pay now** over the order total, Relay's check
+fails and shows you the screen. Fix the stylesheet, and the **same saved test** proves it.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/demo-dark.webp" />
-  <img alt="Relay recording a check, failing on an overlapping Save button, repairing the page, and passing on rerun" src="./assets/readme/demo-light.webp" width="100%" />
+  <img alt="Relay recording a checkout test, failing when Pay now covers the order total, fixing the stylesheet, and passing on rerun" src="./assets/readme/demo-light.webp" width="100%" />
 </picture>
-
-Run it yourself from a fresh clone. It needs no account and no model key.
 
 ## Quick start
 
@@ -54,18 +51,12 @@ cd relay
 vp install
 pnpm doctor -- --web
 pnpm ensure:serve
-pnpm demo
+pnpm dev:web       # or pnpm dev:desktop for the desktop app
 ```
 
-The demo prints links to both runs: the failure, with Save overlapping the seats, and the passing
-rerun. The [first-test guide](https://relay-lime-pi.vercel.app/docs/getting-started/first-test) walks through every line of output.
-
-Then open the workspace and record a test in your own app:
-
-```bash
-pnpm dev:desktop   # the desktop app
-pnpm dev:web       # or the same workspace in your browser
-```
+Choose **New test**, enter your website's address, and click through one flow. Relay saves each
+step. The [first-test guide](https://relay-lime-pi.vercel.app/docs/getting-started/first-test)
+walks through it. No account and no model key needed.
 
 ## How it works
 
@@ -105,7 +96,7 @@ The Map keeps the screens you reached and the paths between them. Open a screen 
 rename it, or use a known path in your next test.
 
 <a href="./assets/readme/app-map.webp">
-<img alt="Relay's Map showing the recorded path from Sign in to Workspace settings" src="./assets/readme/app-map.webp" width="100%" />
+<img alt="Relay's Map showing the recorded path from a product page to checkout" src="./assets/readme/app-map.webp" width="100%" />
 </a>
 
 ## For coding agents
@@ -117,7 +108,7 @@ again. Then you review the exact run it made.
 **CLI:** from a source checkout, use `pnpm relay`.
 
 ```bash
-pnpm relay run "Member layout" --device browser   # rerun a saved test
+pnpm relay run "Checkout" --device browser        # rerun a saved test
 pnpm relay inspect <run-id>                      # expected vs saw, step by step
 pnpm relay ci shop.example.com --output result.json --junit junit.xml
 pnpm relay guide                                  # bundled guides, no server needed
@@ -185,11 +176,11 @@ and the [agent plugin and skills](./plugins/relay-proof/README.md).
 
 ## Learn more
 
-- [Your first test](./docs/FIRST_TEST.md): the demo, step by step.
+- [Your first test](./packages/site/content/docs/getting-started/first-test.mdx): record one flow in your own website.
 - [Record a flow](./packages/site/content/docs/workflows/recording.mdx): record and edit a test in
   your own app.
-- [The Map](./docs/MAP.md): how runs grow it, and how to fix a screen it got wrong.
-- [Plans and Data sets](./docs/PLANS.md): run tests together across inputs, languages, or devices.
+- [The Map](./packages/site/content/docs/workflows/map.mdx): how runs grow it, and how to fix a screen it got wrong.
+- [Plans and Data sets](./packages/site/content/docs/workflows/data-sets.mdx): run tests together across inputs, languages, or devices.
 - [Packaged runtime](./packages/runtime/README.md): run Relay from a local tarball.
 
 ## Contributing

@@ -22,11 +22,11 @@ const inkButton =
   "h-12 rounded-full bg-ink px-6 text-[0.95rem] text-ink-foreground hover:bg-ink/85 dark:bg-ink-foreground dark:text-ink dark:hover:bg-ink-foreground/90";
 const quietButton = "h-12 rounded-full bg-card px-5 text-[0.95rem]";
 
-const demoCommands = [
+const startCommands = [
   "git clone https://github.com/bernaferrari/relay.git",
   "cd relay && pnpm install",
   "pnpm ensure:serve",
-  "pnpm demo",
+  "pnpm dev:web",
 ];
 
 const faqs = [
@@ -34,7 +34,7 @@ const faqs = [
     question: "Do I need a model key?",
     answer: (
       <>
-        Not for the demo or for recorded steps, which replay deterministically. Describing a test in
+        Not for recorded steps, which replay deterministically. Describing a test in
         plain English and model-assisted actions do need one.{" "}
         <Link href="/docs/getting-started/installation">The setup guide</Link> explains both paths.
       </>
@@ -77,7 +77,7 @@ const faqs = [
       <>
         Yes. Relay is MIT licensed, and you can run it from source today. Model providers may charge
         for model-assisted actions.{" "}
-        <Link href="/docs/getting-started/first-test">Start with the demo</Link>, no key required.
+        <Link href="/docs/getting-started/first-test">Record your first test</Link>, no key required.
       </>
     ),
   },
@@ -89,7 +89,7 @@ export default function HomePage() {
       <SiteHeader />
       <main id="main-content" className="overflow-x-clip">
         <Hero />
-        <DemoSection />
+        <StorySection />
         <LoopSection />
         <AgentsSection />
         <LocalSection />
@@ -139,7 +139,7 @@ function Hero() {
               href="/docs/getting-started/first-test"
               className={buttonVariants({ className: inkButton })}
             >
-              Run the demo <ArrowRight className="size-4" />
+              Record your first test <ArrowRight className="size-4" />
             </Link>
             <a
               href={repositoryUrl}
@@ -150,7 +150,7 @@ function Hero() {
           </div>
           <p className="mt-5 flex items-center gap-2 text-[0.8rem] text-muted-foreground">
             <Check className="size-3.5 text-pass" strokeWidth={3} />
-            The demo runs locally. No model key, no account.
+            Runs on your computer. No model key, no account.
           </p>
         </div>
         <HeroLoop />
@@ -216,17 +216,16 @@ function LoopTag({
   );
 }
 
-function DemoSection() {
+function StorySection() {
   return (
-    <section id="demo" className={`${container} scroll-mt-24 pt-10 pb-24 sm:pt-16 sm:pb-32`}>
+    <section id="story" className={`${container} scroll-mt-24 pt-10 pb-24 sm:pt-16 sm:pb-32`}>
       <div className="mb-10 grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
         <div>
-          <p className={`${eyebrow} text-ribbon-blue`}>The demo, in four beats</p>
+          <p className={`${eyebrow} text-ribbon-blue`}>One test, four beats</p>
           <h2 className={`${h2} mt-4 max-w-[16ch]`}>Catch a bug. Prove the repair.</h2>
         </div>
         <p className={`${lede} max-w-sm md:text-right`}>
-          The demo website ships with a real layout bug. Relay records a check, catches the bug, and
-          then reruns the same saved test to prove the fix.
+          Record a checkout once. When Pay now slides over the total, Relay catches it, and the same saved test proves the fix.
         </p>
       </div>
       <RunReel />
@@ -316,7 +315,7 @@ function LoopSection() {
 }
 
 function RecordVisual() {
-  const rows = ["Tap “Continue as Member”", "Tap “Settings”", "See “Team seats”"];
+  const rows = ["Tap “Add to cart”", "Tap “Checkout”", "See “Order total”"];
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between">
@@ -334,7 +333,7 @@ function RecordVisual() {
           </li>
         ))}
         <li className="flex items-center gap-2 rounded-md border border-dashed border-ribbon-blue/60 bg-ribbon-blue/5 px-2.5 py-1.5 text-ribbon-blue">
-          <Plus className="size-3" /> Check: Save and seats don’t overlap
+          <Plus className="size-3" /> Check: Pay now doesn’t cover the total
         </li>
       </ol>
     </div>
@@ -502,10 +501,9 @@ function QuickstartSection() {
       >
         <div>
           <p className={`${eyebrow} text-ribbon-pink`}>Quickstart</p>
-          <h2 className={`${h2} mt-4`}>Your first caught bug, in four commands.</h2>
+          <h2 className={`${h2} mt-4`}>Your first test, in four commands.</h2>
           <p className={`${lede} mt-6 max-w-md`}>
-            The demo starts a small website with a real layout bug, catches it, repairs it, and
-            proves the repair with the same test. Then open the run in Relay and look for yourself.
+            Start Relay, open it, and click through one flow in your own website. Relay saves each step, so you can run it again any time.
           </p>
           <ul className="mt-8 flex flex-wrap gap-2">
             {["Node.js 24+", "pnpm", "Git", "A local browser"].map((req) => (
@@ -531,27 +529,25 @@ function QuickstartSection() {
             </span>
             <span className="font-mono text-[0.68rem] text-white/40">~/relay</span>
             <span className="[&_button]:text-white/60 [&_button:hover]:bg-white/10 [&_button:hover]:text-white">
-              <CopyExampleCommand text={demoCommands.join("\n")} />
+              <CopyExampleCommand text={startCommands.join("\n")} />
             </span>
           </div>
           <div className="overflow-x-auto p-5 font-mono text-[0.78rem] leading-7 sm:p-6">
-            {demoCommands.map((cmd) => (
+            {startCommands.map((cmd) => (
               <p key={cmd} className="whitespace-nowrap">
                 <span className="mr-2 select-none text-ribbon-orange">$</span>
                 {cmd}
               </p>
             ))}
             <div className="mt-3 border-t border-white/10 pt-3 text-[0.74rem] leading-6">
-              <p className="ps-4 -indent-4 text-fail">
-                ✗ Caught the defect: Save overlaps the team seats (layout check failed).
+              <p className="ps-4 -indent-4 text-white/50">
+                → Relay is open at http://localhost:3000
               </p>
               <p className="ps-4 -indent-4 text-white/50">
-                ↻ Repair: removed the overlap in this owned demo website; rerunning the unchanged
-                Test.
+                → New test · enter your website · click through it once
               </p>
               <p className="ps-4 -indent-4 text-pass">
-                ✓ Layout check passed. Screenshot review is pending; the demo makes no human
-                decision.
+                ✓ Saved. Run it again any time, or let your agent do it.
               </p>
             </div>
           </div>
@@ -603,36 +599,38 @@ function ClosingSection() {
           aria-hidden
           className="paper-grid pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_left,black,transparent_70%)]"
         />
-        <Image
-          src="/relay-loop.webp"
-          alt=""
-          width={1024}
-          height={1024}
-          aria-hidden
-          className="animate-loop-drift pointer-events-none absolute -right-24 -bottom-28 w-[22rem] select-none sm:-right-10 sm:-bottom-20 sm:w-[30rem] motion-reduce:animate-none"
-        />
-        <div className="relative max-w-xl">
-          <h2 className={h2}>
-            Give one flow a <span className="ribbon-text">repeat button.</span>
-          </h2>
-          <p className={`${lede} mt-5 max-w-md`}>
-            Start with the demo, then record the journey in your own app that you’re tired of
-            clicking through by hand.
-          </p>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <Link
-              href="/docs/getting-started/first-test"
-              className={buttonVariants({ className: inkButton })}
-            >
-              Run the demo <ArrowRight className="size-4" />
-            </Link>
-            <Link
-              href="/docs"
-              className={buttonVariants({ variant: "outline", className: quietButton })}
-            >
-              Read the docs
-            </Link>
+        {/* The loop gets its own column: it never sits behind the words. */}
+        <div className="relative grid items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+          <div className="relative max-w-xl">
+            <h2 className={h2}>
+              Give one flow a <span className="ribbon-text">repeat button.</span>
+            </h2>
+            <p className={`${lede} mt-5 max-w-md`}>
+              Record the journey in your own app that you’re tired of clicking through by hand.
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3">
+              <Link
+                href="/docs/getting-started/first-test"
+                className={buttonVariants({ className: inkButton })}
+              >
+                Record your first test <ArrowRight className="size-4" />
+              </Link>
+              <Link
+                href="/docs"
+                className={buttonVariants({ variant: "outline", className: quietButton })}
+              >
+                Read the docs
+              </Link>
+            </div>
           </div>
+          <Image
+            src="/relay-loop.webp"
+            alt=""
+            width={1024}
+            height={1024}
+            aria-hidden
+            className="animate-loop-drift pointer-events-none mx-auto w-52 select-none sm:w-64 md:-my-10 md:w-full motion-reduce:animate-none"
+          />
         </div>
       </div>
     </section>
@@ -646,7 +644,7 @@ function SiteFooter() {
       links: [
         ["How it works", "#loop"],
         ["For agents", "#agents"],
-        ["Run the demo", "/docs/getting-started/first-test"],
+        ["Your first test", "/docs/getting-started/first-test"],
       ],
     },
     {

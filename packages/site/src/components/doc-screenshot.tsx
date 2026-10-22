@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-/** Retained, owned demo captures shared by the site and user guides. */
+/** Real Relay captures shared by the site and user guides. */
 export function DocScreenshot({
   src,
   alt,

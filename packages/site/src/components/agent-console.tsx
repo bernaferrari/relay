@@ -4,10 +4,10 @@ import { useState, type CSSProperties } from "react";
 import { CopyExampleCommand } from "./site-controls";
 
 const cli = [
-  { cmd: 'pnpm relay run "Member layout" --device browser', note: "rerun the saved Test" },
+  { cmd: 'pnpm relay run "Checkout" --device browser', note: "rerun the saved Test" },
   { cmd: "echo $?", note: "1 = a Test failed its expectation" },
   { cmd: "pnpm relay inspect <run-id>", note: "expected vs saw, step by step" },
-  { cmd: 'pnpm relay run "Member layout" --device browser', note: "repair, then repeat" },
+  { cmd: 'pnpm relay run "Checkout" --device browser', note: "fix, then repeat" },
 ];
 
 const mcp = `{

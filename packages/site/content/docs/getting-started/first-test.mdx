@@ -1,13 +1,13 @@
 ---
 title: Your first test
-description: Catch a real layout bug, see the repair, and repeat the same Test. No model key needed.
+description: Record one flow in your own website, run it again, and review what Relay saw. No model key needed.
 ---
 
-The fastest way to understand Relay is a complete, local browser demo. It records a journey to Settings, catches a seeded overlap, fixes the demo website, and reruns the unchanged saved Test.
+Your first test is one short journey in your own website: something you check by hand today, like adding an item to a cart and reaching checkout. Record it once, and Relay can repeat it whenever you want.
 
-Relay currently runs from source. This walkthrough uses a checkout; no published npm package or desktop installer is required.
+Relay currently runs from source. No published npm package or desktop installer is required.
 
-## 1. Get the workspace ready
+## 1. Get Relay running
 
 Install [Node.js 24 or newer](https://nodejs.org/en/download), [pnpm](https://pnpm.io/installation), and Chrome, Chromium, or Edge. Then:
 
@@ -16,56 +16,38 @@ git clone https://github.com/bernaferrari/relay.git
 cd relay
 pnpm install
 pnpm doctor -- --web
-```
-
-Follow the doctor's instructions if a prerequisite is missing. For an unusual browser installation, set `RELAY_BROWSER_EXECUTABLE` to its absolute path before starting the service.
-
-## 2. Run the demo
-
-Let any existing Relay recording or Run finish first. `ensure:serve` starts a fresh development service; it can restart the service used by other local Relay work.
-
-```bash title="From the relay directory"
 pnpm ensure:serve
-pnpm demo
+pnpm dev:web
 ```
 
-No account, model key, Android tools, or iOS tools are needed. Keep the demo terminal open: it serves the local website used by the Test.
+Follow the doctor's instructions if a prerequisite is missing. For an unusual browser installation, set `RELAY_BROWSER_EXECUTABLE` to its absolute path before starting the service. Prefer a window of its own? Use `pnpm dev:desktop` instead of `pnpm dev:web`.
 
-## 3. Open both results
+## 2. Record one flow
 
-The terminal prints two local, read-only review links. Open them directly; this walkthrough does not require the desktop app or a web development server. The links require the Relay service to stay running.
+In Relay, choose **New test**, pick **Website**, and enter your site's address (a local one like `localhost:3000` works). Relay opens a fresh browser.
 
-Compare these results:
+Click through the journey the way you normally would. Each action becomes a step. Add a **check** where something must be true, like "the order total is visible", and a **screenshot** where you want to look at the screen later. When you're done, choose **Stop and review**, then **Save**.
 
-| Result            | What to look for                                              |
-| ----------------- | ------------------------------------------------------------- |
-| **Defect Review** | The first Run fails because **Save** overlaps the team seats. |
-| **Review**        | The repaired website passes the same layout check.            |
+No account, model key, Android tools, or iOS tools are needed for recorded steps.
 
-The output also includes the Test ID, separate Run IDs, measured durations, and an exported **Member settings.png** screenshot for each Run. Both screenshots should show Workspace settings for the Member account.
+## 3. Run it again
 
-“Layout check passed” means Save and the team seats do not overlap. It does **not** mean someone has approved the appearance. That is a [screenshot review](/docs/workflows/review) decision.
+Open the test and press **Run**. Relay repeats every step in a fresh browser and shows each one with its timing and the screen it reached. If a check fails, it says what it **expected** and what it **saw**, next to the screenshot.
 
 <DocScreenshot
   src="/images/relay-run.webp"
-  alt="Relay showing the local demo after its layout check passed"
-  caption="The repaired demo in Relay: saved steps on the left, retained evidence on the right. This screenshot illustrates the product workspace; the terminal’s review links open a read-only gallery."
+  alt="A passing Relay run of a checkout test: each step with its timing, and the checkout screen it reached"
+  caption="A run in Relay: the saved steps on the left, the screen each one reached on the right."
 />
 
-To record a human appearance decision, open `pnpm dev:web` or `pnpm dev:desktop`, select **Demo · Member layout**, and review that Run’s screenshots. The local gallery links alone do not save a review decision.
+A passing check is not the same as someone approving how the screen looks. That is a [screenshot review](/docs/workflows/review) decision.
 
-## 4. Repeat it
+## 4. Repeat it anywhere
 
-Use the exact **Repeat** command printed by the demo. It runs the same saved Test against the repaired website and creates a new Run with its own evidence.
-
-Stop the demo with Ctrl+C when finished. Start it again before repeating after the website has stopped. Review links need the Relay service running and expire after 24 hours.
-
-For a demo that closes its website after the two runs:
+The same saved test runs from the command line and from coding agents:
 
 ```bash
-pnpm demo -- --once
+pnpm relay run "Checkout" --device browser
 ```
 
-## Next: use your own app
-
-Open Relay's [desktop or web interface](/docs/getting-started/installation), choose **New test**, and [record one short journey](/docs/workflows/recording). Aim for a single repeatable outcome before adding more coverage.
+Next, [record more journeys](/docs/workflows/recording) or learn how [runs work](/docs/workflows/running). Aim for a single repeatable outcome before adding more coverage.

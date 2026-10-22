@@ -132,12 +132,6 @@ summary:focus-visible {
   --color-fail: var(--signal-fail);
   --color-ink: var(--ink);
   --color-ink-foreground: var(--ink-foreground);
-  /* The demo website's own palette, for the illustrated frame (always light). */
-  --color-demo-ink: oklch(0.2 0.02 270);
-  --color-demo-accent: oklch(0.47 0.21 266);
-  --color-demo-link: oklch(0.5 0.2 268);
-  --color-demo-tint: oklch(0.94 0.03 270);
-  --color-demo-chrome: oklch(0.97 0.003 90);
   --color-showcase: oklch(0.16 0.01 270);
 
   /* Marketing type scale: size / line-height / tracking travel together. */

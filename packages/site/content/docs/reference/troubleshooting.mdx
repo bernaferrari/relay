@@ -29,7 +29,7 @@ Replace `<target-id>` with the device ID from Relay. Health describes the target
 | Recorded control does not match its step       | Return to the intended source screen and record that step again. Do not reuse mismatched control evidence.        |
 | Device is busy                                 | Let the owning recording or Run finish. Do not send competing input.                                              |
 | Test starts on the wrong screen                | Check the selected app, account, target, and **Restart app before running** option.                               |
-| Description-based step needs a model           | Configure the key in **Settings → Advanced**. The local demo and deterministic recorded steps do not need one.    |
+| Description-based step needs a model           | Configure the key in **Settings → Advanced**. Recorded steps do not need one.    |
 | Screenshot is missing                          | Inspect capture status and connection health. Rerun to collect new evidence; missing evidence cannot be approved. |
 | Model key was added in a shell but is not used | Save it in Settings or restart the service with that environment after active work finishes.                      |
 | A schedule does not run                        | Keep Relay’s service and computer awake, check the exact target and account, and inspect Previous scheduled runs. |

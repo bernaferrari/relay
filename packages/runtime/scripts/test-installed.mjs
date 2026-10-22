@@ -27,9 +27,7 @@ const authenticatedWorkspace = resolve(temporary, "authenticated-workspace");
 await mkdir(installation);
 await mkdir(workspace);
 const port = await freePort();
-const fixturePort = await freePort();
 let runtime;
-let liveDemo;
 const token = "installed-runtime-test-credential";
 const authorized = { headers: { Authorization: `Bearer ${token}` } };
 
@@ -76,61 +74,6 @@ function launchEnvironment(args, credential = "") {
     RELAY_AUTH_SUBJECT: "agent:installed-runtime-test",
     RELAY_ACTOR_ID: "agent:installed-runtime-test",
   };
-}
-async function launchLiveDemo(args) {
-  const child = spawn(process.execPath, [cli, ...args], {
-    cwd: installation,
-    env: launchEnvironment(args),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let stdout = "";
-  let stderr = "";
-  const exited = new Promise((done) => child.once("exit", done));
-  const handle = {
-    get stdout() {
-      return stdout;
-    },
-    async stop() {
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      child.kill("SIGINT");
-      let timeout;
-      try {
-        await Promise.race([
-          exited,
-          new Promise((_done, reject) => {
-            timeout = setTimeout(() => reject(new Error("Owned demo did not close")), 10_000);
-          }),
-        ]);
-      } finally {
-        clearTimeout(timeout);
-        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-      }
-    },
-  };
-  liveDemo = handle;
-  let timeout;
-  try {
-    await new Promise((done, reject) => {
-      timeout = setTimeout(() => reject(new Error(`Live demo timed out: ${stderr}`)), 150_000);
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk;
-        if (stdout.includes("The demo website stays available")) done();
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk;
-      });
-      child.once("error", reject);
-      child.once("exit", (code) => reject(new Error(`Live demo exited (${code}): ${stderr}`)));
-    });
-    return handle;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-function outputValue(output, label) {
-  const value = output.split("\n").find((line) => line.startsWith(`${label}: `));
-  assert.ok(value, `Missing ${label} in demo output`);
-  return value.slice(label.length + 2);
 }
 const startArgs = ["start", "--workspace", workspace, "--port", String(port)];
 let cli;
@@ -309,152 +252,6 @@ try {
   );
   assert.equal((await (await fetch(`${runtime.url}/health`)).json()).pid, runtime.pid);
 
-  const demoArgs = [
-    "demo",
-    "--workspace",
-    workspace,
-    "--port",
-    String(port),
-    "--fixture-port",
-    String(fixturePort),
-    "--once",
-  ];
-  const first = await launch(demoArgs);
-  assert.match(first.stdout, /Record: sign in as Member/u);
-  assert.match(first.stdout, /Caught the defect: Save overlaps/u);
-  assert.match(first.stdout, /Layout check passed/u);
-  assert.match(first.stdout, /Screenshot:.*Member settings\.png/u);
-  assert.match(first.stdout, /Screenshot review is pending/u);
-  const review = first.stdout
-    .split("\n")
-    .find((line) => line.startsWith("Review: "))
-    .slice("Review: ".length);
-  assert.ok(
-    review.startsWith(`${runtime.url}/shared/runs/`),
-    "packaged review must use its own canonical service",
-  );
-  const gallery = await fetch(review);
-  assert.equal(gallery.status, 200);
-  assert.match(gallery.headers.get("content-type"), /text\/html/u);
-  assert.match(await gallery.text(), /Demo/u);
-  assert.doesNotMatch(first.stdout, /\.\/bin\/relay/u);
-  const repeat = await launch(demoArgs);
-  assert.doesNotMatch(repeat.stdout, /Record:/u);
-  assert.match(repeat.stdout, /Layout check passed/u);
-  const saved = JSON.parse(
-    await readFile(resolve(workspace, ".relay/first-run-demo.json"), "utf8"),
-  );
-  const frame = first.stdout
-    .split("\n")
-    .find((line) => line.startsWith("Screenshot: "))
-    .slice("Screenshot: ".length);
-  assert.ok((await stat(frame)).size > 1000);
-  const readRun = async (output, prefix = "") => {
-    const response = await fetch(`${runtime.url}/runs/${outputValue(output, `${prefix}Run ID`)}`, {
-      headers: {
-        "X-Organization-Id": "local",
-        "X-Project-Id": "default",
-        "X-Relay-Actor-Id": "agent:installed-runtime-test",
-        "X-Relay-Actor-Kind": "agent",
-      },
-    });
-    assert.equal(response.status, 200);
-    return (await response.json()).run;
-  };
-  const assertLayoutOutcome = (run, passed) => {
-    assert.equal(run.outcome, passed ? "passed" : "product-failure");
-    assert.ok(
-      run.artifacts.some(
-        (artifact) => artifact.kind === "layout-assertion" && artifact.data?.passed === passed,
-      ),
-    );
-  };
-  const defectRun = await readRun(first.stdout, "Defect ");
-  const repairRun = await readRun(first.stdout);
-  assertLayoutOutcome(defectRun, false);
-  assertLayoutOutcome(repairRun, true);
-  assert.equal(outputValue(first.stdout, "Defect Test ID"), saved.testId);
-  assert.equal(outputValue(first.stdout, "Test ID"), saved.testId);
-  assert.deepEqual(defectRun.recipeSnapshot, repairRun.recipeSnapshot);
-  assert.deepEqual(defectRun.resolvedInputs, repairRun.resolvedInputs);
-  const defectGallery = await fetch(outputValue(first.stdout, "Defect Review"));
-  assert.equal(defectGallery.status, 200);
-  assert.match(await defectGallery.text(), /aria-label="product-failure"/u);
-
-  // Exercise the documented default: the original terminal stays open while
-  // its printed Repeat command runs the same Test in a separate process.
-  const live = await launchLiveDemo(demoArgs.filter((arg) => arg !== "--once"));
-  const repeatArgs = demoArgs.filter((arg) => arg !== "--once");
-  repeatArgs[0] = "repeat";
-  const shellQuote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-  assert.equal(
-    outputValue(live.stdout, "Repeat"),
-    `node ${shellQuote(cli)} repeat --workspace ${shellQuote(workspace)} --port ${port} --fixture-port ${fixturePort}`,
-  );
-  // Execute the verified argument vector, never arbitrary printed shell text.
-  const liveRepeat = await launch(repeatArgs);
-  assert.doesNotMatch(liveRepeat.stdout, /Record:/u);
-  assert.equal(outputValue(live.stdout, "Test ID"), saved.testId);
-  assert.equal(outputValue(liveRepeat.stdout, "Test ID"), saved.testId);
-  assert.notEqual(outputValue(liveRepeat.stdout, "Run ID"), outputValue(live.stdout, "Run ID"));
-  const fixtureUrl = `http://127.0.0.1:${fixturePort}`;
-  const injected = await fetch(`${fixtureUrl}/control/defect`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ on: true }),
-  });
-  assert.equal(injected.status, 200);
-  const failedRepeat = await launch(repeatArgs).then(
-    () => {
-      throw new Error("Repeating the defective fixture must fail the check");
-    },
-    (error) => error,
-  );
-  assert.match(failedRepeat.stderr, /Demo check failed/u);
-  assert.equal(outputValue(failedRepeat.stdout, "Test ID"), saved.testId);
-  assertLayoutOutcome(await readRun(failedRepeat.stdout), false);
-  assert.equal((await (await fetch(`${fixtureUrl}/control/defect`)).json()).on, true);
-  const repaired = await fetch(`${fixtureUrl}/control/defect`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ on: false }),
-  });
-  assert.equal(repaired.status, 200);
-  assert.equal((await repaired.json()).on, false);
-  const repairedRepeat = await launch(repeatArgs);
-  assert.equal(outputValue(repairedRepeat.stdout, "Test ID"), saved.testId);
-  assert.notEqual(
-    outputValue(repairedRepeat.stdout, "Run ID"),
-    outputValue(liveRepeat.stdout, "Run ID"),
-  );
-  assert.match(repairedRepeat.stdout, /Layout check passed/u);
-  assert.equal((await (await fetch(`${fixtureUrl}/control/defect`)).json()).on, false);
-  const defectFrame = await readFile(outputValue(failedRepeat.stdout, "Screenshot"));
-  const repairedFrame = await readFile(outputValue(repairedRepeat.stdout, "Screenshot"));
-  assert.ok(
-    !defectFrame.equals(repairedFrame),
-    "Repair must be visible in the retained new screenshot",
-  );
-  await live.stop();
-  liveDemo = undefined;
-  await assert.rejects(
-    launch(repeatArgs),
-    /original demo website is no longer running.*No browser input was sent/su,
-  );
-  const foreignFixture = http.createServer((_request, response) => {
-    response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ on: false }));
-  });
-  await new Promise((done) => foreignFixture.listen(fixturePort, "127.0.0.1", done));
-  try {
-    await assert.rejects(
-      launch(repeatArgs),
-      /original demo website is no longer running.*No browser input was sent/su,
-    );
-    assert.equal((await (await fetch(fixtureUrl)).json()).on, false);
-  } finally {
-    await new Promise((done) => foreignFixture.close(done));
-  }
   const authenticatedPort = await freePort();
   const authenticatedMcp = await inspectInstalledMcp(
     ["--workspace", authenticatedWorkspace, "--runtime-port", String(authenticatedPort)],
@@ -473,26 +270,6 @@ try {
     (response) => response.json(),
   );
   assert.equal(authenticatedHealth.pid, authenticated.pid);
-  await assert.rejects(
-    launch(
-      [
-        "demo",
-        "--workspace",
-        authenticatedWorkspace,
-        "--port",
-        String(authenticatedPort),
-        "--fixture-port",
-        String(fixturePort),
-        "--once",
-      ],
-      token,
-    ),
-    /canonical local-host boundary/u,
-  );
-  assert.equal(
-    JSON.parse(await readFile(resolve(workspace, ".relay/first-run-demo.json"), "utf8")).testId,
-    saved.testId,
-  );
   const report = {
     schemaVersion: 1,
     installation,
@@ -506,27 +283,10 @@ try {
     authenticatedWorkspace,
     authenticatedPid: authenticated.pid,
     authenticatedUrl: authenticated.url,
-    browserDemoUsesTrustedLoopback: true,
     browserInstallNeedsNoAndroidAsset: true,
-    defectAndRepairUseIdenticalSavedRecipe: true,
-    defectRunId: defectRun.id,
-    repairRunId: repairRun.id,
-    authenticatedDemoFailsClosed: true,
     negotiatedPanel: Boolean(mcp.find((entry) => entry.id === 3)),
     pid: runtime.pid,
     url: runtime.url,
-    testId: saved.testId,
-    screenshot: frame,
-    first: first.stdout,
-    repeat: repeat.stdout,
-    defaultDemoRepeatWorks: true,
-    repeatPreservesFixtureRepair: true,
-    repeatAfterCloseFailsBeforeInput: true,
-    foreignFixtureRejected: true,
-    liveDemo: live.stdout,
-    liveRepeat: liveRepeat.stdout,
-    failedRepeat: failedRepeat.stdout,
-    repairedRepeat: repairedRepeat.stdout,
     sourceIndependent: true,
     immutableInstallation: true,
     nativeQualified: false,
@@ -534,7 +294,6 @@ try {
   await writeFile(resolve(temporary, "acceptance.json"), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
 } finally {
-  await liveDemo?.stop();
   for (const [ownedWorkspace, headers] of [
     [workspace, {}],
     [authenticatedWorkspace, authorized],

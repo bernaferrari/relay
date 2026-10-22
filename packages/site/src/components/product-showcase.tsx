@@ -10,7 +10,7 @@ const views = [
     label: "Run",
     icon: Play,
     src: "/images/relay-run.webp",
-    alt: "Relay running its local demo: saved steps and a successful layout check",
+    alt: "A passing Relay run of a checkout test: saved steps and the screen each one reached",
     title: "Follow every action.",
     caption: "Each step, its timing, and the screen it reached, in order.",
   },
@@ -19,7 +19,7 @@ const views = [
     label: "Review",
     icon: Images,
     src: "/images/relay-review.webp",
-    alt: "Relay's screenshot review with a captured Workspace settings screen from the demo",
+    alt: "Relay's screenshot review with a captured checkout screen",
     title: "Decide on every screen.",
     caption: "Accept what looks right, flag what doesn't, and keep the decision.",
   },
@@ -28,13 +28,13 @@ const views = [
     label: "Map",
     icon: GitBranch,
     src: "/images/relay-map.webp",
-    alt: "Relay's app map connecting the demo's sign-in and settings screens",
+    alt: "Relay's app map connecting a product page to checkout",
     title: "See how screens connect.",
     caption: "The screens your tests reached, and the paths between them.",
   },
 ] as const;
 
-/** Screens captured from the production UI against an owned, local demo. */
+/** Screens captured from the production UI against a sample store. */
 export function ProductShowcase() {
   const [activeId, setActiveId] = useState<(typeof views)[number]["id"]>("run");
   return (
@@ -92,7 +92,7 @@ export function ProductShowcase() {
         <figcaption className="mt-3 flex justify-between gap-4 text-xs text-muted-foreground">
           <span className="lg:hidden">{views.find((v) => v.id === activeId)!.caption}</span>
           <span className="hidden lg:inline">
-            Actual Relay UI, captured against the local demo.
+            Actual Relay UI, testing a sample store.
           </span>
         </figcaption>
       </div>

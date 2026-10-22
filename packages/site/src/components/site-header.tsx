@@ -46,7 +46,7 @@ export function SiteHeader() {
                 "ml-1 hidden h-9 rounded-full bg-ink px-4 text-ink-foreground hover:bg-ink/85 sm:inline-flex dark:bg-ink-foreground dark:text-ink dark:hover:bg-ink-foreground/90",
             })}
           >
-            Run the demo <ArrowRight className="size-3.5" />
+            Get started <ArrowRight className="size-3.5" />
           </Link>
         </nav>
       </div>

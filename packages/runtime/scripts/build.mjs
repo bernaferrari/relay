@@ -35,7 +35,6 @@ await build({
   entryPoints: {
     "relay-runtime": "src/cli.mjs",
     server: "src/server-entry.mjs",
-    demo: "src/demo.mjs",
     startup: "src/startup.mjs",
   },
   outdir: "dist",
