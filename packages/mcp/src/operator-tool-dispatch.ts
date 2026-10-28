@@ -244,6 +244,14 @@ export async function invokeRelayOperatorTool(input: {
         app: parsed.app,
         ...(typeof parsed.relaunch === "boolean" ? { relaunch: parsed.relaunch } : {}),
       });
+    case "relay_prompt": {
+      const { targetId, ...prompt } = parsed;
+      return call("target.prompt", { serial: targetId, ...prompt });
+    }
+    case "relay_set_network":
+      return call("target.network.set", { serial: parsed.targetId, mode: parsed.mode });
+    case "relay_set_display":
+      return call("target.display.set", { serial: parsed.targetId, mode: parsed.mode });
     case "relay_recover": {
       if (typeof parsed.targetId === "string") {
         return call("target.recover", { serial: parsed.targetId });

@@ -68,6 +68,7 @@ export const browserDeviceOperationDefinitions = [
       idempotency: "required",
       lease: "exclusive",
       minimumRole: "author",
+      targetCapabilities: ["snapshot"],
     },
   ),
   command(

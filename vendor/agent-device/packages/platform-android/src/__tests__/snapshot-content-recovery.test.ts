@@ -140,6 +140,42 @@ test('keeps a meaningful foreground application surface owned by another package
   expect(decision).toBeUndefined();
 });
 
+test('keeps an active framework "Open with" dialog over the foreground app', () => {
+  const decision = unusableDecisionFor(
+    helperXml([
+      node({
+        windowType: 1,
+        packageName: 'ai.x.grok',
+        className: 'android.widget.FrameLayout',
+        children: [
+          node({ text: 'Ask anything', packageName: 'ai.x.grok', className: 'android.widget.TextView' }),
+        ],
+      }),
+      node({
+        windowType: 1,
+        windowActive: true,
+        packageName: 'android',
+        className: 'android.widget.FrameLayout',
+        children: [
+          node({ text: 'Open with', packageName: 'android', className: 'android.widget.TextView' }),
+          node({ text: 'Chrome', packageName: 'android', className: 'android.widget.TextView' }),
+          node({ text: 'Just once', packageName: 'android', className: 'android.widget.Button' }),
+        ],
+      }),
+    ]),
+    {
+      backend: 'android-helper',
+      nodeCount: 6,
+      rootPresent: true,
+      windowCount: 2,
+      captureMode: 'interactive-windows',
+    },
+    { foregroundAppPackage: 'ai.x.grok' },
+  );
+
+  expect(decision).toBeUndefined();
+});
+
 test('rejects a status-bar-only capture without window metadata', () => {
   const decision = unusableDecisionFor(
     helperXml([

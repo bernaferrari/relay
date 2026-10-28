@@ -7,6 +7,7 @@ import { workspaceTargetOperationOutputSchemas } from "./workspace-target-operat
 import { laneOperationOutputSchemas } from "./lane-operation-schemas.js";
 import { changeVerificationOperationOutputSchemas } from "./change-verification-operation-schemas.js";
 import { proofSetupOperationOutputSchemas } from "./proof-setup.js";
+import { targetDeviceControlOutputSchemas } from "./target-device-control-schemas.js";
 
 /** Schema-first outputs for operation families that previously used OperationRecord. */
 export const operationFamilyOutputSchemas = {
@@ -16,6 +17,7 @@ export const operationFamilyOutputSchemas = {
   ...executionOperationOutputSchemas,
   ...changeVerificationOperationOutputSchemas,
   ...proofSetupOperationOutputSchemas,
+  ...targetDeviceControlOutputSchemas,
 } as const satisfies Readonly<Record<string, z.ZodType>>;
 
 /** Exact runtime schemas for every descriptor that does not own a specialized parser. */

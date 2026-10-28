@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { androidKeyCode, primaryAndroidDisplay } from "./workspace-android-raw.js";
+import {
+  androidKeyboardVisible,
+  androidKeyCode,
+  primaryAndroidDisplay,
+} from "./workspace-android-raw.js";
+
+test("hide-keyboard trusts the system flag, not the IME's stale view flag", () => {
+  assert.equal(androidKeyboardVisible("      mInputShown=false\n  mIsInputViewShown=true"), false);
+  assert.equal(androidKeyboardVisible("      mInputShown=true\n  mIsInputViewShown=true"), true);
+});
 
 test("raw Android navigation keys never fall through to backspace", () => {
   assert.equal(androidKeyCode("enter"), "KEYCODE_ENTER");

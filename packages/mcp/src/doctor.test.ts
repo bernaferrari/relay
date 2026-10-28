@@ -24,7 +24,11 @@ function fakeFetch(missing: readonly string[] = []): typeof fetch {
     if (url.endsWith("/health")) {
       return response({
         ok: true,
-        access: { role: "admin", organizationId: "org-test", projectId: "project-test" },
+        access: {
+          role: "admin",
+          organizationId: "org-test",
+          projectId: "project-test",
+        },
       });
     }
     if (url.endsWith("/meta")) {
@@ -57,6 +61,7 @@ test("doctor validates the device surface without exposing credentials", async (
   assert.match(manifestCheck?.message ?? "", /for profile device/u);
   assert.ok(report.checks.every(({ message }) => !message.includes("secret")));
   assert.match(formatRelayMcpDoctor(report), /Relay doctor: READY/u);
+  assert.match(formatRelayMcpDoctor(report), /OK host-size: profile device registers \d+ tools/u);
 });
 
 test("doctor validates the live Proof lifecycle under the full profile", async () => {
@@ -78,6 +83,12 @@ test("doctor validates the live Proof lifecycle under the full profile", async (
       .map(({ name }) => name),
   );
   assert.match(formatRelayMcpDoctor(report), /Relay doctor: READY/u);
+  const hostSize = report.checks.find(({ name }) => name === "host-size");
+  assert.equal(hostSize?.warning, true);
+  assert.match(
+    formatRelayMcpDoctor(report),
+    /WARN host-size: profile full registers \d+ tools[^\n]*\n  Next: Use --profile device/u,
+  );
 });
 
 test("doctor fails clearly when the server is missing a canonical Proof operation", async () => {
@@ -154,7 +165,11 @@ test("QA doctor checks required roles rather than only read-only raw descriptors
     if (String(input).endsWith("/health"))
       return response({
         ok: true,
-        access: { role: "viewer", organizationId: "org-test", projectId: "project-test" },
+        access: {
+          role: "viewer",
+          organizationId: "org-test",
+          projectId: "project-test",
+        },
       });
     return fixture(input, init);
   });

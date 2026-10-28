@@ -47,30 +47,55 @@ export function rawTap(x: number, y: number, serial?: string): void {
   execFileSync(resolveAndroidSdkToolSync("adb"), args, { timeout: 5000 });
 }
 
+export type AndroidRawKey = "enter" | "backspace" | "back" | "home" | "recents";
+
 export function androidKeyCode(
-  key: "enter" | "backspace" | "back" | "home" | "recents",
+  key: AndroidRawKey,
 ): "KEYCODE_ENTER" | "KEYCODE_DEL" | "KEYCODE_BACK" | "KEYCODE_HOME" | "KEYCODE_APP_SWITCH" {
-  if (key === "enter") return "KEYCODE_ENTER";
-  if (key === "backspace") return "KEYCODE_DEL";
-  if (key === "back") return "KEYCODE_BACK";
-  if (key === "recents") return "KEYCODE_APP_SWITCH";
-  return "KEYCODE_HOME";
+  switch (key) {
+    case "enter":
+      return "KEYCODE_ENTER";
+    case "backspace":
+      return "KEYCODE_DEL";
+    case "back":
+      return "KEYCODE_BACK";
+    case "recents":
+      return "KEYCODE_APP_SWITCH";
+    case "home":
+      return "KEYCODE_HOME";
+    default: {
+      const unhandled: never = key;
+      throw new Error(`Unsupported Android key ${String(unhandled)}`);
+    }
+  }
+}
+
+/** The system's `mInputShown` is authoritative; the IME's own `mIsInputViewShown` stays stale after hiding. */
+export function androidKeyboardVisible(inputMethodDump: string): boolean {
+  return /^\s*mInputShown=true\b/m.test(inputMethodDump);
 }
 
 /** Raw adb key input — keeps navigation and keyboard control available without a live stream. */
-export function rawKey(
-  key: "enter" | "backspace" | "back" | "home" | "recents",
-  serial?: string,
-): void {
+export function rawKey(key: AndroidRawKey | "hide-keyboard", serial?: string): { sent: boolean } {
   if (!serial) throw new Error("Explicit Android target serial is required");
-  const keyCode = androidKeyCode(key);
-  execFileSync(
-    resolveAndroidSdkToolSync("adb"),
-    ["-s", serial, "shell", "input", "keyevent", keyCode],
-    {
+  const adb = resolveAndroidSdkToolSync("adb");
+  if (key === "hide-keyboard") {
+    // BACK only closes the keyboard while it is showing; otherwise it navigates.
+    const dump = execFileSync(adb, ["-s", serial, "shell", "dumpsys", "input_method"], {
+      encoding: "utf8",
       timeout: 5000,
-    },
-  );
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    if (!androidKeyboardVisible(dump)) return { sent: false };
+    execFileSync(adb, ["-s", serial, "shell", "input", "keyevent", "KEYCODE_BACK"], {
+      timeout: 5000,
+    });
+    return { sent: true };
+  }
+  execFileSync(adb, ["-s", serial, "shell", "input", "keyevent", androidKeyCode(key)], {
+    timeout: 5000,
+  });
+  return { sent: true };
 }
 
 /** Raw adb input swipe — works without a session, on any app. */

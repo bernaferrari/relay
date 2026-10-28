@@ -162,6 +162,16 @@ const targetPreflight = z
   })
   .strict();
 
+const textEntryTarget = z
+  .object({
+    identifier: text.optional(),
+    ref: text.optional(),
+    label: text.optional(),
+    text: text.optional(),
+    point: point.optional(),
+  })
+  .strict();
+
 const interactInput = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("identifier"), identifier: text, point: point.optional() }).strict(),
   z.object({ kind: z.literal("label"), label: text, point: point.optional() }).strict(),
@@ -180,25 +190,13 @@ const interactInput = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("key"),
-      key: z.enum(["enter", "backspace", "back", "home", "recents"]),
+      key: z.enum(["enter", "backspace", "back", "home", "recents", "hide-keyboard"]),
     })
     .strict(),
-  z.object({ kind: z.literal("type"), text: z.string() }).strict(),
   z
-    .object({
-      kind: z.literal("replace"),
-      target: z
-        .object({
-          identifier: text.optional(),
-          ref: text.optional(),
-          label: text.optional(),
-          text: text.optional(),
-          point: point.optional(),
-        })
-        .strict(),
-      text: z.string(),
-    })
+    .object({ kind: z.literal("type"), text: z.string(), target: textEntryTarget.optional() })
     .strict(),
+  z.object({ kind: z.literal("replace"), target: textEntryTarget, text: z.string() }).strict(),
 ]);
 
 const iosSessionLifecycle = z

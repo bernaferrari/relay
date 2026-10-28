@@ -56,6 +56,10 @@ import { isSimulatorSdkRoute, resolveAppleControlRoute } from "./apple-control-r
 import { captureScreenshot, captureSnapshot, type ScreenshotPayload } from "./workspace-capture.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
 import { IosXCTestSessionUnavailableError, diagnoseIosRunnerError } from "./ios-device-adapter.js";
+import { normalizeInteractInput } from "./interact-input.js";
+import { typeIntoField } from "./device-text-entry.js";
+import { NamedControlMissError } from "./named-control-miss.js";
+import type { TextEntryTarget } from "./text-entry-focus.js";
 
 export type InteractPoint = { x: number; y: number };
 
@@ -72,19 +76,14 @@ export type InteractInput =
       to: { x: number; y: number };
       durationMs?: number;
     }
-  | { kind: "key"; key: "enter" | "backspace" | "back" | "home" | "recents" }
-  | { kind: "type"; text: string }
-  | {
-      kind: "replace";
-      target: {
-        identifier?: string;
-        ref?: string;
-        label?: string;
-        text?: string;
-        point?: { x: number; y: number };
-      };
-      text: string;
-    };
+  | { kind: "key"; key: InteractKey }
+  | { kind: "type"; text: string; target?: TextEntryTarget }
+  | { kind: "replace"; target: TextEntryTarget; text: string };
+
+/** `backspace` deletes a character; `back` navigates; `hide-keyboard` only closes the IME. */
+export type InteractKey = "enter" | "backspace" | "back" | "home" | "recents" | "hide-keyboard";
+
+export type { TextEntryTarget };
 
 export type InteractResult = {
   resolution?: NamedControlResolution;
@@ -178,10 +177,11 @@ async function namedInteraction(
     if (error instanceof Error && error.name === "JobCancelledError") throw error;
     const message = error instanceof Error ? error.message : String(error);
     if (/no unique control matched/i.test(message)) {
+      const hint = error instanceof NamedControlMissError && error.hint ? ` ${error.hint}` : "";
       throw new GroundingError(
         `No control matched ${
           target.label ? `label "${target.label}"` : `identifier "${target.identifier}"`
-        } on the current page. Nothing was tapped. Wait for the page to settle or retry with the exact visible label.`,
+        } on the current page. Nothing was tapped.${hint || " Wait for the page to settle or retry with the exact visible label."}`,
       );
     }
     throw error;
@@ -358,7 +358,7 @@ export function resolveInteractPreview(
 }
 
 export async function previewInteract(
-  input: InteractInput,
+  rawInput: InteractInput,
   opts?: { serial?: string; device?: Device; overlay?: RuntimeTargetOverlay },
 ): Promise<
   ScreenshotPayload & {
@@ -368,6 +368,7 @@ export async function previewInteract(
     iosSessionLifecycle?: IosSessionOperationDiagnostic;
   }
 > {
+  const input = normalizeInteractInput(rawInput);
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device, opts?.overlay);
   return runWithTargetContext(target.context, async () => {
     if (
@@ -552,7 +553,7 @@ export async function interactOnDevice(
 }
 
 export async function interact(
-  input: InteractInput,
+  rawInput: InteractInput,
   opts?: {
     serial?: string;
     verifyIosScreenChange?: boolean;
@@ -560,24 +561,7 @@ export async function interact(
     overlay?: RuntimeTargetOverlay;
   },
 ): Promise<InteractResult> {
-  if (input.kind === "swipe") {
-    const validPoint = (point: unknown): point is InteractPoint => {
-      if (!point || typeof point !== "object") return false;
-      const value = point as Partial<InteractPoint>;
-      return Number.isFinite(value.x) && Number.isFinite(value.y);
-    };
-    if (!validPoint(input.from) || !validPoint(input.to)) {
-      throw new Error(
-        'Swipe requires "from" and "to" points, for example {"kind":"swipe","from":{"x":540,"y":1800},"to":{"x":540,"y":650}}.',
-      );
-    }
-    if (
-      input.durationMs !== undefined &&
-      (!Number.isFinite(input.durationMs) || input.durationMs < 50 || input.durationMs > 5_000)
-    ) {
-      throw new Error("Swipe durationMs must be between 50 and 5000.");
-    }
-  }
+  const input = normalizeInteractInput(rawInput);
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device, opts?.overlay);
   return runWithTargetContext(target.context, async () => {
     const context = currentTargetContext();
@@ -634,8 +618,8 @@ export async function interact(
         return afterInput({});
       }
       if (input.kind === "key") {
-        rawKey(input.key, context.serial);
-        return afterInput({});
+        const { sent } = rawKey(input.key, context.serial);
+        return sent ? afterInput({}) : {};
       }
     }
     if (context.kind === "device" && context.platform === "ios" && input.kind === "point") {
@@ -739,28 +723,38 @@ export async function interact(
             case "swipe":
               await swipeGesture(target.device, input.from, input.to, input.durationMs ?? 250);
               return {};
-            case "type":
-              await typeText(target.device, input.text);
-              return {};
+            case "type": {
+              const { resolution } = await typeIntoField(target.device, input.text, input.target);
+              return resolution ? { resolution } : {};
+            }
             case "key":
-              if (input.key === "enter") {
-                await keyboardAction(target.device, "enter");
-                return {};
+              switch (input.key) {
+                case "enter":
+                  await keyboardAction(target.device, "enter");
+                  return {};
+                case "hide-keyboard":
+                  await keyboardAction(target.device, "dismiss");
+                  return {};
+                case "backspace":
+                  await typeText(target.device, "\b");
+                  return {};
+                case "back":
+                case "home":
+                  await pressKey(target.device, input.key);
+                  return {};
+                case "recents":
+                  throw new Error(
+                    `iOS key ${input.key} needs an explicit keyboard action; use a semantic control or type text instead.`,
+                  );
+                default: {
+                  const unhandled: never = input.key;
+                  throw new Error(`Unsupported key ${String(unhandled)}`);
+                }
               }
-              if (input.key === "backspace") {
-                await typeText(target.device, "\b");
-                return {};
-              }
-              if (input.key === "back" || input.key === "home") {
-                await pressKey(target.device, input.key);
-                return {};
-              }
-              throw new Error(
-                `iOS key ${input.key} needs an explicit keyboard action; use a semantic control or type text instead.`,
-              );
-            case "replace":
-              await replaceText(target.device, input.target, input.text);
-              return {};
+            case "replace": {
+              const { resolution } = await replaceText(target.device, input.target, input.text);
+              return resolution ? { resolution } : {};
+            }
             case "identifier":
             case "label":
             case "point":

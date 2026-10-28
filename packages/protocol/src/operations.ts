@@ -27,6 +27,8 @@ import { createTargetSupervisorOperationDefinitions } from "./target-supervisor-
 import * as authoringOperations from "./authoring-raw-optimization-operation.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
 import { browserDeviceOperationDefinitions } from "./browser-device-operation-definitions.js";
+import { targetDeviceControlOperationDefinitions } from "./target-device-control-operation-definitions.js";
+import { presenceOperationDefinitions } from "./presence-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
 import { runEvidenceOperationDefinitions } from "./run-evidence-operation-definitions.js";
 import { captureReferenceOperationDefinitions } from "./capture-reference-operations.js";
@@ -338,6 +340,7 @@ const targetAppLaunchOutputParser = objectParser<OperationOutput<"target.app.lau
     const observed = record(input.observed, "observed foreground app");
     if (observed.app !== undefined) string(observed.app, "observed foreground app name");
     boolean(observed.matched, "observed foreground app matched");
+    if (observed.coveredBy !== undefined) string(observed.coveredBy, "observed covering app");
   },
 );
 
@@ -620,15 +623,7 @@ export const operationDefinitions = [
     category: "system",
     mode: "stream",
   }),
-  query("presence.list", "List project presence", "/presence", { category: "system" }),
-  command("presence.upsert", "Publish actor presence", "POST", "/presence", {
-    category: "system",
-    idempotency: "inherent",
-  }),
-  command("presence.clear", "Clear actor presence", "DELETE", "/presence/:actorId", {
-    category: "system",
-    idempotency: "inherent",
-  }),
+  ...presenceOperationDefinitions,
   ...workspaceOperationDefinitions,
   ...appleDeviceOperationDefinitions,
   query("target.actions.list", "List available actions", "/actions", {
@@ -660,6 +655,7 @@ export const operationDefinitions = [
     idempotency: "inherent",
   }),
   ...browserDeviceOperationDefinitions,
+  ...targetDeviceControlOperationDefinitions,
   command("target.boot", "Boot target", "POST", "/device/boot", { category: "target" }),
   command("target.avd.boot", "Boot a named Android emulator", "POST", "/device/avd/boot", {
     category: "target",

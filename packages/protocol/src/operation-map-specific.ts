@@ -291,6 +291,8 @@ export type SpecificOperationMap = {
       observed: {
         app?: string;
         matched: boolean;
+        /** Focused app when another window sits on top of the requested one. */
+        coveredBy?: string;
       };
     };
   };

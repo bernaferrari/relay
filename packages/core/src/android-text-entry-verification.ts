@@ -4,7 +4,7 @@ import { NativeTextEntryVerificationError } from "./input-not-dispatched.js";
 
 export type AndroidTextEntryReceipt = {
   platform: "android";
-  transport: "clipboard" | "adb-shell";
+  transport: "clipboard" | "adb-shell" | "ime-helper";
   verification: "exact" | "normalized" | "unverified" | "failed";
   normalization?: "ime-trailing-space";
   reason?:
@@ -143,9 +143,10 @@ export async function verifyAndroidTextEntry(input: {
       receipt.normalization = "ime-trailing-space";
     }
   };
-  // Two explicit read-only observations establish stability without repeating
-  // paste/type or polling until a wrong value happens to look acceptable.
+  // Keyboard-typed text can be autocorrected a beat after it lands, so the
+  // shell transport needs a second read to establish stability. Pasted and
+  // IME-committed text bypass autocorrect; one exact read is the proof.
   await read();
-  await read();
+  if (input.transport === "adb-shell") await read();
   return receipt;
 }

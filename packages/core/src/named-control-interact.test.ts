@@ -67,7 +67,7 @@ test("mouse/CLI interactOnDevice records Home label method and bounds", async ()
 test("device swipe rejects missing coordinates with actionable syntax", async () => {
   await assert.rejects(
     interact({ kind: "swipe" } as never, { serial: "unused" }),
-    /Swipe requires "from" and "to" points/u,
+    /kind "swipe" needs "from and to"/u,
   );
 });
 

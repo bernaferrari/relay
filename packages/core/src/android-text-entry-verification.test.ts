@@ -232,22 +232,32 @@ test("an optional recipe step cannot swallow a native text verification error", 
   );
 });
 
-test("multiline shell fallback rejects before any input or Enter can submit", async () => {
+test("multiline shell fallback breaks lines with Shift+Enter, never a submitting Enter", async () => {
   const input = fixture((text) => text);
-  let nativeAttempts = 0;
-  input.dependencies.execAndroidAdb = async () => {
-    nativeAttempts++;
+  const commands: string[][] = [];
+  let value = "";
+  input.dependencies.snapshot = async () => [
+    { identifier: "chat_text_input", bundleId: "ai.x.grok", editable: true, focused: true, value },
+  ];
+  input.dependencies.execAndroidAdb = async (args: string[]) => {
+    commands.push(args.slice(3));
+    if (args[4] === "text") value += args[5]!.replaceAll("%s", " ");
+    if (args[4] === "keycombination") value += "\n";
     return { stdout: "", stderr: "" };
   };
-  await assert.rejects(
-    runWithTargetContext(
-      { kind: "device", platform: "android", serial: "text-newline-fixture" },
-      () => typeDeviceText(input.device, "first\nsecond", input.dependencies),
-    ),
-    /one bounded ASCII line/,
+  const receipt = await runWithTargetContext(
+    { kind: "device", platform: "android", serial: "text-newline-fixture" },
+    () => typeDeviceText(input.device, "first\nsecond", input.dependencies),
   );
-  assert.equal(nativeAttempts, 0);
-  assert.equal(input.typed(), 0);
+  assert.equal(value, "first\nsecond");
+  assert.equal(receipt?.verification, "exact");
+  assert.deepEqual(
+    commands.filter((command) => command.includes("keycombination")),
+    [["input", "keycombination", "KEYCODE_SHIFT_LEFT", "KEYCODE_ENTER"]],
+  );
+  assert.ok(
+    !commands.some((command) => command.includes("KEYCODE_ENTER") && command[1] === "keyevent"),
+  );
 });
 
 test("the observed normal prompt accepts one IME trailing ASCII blank with a normalized receipt", async () => {

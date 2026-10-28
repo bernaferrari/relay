@@ -63,8 +63,35 @@ export function snapshotLabelMatches(query: string, live: string | undefined): b
   const normalizedLive = normalizeSemanticText(live);
   if (!normalizedQuery || !normalizedLive) return false;
   if (normalizedLive === normalizedQuery) return true;
+  const liveStem = tickingLabelStem(normalizedLive);
+  if (liveStem && liveStem === (tickingLabelStem(normalizedQuery) ?? normalizedQuery)) return true;
   if (!normalizedLive.startsWith(normalizedQuery)) return false;
   return /^[\s]*[,:;–—([{/-]/u.test(normalizedLive.slice(normalizedQuery.length));
+}
+
+const SYSTEM_CHROME_PACKAGES = new Set([
+  "com.android.systemui",
+  "com.google.android.inputmethod.latin",
+  "com.samsung.android.honeyboard",
+  "com.touchtype.swiftkey",
+  "com.microsoft.swiftkey",
+]);
+
+/** Navigation bar and keyboard copy ("Back", "Search") loses to the app's own control. */
+function isSystemChromeNode(node: SnapshotNode): boolean {
+  const owner = node.bundleId ?? node.identifier?.split(":id/")[0];
+  return owner !== undefined && SYSTEM_CHROME_PACKAGES.has(owner.toLowerCase());
+}
+
+/** Timers and progress readouts ("Thinking for 26s", "Uploading 40%") change every tick. */
+const TICKING_COUNTER_SUFFIX =
+  /\s+\d+(?:[.,:]\d+)*\s*(?:ms|s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|%)$/iu;
+
+/** The stable part of a ticking label, or undefined when the label has no counter. */
+export function tickingLabelStem(label: string): string | undefined {
+  if (!TICKING_COUNTER_SUFFIX.test(label)) return undefined;
+  const stem = label.replace(TICKING_COUNTER_SUFFIX, "").trim();
+  return stem.length >= 3 ? stem : undefined;
 }
 
 export function snapshotTextMatches(query: string, live: string | undefined): boolean {
@@ -441,6 +468,9 @@ function resolveSnapshotTarget(
     candidates = candidates.filter((candidate) =>
       ancestorChainIncludes(candidate.node, nodesByIndex, headingIndexes),
     );
+  }
+  if (candidates.some((candidate) => !isSystemChromeNode(candidate.node))) {
+    candidates = candidates.filter((candidate) => !isSystemChromeNode(candidate.node));
   }
   if (candidates.length === 0) return undefined;
   const activeLocations = candidates

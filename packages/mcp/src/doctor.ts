@@ -7,10 +7,12 @@ import {
   type RelayMcpProfile,
 } from "./tools.js";
 
-import { relayRequiredOperationIds } from "./registered-tools.js";
+import { relayRegisteredToolNames, relayRequiredOperationIds } from "./registered-tools.js";
 
 const ACTOR_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
 const ROLE_ORDER: readonly ProjectRole[] = ["viewer", "author", "runner", "admin"];
+/** Cursor and similar hosts truncate or fail discovery well before a few hundred tools. */
+const HOST_TOOL_BUDGET = 80;
 
 /**
  * The Proof lifecycle is intentionally derived from the canonical operation
@@ -25,12 +27,16 @@ function proofToolsForProfile(profile: RelayMcpProfile) {
 
 function expectedOperationsForProfile(profile: RelayMcpProfile) {
   if (profile === "full") return proofToolsForProfile(profile);
-  return relayRequiredOperationIds(profile).map((operationId) => ({ operationId }));
+  return relayRequiredOperationIds(profile).map((operationId) => ({
+    operationId,
+  }));
 }
 
 export type RelayMcpDoctorCheck = {
   readonly name: string;
   readonly ok: boolean;
+  /** Passes, but the host may still struggle with it. */
+  readonly warning?: boolean;
   readonly message: string;
 };
 
@@ -113,6 +119,18 @@ function check(name: string, ok: boolean, message: string): RelayMcpDoctorCheck 
   return Object.freeze({ name, ok, message });
 }
 
+function hostSizeCheck(profile: RelayMcpProfile): RelayMcpDoctorCheck {
+  const count = relayRegisteredToolNames(profile).length;
+  return count > HOST_TOOL_BUDGET
+    ? Object.freeze({
+        name: "host-size",
+        ok: true,
+        warning: true,
+        message: `profile ${profile} registers ${count} tools; Cursor and similar hosts can fail or silently truncate MCP discovery above ${HOST_TOOL_BUDGET}`,
+      })
+    : check("host-size", true, `profile ${profile} registers ${count} tools`);
+}
+
 function configForDoctor(
   argv: readonly string[],
   env: Record<string, string | undefined>,
@@ -148,6 +166,7 @@ export async function runRelayMcpDoctor(
         : `profile ${config.profile} requires ${expectedTools.length} server operations for ordinary agent work; the Proof lifecycle needs --profile full`,
     ),
   );
+  checks.push(hostSizeCheck(config.profile));
 
   checks.push(
     check(
@@ -281,6 +300,8 @@ export function formatRelayMcpDoctor(report: RelayMcpDoctorReport): string {
     actor: "Set RELAY_ACTOR_ID to a distinct agent:<name> identity.",
     capabilities:
       "Use credentials with the required project role; keep tokens in the host process environment.",
+    "host-size":
+      "Use --profile device for live device control or --profile qa for tests; keep --profile full for hosts that page tool lists.",
     "proof-tools":
       "Connect to a compatible Relay runtime with the missing operations; changing the selected target cannot repair a contract mismatch.",
   };
@@ -292,10 +313,11 @@ export function formatRelayMcpDoctor(report: RelayMcpDoctorReport): string {
     `Profile: ${report.config.profile}`,
     ...(report.config.profile === "full" ? [`Proof tools: ${report.proofTools.join(", ")}`] : []),
     "",
-    ...report.checks.map(
-      ({ name, ok, message }) =>
-        `${ok ? "OK" : "FAIL"} ${name}: ${message}${!ok && remedies[name] ? `\n  Next: ${remedies[name]}` : ""}`,
-    ),
+    ...report.checks.map(({ name, ok, warning, message }) => {
+      const status = ok ? (warning ? "WARN" : "OK") : "FAIL";
+      const next = (!ok || warning) && remedies[name] ? `\n  Next: ${remedies[name]}` : "";
+      return `${status} ${name}: ${message}${next}`;
+    }),
   ];
   return lines.join("\n");
 }

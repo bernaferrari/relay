@@ -30,6 +30,7 @@ import {
 } from "./device-dispatch.js";
 import { type DeviceTextInputDependencies, typeDeviceText } from "./device-android-text.js";
 import { typeViaLiveIosListener } from "./device-text-entry.js";
+import { NamedControlMissError } from "./named-control-miss.js";
 import {
   boundedAndroidTextEntrySnapshot,
   type AndroidTextEntryReceipt,
@@ -675,6 +676,7 @@ export async function swipeGesture(
 export async function typeText(
   device: Device,
   text: string,
+  knownBefore?: SnapshotNode,
 ): Promise<AndroidTextEntryReceipt | undefined> {
   const dependencies: DeviceTextInputDependencies = {
     snapshot: (target) =>
@@ -684,7 +686,7 @@ export async function typeText(
     mutateCurrentTarget,
     typeViaLiveIosListener,
   };
-  return typeDeviceText(device, text, dependencies);
+  return typeDeviceText(device, text, dependencies, knownBefore);
 }
 
 export async function pressKey(device: Device, key: "back" | "home" | "recents"): Promise<void> {
@@ -945,9 +947,7 @@ export async function pressNamedControl(
       // Keep the chrome-bounded miss. Do not invent a point.
     }
   }
-  if (!resolved) {
-    throw new Error("no unique control matched identifier, label, text, or point");
-  }
+  if (!resolved) throw new NamedControlMissError(nodes, target);
   try {
     return await pressResolvedControl(device, resolved, target, repeated);
   } catch (error) {

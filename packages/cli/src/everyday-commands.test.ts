@@ -64,6 +64,14 @@ const devices = {
     { id: "pixel", serial: "emulator-5554", name: "Pixel 9", platform: "android", booted: true },
     { id: "ipad", serial: "ipad-1", name: "iPad Pro", platform: "ios", booted: true },
     { id: "iphone", serial: "iphone-1", name: "iPhone 18", platform: "ios", booted: true },
+    {
+      id: "off",
+      serial: "sim-off",
+      name: "iPhone 16e",
+      platform: "ios",
+      kind: "simulator",
+      booted: false,
+    },
   ],
 };
 
@@ -377,6 +385,9 @@ test("relay apps, tests, and devices print tables", async () => {
   assert.equal(json.result.tests.length, 3);
   const listed = await everyday(["devices"]);
   assert.match(listed.stdout, /Pixel 9 +android +emulator-5554/u);
+  assert.doesNotMatch(listed.stdout, /sim-off/u);
+  assert.match(listed.stdout, /1 shut-down simulator hidden\. Show all: relay devices --all/u);
+  assert.match((await everyday(["devices", "--all"])).stdout, /iPhone 16e .*sim-off/u);
   assert.equal(listed.stderr, "", "fast reads print no progress noise");
   assert.equal(formatListResult({ runs: [] }), "No runs yet.");
 });

@@ -97,5 +97,20 @@ export function classifyError(error: unknown): CliError {
     }
     return new CliError(raw, ExitCode.connection);
   }
+  const issues = schemaIssues(error);
+  if (issues) return new CliError(issues, ExitCode.validation);
   return new CliError(error instanceof Error ? error.message : String(error), ExitCode.validation);
+}
+
+/** Schema errors serialize as a JSON array; agents need one readable line. */
+function schemaIssues(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.name !== "ZodError") return undefined;
+  const issues = (error as Error & { issues?: unknown }).issues;
+  if (!Array.isArray(issues) || issues.length === 0) return undefined;
+  return issues
+    .map((issue: { path?: unknown[]; message?: string }) => {
+      const path = Array.isArray(issue.path) && issue.path.length ? issue.path.join(".") : "";
+      return path ? `${path}: ${issue.message}` : String(issue.message);
+    })
+    .join("; ");
 }

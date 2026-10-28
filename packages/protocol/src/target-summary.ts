@@ -627,7 +627,7 @@ export function summarizeLaunchedForeground(
         treeApp?: unknown;
       }
     | undefined,
-): { app?: string; matched: boolean } {
+): { app?: string; matched: boolean; coveredBy?: string } {
   if (!snapshot) return { matched: false };
   const nodes = Array.isArray(snapshot.nodes) ? snapshot.nodes : [];
   const chrome = describeSnapshotChrome(nodes);
@@ -635,9 +635,17 @@ export function summarizeLaunchedForeground(
   const foregroundApp =
     typeof snapshot.foregroundApp === "string" ? snapshot.foregroundApp.trim() : "";
   const app = chrome.app || treeApp || foregroundApp || undefined;
+  const matched = Boolean(app && launchedAppMatchesObserved(requested, app));
+  // The tree's majority package can still be the app under a floating window
+  // or dialog; the focused activity is what owns input.
+  const coveredBy =
+    matched && !chrome.app && foregroundApp && !launchedAppMatchesObserved(requested, foregroundApp)
+      ? foregroundApp
+      : undefined;
   return {
     ...(app ? { app } : {}),
-    matched: Boolean(app && launchedAppMatchesObserved(requested, app)),
+    matched: matched && !coveredBy,
+    ...(coveredBy ? { coveredBy } : {}),
   };
 }
 

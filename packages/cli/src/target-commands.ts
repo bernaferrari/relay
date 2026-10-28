@@ -81,6 +81,27 @@ export const targetCommandDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.browser-auth.import",
+    path("device account import", ["targetId"], undefined, {
+      summary: "Encrypt and freeze reviewed browser sign-in state exported elsewhere",
+      argumentHelp: [
+        { name: "targetId", type: "string", description: "Managed browser target identifier" },
+      ],
+      inputHelp: [
+        { name: "name", type: "string", description: "Human-readable fixture name" },
+        {
+          name: "storageState",
+          type: "object",
+          description: "Playwright storage state with cookies and origins",
+        },
+      ],
+      examples: [
+        "relay device account import staging-web --input-file signed-in.json --confirm --json",
+      ],
+      note: "Human-only. Relay stores the imported state encrypted and returns a non-secret exact reference.",
+    }),
+  ),
+  mapped(
     "target.browser-auth.list",
     path("device account list", ["targetId"], undefined, {
       summary: "List non-secret browser sign-in fixture metadata",
@@ -185,7 +206,7 @@ export const targetCommandDescriptors: readonly CliOperationDescriptor[] = [
           "relay device snapshot emulator-5554 --file tree.json",
           "relay device snapshot --lane grok-lab --json --full",
         ],
-        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable. --lane applies the saved browser fixture overlay; snapshot grok-com without a Lane is the unsigned profile.",
+        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides (ref, rect, editable and focused are kept). In both shapes node geometry is `rect`; interact replies report the tapped area as `resolution.bounds`. Parent folders for --file are created. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable. --lane applies the saved browser fixture overlay; snapshot grok-com without a Lane is the unsigned profile.",
       },
     ),
   ),
@@ -333,6 +354,56 @@ export const targetCommandDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.prompt",
+    path("device prompt", ["serial", "text"], undefined, {
+      summary: "Replace the composer text with a prompt, send it, and wait for the reply to settle",
+      argumentHelp: [
+        { name: "serial", type: "string", description: "Connected device serial" },
+        { name: "text", type: "string", description: "Prompt to send" },
+      ],
+      examples: [
+        'relay device prompt RQCY104BG8X "What is 2+2?" --json',
+        'relay device prompt RQCY104BG8X "Draw a cat" --input \'{"timeoutMs":180000}\'',
+        'relay device prompt RQCY104BG8X "hi" --input \'{"send":{"label":"Send message"},"wait":false}\'',
+      ],
+      note: "Composer defaults to the focused editable field, else the lowest one; send defaults to the nearest Send/Submit control, else Enter. reply.newText lists text that appeared after sending, and reply.status is idle once it stops changing and no Stop control is visible.",
+    }),
+  ),
+  mapped(
+    "target.network.set",
+    path("device network", ["serial", "mode"], undefined, {
+      summary: "Turn Android radios off for offline QA, then restore them",
+      argumentHelp: [
+        { name: "serial", type: "string", description: "Connected Android serial" },
+        {
+          name: "mode",
+          type: "airplane | wifi-off | data-off | restore",
+          description: "Radio change",
+        },
+      ],
+      examples: [
+        "relay device network RQCY104BG8X airplane",
+        "relay device network RQCY104BG8X restore",
+      ],
+      note: "restore returns every radio to its state before Relay's first change. `relay device health` reports connectivity.",
+    }),
+  ),
+  mapped(
+    "target.display.set",
+    path("device display", ["serial", "mode"], undefined, {
+      summary: "Wake an Android display or keep it awake for a session",
+      argumentHelp: [
+        { name: "serial", type: "string", description: "Connected Android serial" },
+        { name: "mode", type: "wake | keep-awake | release", description: "Display change" },
+      ],
+      examples: [
+        "relay device display RQCY104BG8X keep-awake",
+        "relay device display RQCY104BG8X release",
+      ],
+      note: "keep-awake holds the screen on while plugged in; release restores the previous setting. A PIN or pattern lock still needs a person.",
+    }),
+  ),
+  mapped(
     "target.ui.scrollCollect",
     path("device scroll-collect", ["serial"], undefined, {
       summary: "Scroll a list and collect interactive controls without overscroll-dismiss",
@@ -359,8 +430,10 @@ export const targetCommandDescriptors: readonly CliOperationDescriptor[] = [
         'relay device interact 00008110 --preview --file preview.png --input \'{"kind":"label","label":"Back"}\'',
         'relay device interact --preview --lane grok-lab --file preview.png --input \'{"kind":"label","label":"Imagine"}\'',
         'relay device interact emulator-5554 --input \'{"kind":"swipe","from":{"x":540,"y":1800},"to":{"x":540,"y":650},"durationMs":300}\'',
+        'relay device interact emulator-5554 --input \'{"kind":"replace","target":{"identifier":"chat_text_input"},"text":"hello"}\'',
+        'relay device interact emulator-5554 --input \'{"kind":"text-match","match":"Thought for"}\'',
       ],
-      note: "Happy path 2/3 after screenshot. Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap. --lane fills the target (and browser fixture overlay) so --input-file is not needed.",
+      note: "Happy path 2/3 after screenshot. type/replace with a target place the caret on the field's text line (never a nested chip) and return the point used. Labels that tick ('Thinking for 26s') match by their stable stem. key 'backspace' deletes, 'back' navigates, 'hide-keyboard' only closes the keyboard. Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap. --lane fills the target (and browser fixture overlay) so --input-file is not needed.",
     }),
   ),
   mapped(

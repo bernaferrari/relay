@@ -3,6 +3,7 @@
  * `relay runs`, `relay devices`, and `relay --version`. They take names, read
  * relay.json defaults, and print tables for people and envelopes for machines.
  */
+import { summarizeTargetOperationResult } from "@relay/protocol";
 import { tokenize, type ParsedTokens } from "./cli-argv.js";
 import { runCiCommand } from "./ci-command.js";
 import { parseCli } from "./config.js";
@@ -75,7 +76,14 @@ function assertFlags(verb: Verb, tokens: ParsedTokens): void {
   for (const flag of tokens.values.keys()) {
     if (!allowed.has(flag)) throw new UsageError(`${flag} is not an option of relay ${verb}`);
   }
-  const switches = new Set(["--json", "--ndjson", "--quiet", "--version", "--wait"]);
+  const switches = new Set([
+    "--json",
+    "--ndjson",
+    "--quiet",
+    "--version",
+    "--wait",
+    ...(verb === "devices" ? ["--all"] : []),
+  ]);
   for (const flag of tokens.switches) {
     if (!switches.has(flag)) throw new UsageError(`${flag} is not an option of relay ${verb}`);
   }
@@ -270,9 +278,12 @@ export async function runEverydayCommand(
       return ExitCode.success;
     }
     if (verb === "devices") {
-      if (args.length) throw new UsageError("Expected: relay devices");
+      if (args.length) throw new UsageError("Expected: relay devices [--all]");
       const result = await invoke("target.devices.list", {});
-      output.result(operationId, result, true, formatListResult(result));
+      const listed = tokens.switches.has("--all")
+        ? result
+        : summarizeTargetOperationResult("target.devices.list", result);
+      output.result(operationId, listed, true, formatListResult(listed));
       return ExitCode.success;
     }
     const cwd = callerCwd(deps.env);

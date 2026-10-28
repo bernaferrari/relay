@@ -1,4 +1,5 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { Buffer } from "node:buffer";
 import { interactPreviewSelectionSchema, presentPersistedSnapshot } from "@relay/protocol";
 import type { ScreenshotOutput } from "./config.js";
@@ -83,6 +84,7 @@ export async function emitScreenshot(
   }
 
   try {
+    await mkdir(dirname(destination.path), { recursive: true });
     await writeFile(destination.path, png, { flag: destination.force ? "w" : "wx" });
   } catch (error) {
     if (
@@ -108,6 +110,7 @@ export async function emitScreenshot(
     bytes: png.byteLength,
     mime: "image/png",
     ...(typeof source.path === "string" ? { sourcePath: source.path } : {}),
+    ...(optionalRecord(source.display) ? { display: source.display } : {}),
     ...previewFileMetadata(operationId, source),
   });
 }
@@ -123,15 +126,31 @@ export async function emitSnapshotFile(
   }
   const raw = result as Record<string, unknown>;
   const presented = presentPersistedSnapshot(result);
+  const rawNodes = (Array.isArray(raw.nodes) ? raw.nodes : []).filter(
+    (node): node is Record<string, unknown> =>
+      Boolean(node) && typeof node === "object" && !Array.isArray(node),
+  );
   const body = `${JSON.stringify(
     {
       ...(typeof raw.serial === "string" ? { serial: raw.serial } : {}),
       ...presented,
+      // The file tree is for acting, not only reading: keep the ref an
+      // interact call accepts and the editable/focus state type needs.
+      nodes: presented.nodes.map((node, index) => {
+        const source = rawNodes[index] ?? {};
+        return {
+          ...(typeof source.ref === "string" ? { ref: source.ref } : {}),
+          ...node,
+          ...(source.editable === true ? { editable: true } : {}),
+          ...(source.focused === true ? { focused: true } : {}),
+        };
+      }),
     },
     null,
     2,
   )}\n`;
   try {
+    await mkdir(dirname(destination.path), { recursive: true });
     await writeFile(destination.path, body, { flag: destination.force ? "w" : "wx" });
   } catch (error) {
     if (

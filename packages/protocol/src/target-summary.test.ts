@@ -553,6 +553,25 @@ test("launch summaries name the observed foreground app so launch is not foregro
   assert.deepEqual(summarizeLaunchedForeground("Chrome", undefined), { matched: false });
 });
 
+test("launch is not matched while another app's window has focus over the requested app", () => {
+  assert.deepEqual(
+    summarizeLaunchedForeground("ai.x.grok", {
+      nodes: [],
+      treeApp: "ai.x.grok",
+      foregroundApp: "com.instagram.android",
+    }),
+    { app: "ai.x.grok", matched: false, coveredBy: "com.instagram.android" },
+  );
+  assert.deepEqual(
+    summarizeLaunchedForeground("ai.x.grok", {
+      nodes: [],
+      treeApp: "ai.x.grok",
+      foregroundApp: "ai.x.grok",
+    }),
+    { app: "ai.x.grok", matched: true },
+  );
+});
+
 test("launch match uses the returned app instead of a conflicting lower-priority candidate", () => {
   const settings = { type: "Application", label: "Settings" };
   assert.deepEqual(

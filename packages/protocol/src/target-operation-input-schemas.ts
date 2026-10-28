@@ -15,6 +15,62 @@ import {
   text,
 } from "./operation-schema-primitives.js";
 
+type InteractFields = {
+  kind:
+    | "label"
+    | "identifier"
+    | "point"
+    | "ref"
+    | "find"
+    | "text-match"
+    | "swipe"
+    | "type"
+    | "key"
+    | "replace";
+  identifier?: string;
+  label?: string;
+  match?: string;
+  text?: string;
+  query?: string;
+  ref?: string;
+  key?: string;
+  x?: number;
+  y?: number;
+  from?: unknown;
+  to?: unknown;
+  target?: unknown;
+};
+
+/** The one field a kind cannot run without, accepting the documented `text` alias. */
+function interactRequiredField(input: InteractFields): keyof InteractFields | undefined {
+  switch (input.kind) {
+    case "identifier":
+      return input.identifier ? undefined : "identifier";
+    case "label":
+      return input.label || input.text ? undefined : "label";
+    case "text-match":
+      return input.match || input.text || input.label ? undefined : "match";
+    case "find":
+      return input.query || input.text || input.label ? undefined : "query";
+    case "point":
+      return input.x !== undefined && input.y !== undefined ? undefined : "x";
+    case "ref":
+      return input.ref ? undefined : "ref";
+    case "swipe":
+      return input.from && input.to ? undefined : input.from ? "to" : "from";
+    case "key":
+      return input.key ? undefined : "key";
+    case "type":
+      return input.text ? undefined : "text";
+    case "replace":
+      return !input.target ? "target" : input.text === undefined ? "text" : undefined;
+    default: {
+      const unhandled: never = input.kind;
+      return unhandled;
+    }
+  }
+}
+
 export const targetOperationInputSchemas = {
   "target.create": z
     .object({
@@ -165,12 +221,14 @@ export const targetOperationInputSchemas = {
         .string()
         .min(1)
         .optional()
-        .describe("Required when kind is 'text-match': visible text to match and tap"),
+        .describe(
+          "Required when kind is 'text-match': visible text to match and tap. Substrings work, so 'Thought for' taps 'Thought for 51s'.",
+        ),
       text: z
         .string()
         .optional()
         .describe(
-          "Required when kind is 'type' or 'replace': text to type (type) or replace the target's content with (replace)",
+          "Required when kind is 'type' or 'replace': text to type (type) or replace the target's content with (replace). For 'text-match'/'label' it is accepted as the match.",
         ),
       x: z
         .number()
@@ -193,9 +251,11 @@ export const targetOperationInputSchemas = {
         ),
       query: z.string().min(1).optional(),
       key: z
-        .enum(["enter", "backspace", "back", "home", "recents"])
+        .enum(["enter", "backspace", "back", "home", "recents", "hide-keyboard"])
         .optional()
-        .describe("Required when kind is 'key': which system key to send"),
+        .describe(
+          "Required when kind is 'key'. 'backspace' deletes one character, 'back' navigates, 'hide-keyboard' closes only the keyboard (no-op when hidden).",
+        ),
       target: z
         .object({
           identifier: z.string().min(1).optional(),
@@ -205,7 +265,10 @@ export const targetOperationInputSchemas = {
           point: tapPoint.optional(),
         })
         .strict()
-        .optional(),
+        .optional()
+        .describe(
+          "Text field for 'replace' (required) or 'type' (optional). Relay places the caret on the field's text line, away from nested chips and buttons.",
+        ),
     })
     .strict()
     .superRefine((input, context) => {
@@ -214,6 +277,14 @@ export const targetOperationInputSchemas = {
           code: "custom",
           message: "serial or laneId is required",
           path: ["serial"],
+        });
+      }
+      const required = interactRequiredField(input);
+      if (required) {
+        context.addIssue({
+          code: "custom",
+          message: `kind '${input.kind}' needs '${required}'`,
+          path: [required],
         });
       }
     }),

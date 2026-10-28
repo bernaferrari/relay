@@ -84,6 +84,21 @@ const examples: Record<string, { input: Record<string, unknown>; call: Call }> =
       input: { serial: "pixel", app: "Settings", relaunch: true },
     },
   },
+  relay_prompt: {
+    input: { targetId: "pixel", text: "hello", send: "enter", timeoutMs: 60_000 },
+    call: {
+      operationId: "target.prompt",
+      input: { serial: "pixel", text: "hello", send: "enter", timeoutMs: 60_000 },
+    },
+  },
+  relay_set_network: {
+    input: { targetId: "pixel", mode: "airplane" },
+    call: { operationId: "target.network.set", input: { serial: "pixel", mode: "airplane" } },
+  },
+  relay_set_display: {
+    input: { targetId: "pixel", mode: "keep-awake" },
+    call: { operationId: "target.display.set", input: { serial: "pixel", mode: "keep-awake" } },
+  },
   relay_recover: {
     input: { targetId: "ipad" },
     call: { operationId: "target.recover", input: { serial: "ipad" } },

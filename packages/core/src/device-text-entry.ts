@@ -4,15 +4,32 @@
  * The device facade supplies observation and target mutation plumbing.
  */
 import { getExecutingJobId } from "./control.js";
-import { clearAndroidTextWithAdb } from "./device-mutation-adapter.js";
-import { resolveSnapshotTargetPoint } from "./device-target-resolution.js";
+import { clearAndroidTextWithAdb, moveAndroidCaretToEnd } from "./device-mutation-adapter.js";
+import {
+  explicitPointResolution,
+  resolveSnapshotTargetPoint,
+  type NamedControlResolution,
+} from "./device-target-resolution.js";
 import {
   base,
   controlledMutation,
   iosNonHittablePressFields,
   nativeDevice,
 } from "./device-dispatch.js";
-import { iosSnapshotFallbackPoint, snapshot, typeText, type Device } from "./device.js";
+import {
+  iosSnapshotFallbackPoint,
+  pressNamedControl,
+  pressPoint,
+  snapshot,
+  typeText,
+  type Device,
+  type SnapshotNode,
+} from "./device.js";
+import {
+  planTextEntryFocus,
+  type TextEntryFocusPlan,
+  type TextEntryTarget,
+} from "./text-entry-focus.js";
 import { currentTargetContext, selectedPlatform, targetIdentity } from "./target-context.js";
 import { isPhysicalRunnerRoute, resolveAppleControlRoute } from "./apple-control-route.js";
 import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
@@ -20,17 +37,81 @@ import { typeViaLiveIosRunnerListener } from "./ios-runner-listener-command.js";
 import { rememberedTargetApplication } from "./device-target-applications.js";
 import type { AndroidTextEntryReceipt } from "./android-text-entry-verification.js";
 
+export type TextEntryOutcome = {
+  resolution?: NamedControlResolution;
+  receipt?: AndroidTextEntryReceipt;
+};
+
+function knownFieldText(field: SnapshotNode | undefined): string | undefined {
+  if (!field) return undefined;
+  if ((field as { hintShowing?: boolean }).hintShowing) return "";
+  return field.value ?? "";
+}
+
+/**
+ * Type or replace on Android: caret on the field's text line (never a nested
+ * chip), clear with select-all, then the verified paste path. Skips work the
+ * live tree proves unnecessary (an empty field is not cleared, a focused field
+ * is not tapped).
+ */
+async function enterAndroidText(
+  device: Device,
+  mode: "type" | "replace",
+  target: TextEntryTarget | undefined,
+  text: string,
+): Promise<TextEntryOutcome> {
+  const serial = targetIdentity();
+  let plan: TextEntryFocusPlan | undefined;
+  if (target) {
+    plan = planTextEntryFocus(await snapshot(device, { raw: true }), target);
+    if (!plan.alreadyFocused) {
+      await pressPoint(device, plan.resolution.point.x, plan.resolution.point.y);
+    }
+  }
+  const existing = knownFieldText(plan?.field);
+  if (mode === "replace") {
+    if (existing === undefined || existing.length > 0) {
+      await clearAndroidTextWithAdb(serial, getExecutingJobId(), existing?.length);
+    }
+  } else if (target && existing && existing.length > 0) {
+    await moveAndroidCaretToEnd(serial, getExecutingJobId());
+  }
+  // Refs and bounds shift once the keyboard opens; only an identifier keeps
+  // the planned field recognisable to the post-entry readback.
+  const knownBefore =
+    plan?.field?.identifier && existing !== undefined
+      ? { ...plan.field, focused: true, value: mode === "replace" ? "" : existing }
+      : undefined;
+  const receipt = text.length > 0 ? await typeText(device, text, knownBefore) : undefined;
+  return {
+    ...(plan ? { resolution: plan.resolution } : {}),
+    ...(receipt ? { receipt } : {}),
+  };
+}
+
+/** Type at the caret, optionally focusing a field first. */
+export async function typeIntoField(
+  device: Device,
+  text: string,
+  target?: TextEntryTarget,
+): Promise<TextEntryOutcome> {
+  if (currentTargetContext().kind !== "browser" && selectedPlatform() === "android") {
+    return enterAndroidText(device, "type", target, text);
+  }
+  let resolution: NamedControlResolution | undefined;
+  if (target) resolution = await pressNamedControl(device, target);
+  const receipt = await typeText(device, text);
+  return { ...(resolution ? { resolution } : {}), ...(receipt ? { receipt } : {}) };
+}
+
 export async function replaceText(
   device: Device,
-  target: {
-    identifier?: string;
-    ref?: string;
-    label?: string;
-    text?: string;
-    point?: { x: number; y: number };
-  },
+  target: TextEntryTarget,
   text: string,
-): Promise<AndroidTextEntryReceipt | undefined> {
+): Promise<TextEntryOutcome> {
+  if (currentTargetContext().kind !== "browser" && selectedPlatform() === "android") {
+    return enterAndroidText(device, "replace", target, text);
+  }
   const interactionTarget = target.identifier
     ? { selector: `id="${target.identifier.replaceAll('"', '\\"')}"` }
     : target.ref
@@ -43,19 +124,6 @@ export async function replaceText(
             ? { x: target.point.x, y: target.point.y }
             : undefined;
   if (!interactionTarget) throw new Error("replace text requires a target");
-
-  // Android's accessibility fill is not consistently a replacement operation.
-  // Compose fields in particular may preserve the existing value and append the
-  // new text, even though the command succeeds. Make replacement deterministic
-  // at the input boundary: focus the target, clear it with native key events,
-  // then use the normal exact-text path for the new value.
-  if (currentTargetContext().kind !== "browser" && selectedPlatform() === "android") {
-    await controlledMutation("press", () =>
-      nativeDevice(device).interactions.press({ ...base(), ...interactionTarget }),
-    );
-    await clearAndroidFocusedText(targetIdentity());
-    return typeText(device, text);
-  }
   // The selector fill carries the same non-hittable coordination fields a
   // press does: the runner can fall back to the snapshot-derived coordinate
   // in one round-trip instead of paying a second full traversal here.
@@ -103,14 +171,7 @@ export async function replaceText(
       );
     },
   });
-}
-
-async function clearAndroidFocusedText(serial: string): Promise<void> {
-  // Android's MOVE_END is line-aware: on a multiline Compose field it lands at
-  // the end of the current line, which leaves later lines behind. Move to the
-  // beginning of the current line, walk to the top, then move to the beginning
-  // of the whole value before deleting forward.
-  await clearAndroidTextWithAdb(serial, getExecutingJobId());
+  return fillPoint ? { resolution: explicitPointResolution(fillPoint) } : {};
 }
 
 export type TextReplacementAdapter = {

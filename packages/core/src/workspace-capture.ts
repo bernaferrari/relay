@@ -62,6 +62,11 @@ import {
   type IosSessionOperationDiagnostic,
 } from "./workspace-ios-session.js";
 import { rawScreenshot } from "./workspace-android-raw.js";
+import { iosPixelsUnavailableMessage } from "./ios-pixels-unavailable.js";
+import {
+  androidScreenshotDisplay,
+  type DeviceDisplayCondition,
+} from "./android-device-conditions.js";
 import {
   beginTargetRuntimeObservation,
   hasUsableSemanticAccessibility,
@@ -124,6 +129,7 @@ export type SnapshotPayload = {
   proposedRows?: ProposedVisualRow[];
   /** Separate live facts for pixels, semantic control, and evidence capture. */
   readiness?: TargetRuntimeReadiness;
+  display?: { state: DeviceDisplayCondition; warning?: string };
 };
 
 type IosSnapshotGeometryProof = {
@@ -647,22 +653,7 @@ export async function attachScreenshotPayload(
   return screenshot;
 }
 
-function errorText(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim();
-}
-
-/** Prefer the go-ios pixel failure over agent-device's browser "open first" copy. */
-export function iosPixelsUnavailableMessage(goIosError: unknown, sdkError?: unknown): string {
-  const goIos = errorText(goIosError).slice(0, 400);
-  const sdk = sdkError ? errorText(sdkError) : "";
-  if (/tunnel|ios 17|rsd|instruments/i.test(goIos)) {
-    return `iOS pixels need an active go-ios tunnel (iOS 17+). ${goIos} Do not run target.open on a physical iPad.`;
-  }
-  if (/no active session|run open first/i.test(sdk)) {
-    return `iOS screenshot failed via go-ios (${goIos}). XCTest is also down — that is not a failed screenshot. Do not run target.open on a physical iPad.`;
-  }
-  return `iOS screenshot failed via go-ios: ${goIos}`;
-}
+export { iosPixelsUnavailableMessage };
 
 export async function captureScreenshot(opts?: {
   serial?: string;
@@ -694,6 +685,10 @@ export async function captureScreenshot(opts?: {
   const dir = await mkdtemp(join(parent, "shot-"));
   const path = join(dir, "capture.png");
   return await runWithTargetContext(target.context, async () => {
+    const display =
+      target.context.kind === "device" && target.context.platform === "android"
+        ? androidScreenshotDisplay(target.context.serial)
+        : undefined;
     const foregroundApp =
       target.context.kind === "device" && target.context.serial
         ? target.context.platform === "android"
@@ -869,6 +864,7 @@ export async function captureScreenshot(opts?: {
       ...(screenMatch ? { screenMatch } : {}),
       ...(proposedRows.length ? { proposedRows } : {}),
       ...(readiness ? { readiness } : {}),
+      ...(await display),
       ...(active?.id || opts?.jobId ? { jobId: active?.id ?? opts?.jobId } : {}),
     };
     if (active) {

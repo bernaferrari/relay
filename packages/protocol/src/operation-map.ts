@@ -354,6 +354,8 @@ export type TargetScreenshotDto = {
   framePath?: string;
   inspectable?: boolean;
   readiness?: TargetRuntimeReadiness;
+  /** Android only: a black or keyguard frame is not evidence of the app. */
+  display?: { state: "on" | "asleep" | "locked" | "unknown"; warning?: string };
 };
 
 export type ScrollSurveySnapshotDto = {

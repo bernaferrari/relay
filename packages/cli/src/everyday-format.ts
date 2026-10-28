@@ -316,7 +316,11 @@ export function formatListResult(result: unknown, now = Date.now()): string | un
           device.serial ?? device.id,
         ]),
       ),
-      ...(hidden ? [`${hidden} unavailable device${hidden === 1 ? "" : "s"} hidden.`] : []),
+      ...(hidden
+        ? [
+            `${hidden} shut-down simulator${hidden === 1 ? "" : "s"} hidden. Show all: relay devices --all`,
+          ]
+        : []),
     ].join("\n");
   }
   return undefined;

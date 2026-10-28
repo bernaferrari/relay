@@ -149,7 +149,7 @@ export async function runTypeStep(
       await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
     const receipt =
       step.mode === "replace"
-        ? await replaceText(device, step.target!, step.text)
+        ? (await replaceText(device, step.target!, step.text)).receipt
         : await typeText(device, step.text);
     if (receipt) retainReceipt(receipt);
   } catch (error) {

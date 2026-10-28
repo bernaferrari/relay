@@ -55,6 +55,7 @@ function admitsQueuedRun(operationId: string): boolean {
 
 const HUMAN_INTERVENTION_OPERATIONS = new Set([
   "target.interact",
+  "target.prompt",
   "target.do",
   "target.ui.back",
   "target.ui.scrollCollect",

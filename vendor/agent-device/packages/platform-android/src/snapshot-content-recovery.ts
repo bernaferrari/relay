@@ -63,6 +63,7 @@ export function classifyAndroidHelperContent(
   // capture is the truth, so it must be returned rather than classified as a helper failure.
   if (isScreenOwnedByMeaningfulSystemSurface(summary)) return { outcome: 'system-surface-only' };
   if (isForegroundAppContentHiddenByInputMethod(summary)) return { outcome: 'ok' };
+  if (isActiveFrameworkDialog(summary)) return { outcome: 'ok' };
   if (isForegroundAppContentPoor(summary)) {
     return unusable(
       summary,
@@ -124,6 +125,14 @@ function isForegroundAppContentHiddenByInputMethod(summary: AndroidHelperXmlSumm
     isForegroundAppContentPoor(summary) &&
     summary.inputMethodMeaningfulNodeCount >= MIN_INPUT_METHOD_MEANINGFUL_NODES
   );
+}
+
+/**
+ * Chooser and "Open with" dialogs are application windows owned by the framework package, so they
+ * never count as app content. An active one with real rows is the screen the user sees.
+ */
+function isActiveFrameworkDialog(summary: AndroidHelperXmlSummary): boolean {
+  return summary.activeFrameworkDialogMeaningfulNodeCount >= MIN_FOREGROUND_APP_MEANINGFUL_NODES;
 }
 
 function isForegroundAppContentPoor(summary: AndroidHelperXmlSummary): boolean {
@@ -190,6 +199,7 @@ type AndroidHelperXmlSummary = {
   windowRootCount: number;
   applicationWindowRootCount: number;
   activeSystemSurfaceMeaningfulNodeCount: number;
+  activeFrameworkDialogMeaningfulNodeCount: number;
   meaningfulNodeCount: number;
   applicationMeaningfulNodeCount: number;
   nonSystemMeaningfulNodeCount: number;
@@ -229,6 +239,7 @@ function createAndroidHelperXmlSummaryState(
     windowRootCount: 0,
     applicationWindowRootCount: 0,
     activeSystemSurfaceMeaningfulNodeCount: 0,
+    activeFrameworkDialogMeaningfulNodeCount: 0,
     meaningfulNodeCount: 0,
     applicationMeaningfulNodeCount: 0,
     nonSystemMeaningfulNodeCount: 0,
@@ -298,6 +309,13 @@ function recordMeaningfulWindowOwnership(
   ) {
     summary.applicationMeaningfulNodeCount += 1;
   }
+  if (
+    summary.currentWindowType === ANDROID_WINDOW_TYPE_APPLICATION &&
+    summary.currentWindowActiveOrFocused === true &&
+    node.packageName === 'android'
+  ) {
+    summary.activeFrameworkDialogMeaningfulNodeCount += 1;
+  }
   // Status/nav-bar chrome must not satisfy the system-surface floor: an active navigation bar
   // (Back + Home + Recents) or status chrome (clock, battery, signal icons) is missing-app-content
   // residue, not a usable shade/quick-settings surface. Only non-chrome nodes count.
@@ -346,6 +364,7 @@ function finalizeAndroidHelperXmlSummary(
     windowRootCount: summary.windowRootCount,
     applicationWindowRootCount: summary.applicationWindowRootCount,
     activeSystemSurfaceMeaningfulNodeCount: summary.activeSystemSurfaceMeaningfulNodeCount,
+    activeFrameworkDialogMeaningfulNodeCount: summary.activeFrameworkDialogMeaningfulNodeCount,
     meaningfulNodeCount: summary.meaningfulNodeCount,
     applicationMeaningfulNodeCount: summary.applicationMeaningfulNodeCount,
     nonSystemMeaningfulNodeCount: summary.nonSystemMeaningfulNodeCount,

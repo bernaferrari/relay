@@ -163,11 +163,11 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_press_key",
     "Press a key",
-    "Press a system key: back, home, recents, enter or backspace.",
+    "Press a system key: back (navigates), home, recents, enter, backspace (deletes a character) or hide-keyboard (closes only the keyboard).",
     z
       .object({
         ...controlTargetFields,
-        key: z.enum(["back", "home", "recents", "enter", "backspace"]),
+        key: z.enum(["back", "home", "recents", "enter", "backspace", "hide-keyboard"]),
       })
       .strict()
       .superRefine(requireControlTarget),
@@ -182,6 +182,56 @@ export const relayOperatorTools = Object.freeze([
         targetId: identifier,
         app: identifier.describe("App name, package or bundle id"),
         relaunch: z.boolean().optional(),
+      })
+      .strict(),
+    rw,
+  ),
+  verb(
+    "relay_prompt",
+    "Send a chat prompt",
+    "Type a prompt into the app's composer, send it, and wait until the reply stops changing. Returns the text that appeared, replacing separate focus, type, send and polling calls.",
+    z
+      .object({
+        targetId: identifier,
+        text: z.string().min(1).max(4_096),
+        composer: z
+          .object({ identifier: identifier.optional(), label: identifier.optional() })
+          .strict()
+          .optional()
+          .describe("Composer field; defaults to the focused or lowest text field"),
+        send: z
+          .union([
+            z.enum(["enter", "none"]),
+            z.object({ identifier: identifier.optional(), label: identifier.optional() }).strict(),
+          ])
+          .optional()
+          .describe("Send control; defaults to the nearest Send button, else Enter"),
+        wait: z.boolean().optional().describe("Wait for the reply (default true)"),
+        timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
+      })
+      .strict(),
+    rw,
+  ),
+  verb(
+    "relay_set_network",
+    "Change Android network",
+    "Turn on airplane mode, or turn off Wi-Fi or mobile data, to test offline behavior. Always finish with restore.",
+    z
+      .object({
+        targetId: identifier,
+        mode: z.enum(["airplane", "wifi-off", "data-off", "restore"]),
+      })
+      .strict(),
+    rw,
+  ),
+  verb(
+    "relay_set_display",
+    "Wake an Android display",
+    "Wake the screen, keep it awake while plugged in for a long session, or release that setting. Use it when screenshots come back black.",
+    z
+      .object({
+        targetId: identifier,
+        mode: z.enum(["wake", "keep-awake", "release"]),
       })
       .strict(),
     rw,

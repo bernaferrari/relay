@@ -73,17 +73,59 @@ export function bindNativeDeviceMutations(
   };
 }
 
-/** Clear an Android field atomically so another job cannot interleave key events. */
-export async function clearAndroidTextWithAdb(serial: string, jobId: string | null): Promise<void> {
+type AndroidInput = (args: string[]) => Promise<{ stdout: string; stderr: string }>;
+
+async function androidInput(serial: string): Promise<AndroidInput> {
+  const adb = await resolveAndroidSdkTool("adb");
+  return (args) => raceCancel(execFileAsync(adb, ["-s", serial, "shell", "input", ...args]));
+}
+
+/** `input keycombination` exists from Android 12; older shells print usage instead of failing. */
+async function keyCombination(input: AndroidInput, keys: string[]): Promise<boolean> {
+  try {
+    const { stdout, stderr } = await input(["keycombination", ...keys]);
+    return !/unknown command|usage:|error/i.test(`${stdout}\n${stderr}`);
+  } catch {
+    return false;
+  }
+}
+
+async function repeatKey(input: AndroidInput, key: string, count: number): Promise<void> {
+  for (let remaining = count; remaining > 0; remaining -= 128) {
+    await input(["keyevent", ...Array.from({ length: Math.min(128, remaining) }, () => key)]);
+  }
+}
+
+/**
+ * Clear the focused Android field atomically so another job cannot interleave
+ * key events. Select-all + delete is one gesture on every modern field; the
+ * bounded fallback deletes both sides of the caret without arrow keys, which
+ * Compose routes to focus traversal (opening drawers) once the text ends.
+ */
+export async function clearAndroidTextWithAdb(
+  serial: string,
+  jobId: string | null,
+  knownLength?: number,
+): Promise<void> {
   await runTargetMutation(serial, jobId, async () => {
-    const adb = await resolveAndroidSdkTool("adb");
-    const keyevent = (keys: string[]) =>
-      raceCancel(execFileAsync(adb, ["-s", serial, "shell", "input", "keyevent", ...keys]));
-    await keyevent(["KEYCODE_MOVE_HOME"]);
-    await keyevent(Array.from({ length: 512 }, () => "KEYCODE_DPAD_UP"));
-    await keyevent(["KEYCODE_MOVE_HOME"]);
-    for (let remaining = 4096; remaining > 0; remaining -= 128) {
-      await keyevent(Array.from({ length: Math.min(128, remaining) }, () => "KEYCODE_FORWARD_DEL"));
+    const input = await androidInput(serial);
+    if (await keyCombination(input, ["KEYCODE_CTRL_LEFT", "KEYCODE_A"])) {
+      await input(["keyevent", "KEYCODE_DEL"]);
+      return;
     }
+    const count = Math.min(4096, (knownLength ?? 1024) + 16);
+    await input(["keyevent", "KEYCODE_MOVE_END"]);
+    await repeatKey(input, "KEYCODE_DEL", count);
+    await input(["keyevent", "KEYCODE_MOVE_HOME"]);
+    await repeatKey(input, "KEYCODE_FORWARD_DEL", count);
+  });
+}
+
+/** Put the caret after the existing value so typing appends instead of splitting it. */
+export async function moveAndroidCaretToEnd(serial: string, jobId: string | null): Promise<void> {
+  await runTargetMutation(serial, jobId, async () => {
+    const input = await androidInput(serial);
+    if (await keyCombination(input, ["KEYCODE_CTRL_LEFT", "KEYCODE_MOVE_END"])) return;
+    await input(["keyevent", "KEYCODE_MOVE_END"]);
   });
 }

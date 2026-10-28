@@ -61,15 +61,41 @@ function collectInactiveApplicationWindows(
   );
   if (foregroundApplicationWindows.length === 0) return;
   const foregroundLayer = highestAndroidWindowLayer(foregroundApplicationWindows);
+  const foregroundPackages = new Set(
+    foregroundApplicationWindows
+      .map((window) => window.packageName)
+      .filter((packageName): packageName is string => Boolean(packageName)),
+  );
 
   for (const window of retainedChildren(root, hidden, presentationBudget)) {
     presentationBudget?.check('work');
     if (!isAndroidApplicationWindow(window)) continue;
     const keep =
-      isAndroidForegroundWindow(window) &&
-      (foregroundLayer === undefined || window.windowLayer === foregroundLayer);
+      (isAndroidForegroundWindow(window) &&
+        (foregroundLayer === undefined || window.windowLayer === foregroundLayer)) ||
+      isForegroundOwnedPopup(window, foregroundLayer, foregroundPackages);
     if (!keep) hidden.add(window);
   }
+}
+
+/**
+ * Non-focusable popups (Compose DropdownMenu, PopupWindow, model pickers) are separate application
+ * windows that are neither active nor focused, yet they are drawn above the foreground window.
+ * Stale windows left behind by transitions sit below it, so a same-package layer above the
+ * foreground layer is visible content.
+ */
+function isForegroundOwnedPopup(
+  window: AndroidNode,
+  foregroundLayer: number | undefined,
+  foregroundPackages: ReadonlySet<string>,
+): boolean {
+  return (
+    foregroundLayer !== undefined &&
+    window.windowLayer !== undefined &&
+    window.windowLayer > foregroundLayer &&
+    window.packageName !== null &&
+    foregroundPackages.has(window.packageName)
+  );
 }
 
 function highestAndroidWindowLayer(windows: AndroidNode[]): number | undefined {

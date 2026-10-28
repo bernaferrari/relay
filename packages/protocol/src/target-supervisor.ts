@@ -114,6 +114,9 @@ export type TargetSupervisorHealth = {
   overall: TargetOverallHealthState;
   context: {
     foregroundApp?: string;
+    /** Live Android facts: an asleep or locked display yields black or keyguard frames. */
+    display?: "on" | "asleep" | "locked" | "unknown";
+    connectivity?: "online" | "offline" | "airplane" | "unknown";
     screenFingerprint?: string;
     runCursor?: { runId: string; stepId?: string; index?: number };
   };

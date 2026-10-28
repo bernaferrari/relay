@@ -14,6 +14,7 @@ import {
   type AndroidTextEntryReceipt,
 } from "./android-text-entry-verification.js";
 import { InputNotDispatchedError } from "./input-not-dispatched.js";
+import { typeAndroidTextViaImeHelper } from "./android-ime-helper-text.js";
 
 export type AndroidTextPasteAdapter = {
   readClipboard: () => Promise<string>;
@@ -34,6 +35,9 @@ const ANDROID_IME_PACKAGES = new Set([
   "com.touchtype.swiftkey",
   "com.microsoft.swiftkey",
 ]);
+
+/** Devices whose clipboard transport failed once; later entries skip straight to the fallback. */
+const clipboardlessAndroidTargets = new Set<string>();
 
 const ANDROID_SHELL_META = /[\\'"`$&;|<>()[\]{}*?!#~]/g;
 
@@ -167,17 +171,56 @@ function firstCasedCharacter(text: string): string | undefined {
   );
 }
 
-async function typeAndroidShellTextExactly(
+/**
+ * Text entry when the clipboard is unavailable. ASCII lines go through
+ * `input text` with Shift+Enter between them (plain Enter sends in chat
+ * composers); anything else is committed by the transient test IME.
+ */
+async function typeAndroidTextWithoutClipboard(
+  device: Device,
+  serial: string,
+  text: string,
+  dependencies: DeviceTextInputDependencies,
+): Promise<"adb-shell" | "ime-helper"> {
+  const adb = dependencies.execAndroidAdb ?? execAndroidAdb;
+  if (text.length > 4096) {
+    throw new InputNotDispatchedError(
+      "Android text entry without a clipboard is limited to 4096 characters; no text was dispatched.",
+    );
+  }
+  if (/[^\x20-\x7e\n]/u.test(text) || text.includes("%s")) {
+    await dependencies.mutateCurrentTarget(() => typeAndroidTextViaImeHelper(serial, text, adb));
+    return "ime-helper";
+  }
+  const lines = text.split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (index > 0) {
+      await dependencies.mutateCurrentTarget(() =>
+        raceCancel(
+          adb([
+            "-s",
+            serial,
+            "shell",
+            "input",
+            "keycombination",
+            "KEYCODE_SHIFT_LEFT",
+            "KEYCODE_ENTER",
+          ]),
+        ),
+      );
+    }
+    await typeAndroidShellLine(device, serial, line, dependencies);
+  }
+  return "adb-shell";
+}
+
+async function typeAndroidShellLine(
   device: Device,
   serial: string,
   text: string,
   dependencies: DeviceTextInputDependencies,
 ): Promise<void> {
   const adb = dependencies.execAndroidAdb ?? execAndroidAdb;
-  if (text.length > 4096 || /[^\x20-\x7e]/u.test(text) || text.includes("%s"))
-    throw new InputNotDispatchedError(
-      "The Android clipboard fallback supports one bounded ASCII line only; no text was dispatched.",
-    );
   const firstCased = firstCasedCharacter(text);
   if (firstCased && firstCased === firstCased.toLocaleLowerCase()) {
     const shifted = await dependencies
@@ -215,10 +258,12 @@ export async function typeDeviceText(
   device: Device,
   text: string,
   dependencies: DeviceTextInputDependencies,
+  /** The focused field as the caller already observed it; skips one tree read. */
+  knownBefore?: SnapshotNode,
 ): Promise<AndroidTextEntryReceipt | undefined> {
   const android = currentTargetContext().kind !== "browser" && selectedPlatform() === "android";
-  let before: SnapshotNode | undefined;
-  if (android) {
+  let before = knownBefore;
+  if (android && !before) {
     try {
       before = androidTextEntryField(await dependencies.snapshot(device));
     } catch (error) {
@@ -248,10 +293,17 @@ async function dispatchDeviceText(
   dependencies: DeviceTextInputDependencies,
 ): Promise<AndroidTextEntryReceipt["transport"] | undefined> {
   if (currentTargetContext().kind !== "browser" && selectedPlatform() === "android") {
+    const serial = targetIdentity();
+    const withoutClipboard = () => {
+      clipboardlessAndroidTargets.add(serial);
+      return controlledMutation("type", () =>
+        typeAndroidTextWithoutClipboard(device, serial, text, dependencies),
+      );
+    };
+    if (clipboardlessAndroidTargets.has(serial)) return withoutClipboard();
     // Prefer whole-payload paste. If writing is unsupported before paste begins,
     // use one bounded shell command per line and retain the readback outcome.
     if (typeof nativeDevice(device).command.clipboard !== "function") {
-      const serial = targetIdentity();
       try {
         await controlledMutation("type", () =>
           dependencies.mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)),
@@ -264,13 +316,9 @@ async function dispatchDeviceText(
           !isAndroidClipboardTransportFailure(message)
         )
           throw error;
-        await controlledMutation("type", () =>
-          typeAndroidShellTextExactly(device, serial, text, dependencies),
-        );
-        return "adb-shell";
+        return withoutClipboard();
       }
     }
-    const serial = targetIdentity();
     try {
       await controlledMutation("type", () =>
         pasteAndroidText(text, {
@@ -340,10 +388,7 @@ async function dispatchDeviceText(
         !isAndroidClipboardTransportFailure(message)
       )
         throw error;
-      await controlledMutation("type", () =>
-        typeAndroidShellTextExactly(device, serial, text, dependencies),
-      );
-      return "adb-shell";
+      return withoutClipboard();
     }
   }
   if (await dependencies.typeViaLiveIosListener(text)) return;

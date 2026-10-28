@@ -11,6 +11,8 @@ import type {
 const PIXEL_STATES = new Set(["ready", "delayed", "unavailable"]);
 const SEMANTIC_STATES = new Set(["current", "stale", "refreshing", "wedged", "unavailable"]);
 const INPUT_STATES = new Set(["ready", "uncertain", "blocked"]);
+const DISPLAY_STATES = new Set(["on", "asleep", "locked", "unknown"]);
+const CONNECTIVITY_STATES = new Set(["online", "offline", "airplane", "unknown"]);
 const OVERALL_STATES = new Set([
   "starting",
   "ready",
@@ -71,6 +73,15 @@ function targetSupervisorHealthOutput(input: {
     const context = record(health.context, "target health context");
     boundedOptionalText(context.foregroundApp, "target health foreground app");
     boundedOptionalText(context.screenFingerprint, "target health screen fingerprint", 256);
+    if (context.display !== undefined && !DISPLAY_STATES.has(String(context.display))) {
+      fail("target health display", "is unsupported");
+    }
+    if (
+      context.connectivity !== undefined &&
+      !CONNECTIVITY_STATES.has(String(context.connectivity))
+    ) {
+      fail("target health connectivity", "is unsupported");
+    }
     record(health.counters, "target health counters");
     record(health.latency, "target health latency");
     input.assertTargetRuntimeReadiness(health.readiness, "target health readiness");

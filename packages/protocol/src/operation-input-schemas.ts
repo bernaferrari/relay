@@ -22,6 +22,7 @@ import { changeVerificationOperationInputSchemas } from "./change-verification-o
 import { proofSetupOperationInputSchemas } from "./proof-setup.js";
 import { repeatFailureKindSchema } from "./repeat-failure.js";
 import { targetOperationInputSchemas } from "./target-operation-input-schemas.js";
+import { targetDeviceControlInputSchemas } from "./target-device-control-schemas.js";
 import { stateFixtureSchema } from "./exploration-policy.js";
 import {
   authoringInteraction,
@@ -57,6 +58,7 @@ export const operationInputSchemas = {
   ...proofSetupOperationInputSchemas,
   ...browserAuthenticationFixtureOperationInputSchemas,
   ...targetOperationInputSchemas,
+  ...targetDeviceControlInputSchemas,
   "project.save": z
     .object({ id: identifier("Project identifier"), name: text("Project name") })
     .strict(),

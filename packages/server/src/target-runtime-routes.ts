@@ -19,6 +19,7 @@ import {
   listDevices,
   listTargets,
   listAndroidAppLocales,
+  readAndroidDeviceConditions,
   listAndroidInstalledApps,
   listIosInstalledApps,
   setAndroidAppLocaleOnDevice,
@@ -103,6 +104,8 @@ export type TargetRuntimeRouteRuntime = {
   setAppLocale: typeof setAndroidAppLocaleOnDevice;
   now: () => number;
   readTargetHealth: (serial: string, platform: SupervisedRuntimePlatform) => TargetSupervisorHealth;
+  /** Live Android display and network facts; omitted where no device is attached. */
+  readDeviceConditions?: typeof readAndroidDeviceConditions;
   captureTargetObservation: typeof captureDurableTargetObservation;
   reconcileTargetInput: (
     serial: string,
@@ -169,6 +172,7 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
       targetRuntimeReadiness({ serial, platform }),
     );
   },
+  readDeviceConditions: readAndroidDeviceConditions,
   captureTargetObservation: captureDurableTargetObservation,
   reconcileTargetInput: (serial, platform, input) => {
     const store = currentTargetSupervisorStore();
@@ -221,8 +225,13 @@ export async function handleTargetRuntimeRoute(context: {
     const url = new URL(request.url ?? pathname, "http://relay.local");
     const serial = url.searchParams.get("serial")?.trim() ?? "";
     if (!serial) throw new HttpError(400, "serial is required");
+    const health = await scopedTargetHealth({ scope, serial, runtime });
+    const conditions =
+      health.target.kind === "android" && runtime.readDeviceConditions
+        ? await runtime.readDeviceConditions(serial)
+        : undefined;
     json(response, 200, {
-      health: await scopedTargetHealth({ scope, serial, runtime }),
+      health: conditions ? { ...health, context: { ...health.context, ...conditions } } : health,
     });
     return true;
   }

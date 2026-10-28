@@ -78,10 +78,11 @@ Lists the app's Tests and whether each is ready to run.`,
   runs: `relay runs [<app>]
 
 Lists the 20 most recent runs (newest first), optionally for one app.`,
-  devices: `relay devices
+  devices: `relay devices [--all]
 
-Lists connected phones, simulators, emulators, and browsers. Pass the name,
-id, or just ios / android / browser to --device.`,
+Lists connected phones, booted simulators and emulators, and browsers. --all
+also lists shut-down simulators. Pass the name, id, or just ios / android /
+browser to --device.`,
   version: `relay --version
 
 Prints the CLI version.`,

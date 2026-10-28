@@ -9,15 +9,24 @@ import {
   IosMutationOutcomeUnknownError,
   iosVisualVerificationDiagnostic,
   interact,
+  InvalidInteractInputError,
+  normalizeInteractInput,
   previewInteract,
   scrollSurveyOutcomeUnknownDiagnostic,
   type InteractInput,
   type InteractResult,
   type ScrollSurveyOutcomeUnknownDiagnostic,
+  devicePlatformForSerial,
+  promptDevice,
+  PromptComposerNotFoundError,
+  setAndroidDisplay,
+  setAndroidNetwork,
 } from "@relay/core";
+import type { OperationInput } from "@relay/protocol";
 import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
 import { applyLaneToInteractOrThrow, runtimeOverlayFromLaneResolution } from "./lane-run-route.js";
+import { assertAndroidLiveInputPlatform } from "./live-input-platform.js";
 import type { RequestContext } from "./security.js";
 
 type InteractionRouteInput = {
@@ -154,8 +163,62 @@ export function iosMutationOutcomeUnknownHttpError(
   return new HttpError(409, error.message, iosMutationOutcomeUnknownPayload(error, details));
 }
 
+async function controlledAndroidSerial(scope: RequestContext, serial: string): Promise<string> {
+  assertNoRunningJob(serial);
+  await assertTargetControl(scope, serial);
+  assertAndroidLiveInputPlatform(await devicePlatformForSerial(serial));
+  return serial;
+}
+
+/** Prompt, network, and display verbs need the same control as /interact. */
+async function handleDeviceControlRoute(input: InteractionRouteInput): Promise<boolean> {
+  const { method, pathname, request, response, scope } = input;
+  if (method !== "POST") return false;
+  if (pathname === "/device/prompt") {
+    const { serial, ...prompt } = (await parseJsonBody(request)) as OperationInput<"target.prompt">;
+    const resolved = await applyLaneToInteractOrThrow({ projectId: scope.projectId, serial });
+    const overlay = runtimeOverlayFromLaneResolution(resolved, scope.projectId);
+    assertNoRunningJob(resolved.serial);
+    await assertTargetControl(scope, resolved.serial);
+    try {
+      const result = await promptDevice(prompt, {
+        serial: resolved.serial,
+        overlay: { ...overlay, projectId: scope.projectId },
+      });
+      json(response, 200, result);
+    } catch (error) {
+      if (error instanceof PromptComposerNotFoundError) throw new HttpError(409, error.message);
+      if (error instanceof IosMutationOutcomeUnknownError) {
+        throw iosMutationOutcomeUnknownHttpError(error);
+      }
+      throw error;
+    }
+    return true;
+  }
+  if (pathname === "/device/network") {
+    const { serial, mode } = (await parseJsonBody(request)) as OperationInput<"target.network.set">;
+    json(
+      response,
+      200,
+      await setAndroidNetwork(await controlledAndroidSerial(scope, serial), mode),
+    );
+    return true;
+  }
+  if (pathname === "/device/display") {
+    const { serial, mode } = (await parseJsonBody(request)) as OperationInput<"target.display.set">;
+    json(
+      response,
+      200,
+      await setAndroidDisplay(await controlledAndroidSerial(scope, serial), mode),
+    );
+    return true;
+  }
+  return false;
+}
+
 export async function handleInteractionRoute(input: InteractionRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
+  if (await handleDeviceControlRoute(input)) return true;
 
   if (method === "POST" && pathname === "/ground") {
     const body = (await parseJsonBody(request)) as GroundingRequestBody;
@@ -231,7 +294,13 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
       ...(typeof serial === "string" ? { serial } : {}),
     });
     const overlay = runtimeOverlayFromLaneResolution(resolved, scope.projectId);
-    const interaction = rest as InteractInput;
+    let interaction: InteractInput;
+    try {
+      interaction = normalizeInteractInput(rest as InteractInput);
+    } catch (error) {
+      if (error instanceof InvalidInteractInputError) throw new HttpError(400, error.message);
+      throw error;
+    }
     if (preview === true) {
       assertTargetObservation(scope, resolved.serial);
       const result = await previewInteract(interaction, {
