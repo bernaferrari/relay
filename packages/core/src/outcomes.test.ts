@@ -96,3 +96,16 @@ describe("classifyRunOutcome", () => {
     );
   });
 });
+
+it("does not classify quoted application content as an infrastructure cause", () => {
+  for (const error of [
+    'expect: "My devices" not visible after 5s',
+    'expect: "Sessions" still visible after 5s',
+    'content assertion: status did not satisfy equals "No matches"',
+  ]) {
+    assert.deepEqual(classifyRunOutcome({ status: "error", error }), {
+      outcome: "product-failure",
+      failureCategory: "deterministic-assertion",
+    });
+  }
+});

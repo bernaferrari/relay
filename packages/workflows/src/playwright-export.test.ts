@@ -88,3 +88,24 @@ test("fails closed without an acknowledged browser path", () => {
   noUrl.target = { targetId: "t", platform: "browser" as const };
   assert.throws(() => exportGoalSessionPlaywrightSpec(noUrl), /startUrl/u);
 });
+
+test("exports named controls without inventing roles and preserves append", () => {
+  const spec = exportGoalSessionPlaywrightSpec(
+    record([
+      action("action-1", { kind: "label", target: { label: "Save" } }),
+      action("action-2", {
+        kind: "fill",
+        target: { label: "Name" },
+        value: " suffix",
+        mode: "append",
+      }),
+    ]),
+  );
+  assert.ok(
+    spec.includes(
+      'page.getByText("Save", { exact: true }).or(page.getByLabel("Save", { exact: true })).click()',
+    ),
+  );
+  assert.ok(spec.includes('page.getByLabel("Name", { exact: true }).pressSequentially(" suffix")'));
+  assert.ok(!spec.includes(".fill("));
+});

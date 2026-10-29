@@ -221,7 +221,7 @@ export function neighboringBrowser(
         ? rect[along] >= source[along] + source[length] - 0.01
         : rect[along] + rect[length] <= source[along] + 0.01),
   );
-  function score(rect: BrowserRect) {
+  const score = (rect: BrowserRect) => {
     const overlap =
       Math.min(source[across] + source[crossLength], rect[across] + rect[crossLength]) -
       Math.max(source[across], rect[across]);
@@ -230,6 +230,6 @@ export function neighboringBrowser(
       Math.abs(rect[along] + rect[length] / 2 - source[along] - source[length] / 2) +
       Math.abs(rect[across] + rect[crossLength] / 2 - source[across] - source[crossLength] / 2) / 10
     );
-  }
+  };
   return candidates.sort((a, b) => score(a[1]) - score(b[1]))[0]?.[0];
 }

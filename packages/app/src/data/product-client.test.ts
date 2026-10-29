@@ -31,3 +31,18 @@ describe("coalesceGets", () => {
     expect(base).toHaveBeenCalledTimes(4);
   });
 });
+
+it("keeps cancellation independent for simultaneous consumers", async () => {
+  const base: typeof fetch = async (_input, init) =>
+    new Promise((resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      if (!init?.signal) resolve(new Response("other consumer"));
+    });
+  const fetcher = coalesceGets(base);
+  const controller = new AbortController();
+  const first = fetcher("http://relay/runs", { signal: controller.signal });
+  const second = fetcher("http://relay/runs");
+  controller.abort();
+  await expect(first).rejects.toBeDefined();
+  expect(await (await second).text()).toBe("other consumer");
+});

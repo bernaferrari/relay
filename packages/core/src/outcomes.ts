@@ -16,6 +16,8 @@ export function classifyRunOutcome(input: {
     return { outcome: "cancelled" };
 
   const message = (input.error ?? "").toLowerCase();
+  // Quoted labels and expected values are application data, not error causes.
+  const cause = message.replace(/"[^"\n]*"|'[^'\n]*'/g, "");
   if (/input outcome unknown:|may already have reached the device/.test(message)) {
     return { outcome: "uncertain", failureCategory: "action" };
   }
@@ -26,7 +28,12 @@ export function classifyRunOutcome(input: {
   // target evidence. Check it before assertion wording because lower layers
   // often preserve both messages (for example, "expect-screen ... session
   // disconnected"). Such a run did not prove a product regression.
-  if (input.errorCode === "DEVICE_MISSING" || /device|adb|session|connection/.test(message)) {
+  if (
+    input.errorCode === "DEVICE_MISSING" ||
+    /\b(?:device|session|connection)\b[^:;\n]{0,30}\b(?:lost|missing|disconnected|unavailable|closed|refused|reset|not found|offline)\b|\badb\b.*(?:failed|error|offline|not found)/.test(
+      cause,
+    )
+  ) {
     return { outcome: "harness-failure", failureCategory: "environment" };
   }
   if (input.errorCode === "INTERNAL") {
@@ -38,7 +45,7 @@ export function classifyRunOutcome(input: {
   if (/wait-for:|response completion/.test(message)) {
     return { outcome: "harness-failure", failureCategory: "completion" };
   }
-  if (/tap failed|no strategy matched|no match/.test(message)) {
+  if (/tap failed|no strategy matched|no match/.test(cause)) {
     return { outcome: "harness-failure", failureCategory: "locator" };
   }
   if (/judge unavailable/.test(message)) {

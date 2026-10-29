@@ -19,6 +19,7 @@ export type Verdict = {
   reason?: string;
   durationMs?: number;
   device?: string;
+  review?: { pending: number };
   steps: VerdictStep[];
 };
 
@@ -121,6 +122,7 @@ export type CiTotals = {
   blocked: number;
   cancelled: number;
   skipped: number;
+  pendingReview?: number;
 };
 
 export type CiSkipped = { testId: string; name: string; reason: string };
@@ -163,6 +165,7 @@ export function formatCiReport(input: {
     "",
     [
       `${totals.passed} passed`,
+      ...(totals.pendingReview ? [`${totals.pendingReview} captures awaiting review`] : []),
       `${totals.failed} failed`,
       `${totals.blocked} blocked`,
       ...(totals.cancelled ? [`${totals.cancelled} cancelled`] : []),
@@ -203,11 +206,13 @@ export function ciJunit(input: {
         .filter(Boolean)
         .join("\n");
       const body =
-        verdict.status === "passed"
-          ? ""
-          : verdict.status === "failed"
-            ? `\n      <failure message="${xml(verdict.summary)}">${xml(detail)}</failure>\n    `
-            : `\n      <error type="${verdict.status}" message="${xml(verdict.summary)}">${xml(detail)}</error>\n    `;
+        verdict.status === "passed" && (verdict.review?.pending ?? 0) > 0
+          ? `\n      <error type="review-required" message="Screenshots awaiting review"/>\n    `
+          : verdict.status === "passed"
+            ? ""
+            : verdict.status === "failed"
+              ? `\n      <failure message="${xml(verdict.summary)}">${xml(detail)}</failure>\n    `
+              : `\n      <error type="${verdict.status}" message="${xml(verdict.summary)}">${xml(detail)}</error>\n    `;
       return `${open}${body}</testcase>`;
     }),
     ...input.skipped.map(
@@ -215,7 +220,10 @@ export function ciJunit(input: {
         `    <testcase classname="${xml(input.app)}" name="${xml(skip.name)}" time="0"><skipped message="${xml(skip.reason)}"/></testcase>`,
     ),
   ];
-  const errors = input.totals.blocked + input.totals.cancelled;
+  const errors =
+    input.totals.blocked +
+    input.totals.cancelled +
+    input.verdicts.filter((v) => v.status === "passed" && (v.review?.pending ?? 0) > 0).length;
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<testsuites name="relay" tests="${input.totals.total}" failures="${input.totals.failed}" errors="${errors}" skipped="${input.totals.skipped}" time="${seconds(time)}">`,
@@ -351,7 +359,7 @@ export function ciMarkdown(input: {
   const lines = [
     `### Relay · ${md(input.app)}`,
     "",
-    `${totals.passed} passed · ${totals.failed} failed · ${totals.blocked} could not run${totals.skipped ? ` · ${totals.skipped} skipped` : ""}`,
+    `${totals.passed} passed · ${totals.failed} failed · ${totals.blocked} could not run${totals.skipped ? ` · ${totals.skipped} skipped` : ""}${totals.pendingReview ? ` · ${totals.pendingReview} captures awaiting review` : ""}`,
     "",
     "| | Test | Result |",
     "|---|---|---|",

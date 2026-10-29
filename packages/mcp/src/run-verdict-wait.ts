@@ -142,6 +142,7 @@ export async function waitForRunVerdict(
   }
   return {
     status: verdict.status,
+    review: snapshot.review,
     runId,
     verdict: agentVerdict(verdict),
     ...(workflow ? { workflow } : {}),
@@ -150,7 +151,9 @@ export async function waitForRunVerdict(
         ? `Still running; call relay_get_verdict {runId:"${runId}"} later.`
         : verdict.status === "failed"
           ? `Call relay_inspect_failure {runId:"${runId}"} for evidence and repair options.`
-          : "Done.",
+          : Number(object(snapshot.review).pending ?? 0) > 0
+            ? `Review the pending screenshots for run ${runId}.`
+            : "Done.",
   };
 }
 

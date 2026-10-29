@@ -1,14 +1,14 @@
 import type http from "node:http";
 import { envelopeEvent, eventsAfter, now, subscribe, type DeviceEvent } from "@relay/core";
 
-const SLOW_CLIENT_SKIP_LIMIT = 50;
+const MAX_PENDING_EVENTS = 50;
 
 type Client = {
   res: http.ServerResponse;
   heartbeat: NodeJS.Timeout;
   visible: (event: DeviceEvent) => boolean;
   paused: boolean;
-  skipped: number;
+  pending: DeviceEvent[];
 };
 
 export function createSseHub(headers: Record<string, string>): {
@@ -25,6 +25,7 @@ export function createSseHub(headers: Record<string, string>): {
   const drop = (client: Client) => {
     clearInterval(client.heartbeat);
     clients.delete(client);
+    if (!client.res.destroyed) client.res.destroy();
   };
 
   const write = (client: Client, event: DeviceEvent) => {
@@ -33,23 +34,21 @@ export function createSseHub(headers: Record<string, string>): {
       return;
     }
     if (client.paused) {
-      client.skipped += 1;
-      if (client.skipped > SLOW_CLIENT_SKIP_LIMIT) drop(client);
+      client.pending.push(event);
+      if (client.pending.length > MAX_PENDING_EVENTS) drop(client);
       return;
     }
     try {
-      const ok =
-        client.res.write(`id: ${event.sequence}\n`) &&
-        client.res.write(`event: ${event.payload.type}\n`) &&
-        client.res.write(`data: ${JSON.stringify(event)}\n\n`);
-      if (ok) {
-        client.skipped = 0;
-        return;
-      }
+      const ok = client.res.write(
+        `id: ${event.sequence}\nevent: ${event.payload.type}\ndata: ${JSON.stringify(event)}\n\n`,
+      );
+      if (ok) return;
       client.paused = true;
       client.res.once("drain", () => {
         client.paused = false;
-        client.skipped = 0;
+        while (!client.paused && !client.res.destroyed && client.pending.length) {
+          write(client, client.pending.shift()!);
+        }
       });
     } catch {
       drop(client);
@@ -80,7 +79,7 @@ export function createSseHub(headers: Record<string, string>): {
         res,
         visible,
         paused: false,
-        skipped: 0,
+        pending: [],
         heartbeat: setInterval(() => {
           if (client.paused || res.destroyed || res.writableEnded) return;
           try {
@@ -90,6 +89,7 @@ export function createSseHub(headers: Record<string, string>): {
           }
         }, 15_000),
       };
+      clients.add(client);
       for (const event of replay.events) {
         if (visible(event)) write(client, event);
       }
@@ -107,7 +107,6 @@ export function createSseHub(headers: Record<string, string>): {
         );
       }
 
-      clients.add(client);
       const cleanup = () => drop(client);
       req.on("close", cleanup);
       req.on("error", cleanup);

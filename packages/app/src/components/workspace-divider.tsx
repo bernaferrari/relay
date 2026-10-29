@@ -22,7 +22,9 @@ export function useWorkspaceDivider() {
     const element = grid.current;
     if (!element) return;
     setAvailableWidth(element.clientWidth);
-    const observer = new ResizeObserver(([entry]) => setAvailableWidth(entry.contentRect.width));
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setAvailableWidth(entry.contentRect.width);
+    });
     observer.observe(element);
     return () => observer.disconnect();
   }, []);

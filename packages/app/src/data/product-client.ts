@@ -17,7 +17,7 @@ export function coalesceGets(base: typeof fetch): typeof fetch {
     const method = (
       init?.method ?? (input instanceof Request ? input.method : "GET")
     ).toUpperCase();
-    if (method !== "GET" || input instanceof Request) return base(input, init);
+    if (method !== "GET" || input instanceof Request || init?.signal) return base(input, init);
     const key = String(input);
     let shared = inflight.get(key);
     if (!shared) {

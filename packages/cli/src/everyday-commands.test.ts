@@ -476,3 +476,28 @@ test("relay ci writes a GitHub job summary with each failure's expected and saw"
   assert.match(summary, /\*\*Saw:\*\* Total is \$25/u);
   assert.match(summary, /Skipped: Refunds \(needs recording\)/u);
 });
+
+test("CI preserves pending review counts and returns verification incomplete", () => {
+  const totals = ciTotals([{ ...verdictFor("x"), review: { pending: 2 } }], 0);
+  assert.equal(totals.pendingReview, 2);
+  assert.equal(ciExitCode(totals, false), ExitCode.verificationIncomplete);
+});
+
+test("CI carries reviews from the workflow into its report", async () => {
+  const invoke = fakeInvoke();
+  const io = capture();
+  const ci = await runCiCommand({
+    options: { app: "Shop", tests: ["test-search"] },
+    client: clientFrom(invoke),
+    invoke,
+    actorId: "human:test",
+    env: {},
+    output: new CliOutput("human", false, io.streams),
+    human: true,
+    signal: new AbortController().signal,
+    pollIntervalMs: 1,
+    runTest: async () => ({ ...settled("test-search"), review: { pending: 2, decided: 0 } }),
+  });
+  assert.equal(ci.report.totals.pendingReview, 2);
+  assert.equal(ci.exitCode, ExitCode.verificationIncomplete);
+});

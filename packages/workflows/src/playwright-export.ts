@@ -28,7 +28,10 @@ function selectorFor(action: GoalSessionAction): string | undefined {
   }
   const target = action.interaction.target;
   if (target.identifier) return `page.locator(${JSON.stringify(`[id="${target.identifier}"]`)})`;
-  if (target.label) return `page.getByRole("generic", { name: ${JSON.stringify(target.label)} })`;
+  if (target.label && action.interaction.kind === "fill")
+    return `page.getByLabel(${JSON.stringify(target.label)}, { exact: true })`;
+  if (target.label)
+    return `page.getByText(${JSON.stringify(target.label)}, { exact: true }).or(page.getByLabel(${JSON.stringify(target.label)}, { exact: true }))`;
   return undefined;
 }
 
@@ -38,6 +41,9 @@ function stepFor(action: GoalSessionAction): string | undefined {
     const selector = selectorFor(action);
     if (!selector) {
       return `    // TODO: fill "${action.label}" — Relay recorded no stable selector for this field.`;
+    }
+    if (interaction.mode === "append") {
+      return `    await ${selector}.focus();\n    await ${selector}.press("ControlOrMeta+End");\n    await ${selector}.pressSequentially(${JSON.stringify(interaction.value)});`;
     }
     return `    await ${selector}.fill(${JSON.stringify(interaction.value)});`;
   }

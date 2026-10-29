@@ -101,6 +101,9 @@ export function ciTotals(verdicts: readonly Verdict[], skipped: number): CiTotal
     blocked: count("blocked") + count("running"),
     cancelled: count("cancelled"),
     skipped,
+    ...(verdicts.some((v) => (v.review?.pending ?? 0) > 0)
+      ? { pendingReview: verdicts.reduce((sum, v) => sum + (v.review?.pending ?? 0), 0) }
+      : {}),
   };
 }
 
@@ -108,6 +111,7 @@ export function ciExitCode(totals: CiTotals, interrupted: boolean): ExitCode {
   if (interrupted) return ExitCode.cancellation;
   if (totals.failed > 0) return ExitCode.testFailed;
   if (totals.blocked > 0 || totals.cancelled > 0) return ExitCode.blocked;
+  if (totals.pendingReview) return ExitCode.verificationIncomplete;
   return totals.passed > 0 ? ExitCode.success : ExitCode.blocked;
 }
 
@@ -170,7 +174,13 @@ export async function runCiCommand(input: {
       const verdict = await readVerdict(input.client, settled, signal);
       verdicts.push(
         verdict && verdict.status !== "running"
-          ? { ...verdict, title: verdict.title || test.name }
+          ? {
+              ...verdict,
+              title: verdict.title || test.name,
+              review: {
+                pending: (settled.kind === "run-test" ? settled.review?.pending : undefined) ?? 0,
+              },
+            }
           : verdictWithoutRun(test, settled),
       );
     } catch (error) {

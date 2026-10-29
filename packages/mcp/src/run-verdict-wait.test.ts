@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentVerdict, withFailingStep } from "./run-verdict-wait.js";
+import { agentVerdict, withFailingStep, waitForRunVerdict } from "./run-verdict-wait.js";
 
 test("reserving an early failure does not shrink or duplicate the bounded step list", () => {
   const verdict = agentVerdict({
@@ -37,4 +37,18 @@ test("bounded MCP verdicts and failure inspection retain a failure after step 40
   })) as { verdict: { failingStep: { id: string; saw: string } } };
   assert.equal(inspected.verdict.failingStep.id, "45");
   assert.equal(inspected.verdict.failingStep.saw, "Error");
+});
+
+test("a passed execution retains pending screenshot reviews", async () => {
+  const result = await waitForRunVerdict(
+    { phase: "succeeded", execution: { runId: "run" }, review: { pending: 2 } },
+    {
+      invoker: { invoke: async () => ({ verdict: { status: "passed", steps: [] } }) } as never,
+      jobs: {} as never,
+      signal: new AbortController().signal,
+    },
+    1000,
+  );
+  assert.deepEqual(result.review, { pending: 2 });
+  assert.match(String(result.next), /Review the pending screenshots/);
 });
