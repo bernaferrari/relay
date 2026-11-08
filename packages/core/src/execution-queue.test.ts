@@ -154,8 +154,23 @@ function queueMap(tests: Record<string, AppMapScenarioTest>): AppMap {
     revision: 7,
     notes: {},
     groups: {},
-    screens: { home: screen("home") },
-    screenVariants: {},
+    screens: { home: { ...screen("home"), variantIds: ["home-pixel-en"] } },
+    screenVariants: {
+      "home-pixel-en": {
+        ...entity("home-pixel-en"),
+        screenId: "home",
+        targetProfile: {
+          id: "pixel-en",
+          targetId: "pixel",
+          source: "device",
+          platform: "android",
+          name: "Pixel English",
+          capabilities: ["screenshot", "tap"],
+          observedAt: at,
+        },
+        evidenceIds: [],
+      },
+    },
     connections: { "open-settings-panel": inspectConnection() },
     caseStacks: {},
     variables: {
@@ -259,7 +274,7 @@ test("live-output compile rejects a loading placeholder as Sequence after", () =
   );
 });
 
-test("Combine/plan duration quote lists the three queues separately when members declare them", async () => {
+test("Combine/plan duration quote lists the three queues separately when members declare them", async (context) => {
   const tests = {
     "settings-inspect": inspectTest(),
     "live-reply": liveOutputTest(),
@@ -284,6 +299,22 @@ test("Combine/plan duration quote lists the three queues separately when members
   map.combines = { queues: combine };
   const preflight = await preflightAppMapCombine(map, combine);
   assert.equal(preflight.ok, true, JSON.stringify(preflight.blockers));
+  await context.test("an unsaved profile cannot qualify any queue", async () => {
+    const missingProfile = structuredClone(map);
+    missingProfile.screenVariants = {};
+    missingProfile.screens.home!.variantIds = [];
+    const blocked = await preflightAppMapCombine(missingProfile, combine);
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.blockers.length, 3);
+    assert.ok(
+      blocked.blockers.every((issue) => issue.code === "mismatched-binding"),
+      JSON.stringify(blocked.blockers),
+    );
+    assert.deepEqual(
+      new Set(blocked.blockers.map((issue) => issue.testId)),
+      new Set(combine.testIds),
+    );
+  });
   assert.deepEqual(
     preflight.queueQuotes?.map((quote) => quote.queue),
     ["fast-ui", "live-output", "stateful-survival"],

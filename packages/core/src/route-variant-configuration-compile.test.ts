@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTest, TargetProfile } from "@relay/protocol";
 import {
+  compileBrowserEnvironment,
   ROUTE_VARIANT_CONFIGURATION_ASSUMPTION,
   captureReviewSlotId,
   routeVariantQuotesShareATestAcrossPlatforms,
@@ -43,6 +44,7 @@ function browserProfile(): TargetProfile {
     source: "browser",
     platform: "browser",
     name: "Grok.com",
+    browserCaseProfile: compileBrowserEnvironment({}),
     capabilities: ["screenshot", "tap"],
     observedAt: at,
   };
@@ -241,7 +243,7 @@ test("P0.4 compile JSON lists Android vs iOS vs web Home chrome as separate conf
   assert.match(ROUTE_VARIANT_CONFIGURATION_ASSUMPTION, /separate configurations/u);
 });
 
-test("P0.4 Plan JSON does not treat a shared caption as one Test covering three platforms", async () => {
+test("P0.4 Plan JSON does not treat a shared caption as one Test covering three platforms", async (context) => {
   const map = destEndMap({
     id: "grok-web",
     profile: browserProfile(),
@@ -292,6 +294,18 @@ test("P0.4 Plan JSON does not treat a shared caption as one Test covering three 
   map.combines = { "home-chrome": combine };
   const preflight = await preflightAppMapCombine(map, combine);
   assert.equal(preflight.ok, true, JSON.stringify(preflight.blockers));
+  await context.test("a browser profile without its frozen environment stays blocked", async () => {
+    const incompleteBrowser = structuredClone(map);
+    delete incompleteBrowser.screenVariants["grok-web-home"]!.targetProfile.browserCaseProfile;
+    const blocked = await preflightAppMapCombine(incompleteBrowser, combine);
+    assert.equal(blocked.ok, false);
+    assert.ok(
+      blocked.blockers.some(
+        (issue) =>
+          issue.code === "mismatched-binding" && issue.targetProfileId === browserProfile().id,
+      ),
+    );
+  });
   assert.deepEqual(
     preflight.routeVariantConfigurations?.map((quote) => [
       quote.platform,
