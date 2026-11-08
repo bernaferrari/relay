@@ -128,7 +128,12 @@ async function recordingFixture(
   process.env.RELAY_WORKSPACE_ROOT = directory;
   await writeFile(
     join(directory, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerPid: process.pid,
+      ownerPid: process.pid,
+      port: 50937,
+      runnerToken: "relay-recording-fixture-token",
+    }),
   );
   const intentPath = join(directory, "intent.json");
   const commands: LiveIosRunnerCommand[] = [];
@@ -138,7 +143,8 @@ async function recordingFixture(
   const matches = nodes.filter(
     (node) => node.identifier === control.identifier || node.label === control.label,
   );
-  const restorePost = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+  const restorePost = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
+    assert.equal(listener.runnerToken, "relay-recording-fixture-token");
     commands.push(command);
     assert.equal(command.appBundleId, appBundleId);
     if (command.command === "appWindowBounds") {

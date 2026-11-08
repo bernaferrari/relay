@@ -41,7 +41,12 @@ test("a recorded label wait reads the adopted iOS session without SDK find or in
   process.env.RELAY_WORKSPACE_ROOT = directory;
   await writeFile(
     join(directory, `${serial}.json`),
-    JSON.stringify({ runnerPid: process.pid, ownerPid: process.pid, port: 50937 }),
+    JSON.stringify({
+      runnerPid: process.pid,
+      ownerPid: process.pid,
+      port: 50937,
+      runnerToken: "relay-recording-fixture-token",
+    }),
   );
   const observation: AuthoringObservation = {
     id: "old-before",
@@ -93,6 +98,7 @@ test("a recorded label wait reads the adopted iOS session without SDK find or in
   const commands: LiveIosRunnerCommand[] = [];
   const restorePost = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
     assert.equal(listener.serial, serial);
+    assert.equal(listener.runnerToken, "relay-recording-fixture-token");
     assert.equal(command.appBundleId, appBundleId);
     const durable = JSON.parse(await readFile(intentPath, "utf8")) as AuthoringSession;
     assert.equal(durable.take!.rawEvents!.at(-1)!.kind, "interaction-intent");
