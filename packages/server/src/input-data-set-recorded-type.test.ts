@@ -159,11 +159,27 @@ test("recorded Type parameterization reaches frozen Plan rows and resumes their 
       testId: "prompt",
       targetProfileId: "native-profile",
     });
-    const typeSteps = (recipes: Record<string, { steps: readonly RecipeStep[] }>) =>
-      Object.values(recipes).flatMap((recipe) =>
-        recipe.steps.filter((step) => step.kind === "type"),
-      );
-    assert.deepEqual(typeSteps(literal.plan.recipes), recorded.steps);
+    // The graph also stores recovery alternatives. Count the primary execution
+    // path, retaining repeated module calls so duplicate mutations still fail.
+    const typeSteps = (plan: {
+      rootRecipeId: string;
+      recipes: Record<string, { steps: readonly RecipeStep[] }>;
+    }): RecipeStep[] => {
+      const visit = (id: string, ancestors: readonly string[]): RecipeStep[] => {
+        assert.ok(!ancestors.includes(id), `Unexpected recipe cycle at ${id}`);
+        const recipe = plan.recipes[id];
+        assert.ok(recipe, `Missing recipe ${id}`);
+        return recipe.steps.flatMap((step) =>
+          step.kind === "module"
+            ? visit(step.recipeId, [...ancestors, id])
+            : step.kind === "type"
+              ? [step]
+              : [],
+        );
+      };
+      return visit(plan.rootRecipeId, []);
+    };
+    assert.deepEqual(typeSteps(literal.plan), recorded.steps);
     const changed = await client.invoke("app-map.connection.update", {
       appMapId: fixture.appMapId,
       connectionId: "recorded-prompt",
@@ -187,7 +203,7 @@ test("recorded Type parameterization reaches frozen Plan rows and resumes their 
       0,
       JSON.stringify(compiled.preflight.findings),
     );
-    assert.deepEqual(typeSteps(compiled.plan.recipes), parameterized.steps);
+    assert.deepEqual(typeSteps(compiled.plan), parameterized.steps);
     assert.ok(
       compiled.plan.stepProvenance.some(
         (source) =>
