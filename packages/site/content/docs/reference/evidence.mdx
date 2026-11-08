@@ -47,3 +47,17 @@ If an expected capture is missing or blocked, keep that status visible and colle
 Inspect an evidence pack before sharing it. Captures may contain account details, user content, or app information. Model-assisted actions can also send required observations to your configured provider.
 
 See [screenshot review](/docs/workflows/review) to record human decisions and export the exact Run you inspected.
+
+## Check generated media
+
+Use **Download a generated file** followed by **Check a media file** to inspect the actual output. Give both steps the same file name. Relay stores a separate copy inside each Run, so recurring tests cannot reuse an older Run's download.
+
+Media checks decode the file and can verify its type, pixel dimensions, minimum duration, and minimum size. A source comparison can require changed decoded content, larger dimensions for an upscale, or longer duration for an extension. These checks require `ffmpeg` and `ffprobe` on the Relay server's PATH. Use a visual or semantic check as well when the requested edit has a specific meaning, such as changing an apple's color.
+
+For uploads, choose a saved test file or import one from your computer. Imports are project-scoped, content-verified, and limited to 25 MiB. The iOS upload path still requires a reviewed Files-app handoff.
+
+## Check voice output
+
+The `audio-record` execution step captures a selected, playing HTML audio or video element for 250–30,000 milliseconds. It requires audio consent, saves the recording in the Run, decodes it, and rejects missing or silent output. It proves sound in that media stream. It does not capture WebAudio, speech synthesis, native app audio, or physical speakers, and does not judge what was said.
+
+A Chromium browser profile can supply an `audioInputFixture` referencing an imported WAV file. The profile must grant microphone permission and run in the fixture's project. This feeds a known recording to the browser's microphone input for transcription tests without opening the host microphone. Other engines reject this configuration.

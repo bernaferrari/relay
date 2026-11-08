@@ -17,6 +17,7 @@ const facts = {
   durationMs: 2000,
   hasVideo: true,
   hasAudio: false,
+  isImage: false,
 };
 test("media assertions reject wrong dimensions, short output, unchanged source and invalid lineage", () => {
   assert.throws(
@@ -56,7 +57,7 @@ test("media assertions reject wrong dimensions, short output, unchanged source a
   assert.throws(
     () =>
       assertMediaFacts(
-        { kind: "media-check", file: "x", media: "image", sourceFile: "s", relation: "edited" },
+        { kind: "media-check", file: "x", media: "video", sourceFile: "s", relation: "edited" },
         facts,
         { ...facts, sha256: "different-container" },
       ),
@@ -106,6 +107,21 @@ test("inspectMedia decodes real files and rejects corrupt artifacts", async () =
     assert.equal(result.height, 72);
     assert.ok(result.durationMs && result.durationMs >= 200);
     assert.equal(result.sha256.length, 64);
+    assert.equal(result.isImage, false);
+    assert.throws(
+      () => assertMediaFacts({ kind: "media-check", file, media: "image" }, result),
+      /expected an image/,
+    );
+    const image = join(dir, "still.png");
+    await execute("ffmpeg", ["-nostdin", "-v", "error", "-i", file, "-frames:v", "1", image]);
+    const imageFacts = await inspectMedia(image);
+    assert.equal(imageFacts.isImage, true);
+    assertMediaFacts({ kind: "media-check", file: image, media: "image", width: 128 }, imageFacts);
+    assert.throws(
+      () => assertMediaFacts({ kind: "media-check", file: image, media: "video" }, imageFacts),
+      /expected a video/,
+    );
+
     const bad = join(dir, "bad.mp4");
     await writeFile(bad, "not media");
     await assert.rejects(inspectMedia(bad), /could not be decoded/);

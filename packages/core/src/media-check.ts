@@ -20,7 +20,11 @@ const probeSchema = z.object({
       height: z.number().optional(),
     }),
   ),
-  format: z.object({ duration: z.string().optional() }),
+  format: z.object({
+    format_name: z.string(),
+    duration: z.string().optional(),
+    tags: z.object({ major_brand: z.string().optional() }).passthrough().optional(),
+  }),
 });
 export type MediaFacts = {
   sha256: string;
@@ -29,6 +33,7 @@ export type MediaFacts = {
   width?: number;
   height?: number;
   durationMs?: number;
+  isImage: boolean;
   hasAudio: boolean;
   hasVideo: boolean;
 };
@@ -122,6 +127,26 @@ export async function inspectMedia(
     ...(Number.isFinite(duration) && duration > 0
       ? { durationMs: Math.round(duration * 1000) }
       : {}),
+    isImage:
+      probe.format.format_name
+        .split(",")
+        .some((name) =>
+          [
+            "image2",
+            "image2pipe",
+            "png_pipe",
+            "jpeg_pipe",
+            "webp_pipe",
+            "bmp_pipe",
+            "tiff_pipe",
+            "gif",
+            "apng",
+            "ico",
+            "jpegls_pipe",
+            "jpegxl_pipe",
+            "svg_pipe",
+          ].includes(name),
+        ) || ["avif", "avis"].includes(probe.format.tags?.major_brand?.trim() ?? ""),
     hasAudio: probe.streams.some((stream) => stream.codec_type === "audio"),
     hasVideo: Boolean(video),
   };
@@ -130,6 +155,10 @@ export async function inspectMedia(
 export function assertMediaFacts(step: MediaCheck, output: MediaFacts, source?: MediaFacts): void {
   if (step.media === "audio" ? !output.hasAudio : !output.hasVideo)
     throw new Error(`media-check: no ${step.media} stream`);
+  if (step.media === "image" && !output.isImage)
+    throw new Error("media-check: expected an image file, saw video");
+  if (step.media === "video" && output.isImage)
+    throw new Error("media-check: expected a video file, saw image");
   if (step.media !== "image" && !output.durationMs)
     throw new Error("media-check: missing playable duration");
   for (const key of ["width", "height"] as const)
