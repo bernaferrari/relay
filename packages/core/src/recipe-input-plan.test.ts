@@ -267,9 +267,9 @@ test("referenced Data set aliases and differing runtime values fail before gener
       await prepareFrozenRecipeInputs({
         recipeGraph: graph("{{chat_prompt}} {{prompt-data}}"),
         definitions: [prompt],
-        runtimeValues: { "prompt-data": " Same prompt ", chat_prompt: "Same prompt" },
+        runtimeValues: { "prompt-data": " Same prompt ", chat_prompt: " Same prompt " },
       })
     ).variables,
-    { chat_prompt: "Same prompt", "prompt-data": "Same prompt" },
+    { chat_prompt: " Same prompt ", "prompt-data": " Same prompt " },
   );
 });

@@ -877,17 +877,21 @@ test("cursor firewall blocks unproven warm mutations but permits one exact sourc
     updatedAt: at,
   };
   const blockedMutations: string[] = [];
-  await runRuntimeCheck(
-    unknown,
-    {
-      id: "unsafe",
-      title: "Unsafe",
-      warmSourceScreenId: "settings",
-      transitionDependencies: [sourceToChild],
-    },
-    async (recipeId) => {
-      blockedMutations.push(recipeId ?? "warm");
-    },
+  await assert.rejects(
+    () =>
+      runRuntimeCheck(
+        unknown,
+        {
+          id: "unsafe",
+          title: "Unsafe",
+          warmSourceScreenId: "settings",
+          transitionDependencies: [sourceToChild],
+        },
+        async (recipeId) => {
+          blockedMutations.push(recipeId ?? "warm");
+        },
+      ),
+    /navigation-proof-unavailable/,
   );
   assert.deepEqual(blockedMutations, []);
 
@@ -903,18 +907,22 @@ test("cursor firewall blocks unproven warm mutations but permits one exact sourc
     [canonicalRecovery.recipeId]: sourceProofRecipe(canonicalRecovery.recipeId, "settings"),
   };
   const externalMutations: string[] = [];
-  await runRuntimeCheck(
-    external,
-    {
-      id: "external-canonical",
-      title: "External canonical",
-      warmSourceScreenId: "settings",
-      transitionDependencies: [sourceToChild],
-      recovery: canonicalRecovery,
-    },
-    async (recipeId) => {
-      externalMutations.push(recipeId ?? "warm");
-    },
+  await assert.rejects(
+    () =>
+      runRuntimeCheck(
+        external,
+        {
+          id: "external-canonical",
+          title: "External canonical",
+          warmSourceScreenId: "settings",
+          transitionDependencies: [sourceToChild],
+          recovery: canonicalRecovery,
+        },
+        async (recipeId) => {
+          externalMutations.push(recipeId ?? "warm");
+        },
+      ),
+    /navigation-proof-unavailable/,
   );
   assert.deepEqual(
     externalMutations,
@@ -976,17 +984,21 @@ test("cursor firewall blocks unproven warm mutations but permits one exact sourc
     },
   );
   assert.equal(cleanup.runtime?.navigationCursor?.status, "unknown");
-  await runRuntimeCheck(
-    cleanup,
-    {
-      id: "after-cleanup",
-      title: "After cleanup",
-      warmSourceScreenId: "settings",
-      transitionDependencies: [sourceToChild],
-    },
-    async (recipeId) => {
-      cleanupExecutions.push(recipeId ?? "warm-after-cleanup");
-    },
+  await assert.rejects(
+    () =>
+      runRuntimeCheck(
+        cleanup,
+        {
+          id: "after-cleanup",
+          title: "After cleanup",
+          warmSourceScreenId: "settings",
+          transitionDependencies: [sourceToChild],
+        },
+        async (recipeId) => {
+          cleanupExecutions.push(recipeId ?? "warm-after-cleanup");
+        },
+      ),
+    /navigation-proof-unavailable/,
   );
   assert.deepEqual(cleanupExecutions, ["warm", "ensure-off"]);
   assert.ok(

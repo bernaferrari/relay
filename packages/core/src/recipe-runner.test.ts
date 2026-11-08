@@ -5511,19 +5511,23 @@ describe("runRecipeStep conversational evidence", () => {
       });
       const owner = job();
       const typed: unknown[] = [];
-      await runRecipeStep(
-        stubDevice({
-          type: async (input) => {
-            typed.push(input);
-            return {};
-          },
-        }),
-        {
-          kind: "module",
-          recipeId: flow.id,
-          bindings: { login_email: "qa.secondary@example.test" },
-        },
-        { log: () => {}, job: owner },
+      await runWithTargetContext(
+        { kind: "browser", platform: "browser", targetId: "flow-input-binding" },
+        () =>
+          runRecipeStepWithoutContext(
+            stubDevice({
+              type: async (input) => {
+                typed.push(input);
+                return {};
+              },
+            }),
+            {
+              kind: "module",
+              recipeId: flow.id,
+              bindings: { login_email: "qa.secondary@example.test" },
+            },
+            { log: () => {}, job: owner },
+          ),
       );
       assert.equal((typed[0] as { text?: string }).text, "qa.secondary@example.test");
       assert.equal(owner.resolvedInputs.login_email, undefined);
