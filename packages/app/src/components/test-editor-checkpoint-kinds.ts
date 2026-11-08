@@ -10,6 +10,7 @@ export const VALIDATION_KIND_GROUPS = [
     kinds: [
       { value: "upload", label: "Upload a file" },
       { value: "download", label: "Download a generated file" },
+      { value: "audio-record", label: "Record browser audio output" },
     ],
   },
   {

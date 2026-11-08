@@ -67,3 +67,26 @@ it("preserves an exact download target when only its output path changes", () =>
     step: { ...step, file: "generated/new.mp4" },
   });
 });
+
+it("round-trips browser audio capture and rejects unbounded durations", () => {
+  const step = {
+    kind: "audio-record",
+    file: "generated/output.webm",
+    durationMs: 3000,
+    target: { label: "Reply audio", identifier: "reply-player" },
+  } as const;
+  const draft = validationDraft({
+    id: "audio",
+    kind: "validation",
+    intent: "Capture reply",
+    binding: { kind: "recipe-step", status: "resolved", step },
+  });
+  if (draft?.kind !== "audio-record") throw new Error("Missing audio draft");
+  expect(validationBindingFromDraft(draft)).toEqual({
+    kind: "recipe-step",
+    status: "resolved",
+    step,
+  });
+  for (const durationMs of ["0", "249", "30001", "1.5", "nope"])
+    expect(isValidationDraftReady({ ...draft, durationMs })).toBe(false);
+});

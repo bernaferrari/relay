@@ -44,6 +44,13 @@ export type ValidationDraft =
       source?: Extract<RecipeStep, { kind: "download" }>;
     }
   | {
+      kind: "audio-record";
+      file: string;
+      label: string;
+      durationMs: string;
+      source?: Extract<RecipeStep, { kind: "audio-record" }>;
+    }
+  | {
       kind: "media-check";
       file: string;
       media: "image" | "video" | "audio";
@@ -119,6 +126,7 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
   if (recipe.kind === "evaluate-visual")
     return "A visual judge will score this screenshot. Disagreement stays Needs review. Do not auto-accept.";
   if (recipe.kind === "evaluate-semantic") return "A semantic judge will score the reply.";
+  if (recipe.kind === "audio-record") return `Records browser HTML media output to ${recipe.file}.`;
   if (recipe.kind === "download") return `Downloads the generated file to ${recipe.file}.`;
   if (recipe.kind === "media-check")
     return `Decodes and checks the ${recipe.media} file ${recipe.file}.`;
@@ -184,6 +192,16 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
       kind: "upload",
       file: step.binding.step.file,
       label: step.binding.step.target?.label ?? "",
+    };
+  }
+  if (step.binding.kind === "recipe-step" && step.binding.step.kind === "audio-record") {
+    const recipe = step.binding.step;
+    return {
+      kind: "audio-record",
+      file: recipe.file,
+      label: controlLabel(recipe.target) ?? "",
+      durationMs: String(recipe.durationMs),
+      source: structuredClone(recipe),
     };
   }
   if (step.binding.kind === "recipe-step" && step.binding.step.kind === "download") {
@@ -265,6 +283,13 @@ export function isValidationDraftReady(draft: ValidationDraft): boolean {
     return Boolean(draft.label.trim()) && validWaitSeconds(draft.seconds);
   if (draft.kind === "capture") return Boolean(draft.name.trim());
   if (draft.kind === "upload") return Boolean(draft.file.trim());
+  if (draft.kind === "audio-record")
+    return (
+      Boolean(draft.file.trim() && draft.label.trim()) &&
+      Number.isInteger(Number(draft.durationMs)) &&
+      Number(draft.durationMs) >= 250 &&
+      Number(draft.durationMs) <= 30000
+    );
   if (draft.kind === "download") return Boolean(draft.file.trim() && draft.label.trim());
   if (draft.kind === "media-check")
     return (
@@ -418,6 +443,26 @@ export function validationBindingFromDraft(
       },
     };
   }
+  if (draft.kind === "audio-record") {
+    if (!isValidationDraftReady(draft))
+      throw new Error(
+        "Choose a media control, output file, and a duration between 250 and 30000 milliseconds.",
+      );
+    return {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        ...draft.source,
+        kind: "audio-record",
+        file: draft.file.trim(),
+        durationMs: Number(draft.durationMs),
+        target:
+          draft.source && controlLabel(draft.source.target) === draft.label.trim()
+            ? draft.source.target
+            : { label: draft.label.trim() },
+      },
+    };
+  }
   if (draft.kind === "download") {
     if (!isValidationDraftReady(draft))
       throw new Error("Choose a download control and output file.");
@@ -534,6 +579,8 @@ export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationD
   if (kind === "wait-response") return { kind: "wait-response", label: "", maxMs: "" };
   if (kind === "extract") return { kind: "extract", as: "reply", label: "", role: "assistant" };
   if (kind === "identity-ignore") return { kind: "identity-ignore", name: "", region: "" };
+  if (kind === "audio-record")
+    return { kind: "audio-record", file: "generated/output.webm", label: "", durationMs: "3000" };
   if (kind === "download")
     return { kind: "download", file: "generated/output.mp4", label: "Download" };
   if (kind === "media-check")

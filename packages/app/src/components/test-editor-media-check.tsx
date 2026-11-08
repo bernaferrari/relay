@@ -2,7 +2,7 @@
 import { Input } from "@relay/ui-react/components/input";
 import type { ValidationDraft } from "./test-editor-assertion-model";
 
-type MediaDraft = Extract<ValidationDraft, { kind: "download" | "media-check" }>;
+type MediaDraft = Extract<ValidationDraft, { kind: "download" | "media-check" | "audio-record" }>;
 export function MediaCheckEditor({
   value,
   onChange,
@@ -13,7 +13,7 @@ export function MediaCheckEditor({
   return (
     <div className="grid gap-3">
       <label htmlFor="media-check-file">
-        {value.kind === "download" ? "Save as" : "Generated file"}
+        {value.kind !== "media-check" ? "Save as" : "Generated file"}
         <Input
           id="media-check-file"
           value={value.file}
@@ -21,20 +21,44 @@ export function MediaCheckEditor({
           onChange={(event) => onChange({ ...value, file: event.currentTarget.value })}
         />
       </label>
-      {value.kind === "download" ? (
+      {value.kind !== "media-check" ? (
         <>
           <label htmlFor="download-control">
-            Download control
+            {value.kind === "download" ? "Download control" : "HTML audio or video control"}
             <Input
               id="download-control"
               value={value.label}
               onChange={(event) => onChange({ ...value, label: event.currentTarget.value })}
             />
           </label>
-          <p className="text-muted-foreground">
-            Downloads the actual generated file through the browser. Add a media check next to
-            verify it.
-          </p>
+          {value.kind === "audio-record" ? (
+            <>
+              <label htmlFor="audio-record-duration">
+                Recording duration in milliseconds
+                <Input
+                  id="audio-record-duration"
+                  type="number"
+                  min={250}
+                  max={30000}
+                  step={1}
+                  value={value.durationMs}
+                  onChange={(event) =>
+                    onChange({ ...value, durationMs: event.currentTarget.value })
+                  }
+                />
+              </label>
+              <p className="text-muted-foreground">
+                Records a selected browser HTML audio or video element with explicit audio consent.
+                WebAudio, speech synthesis, native apps, and physical speaker output are
+                unsupported.
+              </p>
+            </>
+          ) : (
+            <p className="text-muted-foreground">
+              Downloads the actual generated file through the browser. Add a media check next to
+              verify it.
+            </p>
+          )}
         </>
       ) : (
         <>

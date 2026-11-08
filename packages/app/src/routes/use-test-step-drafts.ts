@@ -47,6 +47,12 @@ function validExpected(value: StepDraft["expected"]): boolean {
   if (value.kind === "capture") {
     return typeof value.name === "string" && typeof value.lookFor === "string";
   }
+  if (value.kind === "audio-record")
+    return (
+      typeof value.file === "string" &&
+      typeof value.label === "string" &&
+      typeof value.durationMs === "string"
+    );
   if (value.kind === "media-check")
     return (
       [

@@ -123,7 +123,9 @@ export function ValidationExpectationEditor({
         hasRememberableReply={hasRememberableReply}
         onSelect={(kind) => onChange(emptyValidationDraft(kind))}
       />
-      {value.kind === "media-check" || value.kind === "download" ? (
+      {value.kind === "media-check" ||
+      value.kind === "download" ||
+      value.kind === "audio-record" ? (
         <MediaCheckEditor value={value} onChange={onChange} />
       ) : null}
       {value.kind === "wait-for" ? <ConditionWaitEditor value={value} onChange={onChange} /> : null}
