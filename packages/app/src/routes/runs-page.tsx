@@ -138,10 +138,7 @@ export function RunsPage() {
   }
 
   return (
-    <LibraryPage
-      className="flex min-h-full flex-col"
-      onClickCapture={returnFocus.onClickCapture}
-    >
+    <LibraryPage className="flex min-h-full flex-col" onClickCapture={returnFocus.onClickCapture}>
       <PageHeader
         title="Runs"
         description="Everything that ran, newest first."

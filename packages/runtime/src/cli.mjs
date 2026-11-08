@@ -1,8 +1,7 @@
 import { isAbsolute } from "node:path";
 import { ensureRelayRuntime } from "./startup.mjs";
 
-const usage =
-  "Usage: relay-runtime start --workspace /absolute/path [--port 8787]";
+const usage = "Usage: relay-runtime start --workspace /absolute/path [--port 8787]";
 try {
   const argv = process.argv.slice(2);
   const command = argv.shift();

@@ -34,8 +34,8 @@ const faqs = [
     question: "Do I need a model key?",
     answer: (
       <>
-        Not for recorded steps, which replay deterministically. Describing a test in
-        plain English and model-assisted actions do need one.{" "}
+        Not for recorded steps, which replay deterministically. Describing a test in plain English
+        and model-assisted actions do need one.{" "}
         <Link href="/docs/getting-started/installation">The setup guide</Link> explains both paths.
       </>
     ),
@@ -77,7 +77,8 @@ const faqs = [
       <>
         Yes. Relay is MIT licensed, and you can run it from source today. Model providers may charge
         for model-assisted actions.{" "}
-        <Link href="/docs/getting-started/first-test">Record your first test</Link>, no key required.
+        <Link href="/docs/getting-started/first-test">Record your first test</Link>, no key
+        required.
       </>
     ),
   },
@@ -225,7 +226,8 @@ function StorySection() {
           <h2 className={`${h2} mt-4 max-w-[16ch]`}>Catch a bug. Prove the repair.</h2>
         </div>
         <p className={`${lede} max-w-sm md:text-right`}>
-          Record a checkout once. When Pay now slides over the total, Relay catches it, and the same saved test proves the fix.
+          Record a checkout once. When Pay now slides over the total, Relay catches it, and the same
+          saved test proves the fix.
         </p>
       </div>
       <RunReel />
@@ -503,7 +505,8 @@ function QuickstartSection() {
           <p className={`${eyebrow} text-ribbon-pink`}>Quickstart</p>
           <h2 className={`${h2} mt-4`}>Your first test, in four commands.</h2>
           <p className={`${lede} mt-6 max-w-md`}>
-            Start Relay, open it, and click through one flow in your own website. Relay saves each step, so you can run it again any time.
+            Start Relay, open it, and click through one flow in your own website. Relay saves each
+            step, so you can run it again any time.
           </p>
           <ul className="mt-8 flex flex-wrap gap-2">
             {["Node.js 24+", "pnpm", "Git", "A local browser"].map((req) => (

@@ -91,9 +91,7 @@ export function ProductShowcase() {
         </div>
         <figcaption className="mt-3 flex justify-between gap-4 text-xs text-muted-foreground">
           <span className="lg:hidden">{views.find((v) => v.id === activeId)!.caption}</span>
-          <span className="hidden lg:inline">
-            Actual Relay UI, testing a sample store.
-          </span>
+          <span className="hidden lg:inline">Actual Relay UI, testing a sample store.</span>
         </figcaption>
       </div>
     </figure>

@@ -467,9 +467,7 @@ describe("RunWorkbench", () => {
     const host = render(0, value, review);
     // Bulk selection stays out of screenshot browsing until requested.
     act(() =>
-      [...host.querySelectorAll("button")]
-        .find((item) => item.textContent === "Select")!
-        .click(),
+      [...host.querySelectorAll("button")].find((item) => item.textContent === "Select")!.click(),
     );
     await act(async () => {
       for (const input of host.querySelectorAll<HTMLElement>('[role="checkbox"]')) input.click();
