@@ -1,3 +1,4 @@
+import type { AppMapValidationRecipeStep } from "./test-validation-recipe-step.js";
 import type { AppMapTestStartingState } from "./routine-effects.js";
 import type {
   ExecutionQueue,
@@ -99,23 +100,7 @@ export type AppMapInstructionTestStep = TestStepBase & {
   cleanup?: AppMapTestStepCleanup;
 };
 
-export type AppMapValidationRecipeStep =
-  | Extract<
-      RecipeStep,
-      {
-        kind:
-          | "expect"
-          | "expect-set"
-          | "assert-content"
-          | "assert-layout"
-          | "wait-response"
-          | "extract"
-          | "identity-ignore"
-          | "upload"
-          | "screenshot";
-      }
-    >
-  | Extract<RecipeStep, { kind: "evaluate-semantic" | "evaluate-visual" }>;
+export type { AppMapValidationRecipeStep } from "./test-validation-recipe-step.js";
 
 export type AppMapValidationTestStep = TestStepBase & {
   kind: "validation";

@@ -97,3 +97,24 @@ test("mobile browser profiles require explicit touch capability", () => {
     true,
   );
 });
+
+test("audio input fixtures require Chromium and microphone permission", () => {
+  const profile = compileBrowserEnvironment({
+    audioInputFixture: "fixture:recording",
+    permissions: ["microphone"],
+  });
+  assert.equal(profile.audioInputFixture, "fixture:recording");
+  assert.throws(
+    () => compileBrowserEnvironment({ audioInputFixture: "fixture:recording" }),
+    /microphone/,
+  );
+  assert.throws(
+    () =>
+      compileBrowserEnvironment({
+        engine: "firefox",
+        audioInputFixture: "fixture:recording",
+        permissions: ["microphone"],
+      }),
+    /Chromium/,
+  );
+});

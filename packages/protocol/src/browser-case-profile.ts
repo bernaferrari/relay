@@ -98,6 +98,7 @@ const browserCaseProfileFields = {
   networkProfile: reference.optional(),
   /** Reference only. Credentials never belong in a case profile. */
   authenticationFixtureId: reference.optional(),
+  audioInputFixture: reference.optional(),
   featureFlagFixtureId: reference.optional(),
   environmentRevision: browserEnvironmentRevision,
 } as const;
@@ -113,6 +114,16 @@ export const browserCaseProfileSchema = z
         code: "custom",
         path: ["channel"],
         message: "browser channels are only valid for the chromium engine",
+      });
+    }
+    if (
+      profile.audioInputFixture &&
+      (profile.engine !== "chromium" || !profile.permissions.includes("microphone"))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["audioInputFixture"],
+        message: "audio input fixtures require Chromium and explicit microphone permission",
       });
     }
     if (profile.mobile && profile.engine === "firefox") {
@@ -171,6 +182,7 @@ export const browserEnvironmentInputSchema = z
     offline: z.boolean().optional(),
     networkProfile: reference.optional(),
     authenticationFixtureId: reference.optional(),
+    audioInputFixture: reference.optional(),
     featureFlagFixtureId: reference.optional(),
     environmentRevision: browserEnvironmentRevision.optional(),
   })
@@ -222,6 +234,9 @@ export function compileBrowserEnvironment(input: BrowserEnvironmentInput = {}): 
     ...(parsed.authenticationFixtureId === undefined
       ? {}
       : { authenticationFixtureId: parsed.authenticationFixtureId }),
+    ...(parsed.audioInputFixture === undefined
+      ? {}
+      : { audioInputFixture: parsed.audioInputFixture }),
     ...(parsed.featureFlagFixtureId === undefined
       ? {}
       : { featureFlagFixtureId: parsed.featureFlagFixtureId }),

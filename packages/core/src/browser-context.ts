@@ -1,3 +1,4 @@
+import { audioFixtureLaunchArguments } from "./browser-audio-fixture.js";
 import type {
   BrowserContext,
   BrowserContextOptions,
@@ -68,11 +69,11 @@ export function browserContextOptionsForProfile(
   };
 }
 
-function launchOptions(
+async function launchOptions(
   target: TargetDefinition,
   profile: BrowserCaseProfile,
   options: BrowserContextOpenOptions,
-): LaunchOptions {
+): Promise<LaunchOptions> {
   const browserOptions: LaunchOptions = {
     headless: options.headless ?? target.browser?.headless ?? false,
   };
@@ -85,6 +86,11 @@ function launchOptions(
   if (profile.engine === "chromium" && profile.channel === undefined) {
     browserOptions.executablePath = browserExecutable(target);
   }
+  if (profile.audioInputFixture)
+    browserOptions.args = await audioFixtureLaunchArguments(
+      profile.audioInputFixture,
+      options.projectId,
+    );
   return browserOptions;
 }
 
@@ -106,7 +112,7 @@ async function openPersistentAuthoringContext(
   const context = await browserType.launchPersistentContext(
     browserProfileDir(target.id, options.unsignedLaneId),
     {
-      ...launchOptions(target, profile, options),
+      ...(await launchOptions(target, profile, options)),
       ...contextOptionsValue,
     },
   );
@@ -123,7 +129,7 @@ async function openFreshProofContext(
   profile: BrowserCaseProfile,
   options: BrowserContextOpenOptions,
 ): Promise<BrowserContextHandle> {
-  const launch = launchOptions(target, profile, options);
+  const launch = await launchOptions(target, profile, options);
   if (profile.authenticationFixtureId && !options.projectId) {
     throw new Error(
       "Browser authentication fixture requires one explicit project scope before browser launch",

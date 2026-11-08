@@ -1,6 +1,6 @@
 import type { Page } from "playwright-core";
 import type { StepTarget } from "@relay/protocol";
-import { open, realpath, unlink } from "node:fs/promises";
+import { mkdir, open, realpath, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { RecipeStep } from "./recipes.js";
 import type { Device } from "./device.js";
@@ -21,7 +21,13 @@ export async function runDownloadStep(
   const session = browserSessionForDevice(device);
   if (!session) throw new Error("download requires a browser target");
   const root = await realpath(findWorkspaceRoot());
-  const file = resolve(root, step.file);
+  const relativeFile = relative(root, resolve(root, step.file));
+  if (isAbsolute(relativeFile) || relativeFile === ".." || relativeFile.startsWith("../"))
+    throw new Error("download: destination must be inside workspace");
+  const file = ctx.job
+    ? resolve(root, ".relay", "downloads", ctx.job.id, relativeFile)
+    : resolve(root, step.file);
+  if (ctx.job) await mkdir(dirname(file), { recursive: true });
   const parent = await realpath(dirname(file));
   const local = relative(root, parent);
   if (isAbsolute(local) || local === ".." || local.startsWith("../"))
@@ -48,7 +54,7 @@ export async function runDownloadStep(
   const artifact = {
     kind: "download",
     capturedAt: Date.now(),
-    data: { stepId: step.id, file: step.file },
+    data: { stepId: step.id, file: step.file, path: file },
   };
   ctx.job?.artifacts.push(artifact);
   ctx.artifacts?.push(artifact);

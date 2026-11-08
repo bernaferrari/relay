@@ -1,3 +1,4 @@
+import { resolveManagedFixtureFile } from "./managed-fixtures.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -41,8 +42,12 @@ async function workspaceFile(file: string): Promise<string> {
   return path;
 }
 
-export async function inspectMedia(file: string): Promise<MediaFacts> {
-  const path = await workspaceFile(file);
+export async function inspectMedia(file: string, projectId?: string): Promise<MediaFacts> {
+  if (file.startsWith("fixture:") && !projectId)
+    throw new Error("media-check: managed file requires project scope");
+  const path = file.startsWith("fixture:")
+    ? await resolveManagedFixtureFile(file, projectId!)
+    : await workspaceFile(file);
   const info = await stat(path);
   if (info.size === 0) throw new Error("media-check: empty file");
   const hash = createHash("sha256");
@@ -140,8 +145,29 @@ export function assertMediaFacts(step: MediaCheck, output: MediaFacts, source?: 
 }
 
 export async function runMediaCheckStep(step: MediaCheck, ctx: RecipeStepContext): Promise<void> {
-  const output = await inspectMedia(step.file);
-  const source = step.sourceFile ? await inspectMedia(step.sourceFile) : undefined;
+  const artifactPath = (file: string) => {
+    const downloaded = ctx.job?.artifacts
+      .slice()
+      .reverse()
+      .find(
+        (entry) =>
+          entry.kind === "download" &&
+          entry.data &&
+          typeof entry.data === "object" &&
+          "file" in entry.data &&
+          entry.data.file === file,
+      );
+    return downloaded?.data &&
+      typeof downloaded.data === "object" &&
+      "path" in downloaded.data &&
+      typeof downloaded.data.path === "string"
+      ? downloaded.data.path
+      : file;
+  };
+  const output = await inspectMedia(artifactPath(step.file), ctx.job?.projectId);
+  const source = step.sourceFile
+    ? await inspectMedia(artifactPath(step.sourceFile), ctx.job?.projectId)
+    : undefined;
   const artifact = {
     kind: "media-check",
     capturedAt: Date.now(),
