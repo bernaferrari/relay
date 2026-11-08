@@ -66,7 +66,7 @@ export function ProductShowcase() {
               <span className="mt-2 hidden text-sm font-semibold tracking-tight lg:block">
                 {title}
               </span>
-              <span className="mt-1 hidden text-[0.8rem] leading-relaxed text-muted-foreground lg:block">
+              <span className="mt-1 hidden text-step leading-relaxed text-muted-foreground lg:block">
                 {caption}
               </span>
             </button>
@@ -74,7 +74,7 @@ export function ProductShowcase() {
         })}
       </div>
       <div>
-        <div className="overflow-hidden rounded-2xl border bg-[#0d0f14] p-1.5 shadow-[0_30px_70px_-35px_color-mix(in_oklch,var(--ribbon-blue)_45%,transparent)]">
+        <div className="overflow-hidden rounded-2xl border bg-showcase p-1.5 shadow-showcase">
           {views.map((view, index) => (
             <Image
               key={view.id}

@@ -11,16 +11,15 @@ import { GitHubMark } from "@/components/github-mark";
 import { CopyExampleCommand } from "@/components/site-controls";
 import { repositoryUrl } from "@/lib/site";
 
-const container = "mx-auto w-full max-w-[1200px] px-5 sm:px-8";
-const eyebrow = "font-mono text-[0.7rem] font-medium tracking-[0.14em] uppercase";
-const h2 =
-  "font-display text-[2.35rem] leading-[1.04] font-semibold tracking-[-0.028em] sm:text-[3.3rem]";
-const lede = "text-[1.05rem] leading-relaxed text-muted-foreground";
+const container = "mx-auto w-full max-w-page px-5 sm:px-8";
+const eyebrow = "font-mono text-eyebrow font-medium uppercase";
+const h2 = "font-display text-headline font-semibold sm:text-headline-wide";
+const lede = "text-lede leading-relaxed text-muted-foreground";
 const textLink =
   "group inline-flex min-h-11 items-center gap-1.5 text-sm font-medium underline-offset-4 hover:underline";
 const inkButton =
-  "h-12 rounded-full bg-ink px-6 text-[0.95rem] text-ink-foreground hover:bg-ink/85 dark:bg-ink-foreground dark:text-ink dark:hover:bg-ink-foreground/90";
-const quietButton = "h-12 rounded-full bg-card px-5 text-[0.95rem]";
+  "h-12 rounded-full bg-ink px-6 text-quiet text-ink-foreground hover:bg-ink/85 dark:bg-ink-foreground dark:text-ink dark:hover:bg-ink-foreground/90";
+const quietButton = "h-12 rounded-full bg-card px-5 text-quiet";
 
 const startCommands = [
   "git clone https://github.com/bernaferrari/relay.git",
@@ -106,10 +105,7 @@ export default function HomePage() {
 function Hero() {
   return (
     <section className="relative">
-      <div
-        aria-hidden
-        className="paper-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_70%_60%_at_70%_35%,black,transparent)]"
-      />
+      <div aria-hidden className="paper-grid pointer-events-none absolute inset-0 fade-hero" />
       <div
         className={`${container} relative grid items-center gap-6 pt-14 pb-10 sm:pt-20 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)] lg:gap-4 lg:pt-24 lg:pb-16`}
       >
@@ -118,19 +114,19 @@ function Hero() {
             href={repositoryUrl}
             className="inline-flex items-center gap-2 rounded-full border bg-card/80 py-1 ps-1 pe-3 text-xs text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
           >
-            <span className="rounded-full bg-ink px-2 py-0.5 font-mono text-[0.65rem] text-ink-foreground dark:bg-ink-foreground dark:text-ink">
+            <span className="rounded-full bg-ink px-2 py-0.5 font-mono text-tiny text-ink-foreground dark:bg-ink-foreground dark:text-ink">
               MIT
             </span>
             Open source · runs on your machine
             <ArrowUpRight className="size-3" />
           </a>
-          <h1 className="mt-7 font-display text-[clamp(2.7rem,10vw,4rem)] leading-[0.98] font-semibold tracking-[-0.034em] lg:text-[clamp(4rem,5.3vw,4.85rem)]">
+          <h1 className="mt-7 font-display text-hero font-semibold lg:text-hero-wide">
             <span className="block sm:whitespace-nowrap">Click through it once.</span>
             <span className="ribbon-text block pe-1 pb-1 sm:whitespace-nowrap">
               Relay keeps checking.
             </span>
           </h1>
-          <p className={`${lede} mt-7 max-w-[34rem] sm:text-[1.15rem]`}>
+          <p className={`${lede} mt-7 max-w-136 sm:text-lede-wide`}>
             Record a test just by using your website or mobile app. Relay replays it on your own
             browser, Android, or iOS device, and keeps a screenshot of every step. Works the same
             whether you press record or your coding agent does.
@@ -149,7 +145,7 @@ function Hero() {
               <GitHubMark /> View source
             </a>
           </div>
-          <p className="mt-5 flex items-center gap-2 text-[0.8rem] text-muted-foreground">
+          <p className="mt-5 flex items-center gap-2 text-step text-muted-foreground">
             <Check className="size-3.5 text-pass" strokeWidth={3} />
             Runs on your computer. No model key, no account.
           </p>
@@ -163,10 +159,10 @@ function Hero() {
 /** The icon is the brand: two ribbons, one loop. Blue is you; orange is your agent. */
 function HeroLoop() {
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[22rem] sm:max-w-[28rem] lg:max-w-none">
+    <div className="relative mx-auto aspect-square w-full max-w-88 sm:max-w-112 lg:max-w-none">
       <div
         aria-hidden
-        className="absolute inset-[14%] rounded-full opacity-60 blur-[70px] [background:conic-gradient(from_200deg,var(--ribbon-blue),var(--ribbon-violet),var(--ribbon-pink),var(--ribbon-orange),var(--ribbon-blue))] dark:opacity-45"
+        className="absolute loop-halo-inset rounded-full opacity-60 blur-loop ribbon-glow dark:opacity-45"
       />
       <Image
         src="/relay-loop.webp"
@@ -184,7 +180,7 @@ function HeroLoop() {
         detail="record a flow"
       />
       <LoopTag
-        className="right-[-2%] bottom-[16%] sm:right-[0%]"
+        className="right-[-2%] loop-tag-baseline sm:right-[0%]"
         tone="orange"
         label="Your agent"
         detail="reruns it"
@@ -206,10 +202,10 @@ function LoopTag({
 }) {
   return (
     <span
-      className={`absolute flex items-center gap-2 rounded-full border bg-card/90 py-1.5 ps-1.5 pe-3.5 text-xs shadow-[0_8px_30px_-12px_rgb(0_0_0/0.25)] backdrop-blur-md ${className}`}
+      className={`absolute flex items-center gap-2 rounded-full border bg-card/90 py-1.5 ps-1.5 pe-3.5 text-xs shadow-float backdrop-blur-md ${className}`}
     >
       <span
-        className={`size-5 rounded-full ${tone === "blue" ? "bg-ribbon-blue" : "bg-ribbon-orange"} shadow-[inset_0_-2px_4px_rgb(0_0_0/0.2),inset_0_2px_3px_rgb(255_255_255/0.5)]`}
+        className={`size-5 rounded-full ${tone === "blue" ? "bg-ribbon-blue" : "bg-ribbon-orange"} shadow-gloss`}
       />
       <span className="font-semibold">{label}</span>
       <span className="text-muted-foreground">{detail}</span>
@@ -281,7 +277,7 @@ function LoopSection() {
         <div className="relative mt-16">
           <div
             aria-hidden
-            className="ribbon-line absolute top-[1.125rem] right-0 left-0 hidden h-px opacity-50 md:block"
+            className="ribbon-line absolute top-4.5 right-0 left-0 hidden h-px opacity-50 md:block"
           />
           <div className="grid gap-14 md:grid-cols-3 md:gap-8">
             {loop.map((item) => (
@@ -289,16 +285,14 @@ function LoopSection() {
                 <span className="relative grid size-9 place-items-center rounded-full border bg-background font-mono text-xs font-medium shadow-sm">
                   {item.n}
                 </span>
-                <h3 className="mt-6 font-display text-[1.75rem] font-semibold tracking-[-0.03em]">
+                <h3 className="mt-6 font-display text-feature font-semibold tracking-display">
                   {item.title}
                 </h3>
                 <div className="mt-5 h-52 overflow-hidden rounded-2xl border bg-background p-4">
                   {item.visual}
                 </div>
                 <p className="mt-6 font-medium tracking-tight">{item.line}</p>
-                <p className="mt-2 text-[0.92rem] leading-relaxed text-muted-foreground">
-                  {item.body}
-                </p>
+                <p className="mt-2 text-quiet leading-relaxed text-muted-foreground">{item.body}</p>
                 <Link href={item.href} className={`${textLink} mt-2`}>
                   {item.cta}
                   <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
@@ -321,13 +315,13 @@ function RecordVisual() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-fail/10 px-2 py-0.5 font-mono text-[0.65rem] text-fail">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-fail/10 px-2 py-0.5 font-mono text-tiny text-fail">
           <span className="size-1.5 animate-pulse rounded-full bg-current motion-reduce:animate-none" />
           REC 00:14
         </span>
-        <span className="font-mono text-[0.65rem] text-muted-foreground">3 steps · 1 check</span>
+        <span className="font-mono text-tiny text-muted-foreground">3 steps · 1 check</span>
       </div>
-      <ol className="mt-3.5 space-y-1.5 text-[0.78rem]">
+      <ol className="mt-3.5 space-y-1.5 text-step">
         {rows.map((row) => (
           <li key={row} className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5">
             <span className="size-1.5 rounded-full bg-ribbon-blue" />
@@ -361,7 +355,7 @@ function ReplayVisual() {
               <Check className="size-3" strokeWidth={3} />
             </span>
           </div>
-          <span className="font-mono text-[0.62rem] text-muted-foreground">{d.name}</span>
+          <span className="font-mono text-tiny text-muted-foreground">{d.name}</span>
         </div>
       ))}
     </div>
@@ -392,7 +386,7 @@ function ReviewVisual() {
               <div className="h-1 w-5/6 rounded-full bg-foreground/8" />
             </div>
           </div>
-          <span className={`font-mono text-[0.62rem] ${f.tone}`}>{f.state}</span>
+          <span className={`font-mono text-tiny ${f.tone}`}>{f.state}</span>
         </div>
       ))}
     </div>
@@ -407,7 +401,7 @@ function AgentsSection() {
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute top-1/2 right-[-10%] h-[36rem] w-[48rem] -translate-y-1/2 rounded-full opacity-30 blur-[120px] [background:radial-gradient(closest-side,var(--ribbon-orange),var(--ribbon-pink)_45%,transparent)]"
+        className="pointer-events-none absolute top-1/2 right-[-10%] h-144 w-192 -translate-y-1/2 rounded-full opacity-30 blur-ambient ember-glow"
       />
       <div
         className={`${container} relative grid gap-14 py-24 sm:py-32 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center`}
@@ -415,12 +409,12 @@ function AgentsSection() {
         <div>
           <p className={`${eyebrow} text-ribbon-orange`}>For coding agents</p>
           <h2 className={`${h2} mt-4`}>Your agent gets the same buttons.</h2>
-          <p className="mt-6 max-w-lg text-[1.05rem] leading-relaxed text-ink-foreground/65">
+          <p className="mt-6 max-w-lg text-lede leading-relaxed text-ink-foreground/65">
             The app, the CLI, and MCP all drive the same saved tests and the same runs. An agent can
             rerun a flow, read what was expected and what it saw, repair the cause, and run it
             again. Then you review the exact run it made.
           </p>
-          <ul className="mt-9 space-y-4 text-[0.92rem]">
+          <ul className="mt-9 space-y-4 text-quiet">
             {[
               [
                 "Exit codes that mean something",
@@ -484,10 +478,8 @@ function LocalSection() {
             <span
               className={`block h-1 w-8 rounded-full ${["bg-ribbon-blue", "bg-ribbon-pink", "bg-ribbon-orange"][i]}`}
             />
-            <h3 className="mt-6 font-display text-2xl font-semibold tracking-[-0.03em]">
-              {fact.k}
-            </h3>
-            <p className="mt-3 text-[0.92rem] leading-relaxed text-muted-foreground">{fact.v}</p>
+            <h3 className="mt-6 font-display text-2xl font-semibold tracking-display">{fact.k}</h3>
+            <p className="mt-3 text-quiet leading-relaxed text-muted-foreground">{fact.v}</p>
           </div>
         ))}
       </div>
@@ -512,7 +504,7 @@ function QuickstartSection() {
             {["Node.js 24+", "pnpm", "Git", "A local browser"].map((req) => (
               <li
                 key={req}
-                className="rounded-full border bg-background px-3 py-1 font-mono text-[0.72rem] text-muted-foreground"
+                className="rounded-full border bg-background px-3 py-1 font-mono text-data text-muted-foreground"
               >
                 {req}
               </li>
@@ -523,26 +515,26 @@ function QuickstartSection() {
             <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
-        <div className="overflow-hidden rounded-2xl border bg-ink text-ink-foreground shadow-[0_30px_70px_-35px_color-mix(in_oklch,var(--ribbon-pink)_45%,transparent)]">
+        <div className="overflow-hidden rounded-2xl border bg-ink text-ink-foreground shadow-terminal">
           <div className="flex items-center justify-between border-b border-white/10 py-1.5 ps-4 pe-1">
             <span className="flex gap-1.5">
               <i className="size-2.5 rounded-full bg-white/15" />
               <i className="size-2.5 rounded-full bg-white/15" />
               <i className="size-2.5 rounded-full bg-white/15" />
             </span>
-            <span className="font-mono text-[0.68rem] text-white/40">~/relay</span>
+            <span className="font-mono text-eyebrow text-white/40">~/relay</span>
             <span className="[&_button]:text-white/60 [&_button:hover]:bg-white/10 [&_button:hover]:text-white">
               <CopyExampleCommand text={startCommands.join("\n")} />
             </span>
           </div>
-          <div className="overflow-x-auto p-5 font-mono text-[0.78rem] leading-7 sm:p-6">
+          <div className="overflow-x-auto p-5 font-mono text-step leading-7 sm:p-6">
             {startCommands.map((cmd) => (
               <p key={cmd} className="whitespace-nowrap">
                 <span className="mr-2 select-none text-ribbon-orange">$</span>
                 {cmd}
               </p>
             ))}
-            <div className="mt-3 border-t border-white/10 pt-3 text-[0.74rem] leading-6">
+            <div className="mt-3 border-t border-white/10 pt-3 text-xs leading-6">
               <p className="ps-4 -indent-4 text-white/50">
                 → Relay is open at http://localhost:3000
               </p>
@@ -578,13 +570,13 @@ function FaqSection() {
       <div className="border-t">
         {faqs.map(({ question, answer }) => (
           <details key={question} className="group border-b">
-            <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-6 py-5 text-[1.05rem] font-medium tracking-tight [&::-webkit-details-marker]:hidden">
+            <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-6 py-5 text-lede font-medium tracking-tight [&::-webkit-details-marker]:hidden">
               {question}
               <span className="grid size-8 shrink-0 place-items-center rounded-full border text-muted-foreground transition-transform duration-200 group-open:rotate-45">
                 <Plus className="size-4" />
               </span>
             </summary>
-            <p className="max-w-[62ch] pb-6 text-[0.95rem] leading-relaxed text-muted-foreground [&_a]:font-medium [&_a]:text-foreground [&_a]:underline [&_a]:underline-offset-4">
+            <p className="max-w-[62ch] pb-6 text-quiet leading-relaxed text-muted-foreground [&_a]:font-medium [&_a]:text-foreground [&_a]:underline [&_a]:underline-offset-4">
               {answer}
             </p>
           </details>
@@ -597,11 +589,8 @@ function FaqSection() {
 function ClosingSection() {
   return (
     <section className={`${container} pb-24 sm:pb-32`}>
-      <div className="relative overflow-hidden rounded-[2rem] border bg-card px-7 py-14 sm:px-14 sm:py-20">
-        <div
-          aria-hidden
-          className="paper-grid pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_left,black,transparent_70%)]"
-        />
+      <div className="relative overflow-hidden rounded-banner border bg-card px-7 py-14 sm:px-14 sm:py-20">
+        <div aria-hidden className="paper-grid pointer-events-none absolute inset-0 fade-left" />
         {/* The loop gets its own column: it never sits behind the words. */}
         <div className="relative grid items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
           <div className="relative max-w-xl">
@@ -674,7 +663,7 @@ function SiteFooter() {
           <Link href="/" aria-label="Relay home" className="inline-flex rounded-md">
             <RelayBrand />
           </Link>
-          <p className="mt-3 max-w-[16rem] text-sm leading-relaxed text-muted-foreground">
+          <p className="mt-3 max-w-64 text-sm leading-relaxed text-muted-foreground">
             Local QA, for people and agents.
           </p>
         </div>

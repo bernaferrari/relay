@@ -173,6 +173,9 @@ summary:focus-visible {
   --tracking-display: -0.03em;
 
   --container-page: 1200px;
+  --radius-banner: 2rem;
+  --blur-loop: 70px;
+  --blur-ambient: 120px;
   --ease-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   --shadow-reel:
@@ -211,6 +214,13 @@ summary:focus-visible {
     var(--ribbon-pink),
     var(--ribbon-orange)
   );
+}
+/* Artwork proportions stay independent of the surrounding text layout. */
+@utility loop-halo-inset {
+  inset: 14%;
+}
+@utility loop-tag-baseline {
+  bottom: 16%;
 }
 @utility ribbon-glow {
   background: conic-gradient(
