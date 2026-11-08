@@ -359,20 +359,21 @@ export async function launchIosAppViaDevicectl(
 
 export async function resolveGoIosBinary(): Promise<string> {
   const fromEnv = process.env.RELAY_GO_IOS_BIN?.trim() || process.env.GO_IOS_BIN?.trim();
-  const candidates = [
-    ...(fromEnv ? [fromEnv] : []),
-    join(findWorkspaceRoot(), "vendor", "go-ios", "bin", "ios"),
-  ];
-  for (const candidate of candidates) {
-    const path = isAbsolute(candidate) ? candidate : join(process.cwd(), candidate);
-    try {
-      await access(path);
-      return path;
-    } catch {
-      // next
-    }
+  // An explicit executable selects the backend. Falling back after a typo
+  // can start a real device tunnel even when an isolated fixture disabled it.
+  const candidate = fromEnv ?? join(findWorkspaceRoot(), "vendor", "go-ios", "bin", "ios");
+  const path = isAbsolute(candidate) ? candidate : join(process.cwd(), candidate);
+  try {
+    await access(path);
+    return path;
+  } catch (cause) {
+    throw new Error(
+      fromEnv
+        ? "Configured go-ios binary not found (check RELAY_GO_IOS_BIN or GO_IOS_BIN)"
+        : "go-ios binary not found (set RELAY_GO_IOS_BIN)",
+      { cause },
+    );
   }
-  throw new Error("go-ios binary not found (set RELAY_GO_IOS_BIN)");
 }
 
 async function runGoIos(

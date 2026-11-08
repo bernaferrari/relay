@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -16,6 +16,7 @@ import {
   resetGoIosTunnelChildForTests,
   resetGoIosTunnelInfoPortForTests,
   resolveIosLaunchBundleId,
+  resolveGoIosBinary,
   type CommandResult,
   type CommandRunner,
   verifyIosScreenChanged,
@@ -770,4 +771,47 @@ test("stale tunnel ls without a live info port respawns the userspace tunnel", a
     });
     assert.equal(spawned, 1);
   });
+});
+
+test("an invalid explicit go-ios binary cannot fall back to the vendored device backend", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-go-ios-selection-"));
+  const cwd = process.cwd();
+  const previousRelay = process.env.RELAY_GO_IOS_BIN;
+  const previousGo = process.env.GO_IOS_BIN;
+  const vendor = join(root, "vendor", "go-ios", "bin", "ios");
+  await mkdir(join(root, "vendor", "go-ios", "bin"), { recursive: true });
+  await writeFile(vendor, "fixture-only executable placeholder");
+  await writeFile(join(root, "pnpm-workspace.yaml"), "packages: []\n");
+  process.chdir(root);
+  try {
+    process.env.RELAY_GO_IOS_BIN = join(root, "missing-primary");
+    process.env.GO_IOS_BIN = vendor;
+    await assert.rejects(resolveGoIosBinary(), /Configured go-ios binary not found/);
+    let spawned = false;
+    await assert.rejects(
+      ensureGoIosTunnel({
+        spawnTunnel: () => {
+          spawned = true;
+          throw new Error("A missing configured executable must never spawn a tunnel");
+        },
+      }),
+      /Configured go-ios binary not found/,
+    );
+    assert.equal(spawned, false);
+    delete process.env.RELAY_GO_IOS_BIN;
+    process.env.GO_IOS_BIN = join(root, "missing-secondary");
+    await assert.rejects(resolveGoIosBinary(), /Configured go-ios binary not found/);
+    process.env.RELAY_GO_IOS_BIN = vendor;
+    assert.equal(await realpath(await resolveGoIosBinary()), await realpath(vendor));
+    delete process.env.RELAY_GO_IOS_BIN;
+    delete process.env.GO_IOS_BIN;
+    assert.equal(await realpath(await resolveGoIosBinary()), await realpath(vendor));
+  } finally {
+    process.chdir(cwd);
+    if (previousRelay === undefined) delete process.env.RELAY_GO_IOS_BIN;
+    else process.env.RELAY_GO_IOS_BIN = previousRelay;
+    if (previousGo === undefined) delete process.env.GO_IOS_BIN;
+    else process.env.GO_IOS_BIN = previousGo;
+    await rm(root, { recursive: true, force: true });
+  }
 });
