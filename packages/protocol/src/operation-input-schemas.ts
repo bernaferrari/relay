@@ -1,3 +1,4 @@
+import { managedFixtureInputSchemas } from "./managed-fixture.js";
 import { e2eOperationInputSchemas } from "./e2e-project.js";
 import * as z from "zod/v4";
 import { browserAuthenticationFixtureOperationInputSchemas } from "./browser-authentication-fixture.js";
@@ -46,6 +47,7 @@ export type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 export const operationInputSchemas = {
   ...reviewedDocumentOriginOperationSchemas,
   ...workspaceOperationSchemas,
+  ...managedFixtureInputSchemas,
   ...e2eOperationInputSchemas,
   ...laneOperationInputSchemas,
   ...appMapAuthoringOperationSchemas,

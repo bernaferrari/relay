@@ -69,7 +69,7 @@ export const targetDeviceControlOutputSchemas = {
       ]),
       reply: z
         .object({
-          status: z.enum(["idle", "timeout", "not-waited"]),
+          status: z.enum(["idle", "timeout", "not-waited", "error"]),
           waitedMs: z.number().nonnegative(),
           samples: z.number().int().nonnegative(),
           newText: z.array(z.string()),

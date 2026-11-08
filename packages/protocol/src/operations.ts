@@ -1,3 +1,4 @@
+import { managedFixtureOperationDefinitions } from "./managed-fixture-operation-definitions.js";
 import { e2eOperationDefinitions } from "./e2e-operation-definitions.js";
 import { replayRunInputParser, runIdInputParser } from "./run-replay-operation-parser.js";
 import { createAuthoringSessionParser } from "./authoring-session-operation-parser.js";
@@ -1034,6 +1035,7 @@ export const operationDefinitions = [
     { category: "authoring", input: authoringSessionRefParser, output: okParser },
   ),
   ...scheduleOperationDefinitions,
+  ...managedFixtureOperationDefinitions,
   ...e2eOperationDefinitions,
   ...discoveryOperationDefinitions,
   query("job.list", "List jobs", "/jobs", { category: "execution", output: jobsParser }),

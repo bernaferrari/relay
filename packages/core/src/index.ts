@@ -257,3 +257,5 @@ export {
   type TestYaml,
   type TestYamlStep,
 } from "./test-yaml.js";
+
+export * from "./managed-fixtures.js";

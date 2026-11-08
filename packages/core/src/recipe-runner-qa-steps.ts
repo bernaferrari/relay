@@ -1,3 +1,4 @@
+import { resolveManagedFixtureFile } from "./managed-fixtures.js";
 import { readFile, copyFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -237,7 +238,9 @@ export async function runUploadStep(
   step: Extract<RecipeStep, { kind: "upload" }>,
   ctx: RecipeStepContext,
 ): Promise<void> {
-  const path = resolveUploadFile(step.file);
+  const path = step.file.startsWith("fixture:")
+    ? await resolveManagedFixtureFile(step.file, ctx.job?.projectId ?? "")
+    : resolveUploadFile(step.file);
   await readFile(path);
   const context = currentTargetContext();
   if (context.kind === "browser") {

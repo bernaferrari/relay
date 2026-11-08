@@ -1,3 +1,4 @@
+import { isAssistantSlot, turnObservation } from "./recipe-response-boundary.js";
 import { isGenerationBusyControl } from "./generation-controls.js";
 import type { SnapshotNode } from "./device.js";
 import type { NamedControlResolution } from "./device-target-resolution.js";
@@ -27,7 +28,7 @@ export type PromptSent =
   | { method: "none" };
 
 export type PromptReply = {
-  status: "idle" | "timeout" | "not-waited";
+  status: "idle" | "timeout" | "not-waited" | "error";
   waitedMs: number;
   samples: number;
   /** New visible text occurrences after the prompt, in screen order. */
@@ -215,6 +216,17 @@ async function waitForReply(
     const nodes = await deps.nodes();
     samples += 1;
     newText = replyText(nodes, before, input.text);
+    const failure = nodes.some((node) => {
+      const text = visibleText(node);
+      return (
+        text &&
+        newText.includes(text) &&
+        !isAssistantSlot(node) &&
+        (turnObservation(text) !== "completed" ||
+          /^(?:connection (?:failed|lost)|network error|something went wrong)\b/iu.test(text))
+      );
+    });
+    if (failure) return { status: "error", waitedMs: clock() - began, samples, newText };
     const next = newText.join("\n");
     const at = clock();
     if (next !== signature || isBusy(nodes)) {

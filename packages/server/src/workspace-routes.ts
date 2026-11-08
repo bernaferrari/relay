@@ -1,3 +1,4 @@
+import { handleManagedFixtureRoute } from "./managed-fixture-routes.js";
 import type http from "node:http";
 import {
   authoringSessions,
@@ -42,6 +43,7 @@ function sessionHistory(projectId: string): ReturnType<typeof authoringSessions.
  * Compiled execution plans intentionally have no public storage route. */
 
 export async function handleWorkspaceRoute(input: WorkspaceRouteInput): Promise<boolean> {
+  if (await handleManagedFixtureRoute(input)) return true;
   const { method, pathname, url, request, response, scope } = input;
   if (method === "GET" && pathname === "/lanes") {
     json(response, 200, { lanes: await listLanes(scope.projectId) });

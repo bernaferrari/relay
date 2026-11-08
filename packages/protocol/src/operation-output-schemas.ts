@@ -1,3 +1,4 @@
+import { managedFixtureOutputSchemas } from "./managed-fixture.js";
 import { e2eOperationOutputSchemas } from "./e2e-project.js";
 import type * as z from "zod/v4";
 import { coreOperationOutputSchemas } from "./core-operation-output-schemas.js";
@@ -12,6 +13,7 @@ import { targetDeviceControlOutputSchemas } from "./target-device-control-schema
 /** Schema-first outputs for operation families that previously used OperationRecord. */
 export const operationFamilyOutputSchemas = {
   ...workspaceTargetOperationOutputSchemas,
+  ...managedFixtureOutputSchemas,
   ...laneOperationOutputSchemas,
   ...observationOperationOutputSchemas,
   ...executionOperationOutputSchemas,

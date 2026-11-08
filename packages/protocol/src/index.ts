@@ -822,3 +822,5 @@ export type { FrozenRecipeInputReceipt } from "./frozen-recipe-inputs.js";
 export { canonicalJson, canonicalSha256, type CanonicalSha256 } from "./canonical-json.js";
 
 export * from "./e2e-project.js";
+
+export * from "./managed-fixture.js";

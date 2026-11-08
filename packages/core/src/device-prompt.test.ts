@@ -184,3 +184,31 @@ test("unchanged prior answers never count as a new reply", async () => {
   assert.equal(result.reply.status, "timeout");
   assert.deepEqual(result.reply.newText, []);
 });
+
+test("a new connection failure is an error, not a completed reply", async () => {
+  const { deps } = fakeDevice([
+    [composer],
+    [composer, { label: "Connection failed. Try again", rect: rect(20, 800) }],
+  ]);
+  const result = await promptTarget({ text: "hello", send: "enter", timeoutMs: 2000 }, deps);
+  assert.equal(result.reply.status, "error");
+});
+
+test("an assistant answer discussing retries is not a quota banner", async () => {
+  const { deps } = fakeDevice([
+    [composer],
+    [
+      composer,
+      {
+        identifier: "assistant-message",
+        value: "Try again later is a useful phrase",
+        rect: rect(20, 800),
+      },
+    ],
+  ]);
+  const result = await promptTarget(
+    { text: "hello", send: "enter", stableForMs: 300, timeoutMs: 2000 },
+    deps,
+  );
+  assert.equal(result.reply.status, "idle");
+});
