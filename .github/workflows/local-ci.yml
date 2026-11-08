@@ -49,6 +49,9 @@ jobs:
       - name: Validate architecture boundaries
         run: pnpm run check:architecture
 
+      - name: Test iOS tap helper
+        run: pnpm run ios-hid-tap:test
+
       - name: Run architecture contract tests
         run: pnpm run test:architecture
 

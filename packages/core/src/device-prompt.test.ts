@@ -70,7 +70,10 @@ test("findSendControl picks the nearest enabled Send control", () => {
 });
 
 test("replyText drops prior screen text, the prompt echo, and busy controls", () => {
-  const before = new Set(["Earlier answer", "Copy"]);
+  const before = new Map([
+    ["Earlier answer", 1],
+    ["Copy", 1],
+  ]);
   const nodes: SnapshotNode[] = [
     ...history,
     { label: "hello", rect: rect(0, 600) },
@@ -145,4 +148,39 @@ test("promptTarget times out while the app still shows a busy control", async ()
 test("promptTarget explains a missing composer", async () => {
   const { deps } = fakeDevice([history]);
   await assert.rejects(promptTarget({ text: "hi" }, deps), /No editable composer is visible/u);
+});
+
+test("promptTarget recognizes a second identical answer in the conversation", async () => {
+  const before = [...history, composer];
+  const done = [...history, { label: "Earlier answer", rect: rect(20, 800) }, composer];
+  const { deps } = fakeDevice([before, ...Array(8).fill(done)]);
+  const result = await promptTarget(
+    { text: "repeat the earlier answer", send: "enter", stableForMs: 600, timeoutMs: 2400 },
+    deps,
+  );
+  assert.equal(result.reply.status, "idle");
+  assert.deepEqual(result.reply.newText, ["Earlier answer"]);
+});
+
+test("promptTarget does not count busy time toward idle stability", async () => {
+  const answer = { label: "A new answer", rect: rect(20, 800) };
+  const busy = [composer, answer, { label: "Stop message", rect: rect(20, 900) }];
+  const done = [composer, answer];
+  const { deps } = fakeDevice([[composer], ...Array(6).fill(busy), ...Array(8).fill(done)]);
+  const result = await promptTarget(
+    { text: "hello", send: "enter", stableForMs: 900, timeoutMs: 5000 },
+    deps,
+  );
+  assert.equal(result.reply.status, "idle");
+  assert.equal(result.reply.waitedMs, 2700);
+});
+
+test("unchanged prior answers never count as a new reply", async () => {
+  const { deps } = fakeDevice([[...history, composer]]);
+  const result = await promptTarget(
+    { text: "hello", send: "enter", stableForMs: 300, timeoutMs: 1200 },
+    deps,
+  );
+  assert.equal(result.reply.status, "timeout");
+  assert.deepEqual(result.reply.newText, []);
 });

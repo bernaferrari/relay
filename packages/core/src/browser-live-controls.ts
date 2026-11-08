@@ -75,7 +75,6 @@ export async function fulfillBrowserUpload(
       await chooser.setFiles(file);
       return;
     }
-    if (await io.tryHiddenInput()) return;
     throw new Error("upload: file chooser did not open after clicking the attach control");
   }
   if (await io.tryHiddenInput()) return;
@@ -122,7 +121,11 @@ export async function attachFilesOnPage(
         file,
       ),
     tryLabelInput: (label) => setInputFilesQuietly(page.getByLabel(label, { exact: false }), file),
-    tryHiddenInput: () => setInputFilesQuietly(page.locator('input[type="file"]').first(), file),
+    tryHiddenInput: async () => {
+      const inputs = page.locator('input[type="file"]');
+      if ((await inputs.count()) !== 1) return false;
+      return setInputFilesQuietly(inputs, file);
+    },
     clickSemanticTarget: async (stepTarget) => {
       const locator = await locatorFor(page, browserUploadLocatorInput(stepTarget));
       await locator.click();

@@ -85,3 +85,24 @@ describe("browser upload", () => {
     });
   });
 });
+
+it("never falls back to an unrelated input after a named control fails", async () => {
+  let unrelatedInputUsed = false;
+  await assert.rejects(
+    fulfillBrowserUpload(
+      "fixture.png",
+      { label: "Edit image" },
+      {
+        tryLabelInput: async () => false,
+        clickSemanticTarget: async () => {},
+        waitForFileChooser: async () => undefined,
+        tryHiddenInput: async () => {
+          unrelatedInputUsed = true;
+          return true;
+        },
+      },
+    ),
+    /file chooser did not open/,
+  );
+  assert.equal(unrelatedInputUsed, false);
+});

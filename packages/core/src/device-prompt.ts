@@ -1,3 +1,4 @@
+import { isGenerationBusyControl } from "./generation-controls.js";
 import type { SnapshotNode } from "./device.js";
 import type { NamedControlResolution } from "./device-target-resolution.js";
 import { now } from "./events.js";
@@ -29,7 +30,7 @@ export type PromptReply = {
   status: "idle" | "timeout" | "not-waited";
   waitedMs: number;
   samples: number;
-  /** Visible text that was not on screen before the prompt, in screen order. */
+  /** New visible text occurrences after the prompt, in screen order. */
   newText: string[];
 };
 
@@ -53,7 +54,6 @@ const PROMPT_POLL_MS = 300;
 const MAX_REPLY_LINES = 40;
 const MAX_REPLY_LINE_CHARS = 500;
 const SEND_CONTROL = /\b(?:send|submit)\b/iu;
-const BUSY_CONTROL = /^(?:stop|stop (?:generating|response|streaming)|cancel generation)$/iu;
 
 export class PromptComposerNotFoundError extends Error {
   constructor() {
@@ -124,22 +124,29 @@ function visibleText(node: SnapshotNode): string | undefined {
 }
 
 function isBusy(nodes: readonly SnapshotNode[]): boolean {
-  return nodes.some((node) => visible(node) && BUSY_CONTROL.test(nodeName(node)));
+  return nodes.some((node) => visible(node) && isGenerationBusyControl(nodeName(node)));
 }
 
 /** Text that appeared after the prompt, excluding the echoed prompt itself. */
 export function replyText(
   nodes: readonly SnapshotNode[],
-  before: ReadonlySet<string>,
+  before: ReadonlyMap<string, number>,
   prompt: string,
 ): string[] {
   const echo = prompt.trim();
+  const remaining = new Map(before);
   const seen = new Set<string>();
   const lines: string[] = [];
   for (const node of nodes) {
     const text = visibleText(node);
-    if (!text || before.has(text) || seen.has(text) || text === echo) continue;
-    if (BUSY_CONTROL.test(text)) continue;
+    if (!text || text === echo) continue;
+    const priorCount = remaining.get(text) ?? 0;
+    if (priorCount > 0) {
+      remaining.set(text, priorCount - 1);
+      continue;
+    }
+    if (seen.has(text)) continue;
+    if (isGenerationBusyControl(text)) continue;
     seen.add(text);
     lines.push(
       text.length > MAX_REPLY_LINE_CHARS ? `${text.slice(0, MAX_REPLY_LINE_CHARS)}…` : text,
@@ -149,8 +156,13 @@ export function replyText(
   return lines;
 }
 
-function screenTexts(nodes: readonly SnapshotNode[]): Set<string> {
-  return new Set(nodes.map(visibleText).filter((text): text is string => text !== undefined));
+function screenTexts(nodes: readonly SnapshotNode[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    const text = visibleText(node);
+    if (text) counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  return counts;
 }
 
 async function sendPrompt(
@@ -187,7 +199,7 @@ async function sendPrompt(
 async function waitForReply(
   input: PromptInput,
   deps: PromptDeps,
-  before: ReadonlySet<string>,
+  before: ReadonlyMap<string, number>,
 ): Promise<PromptReply> {
   const clock = deps.now ?? now;
   const pause = deps.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
@@ -205,7 +217,7 @@ async function waitForReply(
     newText = replyText(nodes, before, input.text);
     const next = newText.join("\n");
     const at = clock();
-    if (next !== signature) {
+    if (next !== signature || isBusy(nodes)) {
       signature = next;
       stableSince = at;
       continue;

@@ -3,7 +3,7 @@ import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
 import { resolveNamedControlOutcome, snapshotLabelMatches } from "./device-target-resolution.js";
 import type { SnapshotNode } from "./device.js";
 
-const BUSY_NAME = /^(?:stop|cancel) (?:message|response|generation|generating|image|video)$/iu;
+import { isGenerationBusyControl } from "./generation-controls.js";
 const RESULT_NAME =
   /^(?:copy (?:message|response)|download(?: (?:image|video))?|save (?:image|video)|extend(?: video)?|upscale(?: video)?)$/iu;
 const TERMINAL_FAILURE_NAME =
@@ -23,7 +23,7 @@ export function hasAuthoringBusyControl(observation: AuthoringObservation | unde
       (node) =>
         visibleInApp(node as SnapshotNode, observation.foregroundApp) &&
         typeof node.label === "string" &&
-        BUSY_NAME.test(node.label),
+        isGenerationBusyControl(node.label),
     ),
   );
 }
@@ -77,10 +77,12 @@ export function inferredAuthoringCompletionWait(
     )
   )
     return undefined;
-  const busy = previous.filter((node) => visible(node) && BUSY_NAME.test(node.label ?? ""));
+  const busy = previous.filter(
+    (node) => visible(node) && isGenerationBusyControl(node.label ?? ""),
+  );
   if (
     busy.length !== 1 ||
-    current.some((node) => visible(node) && BUSY_NAME.test(node.label ?? ""))
+    current.some((node) => visible(node) && isGenerationBusyControl(node.label ?? ""))
   )
     return undefined;
   const busyTarget: StepTarget = { label: busy[0]!.label! };
