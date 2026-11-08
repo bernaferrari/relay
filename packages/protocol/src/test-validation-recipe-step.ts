@@ -14,6 +14,7 @@ export type AppMapValidationRecipeStep = Extract<
       | "upload"
       | "download"
       | "media-check"
+      | "audio-record"
       | "screenshot"
       | "evaluate-semantic"
       | "evaluate-visual";

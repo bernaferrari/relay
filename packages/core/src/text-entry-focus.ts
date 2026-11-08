@@ -6,7 +6,7 @@
  * that node can open a chip or a drawer instead of placing the caret, so focus
  * lands on a point inside the editable that no nested control claims.
  */
-import type { SnapshotNode } from "./device-capabilities.js";
+import type { SnapshotNode } from "./device.js";
 import {
   resolveNamedControlOutcome,
   type NamedControlResolution,

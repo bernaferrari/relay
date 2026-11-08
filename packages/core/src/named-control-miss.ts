@@ -3,7 +3,7 @@
  * ambiguity the resolver saw, visible labels that nearly match, and the stable
  * prefix of a label that ticks ("Thinking for 26s" → "Thinking for").
  */
-import type { SnapshotNode } from "./device-capabilities.js";
+import type { SnapshotNode } from "./device.js";
 import {
   resolveNamedControlOutcome,
   tickingLabelStem,

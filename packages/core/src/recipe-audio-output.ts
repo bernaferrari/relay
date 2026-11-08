@@ -68,7 +68,7 @@ export async function runAudioRecordStep(
     data: {
       stepId: step.id,
       file: step.file,
-      path: file,
+      path: relative(root, file),
       scope: "html-media-element",
       observationWindowMs: step.durationMs,
       limitation:
@@ -80,11 +80,11 @@ export async function runAudioRecordStep(
   const download = {
     kind: "download",
     capturedAt: Date.now(),
-    data: { file: step.file, path: file, stepId: step.id },
+    data: { file: step.file, path: relative(root, file), stepId: step.id },
   };
   job.artifacts.push(download);
   ctx.artifacts?.push(download);
-  const facts = await inspectMedia(file, job.projectId);
+  const facts = await inspectMedia(file, job.projectId, job.runDir);
   const levels = await measureAudioOutput(file);
   const analysis = {
     kind: "audio-output-analysis",
