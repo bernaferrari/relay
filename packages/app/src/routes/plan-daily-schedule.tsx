@@ -47,6 +47,7 @@ export function PlanDailySchedule({
   schedules = [],
   onSave,
   onRemove,
+  onSetEnabled,
   targetName,
 }: {
   disabled: boolean;
@@ -55,6 +56,7 @@ export function PlanDailySchedule({
   schedules?: readonly ProductPlanSchedule[];
   targetName?: string;
   onRemove?(id: string): void;
+  onSetEnabled?(id: string, enabled: boolean): void;
   onSave(input: ProductPlanScheduleTiming): void;
 }) {
   const [editingId, setEditingId] = useState<string>();
@@ -95,6 +97,16 @@ export function PlanDailySchedule({
                   >
                     Change frequency
                   </Button>
+                  {onSetEnabled ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => onSetEnabled(schedule.id, !schedule.enabled)}
+                    >
+                      {schedule.enabled ? "Pause schedule" : "Resume schedule"}
+                    </Button>
+                  ) : null}
                   {onRemove ? (
                     <Button
                       variant="outline"

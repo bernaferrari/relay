@@ -716,10 +716,14 @@ describe("Test editor", () => {
     await render(harness.editor, "/tests/test-checkout?step=step-cart");
     await click("Add a check");
     await chooseCheckpoint("Upload a file");
-    expect(document.body.textContent).toContain("record picking the file once");
+    expect(document.body.textContent).toContain("Android stages it in Downloads");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-upload-file")?.value,
-    ).toBe("tests/fixtures/sample.pdf");
+    ).toBe("");
+    await fill(
+      document.querySelector<HTMLInputElement>("#selected-step-expected-upload-file")!,
+      "tests/fixtures/sample.pdf",
+    );
     await click("Save");
     expect(harness.edits.at(-1)).toEqual([
       expect.objectContaining({

@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { usePlanScheduleActions } from "./use-plan-schedule-actions";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import {
   Dialog,
@@ -200,16 +201,11 @@ export function SuitePage() {
       await queryClient.invalidateQueries({ queryKey: ["suites", appId, suiteId, "schedules"] });
     },
   });
-  const removeSchedule = useMutation({
-    mutationFn: (id: string) => {
-      if (!suiteProfileService.removePlanSchedule)
-        throw new TypeError("Removing schedules is unavailable.");
-      return suiteProfileService.removePlanSchedule(id);
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["suites", appId, suiteId, "schedules"] });
-    },
-  });
+  const { toggleSchedule, removeSchedule } = usePlanScheduleActions(
+    suiteProfileService,
+    appId,
+    suiteId,
+  );
   const planSchedules = useQuery({
     queryKey: ["suites", appId, suiteId, "schedules"],
     queryFn: () => {
@@ -307,7 +303,12 @@ export function SuitePage() {
           <PlanInputUsageWarnings issues={unusedInputs} tests={value.tests} appId={appId} />
 
           <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_22rem]">
-            <PlanChecklist appId={appId} suiteId={suiteId} tests={value.tests} />
+            <PlanChecklist
+              appId={appId}
+              suiteId={suiteId}
+              tests={value.tests}
+              scheduleIds={planSchedules.data?.map((item) => item.id)}
+            />
 
             <section
               id="suite-run-setup"
@@ -636,8 +637,13 @@ export function SuitePage() {
                 configuration.targetUnavailable ||
                 planSchedules.isLoading
               }
-              pending={schedule.isPending || removeSchedule.isPending}
-              error={removeSchedule.error || schedule.error || planSchedules.error}
+              pending={schedule.isPending || removeSchedule.isPending || toggleSchedule.isPending}
+              error={
+                toggleSchedule.error ||
+                removeSchedule.error ||
+                schedule.error ||
+                planSchedules.error
+              }
               targetName={environments.data
                 ?.filter((item) => selectedProfileIds.includes(item.id))
                 .map((item) => item.name)
@@ -645,6 +651,11 @@ export function SuitePage() {
               onRemove={
                 suiteProfileService.removePlanSchedule
                   ? (id) => removeSchedule.mutate(id)
+                  : undefined
+              }
+              onSetEnabled={
+                suiteProfileService.setPlanScheduleEnabled
+                  ? (id, enabled) => toggleSchedule.mutate({ id, enabled })
                   : undefined
               }
               schedules={planSchedules.data ?? []}

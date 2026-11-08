@@ -25,8 +25,10 @@ describe("test editor assertions", () => {
     ).toEqual([
       "capture",
       "upload",
+      "download",
       "screen",
       "content",
+      "media-check",
       "wait-for",
       "wait-response",
       "extract",
@@ -44,8 +46,10 @@ describe("test editor assertions", () => {
     ).toEqual([
       "capture",
       "upload",
+      "download",
       "screen",
       "content",
+      "media-check",
       "wait-for",
       "wait-response",
       "visual",

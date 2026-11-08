@@ -394,31 +394,41 @@ describe("manual test drafts", () => {
       }),
     );
   });
-  it("saves drafted Actions and Checks with the start address", async () => {
-    clientRef.current.invoke.mockReset();
-    const current = map(3);
-    clientRef.current.invoke
-      .mockResolvedValueOnce({ appMap: current })
-      .mockImplementationOnce(async (_id, input) => ({
-        appMap: {
-          ...current,
-          revision: 4,
-          tests: { ...current.tests, [input.testId]: { ...test, ...input.test, id: input.testId } },
-        },
-      }));
-    const created = await createTestEditorProductService(platform).createDraft!({
-      appMapId: "store",
-      testId: "described",
-      name: "API keys",
-      startUrl: "https://shop.example/",
-      steps: [
-        { kind: "instruction", intent: "Create an API key" },
-        { kind: "validation", intent: "The new key is listed" },
-      ],
-    });
-    expect(created.test.startUrl).toBe("https://shop.example/");
-    expect(created.test.steps.map((step) => step.kind)).toEqual(["instruction", "validation"]);
-  });
+  it.each([
+    { startUrl: "https://shop.example/", originApplication: undefined },
+    { startUrl: undefined, originApplication: "ai.x.grok" },
+  ])(
+    "saves drafted Actions and Checks with their starting app or address ($originApplication)",
+    async (origin) => {
+      clientRef.current.invoke.mockReset();
+      const current = map(3);
+      clientRef.current.invoke
+        .mockResolvedValueOnce({ appMap: current })
+        .mockImplementationOnce(async (_id, input) => ({
+          appMap: {
+            ...current,
+            revision: 4,
+            tests: {
+              ...current.tests,
+              [input.testId]: { ...test, ...input.test, id: input.testId },
+            },
+          },
+        }));
+      const created = await createTestEditorProductService(platform).createDraft!({
+        appMapId: "store",
+        testId: "described",
+        name: "API keys",
+        ...origin,
+        steps: [
+          { kind: "instruction", intent: "Create an API key" },
+          { kind: "validation", intent: "The new key is listed" },
+        ],
+      });
+      expect(created.test.startUrl).toBe(origin.startUrl);
+      expect(created.test.originApplication).toBe(origin.originApplication);
+      expect(created.test.steps.map((step) => step.kind)).toEqual(["instruction", "validation"]);
+    },
+  );
   it("edits only the addressed recorded text through a revisioned connection patch", async () => {
     const current = map(10);
     current.tests.checkout!.steps = [

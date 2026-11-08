@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProductRunSummary } from "@relay/product/catalog";
-import { checkState, latestRunPerTest } from "./plan-checklist";
+import { checkState, latestCycleRuns, aggregateCheckState } from "./plan-checklist";
 
 const scope = { appMapId: "grok", combineId: "prompts" };
 
@@ -43,7 +43,7 @@ describe("plan checklist", () => {
   });
 
   it("keeps only the newest run of each test in the plan", () => {
-    const latest = latestRunPerTest(
+    const latest = latestCycleRuns(
       [
         run({ id: "old", testId: "login", queuedAt: 1 }),
         run({ id: "new", testId: "login", queuedAt: 5 }),
@@ -52,13 +52,13 @@ describe("plan checklist", () => {
       ["login", "checkout"],
       scope,
     );
-    expect([...latest.entries()].map(([test, value]) => [test, value.id])).toEqual([
+    expect([...latest.entries()].map(([test, value]) => [test, value[0]?.id])).toEqual([
       ["login", "new"],
     ]);
   });
 
   it("excludes standalone, other plan, other app and unattributed legacy results", () => {
-    const latest = latestRunPerTest(
+    const latest = latestCycleRuns(
       [
         run({ id: "own", testId: "speed", queuedAt: 1 }),
         run({
@@ -88,6 +88,24 @@ describe("plan checklist", () => {
       ["speed", "fast"],
       scope,
     );
-    expect([...latest.values()].map((item) => item.id)).toEqual(["own"]);
+    expect([...latest.values()].map((item) => item[0]?.id)).toEqual(["own"]);
   });
+});
+
+it("keeps failed matrix cells and excludes stale tests from an earlier cycle", () => {
+  const latest = latestCycleRuns(
+    [
+      run({ id: "old", testId: "login", batchId: "old-cycle", queuedAt: 1 }),
+      run({ id: "failed", testId: "image", batchId: "current", queuedAt: 2, phase: "failed" }),
+      run({ id: "passed", testId: "image", batchId: "current", queuedAt: 3 }),
+    ],
+    ["login", "image"],
+    scope,
+  );
+  expect(latest.has("login")).toBe(false);
+  expect(aggregateCheckState(latest.get("image")!)).toBe("failed");
+  expect(latest.get("image")).toHaveLength(2);
+});
+it("an admitted occurrence without jobs cannot inherit historical passes", () => {
+  expect(latestCycleRuns([run({ testId: "login" })], ["login"], scope, { jobs: [] }).size).toBe(0);
 });

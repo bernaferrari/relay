@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { NativeDescribeTest } from "./native-describe-test";
 import { RecordingInputRecovery } from "./recording-input-recovery";
 import type {
   RecordingInputOutcome,
@@ -22,7 +23,7 @@ import type {
   LiveTargetSession,
   LiveTargetStatus,
 } from "../data/live-target-session";
-import type { ComponentProps, FormEvent, RefObject } from "react";
+import { useState, type ComponentProps, type FormEvent, type RefObject } from "react";
 
 type App = ComponentProps<typeof RecordingAppChoice>["apps"][number];
 type Browser = ComponentProps<typeof BrowserSetup>["browsers"][number];
@@ -124,6 +125,7 @@ export function NewTestDetailedSetup({
   onToggleNewBrowser(): void;
   onBrowserStart: ComponentProps<typeof BrowserSetup>["onStart"];
 }) {
+  const [describing, setDescribing] = useState(false);
   const choices = deviceOnly
     ? targetOptions.filter((target) => target.kind === "device")
     : targetOptions;
@@ -268,9 +270,17 @@ export function NewTestDetailedSetup({
               }}
             />
           ) : null}
+          {deviceOnly && !startsFromPath ? (
+            <NativeDescribeTest
+              appId={appId}
+              originApplication={originApplication}
+              disabled={admission.busy}
+              onBusyChange={setDescribing}
+            />
+          ) : null}
           <Button
             type="submit"
-            disabled={!formReady}
+            disabled={!formReady || describing}
             aria-describedby="recording-readiness"
             className="w-full"
           >

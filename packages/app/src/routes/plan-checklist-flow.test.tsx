@@ -56,7 +56,10 @@ const matrixCase = {
   world: "one",
   values: { prompts: "value-1" },
 };
-async function render(runs: RunSummary[] | (() => Promise<RunSummary[]>)) {
+async function render(
+  runs: RunSummary[] | (() => Promise<RunSummary[]>),
+  occurrence?: { jobs: { id: string; testId?: string }[] },
+) {
   const listRuns = vi.fn(async () =>
     projectProductRuns(typeof runs === "function" ? await runs() : runs),
   );
@@ -71,6 +74,7 @@ async function render(runs: RunSummary[] | (() => Promise<RunSummary[]>)) {
         <PlanChecklist
           appId="grok"
           suiteId="prompts"
+          occurrence={occurrence}
           tests={[{ id: "speed", name: "Speed images", status: "ready" }]}
         />
       </QueryClientProvider>,
@@ -153,4 +157,47 @@ it("loading and failed history never claim that the plan has not run", async () 
   expect(document.body.textContent).toContain("Results unavailable");
   expect(document.body.textContent).not.toContain("No plan run");
   expect(document.body.textContent).not.toContain("not run");
+});
+
+it("a passed matrix case cannot hide a failed case in the same cycle", async () => {
+  await render([
+    run({
+      id: "failed",
+      matrixCase,
+      batchId: "batch",
+      queuedAt: 1,
+      status: "error",
+      outcome: "product-failure",
+    }),
+    run({
+      id: "passed",
+      matrixCase,
+      batchId: "batch",
+      queuedAt: 2,
+      status: "ok",
+      outcome: "passed",
+    }),
+  ]);
+  await settled();
+  expect(document.body.textContent).toContain("1 failed");
+  expect(document.body.textContent).not.toContain("1 passed");
+  expect(document.querySelector('a[href="/runs/failed"]')).not.toBeNull();
+});
+it("a newly admitted schedule does not display the previous occurrence's pass", async () => {
+  await render([run({ id: "old-pass", matrixCase, outcome: "passed", queuedAt: 1 })], { jobs: [] });
+  await settled();
+  expect(document.body.textContent).toContain("Not run yet");
+  expect(document.body.textContent).not.toContain("1 passed");
+  expect(document.querySelector('a[href="/runs/old-pass"]')).toBeNull();
+});
+it("missing expected case evidence prevents a complete pass", async () => {
+  await render([run({ id: "known-pass", matrixCase, outcome: "passed", queuedAt: 1 })], {
+    jobs: [
+      { id: "known-pass", testId: "speed" },
+      { id: "not-committed", testId: "speed" },
+    ],
+  });
+  await settled();
+  expect(document.body.textContent).not.toContain("1 passed");
+  expect(document.body.textContent).toContain("Not run yet");
 });

@@ -5,6 +5,8 @@ import { Textarea } from "@relay/ui-react/components/textarea";
 import { Button } from "@relay/ui-react/components/button";
 import { SelectField } from "./filter-select";
 import { validationKindGroupsForEditor } from "./test-editor-checkpoint-kinds";
+import { MediaCheckEditor } from "./test-editor-media-check";
+import { ManagedFixturePicker } from "./managed-fixture-picker";
 import { ConditionWaitEditor } from "./test-editor-wait";
 import { JudgeAgreementControls } from "./test-editor-judge-agreement";
 import type { CSSProperties } from "react";
@@ -121,6 +123,9 @@ export function ValidationExpectationEditor({
         hasRememberableReply={hasRememberableReply}
         onSelect={(kind) => onChange(emptyValidationDraft(kind))}
       />
+      {value.kind === "media-check" || value.kind === "download" ? (
+        <MediaCheckEditor value={value} onChange={onChange} />
+      ) : null}
       {value.kind === "wait-for" ? <ConditionWaitEditor value={value} onChange={onChange} /> : null}
       {value.kind === "capture" ? (
         <>
@@ -152,15 +157,22 @@ export function ValidationExpectationEditor({
       ) : null}
       {value.kind === "upload" ? (
         <>
-          <label htmlFor="selected-step-expected-upload-file">
-            Workspace file
-            <Input
-              id="selected-step-expected-upload-file"
-              value={value.file}
-              onChange={(event) => onChange({ ...value, file: event.currentTarget.value })}
-              placeholder="tests/fixtures/sample.pdf"
-            />
-          </label>
+          <ManagedFixturePicker
+            value={value.file}
+            onChange={(file) => onChange({ ...value, file })}
+          />
+          <details>
+            <summary className="cursor-pointer">Advanced file reference</summary>
+            <label htmlFor="selected-step-expected-upload-file">
+              Workspace file
+              <Input
+                id="selected-step-expected-upload-file"
+                value={value.file}
+                onChange={(event) => onChange({ ...value, file: event.currentTarget.value })}
+                placeholder="tests/fixtures/sample.pdf"
+              />
+            </label>
+          </details>
           <label htmlFor="selected-step-expected-upload-label">
             Attach control
             <Input
@@ -171,8 +183,9 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            Relay attaches this file in a browser. On iOS and Android, record picking the file once
-            so Relay can repeat it.
+            Browser attaches the file directly. Android stages it in Downloads; record selecting it
+            and check the attachment. iOS requires a reviewed Files-app handoff; the upload step
+            itself cannot run there.
           </p>
         </>
       ) : null}

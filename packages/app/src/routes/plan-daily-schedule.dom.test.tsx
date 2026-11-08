@@ -103,3 +103,17 @@ it.each([
   expect(onSave).not.toHaveBeenCalled();
   expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
 });
+
+it.each([true, false])(
+  "toggles enabled=%s without depending on run setup readiness",
+  async (enabled) => {
+    const onSetEnabled = vi.fn();
+    await render({
+      disabled: true,
+      schedules: [{ id: "s", intervalMinutes: 30, nextRunAt: 1, enabled }],
+      onSetEnabled,
+    });
+    await act(async () => button(enabled ? "Pause schedule" : "Resume schedule").click());
+    expect(onSetEnabled).toHaveBeenCalledExactlyOnceWith("s", !enabled);
+  },
+);

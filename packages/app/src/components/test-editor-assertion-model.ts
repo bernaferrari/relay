@@ -36,7 +36,24 @@ export type ValidationDraft =
     }
   | { kind: "extract"; as: string; label: string; role: "assistant" | "user" | "" }
   | { kind: "identity-ignore"; name: string; region: string }
-  | { kind: "upload"; file: string; label: string };
+  | { kind: "upload"; file: string; label: string }
+  | {
+      kind: "download";
+      file: string;
+      label: string;
+      source?: Extract<RecipeStep, { kind: "download" }>;
+    }
+  | {
+      kind: "media-check";
+      file: string;
+      media: "image" | "video" | "audio";
+      width: string;
+      height: string;
+      minDurationMs: string;
+      minBytes: string;
+      sourceFile: string;
+      relation: "" | "edited" | "upscaled" | "extended";
+    };
 
 function controlLabel(target: {
   label?: string;
@@ -102,6 +119,9 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
   if (recipe.kind === "evaluate-visual")
     return "A visual judge will score this screenshot. Disagreement stays Needs review. Do not auto-accept.";
   if (recipe.kind === "evaluate-semantic") return "A semantic judge will score the reply.";
+  if (recipe.kind === "download") return `Downloads the generated file to ${recipe.file}.`;
+  if (recipe.kind === "media-check")
+    return `Decodes and checks the ${recipe.media} file ${recipe.file}.`;
   if (recipe.kind === "upload") {
     return `Browser attaches ${recipe.file || "a workspace file"} through a file input or chooser. Android stages it in Downloads; follow with recorded picker steps and check the attachment. iOS upload is blocked; use a reviewed Files-app handoff. Does not accept a visual baseline.`;
   }
@@ -166,6 +186,29 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
       label: step.binding.step.target?.label ?? "",
     };
   }
+  if (step.binding.kind === "recipe-step" && step.binding.step.kind === "download") {
+    const recipe = step.binding.step;
+    return {
+      kind: "download",
+      file: recipe.file,
+      label: controlLabel(recipe.target) ?? "",
+      source: structuredClone(recipe),
+    };
+  }
+  if (step.binding.kind === "recipe-step" && step.binding.step.kind === "media-check") {
+    const recipe = step.binding.step;
+    return {
+      kind: "media-check",
+      file: recipe.file,
+      media: recipe.media,
+      width: recipe.width === undefined ? "" : String(recipe.width),
+      height: recipe.height === undefined ? "" : String(recipe.height),
+      minDurationMs: recipe.minDurationMs === undefined ? "" : String(recipe.minDurationMs),
+      minBytes: recipe.minBytes === undefined ? "" : String(recipe.minBytes),
+      sourceFile: recipe.sourceFile ?? "",
+      relation: recipe.relation ?? "",
+    };
+  }
   if (
     step.binding.kind === "recipe-step" &&
     step.binding.step.kind === "screenshot" &&
@@ -222,6 +265,15 @@ export function isValidationDraftReady(draft: ValidationDraft): boolean {
     return Boolean(draft.label.trim()) && validWaitSeconds(draft.seconds);
   if (draft.kind === "capture") return Boolean(draft.name.trim());
   if (draft.kind === "upload") return Boolean(draft.file.trim());
+  if (draft.kind === "download") return Boolean(draft.file.trim() && draft.label.trim());
+  if (draft.kind === "media-check")
+    return (
+      Boolean(draft.file.trim()) &&
+      [draft.width, draft.height, draft.minDurationMs, draft.minBytes].every(
+        (value) => !value.trim() || (Number.isSafeInteger(Number(value)) && Number(value) > 0),
+      ) &&
+      Boolean(draft.sourceFile.trim()) === Boolean(draft.relation)
+    );
   if (draft.kind === "screen") return Boolean(draft.screenId.trim());
   if (draft.kind === "visual") {
     if (!draft.criteria.trim()) return false;
@@ -366,6 +418,42 @@ export function validationBindingFromDraft(
       },
     };
   }
+  if (draft.kind === "download") {
+    if (!isValidationDraftReady(draft))
+      throw new Error("Choose a download control and output file.");
+    return {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        ...draft.source,
+        kind: "download",
+        file: draft.file.trim(),
+        target:
+          draft.source && controlLabel(draft.source.target) === draft.label.trim()
+            ? draft.source.target
+            : { label: draft.label.trim() },
+      },
+    };
+  }
+  if (draft.kind === "media-check") {
+    if (!isValidationDraftReady(draft))
+      throw new Error("Choose a file, positive media limits, and a source file for comparisons.");
+    return {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "media-check",
+        file: draft.file.trim(),
+        media: draft.media,
+        ...(draft.width.trim() ? { width: Number(draft.width) } : {}),
+        ...(draft.height.trim() ? { height: Number(draft.height) } : {}),
+        ...(draft.minDurationMs.trim() ? { minDurationMs: Number(draft.minDurationMs) } : {}),
+        ...(draft.minBytes.trim() ? { minBytes: Number(draft.minBytes) } : {}),
+        ...(draft.sourceFile.trim() ? { sourceFile: draft.sourceFile.trim() } : {}),
+        ...(draft.relation ? { relation: draft.relation } : {}),
+      },
+    };
+  }
   if (draft.kind === "upload") {
     const file = draft.file.trim();
     const label = draft.label.trim();
@@ -446,7 +534,21 @@ export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationD
   if (kind === "wait-response") return { kind: "wait-response", label: "", maxMs: "" };
   if (kind === "extract") return { kind: "extract", as: "reply", label: "", role: "assistant" };
   if (kind === "identity-ignore") return { kind: "identity-ignore", name: "", region: "" };
-  if (kind === "upload") return { kind: "upload", file: "tests/fixtures/sample.pdf", label: "" };
+  if (kind === "download")
+    return { kind: "download", file: "generated/output.mp4", label: "Download" };
+  if (kind === "media-check")
+    return {
+      kind: "media-check",
+      file: "generated/output.mp4",
+      media: "video",
+      width: "",
+      height: "",
+      minDurationMs: "",
+      minBytes: "",
+      sourceFile: "",
+      relation: "",
+    };
+  if (kind === "upload") return { kind: "upload", file: "", label: "" };
   return { kind: "content", input: "", expected: "", match: "contains" };
 }
 

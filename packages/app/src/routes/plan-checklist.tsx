@@ -35,20 +35,54 @@ export function checkState(run: ProductRunSummary | undefined): CheckState {
   return "not-run";
 }
 
-export function latestRunPerTest(
+/** Aggregate one execution cycle; never borrow a pass from an older cycle. */
+export function latestCycleRuns(
   runs: readonly ProductRunSummary[],
   testIds: readonly string[],
   scope: { appMapId: string; combineId: string },
-): Map<string, ProductRunSummary> {
+  occurrence?: { jobs: readonly { id: string }[] },
+): Map<string, ProductRunSummary[]> {
   const wanted = new Set(testIds);
-  const latest = new Map<string, ProductRunSummary>();
-  for (const run of runs) {
-    if (run.appMapId !== scope.appMapId || run.combineId !== scope.combineId) continue;
+  const scoped = runs.filter(
+    (run) =>
+      run.appMapId === scope.appMapId &&
+      run.combineId === scope.combineId &&
+      Boolean(run.testId && wanted.has(run.testId)),
+  );
+  const newest = scoped.reduce<ProductRunSummary | undefined>(
+    (latest, run) => (!latest || run.queuedAt > latest.queuedAt ? run : latest),
+    undefined,
+  );
+  const jobIds = occurrence ? new Set(occurrence.jobs.map((job) => job.id)) : undefined;
+  const cycle = scoped.filter((run) =>
+    jobIds
+      ? jobIds.has(run.id)
+      : newest?.batchId
+        ? run.batchId === newest.batchId
+        : run.id === newest?.id,
+  );
+  const result = new Map<string, ProductRunSummary[]>();
+  for (const run of cycle) {
     if (!run.testId || !wanted.has(run.testId)) continue;
-    const current = latest.get(run.testId);
-    if (!current || run.queuedAt > current.queuedAt) latest.set(run.testId, run);
+    const group = result.get(run.testId) ?? [];
+    group.push(run);
+    result.set(run.testId, group);
   }
-  return latest;
+  return result;
+}
+
+export function aggregateCheckState(runs: readonly ProductRunSummary[]): CheckState {
+  const states = runs.map(checkState);
+  return (
+    (["failed", "blocked", "running", "review", "not-run", "passed"] as const).find((state) =>
+      states.includes(state),
+    ) ?? "not-run"
+  );
+}
+
+function representativeRun(runs: readonly ProductRunSummary[]): ProductRunSummary | undefined {
+  const state = aggregateCheckState(runs);
+  return runs.find((run) => checkState(run) === state);
 }
 
 const STATE_PRESENTATION: Record<
@@ -84,17 +118,33 @@ function detail(run: ProductRunSummary | undefined, state: CheckState): string {
   return parts.filter(Boolean).join(" · ");
 }
 
-/** Every Test with its latest Run attributed to this exact saved Plan. */
+/** Coverage from one exact scheduled occurrence, or the latest manual batch. */
 export function PlanChecklist({
   appId,
   suiteId,
   tests,
+  occurrence: suppliedOccurrence,
+  scheduleIds = [],
 }: {
   appId: string;
   suiteId: string;
   tests: readonly PlanTest[];
+  occurrence?: { jobs: readonly { id: string; testId?: string }[] };
+  scheduleIds?: readonly string[];
 }) {
-  const { catalogService } = useRouteContext({ from: "__root__" });
+  const { catalogService, suiteProfileService } = useRouteContext({ from: "__root__" });
+  const occurrences = useQuery({
+    queryKey: ["plan-occurrences", ...scheduleIds],
+    queryFn: () => suiteProfileService.listPlanOccurrences!(scheduleIds),
+    enabled: Boolean(scheduleIds.length && suiteProfileService?.listPlanOccurrences),
+    refetchInterval: 5_000,
+  });
+  const latestOccurrence = occurrences.data?.reduce<(typeof occurrences.data)[number] | undefined>(
+    (latest, item) => (!latest || item.scheduledAt > latest.scheduledAt ? item : latest),
+    undefined,
+  );
+  const occurrence =
+    suppliedOccurrence ?? latestOccurrence ?? (scheduleIds.length ? { jobs: [] } : undefined);
   const runs = useQuery({
     queryKey: [...catalogQueryKeys.runs, "app", appId],
     queryFn: () => catalogService.listRuns({ appMapId: appId }),
@@ -104,31 +154,50 @@ export function PlanChecklist({
         ? 3_000
         : 30_000,
   });
-  const latest = latestRunPerTest(
+  const latest = latestCycleRuns(
     runs.data ?? [],
     tests.map((test) => test.id),
     { appMapId: appId, combineId: suiteId },
+    occurrence,
   );
-  const states = tests.map((test) => checkState(latest.get(test.id)));
-  const toReview = [...latest.values()].reduce(
-    (total, run) => total + (run.captureSummary?.pending ?? 0),
-    0,
-  );
+  const states = tests.map((test) => {
+    const testRuns = latest.get(test.id) ?? [];
+    const state = aggregateCheckState(testRuns);
+    const expected = occurrence?.jobs.filter((job) => job.testId === test.id).length ?? 0;
+    return state === "passed" && expected > testRuns.length ? "not-run" : state;
+  });
+  const cycleRuns = [...latest.values()].flat();
+  const completeCoverage =
+    !latestOccurrence ||
+    (latestOccurrence.state === "completed" &&
+      cycleRuns.length >= latestOccurrence.expectedCaseCount);
+  const toReview = cycleRuns.reduce((total, run) => total + (run.captureSummary?.pending ?? 0), 0);
   const lastActivity = Math.max(
     0,
-    ...[...latest.values()].map((run) => run.finishedAt ?? run.startedAt ?? run.queuedAt),
+    ...cycleRuns.map((run) => run.finishedAt ?? run.startedAt ?? run.queuedAt),
   );
 
   return (
     <section className="min-w-0" aria-labelledby="plan-checklist-title">
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 pb-1">
         <div className="grid gap-0.5">
+          {scheduleIds.length ? (
+            <p className="text-xs text-muted-foreground">
+              {occurrences.isError
+                ? "Scheduled results unavailable"
+                : occurrences.isPending
+                  ? "Loading scheduled run…"
+                  : latestOccurrence
+                    ? `Latest scheduled run: ${latestOccurrence.state}${latestOccurrence.detail ? ` · ${latestOccurrence.detail}` : ""}`
+                    : "Waiting for the first scheduled run"}
+            </p>
+          ) : null}
           <h2 id="plan-checklist-title" className="text-sm font-semibold text-foreground">
             Tests
           </h2>
-          {runs.isSuccess && latest.size ? (
+          {runs.isSuccess && latest.size && completeCoverage ? (
             <span className="w-64 max-w-full">
-              <ResultsBar states={[...latest.values()].map(checkState)} />
+              <ResultsBar states={states} />
             </span>
           ) : null}
           <p className="text-xs text-muted-foreground tabular-nums">
@@ -155,7 +224,8 @@ export function PlanChecklist({
 
       <ul className="mt-3 grid min-w-0 list-none gap-1 p-0">
         {tests.map((test, index) => {
-          const run = latest.get(test.id);
+          const testRuns = latest.get(test.id) ?? [];
+          const run = representativeRun(testRuns);
           const state = states[index]!;
           const presentation = STATE_PRESENTATION[state];
           const label =
@@ -186,7 +256,13 @@ export function PlanChecklist({
                 <span className="truncate text-xs text-muted-foreground">
                   {test.status === "needs-review"
                     ? "Steps need review before this can run"
-                    : [label, detail(run, state)].filter(Boolean).join(" · ")}
+                    : [
+                        label,
+                        testRuns.length > 1 ? `${testRuns.length} cases` : "",
+                        detail(run, state),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                 </span>
               </span>
               {run ? (

@@ -78,6 +78,8 @@ export type TestEditorProductService = {
     instructions?: readonly string[];
     /** Plain-English Actions and Checks; takes precedence over instructions. */
     steps?: readonly ProductDraftedStep[];
+    /** Native application to open when the Test runs. */
+    originApplication?: string;
     /** Web address a plain-English Test opens first. */
     startUrl?: string;
   }): Promise<ProductTestEditorDocument>;
@@ -180,7 +182,15 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
         ...(startUrl ? { startUrl } : {}),
       });
     },
-    async createDraft({ appMapId, testId, name, instructions = [], steps, startUrl }) {
+    async createDraft({
+      appMapId,
+      testId,
+      name,
+      instructions = [],
+      steps,
+      startUrl,
+      originApplication,
+    }) {
       const relay = await client();
       const { appMap: current } = await relay.invoke("app-map.get", { appMapId });
       const { appMap } = await relay.invoke("app-map.test.save", {
@@ -193,6 +203,7 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
           kind: "scenario",
           intentSchemaVersion: 1,
           ...(startUrl ? { startUrl } : {}),
+          ...(originApplication ? { originApplication } : {}),
           steps: (
             steps ?? instructions.map((intent) => ({ kind: "instruction" as const, intent }))
           ).map((step, index) => ({

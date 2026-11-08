@@ -47,7 +47,20 @@ function validExpected(value: StepDraft["expected"]): boolean {
   if (value.kind === "capture") {
     return typeof value.name === "string" && typeof value.lookFor === "string";
   }
-  if (value.kind === "upload") {
+  if (value.kind === "media-check")
+    return (
+      [
+        value.file,
+        value.width,
+        value.height,
+        value.minDurationMs,
+        value.minBytes,
+        value.sourceFile,
+      ].every((item) => typeof item === "string") &&
+      ["image", "video", "audio"].includes(value.media) &&
+      ["", "edited", "upscaled", "extended"].includes(value.relation)
+    );
+  if (value.kind === "upload" || value.kind === "download") {
     return typeof value.file === "string" && typeof value.label === "string";
   }
   return (

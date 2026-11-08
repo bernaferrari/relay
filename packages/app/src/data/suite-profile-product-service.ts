@@ -235,9 +235,18 @@ export type SuiteProfileProductService = Partial<PlanInputDataSetService> & {
       accounts?: readonly PlanStartAccountBinding[];
     },
   ): Promise<{ id: string }>;
+  setPlanScheduleEnabled?(input: {
+    id: string;
+    appMapId: string;
+    combineId: string;
+    enabled: boolean;
+  }): Promise<void>;
   removePlanSchedule?(id: string): Promise<void>;
+  listPlanOccurrences?(scheduleIds: readonly string[]): Promise<readonly ProductPlanOccurrence[]>;
   listPlanSchedules?(input: { combineId: string }): Promise<readonly ProductPlanSchedule[]>;
 };
+
+export type ProductPlanOccurrence = OperationOutput<"schedule.occurrences">["occurrences"][number];
 
 export type ProductPlanScheduleTiming = {
   scheduleId?: string;
@@ -830,8 +839,36 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       });
       return { id: result.schedule.id };
     },
+    async setPlanScheduleEnabled(input) {
+      const relay = await client();
+      const { schedules } = await relay.invoke("schedule.list", {});
+      const saved = schedules.find((item) => item.id === input.id);
+      if (!saved || saved.combineId !== input.combineId || saved.appMapId !== input.appMapId)
+        throw new TypeError("That schedule changed. Reload this plan before saving.");
+      await relay.invoke("schedule.create", {
+        id: saved.id,
+        combineId: saved.combineId,
+        appMapId: saved.appMapId,
+        targetKind: saved.targetKind,
+        targetId: saved.targetId,
+        platform: saved.platform,
+        intervalMinutes: saved.intervalMinutes,
+        ...(saved.hour === undefined ? {} : { hour: saved.hour }),
+        ...(saved.timezone ? { timezone: saved.timezone } : {}),
+        repetitions: saved.repetitions,
+        enabled: input.enabled,
+        ...(saved.profileTargets?.length ? { profileTargets: saved.profileTargets } : {}),
+      });
+    },
     async removePlanSchedule(id) {
       await (await client()).invoke("schedule.delete", { scheduleId: id });
+    },
+    async listPlanOccurrences(scheduleIds) {
+      const relay = await client();
+      const results = await Promise.all(
+        scheduleIds.map((scheduleId) => relay.invoke("schedule.occurrences", { scheduleId })),
+      );
+      return results.flatMap((result) => result.occurrences);
     },
     async listPlanSchedules(input) {
       const combineId = input.combineId.trim();

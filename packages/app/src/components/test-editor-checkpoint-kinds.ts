@@ -7,7 +7,10 @@ export const VALIDATION_KIND_GROUPS = [
   {
     id: "attach",
     label: "Attach",
-    kinds: [{ value: "upload", label: "Upload a file" }],
+    kinds: [
+      { value: "upload", label: "Upload a file" },
+      { value: "download", label: "Download a generated file" },
+    ],
   },
   {
     id: "check",
@@ -15,6 +18,7 @@ export const VALIDATION_KIND_GROUPS = [
     kinds: [
       { value: "screen", label: "Screen" },
       { value: "content", label: "Content" },
+      { value: "media-check", label: "Image, video, or audio file" },
     ],
   },
   {
