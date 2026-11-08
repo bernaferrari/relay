@@ -2,7 +2,7 @@ import type { LocalSchedule } from "@relay/core";
 import { inspectManagedBrowserAuthPage, probeScheduledPlanAccountHealth } from "@relay/core";
 import { executeCombineStart } from "./combine-start-route.js";
 import { defaultJobRouteRuntime } from "./job-routes.js";
-import { defaultSchedulerRuntime, runDueSchedules } from "./scheduler.js";
+import { defaultSchedulerRuntime, runDueSchedules, type ScheduledAdmission } from "./scheduler.js";
 import type { RequestContext } from "./security.js";
 
 function schedulerScope(projectId: string): RequestContext {
@@ -72,7 +72,7 @@ export async function startScheduledCombine(
     url: string,
     context: { targetId: string; reference: string },
   ) => Promise<{ title: string; bodyText: string }>,
-): Promise<void> {
+): Promise<ScheduledAdmission> {
   await probeScheduledPlanAccountHealth({
     projectId: schedule.projectId,
     fallbackTargetId: schedule.targetId,
@@ -87,11 +87,27 @@ export async function startScheduledCombine(
           url,
         })),
   });
-  await executeCombineStart(
+  const result = await executeCombineStart(
     schedulerScope(schedule.projectId),
     defaultJobRouteRuntime,
     scheduledCombineStartInput(schedule),
   );
+  return {
+    batchId: result.batch.id,
+    ...(result.campaign
+      ? { campaignId: result.campaign.id, sourceRevision: result.campaign.sourceRevision }
+      : {}),
+    expectedCaseCount: result.campaign?.cases.length ?? result.jobs.length,
+    jobs: result.jobs.map((job) => {
+      const entry = result.campaign?.cases.find((candidate) => candidate.jobId === job.id);
+      return {
+        id: job.id,
+        caseIndex: job.caseIndex,
+        targetId: job.serial,
+        ...(entry ? { testId: entry.testId, executionCaseId: entry.executionCaseId } : {}),
+      };
+    }),
+  };
 }
 
 export function runDueSchedulesWithCombineStarter(): Promise<void> {

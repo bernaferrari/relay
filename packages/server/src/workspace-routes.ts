@@ -5,6 +5,7 @@ import {
   listAppMaps,
   listLanes,
   listSchedules,
+  listScheduleOccurrences,
   readAuthoringEvidence,
   removeLane,
   saveLane,
@@ -90,6 +91,16 @@ export async function handleWorkspaceRoute(input: WorkspaceRouteInput): Promise<
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
+    return true;
+  }
+  const occurrenceMatch = matchPath(pathname, "/schedules/:scheduleId/occurrences");
+  if (method === "GET" && occurrenceMatch) {
+    json(response, 200, {
+      occurrences: await listScheduleOccurrences({
+        projectId: scope.projectId,
+        scheduleId: occurrenceMatch.scheduleId!,
+      }),
+    });
     return true;
   }
   const scheduleMatch = matchPath(pathname, "/schedules/:id");

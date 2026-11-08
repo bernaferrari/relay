@@ -1,6 +1,11 @@
+import { HttpError } from "./http.js";
+import type { ScheduleOccurrence } from "@relay/protocol";
 import type { LocalSchedule, ScheduleNotification } from "@relay/core";
 import {
   buildTargetProfiles,
+  beginScheduleOccurrence,
+  saveScheduleOccurrence,
+  finishScheduleOccurrenceAdmission,
   freezeRecipeGraph,
   listDevices,
   listSchedules,
@@ -21,6 +26,9 @@ import {
   assertClaimedBrowserJobStartAllowed,
 } from "@relay/core";
 
+export type ScheduledAdmission = Pick<ScheduleOccurrence, "jobs" | "expectedCaseCount"> &
+  Partial<Pick<ScheduleOccurrence, "batchId" | "campaignId" | "sourceRevision">>;
+
 export type SchedulerRuntime = {
   listSchedules: typeof listSchedules;
   listDevices: typeof listDevices;
@@ -32,7 +40,9 @@ export type SchedulerRuntime = {
   prepareJobBatch: typeof prepareJobBatch;
   markScheduleRun: typeof markScheduleRun;
   markScheduleFailure: typeof markScheduleFailure;
-  startCombine?: (schedule: LocalSchedule) => Promise<void>;
+  startCombine?: (schedule: LocalSchedule) => Promise<ScheduledAdmission | void>;
+  beginOccurrence?: typeof beginScheduleOccurrence;
+  saveOccurrence?: typeof saveScheduleOccurrence;
   notify?: (item: ScheduleNotification) => Promise<void>;
 };
 
@@ -48,6 +58,8 @@ export const defaultSchedulerRuntime: SchedulerRuntime = {
   markScheduleRun,
   markScheduleFailure,
   notify: recordScheduleNotification,
+  beginOccurrence: beginScheduleOccurrence,
+  saveOccurrence: saveScheduleOccurrence,
 };
 
 const defaultRuntime = defaultSchedulerRuntime;
@@ -55,6 +67,21 @@ const defaultRuntime = defaultSchedulerRuntime;
 /** The server owns one scheduler process. This fence also protects direct
  * test/administrative polls from admitting the same occurrence concurrently. */
 const activeScheduleAdmissions = new Set<string>();
+
+function notifyWithoutBlocking(runtime: SchedulerRuntime, item: ScheduleNotification): void {
+  // Delivery is independent of admission. A failed disk write or slow webhook
+  // cannot roll back dispatched work or hold the next due Plan behind it.
+  void Promise.resolve()
+    .then(() => runtime.notify?.(item))
+    .catch((error: unknown) => {
+      publish({
+        type: "error",
+        at: Date.now(),
+        where: "server.scheduler.notification",
+        message: `Schedule ${item.scheduleId} notification failed: ${redactText(messageOf(error))}`,
+      });
+    });
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -75,14 +102,17 @@ export async function runDueSchedules(
     if (activeScheduleAdmissions.has(schedule.id)) continue;
     activeScheduleAdmissions.add(schedule.id);
     let staged: ReturnType<typeof prepareJobBatch> | undefined;
+    let occurrence: ScheduleOccurrence | undefined;
+    let admitted = false;
     try {
+      occurrence = await runtime.beginOccurrence?.(schedule, at);
       if (schedule.combineId) {
         if (!runtime.startCombine) {
           throw new Error("Plan schedules require a Combine starter");
         }
         if (!schedule.appMapId) throw new Error("A Plan schedule requires appMapId");
         const occurrenceId = `schedule:${schedule.id}:${schedule.nextRunAt}`;
-        await runWithOperationContext(
+        const admission = await runWithOperationContext(
           {
             schemaVersion: 1,
             actorId: "system:scheduler",
@@ -96,8 +126,13 @@ export async function runDueSchedules(
           },
           () => runtime.startCombine!(schedule),
         );
+        admitted = true;
+        if (occurrence && admission) {
+          occurrence = { ...occurrence, ...admission, state: "running", updatedAt: at };
+          await runtime.saveOccurrence?.(occurrence);
+        }
         await runtime.markScheduleRun(schedule.id, at);
-        await runtime.notify?.({
+        notifyWithoutBlocking(runtime, {
           at,
           scheduleId: schedule.id,
           kind: "started",
@@ -186,9 +221,25 @@ export async function runDueSchedules(
       // All fallible batch activation happens before advancing the occurrence.
       // Dispatch is the scheduler's idempotent, no-throw queue transfer.
       staged.activate();
+      if (occurrence) {
+        occurrence = {
+          ...occurrence,
+          state: "running",
+          batchId: matrix.id,
+          expectedCaseCount: matrix.cases.length,
+          jobs: staged.jobs.map((job) => ({
+            id: job.id,
+            caseIndex: job.caseIndex,
+            targetId: job.browserTargetId ?? job.serial,
+          })),
+          updatedAt: at,
+        };
+        await runtime.saveOccurrence?.(occurrence);
+      }
       await runtime.markScheduleRun(schedule.id, at);
       staged.dispatch();
-      await runtime.notify?.({
+      admitted = true;
+      notifyWithoutBlocking(runtime, {
         at,
         scheduleId: schedule.id,
         kind: "started",
@@ -196,6 +247,15 @@ export async function runDueSchedules(
         recipeId: schedule.recipeId,
       });
     } catch (error) {
+      if (admitted) {
+        publish({
+          type: "error",
+          at,
+          where: "server.scheduler.admitted",
+          message: `Schedule ${schedule.id} started but its admission record failed: ${redactText(messageOf(error))}`,
+        });
+        continue;
+      }
       let failureError = error;
       try {
         staged?.rollback();
@@ -206,8 +266,17 @@ export async function runDueSchedules(
       }
       const failure = redactText(messageOf(failureError));
       try {
+        if (occurrence) {
+          const busy = error instanceof HttpError && error.body?.code === "ACTIVE_REPEAT_EXISTS";
+          await runtime.saveOccurrence?.({
+            ...occurrence,
+            state: busy ? "skipped-busy" : "blocked",
+            detail: failure,
+            updatedAt: at,
+          });
+        }
         await runtime.markScheduleFailure(schedule.id, failure, at);
-        await runtime.notify?.({
+        notifyWithoutBlocking(runtime, {
           at,
           scheduleId: schedule.id,
           kind: "failed",
@@ -225,6 +294,7 @@ export async function runDueSchedules(
       }
       // One bad schedule must not prevent other due schedules from queueing.
     } finally {
+      if (occurrence) finishScheduleOccurrenceAdmission(occurrence.id);
       activeScheduleAdmissions.delete(schedule.id);
     }
   }
@@ -241,7 +311,14 @@ export function startScheduler(
     running = runDue()
       // One failing scheduled poll must not produce an unhandled rejection or
       // prevent a later shutdown from observing that the poll has settled.
-      .catch(() => undefined)
+      .catch((error: unknown) => {
+        publish({
+          type: "error",
+          at: Date.now(),
+          where: "server.scheduler.poll",
+          message: `Scheduled poll failed: ${redactText(messageOf(error))}`,
+        });
+      })
       .finally(() => {
         running = undefined;
       });

@@ -226,3 +226,140 @@ test("Plan schedules start a Combine instead of a Test recipe", async () => {
   assert.deepEqual(started, ["grok-web-daily"]);
   assert.deepEqual(marked, [dueSchedule.id]);
 });
+
+test("failed or stalled notification delivery cannot reverse admission or block another Plan", async () => {
+  const started: string[] = [];
+  const failures: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const runtime = fakeRuntime({
+    listSchedules: async () =>
+      ["one", "two", "three"].map((id) => ({
+        ...dueSchedule,
+        id,
+        combineId: id,
+        appMapId: "map",
+      })),
+    startCombine: async (schedule) => {
+      started.push(schedule.id);
+    },
+    notify: async (item) => {
+      if (item.scheduleId === "one") throw new Error("disk unavailable");
+      await held;
+    },
+    markScheduleFailure: async (_id, failure) => {
+      failures.push(failure);
+    },
+  });
+  try {
+    await runDueSchedules(2000, runtime);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(started, ["one", "two", "three"]);
+    assert.deepEqual(failures, []);
+  } finally {
+    release();
+  }
+});
+
+test("poll failures publish diagnostics and later polls still run", async () => {
+  const { subscribe } = await import("@relay/core");
+  const errors: string[] = [];
+  const unsubscribe = subscribe(({ payload: event }) => {
+    if (event.type === "error" && event.where === "server.scheduler.poll")
+      errors.push(event.message);
+  });
+  let polls = 0;
+  let observed!: () => void;
+  const recovered = new Promise<void>((resolve) => {
+    observed = resolve;
+  });
+  const scheduler = startScheduler(1, async () => {
+    if (++polls === 1) throw new Error("schedule storage unavailable");
+    observed();
+  });
+  try {
+    await recovered;
+    await scheduler.close();
+    assert.match(errors[0] ?? "", /schedule storage unavailable/);
+  } finally {
+    await scheduler.close();
+    unsubscribe();
+  }
+});
+
+test("scheduled Plan stores exact admitted jobs before advancing its deadline", async () => {
+  const records: import("@relay/protocol").ScheduleOccurrence[] = [];
+  const order: string[] = [];
+  await runDueSchedules(
+    2000,
+    fakeRuntime({
+      listSchedules: async () => [{ ...dueSchedule, combineId: "plan", appMapId: "map" }],
+      beginOccurrence: async (schedule, at) => ({
+        id: "occurrence",
+        scheduleId: schedule.id,
+        projectId: schedule.projectId,
+        createdAt: at,
+        updatedAt: at,
+        scheduledAt: schedule.nextRunAt,
+        state: "admitting",
+        jobs: [],
+        expectedCaseCount: 0,
+      }),
+      startCombine: async () => ({
+        jobs: [
+          { id: "run-a", testId: "chat" },
+          { id: "run-b", testId: "image" },
+        ],
+        expectedCaseCount: 2,
+        batchId: "batch",
+        campaignId: "campaign",
+        sourceRevision: 7,
+      }),
+      saveOccurrence: async (record) => {
+        records.push(record);
+        order.push("save");
+      },
+      markScheduleRun: async () => {
+        order.push("advance");
+      },
+    }),
+  );
+  assert.deepEqual(order, ["save", "advance"]);
+  assert.equal(records[0]?.state, "running");
+  assert.equal(records[0]?.sourceRevision, 7);
+  assert.deepEqual(
+    records[0]?.jobs.map((job) => job.id),
+    ["run-a", "run-b"],
+  );
+});
+
+test("busy Plan produces a skipped occurrence instead of losing the due cycle", async () => {
+  const { HttpError } = await import("./http.js");
+  const states: string[] = [];
+  await runDueSchedules(
+    2000,
+    fakeRuntime({
+      listSchedules: async () => [{ ...dueSchedule, combineId: "plan", appMapId: "map" }],
+      beginOccurrence: async (schedule, at) => ({
+        id: "busy",
+        scheduleId: schedule.id,
+        projectId: schedule.projectId,
+        createdAt: at,
+        updatedAt: at,
+        scheduledAt: schedule.nextRunAt,
+        state: "admitting",
+        jobs: [],
+        expectedCaseCount: 0,
+      }),
+      startCombine: async () => {
+        throw new HttpError(409, "Already running", { code: "ACTIVE_REPEAT_EXISTS" });
+      },
+      saveOccurrence: async (record) => {
+        states.push(record.state);
+      },
+    }),
+  );
+  assert.deepEqual(states, ["skipped-busy"]);
+});

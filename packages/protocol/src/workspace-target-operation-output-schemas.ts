@@ -1,3 +1,4 @@
+import { scheduleOccurrenceSchema } from "./schedule-occurrence.js";
 import { browserPageToolResultSchema } from "./browser-page-tools.js";
 import * as z from "zod/v4";
 import { everydayOperationOutputSchemas } from "./everyday-operation-output-schemas.js";
@@ -834,6 +835,7 @@ export const workspaceTargetOperationOutputSchemas = {
     .strict(),
   "target.stream.open": z.object({ contentType: text, stream: z.literal("binary") }).strict(),
   "action.run": actionRunOutput,
+  "schedule.occurrences": z.object({ occurrences: z.array(scheduleOccurrenceSchema) }).strict(),
   "schedule.list": z.object({ schedules: z.array(schedule) }).strict(),
   "schedule.create": z.object({ schedule }).strict(),
   "schedule.delete": ok,

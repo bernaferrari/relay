@@ -696,6 +696,7 @@ export const operationInputSchemas = {
   "authoring.session.discard": z.object(sessionReference).strict(),
   "authoring.session.cancel": z.object(sessionReference).strict(),
   "authoring.session.cleanup": z.object(sessionReference).strict(),
+  "schedule.occurrences": z.object({ scheduleId: identifier("Schedule identifier") }).strict(),
   "schedule.delete": z.object({ scheduleId: identifier("Schedule identifier") }).strict(),
   "matrix.delete": z.object({ matrixId: identifier("Compatibility matrix identifier") }).strict(),
   "matrix.resolve": z.object({ matrixId: identifier("Compatibility matrix identifier") }).strict(),

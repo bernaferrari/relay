@@ -226,3 +226,52 @@ test("Plan schedules persist combineId, hour, and account columns after a disk r
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("cadence edits and re-enabling recalculate due time while unchanged edits preserve it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-schedule-edit-"));
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    const input = {
+      recipeId: "smoke",
+      targetKind: "browser" as const,
+      targetId: "browser",
+      platform: "browser" as const,
+      intervalMinutes: 1440,
+    };
+    const daily = await saveSchedule(input);
+    const unchanged = await saveSchedule({ ...input, id: daily.id });
+    assert.equal(unchanged.nextRunAt, daily.nextRunAt);
+    const before = Date.now();
+    const halfHour = await saveSchedule({ ...input, id: daily.id, intervalMinutes: 30 });
+    assert.ok(halfHour.nextRunAt >= before + 30 * 60_000);
+    assert.ok(halfHour.nextRunAt <= Date.now() + 30 * 60_000);
+    const paused = await saveSchedule({
+      ...input,
+      id: daily.id,
+      intervalMinutes: 30,
+      enabled: false,
+    });
+    await markScheduleRun(paused.id, 1);
+    const resumed = await saveSchedule({
+      ...input,
+      id: daily.id,
+      intervalMinutes: 30,
+      enabled: true,
+    });
+    assert.ok(resumed.nextRunAt > Date.now());
+    const wallClock = await saveSchedule({ ...input, id: daily.id, hour: 8, timezone: "UTC" });
+    const differentHour = await saveSchedule({ ...input, id: daily.id, hour: 9, timezone: "UTC" });
+    assert.notEqual(wallClock.nextRunAt, differentHour.nextRunAt);
+    const differentZone = await saveSchedule({
+      ...input,
+      id: daily.id,
+      hour: 9,
+      timezone: "America/Sao_Paulo",
+    });
+    assert.notEqual(differentZone.nextRunAt, differentHour.nextRunAt);
+  } finally {
+    process.chdir(cwd);
+    await rm(root, { recursive: true, force: true });
+  }
+});

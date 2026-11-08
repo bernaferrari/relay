@@ -88,6 +88,7 @@ export * from "./private-inputs.js";
 export * from "./recipe-input-plan.js";
 export * from "./recipe-input-availability.js";
 export * from "./schedules.js";
+export * from "./schedule-occurrences.js";
 export * from "./schedule-next-run.js";
 export * from "./schedule-notify.js";
 export * from "./plan-findings.js";

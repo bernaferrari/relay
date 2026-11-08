@@ -315,7 +315,13 @@ export async function saveSchedule(
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       nextRunAt:
-        existing?.nextRunAt ?? computeScheduleNextRunAt(now, input.intervalMinutes, hour, timezone),
+        existing &&
+        existing.intervalMinutes === Math.floor(input.intervalMinutes) &&
+        existing.hour === hour &&
+        existing.timezone === timezone &&
+        !(existing.enabled === false && (input.enabled ?? true))
+          ? existing.nextRunAt
+          : computeScheduleNextRunAt(now, input.intervalMinutes, hour, timezone),
       lastRunAt: existing?.lastRunAt,
     };
     await writeSchedules([...schedules.filter((item) => item.id !== schedule.id), schedule], file);
