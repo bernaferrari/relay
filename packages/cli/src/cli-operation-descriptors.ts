@@ -297,6 +297,31 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     reason: "The Test-first edit-recording outcome owns this canonical typed mutation.",
   },
 
+  mapped(
+    "fixture.list",
+    path("file list", [], undefined, { summary: "List saved test files in this project" }),
+  ),
+  mapped(
+    "fixture.import",
+    path("file import", [], undefined, {
+      summary: "Import a test file, up to 25 MiB",
+      inputHelp: [
+        { name: "name", type: "string", description: "Filename without folders." },
+        {
+          name: "base64",
+          type: "string",
+          description:
+            "Canonical base64 file bytes. Returns a portable project-scoped fixture reference.",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "schedule.occurrences",
+    path("plan schedule occurrences", ["scheduleId"], undefined, {
+      summary: "Inspect exact scheduled cycles and their Run results",
+    }),
+  ),
   mapped("schedule.list", path("plan schedule list")),
   mapped(
     "schedule.create",

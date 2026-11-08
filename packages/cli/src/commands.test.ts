@@ -119,6 +119,7 @@ test("the advanced surface includes the e2e harness noun with one spelling per o
     "map",
     "proof",
     "build",
+    "file",
     "system",
   ]);
   const families = new Set(
@@ -970,6 +971,7 @@ test("root help documents exit codes, --confirm, and the machine envelopes", () 
     "map",
     "proof",
     "build",
+    "file",
     "system",
   ]) {
     assert.match(advanced, new RegExp(`^${noun} — `, "mu"), noun);
@@ -1003,4 +1005,15 @@ test("browser targets use the device commands: one spelling each", () => {
   ]) {
     assert.throws(() => resolveCommand(retired), /Unknown command/u);
   }
+});
+
+test("saved files and scheduled cycles have discoverable canonical commands", () => {
+  assert.equal(resolveCommand(["file", "list"])?.operationId, "fixture.list");
+  assert.equal(
+    resolveCommand(["file", "import"], { name: "test.txt", base64: "aGk=" })?.operationId,
+    "fixture.import",
+  );
+  assert.deepEqual(resolveCommand(["plan", "schedule", "occurrences", "schedule-1"])?.input, {
+    scheduleId: "schedule-1",
+  });
 });

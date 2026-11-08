@@ -25,6 +25,7 @@ const nouns = [
   ["map", "The App Map: screens, connections, flows, routines, proposals, Explore"],
   ["proof", "Change Proof lifecycle, evidence and privacy policy, PR reports"],
   ["build", "App builds: save, preflight, install, launch"],
+  ["file", "Project-scoped test files: import and list reusable fixtures"],
   ["system", "Activity log, projects, and the local control database"],
 ] as const;
 
