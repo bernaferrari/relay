@@ -13,6 +13,9 @@ export function recipeStepPlatformBlocker(
   if (step.kind === "offline" && platform !== "browser") {
     return "offline is a browser step";
   }
+  if (step.kind === "download" && platform !== "browser") {
+    return "download requires a browser target; record a reviewed native file export instead";
+  }
   if (step.kind === "upload" && platform === "ios") {
     return "upload on iOS requires a reviewed Files-app handoff; disable this step or record that path";
   }

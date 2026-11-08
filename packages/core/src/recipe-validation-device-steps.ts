@@ -242,6 +242,54 @@ export function parseDeviceRecipeStep(
         throw stepErr(index, 'offline requires state: "on" | "off"');
       return { kind: "offline", state: raw.state, ...(note ? { note } : {}) };
     }
+    case "download": {
+      if (!isString(raw.file) || !raw.file.trim())
+        throw stepErr(index, "download.file is required");
+      return {
+        kind: "download",
+        file: raw.file,
+        target: parseTarget(raw.target, index, "target"),
+        ...(note ? { note } : {}),
+      };
+    }
+    case "media-check": {
+      if (!isString(raw.file) || !raw.file.trim())
+        throw stepErr(index, "media-check.file is required");
+      if (raw.media !== "image" && raw.media !== "video" && raw.media !== "audio")
+        throw stepErr(index, "media-check.media must be image, video or audio");
+      const values: { width?: number; height?: number; minDurationMs?: number; minBytes?: number } =
+        {};
+      for (const key of ["width", "height", "minDurationMs", "minBytes"] as const) {
+        const value = raw[key];
+        if (value !== undefined) {
+          if (!isNumber(value) || !Number.isSafeInteger(value) || value <= 0)
+            throw stepErr(index, `media-check.${key} must be a positive integer`);
+          values[key] = value;
+        }
+      }
+      if (raw.sourceFile !== undefined && (!isString(raw.sourceFile) || !raw.sourceFile.trim()))
+        throw stepErr(index, "media-check.sourceFile must be nonempty");
+      if (
+        raw.relation !== undefined &&
+        raw.relation !== "edited" &&
+        raw.relation !== "upscaled" &&
+        raw.relation !== "extended"
+      )
+        throw stepErr(index, "media-check.relation is invalid");
+      if (raw.relation && !raw.sourceFile)
+        throw stepErr(index, "media-check.relation requires sourceFile");
+      return {
+        kind: "media-check",
+        file: raw.file,
+        media: raw.media,
+        ...values,
+        ...(isString(raw.sourceFile) ? { sourceFile: raw.sourceFile } : {}),
+        ...(raw.relation === "edited" || raw.relation === "upscaled" || raw.relation === "extended"
+          ? { relation: raw.relation }
+          : {}),
+        ...(note ? { note } : {}),
+      };
+    }
     case "upload": {
       if (!isString(raw.file) || !raw.file.trim()) throw stepErr(index, "upload.file is required");
       const target =

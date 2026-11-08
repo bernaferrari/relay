@@ -797,6 +797,22 @@ export type RecipeStep = RecipeStepMetadata &
         state: "on" | "off";
       }
     | {
+        kind: "download";
+        file: string;
+        target: StepTarget;
+      }
+    | {
+        kind: "media-check";
+        file: string;
+        media: "image" | "video" | "audio";
+        width?: number;
+        height?: number;
+        minDurationMs?: number;
+        minBytes?: number;
+        sourceFile?: string;
+        relation?: "edited" | "upscaled" | "extended";
+      }
+    | {
         kind: "upload";
         file: string;
         target?: StepTarget;

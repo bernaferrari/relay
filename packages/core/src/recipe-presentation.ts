@@ -158,6 +158,10 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `${step.action} device logs`;
     case "offline":
       return `${step.state === "on" ? "Go" : "Leave"} offline`;
+    case "download":
+      return `Download ${step.file}`;
+    case "media-check":
+      return `Check ${step.media} ${step.file}`;
     case "upload":
       return step.target
         ? `Upload ${step.file} to ${describeTarget(step.target)}`
@@ -235,6 +239,8 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "permission":
     case "alert":
       return ["tap"];
+    case "download":
+    case "media-check":
     case "network":
     case "logs":
     case "upload":

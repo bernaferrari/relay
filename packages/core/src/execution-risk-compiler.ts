@@ -340,6 +340,10 @@ function leafBounds(step: RecipeStep): Bounds {
     case "flow":
     case "script":
       return {};
+    case "download":
+      return { maximumActions: 1, maximumDurationMs: 30_000 };
+    case "media-check":
+      return { maximumActions: 0, maximumDurationMs: 120_000 };
     case "extract":
     case "assert-content":
     case "evaluate-semantic":

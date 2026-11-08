@@ -160,6 +160,8 @@ function assertBinding(step: AppMapScenarioTestStep, label: string): void {
               "identity-ignore",
               "screenshot",
               "upload",
+              "media-check",
+              "download",
             ] as unknown[]
           ).includes(objectValue(binding.step, `${label}.binding.step`).kind)
         ) {

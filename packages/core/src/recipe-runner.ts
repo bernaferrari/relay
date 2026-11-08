@@ -1,3 +1,5 @@
+import { runDownloadStep } from "./media-download.js";
+import { runMediaCheckStep } from "./media-check.js";
 /** Recipe execution glue; cancellation always escapes strategy fallbacks. */
 import type { Device } from "./device.js";
 import {
@@ -409,6 +411,12 @@ async function runRequiredRecipeStep(
       break;
     case "offline":
       await runOfflineStep(device, step, ctx);
+      break;
+    case "download":
+      await runDownloadStep(device, step, ctx);
+      break;
+    case "media-check":
+      await runMediaCheckStep(step, ctx);
       break;
     case "upload":
       await runUploadStep(device, step, ctx);
