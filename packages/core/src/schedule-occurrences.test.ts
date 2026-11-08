@@ -114,3 +114,31 @@ test("occurrences survive reload, remain project-scoped, and uncertain admission
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("occurrence journals honor the configured state root without cross-server collisions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "occurrence-roots-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  try {
+    process.env.RELAY_STATE_DIR = join(root, "first");
+    await saveScheduleOccurrence({ ...occurrence, state: "blocked", detail: "First server" });
+    process.env.RELAY_STATE_DIR = join(root, "second");
+    assert.deepEqual(
+      await listScheduleOccurrences({ projectId: "project", scheduleId: "one" }),
+      [],
+    );
+    await saveScheduleOccurrence({ ...occurrence, state: "blocked", detail: "Second server" });
+    assert.equal(
+      (await listScheduleOccurrences({ projectId: "project", scheduleId: "one" }))[0]?.detail,
+      "Second server",
+    );
+    process.env.RELAY_STATE_DIR = join(root, "first");
+    assert.equal(
+      (await listScheduleOccurrences({ projectId: "project", scheduleId: "one" }))[0]?.detail,
+      "First server",
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

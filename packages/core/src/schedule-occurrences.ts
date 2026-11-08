@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { scheduleOccurrenceSchema, type ScheduleOccurrence } from "@relay/protocol";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import { collaborationStateRoot } from "./collaboration-store.js";
 import { syncRunPath } from "./run-manifest.js";
 import { readPersistedRun, type PersistedRun } from "./runs.js";
 import { getJob } from "./session.js";
@@ -14,7 +14,7 @@ function directory(scope: { projectId: string; scheduleId: string }): string {
   const key = createHash("sha256")
     .update(JSON.stringify([scope.projectId, scope.scheduleId]))
     .digest("hex");
-  return join(findWorkspaceRoot(), ".relay", "schedule-occurrences", key);
+  return join(collaborationStateRoot(), "schedule-occurrences", key);
 }
 function filename(
   record: Pick<ScheduleOccurrence, "id" | "projectId" | "scheduleId" | "scheduledAt">,
