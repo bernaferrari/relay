@@ -107,9 +107,13 @@ export class TargetDriverRegistry {
 /** Local targets are deliberately the only default registration. Remote
  * drivers must be passed by the host through `runWithTargetDriverRegistry`.
  */
-export const defaultTargetDriverRegistry = new TargetDriverRegistry([
-  createLocalAgentDeviceTargetDriver(),
-]);
+let defaultRegistry: TargetDriverRegistry | undefined;
+
+/** Construct runtime adapters only after their module graph has initialized.
+ * Device setup imports session admission, which itself consumes this registry. */
+export function getDefaultTargetDriverRegistry(): TargetDriverRegistry {
+  return (defaultRegistry ??= new TargetDriverRegistry([createLocalAgentDeviceTargetDriver()]));
+}
 
 const targetDriverRegistries = new AsyncLocalStorage<TargetDriverRegistry>();
 
@@ -132,7 +136,7 @@ export function runWithTargetDriverRegistry<T>(
 }
 
 export function currentTargetDriverRegistry(): TargetDriverRegistry {
-  return targetDriverRegistries.getStore() ?? defaultTargetDriverRegistry;
+  return targetDriverRegistries.getStore() ?? getDefaultTargetDriverRegistry();
 }
 
 function requireCapability(

@@ -4,6 +4,9 @@ import { createDeterministicProviderTestDriver } from "./deterministic-provider-
 import { createTargetDriver, TargetDriverCapabilityUnavailableError } from "./target-driver.js";
 import {
   assertProviderTargetExecutionAdmission,
+  getDefaultTargetDriverRegistry,
+  currentTargetDriverRegistry,
+  runWithTargetDriverRegistry,
   createProviderTargetExecutionPlan,
   recoverProviderTarget,
   TargetDriverRegistry,
@@ -96,4 +99,17 @@ test("an admitted provider plan keeps its exact driver through a registry rotati
     replacement.events.includes(`capture.screenshot:${target.targetId}`),
     "new admissions use the host's rotated driver",
   );
+});
+
+test("default driver runtime is stable and scoped overrides do not replace it", () => {
+  const first = getDefaultTargetDriverRegistry();
+  assert.equal(getDefaultTargetDriverRegistry(), first);
+  assert.equal(currentTargetDriverRegistry(), first);
+  assert.equal(first.list().length, 1);
+  const override = new TargetDriverRegistry();
+  runWithTargetDriverRegistry(override, () => {
+    assert.equal(currentTargetDriverRegistry(), override);
+    assert.equal(getDefaultTargetDriverRegistry(), first);
+  });
+  assert.equal(currentTargetDriverRegistry(), first);
 });

@@ -40,7 +40,7 @@ import { handleEverydayRoute } from "./everyday-routes.js";
 import {
   captureScreenshot,
   currentOperationContext,
-  defaultTargetDriverRegistry,
+  getDefaultTargetDriverRegistry,
   enqueueJob,
   getActiveJobs,
   getJob,
@@ -726,7 +726,7 @@ async function startServerWithStateLease(
   // Remote provider adapters are host-owned and intentionally opt-in. Each
   // request runs under this explicit registry; core captures it at admission
   // so a queued job cannot later resolve a provider against ambient defaults.
-  const targetDriverRegistry = opts.targetDriverRegistry ?? defaultTargetDriverRegistry;
+  const targetDriverRegistry = opts.targetDriverRegistry ?? getDefaultTargetDriverRegistry();
   const githubProofWebhook = opts.githubProofWebhook ?? githubWebhookFromEnv();
   const preAuthenticatedRoute = createPreAuthenticatedRoute(githubProofWebhook);
   const { proofRouteRuntime, proofPublicationWorker, proofCoordinator, recoverProofCell } =

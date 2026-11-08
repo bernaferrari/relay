@@ -53,7 +53,11 @@ type IosRunnerPreparation = { promise: Promise<void>; settled: boolean };
 const iosRunnerPreparations = new Map<string, IosRunnerPreparation>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
 const iosRuntimeRecoveries = new Map<string, Promise<IosRuntimeRecoveryResult>>();
-const runIosRecoverySingleFlight = createIosSessionRecoverySingleFlight<TargetRuntimeRecovery>();
+// Recovery imports device control, which imports this session module again.
+// Initialize the coalescing runtime on first use, after that graph is ready.
+let runIosRecoverySingleFlight:
+  | ReturnType<typeof createIosSessionRecoverySingleFlight<TargetRuntimeRecovery>>
+  | undefined;
 const IOS_SESSION_UNAVAILABLE_FAILURE_TTL_MS = 10_000;
 /**
  * A genuinely locked/passcode-bound iPad cannot be fixed by another screen
@@ -174,6 +178,7 @@ export async function recoverTargetRuntime(
   cause?: unknown,
   opts?: { force?: boolean },
 ): Promise<TargetRuntimeRecovery> {
+  runIosRecoverySingleFlight ??= createIosSessionRecoverySingleFlight<TargetRuntimeRecovery>();
   return runIosRecoverySingleFlight(serial, () =>
     runTargetMutation(serial, getExecutingJobId(), () =>
       recoverTargetRuntimeReserved(serial, cause, opts),
