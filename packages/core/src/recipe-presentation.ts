@@ -162,6 +162,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Download ${step.file}`;
     case "media-check":
       return `Check ${step.media} ${step.file}`;
+    case "audio-record":
+      return `Record HTML media audio from ${describeTarget(step.target)}`;
     case "upload":
       return step.target
         ? `Upload ${step.file} to ${describeTarget(step.target)}`
@@ -241,6 +243,7 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["tap"];
     case "download":
     case "media-check":
+    case "audio-record":
     case "network":
     case "logs":
     case "upload":

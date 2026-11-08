@@ -813,6 +813,13 @@ export type RecipeStep = RecipeStepMetadata &
         relation?: "edited" | "upscaled" | "extended";
       }
     | {
+        /** Consented capture of one playing HTML media element. Not tab/OS/WebAudio/TTS capture. */
+        kind: "audio-record";
+        target: StepTarget;
+        file: string;
+        durationMs: number;
+      }
+    | {
         kind: "upload";
         file: string;
         target?: StepTarget;

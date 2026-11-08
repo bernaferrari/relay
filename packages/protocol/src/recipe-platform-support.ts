@@ -10,6 +10,8 @@ export function recipeStepPlatformBlocker(
   if (step.kind === "settings" && step.setting === "mobile-data" && platform !== "android") {
     return "settings mobile-data is only supported on Android";
   }
+  if (step.kind === "audio-record" && platform !== "browser")
+    return "audio-record captures browser HTML media only; native output is unsupported";
   if (step.kind === "offline" && platform !== "browser") {
     return "offline is a browser step";
   }

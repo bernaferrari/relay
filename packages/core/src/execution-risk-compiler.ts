@@ -28,6 +28,7 @@ export const EXECUTION_RISK_CODES = {
   logsClear: "evidence.logs-clear",
   manualCheckpoint: "interaction.manual-checkpoint",
   missingRecipe: "execution.missing-recipe",
+  audioCapture: "evidence.audio-capture",
   networkBodyCapture: "evidence.network-body-capture",
   opaqueFlow: "execution.opaque-flow",
   opaqueScript: "execution.opaque-script",
@@ -298,6 +299,8 @@ function leafBounds(step: RecipeStep): Bounds {
       return { maximumActions: step.action === "accept" || step.action === "dismiss" ? 1 : 0 };
     case "logs":
       return { maximumActions: step.action === "clear" ? 1 : 0 };
+    case "audio-record":
+      return { maximumActions: 0, maximumDurationMs: step.durationMs + 65_000 };
     case "sleep":
       return { maximumActions: 0, maximumDurationMs: step.ms };
     case "pause": {
@@ -448,6 +451,15 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
         explanation: "The Test changes a system setting on the target.",
         stepId,
         cleanupRequired: true,
+      });
+      return;
+    case "audio-record":
+      accumulator.addRisk({
+        level: "guarded",
+        code: EXECUTION_RISK_CODES.audioCapture,
+        explanation:
+          "The Test records sensitive audio from a selected HTML media element with explicit consent.",
+        stepId,
       });
       return;
     case "offline":

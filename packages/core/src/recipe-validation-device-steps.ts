@@ -290,6 +290,24 @@ export function parseDeviceRecipeStep(
         ...(note ? { note } : {}),
       };
     }
+    case "audio-record": {
+      if (!isString(raw.file) || !raw.file.trim())
+        throw stepErr(index, "audio-record.file is required");
+      if (
+        !isNumber(raw.durationMs) ||
+        !Number.isInteger(raw.durationMs) ||
+        raw.durationMs < 250 ||
+        raw.durationMs > 30_000
+      )
+        throw stepErr(index, "audio-record.durationMs must be from 250 to 30000");
+      return {
+        kind: "audio-record",
+        file: raw.file,
+        target: parseTarget(raw.target, index, "target"),
+        durationMs: raw.durationMs,
+        ...(note ? { note } : {}),
+      };
+    }
     case "upload": {
       if (!isString(raw.file) || !raw.file.trim()) throw stepErr(index, "upload.file is required");
       const target =
