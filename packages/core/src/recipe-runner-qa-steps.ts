@@ -1,3 +1,4 @@
+import { currentRunMediaFile } from "./recipe-media-files.js";
 import { resolveManagedFixtureFile } from "./managed-fixtures.js";
 import { readFile, copyFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
@@ -238,9 +239,12 @@ export async function runUploadStep(
   step: Extract<RecipeStep, { kind: "upload" }>,
   ctx: RecipeStepContext,
 ): Promise<void> {
-  const path = step.file.startsWith("fixture:")
-    ? await resolveManagedFixtureFile(step.file, ctx.job?.projectId ?? "")
-    : resolveUploadFile(step.file);
+  const generated = await currentRunMediaFile(step.file, ctx);
+  const path =
+    generated ??
+    (step.file.startsWith("fixture:")
+      ? await resolveManagedFixtureFile(step.file, ctx.job?.projectId ?? "")
+      : resolveUploadFile(step.file));
   await readFile(path);
   const context = currentTargetContext();
   if (context.kind === "browser") {

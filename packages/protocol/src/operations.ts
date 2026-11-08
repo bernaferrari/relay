@@ -1,3 +1,4 @@
+import { createOperationManifest } from "./operation-manifest.js";
 import { managedFixtureOperationDefinitions } from "./managed-fixture-operation-definitions.js";
 import { e2eOperationDefinitions } from "./e2e-operation-definitions.js";
 import { replayRunInputParser, runIdInputParser } from "./run-replay-operation-parser.js";
@@ -1215,18 +1216,9 @@ export function validateOperationDefinitions(
   validateDefinitions(definitions);
 }
 
-export type OperationManifestItem = Omit<OperationDefinition, "input" | "output"> & {
-  input: string;
-  output: string;
-};
-
+export type { OperationManifestItem } from "./operation-manifest.js";
 export function operationManifest(
   definitions: readonly OperationDefinition[] = operationDefinitions,
-): OperationManifestItem[] {
-  validateOperationDefinitions(definitions);
-  return definitions.map(({ input, output, ...definition }) => ({
-    ...definition,
-    input: input.description,
-    output: output.description,
-  }));
+) {
+  return createOperationManifest(definitions);
 }

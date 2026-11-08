@@ -5,7 +5,6 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { RecipeStep } from "./recipes.js";
 import type { Device } from "./device.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
-import { findWorkspaceRoot } from "./workspace-root.js";
 import { browserSessionForDevice } from "./browser-live-handles.js";
 import { activePage } from "./browser-target.js";
 import { locatorFor } from "./browser-target-locator.js";
@@ -20,18 +19,17 @@ export async function runDownloadStep(
 ): Promise<void> {
   const session = browserSessionForDevice(device);
   if (!session) throw new Error("download requires a browser target");
-  const root = await realpath(findWorkspaceRoot());
-  const relativeFile = relative(root, resolve(root, step.file));
-  if (isAbsolute(relativeFile) || relativeFile === ".." || relativeFile.startsWith("../"))
-    throw new Error("download: destination must be inside workspace");
-  const file = ctx.job
-    ? resolve(root, ".relay", "downloads", ctx.job.id, relativeFile)
-    : resolve(root, step.file);
-  if (ctx.job) await mkdir(dirname(file), { recursive: true });
+  if (!ctx.job?.runDir) throw new Error("download requires an evidence-backed Run");
+  const root = await realpath(ctx.job.runDir);
+  const relativeFile = step.file;
+  if (isAbsolute(relativeFile) || relativeFile.split(/[\\/]/).some((part) => part === ".."))
+    throw new Error("download: use a relative output name");
+  const file = resolve(root, "artifacts", "downloads", relativeFile);
+  await mkdir(dirname(file), { recursive: true });
   const parent = await realpath(dirname(file));
   const local = relative(root, parent);
   if (isAbsolute(local) || local === ".." || local.startsWith("../"))
-    throw new Error("download: destination must be inside the workspace");
+    throw new Error("download: destination is outside its Run");
   // Reserve without clobbering an old result or following a destination symlink.
   const handle = await open(file, "wx", 0o600);
   await handle.close();
@@ -54,7 +52,7 @@ export async function runDownloadStep(
   const artifact = {
     kind: "download",
     capturedAt: Date.now(),
-    data: { stepId: step.id, file: step.file, path: file },
+    data: { stepId: step.id, file: step.file, path: relative(root, file) },
   };
   ctx.job?.artifacts.push(artifact);
   ctx.artifacts?.push(artifact);

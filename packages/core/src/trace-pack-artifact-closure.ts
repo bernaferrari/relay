@@ -140,6 +140,7 @@ function mediaTypeFor(path: string): string {
 }
 
 function artifactChannel(kind: string): string | undefined {
+  if (kind === "download") return "download";
   for (const channel of [
     "video",
     "logs",
@@ -175,6 +176,7 @@ function rawNetworkRetentionAllowed(run: PersistedRun): boolean {
 
 function looksLikeRunArtifact(path: string, channel?: string): boolean {
   if (!path.includes("/")) return false;
+  if (channel === "download") return true;
   if (channel && ["video", "screenshot", "audio", "crash"].includes(channel)) return true;
   return /\.(?:png|jpe?g|webp|mp4|webm|wav|m4a|aac|jsonl?|xml|log|txt|ips|crash|diag|har|trace|pcap|pcapng)$/iu.test(
     path,

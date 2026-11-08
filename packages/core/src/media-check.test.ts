@@ -10,6 +10,7 @@ import { validateRecipeSteps } from "./recipes.js";
 const execute = promisify(execFile);
 const facts = {
   sha256: "output",
+  decodedSha256: "decoded-output",
   bytes: 400,
   width: 1280,
   height: 720,
@@ -48,14 +49,23 @@ test("media assertions reject wrong dimensions, short output, unchanged source a
       assertMediaFacts(
         { kind: "media-check", file: "x", media: "video", sourceFile: "s", relation: "extended" },
         facts,
-        { ...facts, sha256: "source" },
+        { ...facts, sha256: "source", decodedSha256: "decoded-source" },
       ),
     /did not increase/,
+  );
+  assert.throws(
+    () =>
+      assertMediaFacts(
+        { kind: "media-check", file: "x", media: "image", sourceFile: "s", relation: "edited" },
+        facts,
+        { ...facts, sha256: "different-container" },
+      ),
+    /identical/,
   );
   assertMediaFacts(
     { kind: "media-check", file: "x", media: "video", sourceFile: "s", relation: "upscaled" },
     facts,
-    { ...facts, sha256: "source", width: 854, height: 480 },
+    { ...facts, sha256: "source", decodedSha256: "decoded-source", width: 854, height: 480 },
   );
 });
 test("media step parser validates numeric checks and source relation", () => {

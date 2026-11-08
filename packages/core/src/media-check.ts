@@ -1,3 +1,4 @@
+import { currentRunMediaFile } from "./recipe-media-files.js";
 import { resolveManagedFixtureFile } from "./managed-fixtures.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -23,6 +24,7 @@ const probeSchema = z.object({
 });
 export type MediaFacts = {
   sha256: string;
+  decodedSha256: string;
   bytes: number;
   width?: number;
   height?: number;
@@ -32,8 +34,8 @@ export type MediaFacts = {
 };
 type MediaCheck = Extract<RecipeStep, { kind: "media-check" }>;
 
-async function workspaceFile(file: string): Promise<string> {
-  const root = await realpath(findWorkspaceRoot());
+async function workspaceFile(file: string, allowedRoot?: string): Promise<string> {
+  const root = await realpath(allowedRoot ?? findWorkspaceRoot());
   const path = await realpath(resolve(root, file));
   const local = relative(root, path);
   if (isAbsolute(local) || local === ".." || local.startsWith("../"))
@@ -42,17 +44,22 @@ async function workspaceFile(file: string): Promise<string> {
   return path;
 }
 
-export async function inspectMedia(file: string, projectId?: string): Promise<MediaFacts> {
+export async function inspectMedia(
+  file: string,
+  projectId?: string,
+  allowedRoot?: string,
+): Promise<MediaFacts> {
   if (file.startsWith("fixture:") && !projectId)
     throw new Error("media-check: managed file requires project scope");
   const path = file.startsWith("fixture:")
     ? await resolveManagedFixtureFile(file, projectId!)
-    : await workspaceFile(file);
+    : await workspaceFile(file, allowedRoot);
   const info = await stat(path);
   if (info.size === 0) throw new Error("media-check: empty file");
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   let stdout: string;
+  let decodedSha256 = "";
   try {
     ({ stdout } = await execute(
       "ffprobe",
@@ -70,7 +77,7 @@ export async function inspectMedia(file: string, projectId?: string): Promise<Me
       { timeout: 30_000, maxBuffer: 1024 * 1024 },
     ));
     // Decode the entire output. Metadata alone cannot establish playability.
-    await execute(
+    const decoded = await execute(
       "ffmpeg",
       [
         "-nostdin",
@@ -81,12 +88,23 @@ export async function inspectMedia(file: string, projectId?: string): Promise<Me
         "file,pipe",
         "-i",
         path,
+        "-c:v",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "-c:a",
+        "pcm_s16le",
         "-f",
-        "null",
+        "hash",
+        "-hash",
+        "sha256",
         "-",
       ],
       { timeout: 30_000, maxBuffer: 1024 * 1024 },
     );
+    const match = /^SHA256=([a-f0-9]{64})$/im.exec(decoded.stdout.trim());
+    if (!match?.[1]) throw new Error("Decoded media digest missing");
+    decodedSha256 = match[1];
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
       throw new Error("media-check requires ffprobe and ffmpeg on PATH");
@@ -97,6 +115,7 @@ export async function inspectMedia(file: string, projectId?: string): Promise<Me
   const duration = Number(probe.format.duration);
   return {
     sha256: hash.digest("hex"),
+    decodedSha256,
     bytes: info.size,
     ...(video?.width ? { width: video.width } : {}),
     ...(video?.height ? { height: video.height } : {}),
@@ -122,7 +141,7 @@ export function assertMediaFacts(step: MediaCheck, output: MediaFacts, source?: 
     throw new Error("media-check: duration is too short");
   if (step.sourceFile && !source) throw new Error("media-check: source evidence missing");
   if (source) {
-    if (source.sha256 === output.sha256)
+    if (source.sha256 === output.sha256 || source.decodedSha256 === output.decodedSha256)
       throw new Error("media-check: output is identical to source");
     if (
       step.relation === "upscaled" &&
@@ -145,28 +164,19 @@ export function assertMediaFacts(step: MediaCheck, output: MediaFacts, source?: 
 }
 
 export async function runMediaCheckStep(step: MediaCheck, ctx: RecipeStepContext): Promise<void> {
-  const artifactPath = (file: string) => {
-    const downloaded = ctx.job?.artifacts
-      .slice()
-      .reverse()
-      .find(
-        (entry) =>
-          entry.kind === "download" &&
-          entry.data &&
-          typeof entry.data === "object" &&
-          "file" in entry.data &&
-          entry.data.file === file,
-      );
-    return downloaded?.data &&
-      typeof downloaded.data === "object" &&
-      "path" in downloaded.data &&
-      typeof downloaded.data.path === "string"
-      ? downloaded.data.path
-      : file;
-  };
-  const output = await inspectMedia(artifactPath(step.file), ctx.job?.projectId);
+  const outputPath = await currentRunMediaFile(step.file, ctx);
+  const output = await inspectMedia(
+    outputPath ?? step.file,
+    ctx.job?.projectId,
+    outputPath ? ctx.job?.runDir : undefined,
+  );
+  const sourcePath = step.sourceFile ? await currentRunMediaFile(step.sourceFile, ctx) : undefined;
   const source = step.sourceFile
-    ? await inspectMedia(artifactPath(step.sourceFile), ctx.job?.projectId)
+    ? await inspectMedia(
+        sourcePath ?? step.sourceFile,
+        ctx.job?.projectId,
+        sourcePath ? ctx.job?.runDir : undefined,
+      )
     : undefined;
   const artifact = {
     kind: "media-check",
