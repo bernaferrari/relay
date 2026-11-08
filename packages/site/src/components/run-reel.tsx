@@ -75,14 +75,13 @@ export function RunReel() {
               <span
                 className={`flex items-baseline gap-2 text-xs font-medium transition-colors sm:text-sm ${active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"}`}
               >
-                <span className="font-mono text-[0.7rem] tabular-nums opacity-60">0{i + 1}</span>
+                <span className="font-mono text-eyebrow tabular-nums opacity-60">0{i + 1}</span>
                 {p.label}
               </span>
-              <span className="relative h-[3px] w-full overflow-hidden rounded-full bg-border">
+              <span className="relative h-0.75 w-full overflow-hidden rounded-full bg-border">
                 <span
                   key={active && auto && visible ? `run-${index}` : `idle-${i}`}
                   className={`ribbon-line absolute inset-y-0 left-0 rounded-full ${done ? "w-full" : active ? (auto && visible ? "w-full origin-left animate-reel-fill" : "w-full") : "w-0"}`}
-                  style={{ ["--reel" as string]: `${INTERVAL}ms` }}
                 />
               </span>
             </button>
@@ -90,13 +89,13 @@ export function RunReel() {
         })}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border bg-card shadow-[0_1px_0_color-mix(in_oklch,var(--foreground)_4%,transparent),0_24px_60px_-28px_color-mix(in_oklch,var(--ribbon-violet)_35%,transparent)]">
+      <div className="overflow-hidden rounded-2xl border bg-card shadow-reel">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="truncate text-sm font-semibold tracking-tight">
               Checkout · Pay button
             </span>
-            <span className="hidden rounded-md border px-1.5 py-0.5 font-mono text-[0.68rem] text-muted-foreground sm:inline">
+            <span className="hidden rounded-md border px-1.5 py-0.5 font-mono text-eyebrow text-muted-foreground sm:inline">
               chromium
             </span>
           </div>
@@ -121,7 +120,7 @@ export function RunReel() {
               return (
                 <li
                   key={step.label}
-                  className={`flex items-center gap-3 rounded-lg px-2.5 py-2 text-[0.8rem] transition-colors duration-500 ${state === "failed" ? "bg-fail/10" : state === "fixing" ? "bg-ribbon-orange/10" : ""}`}
+                  className={`flex items-center gap-3 rounded-lg px-2.5 py-2 text-step transition-colors duration-500 ${state === "failed" ? "bg-fail/10" : state === "fixing" ? "bg-ribbon-orange/10" : ""}`}
                 >
                   <StepIcon state={state} />
                   <span
@@ -129,7 +128,7 @@ export function RunReel() {
                   >
                     {step.label}
                   </span>
-                  <span className="font-mono text-[0.68rem] tabular-nums text-muted-foreground">
+                  <span className="font-mono text-eyebrow tabular-nums text-muted-foreground">
                     {state === "fixing"
                       ? "fix"
                       : state === "passed" || state === "failed"
@@ -149,7 +148,7 @@ export function RunReel() {
           </div>
         </div>
 
-        <div className="flex items-start gap-3 border-t bg-ink px-4 py-3 font-mono text-[0.72rem] leading-relaxed text-ink-foreground/80 sm:px-5">
+        <div className="flex items-start gap-3 border-t bg-ink px-4 py-3 font-mono text-data leading-relaxed text-ink-foreground/80 sm:px-5">
           <span className="select-none text-ribbon-orange">$</span>
           <p aria-live="polite" key={phase} className="animate-reveal min-w-0">
             <span className="text-ink-foreground/45">relay · </span>
@@ -174,7 +173,7 @@ function StatusChip({ phase }: { phase: Phase }) {
   return (
     <span
       key={phase}
-      className={`reveal-step inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}
+      className={`animate-reveal motion-reduce:animate-none inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}
     >
       {phase === "record" ? (
         <span className="size-1.5 animate-pulse rounded-full bg-current" />
@@ -242,22 +241,22 @@ function CheckoutFrame({ broken, phase }: { broken: boolean; phase: Phase }) {
     blue: "Check: no overlap",
   }[tone];
   return (
-    <figure className="relative m-0 overflow-hidden rounded-xl border bg-[#f5f3ef] text-[#1c1917] shadow-sm dark:border-white/10">
-      <div className="flex items-center gap-2 border-b border-black/8 bg-[#f6f6f4] px-3 py-2">
+    <figure className="relative m-0 overflow-hidden rounded-xl border bg-store-background text-store-foreground shadow-sm dark:border-white/10">
+      <div className="flex items-center gap-2 border-b border-black/8 bg-store-chrome px-3 py-2">
         <span className="flex gap-1">
           <i className="size-2 rounded-full bg-black/12" />
           <i className="size-2 rounded-full bg-black/12" />
           <i className="size-2 rounded-full bg-black/12" />
         </span>
-        <span className="mx-auto rounded bg-white px-2 py-0.5 font-mono text-[0.62rem] text-black/50">
+        <span className="mx-auto rounded bg-white px-2 py-0.5 font-mono text-tiny text-black/50">
           shop.example/checkout
         </span>
       </div>
       <div className="flex items-center justify-between border-b border-black/6 bg-white px-5 py-2">
-        <span className="text-[0.7rem] font-bold tracking-tight">
-          Ember<span className="text-[#c2410c]">.</span>
+        <span className="text-eyebrow font-bold tracking-tight">
+          Ember<span className="text-store-brand">.</span>
         </span>
-        <span className="flex gap-3 text-[0.55rem] text-black/45">
+        <span className="flex gap-3 text-nano text-black/45">
           <span>Shop</span>
           <span>Journal</span>
           <span>Cart</span>
@@ -265,34 +264,34 @@ function CheckoutFrame({ broken, phase }: { broken: boolean; phase: Phase }) {
       </div>
       <div className="m-4 rounded-xl border border-black/8 bg-white px-4 pt-4 pb-5">
         <p className="text-base font-bold tracking-tight">Checkout</p>
-        <p className="text-[0.62rem] text-black/50">Ember pour-over kettle · Free shipping</p>
-        <div className="mt-2 flex justify-between border-b border-black/6 py-1.5 text-[0.62rem]">
+        <p className="text-tiny text-black/50">Ember pour-over kettle · Free shipping</p>
+        <div className="mt-2 flex justify-between border-b border-black/6 py-1.5 text-tiny">
           <span>Card</span>
           <span className="text-black/50">Visa ending 4242</span>
         </div>
         <div className="relative mt-8">
-          <div className="relative flex h-10 items-center rounded-lg border border-black/8 bg-[#faf9f7] px-3 text-[0.62rem]">
+          <div className="relative flex h-10 items-center rounded-lg border border-black/8 bg-store-field px-3 text-tiny">
             <span className="w-16 shrink-0 text-black/50">Order total</span>
             <b className="text-sm">$48.00</b>
             <span
-              className={`ms-auto h-7 rounded-md bg-[#c2410c] px-3 text-[0.62rem] leading-7 font-semibold text-white transition-opacity duration-500 ${broken ? "opacity-0" : "opacity-100"}`}
+              className={`ms-auto h-7 rounded-md bg-store-brand px-3 text-tiny leading-7 font-semibold text-white transition-opacity duration-500 ${broken ? "opacity-0" : "opacity-100"}`}
             >
               Pay now
             </span>
             <span
               aria-hidden={!broken}
-              className={`absolute top-1/2 left-[5.6rem] h-7 -translate-y-1/2 rounded-md bg-[#c2410c] px-3 text-[0.62rem] leading-7 font-semibold text-white shadow transition-all duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${broken ? "opacity-100" : "translate-x-24 opacity-0"}`}
+              className={`absolute top-1/2 left-demo-pay-offset h-7 -translate-y-1/2 rounded-md bg-store-brand px-3 text-tiny leading-7 font-semibold text-white shadow transition-all duration-700 ease-snap ${broken ? "opacity-100" : "translate-x-24 opacity-0"}`}
             >
               Pay now
             </span>
           </div>
           <div
             key={tone}
-            className={`reveal-step pointer-events-none absolute -inset-1.5 rounded-xl border-2 ${outline}`}
+            className={`animate-reveal motion-reduce:animate-none pointer-events-none absolute -inset-1.5 rounded-xl border-2 ${outline}`}
           />
           <span
             key={`l-${tone}`}
-            className={`reveal-step absolute -top-6 left-0 rounded px-1.5 py-0.5 font-mono text-[0.58rem] font-medium text-white ${tone === "fail" ? "bg-fail" : tone === "pass" ? "bg-pass" : tone === "fix" ? "bg-ribbon-orange" : "bg-ribbon-blue"}`}
+            className={`animate-reveal motion-reduce:animate-none absolute -top-6 left-0 rounded px-1.5 py-0.5 font-mono text-nano font-medium text-white ${tone === "fail" ? "bg-fail" : tone === "pass" ? "bg-pass" : tone === "fix" ? "bg-ribbon-orange" : "bg-ribbon-blue"}`}
           >
             {label}
           </span>
@@ -301,15 +300,15 @@ function CheckoutFrame({ broken, phase }: { broken: boolean; phase: Phase }) {
       {/* The one-line fix floats over the page instead of replacing it. */}
       <div
         aria-hidden={phase !== "repair"}
-        className={`absolute top-[4.5rem] right-6 overflow-hidden rounded-lg border border-black/10 bg-[#0f1220] font-mono text-[0.62rem] leading-5 shadow-lg transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${phase === "repair" ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"}`}
+        className={`absolute top-18 right-6 overflow-hidden rounded-lg border border-black/10 bg-store-code font-mono text-tiny leading-5 shadow-lg transition-all duration-500 ease-snap ${phase === "repair" ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"}`}
       >
         <p className="border-b border-white/10 px-2.5 py-1 text-white/45">
           checkout.css · 1 change
         </p>
-        <p className="bg-[#ff5d5d]/15 px-2.5 text-[#ff9b9b]">
+        <p className="bg-store-removed/15 px-2.5 text-store-removed-text">
           − .pay {"{"} position: absolute; {"}"}
         </p>
-        <p className="bg-[#3ddc84]/15 px-2.5 text-[#8ff0b7]">
+        <p className="bg-store-added/15 px-2.5 text-store-added-text">
           + .pay {"{"} margin-left: auto; {"}"}
         </p>
       </div>

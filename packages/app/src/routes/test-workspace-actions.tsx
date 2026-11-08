@@ -103,7 +103,7 @@ export function TestWorkspaceActions({
             <div className="flex items-center" role="group" aria-label="Run">
               <Button
                 size="sm"
-                className={testPresent ? "rounded-e-none" : undefined}
+                segment={testPresent ? "start" : "standalone"}
                 onClick={onRun}
                 disabled={startPending}
                 title={configurationLabel}
@@ -123,13 +123,14 @@ export function TestWorkspaceActions({
                           ref={configurationTriggerRef}
                           size="sm"
                           variant="outline"
-                          className="-ml-px rounded-s-none"
+                          segment="end"
+                          className="-ml-px"
                         />
                       ) : (
                         <Button
                           ref={configurationTriggerRef}
                           size="icon-sm"
-                          className="w-7 rounded-s-none border-l border-l-primary-foreground/25"
+                          segment="end-primary"
                         />
                       )
                     }

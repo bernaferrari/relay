@@ -16,7 +16,7 @@ const navLink =
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
-      <div className="flex h-14 items-center justify-between gap-3 ps-4 pe-2.5 md:h-[69px] md:ps-[15px] md:pe-4">
+      <div className="flex h-14 items-center justify-between gap-3 ps-4 pe-2.5 md:h-17.25 md:ps-3.75 md:pe-4">
         <Link href="/" aria-label="Relay home" className="flex rounded-md">
           <RelayBrand />
         </Link>

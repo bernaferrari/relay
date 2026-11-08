@@ -53,7 +53,7 @@ export function PersonAvatar({ name, size = "md" }: { name: string; size?: "sm" 
   return (
     <span
       aria-hidden="true"
-      className={`grid shrink-0 place-items-center rounded-full font-semibold ${tintFor(name)} ${size === "sm" ? "size-6 text-[11px]" : "size-9 text-sm"}`}
+      className={`grid shrink-0 place-items-center rounded-full font-semibold ${tintFor(name)} ${size === "sm" ? "size-6 text-caption" : "size-9 text-sm"}`}
     >
       {name.trim().charAt(0).toUpperCase() || "?"}
     </span>
@@ -201,7 +201,7 @@ export function SideBySide({
               <div className="flex items-center gap-1 border-b border-border px-2 py-1">
                 <span className="size-1.5 rounded-full bg-muted-foreground/30" />
                 <span className="size-1.5 rounded-full bg-muted-foreground/30" />
-                <span className="ml-1 truncate font-mono text-[10px] text-muted-foreground">
+                <span className="ml-1 truncate font-mono text-micro text-muted-foreground">
                   {row.browserName}
                 </span>
               </div>
@@ -406,7 +406,7 @@ function AccountsEditor({
               Every browser is already used. Add another browser for the next account.
               <Button
                 variant="link"
-                className="h-auto p-0"
+                size="inline"
                 onClick={() => {
                   onOpenChange(false);
                   onNewBrowser();

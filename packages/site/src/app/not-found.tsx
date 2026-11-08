@@ -10,18 +10,18 @@ export default function NotFound() {
       <SiteHeader />
       <main
         id="main-content"
-        className="mx-auto grid w-full max-w-[1200px] flex-1 items-center gap-10 px-5 py-20 sm:px-8 md:grid-cols-[1fr_auto]"
+        className="mx-auto grid w-full max-w-page flex-1 items-center gap-10 px-5 py-20 sm:px-8 md:grid-cols-[1fr_auto]"
       >
         <div className="grid justify-items-start gap-5">
-          <span className="font-mono text-[0.7rem] font-medium tracking-[0.14em] text-ribbon-pink uppercase">
+          <span className="font-mono text-eyebrow font-medium text-ribbon-pink uppercase">
             404 · Page not found
           </span>
-          <h1 className="font-display text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.03em] sm:text-[3.6rem]">
+          <h1 className="font-display text-error-title font-semibold sm:text-error-title-wide">
             This flow has no
             <br />
             recorded step here.
           </h1>
-          <p className="max-w-lg text-[1.05rem] leading-relaxed text-muted-foreground">
+          <p className="max-w-lg text-lede leading-relaxed text-muted-foreground">
             The link may have moved. The docs cover setup, workflows, and troubleshooting.
           </p>
           <div className="mt-2 flex flex-wrap gap-3">

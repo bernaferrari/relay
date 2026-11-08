@@ -172,6 +172,25 @@ summary:focus-visible {
   --text-nano--line-height: 0.85rem;
   --tracking-display: -0.03em;
 
+  --text-error-title: 2.6rem;
+  --text-error-title--line-height: 1.02;
+  --text-error-title--letter-spacing: -0.03em;
+  --text-error-title-wide: 3.6rem;
+  --text-error-title-wide--line-height: 1.02;
+  --text-error-title-wide--letter-spacing: -0.03em;
+
+  /* The simulated store keeps its own identity in either Relay theme. */
+  --color-store-background: #f5f3ef;
+  --color-store-foreground: #1c1917;
+  --color-store-chrome: #f6f6f4;
+  --color-store-brand: #c2410c;
+  --color-store-field: #faf9f7;
+  --color-store-code: #0f1220;
+  --color-store-removed: #ff5d5d;
+  --color-store-removed-text: #ff9b9b;
+  --color-store-added: #3ddc84;
+  --color-store-added-text: #8ff0b7;
+  --spacing-demo-pay-offset: 5.6rem;
   --container-page: 1200px;
   --radius-banner: 2rem;
   --blur-loop: 70px;

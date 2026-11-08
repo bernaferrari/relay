@@ -301,7 +301,7 @@ export function EnvironmentPage() {
                   .toUpperCase() || "?"}
               </span>
               <div className="grid min-w-0 gap-0.5">
-                <h1 className="truncate font-display text-3xl leading-9 font-semibold tracking-[-0.025em]">
+                <h1 className="truncate font-display text-3xl leading-9 font-semibold tracking-tight">
                   {space.name}
                 </h1>
                 <p className="truncate text-sm text-muted-foreground">

@@ -96,7 +96,7 @@ export function TestStage({
           className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-2"
         >
           <span className="relative flex size-2.5 shrink-0" aria-hidden="true">
-            <span className="absolute size-full animate-ping rounded-full bg-success/50 [animation-duration:2s] motion-reduce:hidden" />
+            <span className="absolute size-full animate-ping-slow rounded-full bg-success/50 motion-reduce:hidden" />
             <span className="relative size-2.5 rounded-full bg-success" />
           </span>
           <p className="min-w-0 flex-1 text-sm">

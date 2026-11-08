@@ -22,6 +22,7 @@ const buttonStyles = cva(
         soft: "text-primary hover:bg-primary/10 aria-expanded:bg-primary/10",
       },
       size: {
+        inline: "h-auto gap-1 p-0",
         default:
           "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
         xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
@@ -33,6 +34,12 @@ const buttonStyles = cva(
         "icon-sm":
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
+      },
+      segment: {
+        standalone: "",
+        start: "rounded-e-none",
+        end: "rounded-s-none",
+        "end-primary": "rounded-s-none border-l border-l-primary-foreground/25",
       },
     },
     defaultVariants: {
@@ -51,12 +58,13 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  segment = "standalone",
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={buttonVariants({ variant, size, className })}
+      className={buttonVariants({ variant, size, segment, className })}
       {...props}
     />
   );

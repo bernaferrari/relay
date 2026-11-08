@@ -97,7 +97,7 @@ export function RunStoryFailure({
       ) : null}
       <div className="flex flex-wrap gap-2 pl-6">
         {inspect ? (
-          <Button size="sm" variant="outline" className="bg-card" onClick={onInspectEvidence}>
+          <Button size="sm" variant="outline" onClick={onInspectEvidence}>
             <Eye aria-hidden="true" /> See where it failed
           </Button>
         ) : nextAction === "setup" && testId ? (
@@ -105,7 +105,7 @@ export function RunStoryFailure({
             nativeButton={false}
             size="sm"
             variant="outline"
-            className="bg-card"
+
             render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
           >
             <Settings aria-hidden="true" /> Check run setup
@@ -116,7 +116,7 @@ export function RunStoryFailure({
             nativeButton={false}
             size="sm"
             variant="outline"
-            className="bg-card"
+
             render={<Link to="/tests/$testId" params={{ testId }} search={{ step: step.id }} />}
           >
             {productOverlap ? <Eye aria-hidden="true" /> : <Wrench aria-hidden="true" />}

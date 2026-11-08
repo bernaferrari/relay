@@ -63,7 +63,7 @@ export function PageHeader({
       >
         <div className="min-w-60 flex-1">
           <h1
-            className={`${titleHidden ? "sr-only" : ""} min-w-0 font-display text-3xl leading-9 font-semibold tracking-[-0.025em] wrap-anywhere`}
+            className={`${titleHidden ? "sr-only" : ""} min-w-0 font-display text-3xl leading-9 font-semibold tracking-tight wrap-anywhere`}
           >
             {title}
           </h1>

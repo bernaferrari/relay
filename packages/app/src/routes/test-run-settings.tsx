@@ -243,7 +243,7 @@ export function TestRunSettings({
               className="relative mt-1 flex size-3 shrink-0 items-center justify-center"
               aria-hidden="true"
             >
-              <span className="absolute size-3 animate-ping rounded-full bg-brand/40 [animation-duration:2s] motion-reduce:hidden" />
+              <span className="absolute size-3 animate-ping-slow rounded-full bg-brand/40 motion-reduce:hidden" />
               <span className="relative size-2 rounded-full bg-brand" />
             </span>
             <span className="grid min-w-0 flex-1 gap-0.5">
