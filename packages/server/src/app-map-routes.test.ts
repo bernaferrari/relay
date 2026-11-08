@@ -412,7 +412,12 @@ test("offline Test compilation previews a verified checkpoint without a device o
   const root = await mkdtemp(join(tmpdir(), "relay-test-checkpoint-compile-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
-  const offlineOnlyCalls = { listDevices: 0, assertTargetControl: 0, enqueueJob: 0 };
+  const offlineOnlyCalls = {
+    listDevices: 0,
+    observeViewport: 0,
+    assertTargetControl: 0,
+    enqueueJob: 0,
+  };
   let preflightOnly = true;
   let failIntentConstruction = false;
   const server = await startServer({
@@ -421,7 +426,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
     appMapTestRunRuntime: {
       async listDevices() {
         offlineOnlyCalls.listDevices += 1;
-        if (preflightOnly) throw new Error("blocked Test run tried to discover a device");
+        if (preflightOnly) return [];
         return [
           {
             id: "ipad-1",
@@ -432,6 +437,10 @@ test("offline Test compilation previews a verified checkpoint without a device o
             platform: "ios" as const,
           },
         ];
+      },
+      async observeIosNativeViewport() {
+        offlineOnlyCalls.observeViewport += 1;
+        throw new Error("blocked Test run tried to inspect a device");
       },
       async assertTargetControl(scope, targetId) {
         offlineOnlyCalls.assertTargetControl += 1;
@@ -719,6 +728,15 @@ test("offline Test compilation previews a verified checkpoint without a device o
       ],
     });
 
+    // Compilation uses only saved canonical evidence, including when a profile
+    // has not been selected. It must not even read passive device inventory.
+    assert.deepEqual(offlineOnlyCalls, {
+      listDevices: 0,
+      observeViewport: 0,
+      assertTargetControl: 0,
+      enqueueJob: 0,
+    });
+
     const jobsBeforeBlockedRun = await client.invoke("job.list", { limit: 100 });
     const leasesBeforeBlockedRun = await client.invoke("lease.list", { status: "all" });
     const isRunError = (code: string) => (error: unknown) =>
@@ -804,8 +822,12 @@ test("offline Test compilation previews a verified checkpoint without a device o
     const leasesAfterBlockedRun = await client.invoke("lease.list", { status: "all" });
     assert.equal(jobsAfterBlockedRun.jobs.length, jobsBeforeBlockedRun.jobs.length);
     assert.equal(leasesAfterBlockedRun.leases.length, leasesBeforeBlockedRun.leases.length);
+    // The two Runs without a selected profile may consult passive inventory
+    // to disambiguate saved setups. Empty inventory must not trigger an active
+    // viewport observation, control, mutation, or job admission.
     assert.deepEqual(offlineOnlyCalls, {
-      listDevices: 0,
+      listDevices: 2,
+      observeViewport: 0,
       assertTargetControl: 0,
       enqueueJob: 0,
     });
