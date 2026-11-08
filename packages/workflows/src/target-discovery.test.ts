@@ -3,7 +3,7 @@ import test from "node:test";
 import { createRelayRecordingOutcomeJobs } from "./recording-outcome-jobs.js";
 import { createRelayOutcomeJobs } from "./outcome-jobs.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
-import { selectTarget } from "./target-catalog.js";
+import { selectTarget, NativeRecordingTargetNotReadyError } from "./target-catalog.js";
 
 const phone = {
   id: "samsung",
@@ -149,7 +149,17 @@ for (const [facade, createJobs] of [
         targetId: "sdk-phone-id",
         phase: "android",
       }),
-      /Target sdk-phone-id is not ready:/u,
+      (error: unknown) => {
+        if (facade === "recording") {
+          assert.ok(error instanceof NativeRecordingTargetNotReadyError);
+          assert.equal(error.readiness.reason, "offline");
+          assert.match(error.message, /Wake or reconnect/);
+        } else {
+          assert.ok(error instanceof TypeError);
+          assert.match(error.message, /Target sdk-phone-id is not ready:/u);
+        }
+        return true;
+      },
     );
   });
 
