@@ -85,21 +85,35 @@ async function closeConflictingLiveBrowserSessions(
 export async function attachBrowserRuntime(
   targetId: string,
   sessionId: string,
+  projectId?: string,
 ): Promise<BrowserAuthoringRuntime> {
   for (const [key, pending] of browserSessions) {
     if (!browserSessionBelongsToTarget(key, targetId)) continue;
     const session = await pending;
-    if (session.sessionId === sessionId) return runtimeFromSession(targetId, session);
+    if (session.sessionId === sessionId) {
+      if (session.profile.audioInputFixture && (!projectId || session.projectId !== projectId)) {
+        throw new Error(
+          "The browser audio fixture belongs to a different project. Pass its project scope.",
+        );
+      }
+      return runtimeFromSession(targetId, session);
+    }
   }
   throw new Error("This browser session is no longer available. Open the browser again.");
 }
 
 export async function openBrowserAuthoringRuntime(
   targetId: string,
-  options: { headless: boolean; profile?: BrowserCaseProfile; unsignedLaneId?: string },
+  options: {
+    headless: boolean;
+    profile?: BrowserCaseProfile;
+    unsignedLaneId?: string;
+    projectId?: string;
+  },
 ): Promise<BrowserAuthoringRuntime> {
   const session = await sessionFor(targetId, {
     mode: "authoring",
+    projectId: options.projectId,
     headless: options.headless,
     profile: options.profile,
     recordVideo: automaticVideoAllowed(getEvidenceCollectionPolicy()),
@@ -187,7 +201,8 @@ export async function openBrowserTarget(
     mode: accountBound ? "proof" : "authoring",
     profile,
     ...(unsignedLaneId ? { unsignedLaneId } : {}),
-    ...(accountBound ? { reuseMatchingIdentity: true, projectId: options.projectId } : {}),
+    projectId: options.projectId,
+    ...(accountBound ? { reuseMatchingIdentity: true } : {}),
   });
   const page = await activePage(session);
   if (page.url() === "about:blank") {

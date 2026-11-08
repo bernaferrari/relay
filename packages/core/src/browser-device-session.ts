@@ -258,7 +258,7 @@ export async function openBrowserDeviceSession(
   const signedOut = resolved.signedOut === true;
   const accountBound = Boolean(fixtureId || signedOut);
   const runtime = identity?.sessionId?.trim()
-    ? await attachBrowserRuntime(targetId, identity.sessionId.trim())
+    ? await attachBrowserRuntime(targetId, identity.sessionId.trim(), identity.projectId)
     : accountBound
       ? await openBrowserLiveRuntime(targetId, {
           headless: true,
@@ -269,6 +269,7 @@ export async function openBrowserDeviceSession(
         })
       : await openBrowserAuthoringRuntime(targetId, {
           headless: true,
+          projectId: identity?.projectId,
           profile,
           ...(identity?.unsignedLaneId ? { unsignedLaneId: identity.unsignedLaneId } : {}),
         });

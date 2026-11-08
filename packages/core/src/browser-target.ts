@@ -122,6 +122,7 @@ async function createSession(
       options.mode === "authoring"
         ? await factory.openAuthoring({
             headless: options.headless,
+            projectId: options.projectId,
             ...(recordVideo ? { recordVideoDir: recordingDir } : {}),
             profile,
             ...(options.unsignedLaneId ? { unsignedLaneId: options.unsignedLaneId } : {}),
@@ -140,6 +141,7 @@ async function createSession(
       options.mode === "authoring"
         ? await factory.openAuthoring({
             headless: options.headless,
+            projectId: options.projectId,
             profile,
             ...(options.unsignedLaneId ? { unsignedLaneId: options.unsignedLaneId } : {}),
           })
@@ -248,6 +250,14 @@ export async function sessionFor(
   const existing = sessions.get(key);
   if (existing) {
     const session = await existing;
+    if (
+      session.profile.audioInputFixture &&
+      (!options.projectId || session.projectId !== options.projectId)
+    ) {
+      throw new Error(
+        "The browser audio fixture belongs to a different project. Pass its project scope.",
+      );
+    }
     if (
       browserAttachKeepsExistingSession({
         requestedProfile: options.profile,
