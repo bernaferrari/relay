@@ -98,7 +98,7 @@ functional pass and a human screenshot decision remain separate outcomes.
 
 - `relay_panel` presents saved Tests, recent Runs and retained screenshots in
   hosts that negotiate MCP Apps. In other hosts it returns the same read-only
-  state in chat. See [panel compatibility and qualification](./hosts/panel.md).
+  state in chat. See [panel compatibility and qualification](./hosts/chatgpt/README.md#qualify-the-panel).
 - [Claude Code](./hosts/claude-code/README.md): the same installed command and
   device configuration; no separate tool schemas.
 - [ChatGPT-compatible MCP transports](./hosts/chatgpt/README.md): use local

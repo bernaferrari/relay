@@ -3760,8 +3760,6 @@ test("device screenshot accepts --lane instead of a positional serial", async ()
 test("everyday inspect resolves Run or workflow IDs and export maps to its outcome", () => {
   const inspect = parseOutcomeCliIntent(tokenize(["inspect", "wf-1"]));
   assert.deepEqual(inspect, { kind: "inspect", runOrWorkflowId: "wf-1" });
-  const legacy = parseOutcomeCliIntent(tokenize(["inspect", "relay-workflow.v1.abc"]));
-  assert.deepEqual(legacy, { kind: "inspect-workflow", legacyRef: "relay-workflow.v1.abc" });
   const exported = parseOutcomeCliIntent(tokenize(["export", "run-42"]));
   assert.deepEqual(exported, { kind: "export-evidence", runId: "run-42" });
   assert.deepEqual(parseOutcomeCliIntent(tokenize(["export", "run-42", "--output", "./review"])), {

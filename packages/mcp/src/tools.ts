@@ -1,9 +1,14 @@
-import { operationDefinitions, type OperationDefinition, type OperationId } from "@relay/protocol";
+import {
+  operationDefinition,
+  operationDefinitions,
+  type OperationDefinition,
+  type OperationId,
+} from "@relay/protocol";
 import * as z from "zod/v4";
 type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
 /** qa: write, run and read Tests. device: qa plus live device control and
- * recording. full: device plus advanced raw operations. */
+ * recording. full: device plus Change Proof. */
 export const relayMcpProfiles = ["qa", "device", "full"] as const;
 
 export type RelayMcpProfile = (typeof relayMcpProfiles)[number];
@@ -227,13 +232,11 @@ function toolDescriptor(
   });
 }
 
-export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
-  operationDefinitions
-    .filter((definition) => isToolOperation(definition as OperationDefinition<OperationId>))
-    .map((definition) =>
-      toolDescriptor(definition as OperationDefinition<Exclude<OperationId, ExcludedOperationId>>),
-    ),
-);
+export function relayToolForOperation(id: OperationId): RelayMcpToolDescriptor {
+  const definition: OperationDefinition<OperationId> = operationDefinition(id);
+  if (!isToolOperation(definition)) throw new Error(`MCP cannot expose ${id}`);
+  return toolDescriptor(definition);
+}
 
 /** Read tools the qa profile names plainly. Each is one existing operation
  * under a friendlier name; full hides the raw duplicate. */
@@ -259,10 +262,9 @@ const qaOperationAliases = [
   },
   {
     name: "relay_health",
-    operationId: "system.doctor.get",
+    operationId: "system.health.get",
     title: "Check Relay",
-    description:
-      "Check that Relay is running and ready on this computer: the server, devices, browsers and model key. Call it first when something does not work.",
+    description: "Check that Relay is running and serving the configured project.",
   },
 ] as const satisfies readonly {
   name: `relay_${string}`;
@@ -273,53 +275,51 @@ const qaOperationAliases = [
 
 export const relayQaOperationTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
   qaOperationAliases.map(({ name, operationId, title, description }) => {
-    const raw = relayMcpTools.find((tool) => tool.operationId === operationId)!;
+    const raw = relayToolForOperation(operationId);
     return Object.freeze({ ...raw, name, title, description });
   }),
 );
 
-/** Raw operations a named tool already covers: create/run/verdict loop and
- * the qa read aliases. full lists each capability once. */
-const wrappedOperations = new Set<OperationId>([
-  "test.create-from-goal",
-  "test.apply-yaml",
-  "run.verdict.get",
-  ...qaOperationAliases.map(({ operationId }) => operationId),
+/** Transport operations needed to plan a Proof and interpret its evidence. */
+const proofSupportOperationIds = new Set<OperationId>([
+  "workspace.change.inspect",
+  "target.devices.list",
+  "target.screenshot.capture",
+  "lease.list",
+  "app-map.get",
+  "app-map.diff.impact",
+  "job.get",
+  "run.get",
+  "run.evidence.get",
+  "run.story.get",
+  "run.repair.list",
+  "run.repair.get",
+  "run.repair.propose",
+  "run.share.create",
+  "run.share.list",
+  "run.share.revoke",
+  "run.replay.offline",
+  "run.visual.compare",
+  "run.visual.review",
 ]);
 
-/** Raw operation tools for a profile. qa and device expose only named tools. */
+const proofOperationTools = Object.freeze(
+  operationDefinitions
+    .filter(({ id }) => id.startsWith("proof.") || proofSupportOperationIds.has(id))
+    .map(({ id }) => relayToolForOperation(id)),
+);
+
+/** qa and device use named tools. full adds Proof and evidence operations. */
 export function relayMcpToolsForProfile(
   profile: RelayMcpProfile = defaultRelayMcpProfile,
 ): readonly RelayMcpToolDescriptor[] {
-  if (profile !== "full") return Object.freeze([]);
-  return Object.freeze(relayMcpTools.filter((tool) => !wrappedOperations.has(tool.operationId)));
+  return profile === "full" ? proofOperationTools : [];
 }
 
-/** Old profile names keep working: live control maps to device, the rest to full. */
-const legacyProfiles: Readonly<Record<string, RelayMcpProfile>> = {
-  operator: "device",
-  outcome: "device",
-  control: "device",
-  observe: "device",
-  map: "full",
-  author: "full",
-  test: "full",
-  run: "full",
-  locale: "full",
-  review: "full",
-  admin: "full",
-  proof: "full",
-};
-
-export function resolveRelayMcpProfile(
-  value: string,
-  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
-): RelayMcpProfile {
-  if ((relayMcpProfiles as readonly string[]).includes(value)) return value as RelayMcpProfile;
-  const legacy = Object.hasOwn(legacyProfiles, value) ? legacyProfiles[value] : undefined;
-  if (!legacy) throw new TypeError(`--profile must be one of: ${relayMcpProfiles.join(", ")}`);
-  warn(`relay-mcp: profile "${value}" was removed; using "${legacy}".`);
-  return legacy;
+export function resolveRelayMcpProfile(value: string): RelayMcpProfile {
+  const profile = relayMcpProfiles.find((candidate) => candidate === value);
+  if (profile) return profile;
+  throw new TypeError(`--profile must be one of: ${relayMcpProfiles.join(", ")}`);
 }
 
 export type RelayMcpOperationCatalogEntry = {
@@ -334,7 +334,7 @@ export type RelayMcpOperationCatalogEntry = {
 /** Compact discovery metadata: which profiles can reach each operation. */
 export function relayMcpOperationCatalog(): readonly RelayMcpOperationCatalogEntry[] {
   return Object.freeze(
-    relayMcpTools.map((tool) => {
+    [...relayQaOperationTools, ...proofOperationTools].map((tool) => {
       const definition = operationDefinitions.find(({ id }) => id === tool.operationId)!;
       return Object.freeze({
         operationId: tool.operationId,
@@ -344,43 +344,8 @@ export function relayMcpOperationCatalog(): readonly RelayMcpOperationCatalogEnt
         ...(definition.targetCapabilities.length
           ? { capabilities: definition.targetCapabilities }
           : {}),
-        profiles: wrappedOperations.has(tool.operationId) ? relayMcpProfiles : ["full" as const],
+        profiles: relayQaOperationTools.includes(tool) ? relayMcpProfiles : ["full" as const],
       });
     }),
   );
 }
-
-export function assertRelayMcpToolParity(
-  tools: readonly RelayMcpToolDescriptor[] = relayMcpTools,
-): void {
-  const expected = operationDefinitions.filter(isToolOperation);
-  if (tools.length !== expected.length) {
-    throw new Error(
-      `MCP tool count mismatch: expected ${expected.length}, received ${tools.length}`,
-    );
-  }
-
-  const operationIds = new Set<string>();
-  const names = new Set<string>();
-  for (let index = 0; index < expected.length; index += 1) {
-    const definition = expected[index]!;
-    const tool = tools[index]!;
-    if (tool.operationId !== definition.id) {
-      throw new Error(
-        `MCP tool order mismatch at ${index}: expected ${definition.id}, received ${tool.operationId}`,
-      );
-    }
-    const expectedName = relayToolName(definition.id);
-    if (tool.name !== expectedName) {
-      throw new Error(`MCP tool name mismatch for ${definition.id}: expected ${expectedName}`);
-    }
-    if (operationIds.has(tool.operationId)) {
-      throw new Error(`Duplicate MCP operation mapping: ${tool.operationId}`);
-    }
-    if (names.has(tool.name)) throw new Error(`Duplicate MCP tool name: ${tool.name}`);
-    operationIds.add(tool.operationId);
-    names.add(tool.name);
-  }
-}
-
-assertRelayMcpToolParity();

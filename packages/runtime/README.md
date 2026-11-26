@@ -72,7 +72,12 @@ establish it.
 
 ## Build and verify from the contributor checkout
 
+Build the vendored SDK before packaging. The runtime includes the same SDK
+build that the contributor checkout uses.
+
 ```bash
+pnpm agent-device:install
+pnpm agent-device:build
 node packages/runtime/scripts/build.mjs
 node packages/runtime/scripts/test-installed.mjs
 ```

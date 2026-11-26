@@ -27,7 +27,7 @@ export function relayRegisteredToolNames(
 
 /** Server operations the qa tools call (directly or through the run workflow). */
 const qaRequiredOperationIds = [
-  "system.doctor.get",
+  "system.health.get",
   "target.devices.list",
   "target.list",
   "target.preflight",

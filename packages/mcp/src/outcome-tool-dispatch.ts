@@ -1,7 +1,6 @@
 import type { AuthoringInteraction, RepeatSpec } from "@relay/protocol";
 import type { RelayOutcomeJobs } from "@relay/workflows";
 import type { RelayOutcomeToolDescriptor } from "./outcome-tools.js";
-import type { WorkflowRef } from "@relay/workflows";
 
 type Parser = { parse(value: unknown): unknown };
 
@@ -200,9 +199,7 @@ export async function dispatchRelayOutcomeTool(
     });
   }
   if (input.name === "relay_inspect_workflow") {
-    return typeof parsed.workflowId === "string"
-      ? jobs.inspect({ workflowId: parsed.workflowId })
-      : jobs.inspect({ legacyRef: parsed.legacyRef as WorkflowRef });
+    return jobs.inspect({ workflowId: parsed.workflowId as string });
   }
   if (input.name === "relay_cancel_run") {
     return jobs.cancelRun({

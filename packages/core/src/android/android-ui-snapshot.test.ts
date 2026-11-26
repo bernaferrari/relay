@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { defaultComposer } from "../device/device-prompt.js";
+import { androidTextEntryField } from "./android-text-entry-verification.js";
 import {
   androidInspectionState,
   androidOptionalTreeDegradationLabel,
@@ -17,8 +19,8 @@ import {
 
 test("parses Android UI dump into semantic, nested Relay nodes", () => {
   const nodes = parseAndroidUiSnapshot(`<?xml version="1.0"?>
-    <hierarchy><node index="0" text="" resource-id="root" class="android.widget.FrameLayout" package="ai.x.grok" clickable="false" enabled="true" bounds="[0,0][1080,2400]">
-      <node index="0" text="Continue" content-desc="Continue setup" resource-id="app:id/continue" class="android.widget.Button" package="ai.x.grok" clickable="true" enabled="true" focused="false" bounds="[80,1900][1000,2020]" />
+    <hierarchy><node index="0" text="" resource-id="root" class="android.widget.FrameLayout" package="dev.relay.fixture" clickable="false" enabled="true" bounds="[0,0][1080,2400]">
+      <node index="0" text="Continue" content-desc="Continue setup" resource-id="app:id/continue" class="android.widget.Button" package="dev.relay.fixture" clickable="true" enabled="true" focused="false" bounds="[80,1900][1000,2020]" />
     </node></hierarchy>`);
 
   assert.equal(nodes.length, 2);
@@ -27,31 +29,74 @@ test("parses Android UI dump into semantic, nested Relay nodes", () => {
   assert.equal(nodes[1]?.description, "Continue setup");
   assert.equal(nodes[1]?.value, "Continue");
   assert.equal(nodes[1]?.identifier, "app:id/continue");
-  assert.equal(nodes[1]?.bundleId, "ai.x.grok");
+  assert.equal(nodes[1]?.bundleId, "dev.relay.fixture");
   assert.equal(nodes[1]?.hittable, true);
   assert.equal(nodes[1]?.parentIndex, 0);
 });
 
-test("binds Android snapshots to the app that owns the visible display", () => {
-  const output = `topResumedActivity=ActivityRecord{89162151 u0 ai.x.grok/.main.GrokActivity t62670}`;
-  assert.equal(parseAndroidForegroundApp(output), "ai.x.grok");
+test("prefers the focused window to an activity behind it", () => {
+  const output = [
+    "topResumedActivity=ActivityRecord{89162151 u0 com.example.primary/.MainActivity t62670}",
+    "  Display: mDisplayId=2",
+    "  mCurrentFocus=Window{912bff u0 com.example.external/.ExternalActivity}",
+    "  Display: mDisplayId=0 (organized)",
+    "  mCurrentFocus=Window{91ffef u0 com.example.floating/.FloatingActivity}",
+  ].join("\n");
+  assert.equal(parseAndroidForegroundApp(output), "com.example.floating");
+  assert.equal(parseAndroidForegroundApp(output.replace(/Window\{91ffef.*/u, "null")), undefined);
+  assert.equal(
+    parseAndroidForegroundApp(output.replace("com.example.floating", "com.android.systemui")),
+    undefined,
+  );
+});
 
-  const grokNodes = [
+test("a blank editable composer in a second window remains actionable", () => {
+  const nodes = parseAndroidUiSnapshot(`<hierarchy>
+    <node package="dev.relay.fixture" window-index="0" visible-to-user="false">
+      <node package="dev.relay.fixture" resource-id="dev.relay.fixture:id/search" editable="true"
+        focused="true" text="background" bounds="[0,100][800,200]" />
+    </node>
+    <node package="dev.relay.fixture" window-index="1" window-focused="true">
+      <node package="dev.relay.fixture" resource-id="dev.relay.fixture:id/composer" class="android.view.View"
+        editable="true" focusable="true" focused="true" hint-showing="true"
+        text="Write a message" bounds="[0,1000][800,1080]" />
+      <node package="dev.relay.fixture" text="Send" clickable="true" bounds="[805,1000][880,1080]" />
+    </node>
+  </hierarchy>`);
+  assert.deepEqual(defaultComposer(nodes), { identifier: "dev.relay.fixture:id/composer" });
+  assert.equal(androidTextEntryField(nodes)?.value, "");
+  assert.equal(nodes.find(({ label }) => label === "Send")?.parentIndex, 2);
+});
+
+test("editable values preserve whitespace and omit password readback", () => {
+  const [input, password] = parseAndroidUiSnapshot(`<hierarchy>
+    <node class="android.widget.EditText" text="  exact  " />
+    <node class="android.widget.EditText" text="private" password="true" />
+  </hierarchy>`);
+  assert.equal(input?.editable, true);
+  assert.equal(input?.value, "  exact  ");
+  assert.equal(password?.value, undefined);
+  assert.notEqual(password?.label, "private");
+});
+
+test("binds Android snapshots to the app that owns the visible display", () => {
+  const appNodes = [
     { bundleId: "com.android.systemui" },
     { bundleId: "com.touchtype.swiftkey" },
-    { bundleId: "ai.x.grok" },
-    { bundleId: "ai.x.grok" },
+    ...Array.from({ length: 5 }, () => ({ bundleId: "com.example.other", visibleToUser: false })),
+    { bundleId: "dev.relay.fixture" },
+    { bundleId: "dev.relay.fixture" },
   ];
-  assert.equal(androidSnapshotApplication(grokNodes), "ai.x.grok");
-  assert.equal(androidSnapshotMatchesForeground(grokNodes, "ai.x.grok"), true);
-  assert.equal(androidSnapshotMatchesForeground(grokNodes, "com.Slack"), false);
-  assert.equal(androidSnapshotNodesForForeground(grokNodes, "ai.x.grok"), grokNodes);
-  assert.deepEqual(androidSnapshotNodesForForeground(grokNodes, "com.Slack"), []);
+  assert.equal(androidSnapshotApplication(appNodes), "dev.relay.fixture");
+  assert.equal(androidSnapshotMatchesForeground(appNodes, "dev.relay.fixture"), true);
+  assert.equal(androidSnapshotMatchesForeground(appNodes, "com.example.other"), false);
+  assert.equal(androidSnapshotNodesForForeground(appNodes, "dev.relay.fixture"), appNodes);
+  assert.deepEqual(androidSnapshotNodesForForeground(appNodes, "com.example.other"), []);
 });
 
 test("reassembles chunked snapshot-helper instrumentation XML", () => {
   const xml =
-    '<?xml version=\'1.0\' encoding=\'UTF-8\' standalone=\'yes\' ?><hierarchy rotation="0"><node index="0" text="Ask" package="ai.x.grok" clickable="true" bounds="[0,0][100,80]" /></hierarchy>';
+    '<?xml version=\'1.0\' encoding=\'UTF-8\' standalone=\'yes\' ?><hierarchy rotation="0"><node index="0" text="Ask" package="dev.relay.fixture" clickable="true" bounds="[0,0][100,80]" /></hierarchy>';
   const bytes = Buffer.from(xml, "utf8");
   const mid = Math.ceil(bytes.length / 2);
   const output = [
@@ -78,7 +123,7 @@ test("reassembles chunked snapshot-helper instrumentation XML", () => {
   const nodes = parseAndroidUiSnapshot(decoded!);
   assert.equal(nodes.length, 1);
   assert.equal(nodes[0]?.value, "Ask");
-  assert.equal(nodes[0]?.bundleId, "ai.x.grok");
+  assert.equal(nodes[0]?.bundleId, "dev.relay.fixture");
 });
 
 test("ignores incomplete snapshot-helper instrumentation", () => {

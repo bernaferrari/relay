@@ -1,13 +1,25 @@
 import { execFileSync } from "node:child_process";
-import { access, readFile, readdir } from "node:fs/promises";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { access, readFile } from "node:fs/promises";
+import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const readmePath = resolve(repositoryRoot, "README.md");
 const packagePath = resolve(repositoryRoot, "package.json");
-const markdownRoots = ["docs", "advisor-plans"];
-const additionalMarkdownFiles = ["README.md", "packages/mcp/README.md"];
+const checkoutPaths = new Set(
+  execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  })
+    .split("\0")
+    .filter(Boolean),
+);
+const checkoutDirectories = new Set();
+for (const path of checkoutPaths) {
+  for (let directory = dirname(path); directory !== "."; directory = dirname(directory)) {
+    checkoutDirectories.add(directory);
+  }
+}
 const publicContractCandidates = [
   "docs/PRODUCT_FLOWS.md",
   "docs/RECORDING_FORMAT.md",
@@ -47,28 +59,12 @@ function documentedPnpmScripts(markdown) {
   return scripts;
 }
 
-async function markdownFiles(directory) {
-  let entries;
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if (error?.code === "ENOENT") return [];
-    throw error;
-  }
-  const files = [];
-  for (const entry of entries) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...(await markdownFiles(path)));
-    else if ([".md", ".mdx"].includes(extname(entry.name))) files.push(path);
-  }
-  return files;
-}
-
 const readme = await readFile(readmePath, "utf8");
 const packageSource = await readFile(packagePath, "utf8");
 const publicContractPaths = [];
 const publicContracts = [];
 for (const path of publicContractCandidates) {
+  if (!checkoutPaths.has(path)) continue;
   try {
     publicContracts.push(await readFile(resolve(repositoryRoot, path), "utf8"));
     publicContractPaths.push(path);
@@ -79,12 +75,13 @@ for (const path of publicContractCandidates) {
 const packageJson = JSON.parse(packageSource);
 const violations = [];
 
-const checkedMarkdownPaths = new Set(additionalMarkdownFiles);
-for (const root of markdownRoots) {
-  for (const path of await markdownFiles(resolve(repositoryRoot, root))) {
-    checkedMarkdownPaths.add(relative(repositoryRoot, path));
-  }
-}
+const checkedMarkdownPaths = [...checkoutPaths].filter(
+  (path) =>
+    [".md", ".mdx"].includes(extname(path)) &&
+    (dirname(path) === "." ||
+      /^(?:docs|advisor-plans|plugins)\//u.test(path) ||
+      /^packages\/[^/]+\/README\.md$/u.test(path)),
+);
 
 let checkedLocalLinkCount = 0;
 for (const path of checkedMarkdownPaths) {
@@ -99,7 +96,16 @@ for (const path of checkedMarkdownPaths) {
   for (const link of localMarkdownLinks(markdown)) {
     checkedLocalLinkCount += 1;
     try {
-      await access(resolve(dirname(absolutePath), decodeURIComponent(link)));
+      const target = resolve(dirname(absolutePath), decodeURIComponent(link));
+      const checkoutPath = relative(repositoryRoot, target);
+      if (
+        checkoutPath &&
+        !checkoutPaths.has(checkoutPath) &&
+        !checkoutDirectories.has(checkoutPath)
+      ) {
+        throw new Error("Link target is outside the published checkout");
+      }
+      await access(target);
     } catch {
       violations.push(`${path} links to missing file: ${link}`);
     }
@@ -159,6 +165,6 @@ if (violations.length) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Documentation verification passed: ${checkedLocalLinkCount} local links across ${checkedMarkdownPaths.size} Markdown files, ${documentedPnpmScripts(readme).size} root commands, and ${publicContractPaths.length} public contracts checked.`,
+    `Documentation verification passed: ${checkedLocalLinkCount} local links across ${checkedMarkdownPaths.length} Markdown files, ${documentedPnpmScripts(readme).size} root commands, and ${publicContractPaths.length} public contracts checked.`,
   );
 }

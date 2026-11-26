@@ -14,6 +14,8 @@ import {
 import { resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { Worker } from "node:worker_threads";
 import net from "node:net";
 import http from "node:http";
 
@@ -125,7 +127,7 @@ async function inspectInstalledMcp(args, credential = "") {
           }
         }
         buffered = buffered.slice(buffered.lastIndexOf("\n") + 1);
-        if ([1, 2, 3].every((id) => responses.some((entry) => entry.id === id))) complete();
+        if ([1, 2, 3, 4].every((id) => responses.some((entry) => entry.id === id))) complete();
       });
       child.stderr.on("data", (chunk) => {
         errors += chunk;
@@ -149,6 +151,7 @@ async function inspectInstalledMcp(args, credential = "") {
       },
       { method: "notifications/initialized", params: {} },
       { id: 2, method: "tools/call", params: { name: "relay_health", arguments: {} } },
+      { id: 4, method: "tools/call", params: { name: "relay_list_apps", arguments: {} } },
       { id: 3, method: "resources/read", params: { uri: "ui://relay/review" } },
     ])
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...request })}\n`);
@@ -197,6 +200,12 @@ try {
     !files.includes("src") && !files.includes("scripts"),
     "installed package must not include contributor sources",
   );
+  const sdkPath = "dist/agent-device/package.json";
+  const installedSdk = JSON.parse(await readFile(resolve(installed, sdkPath), "utf8"));
+  const sourceSdk = JSON.parse(
+    await readFile(resolve(repositoryRoot, "vendor/agent-device/package.json"), "utf8"),
+  );
+  assert.equal(installedSdk.version, sourceSdk.version);
   // This dependency's entry is generated only by Android preparation. Its
   // absence proves the browser acceptance does not rely on that download.
   await assert.rejects(
@@ -205,6 +214,20 @@ try {
   );
   await readOnly(installed);
   await readOnly(resolve(installation, "node_modules/@relay/mcp"));
+  const { PNG } = createRequire(cli)("pngjs");
+  const frame = new PNG({ width: 1_000, height: 1_000 });
+  for (let offset = 3; offset < frame.data.length; offset += 4) frame.data[offset] = 255;
+  const analysisWorker = new Worker(resolve(installed, "dist/screenshot-analysis-worker.cjs"), {
+    workerData: PNG.sync.write(frame),
+  });
+  const analysis = await new Promise((resolveAnalysis, reject) => {
+    analysisWorker.once("message", resolveAnalysis);
+    analysisWorker.once("error", reject);
+    analysisWorker.once("exit", (code) =>
+      reject(new Error(`Screenshot worker exited before returning analysis (${code})`)),
+    );
+  });
+  assert.equal(analysis.blank, true, "installed worker analyzes a large blank PNG");
   await assert.rejects(
     launch(["start", "--workspace", resolve(installed, "mutable")]),
     /outside the installed Relay package/u,

@@ -1069,7 +1069,7 @@ test("outcome commands resolve ordinary intent without raw JSON mechanics", () =
   }
 
   const repeat = parseCli(
-    ["repeat", "locale-smoke", "--in", "language=ja,pt", "--lens", "visual"],
+    ["repeat", "locale-smoke", "--each", "language=ja,pt", "--lens", "visual"],
     {},
   );
   assert.equal(repeat.command, "outcome");

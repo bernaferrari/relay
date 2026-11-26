@@ -217,7 +217,7 @@ test("resumeJob does not resume SuperGrok when remembered health is blocked", as
 test("prepareJobBatch does not stage a signed-in target with remembered error health", async () => {
   await withSessionAuthWorkspace(async (root) => {
     const saved = await saveBlockedSuperGrok(root);
-    await runWithOperationContext(operation, () => {
+    runWithOperationContext(operation, () => {
       const before = jobIds();
       assert.throws(
         () => prepareJobBatch([{ input: browserJobInput(saved.reference) }]),
@@ -231,7 +231,7 @@ test("prepareJobBatch does not stage a signed-in target with remembered error he
 test("enqueueJob does not queue a signed-in target with remembered error health", async () => {
   await withSessionAuthWorkspace(async (root) => {
     const saved = await saveBlockedSuperGrok(root);
-    await runWithOperationContext(operation, () => {
+    runWithOperationContext(operation, () => {
       const before = jobIds();
       assert.throws(() => enqueueJob(browserJobInput(saved.reference)), isAccountNeedsRelogin);
       assertNoNewJobs(before);
@@ -242,7 +242,7 @@ test("enqueueJob does not queue a signed-in target with remembered error health"
 test("unsigned prepareJobBatch and enqueueJob still proceed while SuperGrok health is error", async () => {
   await withSessionAuthWorkspace(async (root) => {
     await saveBlockedSuperGrok(root);
-    await runWithOperationContext(operation, () => {
+    runWithOperationContext(operation, () => {
       const staged = prepareJobBatch([{ input: browserJobInput() }]);
       try {
         assert.equal(staged.jobs.length, 1);
@@ -264,7 +264,7 @@ test("unsigned prepareJobBatch and enqueueJob still proceed while SuperGrok heal
 test("ready SuperGrok prepareJobBatch and enqueueJob still proceed", async () => {
   await withSessionAuthWorkspace(async (root) => {
     const saved = await saveReadySuperGrok(root);
-    await runWithOperationContext(operation, () => {
+    runWithOperationContext(operation, () => {
       const staged = prepareJobBatch([{ input: browserJobInput(saved.reference) }]);
       try {
         assert.equal(staged.jobs.length, 1);
@@ -311,7 +311,7 @@ test("retryJob does not re-enqueue SuperGrok when remembered health is blocked",
 test("prepareJobBatch does not stage unsigned cells beside a dead claimed fixture", async () => {
   await withSessionAuthWorkspace(async (root) => {
     const saved = await saveBlockedSuperGrok(root);
-    await runWithOperationContext(operation, () => {
+    runWithOperationContext(operation, () => {
       const before = jobIds();
       assert.throws(
         () =>
@@ -329,7 +329,7 @@ test("prepareJobBatch does not stage unsigned cells beside a dead claimed fixtur
 test("device prepareJobBatch still stages while SuperGrok health is error", async () => {
   await withSessionAuthWorkspace(async (root) => {
     await saveBlockedSuperGrok(root);
-    await runWithOperationContext(operation, () => {
+    runWithOperationContext(operation, () => {
       const staged = prepareJobBatch([{ input: deviceJobInput() }]);
       try {
         assert.equal(staged.jobs.length, 1);

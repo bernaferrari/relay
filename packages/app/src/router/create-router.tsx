@@ -56,9 +56,7 @@ import { AppShell } from "../layout/app-shell";
 import type { Platform } from "../platform/types";
 import { assertAllowedRouteSearch } from "./route-contract";
 
-type PreloadableRoute = { preload?: () => Promise<unknown> };
-
-const preloadableRoutes: PreloadableRoute[] = [];
+const preloadRoutesForTests: (() => Promise<void>)[] = [];
 
 function lazyNamedRoute<TModule extends Record<string, unknown>, TName extends keyof TModule>(
   importer: () => Promise<TModule>,
@@ -84,7 +82,7 @@ function lazyNamedRoute<TModule extends Record<string, unknown>, TName extends k
     return createElement(loaded, props);
   };
   component.preload = preload;
-  preloadableRoutes.push(component);
+  preloadRoutesForTests.push(preload);
   return component as TModule[TName] extends (props: infer TProps) => unknown
     ? AsyncRouteComponent<TProps>
     : never;
@@ -121,7 +119,7 @@ const SettingsPage = lazyNamedRoute(() => import("../routes/settings-page"), "Se
 // keeps the split chunks and intent preloading; tests eagerly resolve
 // the same route registry to assert settled product behavior.
 if (import.meta.env.MODE === "test") {
-  await Promise.all(preloadableRoutes.map((route) => route.preload?.()));
+  await Promise.all(preloadRoutesForTests.map((preload) => preload()));
 }
 
 export type AppRouterContext = {

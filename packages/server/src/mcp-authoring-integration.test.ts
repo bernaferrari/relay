@@ -11,9 +11,7 @@ import { createMcpServer, type OperationInvoker } from "@relay/mcp";
 import type {
   AuthoringInteraction,
   AuthoringSession,
-  AuthoringSessionSummary,
   EventEnvelope,
-  OperationId,
   RecipeStep,
 } from "@relay/protocol";
 import { startServer, type StartedServer } from "./index.js";
@@ -197,7 +195,7 @@ if (args[0] === "devices") {
   return bin;
 }
 
-test("MCP agent authors a transition observed by an app client", async () => {
+test("MCP and the app client see scoped server authoring state", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-mcp-authoring-"));
   const environment = {
     PATH: process.env.PATH,
@@ -285,17 +283,9 @@ test("MCP agent authors a transition observed by an app client", async () => {
       },
       { fetch: agentFetch },
     );
-    const invocations: OperationId[] = [];
-    const failures: Array<{ operationId: OperationId; status: number }> = [];
     const invoker: OperationInvoker = {
-      async invoke(operationId, input, options) {
-        invocations.push(operationId);
-        try {
-          return await agent.invoke(operationId, input as never, options);
-        } catch (error) {
-          if (error instanceof ApiError) failures.push({ operationId, status: error.status });
-          throw error;
-        }
+      invoke(operationId, input, options) {
+        return agent.invoke(operationId, input as never, options);
       },
     };
 
@@ -324,15 +314,14 @@ test("MCP agent authors a transition observed by an app client", async () => {
     const listed = await mcp.request("tools/list", {});
     const tools = listed.result?.tools as Array<{ name: string }>;
     assert.ok(tools.some(({ name }) => name === "relay_target_screenshot_capture"));
-    assert.ok(tools.some(({ name }) => name === "relay_authoring_session_commit"));
+    assert.ok(tools.some(({ name }) => name === "relay_record_test"));
+    assert.ok(!tools.some(({ name }) => name === "relay_authoring_session_commit"));
 
-    const leased = relayResult<{ lease: { id: string } }>(
-      await callTool(mcp, "relay_lease_create", {
-        poolId,
-        deviceSerial: targetId,
-        expiresAt: Date.now() + 60_000,
-      }),
-    );
+    const leased = await agent.invoke("lease.create", {
+      poolId,
+      deviceSerial: targetId,
+      expiresAt: Date.now() + 60_000,
+    });
     const leaseId = leased.lease.id;
 
     const screenshot = callResult(
@@ -351,7 +340,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
 
     cancelNextHealth = true;
     const cancelledCall = mcp.startRequest("tools/call", {
-      name: "relay_system_health_get",
+      name: "relay_health",
       arguments: { confirm: true },
     });
     await waitFor(
@@ -375,86 +364,57 @@ test("MCP agent authors a transition observed by an app client", async () => {
       expectedAppMapRevision: created.appMap.revision,
     } as const;
 
-    const leaseConflictCalls = invocations.length;
-    const leaseConflict = callResult(
-      await callTool(mcp, "relay_authoring_session_create", {
-        ...createInput,
-        leaseId: "lease-not-owned",
-      }),
+    await assert.rejects(
+      () =>
+        agent.invoke("authoring.session.create", { ...createInput, leaseId: "lease-not-owned" }),
+      (error: unknown) => error instanceof ApiError && error.status === 403,
     );
-    assert.equal(leaseConflict.isError, true);
-    assert.equal(invocations.length, leaseConflictCalls + 1);
-    assert.deepEqual(failures.at(-1), {
-      operationId: "authoring.session.create",
-      status: 403,
-    });
-
-    const revisionConflictCalls = invocations.length;
-    const revisionConflict = callResult(
-      await callTool(mcp, "relay_authoring_session_create", {
-        ...createInput,
-        expectedAppMapRevision: created.appMap.revision + 1,
-      }),
+    await assert.rejects(
+      () =>
+        agent.invoke("authoring.session.create", {
+          ...createInput,
+          expectedAppMapRevision: created.appMap.revision + 1,
+        }),
+      (error: unknown) => error instanceof ApiError && error.status === 409,
     );
-    assert.equal(revisionConflict.isError, true);
-    assert.equal(invocations.length, revisionConflictCalls + 1);
-    assert.deepEqual(failures.at(-1), {
-      operationId: "authoring.session.create",
-      status: 409,
-    });
     assert.equal((await observer.invoke("authoring.session.list", {})).sessions.length, 0);
     assert.equal(runtime.observations, 0);
 
-    const createdSession = relayResult<{ session: AuthoringSessionSummary }>(
-      await callTool(mcp, "relay_authoring_session_create", createInput),
-    );
+    const createdSession = await agent.invoke("authoring.session.create", createInput);
     const sessionId = createdSession.session.id;
     assert.equal(createdSession.session.actorId, agentActorId);
     assert.equal(createdSession.session.actorKind, "agent");
 
-    const observed = relayResult<{ session: AuthoringSessionSummary }>(
-      await callTool(mcp, "relay_authoring_session_observe", { sessionId }),
-    );
+    const observed = await agent.invoke("authoring.session.observe", { sessionId });
     assert.equal(observed.session.state, "ready");
-    const started = relayResult<{ session: AuthoringSessionSummary }>(
-      await callTool(mcp, "relay_authoring_session_start", { sessionId }),
-    );
+    const started = await agent.invoke("authoring.session.start", { sessionId });
     assert.equal(started.session.state, "recording");
-    const interacted = relayResult<{ session: AuthoringSessionSummary }>(
-      await callTool(mcp, "relay_authoring_session_interact", {
-        sessionId,
-        interaction: { kind: "key", key: "back" },
-      }),
-    );
-    assert.equal(interacted.session.take?.actionCount, 1);
-    const stopped = relayResult<{ session: AuthoringSessionSummary }>(
-      await callTool(mcp, "relay_authoring_session_stop", { sessionId }),
-    );
+    await agent.invoke("authoring.session.interact", {
+      sessionId,
+      interaction: { kind: "key", key: "back" },
+    });
+    const stopped = await agent.invoke("authoring.session.stop", { sessionId });
     assert.equal(stopped.session.state, "reviewing");
+    const take = stopped.session.take;
+    assert.equal(
+      take?.revisions.find(({ revision }) => revision === take.currentRevision)?.actions.length,
+      1,
+    );
 
-    const inspected = relayResult<{
-      truncated: true;
-      resourceUri: string;
-      session: { take?: { actionCount: number } };
-    }>(await callTool(mcp, "relay_authoring_session_get", { sessionId }));
-    assert.equal(inspected.truncated, true);
-    assert.equal(inspected.resourceUri, `relay://authoring-sessions/${sessionId}`);
-    assert.equal(inspected.session.take?.actionCount, 1);
+    const resource = await mcp.request("resources/read", {
+      uri: `relay://authoring-sessions/${sessionId}`,
+    });
+    assert.equal(resource.error, undefined);
+    assert.match(JSON.stringify(resource.result), /reviewing/u);
 
     runtime.screen = "source";
-    const replayResult = callResult(
-      await callTool(mcp, "relay_authoring_take_replay", { sessionId }),
-    );
-    assert.notEqual(replayResult.isError, true, JSON.stringify(replayResult.content));
+    await agent.invoke("authoring.take.replay", { sessionId });
     const replayed = await observer.authoringSession(sessionId);
     assert.equal(replayed.session.take?.replayAttempts.at(-1)?.outcome, "passed");
-    const commitResult = callResult(
-      await callTool(mcp, "relay_authoring_session_commit", {
-        sessionId,
-        destination: { kind: "new-screen", title: "MCP destination" },
-      }),
-    );
-    assert.notEqual(commitResult.isError, true, JSON.stringify(commitResult.content));
+    await agent.invoke("authoring.session.commit", {
+      sessionId,
+      destination: { kind: "new-screen", title: "MCP destination" },
+    });
     const committed = await observer.authoringSession(sessionId);
     assert.equal(committed.session.state, "committed");
     assert.ok(committed.session.committedConnectionId);
@@ -465,7 +425,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
           (event) =>
             event.payload.type === "authoring.committed" && event.payload.sessionId === sessionId,
         ),
-      "Timed out waiting for the app client to observe the MCP commit",
+      "Timed out waiting for the app client to observe the commit",
     );
     const resourceEvent = events.find(
       (event) =>
@@ -489,6 +449,10 @@ test("MCP agent authors a transition observed by an app client", async () => {
     assert.equal(visibleSession.session.state, "committed");
     const finalMap = (await observer.invoke("app-map.get", { appMapId: created.appMap.id })).appMap;
     assert.equal(finalMap.revision, created.appMap.revision + 1);
+    const listedApps = relayResult<{ appMaps: { id: string }[] }>(
+      await callTool(mcp, "relay_list_apps", {}),
+    );
+    assert.ok(listedApps.appMaps.some(({ id }) => id === finalMap.id));
     const connection = finalMap.connections[committed.session.committedConnectionId!];
     assert.ok(connection);
     assert.equal(connection.state, "ready");

@@ -20,9 +20,9 @@ describe("Relay workspace verification", () => {
     expect(root.scripts?.verify).toContain("vp check");
     expect(root.scripts?.verify).toContain("pnpm typecheck");
     expect(root.scripts?.verify).toContain("pnpm run test:packages");
-    expect(root.scripts?.verify).toContain("vp test");
+    expect(root.scripts?.verify).toContain("vitest run --config vite.config.ts");
     expect(root.scripts?.test).toBe(
-      "pnpm run ios-hid-tap:test && pnpm run ios-preview:test && pnpm run test:packages && vp test",
+      "pnpm run ios-hid-tap:test && pnpm run ios-preview:test && pnpm run test:packages && vitest run --config vite.config.ts",
     );
   });
 
@@ -47,12 +47,12 @@ describe("Relay workspace verification", () => {
     expect(desktop.devDependencies?.["solid-js"]).toBeUndefined();
   });
 
-  it("keeps package tests separate from Vite+ workspace tests", async () => {
+  it("keeps package tests separate from workspace Vitest tests", async () => {
     const root = await packageJson();
     expect(root.scripts?.["test:packages"]).toBe(
       "pnpm --workspace-concurrency=1 -r --if-present run test",
     );
-    expect(root.scripts?.["test:packages"]).not.toContain("vp test");
+    expect(root.scripts?.["test:packages"]).not.toContain("vitest run --config vite.config.ts");
   });
 
   it("keeps physical iOS runner recordings bounded", async () => {

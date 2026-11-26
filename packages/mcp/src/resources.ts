@@ -97,10 +97,6 @@ export function registerRelayResources(
 ): void {
   registerTaskGuideResources(server, scope, profile, tools);
   const activeOperations = new Set(tools.map(({ operationId }) => operationId));
-  const leaseRecoveryRule =
-    profile === "full"
-      ? 'On TARGET_CONTROL_LEASE_REQUIRED, the device tools take control automatically; raw tools need lease.create with poolId "local", deviceSerial, and confirm:true, then a retry.'
-      : "On TARGET_CONTROL_LEASE_REQUIRED, the device tools take control automatically. If another person or agent holds the device, the error names who and since when.";
   const targetRecoveryRule =
     profile === "qa"
       ? "Launch does not wait on XCTest. No active session is not a failed launch — recovering the runner needs the device profile (relay_recover)."
@@ -134,7 +130,7 @@ export function registerRelayResources(
         "relay_recover / target.recover adopts a healthy live XCTest runner. Do not kill a ready runner, remount DDI in a loop, or reboot the iPad.",
         "wait-for/expect-screen poll the accessibility slot while pixels stay still and freeze the glass. Screenshot + interact instead.",
         "Physical iPad screenshot uses go-ios, not target.open. iOS 17+ needs an active tunnel. A missing XCTest session is not a failed screenshot or point tap.",
-        leaseRecoveryRule,
+        "On TARGET_CONTROL_LEASE_REQUIRED, named device tools take control automatically. If another actor owns the device, honor the lease and wait.",
         "On TARGET_CONTROL_RUN_RESERVED, wait or cancel the active job before sending input.",
         targetRecoveryRule,
         "Signed-in browser snapshot needs laneId / --lane so the saved sign-in is applied; without it the browser is signed out.",
@@ -177,7 +173,7 @@ export function registerRelayResources(
           ),
         })),
         guidance:
-          "Choose one profile at server startup: qa (default), device for live control and recording, or full for advanced raw operations.",
+          "Choose one profile at server startup: qa (default), device for live control and recording, or full for Change Proof.",
       };
     },
     scope,

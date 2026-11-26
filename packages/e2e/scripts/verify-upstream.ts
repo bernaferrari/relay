@@ -19,7 +19,7 @@ await writeFile(
 await mkdir(join(root, "tests"), { recursive: true });
 let retries = 0;
 const server = createServer((req, res) => {
-  const message = req.url === "/retry" && ++retries === 1 ? "not ready" : "ready";
+  const message = req.url === "/retry" && ++retries === 1 ? "waiting" : "ready";
   res.setHeader("content-type", "text/html");
   res.end(
     `<h1>QA fixture</h1><button onclick="document.querySelector('[role=status]').textContent='clicked'">Continue</button><p role="status">${message}</p>`,
@@ -57,7 +57,7 @@ try {
       imported = join(root, kind + "-import");
     await writeFile(
       join(root, "e2e.config.ts"),
-      `import { web } from '@e2e-dev/web';import { relayReporter } from ${JSON.stringify(reporterPath)};export default {projectId:'conformance',targets:[{name:'web',engine:web(),app:{url:${JSON.stringify(url)}}}],tests:'tests/parity.e2e.ts',workers:1,retries:1,assertionTimeout:150,cache:'off',output:${JSON.stringify(output)},reporters:['json'${kind === "relay" ? `,relayReporter({directory:${JSON.stringify(imported)},requireHumanReview:true})` : ""}]};`,
+      `import { web } from '@e2e-dev/web';import { relayReporter } from ${JSON.stringify(reporterPath)};export default {projectId:'conformance',targets:[{name:'web',engine:web(),app:{url:${JSON.stringify(url)}}}],tests:'tests/parity.e2e.ts',workers:1,retries:1,assertionTimeout:3000,cache:'off',output:${JSON.stringify(output)},reporters:['json'${kind === "relay" ? `,relayReporter({directory:${JSON.stringify(imported)},requireHumanReview:true})` : ""}]};`,
     );
     const result = await runE2EProject({
       projectRoot: root,
@@ -101,6 +101,14 @@ try {
       })),
     }));
   assert.deepEqual(normalize(reports[0]), normalize(reports[1]));
+  const retry = normalize(reports[0]).find((result: { title: string[] }) =>
+    result.title.includes("retry"),
+  );
+  assert.equal(retry?.status, "flaky");
+  assert.deepEqual(
+    retry.attempts.map(({ status }: { status: string }) => status),
+    ["failed", "passed"],
+  );
   const cancellations: any[] = [];
   for (const kind of ["direct", "relay"]) {
     const output = join(root, kind + "-cancel"),

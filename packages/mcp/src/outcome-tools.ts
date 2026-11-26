@@ -32,11 +32,6 @@ export type RelayOutcomeToolDescriptor = {
 };
 
 const identifier = z.string().trim().min(1);
-const legacyWorkflowRef = z
-  .string()
-  .min(1)
-  .max(96 * 1024)
-  .startsWith("relay-workflow.v1.");
 const targetId = identifier
   .optional()
   .describe("Device or browser from relay_list_devices; keep it for the whole recording");
@@ -426,17 +421,7 @@ export const relayOutcomeTools = Object.freeze([
     description:
       "Read the current state of a recording, repeat or Run by its workflowId, including its latest version.",
     requiresConfirmation: false,
-    inputSchema: z
-      .object({ workflowId: identifier.optional(), legacyRef: legacyWorkflowRef.optional() })
-      .strict()
-      .superRefine((value, context) => {
-        if ((value.workflowId === undefined) === (value.legacyRef === undefined)) {
-          context.addIssue({
-            code: "custom",
-            message: "Provide exactly one workflowId or legacyRef",
-          });
-        }
-      }),
+    inputSchema: z.object({ workflowId: identifier }).strict(),
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,

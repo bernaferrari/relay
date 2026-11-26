@@ -1,7 +1,7 @@
 # ChatGPT-compatible MCP hosts
 
 ChatGPT-compatible hosts must expose the Relay MCP server through the host's
-supported MCP transport. `@relay/mcp` uses the MCP server SDK 2.1.0 over stdio and ships a
+supported MCP transport. `@relay/mcp` uses the MCP server SDK over stdio and ships a
 reviewed `relay-mcp-bridge` that carries that exact process over an authenticated
 HTTP endpoint when the host accepts only remote servers. The bridge is a
 transport adapter: it does not fork Proof schemas, tool names, or approval
@@ -67,7 +67,16 @@ boundary apply everywhere.
 Every profile includes the read-only `relay_panel` tool. A host that
 advertises `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app` gets
 the bundled Tests and results view. Other hosts get its state as text.
-Transport and capability checks do not establish rendered host compatibility.
-Follow the [qualification steps](../panel.md) before claiming a specific
-ChatGPT/Codex host supports this panel. It has no live device controls or
-visual acceptance buttons.
+The panel has no live device controls or visual acceptance buttons. Installed
+artifact tests verify negotiated HTML and the tools-only fallback. Codex and
+ChatGPT rendering still needs verification in each host.
+
+### Qualify the panel
+
+1. Configure the installed connector for the intended Relay project. Run
+   `relay-mcp doctor --profile device --json` in the host environment.
+2. Call `relay_panel` in the host and confirm the view opens on the first
+   result. Select an App and a retained Run, navigate screenshots, and refresh.
+3. Confirm that the panel respects project scope and retains the last view
+   with an actionable error when Relay disconnects. Check keyboard navigation,
+   theme changes, and fullscreen behavior.

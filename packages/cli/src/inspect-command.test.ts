@@ -125,15 +125,14 @@ for (const [status, exitCode] of [
   });
 }
 
-test("inspect keeps bounded legacy reference handling without a canonical Run probe", async () => {
+test("inspect rejects retired workflow references before making an API call", async () => {
   const result = await inspect(["inspect", "relay-workflow.v1.abc"], {
     invoke: async () => {
       throw new Error("An invalid legacy reference must not invoke any operation");
     },
     events: async () => {},
   });
-  assert.equal(result.code, ExitCode.success);
-  assert.equal(result.envelope.result.kind, "run-test");
-  assert.equal(result.envelope.result.phase, "needs-attention");
-  assert.equal(result.envelope.result.problems[0].code, "invalid-workflow-ref");
+  assert.equal(result.code, ExitCode.usage);
+  assert.equal(result.envelope.type, "error");
+  assert.match(result.envelope.error.message, /saved Run or workflow ID/u);
 });

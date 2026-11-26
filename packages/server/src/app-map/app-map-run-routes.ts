@@ -429,18 +429,16 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         }
       }
     }
-    const observedTargetProfile = (
-      await buildTargetProfiles({
-        devices: (observedDevices ?? (await runtime.listDevices().catch(() => []))).map((device) =>
-          prepared.observedDevice?.viewport &&
-          device.serial === targetId &&
-          device.platform === executionTarget.platform
-            ? { ...device, viewport: prepared.observedDevice.viewport }
-            : device,
-        ),
-        targets: await listTargets(),
-      })
-    ).find(
+    const observedTargetProfile = buildTargetProfiles({
+      devices: (observedDevices ?? (await runtime.listDevices().catch(() => []))).map((device) =>
+        prepared.observedDevice?.viewport &&
+        device.serial === targetId &&
+        device.platform === executionTarget.platform
+          ? { ...device, viewport: prepared.observedDevice.viewport }
+          : device,
+      ),
+      targets: await listTargets(),
+    }).find(
       (profile) =>
         profile.targetId === targetId &&
         profile.platform === executionTarget.platform &&
@@ -811,12 +809,10 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     { id: "default", name: "Default", index: 0, values: {}, provenance: [] },
   ];
   const safeMatrix = matrix ? redactCasePlan(matrix, definitions.value) : undefined;
-  const targetProfile = (
-    await buildTargetProfiles({
-      devices: observedDevices ?? (await listDevices().catch(() => [])),
-      targets: observedTargets,
-    })
-  ).find(
+  const targetProfile = buildTargetProfiles({
+    devices: observedDevices ?? (await listDevices().catch(() => [])),
+    targets: observedTargets,
+  }).find(
     (profile) =>
       profile.targetId === targetId &&
       profile.source === targetKind &&

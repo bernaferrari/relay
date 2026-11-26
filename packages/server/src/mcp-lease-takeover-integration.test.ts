@@ -17,12 +17,6 @@ type JsonRpcResponse = {
   error?: { code: number; message: string };
 };
 
-type ToolCallResult = {
-  content: Array<Record<string, unknown>>;
-  structuredContent?: { result?: unknown };
-  isError?: boolean;
-};
-
 type TestTransport = {
   onmessage?: (message: Record<string, unknown>) => void;
   onerror?: (error: Error) => void;
@@ -34,19 +28,6 @@ type TestTransport = {
 type InMemoryTransportConstructor = {
   createLinkedPair(): [TestTransport, TestTransport];
 };
-
-function callResult(response: JsonRpcResponse): ToolCallResult {
-  assert.equal(response.error, undefined);
-  assert.ok(response.result);
-  return response.result as ToolCallResult;
-}
-
-function relayResult<T>(response: JsonRpcResponse): T {
-  const result = callResult(response);
-  assert.notEqual(result.isError, true, JSON.stringify(result.content));
-  assert.ok(result.structuredContent);
-  return result.structuredContent.result as T;
-}
 
 async function connectMcp(invoker: OperationInvoker) {
   const requireFromMcp = createRequire(new URL("../../mcp/package.json", import.meta.url));
@@ -107,7 +88,7 @@ async function connectMcp(invoker: OperationInvoker) {
   };
 }
 
-test("MCP forwards only explicit lease-takeover consent to the canonical server operation", async () => {
+test("MCP leaves lease takeover to the canonical workspace operation", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-mcp-lease-takeover-"));
   const previousStateDir = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
@@ -150,32 +131,20 @@ test("MCP forwards only explicit lease-takeover consent to the canonical server 
       reason: "The user approved the MCP lease handoff",
     };
 
-    const unconfirmed = callResult(
-      await mcp.request("tools/call", {
+    for (const argumentsValue of [takeoverInput, { ...takeoverInput, confirm: true }]) {
+      const response = await mcp.request("tools/call", {
         name: "relay_lease_takeover",
-        arguments: takeoverInput,
-      }),
-    );
-    assert.equal(unconfirmed.isError, true);
-    assert.match(String(unconfirmed.content[0]?.text), /confirm/i);
+        arguments: argumentsValue,
+      });
+      assert.match(response.error?.message ?? "", /Tool relay_lease_takeover not found/u);
+    }
     assert.deepEqual(calls, []);
+    const before = await agent.invoke("lease.list", { status: "all" });
+    assert.equal(before.leases.find((lease) => lease.id === original.lease.id)?.status, "leased");
 
-    const confirmed = relayResult<{
-      lease: { id: string; handoffFromLeaseId?: string; handoffReason?: string };
-    }>(
-      await mcp.request("tools/call", {
-        name: "relay_lease_takeover",
-        arguments: { ...takeoverInput, confirm: true },
-      }),
-    );
+    const confirmed = await agent.invoke("lease.takeover", { ...takeoverInput, confirm: true });
     assert.equal(confirmed.lease.handoffFromLeaseId, original.lease.id);
     assert.equal(confirmed.lease.handoffReason, takeoverInput.reason);
-    assert.deepEqual(calls, [
-      {
-        operationId: "lease.takeover",
-        input: { ...takeoverInput, confirm: true },
-      },
-    ]);
 
     const history = await agent.invoke("lease.list", { status: "all" });
     assert.equal(

@@ -456,9 +456,8 @@ test("discovers excluded profile operations without eagerly exposing their tools
       ),
     );
     assert.ok(
-      envelope.data.additionalOperations.some(
-        ({ operationId, profiles }) =>
-          operationId === "workflow.transition" && profiles.includes("full"),
+      !envelope.data.additionalOperations.some(
+        ({ operationId }) => operationId === "workflow.transition",
       ),
     );
   } finally {

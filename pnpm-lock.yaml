@@ -591,9 +591,6 @@ importers:
       '@yume-chan/stream-extra':
         specifier: 2.6.1
         version: 2.6.1
-      agent-device:
-        specifier: 0.21.23
-        version: 0.21.23(ai@7.0.133(zod@4.6.5))
       ai:
         specifier: ^7.0.133
         version: 7.0.133(zod@4.6.5)
@@ -3698,16 +3695,6 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
-
-  agent-device@0.21.23:
-    resolution: {integrity: sha512-TZAuh3fMFa12Wh+1etcEll7FNvSCg1PjFkkfGz3XIYr9Ap9rJixHq89AnPqpTqnQ5fN2sp1UQgMFr7KcYoyqkA==}
-    engines: {node: '>=22.12'}
-    hasBin: true
-    peerDependencies:
-      ai: ^6.0.0 || ^7.0.0
-    peerDependenciesMeta:
-      ai:
-        optional: true
 
   ai@7.0.133:
     resolution: {integrity: sha512-OjyVMdsDp4ORPSrRB9hiYGic4bzeiOtaOzBPxOM7jiavz6tSXuMrqLwd1eILGhN669VD0G/+jxaiweRqfVulYg==}
@@ -9568,10 +9555,6 @@ snapshots:
   acorn@8.18.0: {}
 
   agent-base@7.1.4: {}
-
-  agent-device@0.21.23(ai@7.0.133(zod@4.6.5)):
-    optionalDependencies:
-      ai: 7.0.133(zod@4.6.5)
 
   ai@7.0.133(zod@4.6.5):
     dependencies:

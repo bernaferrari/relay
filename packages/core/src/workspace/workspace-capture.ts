@@ -328,11 +328,7 @@ async function snapshotForTarget(
     };
   }
 
-  // Android allows only one UiAutomation connection. Prefer the live SDK
-  // helper session. Fallback capture never competes with that session: helper
-  // first if the slot is free, stock dump only as last resort. Dump dies with
-  // 137 / already-registered when the helper is warm, and returns null root
-  // while Niagara is bound.
+  // Android allows one UiAutomation connection. Prefer the live helper session.
   const inspectionState = await captureAndroidInspectionState(target.context.serial);
   const foregroundApp = await captureAndroidForegroundApp(target.context.serial);
   if (inspectionState !== "active") {
@@ -358,14 +354,14 @@ async function snapshotForTarget(
         inspectionState,
         foregroundApp,
         treeApp,
-        bindingState: "matched",
+        bindingState: foregroundApp && treeApp === foregroundApp ? "matched" : undefined,
       };
     }
     if (foregroundApp && treeApp && foregroundApp !== treeApp) {
       await bindAndroidAppSession(target.device, foregroundApp, target.context.serial);
       nodes = await snapshotThroughSdk(target.device, interactiveOnly, "snapshot");
       treeApp = androidSnapshotApplication(nodes);
-      if (nodes.length > 0 && androidSnapshotMatchesForeground(nodes, foregroundApp)) {
+      if (nodes.length > 0 && treeApp === foregroundApp) {
         return {
           nodes,
           inspectable: true,
@@ -406,7 +402,11 @@ async function snapshotForTarget(
     ...(snapshot.treeBackend ? { androidTreeBackend: snapshot.treeBackend } : {}),
     foregroundApp,
     treeApp,
-    bindingState: inspectable ? "matched" : "unavailable",
+    bindingState: !inspectable
+      ? "unavailable"
+      : foregroundApp && treeApp === foregroundApp
+        ? "matched"
+        : undefined,
   };
 }
 

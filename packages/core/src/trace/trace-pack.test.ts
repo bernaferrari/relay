@@ -1007,7 +1007,7 @@ test("generated downloads are retained inside the portable Run artifact closure"
     const pack = await exportTracePack(run);
     assert.ok(JSON.stringify(pack).includes("artifacts/downloads/result.bin"));
     assert.ok(!JSON.stringify(pack).includes(directory));
-    await verifyTracePack(pack);
+    verifyTracePack(pack);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

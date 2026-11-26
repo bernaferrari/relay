@@ -712,5 +712,5 @@ it("live recording preserves only typed pre-dispatch recovery", async () => {
   await expect(live.input({ kind: "tap", target: { label: "Continue" } })).rejects.toMatchObject({
     recordingMutation: { workflowId: "workflow-1", sessionId: "session-1", transitionVersion: 18 },
   });
-  await live.close();
+  live.close();
 });

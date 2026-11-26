@@ -84,11 +84,8 @@ test("doctor validates the live Proof lifecycle under the full profile", async (
   );
   assert.match(formatRelayMcpDoctor(report), /Relay doctor: READY/u);
   const hostSize = report.checks.find(({ name }) => name === "host-size");
-  assert.equal(hostSize?.warning, true);
-  assert.match(
-    formatRelayMcpDoctor(report),
-    /WARN host-size: profile full registers \d+ tools[^\n]*\n  Next: Use --profile device/u,
-  );
+  assert.equal(hostSize?.warning, undefined);
+  assert.match(formatRelayMcpDoctor(report), /OK host-size: profile full registers \d+ tools/u);
 });
 
 test("doctor fails clearly when the server is missing a canonical Proof operation", async () => {

@@ -8,7 +8,13 @@
     "relay-runtime": "dist/relay-runtime.js"
   },
   "files": [
-    "dist",
+    "dist/agent-device",
+    "dist/manifest.json",
+    "dist/relay-runtime.js",
+    "dist/screenshot-analysis-worker.cjs",
+    "dist/server.js",
+    "dist/startup.d.ts",
+    "dist/startup.js",
     "README.md"
   ],
   "type": "module",
@@ -20,7 +26,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test src/startup.test.mjs",
+    "test": "node --import tsx --test src/startup.test.mjs",
     "test:installed": "node scripts/test-installed.mjs",
     "setup:android": "fetch-scrcpy-server 2.5",
     "prepack": "node scripts/build.mjs"
@@ -33,7 +39,6 @@
     "@yume-chan/fetch-scrcpy-server": "1.0.0",
     "@yume-chan/scrcpy": "2.3.0",
     "@yume-chan/stream-extra": "2.6.1",
-    "agent-device": "0.21.23",
     "ai": "^7.0.133",
     "playwright-core": "^1.64.0",
     "pngjs": "^7.0.0",

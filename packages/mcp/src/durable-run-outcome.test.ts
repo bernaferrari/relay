@@ -17,12 +17,12 @@ function recordingJobs(calls: Array<{ method: string; input: unknown }>): RelayO
   ) as RelayOutcomeJobs;
 }
 
-test("default MCP inspects a workflow ID or an explicit legacy v1 input, never an opaque mixed shape", async () => {
+test("MCP workflow inspection accepts a durable ID", async () => {
   const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_inspect_workflow")!;
   assert.equal(descriptor.inputSchema.safeParse({ workflowId: "workflow-1" }).success, true);
   assert.equal(
     descriptor.inputSchema.safeParse({ legacyRef: "relay-workflow.v1.bGVnYWN5" }).success,
-    true,
+    false,
   );
   assert.equal(
     descriptor.inputSchema.safeParse({ workflowId: "workflow-1", legacyRef: "legacy" }).success,

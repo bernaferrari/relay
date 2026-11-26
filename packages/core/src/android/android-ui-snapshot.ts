@@ -76,20 +76,22 @@ export async function captureAndroidInspectionState(
   }
 }
 
-/** Parse Android's authoritative resumed activity into its owning package. */
+/** Read the focused window's package. A resumed activity can sit behind a floating window. */
 export function parseAndroidForegroundApp(output: string): string | undefined {
-  const activity =
-    /(?:topResumedActivity|mResumedActivity)=ActivityRecord\{[^\n]*?\bu\d+\s+([A-Za-z0-9._-]+)\//.exec(
-      output,
-    );
-  return activity?.[1];
+  const defaultDisplay = output
+    .split(/^[ \t]*Display: mDisplayId=/mu)
+    .slice(1)
+    .find((display) => /^0\b/u.test(display));
+  const focus = /^[ \t]*mCurrentFocus=(.*)$/mu.exec(defaultDisplay ?? "")?.[1];
+  const packageName = /^Window\{[^\n]*?\bu\d+\s+([A-Za-z0-9._-]+)\//u.exec(focus ?? "")?.[1];
+  return packageName && !NON_APPLICATION_PACKAGES.has(packageName) ? packageName : undefined;
 }
 
-/** Read the app that owns the pixels currently shown on the physical display. */
+/** Read the focused application on the physical display. */
 export async function captureAndroidForegroundApp(serial: string): Promise<string | undefined> {
   try {
     const { stdout } = await execAndroidAdb(
-      ["-s", serial, "shell", "dumpsys", "activity", "activities"],
+      ["-s", serial, "shell", "dumpsys", "window", "displays"],
       { timeout: 2_000, maxBuffer: 2 * 1024 * 1024 },
     );
     return parseAndroidForegroundApp(stdout);
@@ -101,6 +103,7 @@ export async function captureAndroidForegroundApp(serial: string): Promise<strin
 /** App represented by an Android hierarchy, excluding system overlays and IMEs. */
 export function androidSnapshotApplication(nodes: SnapshotNode[]): string | undefined {
   const owners = nodes
+    .filter((node) => node.visibleToUser !== false)
     .map((node) => node.bundleId?.trim())
     .filter(
       (owner): owner is string =>
@@ -190,9 +193,24 @@ export function parseAndroidUiSnapshot(xml: string): SnapshotNode[] {
     }
     const attrs = attributes(match[1] ?? "");
     const rect = bounds(attrs.bounds);
-    const text = attrs.text?.trim();
+    const parentIndex = parentStack.at(-1);
+    const visibleToUser =
+      parentIndex !== undefined && nodes[parentIndex]?.visibleToUser === false
+        ? false
+        : bool(attrs["visible-to-user"]);
+    const editable =
+      bool(attrs.editable) ?? (attrs.class === "android.widget.EditText" || undefined);
+    const protectedText = bool(attrs.password) === true;
+    const text = protectedText ? undefined : attrs.text?.trim();
+    const value = protectedText
+      ? undefined
+      : editable
+        ? attrs["hint-showing"] === "true"
+          ? ""
+          : (attrs.text ?? "")
+        : text || undefined;
     const description = attrs["content-desc"]?.trim();
-    const label = description || text;
+    const label = description || text || attrs.hint?.trim();
     const clickable = bool(attrs.clickable) === true;
     const focusable = bool(attrs.focusable) === true;
     const longClickable = bool(attrs["long-clickable"]) === true;
@@ -201,20 +219,19 @@ export function parseAndroidUiSnapshot(xml: string): SnapshotNode[] {
     nodes.push({
       ...(label ? { label } : {}),
       ...(description ? { description } : {}),
-      ...(text ? { value: text } : {}),
+      ...(value !== undefined ? { value } : {}),
       ...(attrs["resource-id"] ? { identifier: attrs["resource-id"] } : {}),
       ...(attrs.class ? { role: attrs.class } : {}),
       ...(attrs.package ? { bundleId: attrs.package } : {}),
       ...(bool(attrs.enabled) !== undefined ? { enabled: bool(attrs.enabled) } : {}),
       ...(bool(attrs.selected) !== undefined ? { selected: bool(attrs.selected) } : {}),
       ...(bool(attrs.focused) !== undefined ? { focused: bool(attrs.focused) } : {}),
-      ...(bool(attrs["visible-to-user"]) !== undefined
-        ? { visibleToUser: bool(attrs["visible-to-user"]) }
-        : {}),
+      ...(editable !== undefined ? { editable } : {}),
+      ...(visibleToUser !== undefined ? { visibleToUser } : {}),
       ...(clickable || focusable || longClickable || scrollable ? { hittable: true } : {}),
       ...(rect ? { rect } : {}),
       index,
-      ...(parentStack.length ? { parentIndex: parentStack[parentStack.length - 1] } : {}),
+      ...(parentIndex !== undefined ? { parentIndex } : {}),
     });
     if (match[2] !== "/") parentStack.push(index);
   }

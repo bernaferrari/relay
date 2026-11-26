@@ -13,8 +13,8 @@
     "package": "node scripts/build.mjs && node scripts/sign-mac-dist.mjs --mac dir",
     "dist": "node scripts/build.mjs && node scripts/sign-mac-dist.mjs --mac dmg zip",
     "preview": "node scripts/build.mjs && node scripts/preview.mjs",
-    "test": "tsx --test \"src/**/*.test.ts\" \"scripts/*.test.mjs\" && node scripts/verify-server-bundle.mjs",
-    "test:coverage": "tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov \"src/**/*.test.ts\" \"scripts/*.test.mjs\" && node scripts/verify-server-bundle.mjs",
+    "test": "node --import tsx --test \"src/**/*.test.ts\" \"scripts/*.test.mjs\" && node scripts/verify-server-bundle.mjs",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov \"src/**/*.test.ts\" \"scripts/*.test.mjs\" && node scripts/verify-server-bundle.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

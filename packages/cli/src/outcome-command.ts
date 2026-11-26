@@ -5,7 +5,6 @@ import type {
   ExportEvidenceIntent,
   EditRecordingOutcomeIntent,
   InspectFailureIntent,
-  InspectWorkflowOutcomeIntent,
   ObserveTargetIntent,
   ProposeRepairIntent,
   RecordTestOutcomeIntent,
@@ -38,7 +37,6 @@ export type OutcomeCliIntent =
   | ConnectTargetIntent
   | ObserveTargetIntent
   | InspectCliIntent
-  | InspectWorkflowOutcomeIntent
   | CancelRunOutcomeIntent
   | ContinueRepeatOutcomeIntent
   | RecordTestOutcomeIntent
@@ -94,18 +92,18 @@ export function parseInFlags(raw: string | undefined): Record<string, string[]> 
   return worlds;
 }
 
-function repeatDimensions(raw: string, flag: "--each" | "--in"): RepeatDimensionSpec[] {
+function repeatDimensions(raw: string): RepeatDimensionSpec[] {
   const dimensions: RepeatDimensionSpec[] = [];
   const seen = new Set<string>();
   for (const token of raw.split("\u0000")) {
     const equals = token.indexOf("=");
-    if (equals < 1) throw new UsageError(`${flag} requires dimension=value[,value]`);
+    if (equals < 1) throw new UsageError(`--each requires dimension=value[,value]`);
     const id = token.slice(0, equals).trim();
     const rawValues = token.slice(equals + 1).trim();
-    if (!id || !rawValues) throw new UsageError(`${flag} requires dimension=value[,value]`);
-    if (seen.has(id)) throw new UsageError(`${flag} must name each dimension once`);
+    if (!id || !rawValues) throw new UsageError(`--each requires dimension=value[,value]`);
+    if (seen.has(id)) throw new UsageError(`--each must name each dimension once`);
     seen.add(id);
-    if (flag === "--each" && (rawValues === "all" || rawValues === "supported")) {
+    if (rawValues === "all" || rawValues === "supported") {
       dimensions.push({ id, values: rawValues });
       continue;
     }
@@ -114,7 +112,7 @@ function repeatDimensions(raw: string, flag: "--each" | "--in"): RepeatDimension
       .map((value) => value.trim())
       .filter(Boolean);
     if (!values.length || new Set(values).size !== values.length) {
-      throw new UsageError(`${flag} values must be a distinct comma-separated list`);
+      throw new UsageError(`--each values must be a distinct comma-separated list`);
     }
     dimensions.push({ id, values });
   }
@@ -454,10 +452,8 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
         "repeat always runs a representative pilot first; continue explicitly after review",
       );
     }
-    const each = tokens.values.get("--each");
-    const legacy = tokens.values.get("--in");
-    if (each && legacy) throw new UsageError("repeat accepts --each or compatible --in, not both");
-    const dimensions = repeatDimensions(each ?? legacy ?? "", each ? "--each" : "--in");
+    if (tokens.values.has("--in")) throw new UsageError("repeat uses --each");
+    const dimensions = repeatDimensions(tokens.values.get("--each") ?? "");
     const rawStrategy = tokens.values.get("--strategy");
     if (
       rawStrategy &&
@@ -514,20 +510,12 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       confirmRemaining: true,
     };
   }
-  // inspect accepts canonical Runs and workflows plus bounded legacy references.
   if (verb === "inspect" && args.length === 1) {
-    if (args[0]!.startsWith("relay-workflow.v1.") && args[0]!.length > 96 * 1024) {
-      throw new UsageError("legacy workflow reference exceeds the bounded input limit");
+    const runOrWorkflowId = args[0]!;
+    if (runOrWorkflowId.startsWith("relay-workflow.v1.")) {
+      throw new UsageError("inspect requires a saved Run or workflow ID");
     }
-    return args[0]!.startsWith("relay-workflow.v1.")
-      ? {
-          kind: "inspect-workflow",
-          legacyRef: args[0]! as Extract<
-            InspectWorkflowOutcomeIntent,
-            { legacyRef: unknown }
-          >["legacyRef"],
-        }
-      : { kind: "inspect", runOrWorkflowId: args[0]! };
+    return { kind: "inspect", runOrWorkflowId };
   }
   if (verb === "cancel-run" && args.length === 2) {
     if (!tokens.switches.has("--confirm")) {

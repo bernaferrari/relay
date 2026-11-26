@@ -20,7 +20,6 @@ export type RelayMcpToolDescriptor = {
 export declare const relayMcpProfiles: readonly RelayMcpProfile[];
 export declare const defaultRelayMcpProfile: RelayMcpProfile;
 export declare function relayToolName(operationId: string): `relay_${string}`;
-export declare const relayMcpTools: readonly RelayMcpToolDescriptor[];
 export declare function relayMcpToolsForProfile(
   profile?: RelayMcpProfile,
 ): readonly RelayMcpToolDescriptor[];
@@ -33,4 +32,3 @@ export type RelayMcpOperationCatalogEntry = {
   readonly profiles: readonly RelayMcpProfile[];
 };
 export declare function relayMcpOperationCatalog(): readonly RelayMcpOperationCatalogEntry[];
-export declare function assertRelayMcpToolParity(tools?: readonly RelayMcpToolDescriptor[]): void;

@@ -42,6 +42,7 @@ export function tunnelListingLooksReady(listed: string, serial: string): boolean
 /** One owner coordinates startup; every waiter must then prove its own target. */
 export function createIosTunnelReadiness(runtime: IosTunnelReadinessRuntime): TunnelAction {
   let startup: Promise<void> | null = null;
+  const pendingStartup = () => startup;
   return async (bin, tunnelInfoArgs, serial) => {
     if (startup) await startup;
     let tunnelInfoAnswered = false;
@@ -74,8 +75,9 @@ export function createIosTunnelReadiness(runtime: IosTunnelReadinessRuntime): Tu
       // A responding external owner gets a bounded chance to publish the requested device.
       return runtime.waitForDevice(bin, tunnelInfoArgs, serial);
     }
-    if (startup) {
-      await startup;
+    const competingStartup = pendingStartup();
+    if (competingStartup) {
+      await competingStartup;
       return runtime.waitForDevice(bin, tunnelInfoArgs, serial);
     }
 

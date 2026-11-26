@@ -101,7 +101,7 @@ export class DesktopUpdater {
     if (!this.#configured || this.#state.phase === "checking") return;
     this.#setState({ phase: "checking" });
     try {
-      await autoUpdater.checkForUpdates();
+      autoUpdater.checkForUpdates();
     } catch (error) {
       this.#setState({
         phase: "error",

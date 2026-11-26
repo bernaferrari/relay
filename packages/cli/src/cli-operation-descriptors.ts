@@ -109,7 +109,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   {
     operationId: "workflow.get",
     exclusion: "internal",
-    reason: "relay inspect-workflow owns durable workflow inspection.",
+    reason: "relay inspect owns durable workflow inspection.",
   },
   {
     operationId: "workflow.transition",

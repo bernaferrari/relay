@@ -59,6 +59,7 @@ export default defineConfig({
       "eslint/no-unsafe-optional-chaining": "off",
       "no-unused-vars": "error",
       "no-unsafe-optional-chaining": "error",
+      "typescript/await-thenable": "error",
       "shadcn/no-inline-styles": ["error", { allow: ["transform"] }],
       "shadcn/require-static-classes": "error",
       "shadcn/no-unknown-classes": "error",
@@ -122,44 +123,23 @@ export default defineConfig({
           ],
         },
       ],
-      "shadcn/no-restyle": [
-        "error",
-        {
-          allow: ["*"],
-          contracts: [
-            { pattern: "^Button$", allow: ["layout", "[-webkit-app-region:*]"] },
-            {
-              pattern: "^Badge$",
-              allow: ["layout", "color", "typography", "spacing"],
-            },
-            {
-              pattern: "^Input$|^Textarea$",
-              allow: ["layout", "spacing", "typography", "color"],
-            },
-            {
-              pattern: "^Card(Header|Title|Description|Content|Footer)?$",
-              allow: ["layout", "spacing", "typography", "color"],
-            },
-            {
-              pattern: "^Alert$",
-              allow: ["layout", "spacing", "typography", "color", "shape"],
-            },
-          ],
-        },
-      ],
     },
+    // check-restyle-contract.mjs enforces restyling against the shared primitives.
     overrides: [
+      {
+        files: ["**/*.test.{ts,tsx,mjs}"],
+        rules: { "typescript/no-floating-promises": "off", "typescript/unbound-method": "off" },
+      },
       {
         files: ["packages/ui-react/src/components/**"],
         rules: {
-          "shadcn/no-restyle": "off",
           "shadcn/require-static-classes": "off",
           "shadcn/no-arbitrary-values": "off",
         },
       },
     ],
     options: {
-      typeAware: false,
+      typeAware: true,
       typeCheck: false,
     },
     ignorePatterns: [

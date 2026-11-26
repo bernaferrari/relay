@@ -42,8 +42,8 @@
     "prepack": "npm run build",
     "pack:check": "npm pack --dry-run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test \"src/**/*.test.ts\"",
-    "test:coverage": "tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov \"src/**/*.test.ts\"",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov \"src/**/*.test.ts\"",
     "test:clean-host": "node scripts/test-clean-host.mjs"
   },
   "dependencies": {

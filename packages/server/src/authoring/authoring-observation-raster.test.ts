@@ -7,7 +7,7 @@ import { captureAuthoringObservation } from "./authoring-observation.js";
 
 // Observe the existing decoder through core's own dependency; the server does
 // not gain another image package just to verify its capture lifecycle.
-const { PNG } = createRequire(new URL("../../core/package.json", import.meta.url))("pngjs") as {
+const { PNG } = createRequire(import.meta.resolve("@relay/core"))("pngjs") as {
   PNG: {
     new (options: { width: number; height: number }): {
       width: number;

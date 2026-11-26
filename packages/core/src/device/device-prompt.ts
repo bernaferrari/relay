@@ -86,7 +86,9 @@ function visible(
 
 /** The composer an agent would tap: focused first, else the lowest editable field. */
 export function defaultComposer(nodes: readonly SnapshotNode[]): TextEntryTarget | undefined {
-  const editable = nodes.filter((node) => node.editable === true && visible(node));
+  const editable = nodes.filter(
+    (node) => node.editable === true && node.enabled !== false && visible(node),
+  );
   const chosen =
     editable.find((node) => node.focused === true) ??
     [...editable].sort((a, b) => b.rect!.y + b.rect!.height - (a.rect!.y + a.rect!.height))[0];

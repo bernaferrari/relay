@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createMcpServer,
+  registerRelayTool,
   relayMcpErrorLimit,
   relayMcpInstructions,
   relayMcpInstructionsForProfile,
@@ -14,11 +15,11 @@ import {
 } from "./server.js";
 import {
   defaultRelayMcpProfile,
-  relayMcpTools,
+  relayToolForOperation,
+  relayToolName,
   relayMcpToolsForProfile,
   type RelayMcpProfile,
 } from "./tools.js";
-import { relayOutcomeTools } from "./outcome-tools.js";
 import { relayRegisteredToolNames } from "./registered-tools.js";
 
 type RpcResponse = {
@@ -101,8 +102,19 @@ type ToolCallResult = {
   isError?: boolean;
 };
 
-async function connectMcp(invoker: OperationInvoker, profile: RelayMcpProfile = "full") {
+async function connectMcp(
+  invoker: OperationInvoker,
+  profile: RelayMcpProfile = "full",
+  isolatedRawTools: readonly `relay_${string}`[] = [],
+) {
   const server = createMcpServer({ invoker, scope: { projectId: "project-a" }, profile });
+  const availableNames = new Set(relayRegisteredToolNames(profile));
+  for (const name of isolatedRawTools) {
+    if (availableNames.has(name)) continue;
+    const operation = operationDefinitions.find(({ id }) => relayToolName(id) === name);
+    assert.ok(operation, name);
+    registerRelayTool(server, relayToolForOperation(operation.id), invoker, {});
+  }
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const pending = new Map<
     number,
@@ -160,7 +172,7 @@ function callResult(response: RpcResponse): ToolCallResult {
   return response.result as ToolCallResult;
 }
 
-test("full-profile SDK initialization lists every generated Relay tool exactly once", async () => {
+test("full-profile SDK initialization advertises a bounded Change Proof catalog", async () => {
   const session = await connectMcp({ async invoke() {} });
   try {
     assert.deepEqual(session.initialized.result?.serverInfo, relayMcpServerInfo);
@@ -187,7 +199,7 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
       "relay_app_map_list",
       "relay_run_list",
       "relay_test_yaml_get",
-      "relay_system_doctor_get",
+      "relay_system_health_get",
     ]) {
       assert.equal(
         tools.some(({ name }) => name === duplicate),
@@ -195,7 +207,8 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
         duplicate,
       );
     }
-    assert.equal(fullTools.length, relayMcpTools.length - 7);
+    assert.ok(tools.length <= 80, `tool count ${tools.length}`);
+    assert.ok(!tools.some(({ name }) => name === "relay_target_interact"));
 
     for (const descriptor of fullTools) {
       const tool = tools.find(({ name }) => name === descriptor.name);
@@ -222,26 +235,13 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
       "serial",
     ]);
     assert.equal(screenshot.inputSchema.required, undefined);
-    const snapshot = tools.find(({ name }) => name === "relay_target_snapshot_capture");
-    assert.ok(snapshot);
-    assert.deepEqual(Object.keys(snapshot.inputSchema.properties ?? {}).sort(), [
-      "confirm",
-      "full",
-      "interactiveOnly",
-      "laneId",
-      "logicalBoundsOnly",
-      "serial",
-      "visual",
-    ]);
-    assert.match(snapshot.description ?? "", /digest/i);
-    assert.match(snapshot.description ?? "", /full/);
   } finally {
     await session.close();
   }
 });
 
 test("tools/list JSON schema for app-map.test.edit includes requirementAction", async () => {
-  const session = await connectMcp({ async invoke() {} });
+  const session = await connectMcp({ async invoke() {} }, "full", ["relay_app_map_test_edit"]);
   try {
     const listed = await session.request("tools/list", {});
     assert.equal(listed.error, undefined);
@@ -286,10 +286,7 @@ test("every canonical confirmation contract is surfaced as MCP confirm consent",
       Object.hasOwn(definition.input.presentation.shape, "confirm") &&
       !Object.hasOwn(definition.input.presentation.shape, "confirmation")
     ) {
-      const descriptor = relayMcpTools.find(
-        (tool) => (tool.operationId as string) === definition.id,
-      );
-      assert.ok(descriptor, `${definition.id} must be MCP-eligible`);
+      const descriptor = relayToolForOperation(definition.id);
       assert.equal(descriptor.requiresConfirmation, true, definition.id);
       assert.ok(
         Object.hasOwn(
@@ -542,12 +539,16 @@ test("snapshot capture returns a digest unless full is requested", async () => {
     ],
   };
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
-  const session = await connectMcp({
-    async invoke(operationId, input) {
-      calls.push({ operationId, input });
-      return snapshot;
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return snapshot;
+      },
     },
-  });
+    "full",
+    ["relay_target_snapshot_capture"],
+  );
   try {
     const digest = callResult(
       await session.request("tools/call", {
@@ -680,7 +681,11 @@ test("invokes representative read, write, and confirmed operations with exact in
       return results[operationId];
     },
   };
-  const session = await connectMcp(invoker);
+  const session = await connectMcp(invoker, "full", [
+    "relay_system_health_get",
+    "relay_target_create",
+    "relay_workspace_evidence_update",
+  ]);
   const readInput = {};
   const writeInput = { name: "Web app", startUrl: "https://example.test" };
   const confirmedInput = { channel: "audio", enabled: true, reason: "test run" };
@@ -727,12 +732,16 @@ test("invokes representative read, write, and confirmed operations with exact in
 
 test("forwards one frozen Test evidence scope without accepting unknown controls", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
-  const session = await connectMcp({
-    async invoke(operationId, input) {
-      calls.push({ operationId, input });
-      return {};
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return {};
+      },
     },
-  });
+    "full",
+    ["relay_app_map_test_compile", "relay_app_map_test_run"],
+  );
   const compileInput = {
     appMapId: "checkout",
     testId: "smoke",
@@ -781,38 +790,42 @@ test("forwards one frozen Test evidence scope without accepting unknown controls
 
 test("surfaces a standalone iOS step as terminal review-needed without a second action", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
-  const session = await connectMcp({
-    async invoke(operationId, input) {
-      calls.push({ operationId, input });
-      return {
-        ok: false,
-        terminal: "review-needed",
-        error: "The iOS press may already have reached the device.",
-        durationMs: 12,
-        logs: ["native command issued once"],
-        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-        iosMutation: {
-          sequence: 1,
-          operation: "press",
-          nativeAttempts: 1,
-          outcome: "outcome-unknown",
-          retry: {
-            attempts: 0,
-            decision: "blocked",
-            reason: "native-command-outcome-unknown",
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return {
+          ok: false,
+          terminal: "review-needed",
+          error: "The iOS press may already have reached the device.",
+          durationMs: 12,
+          logs: ["native command issued once"],
+          code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+          iosMutation: {
+            sequence: 1,
+            operation: "press",
+            nativeAttempts: 1,
+            outcome: "outcome-unknown",
+            retry: {
+              attempts: 0,
+              decision: "blocked",
+              reason: "native-command-outcome-unknown",
+            },
+            intervention: { required: true, action: "capture-current-screen-before-any-retry" },
+            at: 1,
           },
-          intervention: { required: true, action: "capture-current-screen-before-any-retry" },
-          at: 1,
-        },
-        stepReview: {
-          captureCurrent: {
-            operationId: "target.screenshot.capture",
-            input: { serial: "ipad-1" },
+          stepReview: {
+            captureCurrent: {
+              operationId: "target.screenshot.capture",
+              input: { serial: "ipad-1" },
+            },
           },
-        },
-      };
+        };
+      },
     },
-  });
+    "full",
+    ["relay_step_run"],
+  );
   const input = { serial: "ipad-1", step: { kind: "sleep", ms: 1 } };
   try {
     const result = callResult(
@@ -881,12 +894,16 @@ test("publishes operation-shaped schemas and rejects invalid arguments before in
 
 test("rejects wrapped input so agents use the one advertised operation schema", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
-  const session = await connectMcp({
-    async invoke(operationId, input) {
-      calls.push({ operationId, input });
-      return { lease: { id: "lease-1" } };
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return { lease: { id: "lease-1" } };
+      },
     },
-  });
+    "full",
+    ["relay_lease_create"],
+  );
   const wrappedInput = {
     poolId: "pool-1",
     deviceSerial: "device-1",
@@ -922,11 +939,15 @@ test("rejects wrapped input so agents use the one advertised operation schema", 
 
 test("requires literal confirmation for confirmation-protected operations", async () => {
   const calls: string[] = [];
-  const session = await connectMcp({
-    async invoke(operationId) {
-      calls.push(operationId);
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        calls.push(operationId);
+      },
     },
-  });
+    "full",
+    ["relay_workspace_evidence_update"],
+  );
   const input = { channel: "audio", enabled: true };
   try {
     for (const argumentsValue of [input, { ...input, confirm: false }]) {
@@ -947,12 +968,16 @@ test("requires literal confirmation for confirmation-protected operations", asyn
 
 test("preserves confirmed lease takeover consent for the canonical protocol operation", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
-  const session = await connectMcp({
-    async invoke(operationId, input) {
-      calls.push({ operationId, input });
-      return { lease: { id: "lease-2" } };
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return { lease: { id: "lease-2" } };
+      },
     },
-  });
+    "full",
+    ["relay_lease_takeover"],
+  );
   const input = {
     leaseId: "lease-1",
     expiresAt: Date.now() + 60_000,
@@ -1151,6 +1176,7 @@ test("preserves confirmed browser authentication consent for canonical operation
       },
     },
     "full",
+    ["relay_target_browser_auth_save", "relay_target_browser_auth_revoke"],
   );
   try {
     const save = callResult(
@@ -1195,6 +1221,7 @@ test("translates confirmed reviewed-origin MCP consent into the signed protocol 
       },
     },
     "full",
+    ["relay_app_map_scroll_surface_origin_review"],
   );
   try {
     await session.request("tools/call", {
@@ -1254,25 +1281,28 @@ test("profile selection exposes three nested tool sets", async () => {
     }
   }
   assert.deepEqual(relayMcpToolsForProfile(defaultRelayMcpProfile), []);
-  assert.ok(relayOutcomeTools.length < relayMcpTools.length / 2);
 });
 
 test("returns sanitized structured ApiError recovery without losing revision state", async () => {
-  const session = await connectMcp({
-    async invoke() {
-      throw new ApiError(409, "Revision conflict", {
-        code: "revision_conflict",
-        error: "Refresh after /Users/example/private/map.json with Bearer private-credential",
-        current: { revision: 17, privateState: "not-public" },
-        recovery: { action: "refresh-and-retry", retryable: true },
-        recoveryAction: {
-          operationId: "lease.takeover",
-          input: { leaseId: "lease-1" },
-          cli: { argv: ["lease", "takeover", "lease-1"] },
-        },
-      });
+  const session = await connectMcp(
+    {
+      async invoke() {
+        throw new ApiError(409, "Revision conflict", {
+          code: "revision_conflict",
+          error: "Refresh after /Users/example/private/map.json with Bearer private-credential",
+          current: { revision: 17, privateState: "not-public" },
+          recovery: { action: "refresh-and-retry", retryable: true },
+          recoveryAction: {
+            operationId: "lease.takeover",
+            input: { leaseId: "lease-1" },
+            cli: { argv: ["lease", "takeover", "lease-1"] },
+          },
+        });
+      },
     },
-  });
+    "full",
+    ["relay_target_list", "relay_lease_takeover"],
+  );
   try {
     const result = callResult(
       await session.request("tools/call", {
@@ -1339,20 +1369,24 @@ test("does not emit a hidden recovery command from a least-privilege profile", a
 
 test("fails closed for a malformed iOS terminal payload while retaining valid review evidence", async () => {
   const iosMutation = { operation: "press", outcome: "outcome-unknown" };
-  const session = await connectMcp({
-    async invoke() {
-      throw new ApiError(409, "Refresh and retry", {
-        code: "IOS_MUTATION_OUTCOME_UNKNOWN",
-        error: "Refresh and retry the tap.",
-        iosMutation,
-        recovery: { action: "refresh-and-retry", retryable: true },
-        recoveryAction: {
-          operationId: "target.interact",
-          input: { serial: "ipad-1", kind: "label", label: "Settings" },
-        },
-      });
+  const session = await connectMcp(
+    {
+      async invoke() {
+        throw new ApiError(409, "Refresh and retry", {
+          code: "IOS_MUTATION_OUTCOME_UNKNOWN",
+          error: "Refresh and retry the tap.",
+          iosMutation,
+          recovery: { action: "refresh-and-retry", retryable: true },
+          recoveryAction: {
+            operationId: "target.interact",
+            input: { serial: "ipad-1", kind: "label", label: "Settings" },
+          },
+        });
+      },
     },
-  });
+    "full",
+    ["relay_target_interact"],
+  );
   try {
     const result = callResult(
       await session.request("tools/call", {
@@ -1379,29 +1413,33 @@ test("fails closed for a malformed iOS terminal payload while retaining valid re
 });
 
 test("large Authoring Sessions point MCP callers at their full offline resource", async () => {
-  const session = await connectMcp({
-    async invoke(operationId) {
-      assert.equal(operationId, "authoring.session.get");
-      return {
-        session: {
-          schemaVersion: 1,
-          id: "session-large",
-          organizationId: "local",
-          projectId: "project-a",
-          actorId: "agent:relay",
-          actorKind: "agent",
-          appMapId: "map-a",
-          state: "reviewing",
-          target: { kind: "device", platform: "android", targetId: "device-a" },
-          leaseId: "lease-a",
-          expectedAppMapRevision: 1,
-          createdAt: 1,
-          updatedAt: 2,
-          immutableCapture: "x".repeat(relayMcpTextLimit * 2),
-        },
-      };
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        assert.equal(operationId, "authoring.session.get");
+        return {
+          session: {
+            schemaVersion: 1,
+            id: "session-large",
+            organizationId: "local",
+            projectId: "project-a",
+            actorId: "agent:relay",
+            actorKind: "agent",
+            appMapId: "map-a",
+            state: "reviewing",
+            target: { kind: "device", platform: "android", targetId: "device-a" },
+            leaseId: "lease-a",
+            expectedAppMapRevision: 1,
+            createdAt: 1,
+            updatedAt: 2,
+            immutableCapture: "x".repeat(relayMcpTextLimit * 2),
+          },
+        };
+      },
     },
-  });
+    "full",
+    ["relay_authoring_session_get"],
+  );
   try {
     const result = callResult(
       await session.request("tools/call", {
@@ -1547,14 +1585,18 @@ test("large evidence exports return a stable TracePack resource and bounded mani
 test("bounds normal text and errors without exposing truncated paths or credentials", async () => {
   const path = "/Users/example/private/results/secret.json";
   const credential = "super-secret-bearer-token";
-  const session = await connectMcp({
-    async invoke(operationId) {
-      if (operationId === "system.doctor.get") {
-        return { path, payload: "x".repeat(relayMcpTextLimit * 2) };
-      }
-      throw new Error(`Authorization: Bearer ${credential} at ${path} ${"x".repeat(2_000)}`);
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        if (operationId === "system.health.get") {
+          return { path, payload: "x".repeat(relayMcpTextLimit * 2) };
+        }
+        throw new Error(`Authorization: Bearer ${credential} at ${path} ${"x".repeat(2_000)}`);
+      },
     },
-  });
+    "full",
+    ["relay_target_list"],
+  );
   try {
     const success = callResult(
       await session.request("tools/call", {
@@ -1844,12 +1886,16 @@ test("compact visual review leftover Close 004 cannot fill dest", async () => {
 });
 
 test("compact visual-baseline update leftover Close 004 cannot fill dest", async () => {
-  const session = await connectMcp({
-    async invoke(operationId) {
-      assert.equal(operationId, "run.visual-baseline.update");
-      return leftoverVisualComparison;
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        assert.equal(operationId, "run.visual-baseline.update");
+        return leftoverVisualComparison;
+      },
     },
-  });
+    "full",
+    ["relay_run_visual_baseline_update"],
+  );
   try {
     const result = callResult(
       await session.request("tools/call", {
@@ -1896,12 +1942,16 @@ test("compact capture-review leftover Close 004 cannot fill dest", async () => {
       summary: { planned: 1, pending: 2 },
     },
   };
-  const session = await connectMcp({
-    async invoke(operationId) {
-      assert.equal(operationId, "job.combine.capture.review");
-      return leftoverCaptureReview;
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        assert.equal(operationId, "job.combine.capture.review");
+        return leftoverCaptureReview;
+      },
     },
-  });
+    "full",
+    ["relay_job_combine_capture_review"],
+  );
   try {
     const result = callResult(
       await session.request("tools/call", {
@@ -2013,19 +2063,23 @@ test("returns screenshots as native PNG content without path or base64 metadata 
 });
 
 test("interact preview without HTTP base64 stays a small digest", async () => {
-  const session = await connectMcp({
-    async invoke() {
-      return {
-        ok: true,
-        preview: true,
-        mime: "image/png",
-        bytes: 700_000,
-        inspectable: false,
-        path: "/tmp/preview.png",
-        nodes: [{ label: "huge leftover tree" }],
-      };
+  const session = await connectMcp(
+    {
+      async invoke() {
+        return {
+          ok: true,
+          preview: true,
+          mime: "image/png",
+          bytes: 700_000,
+          inspectable: false,
+          path: "/tmp/preview.png",
+          nodes: [{ label: "huge leftover tree" }],
+        };
+      },
     },
-  });
+    "full",
+    ["relay_target_interact"],
+  );
   try {
     const result = callResult(
       await session.request("tools/call", {
@@ -2049,24 +2103,28 @@ test("interact preview unwraps an invoke envelope into a native PNG", async () =
     "base64",
   );
   const base64 = png.toString("base64");
-  const session = await connectMcp({
-    async invoke() {
-      return {
-        ok: true,
-        result: {
-          mime: "image/png",
-          base64,
-          bytes: png.byteLength,
-          preview: true,
-          inspectable: false,
-          capturedAt: 1,
-          serial: "ipad-1",
-          width: 1,
-          height: 1,
-        },
-      };
+  const session = await connectMcp(
+    {
+      async invoke() {
+        return {
+          ok: true,
+          result: {
+            mime: "image/png",
+            base64,
+            bytes: png.byteLength,
+            preview: true,
+            inspectable: false,
+            capturedAt: 1,
+            serial: "ipad-1",
+            width: 1,
+            height: 1,
+          },
+        };
+      },
     },
-  });
+    "full",
+    ["relay_target_interact"],
+  );
   try {
     const result = callResult(
       await session.request("tools/call", {
@@ -2091,21 +2149,25 @@ test("interact preview returns a PNG image instead of inlined base64 JSON", asyn
     "base64",
   );
   const base64 = png.toString("base64");
-  const session = await connectMcp({
-    async invoke() {
-      return {
-        mime: "image/png",
-        base64,
-        bytes: png.byteLength,
-        preview: true,
-        inspectable: false,
-        capturedAt: 1,
-        serial: "ipad-1",
-        width: 1,
-        height: 1,
-      };
+  const session = await connectMcp(
+    {
+      async invoke() {
+        return {
+          mime: "image/png",
+          base64,
+          bytes: png.byteLength,
+          preview: true,
+          inspectable: false,
+          capturedAt: 1,
+          serial: "ipad-1",
+          width: 1,
+          height: 1,
+        };
+      },
     },
-  });
+    "full",
+    ["relay_target_interact"],
+  );
   try {
     const result = callResult(
       await session.request("tools/call", {
@@ -2170,7 +2232,8 @@ test("qa exposes the describe, run, verdict loop and accurate discovery", async 
     {
       async invoke(operationId) {
         invoked.push(operationId);
-        if (operationId === "system.doctor.get") return { ok: true, checks: [] };
+        if (operationId === "system.health.get")
+          return { ok: true, product: "relay", deviceCount: null };
         throw new Error(`unexpected ${operationId}`);
       },
     },
@@ -2213,7 +2276,7 @@ test("qa exposes the describe, run, verdict loop and accurate discovery", async 
       await session.request("tools/call", { name: "relay_health", arguments: {} }),
     );
     assert.notEqual(health.isError, true);
-    assert.deepEqual(invoked, ["system.doctor.get"]);
+    assert.deepEqual(invoked, ["system.health.get"]);
     const discovery = callResult(
       await session.request("resources/read", { uri: "relay://operations" }),
     );

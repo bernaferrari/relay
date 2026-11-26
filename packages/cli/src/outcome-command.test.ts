@@ -140,7 +140,7 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
       input: tokens(["repeat", "locale-smoke"], {
         "--map": "settings",
         "--device": "ipad",
-        "--in": "language=ja,pt-BR",
+        "--each": "language=ja,pt-BR",
         "--lens": "visual",
       }),
       expected: {
@@ -271,7 +271,7 @@ test("Repeat CLI rejects ambiguous or malformed dimension policies", () => {
           "--in": "language=en",
         }),
       ),
-    /accepts --each or compatible --in/u,
+    /repeat uses --each/u,
   );
   assert.throws(
     () =>

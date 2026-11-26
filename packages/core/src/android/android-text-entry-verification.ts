@@ -46,8 +46,7 @@ function owner(node: SnapshotNode): string | undefined {
 function editable(node: SnapshotNode): boolean {
   const role = (node.role ?? node.type ?? "").toLowerCase();
   return (
-    node.editable === true ||
-    /(?:^|\.)(?:edittext|textfield|textview|textbox|textarea|searchfield)$/u.test(role)
+    node.editable ?? /(?:^|\.)(?:edittext|textfield|textbox|textarea|searchfield)$/u.test(role)
   );
 }
 

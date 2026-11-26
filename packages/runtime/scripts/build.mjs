@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { readFile, mkdir, writeFile, chmod } from "node:fs/promises";
+import { access, readFile, mkdir, writeFile, chmod, cp, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -15,9 +15,37 @@ const { build } = (() => {
   }
 })();
 const manifest = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
+const sdkRoot = resolve(repositoryRoot, "vendor/agent-device");
+const sdk = JSON.parse(await readFile(resolve(sdkRoot, "package.json"), "utf8"));
+const bundledSdk = resolve(packageRoot, "dist/agent-device");
+try {
+  await access(resolve(sdkRoot, sdk.exports["."].import));
+} catch {
+  throw new Error("Build the vendored SDK first with pnpm agent-device:build.");
+}
+await rm(bundledSdk, { recursive: true, force: true });
+await mkdir(bundledSdk, { recursive: true });
+// Keep the SDK's compiled modules, daemon executable, and helper paths together.
+for (const path of [
+  "package.json",
+  "LICENSE",
+  "bin",
+  ...sdk.files.filter((path) => /^(?:dist$|apple\/|android\/|linux\/)/u.test(path)),
+]) {
+  await cp(resolve(sdkRoot, path), resolve(bundledSdk, path), {
+    recursive: true,
+    filter: (source) => !source.endsWith(".idsig") && !source.split("/").includes(".build"),
+  });
+}
 const aliases = {
   name: "canonical-relay-workspace",
   setup(context) {
+    context.onResolve({ filter: /^agent-device(?:\/|$)/ }, ({ path }) => {
+      const subpath = path === "agent-device" ? "." : `./${path.slice("agent-device/".length)}`;
+      const entry = sdk.exports[subpath]?.import;
+      if (!entry) throw new Error(`Unresolved vendored SDK entry: ${path}`);
+      return { path: `./agent-device/${entry.replace(/^\.\//u, "")}`, external: true };
+    });
     context.onResolve({ filter: /^@relay\// }, async ({ path }) => {
       const [name, ...parts] = path.slice("@relay/".length).split("/");
       const root = resolve(repositoryRoot, "packages", name);
@@ -50,6 +78,16 @@ await build({
   legalComments: "eof",
   metafile: true,
   logLevel: "info",
+});
+await build({
+  entryPoints: [
+    resolve(repositoryRoot, "packages/core/src/screenshot/screenshot-analysis-worker.ts"),
+  ],
+  outfile: resolve(packageRoot, "dist/screenshot-analysis-worker.cjs"),
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: "node24",
 });
 const cliPath = resolve(packageRoot, "dist/relay-runtime.js");
 await writeFile(

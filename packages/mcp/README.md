@@ -26,11 +26,11 @@ reads the same catalog, so instructions match the shipped code.
 
 Relay MCP has three profiles. Each one contains the one before it.
 
-| Profile        | Tools  | Use it to                                                                                  |
-| -------------- | ------ | ------------------------------------------------------------------------------------------ |
-| `qa` (default) | 13     | Write a Test from a sentence, run it, read the verdict, check a change                     |
-| `device`       | 36     | Everything in `qa`, plus drive a device or browser and record Tests                        |
-| `full`         | Varies | Everything in `device`, plus advanced raw operations. Renderer-only transport is excluded. |
+| Profile        | Tools  | Use it to                                                              |
+| -------------- | ------ | ---------------------------------------------------------------------- |
+| `qa` (default) | 13     | Write a Test from a sentence, run it, read the verdict, check a change |
+| `device`       | 36     | Everything in `qa`, plus drive a device or browser and record Tests    |
+| `full`         | Varies | Everything in `device`, plus Change Proof and evidence review.         |
 
 Pick one with `--profile <name>` or `RELAY_MCP_PROFILE`. Destructive tools
 (cancel, delete, remove, discard, revoke) carry the MCP `destructiveHint`
@@ -52,7 +52,7 @@ side effects.
 | `relay_list_devices`    | List ready phones, emulators and browsers with their `targetId` |
 | `relay_get_test`        | Read a Test as its test file                                    |
 | `relay_get_guide`       | Read the bundled how-to guides                                  |
-| `relay_health`          | Check that Relay and its prerequisites are ready                |
+| `relay_health`          | Check that Relay is serving the configured project              |
 | `relay_panel`           | Read-only Tests and results view (MCP Apps hosts)               |
 
 **`device`** adds live control and recording:
@@ -75,12 +75,10 @@ Device tools take `targetId` from `relay_list_devices`, or `laneId` for a saved
 browser sign-in. They take control of a free device automatically and say who
 holds a busy one.
 
-**`full`** adds `relay_replay_lab`, the Proof tools (`relay_prove_change`,
-`relay_inspect_proof`) and one `relay_<operation>` tool per Relay operation,
-named after its operation id (for example `relay_target_screenshot_capture`).
-Raw tools take the operation's fields directly, and wrapped or alternate input
-envelopes are rejected. `full` leaves out the raw operations a named tool
-already covers, and it is the only profile that exposes `lease.takeover`.
+**`full`** adds Change Proof and evidence tools, including `relay_prove_change`
+and `relay_inspect_proof`. Use `relay://operations` to see which tools are
+available in each profile. The Relay app and CLI provide advanced authoring
+and workspace administration.
 
 ## Install and configure a client
 
@@ -145,7 +143,7 @@ manifest for that profile. The report never prints `RELAY_AUTH_TOKEN`.
 ## Change Proof
 
 The executable defaults to `qa` when no profile is selected. Proof hosts launch
-`--profile full`: it adds `relay_prove_change`, `relay_inspect_proof` and the raw
+`--profile full`: it adds `relay_prove_change`, `relay_inspect_proof` and the
 `proof.*` lifecycle tools for explicit plan review, recovery, publication, and
 selective reruns. A human approves a Verification Plan in the app or CLI.
 
@@ -263,9 +261,10 @@ the authored condition is the executable check. `relay_edit_recording` also
 accepts `insert-before` to add a check to a reviewed recording; replay that
 edited revision before saving it.
 
-Repeat explicitly selected data values with `relay_repeat_test`; inspect one
-pilot before confirming `relay_continue_repeat`. The CLI language variant is
-documented in [Repeat a Test across languages](../../docs/LANGUAGE_SWEEP_LOOP.md).
+Repeat explicitly selected data values with `relay_repeat_test` and inspect one
+pilot before confirming `relay_continue_repeat`. In the workspace CLI, run
+`pnpm relay repeat <test-id> --each language=en,ja,pt-BR`. After reviewing the
+pilot, use `pnpm relay continue-repeat <workflow-id> <expected-version> --confirm`.
 
 ## Advanced graph Test loop
 
@@ -289,9 +288,7 @@ and left with Back; it is not a language-list traversal.
 Failed-check repair is exposed through operations, not a separate tool family: `run.repair.list`
 returns the project's failed-check repair queue (`relay://repairs`), `run.repair.get` reads one
 exact failed-check package under `relay://runs/{runId}/checks/{checkId}/repair`, and
-`run.repair.propose` / `run.repair.retry` act on it. The `relay_repair_this_failed_connection`
-prompt guides diagnosis and replay of one identified connection; every mutation still goes through
-the lease, revision, and confirmation rules above.
+`relay_propose_repair` drafts a repair for review.
 
 Destination-mismatch repair proposals are also exposed as typed data: when a failed run records a
 `destination-repair-proposals` artifact, `relay://runs/{runId}/repair-proposals` reads it through
@@ -312,8 +309,7 @@ remain an explicit legacy/manual `record-runs` recovery path, not the normal Pro
   lease, revision, confirmation, and idempotency rules.
 - `relay_target_screenshot_capture` returns the current Target screenshot as native MCP `image/png`
   content plus safe metadata. It never exposes Relay host paths.
-- Curated advanced prompts guide topology exploration, failed-path repair, and recording review.
-  Every prompt requires the configured project and the relevant canonical resource IDs.
+- The Change Proof prompt requires the configured project and guides a scoped, human-approved run.
 - `relay_export_evidence` returns a content-addressed TracePack for one persisted Run. Offline
   analysis verifies every digest, reports incomplete evidence, and never claims that a future target
   transition will pass.
@@ -374,9 +370,6 @@ the `ui://relay/review` resource and opener metadata. Other hosts receive the
 same bounded state as text with no view metadata or UI resource. The bundled
 HTML has no external dependencies or network access requirements.
 
-MCP server SDK 2.1.0 and MCP Apps SDK 2.0.3 are pinned together. OpenAI
-Extensions 0.1.0 currently peers with the v1 SDK, so its documented thread
-entrypoint/fullscreen metadata is supplied directly without importing an
-incompatible runtime. Capability and copied-artifact tests pass; actual
-Codex/ChatGPT rendering remains unverified. See the plugin's
-[host qualification guide](../../plugins/relay-proof/hosts/panel.md).
+Relay supplies the OpenAI thread entrypoint and fullscreen metadata directly.
+Capability and installed-artifact tests pass. Actual Codex and ChatGPT
+rendering still requires [host qualification](../../plugins/relay-proof/hosts/chatgpt/README.md#qualify-the-panel).

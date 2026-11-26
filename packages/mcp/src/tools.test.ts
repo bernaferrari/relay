@@ -2,14 +2,12 @@ import { destEndCoverageForRequirement, operationDefinitions } from "@relay/prot
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  assertRelayMcpToolParity,
   defaultRelayMcpProfile,
   relayMcpExclusions,
   relayMcpOperationCatalog,
   relayMcpProfiles,
-  relayMcpTools,
+  relayToolForOperation,
   relayMcpToolsForProfile,
-  relayQaOperationTools,
   relayToolName,
   resolveRelayMcpProfile,
 } from "./tools.js";
@@ -19,22 +17,13 @@ const eligibleOperations = operationDefinitions.filter(
   ({ id }) => !relayMcpExclusions.some(({ operationId }) => operationId === id),
 );
 
-function tool(operationId: (typeof operationDefinitions)[number]["id"]) {
-  const descriptor = relayMcpTools.find((candidate) => candidate.operationId === operationId);
-  assert.ok(descriptor, `missing MCP tool for ${operationId}`);
-  return descriptor;
-}
+const tool = relayToolForOperation;
+const relayMcpTools = eligibleOperations.map(({ id }) => tool(id));
 
-test("maps every tool-eligible operation exactly once", () => {
-  assert.doesNotThrow(() => assertRelayMcpToolParity());
-  assert.deepEqual(
-    relayMcpTools.map(({ operationId }) => operationId),
-    eligibleOperations.map(({ id }) => id),
-  );
-  assert.equal(
-    new Set(relayMcpTools.map(({ operationId }) => operationId)).size,
-    relayMcpTools.length,
-  );
+test("operation descriptors map to unique names and expressly exclude renderer transport", () => {
+  for (const { operationId } of relayMcpExclusions) {
+    assert.throws(() => tool(operationId), /MCP cannot expose/u);
+  }
   assert.deepEqual(
     relayMcpExclusions.map(({ operationId }) => operationId),
     [
@@ -363,10 +352,8 @@ test("exposes reviewed-origin authority only through exact offline contracts", (
       confirm: true,
     }),
   );
-  const full = new Set(relayMcpToolsForProfile("full").map(({ operationId }) => operationId));
-  assert.ok(full.has("app-map.scroll-surface.origin.inspect"));
-  assert.ok(full.has("app-map.scroll-surface.origin.review"));
-  assert.ok(full.has("app-map.scroll-surface.origin.revoke"));
+  const full = relayMcpToolsForProfile("full");
+  assert.ok(!full.some(({ operationId }) => operationId.startsWith("app-map.scroll-surface.")));
 });
 
 test("gives run agents one revision-pinned graph Test operation", () => {
@@ -432,9 +419,6 @@ test("gives run agents one revision-pinned graph Test operation", () => {
       targetProfileId: "ipad-pt-BR",
     },
   );
-  assert.ok(
-    relayMcpToolsForProfile("full").some(({ operationId }) => operationId === "app-map.test.run"),
-  );
   assert.throws(() =>
     tool("app-map.test.run").inputSchema.parse({
       appMapId: "checkout",
@@ -487,22 +471,11 @@ test("defines three nested profiles behind the compact qa default", () => {
   assert.equal(defaultRelayMcpProfile, "qa");
   assert.deepEqual(relayMcpToolsForProfile("qa"), []);
   assert.deepEqual(relayMcpToolsForProfile("device"), []);
-  const hidden = new Set([
-    "test.create-from-goal",
-    "test.apply-yaml",
-    "run.verdict.get",
-    ...relayQaOperationTools.map(({ operationId }) => operationId),
-  ]);
-  assert.deepEqual(
-    relayMcpToolsForProfile("full").map(({ operationId }) => operationId),
-    relayMcpTools.map(({ operationId }) => operationId).filter((id) => !hidden.has(id)),
-  );
-  for (const operationId of ["action.run", "target.app.locales", "proof.run", "lease.takeover"]) {
-    assert.ok(
-      relayMcpToolsForProfile("full").some((tool) => tool.operationId === operationId),
-      operationId,
-    );
-  }
+  const full = relayMcpToolsForProfile("full").map(({ operationId }) => operationId);
+  assert.ok(full.includes("proof.run"));
+  assert.ok(full.includes("run.evidence.get"));
+  assert.ok(!full.includes("target.interact"));
+  assert.ok(!full.includes("lease.takeover"));
 });
 
 test("each profile contains the one before it, with one name per tool", () => {
@@ -515,22 +488,15 @@ test("each profile contains the one before it, with one name per tool", () => {
   assert.ok(qa.every((name) => full.includes(name)));
   assert.ok(qa.length <= 13, `qa: ${qa.length}`);
   assert.ok(device.length > qa.length && full.length > device.length);
+  assert.ok(full.length <= 80);
   assert.ok([...qa, ...device].every((name) => /^relay_[a-z]+(?:_[a-z]+)*$/u.test(name)));
 });
 
-test("removed profile names map to device or full with one warning", () => {
-  const warnings: string[] = [];
-  const warn = (message: string) => warnings.push(message);
-  for (const name of ["operator", "outcome", "control", "observe"]) {
-    assert.equal(resolveRelayMcpProfile(name, warn), "device");
+test("profile selection rejects retired settings", () => {
+  for (const name of ["operator", "locale", "review", "execute"]) {
+    assert.throws(() => resolveRelayMcpProfile(name), /qa, device, full/u);
   }
-  for (const name of ["map", "author", "test", "run", "locale", "review", "admin", "proof"]) {
-    assert.equal(resolveRelayMcpProfile(name, warn), "full");
-  }
-  assert.equal(warnings.length, 12);
-  assert.equal(resolveRelayMcpProfile("qa", warn), "qa");
-  assert.equal(warnings.length, 12);
-  assert.throws(() => resolveRelayMcpProfile("execute", warn), /qa, device, full/u);
+  for (const name of relayMcpProfiles) assert.equal(resolveRelayMcpProfile(name), name);
 });
 
 test("marks deleting, discarding and cancelling operations as destructive", () => {
@@ -559,7 +525,6 @@ test("full composes the durable verify-change loop and recovery tools", () => {
     "proof.publication.retry",
     "proof.rerun-affected",
     "workspace.change.inspect",
-    "app-map.test.run",
     "job.get",
     "run.evidence.get",
     "run.story.get",
@@ -619,39 +584,18 @@ test("share tools mirror their CLI operation ids with confirmation metadata", ()
   }
 });
 
-test("publishes compact discovery metadata for every eligible operation", () => {
+test("catalog lists exposed operations and omits transport-only operations", () => {
   const catalog = relayMcpOperationCatalog();
+  assert.ok(catalog.some(({ operationId }) => operationId === "proof.run"));
+  assert.ok(!catalog.some(({ operationId }) => operationId === "workflow.transition"));
+  assert.ok(!catalog.some(({ operationId }) => operationId === "target.interact"));
   assert.deepEqual(
-    catalog.map(({ operationId }) => operationId),
-    relayMcpTools.map(({ operationId }) => operationId),
+    catalog.find(({ operationId }) => operationId === "target.screenshot.capture")?.profiles,
+    ["full"],
   );
-  const screenshot = catalog.find(({ operationId }) => operationId === "target.screenshot.capture");
-  assert.deepEqual(screenshot, {
-    operationId: "target.screenshot.capture",
-    task: "evidence",
-    role: "viewer",
-    confirmation: "none",
-    capabilities: ["screenshot"],
-    profiles: ["full"],
-  });
 });
 
-test("a language Variable exposes one canonical Variable × Test Combine", () => {
-  const locale = new Set(relayMcpToolsForProfile("full").map(({ operationId }) => operationId));
-  for (const operationId of [
-    "app-map.variable.save",
-    "app-map.variable.infer",
-    "app-map.test.save",
-    "app-map.combine.save",
-    "app-map.combine.preflight",
-    "job.combine.start",
-    "job.combine.analysis",
-    "target.screenshot.capture",
-    "target.scroll-survey.capture",
-    "app-map.test.run",
-  ] as const) {
-    assert.ok(locale.has(operationId), `full profile is missing ${operationId}`);
-  }
+test("scroll-survey descriptors preserve evidence export guidance", () => {
   assert.match(tool("target.scroll-survey.capture").description, /Pass dir/u);
   assert.match(tool("target.scroll-survey.capture").description, /Plan export/u);
   assert.match(tool("target.scroll-survey.capture").description, /portable review folder/u);

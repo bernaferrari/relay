@@ -161,11 +161,6 @@ export async function runOutcomeCommand(input: {
     assertOutcomeSucceeded(settled);
     return settled;
   }
-  if (intent.kind === "inspect-workflow") {
-    return "workflowId" in intent
-      ? jobs.inspect({ workflowId: intent.workflowId })
-      : jobs.inspect({ legacyRef: intent.legacyRef });
-  }
   if (intent.kind === "inspect") {
     return inspectRunOrWorkflow(client, intent.runOrWorkflowId, signal, (workflowId) =>
       jobs.inspect({ workflowId }),
