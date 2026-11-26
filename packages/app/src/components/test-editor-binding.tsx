@@ -25,6 +25,7 @@ export function BindingRepair({
       candidates.map((candidate) => [`${candidate.kind}:${candidate.id}`, candidate]),
     ).values(),
   ];
+  const stepBinding = step.binding;
   const bindable = unique.flatMap((candidate) => {
     const binding = bindingForCandidate(step, candidate);
     return binding ? [{ candidate, binding }] : [];
@@ -35,7 +36,7 @@ export function BindingRepair({
   return (
     <details className="rounded-lg border border-border bg-background">
       <summary className="cursor-pointer px-3 py-3 text-sm font-medium">
-        {step.binding.status === "resolved" ? "Change action" : "Connect action"}{" "}
+        {stepBinding.status === "resolved" ? "Change action" : "Connect action"}{" "}
         <span className="ml-2 text-xs font-normal text-muted-foreground">Choose a saved path</span>
       </summary>
       <div className="grid gap-3 border-t border-border p-3">
@@ -75,21 +76,21 @@ export function BindingRepair({
                   label: `Bound ${step.intent} to ${candidate.label}`,
                   forward: [{ kind: "step.bind", stepId: step.id, binding }],
                   reverse: [
-                    step.binding.status === "resolved"
+                    stepBinding.status === "resolved"
                       ? {
                           kind: "step.bind",
                           stepId: step.id,
-                          binding: structuredClone(step.binding),
+                          binding: structuredClone(stepBinding),
                         }
                       : {
                           kind: "step.unbind",
                           stepId: step.id,
                           reason:
-                            step.binding.status === "unresolved"
-                              ? step.binding.reason
+                            stepBinding.status === "unresolved"
+                              ? stepBinding.reason
                               : "Needs setup",
-                          ...(step.binding.status === "unresolved" && step.binding.candidates
-                            ? { candidates: structuredClone(step.binding.candidates) }
+                          ...(stepBinding.status === "unresolved" && stepBinding.candidates
+                            ? { candidates: structuredClone(stepBinding.candidates) }
                             : {}),
                         },
                   ],
@@ -125,7 +126,7 @@ export function BindingRepair({
 function bindingForCandidate(
   step: AppMapScenarioTestStep,
   candidate: AppMapTestBindingCandidate,
-): AppMapScenarioTestStep["binding"] | undefined {
+): import("@relay/protocol").ResolvedAppMapScenarioTestBinding | undefined {
   if (step.kind === "instruction" && candidate.kind === "connection") {
     return { status: "resolved", kind: "connections", connectionIds: [candidate.id] };
   }

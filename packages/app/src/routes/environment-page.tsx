@@ -38,7 +38,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { LibraryPage, PageHeader } from "../components/page-layout";
+import { LibraryPage } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { BrowserLaneTabs } from "../components/browser-lane-tabs";
@@ -109,16 +109,6 @@ export function EnvironmentPage() {
   const lanes = useQuery({
     queryKey: ["app-resources", "account-lanes"],
     queryFn: () => appResourcesService.listAccountLanes?.() ?? Promise.resolve([]),
-    staleTime: 10_000,
-  });
-  const accountHealth = useQuery({
-    queryKey: ["environments", profileId, "account-health"],
-    queryFn: () =>
-      appResourcesService.probeBrowserAccountHealth?.({
-        targetId: space!.id,
-        probe: false,
-      }) ?? Promise.resolve(undefined),
-    enabled: Boolean(space && appResourcesService.probeBrowserAccountHealth),
     staleTime: 10_000,
   });
   const openLane = useMutation({
@@ -418,9 +408,6 @@ export function EnvironmentPage() {
             lanes={lanes.data ?? []}
             targetId={space.id}
             disabled={openLane.isPending}
-            electronGrokLabPartitionPresent={
-              accountHealth.data?.summary.electronGrokLabPartitionPresent
-            }
             onOpen={(tab) => openLane.mutate(tab.laneId)}
           />
 

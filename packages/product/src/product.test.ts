@@ -11,6 +11,49 @@ import {
 } from "./index.js";
 import { ApiError } from "@relay/client";
 import { createScriptedRelayClient } from "@relay/workflows/testing";
+
+function validLookupTest(appMapId: string, id: string) {
+  return {
+    organizationId: "org-1",
+    projectId: "project-1",
+    appMapId,
+    id,
+    createdAt: 1,
+    updatedAt: 1,
+    name: id,
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [],
+  };
+}
+
+function validLookupAppMap(id: string, tests: Record<string, unknown>) {
+  return {
+    schemaVersion: 1,
+    id,
+    organizationId: "org-1",
+    projectId: "project-1",
+    name: id,
+    revision: 1,
+    notes: {},
+    groups: {},
+    screens: {},
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {},
+    tests,
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
 test("route registry is exhaustive and exact", () => {
   assert.equal(ROUTE_DEFINITIONS.length, 23);
   assert.equal(routeMeta("/tests/new").id, "/tests/new");
@@ -80,7 +123,8 @@ test("feature functions use canonical operations", async () => {
   assert.equal(scripted.invocations[0]?.id, "target.list");
 });
 test("global test lookup uses app-map.list", async () => {
-  const app = { tests: { wanted: { id: "wanted" } } };
+  const test = validLookupTest("app-one", "wanted");
+  const app = validLookupAppMap("app-one", { wanted: test });
   const scripted = createScriptedRelayClient([{ id: "app-map.list", output: { appMaps: [app] } }]);
   const found = await createProductFeatures(scripted.client, { actorId: "actor-1" }).test.get(
     "wanted",
@@ -88,14 +132,13 @@ test("global test lookup uses app-map.list", async () => {
   assert.equal(found?.id, "wanted");
 });
 test("global test lookup fails closed when an identity belongs to multiple apps", async () => {
-  const test = { id: "duplicate" };
   const scripted = createScriptedRelayClient([
     {
       id: "app-map.list",
       output: {
         appMaps: [
-          { id: "app-one", tests: { duplicate: test } },
-          { id: "app-two", tests: { duplicate: test } },
+          validLookupAppMap("app-one", { duplicate: validLookupTest("app-one", "duplicate") }),
+          validLookupAppMap("app-two", { duplicate: validLookupTest("app-two", "duplicate") }),
         ],
       },
     },

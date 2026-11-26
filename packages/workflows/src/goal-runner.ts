@@ -14,12 +14,7 @@ import type {
   GoalSessionStartInput,
   ModelDecisionRecord,
 } from "@relay/protocol";
-import {
-  GOAL_SESSION_MAX_ACTIONS,
-  GOAL_SESSION_MAX_DURATION_MS,
-  GOAL_SESSION_MAX_STEPS,
-  GOAL_SESSION_SCHEMA_VERSION,
-} from "@relay/protocol";
+import { GOAL_SESSION_MAX_ACTIONS, GOAL_SESSION_SCHEMA_VERSION } from "@relay/protocol";
 import { runGoalReproduction } from "./goal-reproduction-runner.js";
 import {
   assertSessionId,

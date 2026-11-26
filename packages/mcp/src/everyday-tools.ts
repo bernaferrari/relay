@@ -1,4 +1,3 @@
-import { operationDefinition } from "@relay/protocol";
 import type { RelayOutcomeJobs } from "@relay/workflows";
 import * as z from "zod/v4";
 import type { RelayOutcomeToolDescriptor } from "./outcome-tools.js";

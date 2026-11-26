@@ -1,6 +1,6 @@
 import { runsRoot } from "@relay/core";
 import type { StartServerOptions, StartedServer } from "./server-types.js";
-import { proofPublicationRuntimeFromEnvironment } from "./proof-publication-runtime.js";
+import { proofPublicationRuntimeFromEnvironment } from "./proof/proof-publication-runtime.js";
 
 type ServerStarter = (options: StartServerOptions) => Promise<StartedServer>;
 

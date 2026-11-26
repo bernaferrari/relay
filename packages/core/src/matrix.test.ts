@@ -5,7 +5,7 @@ import {
   buildTargetProfiles,
   resolveCompatibilityMatrix,
   validateCompatibilityMatrix,
-} from "./matrix.js";
+} from "./matrix/matrix.js";
 
 const matrix: CompatibilityMatrix = {
   id: "release-smoke",

@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { TargetProfile } from "@relay/protocol";
-import { findWorkspaceRoot } from "./workspace-root.js";
-import { syncRunPath } from "./run-manifest.js";
-import { computeScheduleNextRunAt, assertIanaTimeZone } from "./schedule-next-run.js";
-import type { CombineExecutionAccount } from "./combine-campaign-case-identity.js";
+import { findWorkspaceRoot } from "./workspace/workspace-root.js";
+import { syncRunPath } from "./run/run-manifest.js";
+import { computeScheduleNextRunAt, assertIanaTimeZone } from "./schedule/schedule-next-run.js";
+import type { CombineExecutionAccount } from "./combine/combine-campaign-case-identity.js";
 
 export type ScheduledPlanProfileTarget = {
   profileId: string;

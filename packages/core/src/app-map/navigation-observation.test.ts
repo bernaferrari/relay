@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SnapshotPayload } from "../workspace-capture.js";
+import type { SnapshotPayload } from "../workspace/workspace-capture.js";
 import { proposeNavigationFromObservation } from "./navigation-observation.js";
 
 function snapshot(title: string, extra: SnapshotPayload["nodes"] = []): SnapshotPayload {

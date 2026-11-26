@@ -1,0 +1,770 @@
+/**
+ * Option sets × map paths.
+ *
+ * A set is any list that changes app state (language, location, theme, …).
+ * Worlds are zip/cartesian/pairwise combinations; each world applies every
+ * selected value then runs the compiled path.
+ */
+import { randomUUID } from "node:crypto";
+import type {
+  AppMap,
+  VariableApply,
+  VariableNavStep,
+  VariableRow,
+  AppMapVariableKind,
+  RecipeStep,
+  TargetProfile,
+  TestData,
+} from "@relay/protocol";
+import type { Recipe } from "../recipes.js";
+import { freezeRecipeGraph, readRecipe } from "../recipes.js";
+import {
+  appLocaleExpectedLabels,
+  appLocaleShouldRelaunch,
+  stayAppLocaleDestinationCheck,
+} from "../stay-app-locale-destination.js";
+import { attachExpectedLabels, appStepExpectedLabels } from "../semantic/semantic-readiness.js";
+import { prepareCasePlan, redactCasePlan, type PreparedCasePlan } from "../case-plan.js";
+import { enqueueJob, type EnqueueJobInput, type TestJob } from "../session/session.js";
+import { currentOperationContext } from "../operation-context.js";
+import { assertClaimedBrowserJobStartAllowed } from "../browser/browser-auth-health.js";
+import {
+  OPTION_NONE,
+  navStepsToRecipe,
+  restoreListSteps,
+  selectSteps,
+  tapHelpers,
+} from "./option-run-nav.js";
+
+export { appLocaleShouldRelaunch };
+export { navStepsToRecipe } from "./option-run-nav.js";
+
+const NONE = OPTION_NONE;
+// One language sweep commonly exceeds 32 locales. Keep a hard safety bound,
+// but let preflight warnings—not an arbitrary small cap—guide large runs.
+const MAX_WORLDS = 250;
+
+export type OptionRunSet = {
+  id: string;
+  name: string;
+  kind: AppMapVariableKind;
+  apply: VariableApply;
+  options: VariableRow[];
+  restoreId?: string;
+  screenshotEach?: boolean;
+};
+
+export type OptionRunRequest = {
+  sets: OptionRunSet[];
+  /** Saved canvas matrix that owns this execution, when one exists. */
+  combineId?: string;
+  /** Present when In/Out are map connection ids. */
+  map?: AppMap;
+  selected?: Record<string, string[]>;
+  strategy?: "zip" | "cartesian" | "pairwise";
+  app?: string;
+  relaunch?: boolean;
+  screenshotEach?: boolean;
+  restoreAtEnd?: boolean;
+};
+
+export type ResolvedVariableApply = {
+  entry: VariableNavStep[];
+  exit: VariableNavStep[];
+};
+
+export function appLocaleRecipeSteps(input: {
+  app: string;
+  locale: string;
+  relaunch?: boolean;
+  expectedLabels?: readonly string[];
+}): RecipeStep[] {
+  const steps: RecipeStep[] = [
+    { kind: "app", action: "set-locale", app: input.app, locale: input.locale },
+  ];
+  if (appLocaleShouldRelaunch(input)) {
+    const open = attachExpectedLabels(
+      { kind: "app" as const, action: "open" as const, app: input.app, relaunch: true },
+      input.expectedLabels,
+    );
+    steps.push(open);
+    if (!appStepExpectedLabels(open).length) steps.push({ kind: "sleep", ms: 1200 });
+  }
+  return steps;
+}
+
+function recipeStepsFromConnectionActions(
+  actions: AppMap["connections"][string]["actions"],
+): import("@relay/protocol").RecipeStep[] {
+  const steps: import("@relay/protocol").RecipeStep[] = [];
+  for (const action of actions) {
+    if (action.kind === "recorded" || action.kind === "steps") steps.push(...action.steps);
+    else if (action.kind === "tap")
+      steps.push({ kind: "tap", target: action.target, id: action.id });
+    else if (action.kind === "wait") steps.push({ kind: "sleep", ms: action.ms, id: action.id });
+    else if (action.kind === "back") steps.push({ kind: "key", key: "back", id: action.id });
+  }
+  return steps;
+}
+
+/** Recorded execution steps become a Variable's replayable navigation path. */
+function variableNavFromRecipeSteps(steps: readonly RecipeStep[]): VariableNavStep[] {
+  const result: VariableNavStep[] = [];
+  for (const step of steps) {
+    if (step.kind === "tap") {
+      const identifier = step.target.identifier?.trim();
+      const label = step.target.label?.trim();
+      const text = step.target.text?.trim();
+      if (identifier || label || text) {
+        result.push({
+          kind: "tap",
+          target: {
+            ...(identifier ? { identifier } : {}),
+            ...(label ? { label } : {}),
+            ...(text ? { text } : {}),
+          },
+        });
+      }
+    } else if (step.kind === "sleep") {
+      result.push({ kind: "wait", ms: Math.max(0, Math.min(120_000, Math.round(step.ms))) });
+    } else if (step.kind === "key" && step.key === "back") {
+      result.push({ kind: "back" });
+    } else if (step.kind === "scroll") {
+      result.push({
+        kind: "scroll",
+        direction: step.direction,
+        ...(step.amount != null ? { amount: step.amount } : {}),
+      });
+    } else if (step.kind === "swipe") {
+      result.push({ kind: "scroll", direction: step.from.y > step.to.y ? "down" : "up" });
+    } else if (step.kind === "app" && step.action === "open" && step.app?.trim()) {
+      result.push({
+        kind: "openApp",
+        app: step.app.trim(),
+        ...(step.relaunch === true ? { relaunch: true } : {}),
+      });
+    }
+  }
+  return result;
+}
+
+/** Compile In/Out from recorded connections (actions only) or flattened nav. Never invents product nav. */
+export function resolveVariableApply(set: OptionRunSet, map?: AppMap): ResolvedVariableApply {
+  if (set.apply.kind === "input") return { entry: [], exit: [] };
+  if (set.apply.kind === "appLocale") return { entry: [], exit: [] };
+  if (set.apply.kind === "toggle") throw new Error("toggles are not runnable yet");
+  const apply = set.apply;
+  let entry: VariableNavStep[] = [];
+  let exit: VariableNavStep[] = [];
+  const pickId = apply.pickStepId?.trim();
+  if (apply.inConnectionId?.trim() && map) {
+    const connection = map.connections[apply.inConnectionId.trim()];
+    if (!connection) throw new Error(`In path “${apply.inConnectionId}” is missing from the map`);
+    const recipeSteps = recipeStepsFromConnectionActions(connection.actions);
+    const pickIndex = pickId
+      ? recipeSteps.findIndex((step) => step.id === pickId || step.id?.endsWith(pickId))
+      : -1;
+    if (pickIndex >= 0) {
+      entry = variableNavFromRecipeSteps(recipeSteps.slice(0, pickIndex));
+      if (!apply.outConnectionId?.trim() && !apply.exitPath?.length) {
+        exit = variableNavFromRecipeSteps(recipeSteps.slice(pickIndex + 1));
+      }
+    } else {
+      entry = variableNavFromRecipeSteps(recipeSteps);
+    }
+  } else {
+    entry = [...(apply.entryPath ?? []), ...(apply.pickerPath ?? [])];
+  }
+  if (apply.outConnectionId?.trim() && map) {
+    const connection = map.connections[apply.outConnectionId.trim()];
+    if (!connection) throw new Error(`Out path “${apply.outConnectionId}” is missing from the map`);
+    exit = variableNavFromRecipeSteps(recipeStepsFromConnectionActions(connection.actions));
+  } else if (!exit.length) {
+    exit = [...(apply.exitPath ?? [])];
+  }
+  return { entry, exit };
+}
+
+/** Account values that are already this world (signed-out or a browser fixture)
+ * do not open an in-app picker. Language/location/theme still require a recorded In. */
+export function optionSetNeedsRecordedPicker(set: Pick<OptionRunSet, "kind" | "apply">): boolean {
+  if (set.apply.kind === "input") return false;
+  if (set.apply.kind === "appLocale" || set.apply.kind === "toggle") return false;
+  if (set.kind !== "account" || set.apply.kind !== "list") return true;
+  return Boolean(
+    set.apply.inConnectionId?.trim() || set.apply.entryPath?.length || set.apply.pickerPath?.length,
+  );
+}
+
+export function assertOptionSandwichReady(
+  set: OptionRunSet,
+  map?: AppMap,
+  work?: { startScreenId?: string },
+): ResolvedVariableApply {
+  const resolved = resolveVariableApply(set, map);
+  if (set.apply.kind === "appLocale") return resolved;
+  if (!optionSetNeedsRecordedPicker(set) && !resolved.entry.length) return resolved;
+  if (!resolved.entry.length && !(set.apply.kind === "list" && set.apply.inConnectionId && !map)) {
+    if (!resolved.entry.length) {
+      throw new Error("Record how you open this list");
+    }
+  }
+  if (!resolved.entry.length) throw new Error("Record how you open this list");
+  const listScreenId = set.apply.kind === "list" ? set.apply.listScreenId : undefined;
+  const workStart = work?.startScreenId?.trim();
+  if (listScreenId && workStart && listScreenId !== workStart && !resolved.exit.length) {
+    throw new Error("Record how you get back — you’ll still be on this list");
+  }
+  return resolved;
+}
+
+/** Derive stable option ids from a11y only — never invents In/Out nav. */
+export function stabilizeOptionIds(rows: VariableRow[]): VariableRow[] {
+  return rows.map((row) => {
+    const current = row.id.trim();
+    if (current && current !== "und") return { ...row, id: current };
+    const identifier = row.identifier?.trim();
+    const fromId = identifier?.match(
+      /(?:^|[.:/_-])([a-z]{2}(?:-[A-Za-z]{2})?|[a-z0-9]{2,})$/i,
+    )?.[1];
+    const slug = (row.label ?? row.text ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    return { ...row, id: (fromId || slug || current || "option").slice(0, 48) };
+  });
+}
+
+function sanitizeId(value: string): string {
+  const id = value
+    .trim()
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/^(\d)/, "_$1");
+  return id || "option";
+}
+
+function selectedIds(set: OptionRunSet, selected?: Record<string, string[]>): string[] {
+  const hasOverride = Object.hasOwn(selected ?? {}, set.id);
+  const override = selected?.[set.id]?.map((id) => id.trim()).filter(Boolean) ?? [];
+  const ids = hasOverride ? override : set.options.map((row) => row.id.trim()).filter(Boolean);
+  const known = new Set(set.options.map((row) => row.id));
+  for (const id of ids) {
+    if (!known.has(id)) throw new Error(`variable “${set.name}” has no option ${id}`);
+  }
+  if (!ids.length) throw new Error(`variable “${set.name}” needs at least one option`);
+  return [...new Set(ids)];
+}
+
+function rowFor(set: OptionRunSet, id: string): VariableRow {
+  return set.options.find((row) => row.id === id) ?? { id };
+}
+
+export function defaultOptionMatrixStrategy(setCount: number): "zip" | "cartesian" {
+  return setCount > 1 ? "cartesian" : "zip";
+}
+
+export async function prepareOptionCasePlan(
+  request: OptionRunRequest,
+  seed?: number,
+): Promise<PreparedCasePlan> {
+  if (!request.sets.length) throw new Error("at least one variable is required");
+  for (const set of request.sets) {
+    if (set.apply.kind === "toggle") {
+      throw new Error("toggles are not runnable yet");
+    }
+  }
+  const strategy = request.strategy ?? defaultOptionMatrixStrategy(request.sets.length);
+  const variables: TestData[] = request.sets.map((set) => ({
+    id: set.id,
+    name: set.id,
+    scope: "shared",
+    source: "list",
+    values: selectedIds(set, request.selected),
+  }));
+  const matrix = await prepareCasePlan({
+    variables,
+    strategy,
+    seed,
+    maxCases: MAX_WORLDS,
+  });
+  return {
+    ...matrix,
+    cases: matrix.cases.map((world) => {
+      const values = { ...world.values };
+      for (const set of request.sets) {
+        const optionId = values[set.id] ?? "";
+        const row = rowFor(set, optionId);
+        values[`${set.id}_identifier`] = row.identifier?.trim() || NONE;
+        values[`${set.id}_label`] = row.label?.trim() || NONE;
+        values[`${set.id}_text`] = row.text?.trim() || NONE;
+      }
+      return { ...world, values };
+    }),
+  };
+}
+
+/**
+ * A single app-locale Variable is already a sequence of complete worlds. If
+ * the saved restore locale is one of those worlds, running it last restores
+ * the device without replaying the same locale mutation after every world.
+ *
+ * This optimization is deliberately narrow: list pickers and multi-variable
+ * products may need authored exit/cleanup actions, and pairwise/cartesian
+ * ordering can carry other state. Those keep their explicit per-world restore.
+ */
+export function optimizeSequentialAppLocaleRestore(
+  request: OptionRunRequest,
+  matrix: PreparedCasePlan,
+): { request: OptionRunRequest; matrix: PreparedCasePlan; optimized: boolean } {
+  const [set] = request.sets;
+  const restoreId = set?.restoreId?.trim();
+  if (
+    request.restoreAtEnd === false ||
+    request.sets.length !== 1 ||
+    set?.apply.kind !== "appLocale" ||
+    !restoreId ||
+    matrix.cases.length < 2
+  ) {
+    return { request, matrix, optimized: false };
+  }
+  const restoreIndex = matrix.cases.findIndex((item) => item.values[set.id] === restoreId);
+  if (restoreIndex < 0) return { request, matrix, optimized: false };
+  const ordered = [
+    ...matrix.cases.slice(0, restoreIndex),
+    ...matrix.cases.slice(restoreIndex + 1),
+    matrix.cases[restoreIndex]!,
+  ].map((item, index) => ({ ...item, index }));
+  return {
+    request: { ...request, restoreAtEnd: false },
+    matrix: { ...matrix, cases: ordered },
+    optimized: true,
+  };
+}
+
+export function composeOptionRunRecipes(input: {
+  body: Recipe;
+  bodyGraph?: Record<string, Recipe>;
+  request: OptionRunRequest;
+  batchId: string;
+}): { root: Recipe; graph: Record<string, Recipe> } {
+  const app = input.request.app?.trim();
+  const at = Date.now();
+  const hasAppLocale = input.request.sets.some((set) => set.apply.kind === "appLocale");
+  const hasGeneratedMapSources = Object.values(input.bodyGraph ?? {}).some((recipe) =>
+    recipe.steps.some(
+      (step) => step.kind === "expect-screen" && (step.id ?? "").startsWith("relay-source-"),
+    ),
+  );
+  const warmMapSuiteRecipe = (recipe: Recipe): Recipe => ({
+    ...recipe,
+    ...(() => {
+      let warmedLaunch = false;
+      const steps = recipe.steps.map((step) => {
+        if (step.kind === "app" && step.action === "open" && step.relaunch === true) {
+          warmedLaunch = true;
+          return { ...step, relaunch: false };
+        }
+        return step;
+      });
+      return {
+        ...(warmedLaunch ? { title: recipe.title.replace(/cold start/iu, "warm recovery") } : {}),
+        steps,
+      };
+    })(),
+  });
+  const ownsScreenshots = (recipe: Recipe, visiting = new Set<string>()): boolean => {
+    if (visiting.has(recipe.id)) return false;
+    const nextVisiting = new Set(visiting).add(recipe.id);
+    return recipe.steps.some((step) => {
+      if (step.kind === "screenshot" || (step.kind === "tour" && step.screenshot !== false)) {
+        return true;
+      }
+      if (step.kind !== "module" && step.kind !== "repeat") return false;
+      const nested = input.bodyGraph?.[step.recipeId];
+      return nested ? ownsScreenshots(nested, nextVisiting) : false;
+    });
+  };
+  const bodyOwnsScreenshots = ownsScreenshots(input.body);
+  const screenshot = input.request.screenshotEach !== false && !bodyOwnsScreenshots;
+  const steps: RecipeStep[] = [];
+  const graph: Record<string, Recipe> = Object.fromEntries(
+    Object.entries(input.bodyGraph ?? {}).map(([id, recipe]) => [
+      id,
+      hasGeneratedMapSources
+        ? warmMapSuiteRecipe(structuredClone(recipe))
+        : structuredClone(recipe),
+    ]),
+  );
+  graph[input.body.id] = hasGeneratedMapSources
+    ? warmMapSuiteRecipe(structuredClone(input.body))
+    : structuredClone(input.body);
+
+  // The matrix wrapper owns the one cold launch for this world. Map-derived
+  // modules below run warm and recover their source screen through Back before
+  // replaying navigation, avoiding a process kill for every sibling test.
+  let appLaunched = false;
+  if (app && !hasAppLocale) {
+    steps.push({
+      kind: "app",
+      action: "open",
+      app,
+      relaunch: input.request.relaunch !== false,
+    });
+    steps.push({ kind: "sleep", ms: 1200 });
+    appLaunched = true;
+  }
+
+  for (const set of input.request.sets) {
+    if (set.apply.kind === "input") continue;
+    if (set.apply.kind === "appLocale") {
+      const relaunch = appLocaleShouldRelaunch(set.apply, graph, input.body.id);
+      steps.push(
+        ...appLocaleRecipeSteps({
+          app: set.apply.app,
+          locale: `{{${set.id}}}`,
+          relaunch: relaunch && !appLaunched,
+          expectedLabels: appLocaleExpectedLabels(graph, input.body.id),
+        }),
+      );
+      if (relaunch && !appLaunched) appLaunched = true;
+      steps.push({ kind: "device", action: "keyboard-dismiss" });
+      steps.push({ kind: "sleep", ms: 250 });
+      if (!relaunch) {
+        const stayCheck = stayAppLocaleDestinationCheck(graph, input.body.id);
+        if (stayCheck) steps.push(stayCheck);
+      }
+      continue;
+    }
+    if (set.apply.kind === "toggle") {
+      throw new Error("toggles are not runnable yet");
+    }
+    const prefix = sanitizeId(set.id);
+    Object.assign(graph, tapHelpers(prefix, at));
+    const resolved = assertOptionSandwichReady(set, input.request.map);
+    if (!optionSetNeedsRecordedPicker(set) && !resolved.entry.length) continue;
+    steps.push(...navStepsToRecipe(resolved.entry, app));
+    steps.push(...selectSteps(prefix));
+    steps.push(...navStepsToRecipe(resolved.exit, app));
+  }
+
+  if (app && !appLaunched) {
+    steps.push({ kind: "app", action: "open", app, relaunch: input.request.relaunch !== false });
+    steps.push({ kind: "sleep", ms: 1200 });
+  }
+
+  const singleLocale = input.request.sets.length === 1 && input.request.sets[0]?.id === "locale";
+  if (screenshot) {
+    steps.push({
+      kind: "screenshot",
+      caption: singleLocale ? "locale:{{locale}} before body" : "world before body",
+    });
+  }
+  steps.push({ kind: "module", recipeId: input.body.id });
+  if (screenshot) {
+    steps.push({
+      kind: "screenshot",
+      caption: singleLocale ? "locale:{{locale}} after body" : "world after body",
+    });
+  }
+
+  // Restore stable state after every world so one matrix cell cannot leak into
+  // the next or leave the physical device changed after the batch. App-locales
+  // use the platform locale API; captured list variables replay their own
+  // entry/select/exit sandwich with the saved restore row.
+  if (input.request.restoreAtEnd !== false) {
+    for (const set of [...input.request.sets].reverse()) {
+      if (!set.restoreId?.trim()) continue;
+      if (set.apply.kind === "appLocale") {
+        steps.push(
+          ...appLocaleRecipeSteps({
+            app: set.apply.app,
+            locale: set.restoreId.trim(),
+            relaunch: appLocaleShouldRelaunch(set.apply, graph, input.body.id),
+            expectedLabels: appLocaleExpectedLabels(graph, input.body.id),
+          }),
+        );
+        continue;
+      }
+      if (set.apply.kind === "list") {
+        if (!optionSetNeedsRecordedPicker(set)) continue;
+        const resolved = assertOptionSandwichReady(set, input.request.map);
+        steps.push(...navStepsToRecipe(resolved.entry, app));
+        steps.push(...restoreListSteps(set));
+        steps.push(...navStepsToRecipe(resolved.exit, app));
+      }
+    }
+  }
+
+  const root: Recipe = {
+    id: `option-run-${input.batchId}`,
+    title: `${input.body.title} · across`,
+    description: `Option matrix over ${input.body.id}`,
+    source: "custom",
+    steps,
+    createdAt: at,
+    updatedAt: at,
+  };
+  graph[root.id] = root;
+  return { root, graph };
+}
+
+export function expectedRecipeScreenshotCount(
+  recipe: Recipe,
+  graph: Record<string, Recipe>,
+  visiting = new Set<string>(),
+): number | undefined {
+  if (visiting.has(recipe.id)) return undefined;
+  const nextVisiting = new Set(visiting).add(recipe.id);
+  let count = 0;
+  for (const step of recipe.steps) {
+    if (step.kind === "screenshot") {
+      count += 1;
+      continue;
+    }
+    if (step.kind === "tour") {
+      if (!step.mappedStopsOnly) return undefined;
+      // An account/feature-dependent row is intentionally skipped when it is
+      // absent. Preflight must not promise a fixed evidence count for that
+      // live branch; the run report will record what was actually available.
+      if (step.fallbackStops?.some((stop) => stop.optional)) return undefined;
+      count +=
+        step.screenshot === false
+          ? 0
+          : (step.captureOrigin ? 1 : 0) +
+            (step.fallbackStops?.filter((stop) => stop.capture !== false).length ?? 0);
+      continue;
+    }
+    if (step.kind === "module") {
+      const module = graph[step.recipeId];
+      if (!module) return undefined;
+      const nested = expectedRecipeScreenshotCount(module, graph, nextVisiting);
+      if (nested === undefined) return undefined;
+      count += nested;
+      continue;
+    }
+    if (step.kind === "repeat") {
+      const repeated = graph[step.recipeId];
+      if (!repeated) return undefined;
+      const nested = expectedRecipeScreenshotCount(repeated, graph, nextVisiting);
+      if (nested === undefined) return undefined;
+      count += nested * step.count;
+      continue;
+    }
+    if (step.kind === "branch") return undefined;
+  }
+  return count;
+}
+
+export async function startOptionRecipeRun(input: {
+  recipeId: string;
+  compiledBody?: Recipe;
+  compiledGraph?: Record<string, Recipe>;
+  map?: AppMap;
+  targetId: string;
+  platform?: "android" | "ios";
+  targetKind?: "device" | "browser";
+  browserTargetId?: string;
+  targetProfile?: TargetProfile;
+  request: OptionRunRequest;
+  title?: string;
+  projectId?: string;
+  ownerId?: string;
+  seed?: number;
+  /** Reuse one durable campaign identity when scheduling later untouched cases. */
+  batchId?: string;
+  /** Schedule only these matrix indexes. Omitted means every case. */
+  caseIndexes?: number[];
+  /**
+   * Fail closed if a resumed case no longer resolves to the values reviewed
+   * when the campaign was created. This prevents option reordering from
+   * silently running the wrong locale under an old case index.
+   */
+  expectedCaseValues?: Record<number, Record<string, string>>;
+}): Promise<{
+  id: string;
+  recipeId: string;
+  bodyRecipeId: string;
+  title: string;
+  createdAt: number;
+  worlds: string[];
+  matrix: PreparedCasePlan;
+  jobs: TestJob[];
+  composedRecipeId: string;
+  expectedScreenshotsPerWorld?: number;
+  expectedScreenshots?: number;
+}> {
+  const targetId = input.targetId.trim();
+  if (!targetId) throw new Error("target is required");
+  const recipeId = input.recipeId.trim();
+  const body = input.compiledBody ?? (recipeId ? await readRecipe(recipeId) : undefined);
+  if (!body) throw new Error("compiled path or recipe is required");
+
+  const batchId = input.batchId?.trim() || randomUUID();
+  const request = { ...input.request, ...(input.map ? { map: input.map } : {}) };
+  if (request.sets.some((set) => set.apply.kind === "input"))
+    throw new Error("Input Data sets require a saved Plan with frozen Test inputs");
+  for (const set of request.sets) {
+    assertOptionSandwichReady(set, request.map);
+  }
+  const preparedMatrix = await prepareOptionCasePlan(request, input.seed);
+  const optimized = optimizeSequentialAppLocaleRestore(request, preparedMatrix);
+  const matrix = optimized.matrix;
+  const executionRequest = optimized.request;
+  const bodyGraph = await freezeRecipeGraph(body, input.compiledGraph ?? {});
+  const { root, graph: seedGraph } = composeOptionRunRecipes({
+    body,
+    bodyGraph,
+    request: executionRequest,
+    batchId,
+  });
+  const recipeGraph: Record<string, Recipe> = {
+    ...bodyGraph,
+    ...seedGraph,
+    [root.id]: root,
+  };
+  const expectedScreenshotsPerWorld = expectedRecipeScreenshotCount(root, recipeGraph);
+  const operation = currentOperationContext();
+  const projectId = input.projectId?.trim() || operation?.projectId || "default";
+  const ownerId = input.ownerId?.trim() || operation?.actorId;
+  const title = input.title?.trim() || `${body.title} · across`;
+  const browserTargetId =
+    input.browserTargetId?.trim() || (input.targetKind === "browser" ? targetId : undefined);
+  const authenticationHealth = await assertClaimedBrowserJobStartAllowed({
+    projectId,
+    targetId: browserTargetId,
+    targetProfile: input.targetProfile,
+    browserCaseProfile: input.targetProfile?.browserCaseProfile,
+  });
+  const safeMatrix = redactCasePlan(matrix, []);
+
+  const requestedIndexes = input.caseIndexes
+    ? new Set(input.caseIndexes.map((index) => Math.floor(index)))
+    : undefined;
+  if (requestedIndexes) {
+    for (const index of requestedIndexes) {
+      if (index < 0 || index >= matrix.cases.length) {
+        throw new Error(`Combine case index ${index} is out of range`);
+      }
+    }
+  }
+  assertRequestedCaseValues(matrix, requestedIndexes, input.expectedCaseValues);
+  const jobs = matrix.cases
+    .filter((item) => !requestedIndexes || requestedIndexes.has(item.index))
+    .map((item) => {
+      const world = item.name || `world-${item.index + 1}`;
+      const enqueue: EnqueueJobInput = {
+        recipe: root.id,
+        title: `${title} · ${world}`,
+        serial: input.targetKind === "browser" ? undefined : targetId,
+        platform: input.platform,
+        targetKind: input.targetKind ?? "device",
+        browserTargetId: input.browserTargetId,
+        targetProfile: input.targetProfile,
+        ...(authenticationHealth ? { authenticationHealth } : {}),
+        variables: item.values,
+        recipeSnapshot: root,
+        recipeGraph,
+        batchId,
+        caseIndex: item.index,
+        caseCount: matrix.cases.length,
+        projectId,
+        ownerId,
+        artifacts: [
+          {
+            kind: "frozen-inputs",
+            capturedAt: matrix.createdAt,
+            data: {
+              matrixId: matrix.id,
+              ...(input.map?.id ? { appMapId: input.map.id } : {}),
+              ...(request.combineId?.trim() ? { combineId: request.combineId.trim() } : {}),
+              optionRunBatchId: batchId,
+              seed: matrix.seed,
+              caseIndex: item.index,
+              caseCount: matrix.cases.length,
+              world,
+              values: safeMatrix.cases[item.index]?.values ?? item.values,
+              kind: "combine",
+              ...(expectedScreenshotsPerWorld !== undefined
+                ? { expectedScreenshots: expectedScreenshotsPerWorld }
+                : {}),
+            },
+          },
+        ],
+      };
+      return enqueueJob(enqueue);
+    });
+
+  return {
+    id: batchId,
+    recipeId: root.id,
+    bodyRecipeId: body.id,
+    title,
+    createdAt: Date.now(),
+    worlds: matrix.cases.map((item) => item.name),
+    matrix: safeMatrix,
+    jobs,
+    composedRecipeId: root.id,
+    ...(expectedScreenshotsPerWorld !== undefined
+      ? {
+          expectedScreenshotsPerWorld,
+          expectedScreenshots: expectedScreenshotsPerWorld * matrix.cases.length,
+        }
+      : {}),
+  };
+}
+
+export function assertRequestedCaseValues(
+  matrix: PreparedCasePlan,
+  requestedIndexes: ReadonlySet<number> | undefined,
+  expectedByIndex: Record<number, Record<string, string>> | undefined,
+): void {
+  if (!expectedByIndex) return;
+  for (const [rawIndex, expectedValues] of Object.entries(expectedByIndex)) {
+    const index = Number(rawIndex);
+    if (!requestedIndexes?.has(index)) continue;
+    const current = matrix.cases[index];
+    if (!current) throw new Error(`Combine case index ${index} is out of range`);
+    for (const [setId, expectedValue] of Object.entries(expectedValues)) {
+      if (current.values[setId] !== expectedValue) {
+        throw new Error(`Combine case ${index + 1} changed since the pilot; start a new campaign`);
+      }
+    }
+  }
+}
+
+export function variableFromLocaleScope(input: {
+  locales: string[];
+  languageOptions?: Record<string, string | { identifier?: string; label?: string; text?: string }>;
+  entryPath?: VariableNavStep[];
+  languagePath?: VariableNavStep[];
+  restoreLocale?: string;
+  screenshotEachLocale?: boolean;
+}): OptionRunSet {
+  const options: VariableRow[] = input.locales.map((locale) => {
+    const raw = input.languageOptions?.[locale];
+    if (typeof raw === "string") return { id: locale, label: raw };
+    if (raw && typeof raw === "object") {
+      return {
+        id: locale,
+        ...(raw.identifier?.trim() ? { identifier: raw.identifier.trim() } : {}),
+        ...(raw.label?.trim() ? { label: raw.label.trim() } : {}),
+        ...(raw.text?.trim() ? { text: raw.text.trim() } : {}),
+      };
+    }
+    return { id: locale, label: locale };
+  });
+  return {
+    id: "locale",
+    name: "Language",
+    kind: "language",
+    apply: {
+      kind: "list",
+      ...(input.entryPath?.length ? { entryPath: input.entryPath } : {}),
+      ...(input.languagePath?.length ? { pickerPath: input.languagePath } : {}),
+    },
+    options,
+    ...(input.restoreLocale?.trim() ? { restoreId: input.restoreLocale.trim() } : {}),
+    screenshotEach: input.screenshotEachLocale !== false,
+  };
+}

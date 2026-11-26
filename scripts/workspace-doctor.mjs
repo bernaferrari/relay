@@ -2,7 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveBrowserExecutable } from "../packages/core/src/browser-executable.ts";
+import { resolveBrowserExecutable } from "../packages/core/src/browser/browser-executable.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

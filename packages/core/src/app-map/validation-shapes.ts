@@ -1,11 +1,5 @@
 import { parseAuthoringCaptureReview, type TargetProfile } from "@relay/protocol";
-import {
-  isRoutineAccountIsolation,
-  isRoutineLeftoverSurface,
-  isRoutineSharingPolicy,
-  isRoutineStartingStateFact,
-  type RoutineEffects,
-} from "@relay/protocol";
+
 import { appMapFail } from "./errors.js";
 import { browserTargetProfileProblem } from "./validation-target-profile.js";
 import type {
@@ -19,18 +13,14 @@ import type {
   Connection,
   ConnectionPatch,
   ConnectionPresentation,
-  Flow,
   MapGroup,
   Proposal,
   ProposalChange,
-  Routine,
-  RunReference,
   Screen,
   ScreenVariant,
-  TargetResultReference,
   UpdateScreenInput,
 } from "./model.js";
-import type { ScreenIdentityObservation } from "../screen-identity.js";
+import type { ScreenIdentityObservation } from "../screen/screen-identity.js";
 import { assertActions } from "./action-validation.js";
 import {
   assertConnectionNavigation,
@@ -44,8 +34,7 @@ import { assertRepeatPolicy } from "./repeat-policy-validation.js";
 import { assertReviewedBinding } from "./reviewed-bindings-validation.js";
 import { assertScreenPatch } from "./screen-patch-validation.js";
 export { assertRun, assertTargetResult } from "./run-result-validation.js";
-import { assertRun, assertTargetResult } from "./run-result-validation.js";
-import { assertFlow, assertRoutine, assertRoutineEffects } from "./routine-flow-validation.js";
+
 export { assertFlow, assertRoutine, assertRoutineEffects } from "./routine-flow-validation.js";
 export { assertScreenPatch } from "./screen-patch-validation.js";
 import {

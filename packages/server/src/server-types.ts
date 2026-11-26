@@ -6,16 +6,16 @@ import type {
   TargetDriverRegistry,
 } from "@relay/core";
 import type { ExternalIdentityVerifier } from "./external-identity.js";
-import type { AppMapTestRunRouteRuntime } from "./app-map-test-run-runtime.js";
-import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
+import type { AppMapTestRunRouteRuntime } from "./app-map/app-map-test-run-runtime.js";
+import type { CampaignDurationRouteRuntime } from "./campaign/campaign-duration-routes.js";
 import type { JobRouteRuntime } from "./job-routes.js";
-import type { RunRouteRuntime } from "./run-routes.js";
+import type { RunRouteRuntime } from "./run/run-routes.js";
 import type { StepRunRouteRuntime } from "./step-run-route.js";
-import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
-import type { WorkflowRouteRuntime } from "./workflow-routes.js";
-import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
-import type { GitHubProofWebhookConfiguration } from "./github-proof-intake.js";
-import type { GoalRouteRuntime } from "./goal-routes.js";
+import type { TargetRuntimeRouteRuntime } from "./target/target-runtime-routes.js";
+import type { WorkflowRouteRuntime } from "./workflow/workflow-routes.js";
+import type { ChangeVerificationRouteRuntime } from "./change/change-verification-routes.js";
+import type { GitHubProofWebhookConfiguration } from "./github/github-proof-intake.js";
+import type { GoalRouteRuntime } from "./goal/goal-routes.js";
 
 /** Host-owned server seams, kept separate from the HTTP router implementation. */
 export type StartServerOptions = {

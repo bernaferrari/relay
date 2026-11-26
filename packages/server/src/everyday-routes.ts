@@ -16,7 +16,7 @@ import {
 import type { AppMap, AppMapScenarioTest, OperationInput } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
-import { applyAppMapMutation } from "./app-map-route-mutations.js";
+import { applyAppMapMutation } from "./app-map/app-map-route-mutations.js";
 
 const PLAIN_ENGLISH_REASON = "Runs from its description. Record it to make it faster and exact.";
 

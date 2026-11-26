@@ -1,9 +1,9 @@
 import * as z from "zod/v4";
-import { journeyAssociationSchema, verificationPlanSchema } from "./change-impact.js";
+import { journeyAssociationSchema, verificationPlanSchema } from "./change/change-impact.js";
 import {
   changeVerificationPolicySchema,
   frozenVerificationTargetCaseSchema,
-} from "./change-verification.js";
+} from "./change/change-verification.js";
 
 const identifier = z.string().trim().min(1).max(256);
 const exactGitSha = z.string().regex(/^[a-f0-9]{40}$/u);

@@ -31,7 +31,7 @@ import type {
   LiveTargetSession,
   LiveTargetStatus,
 } from "../data/live-target-session";
-import { PageLoading, errorMessage } from "./recording-shared";
+import { PageLoading } from "./recording-shared";
 import { useTalkBackReview } from "./talkback-review-panel";
 import { localeLabel, supportedLocaleChoice } from "../lib/locale-label";
 import { DeviceLivePreview } from "./device-live-preview";

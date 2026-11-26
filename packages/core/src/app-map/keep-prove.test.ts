@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Connection } from "@relay/protocol";
-import { IosMutationOutcomeUnknownError, type SnapshotNode } from "../device.js";
-import { observeScreenIdentity } from "../screen-identity.js";
+import { IosMutationOutcomeUnknownError, type SnapshotNode } from "../device/device.js";
+import { observeScreenIdentity } from "../screen/screen-identity.js";
 import {
   connectionProofOutcomeUnknownDiagnostic,
   proveConnectionOnDevice,

@@ -1,0 +1,72 @@
+import * as z from "zod/v4";
+
+const id = z.string().min(1);
+const at = z.number();
+
+export const activitySubjectKindSchema = z.enum([
+  "app-map",
+  "screen",
+  "connection",
+  "group",
+  "flow",
+  "routine",
+  "case-stack",
+  "variable",
+  "test",
+  "combine",
+  "proposal",
+  "run",
+]);
+
+export const activityEventSchema = z
+  .object({
+    organizationId: id,
+    projectId: id,
+    appMapId: id,
+    id,
+    actorId: z.string(),
+    actorKind: z.enum(["human", "agent", "system"]),
+    eventType: z.enum([
+      "app-map.updated",
+      "app-map.committed",
+      "screen.added",
+      "screen.updated",
+      "screen.removed",
+      "screen.consolidated",
+      "connection.connected",
+      "connection.updated",
+      "connection.removed",
+      "group.saved",
+      "group.removed",
+      "flow.saved",
+      "flow.removed",
+      "routine.saved",
+      "routine.removed",
+      "case-stack.saved",
+      "case-stack.attached",
+      "case-stack.removed",
+      "variable.saved",
+      "variable.removed",
+      "test.saved",
+      "test.validated",
+      "test.actions-saved",
+      "test.undone",
+      "test.redone",
+      "test.removed",
+      "combine.saved",
+      "combine.removed",
+      "recording.committed",
+      "run.finished",
+      "proposal.submitted",
+      "proposal.approved",
+      "proposal.rejected",
+      "proposal.reverted",
+    ]),
+    subject: z.object({ kind: activitySubjectKindSchema, id }).strict(),
+    touched: z.array(z.string()).optional(),
+    summary: z.string(),
+    at,
+    beforeRevision: z.number(),
+    afterRevision: z.number(),
+  })
+  .strict();

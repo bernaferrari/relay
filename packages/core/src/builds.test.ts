@@ -14,7 +14,7 @@ import {
   preflightRegisteredBuild,
   resolveRegisteredBuildArtifact,
 } from "./builds.js";
-import { artifactDigestForProof } from "./artifact-digest.js";
+import { artifactDigestForProof } from "./artifact/artifact-digest.js";
 
 test("preflights, installs, and launches a registered Android artifact", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-build-"));

@@ -20,7 +20,7 @@ import {
   preferSettingsChildTitle,
   settingsScreenTitlesConflict,
 } from "./settings-screen-titles.js";
-import { isProfileAppTitle, isProfileWeakTitle } from "../discovery-app-profiles.js";
+import { isProfileAppTitle, isProfileWeakTitle } from "../discovery/discovery-app-profiles.js";
 
 /** A title that cannot tell two screens apart, so it must not block a merge. */
 function isWeakScreenTitle(value: string): boolean {

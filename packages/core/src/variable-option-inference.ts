@@ -1,5 +1,6 @@
 /** Read mutually-exclusive Variable rows from an accessibility tree. */
-import type { SnapshotNode } from "./device.js";
+import type { SnapshotNode } from "./device/device.js";
+import { profileSystemSettingsNoise } from "./discovery/discovery-app-profiles.js";
 
 export type VariableOptionCandidate = {
   id: string;
@@ -16,11 +17,28 @@ export type TaughtVariableRow = {
 };
 
 const CHROME_NOISE =
-  /^(settings|search|cancel|done|edit|back|close|general|about|ok|save|add |preferred |reorder|app language|language|appearance|account|environment|theme|suggested languages|other languages|allow grok to access|grok settings|acknowledgements|photos|microphone|camera|siri & search|notifications|live activities|background app refresh|full access|airplane mode|wi-?fi|bluetooth|vpn|sounds|focus|screen time|control center|display & brightness|apple id.*|jonathan .*|multitasking.*|accessibility|wallpaper|apple pencil|touch id.*|battery|privacy.*|app store|wallet.*|passwords|contacts|calendar|notes|reminders|freeform|voice memos|messages|safari|stocks|weather|translate|maps|measure|shortcuts|health|game center|tv provider|developer|1blocker|bible|bitwarden|chrome|documents|drive|gmail|google photos|legacy|testflight|\bx\b)$/i;
+  /^(settings|search|cancel|done|edit|back|close|general|about|ok|save|add |preferred |reorder|app language|language|appearance|account|environment|theme|suggested languages|other languages|acknowledgements|photos|microphone|camera|siri & search|notifications|live activities|background app refresh|full access|airplane mode|wi-?fi|bluetooth|vpn|sounds|focus|screen time|control center|display & brightness|apple id.*|jonathan .*|multitasking.*|accessibility|wallpaper|apple pencil|touch id.*|battery|privacy.*|app store|wallet.*|passwords|contacts|calendar|notes|reminders|freeform|voice memos|messages|safari|stocks|weather|translate|maps|measure|shortcuts|health|game center|tv provider|developer|1blocker|bible|bitwarden|chrome|documents|drive|gmail|google photos|legacy|testflight|\bx\b)$/i;
 
 /** Left-pane / system settings rows that appear in the same AX tree on iPad split view. */
 const SPLIT_VIEW_SETTINGS_NOISE =
-  /^(jonathan|apple id|airplane|wi-?fi|bluetooth|vpn|notifications|sounds|focus|screen time|general|control center|display|home screen|notes|voice memos|messages|stocks|translate|books|game center|tv provider|developer|bible|bitwarden|documents|drive|google photos|testflight|photos,|microphone|camera|siri|live activities|background app refresh|preferred language|allow grok|grok settings|acknowledgements|language & region|language, english)$/i;
+  /^(jonathan|apple id|airplane|wi-?fi|bluetooth|vpn|notifications|sounds|focus|screen time|general|control center|display|home screen|notes|voice memos|messages|stocks|translate|books|game center|tv provider|developer|bible|bitwarden|documents|drive|google photos|testflight|photos,|microphone|camera|siri|live activities|background app refresh|preferred language|acknowledgements|language & region|language, english)$/i;
+
+function normalizedNoiseLabel(label: string): string {
+  return label.trim().replace(/\s+/gu, " ").toLocaleLowerCase();
+}
+
+function profileNoise(label: string): boolean {
+  const normalized = normalizedNoiseLabel(label);
+  return profileSystemSettingsNoise().some((term) => normalizedNoiseLabel(term) === normalized);
+}
+
+function chromeNoise(label: string): boolean {
+  return CHROME_NOISE.test(label) || profileNoise(label);
+}
+
+function splitViewSettingsNoise(label: string): boolean {
+  return SPLIT_VIEW_SETTINGS_NOISE.test(label) || profileNoise(label);
+}
 
 export function inferOptionId(label: string, subtitle?: string): string {
   const source = `${subtitle ?? ""} ${label}`.trim();
@@ -130,7 +148,7 @@ export function extractVariableOptionsFromNodes(nodes: SnapshotNode[]): Variable
     const rawLabel = (node.label ?? "").trim();
     if (
       !rawLabel ||
-      CHROME_NOISE.test(rawLabel) ||
+      chromeNoise(rawLabel) ||
       /^reorder\s+/i.test(rawLabel) ||
       rawLabel.length > 80
     ) {
@@ -142,7 +160,7 @@ export function extractVariableOptionsFromNodes(nodes: SnapshotNode[]): Variable
       .map((part) => part.trim())
       .filter(Boolean);
     const label = parts[0] ?? rawLabel;
-    if (!label || CHROME_NOISE.test(label) || SPLIT_VIEW_SETTINGS_NOISE.test(label)) continue;
+    if (!label || chromeNoise(label) || splitViewSettingsNoise(label)) continue;
 
     const isCell = type === "cell";
     const isRow = isCell || type === "button" || type === "statictext" || Boolean(node.hittable);
@@ -152,7 +170,7 @@ export function extractVariableOptionsFromNodes(nodes: SnapshotNode[]): Variable
       const parentType = (parent?.type ?? parent?.role ?? "").toLocaleLowerCase();
       if (parentType === "cell" || parentType === "button") continue;
     }
-    if (!isCell && SPLIT_VIEW_SETTINGS_NOISE.test(rawLabel)) continue;
+    if (!isCell && splitViewSettingsNoise(rawLabel)) continue;
 
     const centerX = (node.rect?.x ?? 0) + (node.rect?.width ?? 0) / 2;
     if (
@@ -172,7 +190,7 @@ export function extractVariableOptionsFromNodes(nodes: SnapshotNode[]): Variable
     const children = typeof node.index === "number" ? (byParent.get(node.index) ?? []) : [];
     const ownValue = (node.value ?? "").trim();
     let subtitle: string | undefined = parts.length > 1 ? parts.slice(1).join(", ") : undefined;
-    if (!subtitle && ownValue && ownValue !== label && !CHROME_NOISE.test(ownValue)) {
+    if (!subtitle && ownValue && ownValue !== label && !chromeNoise(ownValue)) {
       subtitle = ownValue;
     }
     if (!subtitle) {
@@ -183,7 +201,7 @@ export function extractVariableOptionsFromNodes(nodes: SnapshotNode[]): Variable
             text &&
             text !== label &&
             text !== rawLabel &&
-            !CHROME_NOISE.test(text) &&
+            !chromeNoise(text) &&
             text.length < 60 &&
             !/^reorder/i.test(text),
         );

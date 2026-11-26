@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { crashLogEntryIsCandidate, parseDevicectlCrashEntries } from "./crash-evidence.js";
-import { runWithTargetContext } from "./target-context.js";
+import { runWithTargetContext } from "./target/target-context.js";
 
 test("crash-log candidates are filtered by extension and modification date", () => {
   const since = Date.parse("2026-08-01T00:00:00Z");

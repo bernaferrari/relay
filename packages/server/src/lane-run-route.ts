@@ -7,7 +7,7 @@ import {
   type LaneInteractResolution,
 } from "@relay/core";
 import type { AuthoringTarget, OperationInput } from "@relay/protocol";
-import { HttpError, parseJsonBody } from "./http.js";
+import { HttpError, parseJsonOperationInput } from "./http.js";
 
 export function laneRunHttpError(error: unknown): never {
   const message = error instanceof Error ? error.message : String(error);
@@ -22,16 +22,19 @@ export async function parseLaneAwareTestRunBody(
   request: http.IncomingMessage,
   projectId: string,
   appMapId: string,
+  testId: string,
 ): Promise<
   Omit<OperationInput<"app-map.test.run">, "appMapId" | "testId"> & {
     expectedRevision: number;
     target: AuthoringTarget;
   }
 > {
-  const body = (await parseJsonBody(request)) as Omit<
-    OperationInput<"app-map.test.run">,
-    "appMapId" | "testId"
-  >;
+  const body = await parseJsonOperationInput(
+    request,
+    "app-map.test.run",
+    new URL(request.url ?? "/", "http://relay.local"),
+    { appMapId, testId },
+  );
   try {
     return await applyLaneToTestRun(projectId, appMapId, body);
   } catch (error) {
@@ -85,7 +88,7 @@ export function runtimeOverlayFromLaneResolution(
   };
 }
 
-/** Overlay for target.open / Browser Device. Never writes grok-com fixture. */
+/** Overlay for target.open / Browser Device. Never writes product account fixture. */
 export async function applyLaneToBrowserOpenOrThrow(input: {
   projectId: string;
   laneId: string;

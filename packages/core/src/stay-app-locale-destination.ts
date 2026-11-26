@@ -1,6 +1,6 @@
 import type { RecipeStep } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
-import { collectExpectedSemanticLabels } from "./semantic-readiness.js";
+import { collectExpectedSemanticLabels } from "./semantic/semantic-readiness.js";
 
 type ExpectScreen = Extract<RecipeStep, { kind: "expect-screen" }>;
 

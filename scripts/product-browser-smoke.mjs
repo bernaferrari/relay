@@ -190,16 +190,6 @@ async function clickNav(page, name, route) {
   }
 }
 
-async function openRoute(page, route) {
-  const target = new URL(page.url());
-  target.hash = `#${route}`;
-  await page.goto(target.toString(), {
-    waitUntil: "domcontentloaded",
-    timeout: START_TIMEOUT_MS,
-  });
-  await waitForRoute(page, route);
-}
-
 async function assertMinimumLayout(page) {
   const layout = await page.evaluate(() => ({
     viewport: { width: window.innerWidth, height: window.innerHeight },

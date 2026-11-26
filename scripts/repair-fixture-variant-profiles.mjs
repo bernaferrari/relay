@@ -3,7 +3,7 @@
  * overlay-honest id derived from the variant's own frozen environment so
  * fixture Lanes can bind and runtime matching stays fail-closed. */
 import { mutateStoredAppMap } from "../packages/core/src/collaboration.js";
-import { repairFixtureVariantProfileIds } from "../packages/core/src/app-map-fixture-variant-repair.js";
+import { repairFixtureVariantProfileIds } from "../packages/core/src/app-map/app-map-fixture-variant-repair.js";
 
 const [projectId, appMapId] = process.argv.slice(2);
 if (!projectId || !appMapId) {

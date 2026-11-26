@@ -11,12 +11,10 @@ import {
   authenticateRequest,
   configuredBrowserOrigins,
   isLoopbackHost,
-  listAuditEvents,
   recordAudit,
   resolveRequestContext,
   type RequestContext,
 } from "./security.js";
-import { liveEventVisible } from "./live-event-scope.js";
 import type { ExternalIdentityVerifier } from "./external-identity.js";
 export {
   verifiedExternalIdentity,
@@ -30,36 +28,18 @@ export {
   publishGitHubProofCheck,
   type GitHubProofCheckConfig,
   type PublishedProofCheck,
-} from "./github-proof-check.js";
-export { publishChangeProofToGitHub } from "./change-proof-github-publisher.js";
-export * from "./github-proof-intake.js";
-import { githubProofWebhookConfigurationFromEnvironment as githubWebhookFromEnv } from "./github-proof-intake.js";
-import { growAppMapsFromPastRuns, loadSavedModelKey, saveModelKey } from "@relay/core";
-import { handleE2EProjectRoute } from "./e2e-project-routes.js";
-import { handleEverydayRoute } from "./everyday-routes.js";
+} from "./github/github-proof-check.js";
+export { publishChangeProofToGitHub } from "./change/change-proof-github-publisher.js";
+export * from "./github/github-proof-intake.js";
+import { githubProofWebhookConfigurationFromEnvironment as githubWebhookFromEnv } from "./github/github-proof-intake.js";
+import { growAppMapsFromPastRuns, loadSavedModelKey } from "@relay/core";
 import {
   captureScreenshot,
-  currentOperationContext,
   getDefaultTargetDriverRegistry,
-  enqueueJob,
-  getActiveJobs,
-  getJob,
-  listActionsWithTrace,
-  listConnectedTargets,
-  listDevices,
   publicShareBaseUrl,
-  resolveJobDevicePlatform,
-  bootDevice,
-  requestAndroidAuthorization,
-  listJobs,
-  listTargetWorkers,
   now,
   publish,
   runsRoot,
-  runDoctor,
-  doctorFailureMessage,
-  toJobReport,
-  toJunitXml,
   releaseDeviceLease,
   loadEvidenceCollectionPolicy,
   loadRedactionPolicy,
@@ -78,98 +58,92 @@ import {
   warmBrowserPreflights,
 } from "@relay/core";
 import { cleanupAbandonedAndroidPacketCaptures } from "./startup-cleanup.js";
-import { collectVisibleReports } from "./report-access.js";
 import { createSseHub } from "./sse.js";
-import { startScheduler } from "./scheduler.js";
-import { runDueSchedulesWithCombineStarter } from "./scheduler-combine.js";
+import { startScheduler } from "./scheduler/scheduler.js";
+import { runDueSchedulesWithCombineStarter } from "./scheduler/scheduler-combine.js";
 import { createRequestHandlerLifecycle } from "./request-handler-lifecycle.js";
+import { dispatchAuthenticatedRoute } from "./authenticated-routes.js";
 import { createFailClosedServerShutdown } from "./server-shutdown.js";
-import { createTargetRuntimeScope } from "./target-runtime-scope.js";
+import { createTargetRuntimeScope } from "./target/target-runtime-scope.js";
 import { shutdownServerSessions } from "./server-session-shutdown.js";
-import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
-import { handleCaptureReferenceRoute } from "./capture-reference-routes.js";
-import { handleLiveRunRoute } from "./live-run-routes.js";
+import type { RunRouteRuntime } from "./run/run-routes.js";
 import { createPreAuthenticatedRoute } from "./pre-authenticated-routes.js";
-import { handleJobRoute, scopedActiveJob, type JobRouteRuntime } from "./job-routes.js";
-import { assertTargetControl } from "./access-control.js";
-import {
-  browserCaseProfileForAdmission,
-  browserCaseProfileIfManaged,
-  rejectBlockedClaimedBrowserJob,
-} from "./claimed-browser-job-admission.js";
-import {
-  CORS_HEADERS,
-  HttpError,
-  json,
-  matchPath,
-  parseJsonBody,
-  parseLimit,
-  text,
-} from "./http.js";
-import { streamTargetVideo } from "./target-video-stream.js";
-import { pruneIosVideoTakes, reconcileIosVideoTake } from "./ios-video-capture.js";
+import type { JobRouteRuntime } from "./job-routes.js";
+import { CORS_HEADERS, HttpError, json } from "./http.js";
+import { streamTargetVideo } from "./target/target-video-stream.js";
+import { pruneIosVideoTakes, reconcileIosVideoTake } from "./ios/ios-video-capture.js";
 import { bindOperationRequest } from "./operations.js";
-import { PRODUCT_VERSION, serverMeta } from "./server-meta.js";
-import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
 import {
   flushOperationActivity,
   handleActivityRoute,
   recordOperationActivity,
 } from "./activity-routes.js";
-import { handleDiscoveryRoute } from "./discovery-routes.js";
-import { handlePresenceRoute } from "./presence-routes.js";
-import { handleSettingsRoute } from "./settings-routes.js";
-import { handleTargetRoute } from "./target-routes.js";
-import { handleManualTargetRoute } from "./manual-target-routes.js";
-import { handleTargetObservationRoute } from "./target-observation-route.js";
-import { handleControlPlaneRoute } from "./control-plane-routes.js";
-import { handleWorkspaceRoute } from "./workspace-routes.js";
-import { handleInteractionRoute } from "./interaction-routes.js";
-import {
-  createGoalRouteRuntimeBinding,
-  dispatchGoalRoute,
-  type GoalRouteRuntimeFactory,
-} from "./goal-routes.js";
-import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
-import { handleAndroidAvdRoute } from "./android-avd-routes.js";
-import type { AppMapTestRunRouteRuntime } from "./app-map-test-run-runtime.js";
-import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
-import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
+import { createGoalRouteRuntimeBinding, type GoalRouteRuntimeFactory } from "./goal/goal-routes.js";
+import type { StepRunRouteRuntime } from "./step-run-route.js";
+import type { AppMapTestRunRouteRuntime } from "./app-map/app-map-test-run-runtime.js";
+import type { CampaignDurationRouteRuntime } from "./campaign/campaign-duration-routes.js";
+import type { TargetRuntimeRouteRuntime } from "./target/target-runtime-routes.js";
 import type { StartServerOptions, StartedServer } from "./server-types.js";
-import type { WorkflowRouteRuntime } from "./workflow-routes.js";
-import { handlePrimaryOperationRoutes } from "./primary-operation-routes.js";
-import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
-import { createProofRuntimeBootstrap } from "./proof-runtime-bootstrap.js";
+import type { WorkflowRouteRuntime } from "./workflow/workflow-routes.js";
+import type { ServerRouteInput } from "./server-route-input.js";
+import type { ServerLivenessState } from "./server-liveness-routes.js";
+import type { ChangeVerificationRouteRuntime } from "./change/change-verification-routes.js";
+import { createProofRuntimeBootstrap } from "./proof/proof-runtime-bootstrap.js";
 import { runServerCliIfInvoked } from "./server-cli.js";
+import { loadRelayExtensionsFromEnvironment } from "./server-extensions.js";
 import { requestsBearerAuthentication, setCorsOrigin } from "./cors.js";
 import { respondToRequestError } from "./request-error-response.js";
 export type { StartServerOptions, StartedServer } from "./server-types.js";
 
 const serverStartedAt = Date.now();
-let lastKnownDeviceCount: number | null = null;
+const serverLiveness: ServerLivenessState = { serverStartedAt, lastKnownDeviceCount: null };
+
+type ServerRequestContext = {
+  token?: string;
+  externalIdentityVerifier?: ExternalIdentityVerifier;
+  localTrusted?: boolean;
+  browserOrigins?: readonly string[];
+  sse?: ReturnType<typeof createSseHub>;
+  authoringRuntime?: AuthoringRuntime;
+  liveVideoStream?: typeof streamTargetVideo;
+  captureTargetScreenshot?: typeof captureScreenshot;
+  targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
+  appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>;
+  jobRouteRuntime?: Partial<JobRouteRuntime>;
+  workflowRouteRuntime?: Partial<WorkflowRouteRuntime>;
+  runRouteRuntime?: Partial<RunRouteRuntime>;
+  stepRunRuntime?: Partial<StepRunRouteRuntime>;
+  campaignDurationRuntime?: CampaignDurationRouteRuntime;
+  proofRouteRuntime?: Partial<ChangeVerificationRouteRuntime>;
+  preAuthenticatedRoute?: ReturnType<typeof createPreAuthenticatedRoute>;
+  goalRouteRuntimeFactory?: GoalRouteRuntimeFactory;
+};
 
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  token?: string,
-  externalIdentityVerifier?: ExternalIdentityVerifier,
-  localTrusted = true,
-  browserOrigins: readonly string[] = [],
-  sse = createSseHub(CORS_HEADERS),
-  authoringRuntime?: AuthoringRuntime,
-  liveVideoStream = streamTargetVideo,
-  captureTargetScreenshot = captureScreenshot,
-  targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
-  appMapTestRunRuntime?: Partial<AppMapTestRunRouteRuntime>,
-  jobRouteRuntime?: Partial<JobRouteRuntime>,
-  workflowRouteRuntime?: Partial<WorkflowRouteRuntime>,
-  runRouteRuntime?: Partial<RunRouteRuntime>,
-  stepRunRuntime?: Partial<StepRunRouteRuntime>,
-  campaignDurationRuntime?: CampaignDurationRouteRuntime,
-  proofRouteRuntime?: Partial<ChangeVerificationRouteRuntime>,
-  preAuthenticatedRoute = createPreAuthenticatedRoute(),
-  goalRouteRuntimeFactory?: GoalRouteRuntimeFactory,
+  context: ServerRequestContext = {},
 ): Promise<void> {
+  const {
+    token,
+    externalIdentityVerifier,
+    localTrusted = true,
+    browserOrigins = [],
+    sse = createSseHub(CORS_HEADERS),
+    authoringRuntime,
+    liveVideoStream = streamTargetVideo,
+    captureTargetScreenshot = captureScreenshot,
+    targetRuntime,
+    appMapTestRunRuntime,
+    jobRouteRuntime,
+    workflowRouteRuntime,
+    runRouteRuntime,
+    stepRunRuntime,
+    campaignDurationRuntime,
+    proofRouteRuntime,
+    preAuthenticatedRoute = createPreAuthenticatedRoute(),
+    goalRouteRuntimeFactory,
+  } = context;
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
   const url = new URL(req.url ?? "/", `http://${host}`);
@@ -239,444 +213,37 @@ async function handleRequest(
       throw new HttpError(403, "This workspace asset is available only from the local Relay host");
     }
     const operation = bindOperationRequest(req, res, method, pathname, url, scope);
-    if (await handleActivityRoute({ method, pathname, url, response: res, scope })) return;
+    const routeInput: ServerRouteInput = {
+      method,
+      pathname,
+      url,
+      request: req,
+      response: res,
+      scope,
+    };
+    if (await handleActivityRoute(routeInput)) return;
     if (operation) await recordOperationActivity({ operation, pathname, scope, response: res });
-    if (await dispatchGoalRoute(req, res, method, pathname, scope, goalRouteRuntimeFactory)) return;
     if (
-      await handlePrimaryOperationRoutes({
-        method,
-        pathname,
-        request: req,
-        response: res,
-        scope,
-        runtimes: {
+      await dispatchAuthenticatedRoute(routeInput, {
+        goal: goalRouteRuntimeFactory,
+        primary: {
           authoring: authoringRuntime,
           appMapTestRun: appMapTestRunRuntime,
           jobs: jobRouteRuntime,
-          workflow: {
-            ...workflowRouteRuntime,
-            ...(authoringRuntime ? { authoringRuntime } : {}),
-          },
+          workflow: { ...workflowRouteRuntime, ...(authoringRuntime ? { authoringRuntime } : {}) },
           proof: proofRouteRuntime,
           target: targetRuntime,
           campaignDuration: campaignDurationRuntime,
         },
-      })
-    )
-      return;
-    if (
-      await handleAuthoringActionReplace({
-        method,
-        pathname,
-        request: req,
-        response: res,
-        scope,
-      })
-    )
-      return;
-    if (
-      await handleAuthoringRoute({
-        method,
-        pathname,
-        request: req,
-        response: res,
-        scope,
-        authoringRuntime,
-      })
-    )
-      return;
-    if (await handlePresenceRoute({ method, pathname, request: req, response: res, scope })) return;
-    if (
-      await handleDiscoveryRoute({
-        method,
-        pathname,
-        url,
-        request: req,
-        response: res,
-        scope,
-      })
-    )
-      return;
-    if (
-      await handleSettingsRoute({
-        method,
-        pathname,
-        request: req,
-        response: res,
-        scope,
-      })
-    )
-      return;
-    if (
-      await handleInteractionRoute({
-        method,
-        pathname,
-        request: req,
-        response: res,
-        scope,
-      })
-    )
-      return;
-    if (
-      await handleStepRunRoute({
-        method,
-        pathname,
-        request: req,
-        response: res,
-        scope,
-        runtime: stepRunRuntime,
-      })
-    )
-      return;
-    if (method === "GET" && pathname === "/audit") {
-      json(res, 200, {
-        events: listAuditEvents(parseLimit(url.searchParams.get("limit"), 100), scope),
-      });
-      return;
-    }
-    if (method === "GET" && pathname === "/health") {
-      const visibleActiveJobs = getActiveJobs().filter(
-        (job) =>
-          scope.localTrusted ||
-          (job.projectId === scope.projectId && job.ownerId === scope.subject),
-      );
-      const active = scopedActiveJob(visibleActiveJobs, scope);
-      const visibleJobCount = scope.localTrusted
-        ? listJobs(50).length
-        : listJobs(50).filter(
-            (job) => job.projectId === scope.projectId && job.ownerId === scope.subject,
-          ).length;
-      json(res, 200, {
-        ok: true,
-        product: "relay",
-        version: PRODUCT_VERSION,
-        mode: "app-testing",
-        pid: process.pid,
-        startedAt: serverStartedAt,
-        at: now(),
-        uptimeMs: now() - serverStartedAt,
-        activeJob: active
-          ? {
-              id: active.id,
-              action: active.action,
-              status: active.status,
-              serial: active.serial ?? null,
-              deviceName: active.deviceName ?? null,
-              startedAt: active.startedAt ?? null,
-            }
-          : null,
-        activeJobs: visibleActiveJobs.map((job) => ({
-          id: job.id,
-          status: job.status,
-          targetId: job.browserTargetId ?? job.serial,
-          workerId: job.workerId,
-        })),
-        targetWorkers: listTargetWorkers(),
-        jobs: visibleJobCount,
-        // Health is a liveness probe and must answer within Electron's short
-        // startup timeout. Device discovery can invoke adb/simctl and belongs
-        // on /devices; report its last completed value without blocking here.
-        deviceCount: lastKnownDeviceCount,
-        sseClients: sse.count(),
-        runsDir: scope.localTrusted ? runsRoot() : "runs",
-        access: {
-          role: scope.role,
-          organizationId: scope.organizationId,
-          projectId: scope.projectId,
-        },
-      });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/events") {
-      sse.attach(req, res, (event) =>
-        liveEventVisible(event, scope, (jobId) => {
-          const job = getJob(jobId);
-          return job ? { projectId: job.projectId, ownerId: job.ownerId } : undefined;
-        }),
-      );
-      return;
-    }
-
-    if (method === "GET" && pathname === "/actions") {
-      json(res, 200, { actions: listActionsWithTrace() });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/devices") {
-      const phase = url.searchParams.get("phase");
-      const targetKind = url.searchParams.get("targetKind");
-      const targetId = url.searchParams.get("targetId")?.trim();
-      const { devices, physicalDeviceCount } = await listConnectedTargets({
-        ...(phase === "android" || phase === "ios" ? { phase } : {}),
-        ...(targetKind === "browser" || targetKind === "device" ? { targetKind } : {}),
-        ...(targetId ? { targetId } : {}),
-      });
-      if (physicalDeviceCount !== undefined) lastKnownDeviceCount = physicalDeviceCount;
-      json(res, 200, { devices });
-      return;
-    }
-
-    if (await handleAndroidAvdRoute({ method, pathname, request: req, response: res, scope })) {
-      return;
-    }
-
-    if (
-      await handleTargetRoute({
-        method,
-        pathname,
-        url,
-        request: req,
-        response: res,
-        scope,
-      })
-    )
-      return;
-    if (await handleTargetObservationRoute({ method, pathname, url, response: res, scope })) return;
-
-    // ---- Project-scoped control plane ----
-    if (
-      await handleControlPlaneRoute({
-        method,
-        pathname,
-        url,
-        request: req,
-        response: res,
-        scope,
-      })
-    )
-      return;
-    if (method === "POST" && pathname === "/device/boot") {
-      const body = (await parseJsonBody(req)) as {
-        serial?: string;
-        platform?: "android" | "ios";
-      };
-      if (!body.serial?.trim()) throw new HttpError(400, "serial is required");
-      await assertTargetControl(scope, body.serial);
-      const known = (await listDevices().catch(() => [])).find(
-        (device) => device.serial === body.serial,
-      );
-      if (known?.kind && !/simulator|emulator/i.test(known.kind)) {
-        throw new HttpError(400, "Only simulators and emulators can be booted from Relay");
-      }
-      try {
-        await bootDevice(body.serial.trim(), body.platform ?? known?.platform ?? "ios");
-      } catch (error) {
-        throw new HttpError(502, error instanceof Error ? error.message : String(error));
-      }
-      json(res, 200, { ok: true, serial: body.serial.trim() });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/device/authorize") {
-      const body = (await parseJsonBody(req)) as { serial?: string };
-      if (!body.serial?.trim()) throw new HttpError(400, "serial is required");
-      await assertTargetControl(scope, body.serial);
-      const known = (await listDevices().catch(() => [])).find(
-        (device) => device.serial === body.serial,
-      );
-      if (!known) throw new HttpError(404, "Android device is no longer attached");
-      if (known.platform !== "android" || known.kind !== "Physical device") {
-        throw new HttpError(400, "Only attached Android hardware can be authorized");
-      }
-      try {
-        await requestAndroidAuthorization(body.serial);
-      } catch (error) {
-        throw new HttpError(502, error instanceof Error ? error.message : String(error));
-      }
-      json(res, 200, { ok: true, serial: body.serial });
-      return;
-    }
-
-    if (
-      await handleJobRoute({
-        method,
-        pathname,
-        url,
-        request: req,
-        response: res,
-        scope,
-        runtime: jobRouteRuntime,
-      })
-    ) {
-      return;
-    }
-
-    if (await handleWorkspaceRoute({ method, pathname, url, request: req, response: res, scope })) {
-      return;
-    }
-
-    const runMatch = matchPath(pathname, "/actions/:id/run");
-    if (method === "POST" && runMatch) {
-      const body = (await parseJsonBody(req)) as {
-        serial?: string;
-        platform?: "android" | "ios";
-        targetKind?: "device" | "browser";
-        browserTargetId?: string;
-        prodAccountMatch?: string;
-        wait?: boolean;
-      };
-      const assertControl = jobRouteRuntime?.assertTargetControl ?? assertTargetControl;
-      const enqueue = jobRouteRuntime?.enqueueJob ?? enqueueJob;
-      const explicitBrowserId =
-        body.browserTargetId?.trim() ||
-        (body.targetKind === "browser" ? body.serial?.trim() : undefined);
-      await assertControl(scope, explicitBrowserId ?? body.serial);
-      const browserCaseProfile = explicitBrowserId
-        ? await browserCaseProfileForAdmission(explicitBrowserId)
-        : await browserCaseProfileIfManaged(body.serial);
-      const browserTargetId = explicitBrowserId ?? (browserCaseProfile ? body.serial : undefined);
-      const authenticationHealth = await rejectBlockedClaimedBrowserJob({
-        projectId: scope.projectId,
-        targetId: browserTargetId,
-        browserCaseProfile,
-      });
-      const job = enqueue({
-        recipe: runMatch.id!,
-        ...(browserCaseProfile
-          ? {
-              targetKind: "browser" as const,
-              browserTargetId,
-              browserCaseProfile,
-              ...(authenticationHealth ? { authenticationHealth } : {}),
-            }
-          : {
-              serial: body.serial,
-              platform: body.platform ?? (await resolveJobDevicePlatform(body.serial)),
-            }),
-        prodAccountMatch: body.prodAccountMatch,
-        projectId: scope.projectId,
-        ownerId: currentOperationContext()!.actorId,
-      });
-      if (body.wait === false) {
-        json(res, 202, { job });
-        return;
-      }
-      for (;;) {
-        const current = getJob(job.id);
-        if (!current) {
-          throw new HttpError(500, "Job disappeared while waiting");
-        }
-        if (
-          current.status === "ok" ||
-          current.status === "error" ||
-          current.status === "healed" ||
-          current.status === "cancelled"
-        ) {
-          json(res, 200, {
-            ok: current.status === "ok" || current.status === "healed",
-            action: current.action,
-            result: current.result,
-            error: current.error,
-            healed: current.healed,
-            healMessage: current.healMessage,
-            cancelled: current.status === "cancelled",
-            job: current,
-            logs: current.logs,
-          });
-          return;
-        }
-        await new Promise((r) => setTimeout(r, 50));
-      }
-    }
-
-    if (
-      await handleManualTargetRoute({
-        method,
-        pathname,
-        url,
-        request: req,
-        response: res,
-        scope,
+        stepRun: stepRunRuntime,
+        run: runRouteRuntime,
+        sse,
+        liveness: serverLiveness,
         liveVideoStream,
         captureTargetScreenshot,
       })
     )
       return;
-
-    if (await handleE2EProjectRoute({ method, pathname, url, request: req, response: res, scope }))
-      return;
-    if (await handleEverydayRoute({ method, pathname, request: req, response: res, scope })) return;
-    if (await handleLiveRunRoute({ method, pathname, response: res, scope })) return;
-
-    if (
-      await handleCaptureReferenceRoute({
-        method,
-        pathname,
-        url,
-        request: req,
-        response: res,
-        scope,
-      })
-    )
-      return;
-
-    if (
-      await handleRunRoute({
-        method,
-        pathname,
-        url,
-        request: req,
-        response: res,
-        scope,
-        runtime: runRouteRuntime,
-      })
-    )
-      return;
-
-    if (method === "POST" && pathname === "/system/model-key") {
-      const body = (await parseJsonBody(req)) as { key?: unknown };
-      if (typeof body.key !== "string") throw new HttpError(400, "key must be a string");
-      try {
-        const result = await saveModelKey(body.key);
-        json(res, 200, { configured: result.configured, source: result.source });
-      } catch (error) {
-        throw new HttpError(400, error instanceof Error ? error.message : "Invalid key");
-      }
-      return;
-    }
-
-    if (method === "GET" && pathname === "/doctor") {
-      const result = await runDoctor();
-      json(
-        res,
-        result.ok ? 200 : 503,
-        result.ok ? result : { ...result, error: doctorFailureMessage(result) },
-      );
-      return;
-    }
-
-    // Must be registered before /report/:jobId so "junit" is not treated as an id.
-    if (method === "GET" && pathname === "/report/junit") {
-      const limit = parseLimit(url.searchParams.get("limit"), 50);
-      text(res, 200, toJunitXml(collectVisibleReports(limit, scope)), "text/xml; charset=utf-8");
-      return;
-    }
-
-    if (method === "GET" && pathname === "/report") {
-      const limit = parseLimit(url.searchParams.get("limit"), 20);
-      json(res, 200, { reports: collectVisibleReports(limit, scope) });
-      return;
-    }
-
-    const reportMatch = matchPath(pathname, "/report/:jobId");
-    if (method === "GET" && reportMatch) {
-      const job = getJob(reportMatch.jobId!);
-      if (!job) throw new HttpError(404, "Job not found");
-      if (
-        !scope.localTrusted &&
-        (job.projectId !== scope.projectId || job.ownerId !== scope.subject)
-      ) {
-        throw new HttpError(404, "Job not found");
-      }
-      json(res, 200, toJobReport(job));
-      return;
-    }
-
-    if (method === "GET" && pathname === "/meta") {
-      json(res, 200, serverMeta(scope));
-      return;
-    }
 
     json(res, 404, { error: `Not found: ${method} ${pathname}` });
   } catch (err) {
@@ -684,11 +251,30 @@ async function handleRequest(
   }
 }
 
+/** Server tests must never write into a developer workspace. The isolated
+ * harness (scripts/test-environment.mjs) exports both directories up front;
+ * when the node test runner is active without them, fail fast with the fix
+ * instead of polluting real maps, jobs, and evidence. */
+function assertServerTestIsolation(): void {
+  if (!process.env.NODE_TEST_CONTEXT) return;
+  const missing: string[] = [];
+  if (!process.env.RELAY_STATE_DIR?.trim()) missing.push("RELAY_STATE_DIR");
+  if (!process.env.RELAY_RUNS_DIR?.trim()) missing.push("RELAY_RUNS_DIR");
+  if (missing.length === 0) return;
+  throw new Error(
+    `Server tests require isolated state (${missing.join(", ")} unset). ` +
+      "Run `pnpm --filter @relay/server test` or " +
+      "`npx tsx --import ./scripts/test-environment.mjs --test <file>` from packages/server.",
+  );
+}
+
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
+  assertServerTestIsolation();
   // Acquire before recovery so a concurrent process cannot touch this daemon or journal.
   const stateLease = acquireRelayStateServerLease();
   beginDurableWorkerServerLifecycle();
   try {
+    await loadRelayExtensionsFromEnvironment();
     return await startServerWithStateLease(opts, stateLease);
   } catch (error) {
     stateLease.release();
@@ -794,28 +380,26 @@ async function startServerWithStateLease(
     if (
       !requestHandlers.run(() =>
         targetRuntimeScope.run(() =>
-          handleRequest(
-            req,
-            res,
+          handleRequest(req, res, {
             token,
             externalIdentityVerifier,
-            isLoopbackHost(host),
+            localTrusted: isLoopbackHost(host),
             browserOrigins,
             sse,
-            opts.authoringRuntime,
-            opts.liveVideoStream,
-            opts.captureTargetScreenshot,
-            opts.targetRuntime,
-            opts.appMapTestRunRuntime,
-            opts.jobRouteRuntime,
-            opts.workflowRouteRuntime,
-            opts.runRouteRuntime,
-            opts.stepRunRuntime,
-            opts.campaignDurationRuntime,
+            authoringRuntime: opts.authoringRuntime,
+            liveVideoStream: opts.liveVideoStream,
+            captureTargetScreenshot: opts.captureTargetScreenshot,
+            targetRuntime: opts.targetRuntime,
+            appMapTestRunRuntime: opts.appMapTestRunRuntime,
+            jobRouteRuntime: opts.jobRouteRuntime,
+            workflowRouteRuntime: opts.workflowRouteRuntime,
+            runRouteRuntime: opts.runRouteRuntime,
+            stepRunRuntime: opts.stepRunRuntime,
+            campaignDurationRuntime: opts.campaignDurationRuntime,
             proofRouteRuntime,
             preAuthenticatedRoute,
             goalRouteRuntimeFactory,
-          ),
+          }),
         ),
       )
     ) {

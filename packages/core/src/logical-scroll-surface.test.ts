@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
 import type { AppMap, TargetProfile } from "@relay/protocol";
-import { validateAppMap } from "./app-map.js";
-import { readAuthoringEvidence } from "./authoring-evidence.js";
+import { validateAppMap } from "./app-map/app-map.js";
+import { readAuthoringEvidence } from "./authoring/authoring-evidence.js";
 import {
   attachAppMapScrollSurface,
   logicalScrollSurfaceId,
@@ -14,9 +14,12 @@ import {
   regenerateLogicalScrollSurface,
   replaceAppMapScrollSurfaceDerived,
 } from "./logical-scroll-surface.js";
-import { recommendScrollSurfaceCapturePolicy } from "./scroll-surface-policy.js";
-import { captureScrollableSurvey, type ScrollSurveyResult } from "./scrollable-survey.js";
-import { validatedFrozenOriginForTest } from "./scrollable-survey-test-support.js";
+import { recommendScrollSurfaceCapturePolicy } from "./scroll/scroll-surface-policy.js";
+import {
+  captureScrollableSurvey,
+  type ScrollSurveyResult,
+} from "./scrollable/scrollable-survey.js";
+import { validatedFrozenOriginForTest } from "./scrollable/scrollable-survey-test-support.js";
 
 function png(red: number): string {
   const image = new PNG({ width: 4, height: 4 });

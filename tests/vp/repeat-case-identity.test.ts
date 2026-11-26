@@ -9,14 +9,14 @@ import type {
 import {
   stagePreparedAppMapCombineCells,
   type StagedAppMapCombineCellBatch,
-} from "../../packages/core/src/app-map-combine-cell-run.js";
-import { prepareAppMapCombineCells } from "../../packages/core/src/app-map-combine-cell-prepare.js";
-import { summarizeJob } from "../../packages/core/src/session-summary.js";
+} from "../../packages/core/src/app-map/app-map-combine-cell-run.js";
+import { prepareAppMapCombineCells } from "../../packages/core/src/app-map/app-map-combine-cell-prepare.js";
+import { summarizeJob } from "../../packages/core/src/session/session-summary.js";
 import { runWithOperationContext } from "../../packages/core/src/operation-context.js";
 import {
   findPreviousApprovedRepeatCapture,
   type RepeatCaptureJob,
-} from "../../packages/core/src/repeat-result-review.js";
+} from "../../packages/core/src/repeat/repeat-result-review.js";
 
 function scope(appMapId: string, id: string) {
   return { organizationId: "org", projectId: "project", appMapId, id };

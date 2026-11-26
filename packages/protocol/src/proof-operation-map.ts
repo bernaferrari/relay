@@ -1,4 +1,4 @@
-import type { VerificationPlan } from "./change-impact.js";
+import type { VerificationPlan } from "./change/change-impact.js";
 import type {
   ChangeProofExecutionConfirmationReceipt,
   ChangeProofExecutionHumanInterventionEvidence,
@@ -7,8 +7,8 @@ import type {
   ChangeProofRunHumanEvidenceInput,
   ChangeProofRunInput,
   ChangeProofRunOutput,
-} from "./change-proof-execution.js";
-import type { ChangeVerification } from "./change-verification.js";
+} from "./change/change-proof-execution.js";
+import type { ChangeVerification } from "./change/change-verification.js";
 import type { ProofSetupIntent, ProofSetupPreview } from "./proof-setup.js";
 
 export type ProofOperationMap = {

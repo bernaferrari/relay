@@ -8,23 +8,26 @@
 import { createHash } from "node:crypto";
 import { PNG } from "pngjs";
 import type { AuthoringEvidence } from "@relay/protocol";
-import { authoringEvidenceExists, persistAuthoringEvidence } from "./authoring-evidence.js";
+import {
+  authoringEvidenceExists,
+  persistAuthoringEvidence,
+} from "./authoring/authoring-evidence.js";
 import type { OperationContext } from "./operation-context.js";
 import {
   assertQualifiedHumanInterventionReproof,
   HumanInterventionReproofUnavailableError,
   operationOwnsHumanIntervention,
   recordHumanInterventionReproof,
-} from "./job-intervention.js";
+} from "./job/job-intervention.js";
 import { visualEvidenceAllowed } from "./redaction.js";
-import { observeVisualScreenFingerprint } from "./screen-identity.js";
-import type { TestJob } from "./session-contract.js";
+import { observeVisualScreenFingerprint } from "./screen/screen-identity.js";
+import type { TestJob } from "./session/session-contract.js";
 import {
   cleanupScreenshot,
   isBlankScreenshot,
   type ScreenshotPayload,
   type SnapshotPayload,
-} from "./workspace-capture.js";
+} from "./workspace/workspace-capture.js";
 
 export const HUMAN_INTERVENTION_PIXEL_BRACKET_SCHEMA_VERSION = 1 as const;
 

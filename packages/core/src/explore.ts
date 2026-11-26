@@ -17,17 +17,17 @@ import {
   snapshot,
   type Device,
   type SnapshotNode,
-} from "./device.js";
+} from "./device/device.js";
 import {
   hasProfileChromePrefix,
   profileBackAffordances,
   profileCloseAffordances,
-} from "./discovery-app-profiles.js";
-import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
-import { observeLocaleStableIdentity } from "./screen-identity.js";
-import { currentTargetContext, runWithTargetContext } from "./target-context.js";
-import { captureSnapshot, formatSnapshotTree, interact } from "./workspace.js";
-import { devicePlatformForSerial } from "./workspace.js";
+} from "./discovery/discovery-app-profiles.js";
+import { rethrowIosMutationOutcomeUnknown } from "./ios/ios-mutation-policy.js";
+import { observeLocaleStableIdentity } from "./screen/screen-identity.js";
+import { currentTargetContext, runWithTargetContext } from "./target/target-context.js";
+import { captureSnapshot, formatSnapshotTree, interact } from "./workspace/workspace.js";
+import { devicePlatformForSerial } from "./workspace/workspace.js";
 
 /** Destructive / external rows agents and crawls should skip by default. */
 export function isUnsafeExploreControlText(value: string): boolean {
@@ -83,7 +83,7 @@ export function isExploreChromeLabel(value: string, options?: ExploreChromeOptio
   ) {
     return true;
   }
-  // Section headers often appear as all-caps cells (APP, GROK, VOICE).
+  // Section headers often appear as all-caps cells (APP, CHAT, VOICE).
   if (/^[A-Z0-9][A-Z0-9 &/.-]{0,22}$/.test(value.trim()) && value === value.toUpperCase()) {
     return true;
   }

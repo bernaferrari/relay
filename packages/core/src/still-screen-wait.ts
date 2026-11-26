@@ -1,8 +1,8 @@
 import { cooperativeCheckpoint } from "./control.js";
-import type { Device } from "./device.js";
-import { MAX_WAIT_MS } from "./recipe-validation-primitives.js";
-import { observeVisualScreenFingerprint } from "./screen-identity.js";
-import { captureScreenshot, cleanupScreenshot } from "./workspace-capture.js";
+import type { Device } from "./device/device.js";
+import { MAX_WAIT_MS } from "./recipe/recipe-validation-primitives.js";
+import { observeVisualScreenFingerprint } from "./screen/screen-identity.js";
+import { captureScreenshot, cleanupScreenshot } from "./workspace/workspace-capture.js";
 
 /** Default `wait-for` budget when a recipe omits timeoutMs. */
 export const RECIPE_WAIT_DEFAULT_MS = 8_000;

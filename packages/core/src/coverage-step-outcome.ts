@@ -4,7 +4,7 @@ import {
   type CoverageStepReason,
   type RecipeStep,
 } from "@relay/protocol";
-import type { TraceStep } from "./trace.js";
+import type { TraceStep } from "./trace/trace.js";
 
 export { describeCoverageStepReason, describeCoverageStepReasons };
 export type { CoverageStepReason };

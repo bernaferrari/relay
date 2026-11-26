@@ -1,5 +1,5 @@
 import type { DeviceSummary, TargetDefinition } from "@relay/protocol";
-import { listAndroidDevicesFast, listDevices } from "./workspace-devices.js";
+import { listAndroidDevicesFast, listDevices } from "./workspace/workspace-devices.js";
 import { listTargets } from "./targets.js";
 
 type InventoryDependencies = {

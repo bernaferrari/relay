@@ -410,6 +410,9 @@ importers:
       '@relay/app':
         specifier: workspace:*
         version: link:../app
+      '@relay/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@relay/ui-react':
         specifier: workspace:*
         version: link:../ui-react
@@ -450,6 +453,9 @@ importers:
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

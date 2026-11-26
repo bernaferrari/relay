@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { listReviewInbox } from "./review-inbox.js";
-import { catalogSummaries, rebuildRunCatalog } from "./run-catalog.js";
+import { catalogSummaries, rebuildRunCatalog } from "./run/run-catalog.js";
 
 const NOW = 1_800_000_000_000;
 

@@ -11,7 +11,7 @@ import type {
   ScrollSurveyCapture,
   ScrollSurveyFrame,
   ScrollSurveyResult,
-} from "./scrollable-survey-types.js";
+} from "./scrollable/scrollable-survey-types.js";
 
 export type ValidatedDocumentOriginIssuance = {
   firstViewport: {

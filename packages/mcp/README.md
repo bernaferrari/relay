@@ -26,11 +26,11 @@ reads the same catalog, so instructions match the shipped code.
 
 Relay MCP has three profiles. Each one contains the one before it.
 
-| Profile        | Tools | Use it to                                                              |
-| -------------- | ----- | ---------------------------------------------------------------------- |
-| `qa` (default) | 13    | Write a Test from a sentence, run it, read the verdict, check a change |
-| `device`       | 36    | Everything in `qa`, plus drive a device or browser and record Tests    |
-| `full`         | ~290  | Everything in `device`, plus every raw Relay operation as a tool       |
+| Profile        | Tools  | Use it to                                                                                  |
+| -------------- | ------ | ------------------------------------------------------------------------------------------ |
+| `qa` (default) | 13     | Write a Test from a sentence, run it, read the verdict, check a change                     |
+| `device`       | 36     | Everything in `qa`, plus drive a device or browser and record Tests                        |
+| `full`         | Varies | Everything in `device`, plus advanced raw operations. Renderer-only transport is excluded. |
 
 Pick one with `--profile <name>` or `RELAY_MCP_PROFILE`. Destructive tools
 (cancel, delete, remove, discard, revoke) carry the MCP `destructiveHint`

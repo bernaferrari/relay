@@ -38,7 +38,6 @@ import {
   decodeRepeatWorkflowRef,
   decodeRunWorkflowRef,
   encodeRunWorkflowRef,
-  type RunWorkflowReference,
 } from "./workflow-ref.js";
 import { executionRiskPreflightProblem } from "./execution-risk-preflight.js";
 import { invalidRefSnapshot } from "./invalid-workflow-snapshot.js";
@@ -47,7 +46,6 @@ import { queuedRunIdentityFromJob } from "./run-workflow-execution-identity.js";
 import {
   mutationUnknownWorkflowProblem as mutationUnknownProblem,
   unavailableWorkflowProblem as unavailableProblem,
-  workflowErrorDetail as errorDetail,
 } from "./workflow-problems.js";
 import {
   authoritativePreDispatch,

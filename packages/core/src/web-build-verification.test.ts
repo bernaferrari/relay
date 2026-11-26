@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { resetControlDatabaseCache, saveBuild } from "./collaboration.js";
+import { resetControlDatabaseCache, saveBuild } from "./collaboration/collaboration.js";
 import {
   assertAuthoritativeWebDeploymentMatches,
   issueWebBuildProviderReceipt,

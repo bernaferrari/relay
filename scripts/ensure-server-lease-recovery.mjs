@@ -185,7 +185,7 @@ export function recoverWorkspaceLeaseBeforeServerStart({
     process.execPath,
     [
       tsx,
-      join(root, "packages/core/src/relay-state-server-lease-bootstrap.ts"),
+      join(root, "packages/core/src/relay/relay-state-server-lease-bootstrap.ts"),
       "--workspace-root",
       root,
       "--local-port-listener",

@@ -13,7 +13,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import { findWorkspaceRoot } from "./workspace/workspace-root.js";
 
 const AUTHORITY_SECRET = ".document-origin-attestation-authority";
 const SHA256 = /^[a-f0-9]{64}$/u;

@@ -4,11 +4,11 @@ import { evaluateCanonicalProductModel } from "./check-canonical-product-model.m
 
 const canonicalEntries = [
   {
-    path: "packages/protocol/src/app-map-operation-definitions.ts",
+    path: "packages/protocol/src/app-map/app-map-operation-definitions.ts",
     source: 'define("app-map.variable.infer")',
   },
   {
-    path: "packages/server/src/app-map-capture-routes.ts",
+    path: "packages/server/src/app-map/app-map-capture-routes.ts",
     source: 'matchPath(pathname, "/app-maps/:appMapId/variables/:variableId/infer")',
   },
   {

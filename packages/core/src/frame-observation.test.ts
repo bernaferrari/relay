@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SnapshotNode } from "./device.js";
+import type { SnapshotNode } from "./device/device.js";
 import { frameObservations, recordFrameObservation } from "./frame-observation.js";
-import type { TestJob } from "./session-contract.js";
+import type { TestJob } from "./session/session-contract.js";
 
 const nodes = [
   {

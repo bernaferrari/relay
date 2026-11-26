@@ -14,7 +14,7 @@ import {
 } from "@relay/core";
 import { isCaptureReferenceRegion, type CaptureReviewItem } from "@relay/protocol";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody } from "./http.js";
-import { loadScopedRun } from "./run-routes.js";
+import { loadScopedRun } from "./run/run-routes.js";
 import { recordAudit, type RequestContext } from "./security.js";
 
 type CaptureReferenceRouteContext = {

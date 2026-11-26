@@ -1,26 +1,18 @@
 /** @jsxImportSource react */
 import { usePlanScheduleActions } from "./use-plan-schedule-actions";
 import { catalogQueryKeys } from "../data/catalog-queries";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from "@relay/ui-react/components/dialog";
-import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+
+import { FieldError } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
-import { Input } from "@relay/ui-react/components/input";
+
 import { Checkbox } from "@relay/ui-react/components/checkbox";
-import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
-import { productTestStatusLabel } from "@relay/product/catalog";
+
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Play, RotateCcw } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-patterns";
+import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
@@ -217,7 +209,6 @@ export function SuitePage() {
     staleTime: 10_000,
   });
   const value = suite.data;
-  const needsReview = value?.tests.some((test) => test.status === "needs-review") ?? false;
   const previewBlockers = [...missingAccountBlockers, ...(preview.data?.blockers ?? [])];
   const unusedInputs = (preview.data?.warnings ?? []).filter(
     (issue) => issue.code === "unused-input-data-set",
@@ -253,7 +244,6 @@ export function SuitePage() {
           ? { tone: "muted", message: "Still checking this plan's setup…" }
           : null;
   const unfinishedBatchId = unfinishedRunOf(start.error);
-  const runningCases = executionMode === "pilot" ? Math.min(1, plannedCases) : plannedCases;
 
   return (
     <LibraryPage>

@@ -5,8 +5,8 @@ import {
   processGitHubPullRequestWebhook,
   readGitHubWebhookBody,
   type GitHubProofWebhookConfiguration,
-} from "./github-proof-intake.js";
-import { handlePublicRunShareRoute } from "./run-share-routes.js";
+} from "./github/github-proof-intake.js";
+import { handlePublicRunShareRoute } from "./run/run-share-routes.js";
 
 type PreAuthenticatedRouteInput = {
   method: string;

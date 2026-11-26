@@ -12,7 +12,6 @@ import {
   isCaptureReviewLeftoverCaption,
   liveCaptureReviewAccount,
   projectCaptureReviewDestIdentity,
-  destIdentityReviewItems,
   type OperationId,
   type CaptureReviewObservedSession,
 } from "@relay/protocol";

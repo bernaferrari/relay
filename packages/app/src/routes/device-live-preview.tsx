@@ -7,7 +7,6 @@ import { BrowserAddressBar } from "../components/browser-address-bar";
 import { RecoveryState } from "../components/product-patterns";
 import type {
   LiveTargetBrowserContext,
-  LiveTargetInput,
   LiveTargetSession,
   LiveTargetStatus,
 } from "../data/live-target-session";

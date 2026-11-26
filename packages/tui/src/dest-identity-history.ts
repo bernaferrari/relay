@@ -3,7 +3,7 @@ import { projectCaptureReviewDestIdentity, planCaptureReviewScreenLabel } from "
 /** Dest wait-for caption for TUI history. Leftover Close / Run saved Test /
  * Transition executed / Inspect setup skipped cannot fill dest. Opener before ·
  * Tap cannot fill dest beside those leftovers either. Strip bare `step:…:`
- * engine ids so Model selector SuperGrok matches Plan Gallery / Run report. */
+ * engine ids so a named model-selector step matches Plan Gallery / Run report. */
 export function destIdentityHistoryCaption(
   destIdentity: Array<{ path?: string; caption?: string }> | undefined,
 ): string | undefined {

@@ -3,7 +3,7 @@ import * as z from "zod/v4";
 type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
 /** qa: write, run and read Tests. device: qa plus live device control and
- * recording. full: device plus every raw operation. */
+ * recording. full: device plus advanced raw operations. */
 export const relayMcpProfiles = ["qa", "device", "full"] as const;
 
 export type RelayMcpProfile = (typeof relayMcpProfiles)[number];
@@ -17,6 +17,24 @@ export const relayMcpExclusions = [
   {
     operationId: "target.stream.open",
     reason: "Live target video is a media stream, not an MCP tool.",
+  },
+  {
+    operationId: "target.browser-device.open",
+    reason:
+      "Embedded Browser Device session transport is for the Relay renderer; use the named device tools for manual control.",
+  },
+  {
+    operationId: "target.browser-device.frame",
+    reason: "Embedded Browser Device frames are renderer media transport; use relay_screenshot.",
+  },
+  {
+    operationId: "target.browser-device.inspect",
+    reason:
+      "Embedded Browser Device overlay data is for the renderer; use the target observation tools.",
+  },
+  {
+    operationId: "target.browser-device.control",
+    reason: "Embedded Browser Device input is renderer transport; use the named device tools.",
   },
   {
     operationId: "target.browser-device.frame-binary",

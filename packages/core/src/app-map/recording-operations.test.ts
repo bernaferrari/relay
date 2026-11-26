@@ -7,12 +7,15 @@ import type {
   AuthoringObservation,
   TargetProfile,
 } from "@relay/protocol";
-import { observeScreenIdentity } from "../screen-identity.js";
-import { compileAppMapScenarioTest } from "../app-map-test-compiler.js";
-import { managedBrowserTargetProfile } from "../browser-case-profile-target.js";
-import { nativeCaptureTargetProfile, selectNativeTargetProfile } from "../native-target-profile.js";
-import { frozenRawAccessibilityTargetProfiles } from "../app-map-test-raw-accessibility.js";
-import { resolveSavedAppMapRuntimeTargetProfile } from "../app-map-combine-cell-prepare.js";
+import { observeScreenIdentity } from "../screen/screen-identity.js";
+import { compileAppMapScenarioTest } from "./app-map-test-compiler.js";
+import { managedBrowserTargetProfile } from "../browser/browser-case-profile-target.js";
+import {
+  nativeCaptureTargetProfile,
+  selectNativeTargetProfile,
+} from "../native/native-target-profile.js";
+import { frozenRawAccessibilityTargetProfiles } from "./app-map-test-raw-accessibility.js";
+import { resolveSavedAppMapRuntimeTargetProfile } from "./app-map-combine-cell-prepare.js";
 import { freezeMissingBrowserCaseProfiles } from "./browser-profile-freeze.js";
 import { AppMapDomainError } from "./errors.js";
 import {

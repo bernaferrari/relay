@@ -13,9 +13,9 @@ import {
   MUTATING_ROUTINE_PRESETS,
   STARTING_STATE_ROUTINE_PRESETS,
 } from "@relay/protocol";
-import { compileAppMapConnection } from "./app-map-compiler.js";
+import { compileAppMapConnection } from "./app-map/app-map-compiler.js";
 import { leftoverSkipForbidden } from "./coverage-step-outcome.js";
-import { AppMapTestCompileError } from "./app-map-test-compiler.js";
+import { AppMapTestCompileError } from "./app-map/app-map-test-compiler.js";
 import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
 import {
   assessIntraTestStartingState,

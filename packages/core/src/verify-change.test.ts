@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { exportTracePack } from "./trace-pack.js";
-import type { PersistedRun } from "./runs.js";
+import { exportTracePack } from "./trace/trace-pack.js";
+import type { PersistedRun } from "./runs/runs.js";
 import { VERIFY_CHANGE_POLICY, verifyChangeOffline } from "./verify-change.js";
 
 function frozenRun(): PersistedRun {

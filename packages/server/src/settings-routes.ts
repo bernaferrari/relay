@@ -18,8 +18,7 @@ import {
   setEvidenceCollectionMode,
   currentOperationContext,
 } from "@relay/core";
-import type { SensitiveEvidenceChannel } from "@relay/protocol";
-import { HttpError, json, parseJsonBody } from "./http.js";
+import { HttpError, json, parseJsonBody, parseJsonOperationInput } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
 
 export type SettingsRouteContext = {
@@ -146,35 +145,24 @@ export async function handleSettingsRoute(context: SettingsRouteContext): Promis
     if (!scope.localTrusted) {
       throw new HttpError(403, "Evidence consent can only be changed from a local Relay host");
     }
-    const body = (await parseJsonBody(req)) as {
-      mode?: unknown;
-      channel?: unknown;
-      enabled?: unknown;
-      reason?: unknown;
-    };
-    if (body.mode !== undefined) {
-      if (body.mode !== "lightweight" && body.mode !== "full") {
-        throw new HttpError(400, "mode must be lightweight or full");
-      }
-      if (body.channel !== undefined || body.enabled !== undefined || body.reason !== undefined) {
-        throw new HttpError(400, "Change either evidence mode or sensitive consent");
-      }
+    const parsed = await parseJsonOperationInput(
+      req,
+      "workspace.evidence.update",
+      new URL(req.url ?? pathname, "http://relay.local"),
+      {},
+    );
+    const body:
+      | { mode: "lightweight" | "full" }
+      | {
+          channel: "audio" | "crash" | "network-body" | "network-raw" | "browser-trace";
+          enabled: boolean;
+          reason?: string;
+        } = parsed;
+    if ("mode" in body) {
       const policy = await setEvidenceCollectionMode(body.mode);
       recordAudit(scope, { action: "evidence.mode.update", resource: body.mode, result: "allow" });
       json(res, 200, { policy });
       return true;
-    }
-    if (
-      body.channel !== "audio" &&
-      body.channel !== "crash" &&
-      body.channel !== "network-body" &&
-      body.channel !== "network-raw" &&
-      body.channel !== "browser-trace"
-    ) {
-      throw new HttpError(
-        400,
-        "channel must be audio, crash, network-body, network-raw, or browser-trace",
-      );
     }
     if (
       (body.channel === "browser-trace" || body.channel === "network-raw") &&
@@ -182,15 +170,11 @@ export async function handleSettingsRoute(context: SettingsRouteContext): Promis
     ) {
       throw new HttpError(403, `${body.channel} retention consent requires a human actor`);
     }
-    if (typeof body.enabled !== "boolean") throw new HttpError(400, "enabled must be a boolean");
-    if (body.reason !== undefined && typeof body.reason !== "string") {
-      throw new HttpError(400, "reason must be a string");
-    }
     const policy = await setSensitiveEvidenceConsent({
-      channel: body.channel as SensitiveEvidenceChannel,
+      channel: body.channel,
       enabled: body.enabled,
       grantedBy: scope.subject,
-      ...(typeof body.reason === "string" ? { reason: body.reason } : {}),
+      ...(body.reason !== undefined ? { reason: body.reason } : {}),
     });
     recordAudit(scope, {
       action: body.enabled ? "evidence.consent.grant" : "evidence.consent.revoke",

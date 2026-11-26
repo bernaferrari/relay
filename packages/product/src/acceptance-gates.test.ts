@@ -6,7 +6,7 @@ import {
   PRODUCT_ROUTES,
   findProductAdvancedVocabulary,
 } from "../../../scripts/product-contract.mjs";
-import { ROUTE_DEFINITIONS, routeMeta, routeUrls } from "./routes.js";
+import { ROUTE_DEFINITIONS, routeMeta } from "./routes.js";
 
 test("the executable Product contract stays synchronized with the product registry", () => {
   assert.deepEqual(

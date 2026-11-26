@@ -1,6 +1,6 @@
 import { TestPlanNavigation } from "./test-plan-navigation";
 import { TestRunHistory } from "./test-run-history";
-import { TestStepsOutline } from "./test-steps-outline";
+
 import { flattenSteps } from "./saved-test-steps";
 import { TestEditor, recentAccountIds } from "./edit-test-page";
 import type { PreparedBrowserRecording } from "./test-editor-browser-pane";
@@ -38,7 +38,6 @@ import {
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { startOwnedTestRun, testStartRequests } from "../data/start-owned-test-run";
 import { useTestDocumentReview } from "../data/test-document-surface";
-import { currentTestOutlineCopy } from "../data/workbench-step-selection";
 import { ReviewRecordingPage } from "./review-recording-page";
 import { TestRunSettings } from "./test-run-settings";
 import { TestWorkspaceActions } from "./test-workspace-actions";
@@ -71,7 +70,7 @@ export function TestPage() {
   const appScope = typeof search.app === "string" && search.app ? search.app : undefined;
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
-  const [setupAnchor, setSetupAnchor] = useState<HTMLElement | null>(null);
+  const [, setSetupAnchor] = useState<HTMLElement | null>(null);
   const [devicePreviewBusy, setDevicePreviewBusy] = useState(false);
   const [preparedBrowserState, setPreparedBrowserState] = useState<
     (PreparedBrowserRecording & { testId: string }) | undefined
@@ -398,10 +397,6 @@ export function TestPage() {
   }, [liveRunId, queryClient, testId]);
   const attachedRunId =
     pinnedRunId ?? [...(recentRuns.data ?? [])].sort((a, b) => b.queuedAt - a.queuedAt)[0]?.id;
-  const outlineCopy = currentTestOutlineCopy({
-    stepCount: test.data?.stepCount ?? 0,
-    viewingHistoricalRun: false,
-  });
   const loading = test.isPending;
   const evidenceSteps = flattenSteps(test.data?.steps ?? []);
   const selectedEvidenceStep =

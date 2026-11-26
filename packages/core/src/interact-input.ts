@@ -4,7 +4,11 @@
  * text-match, `label` on a find); those aliases are accepted here so the
  * resolver never sees an undefined selector.
  */
-import type { InteractInput, InteractKey, TextEntryTarget } from "./workspace-interact.js";
+import type {
+  InteractInput,
+  InteractKey,
+  TextEntryTarget,
+} from "./workspace/workspace-interact.js";
 
 export const INTERACT_KEYS: readonly InteractKey[] = [
   "enter",

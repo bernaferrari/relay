@@ -148,7 +148,7 @@ Add `--json` for machine output. Exit codes are designed for loops:
 
 The `qa` profile covers the everyday loop: `relay_create_test`, `relay_run_test`,
 `relay_get_verdict`, `relay_check_change`, and `relay_inspect_failure`. `device` adds live control
-and recording, and `full` exposes every operation. See the [MCP server](./packages/mcp/README.md)
+and recording, and `full` adds advanced raw operations. See the [MCP server](./packages/mcp/README.md)
 and the [agent plugin and skills](./plugins/relay-proof/README.md).
 
 ## Platforms

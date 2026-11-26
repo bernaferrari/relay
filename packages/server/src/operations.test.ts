@@ -217,6 +217,16 @@ test("GET /meta exposes the registry manifest, not a handwritten endpoint list",
       operationDefinitions.map((item) => item.id),
     );
 
+    const malformed = await fetch(`http://127.0.0.1:${server.port}/health`, {
+      headers: {
+        "x-relay-operation-id": "system.health.get",
+        "x-relay-request-id": "request-test",
+        "idempotency-key": "request-test",
+      },
+    });
+    assert.equal(malformed.status, 400);
+    assert.match((await malformed.json()).error, /system\.health\.get input:.*issuedAt/u);
+
     const health = await fetch(`http://127.0.0.1:${server.port}/health`);
     assert.equal(health.status, 200);
     const healthBody = (await health.json()) as {
@@ -300,7 +310,7 @@ function normalizedRoute(method: string, path: string): string {
 }
 
 async function discoverPublicMutationRoutes(): Promise<Set<string>> {
-  const files = ["index.ts", "job-routes.ts", "run-routes.ts", "authoring-routes.ts"];
+  const files = ["index.ts", "job-routes.ts", "run/run-routes.ts", "authoring/authoring-routes.ts"];
   const routes = new Set<string>();
   for (const file of files) {
     const source = await readFile(new URL(file, import.meta.url), "utf8");

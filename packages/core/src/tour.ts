@@ -3,8 +3,8 @@
  * Labels are read live so a language switch does not freeze English copy.
  */
 import type { DestinationEvidenceSurface } from "@relay/protocol";
-import type { SnapshotNode } from "./device.js";
-import { isProfileAppTitle } from "./discovery-app-profiles.js";
+import type { SnapshotNode } from "./device/device.js";
+import { isProfileAppTitle } from "./discovery/discovery-app-profiles.js";
 
 export type TourStop = {
   label: string;
@@ -265,7 +265,7 @@ export function extractTourStops(
   return stops;
 }
 
-/** Live child-row fingerprint. Grok sub-settings often keep the same nav title. */
+/** Live child-row fingerprint. Nested settings often keep the same nav title. */
 export function tourScreenSignature(
   nodes: SnapshotNode[],
   input: { excludeLanguageRows?: boolean } = {},
@@ -332,7 +332,7 @@ export function tourOriginFingerprintMatch(
 }
 
 /** True when the live tree is the mapped list — fingerprint first, then row overlap.
- * Nav title is never enough: Grok child sheets keep header “Settings”. */
+ * Nav title is never enough: nested sheets can keep the parent header. */
 export function onTourOrigin(input: {
   liveFingerprint?: string;
   originFingerprint?: string;

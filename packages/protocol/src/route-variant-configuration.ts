@@ -1,12 +1,5 @@
 import * as z from "zod/v4";
-import type { CaptureReviewConfiguration } from "./capture-review.js";
-import {
-  RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS,
-  RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION,
-  RC23_SCREENSHOT_FIRST_PLATFORMS,
-  RC23_SCREENSHOT_FIRST_TESTS,
-  type Rc23ScreenshotFirstPlatform,
-} from "./rc23-screenshot-first.js";
+import type { CaptureReviewConfiguration } from "./capture/capture-review.js";
 
 /**
  * Plan / compile / capacity JSON lists Android vs iOS vs web as separate
@@ -16,10 +9,16 @@ import {
 export const ROUTE_VARIANT_CONFIGURATION_ASSUMPTION =
   "Android, iOS, and web route variants are separate configurations, not one Test covering three platforms by name.";
 
-export const ROUTE_VARIANT_PLATFORMS = RC23_SCREENSHOT_FIRST_PLATFORMS;
-export type RouteVariantPlatform = Rc23ScreenshotFirstPlatform;
+export const ROUTE_VARIANT_PLATFORMS = ["web", "android", "ios"] as const;
+export type RouteVariantPlatform = (typeof ROUTE_VARIANT_PLATFORMS)[number];
 
-export const ROUTE_VARIANT_PLATFORM_CONFIGURATION = RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION;
+/** Platform labels only. Application, browser, account, and build identity come
+ * from the frozen target/test, never from a product-specific preset. */
+export const ROUTE_VARIANT_PLATFORM_CONFIGURATION = {
+  web: { browser: "browser" },
+  android: { app: "android" },
+  ios: { app: "ios" },
+} as const satisfies Record<RouteVariantPlatform, CaptureReviewConfiguration>;
 
 export type RouteVariantConfigurationQuote = {
   platform: RouteVariantPlatform;
@@ -122,25 +121,6 @@ export function routeVariantConfigurationsFromPlatformWork(
       configuration: captureReviewConfigurationForRoutePlatform(platform),
       workItems,
     });
-  }
-  return listDeclaredRouteVariantConfigurations(members);
-}
-
-/** RC-23 dest-ends already exist per platform. Captions are not Test identity. */
-export function listRc23RouteVariantConfigurations(): RouteVariantConfigurationQuote[] {
-  const members: RouteVariantConfigurationQuote[] = [];
-  for (const checkpointId of RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS) {
-    for (const platform of ROUTE_VARIANT_PLATFORMS) {
-      const testId = RC23_SCREENSHOT_FIRST_TESTS[checkpointId][platform];
-      if (!testId) continue;
-      members.push({
-        platform,
-        configuration: captureReviewConfigurationForRoutePlatform(platform),
-        testId,
-        checkpointId,
-        role: "compiled",
-      });
-    }
   }
   return listDeclaredRouteVariantConfigurations(members);
 }

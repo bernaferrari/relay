@@ -9,6 +9,11 @@ import type {
 } from "@relay/protocol";
 import { createRelayWorkflows, type RepeatTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
+import {
+  appMapFixture,
+  appMapVariableFixture,
+  compiledTestFixture,
+} from "./test-response-fixtures.js";
 
 const target = { kind: "device", platform: "android", targetId: "pixel-9" } as const;
 const repeat: RepeatSpec = {
@@ -158,24 +163,23 @@ function setupSteps(): ScriptedRelayStep[] {
     {
       id: "app-map.get",
       output: {
-        appMap: {
-          revision: 7,
+        appMap: appMapFixture("settings", 7, {
           variables: {
-            language: {
+            language: appMapVariableFixture({
               id: "language",
               name: "Language",
               kind: "language",
               apply: { kind: "appLocale", app: "com.example.app" },
               options: [{ id: "en" }, { id: "it" }],
-            },
+            }),
           },
-        },
+        }),
       },
     },
     {
       id: "app-map.test.compile",
       output: {
-        plan: { rootRecipeId: "base" },
+        plan: compiledTestFixture("settings", 7, "locale-smoke", "base"),
         preflight: {
           schemaVersion: 1,
           mode: "offline-test-preflight",
@@ -263,7 +267,7 @@ test("durable Repeat reserves before pilot and emits only workflow identity plus
           testId: "locale-smoke",
           rootRecipeId: "repeat-root",
         },
-        plan: { rootRecipeId: "repeat-root" },
+        plan: compiledTestFixture("settings", 8, "locale-smoke", "repeat-root"),
         job: { id: "pilot-job", action: "app-map.test.run", status: "queued", queuedAt: 1 },
         jobs: [{ id: "pilot-job", action: "app-map.test.run", status: "queued", queuedAt: 1 }],
         combine: { id: "combine-1", revision: 8 },

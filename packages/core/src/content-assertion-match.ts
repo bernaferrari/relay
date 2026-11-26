@@ -1,4 +1,4 @@
-/** Content-assertion matching used by grok-web `assert-content` steps. */
+/** Content-assertion matching used by host-product `assert-content` steps. */
 
 export type ContentAssertionMatch =
   | "exact"

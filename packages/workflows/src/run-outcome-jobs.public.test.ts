@@ -4,6 +4,7 @@ import type { DurableWorkflowRead, TargetPreflight } from "@relay/protocol";
 import { createRelayRunOutcomeJobs } from "./run-outcome-jobs.js";
 import { createRelayOutcomeJobs } from "./outcome-jobs.js";
 import { createScriptedRelayClient } from "./testing.js";
+import { appMapFixture, compiledTestFixture } from "./test-response-fixtures.js";
 
 const browser = {
   id: "browser-checkout",
@@ -71,7 +72,7 @@ function workflow(
 
 test("run refuses a managed browser until canonical preflight passes", async () => {
   const scripted = createScriptedRelayClient([
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("app-1", 7) } },
     { id: "target.devices.list", output: { devices: [browser] } },
     { id: "target.list", output: { targets: [browserDefinition] } },
     {
@@ -106,7 +107,7 @@ test("run refuses a managed browser until canonical preflight passes", async () 
 
 test("public run entrypoint forwards cold startup into compilation", async () => {
   const scripted = createScriptedRelayClient([
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("app-1", 7) } },
     { id: "target.devices.list", output: { devices: [browser] } },
     { id: "target.list", output: { targets: [browserDefinition] } },
     { id: "target.preflight", output: { preflight: readyPreflight } },
@@ -114,7 +115,7 @@ test("public run entrypoint forwards cold startup into compilation", async () =>
       id: "app-map.test.compile",
       checkInput: (input) => assert.equal((input as { startupMode?: string }).startupMode, "cold"),
       output: {
-        plan: { rootRecipeId: "root", startup: { mode: "cold" } },
+        plan: compiledTestFixture("app-1", 7, "test-1", "root", { startup: { mode: "cold" } }),
         preflight: {
           schemaVersion: 1,
           mode: "offline-test-preflight",
@@ -146,7 +147,7 @@ test("public run entrypoint forwards cold startup into compilation", async () =>
           cursorTimeline: [],
           returns: [],
           findings: [
-            { severity: "blocker", recipeId: "root", code: "missing", message: "blocked" },
+            { severity: "blocker", recipeId: "root", code: "selector-absent", message: "blocked" },
           ],
         },
       },
@@ -169,6 +170,7 @@ test("both public Run entrypoints carry runtime prompts to canonical Test admiss
     id: "native-fixture",
     serial: "native-fixture",
     name: "Native fixture",
+    kind: "emulator",
     booted: true,
     platform: "android" as const,
   };
@@ -176,13 +178,13 @@ test("both public Run entrypoints carry runtime prompts to canonical Test admiss
   const { resource: _resource, ...unstarted } = reserved.record;
   for (const createJobs of [createRelayRunOutcomeJobs, createRelayOutcomeJobs]) {
     const scripted = createScriptedRelayClient([
-      { id: "app-map.get", output: { appMap: { revision: 7 } } },
+      { id: "app-map.get", output: { appMap: appMapFixture("app-1", 7) } },
       { id: "target.devices.list", output: { devices: [native] } },
-      { id: "app-map.get", output: { appMap: { revision: 7 } } },
+      { id: "app-map.get", output: { appMap: appMapFixture("app-1", 7) } },
       {
         id: "app-map.test.compile",
         output: {
-          plan: { rootRecipeId: "root" },
+          plan: compiledTestFixture("app-1", 7, "test-1", "root"),
           preflight: {
             schemaVersion: 1,
             mode: "offline-test-preflight",
@@ -212,6 +214,7 @@ test("both public Run entrypoints carry runtime prompts to canonical Test admiss
             },
             selectors: [],
             cursorTimeline: [],
+            returns: [],
             findings: [],
           },
         },

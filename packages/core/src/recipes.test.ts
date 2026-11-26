@@ -24,17 +24,35 @@ import {
   parseRecipeYaml,
   recipeYamlPath,
   validateRecipeVariables,
-} from "./recipe-yaml.js";
-import { validateRecipeParameters } from "./recipe-validation.js";
+} from "./recipe/recipe-yaml.js";
+import { validateRecipeParameters } from "./recipe/recipe-validation.js";
+import { registerAction } from "./actions.js";
 
 // Isolate the on-disk store in a temp dir for the whole suite.
 let tmp = "";
+let unregisterFixtureActions: (() => void)[] = [];
 before(async () => {
+  unregisterFixtureActions = [
+    registerAction(
+      {
+        id: "update-last-alpha",
+        title: "Update fixture",
+        description: "Fixture action",
+        category: "test",
+      },
+      async () => undefined,
+    ),
+    registerAction(
+      { id: "logout", title: "Logout fixture", description: "Fixture action", category: "test" },
+      async () => undefined,
+    ),
+  ];
   tmp = await mkdtemp(join(tmpdir(), "recipes-test-"));
   process.env.RELAY_RECIPES_DIR = tmp;
   process.env.RELAY_TESTS_DIR = join(tmp, "tests");
 });
 after(async () => {
+  for (const unregister of unregisterFixtureActions.splice(0)) unregister();
   delete process.env.RELAY_RECIPES_DIR;
   delete process.env.RELAY_TESTS_DIR;
   await rm(tmp, { recursive: true, force: true });
@@ -1814,33 +1832,5 @@ describe("describeRecipeStep", () => {
     assert.deepEqual(glyphsForStep({ kind: "screenshot" }), ["shot"]);
     assert.deepEqual(glyphsForStep({ kind: "tour" }), ["tap", "shot"]);
     assert.deepEqual(glyphsForStep({ kind: "flow", flow: "logout" }), ["store"]);
-  });
-});
-
-describe("grok web daily seed YAML", () => {
-  it("opens grok.com by URL instead of the native package", async () => {
-    const source = await readFile(
-      new URL("../../../tests/grok-web-open-composer.relay.yaml", import.meta.url),
-      "utf8",
-    );
-    const recipe = parseRecipeYaml(source);
-    const open = recipe.steps[0];
-    assert.equal(open?.kind, "app");
-    if (open?.kind !== "app") throw new Error("expected app open");
-    assert.equal(open.url, "{{grok_url}}");
-    assert.equal(open.app, undefined);
-  });
-
-  it("modules the seed pack without Settings navigation", async () => {
-    const source = await readFile(
-      new URL("../../../tests/grok-web-daily.relay.yaml", import.meta.url),
-      "utf8",
-    );
-    const recipe = parseRecipeYaml(source);
-    assert.deepEqual(
-      recipe.steps.filter((step) => step.kind === "module").map((step) => step.recipeId),
-      ["grok-web-open-composer", "grok-web-send-hello", "grok-web-new-chat"],
-    );
-    assert.doesNotMatch(source, /Preferences|Preferred Language|App Language/u);
   });
 });

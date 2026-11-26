@@ -18,8 +18,8 @@ import {
 import type { DeviceLease } from "@relay/protocol";
 import { HttpError } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
-import { runWithTargetControlAdmissionLock } from "./target-control-admission-lock.js";
-import { noteTargetLeaseControlUse } from "./target-lease-admission-state.js";
+import { runWithTargetControlAdmissionLock } from "./target/target-control-admission-lock.js";
+import { noteTargetLeaseControlUse } from "./target/target-lease-admission-state.js";
 
 export function localControlSessionOwner(scope: RequestContext): string {
   const key = Buffer.from(`${scope.organizationId}\0${scope.projectId}`, "utf8").toString(

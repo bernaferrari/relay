@@ -71,16 +71,6 @@ async function clickNav(page, name, route) {
   }
 }
 
-async function openRoute(page, route) {
-  const target = new URL(page.url());
-  target.hash = `#${route}`;
-  await page.goto(target.toString(), {
-    waitUntil: "domcontentloaded",
-    timeout: CHECK_TIMEOUT_MS,
-  });
-  await waitForRoute(page, route);
-}
-
 async function assertLayout(page) {
   const layout = await page.evaluate(() => ({
     viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -222,6 +212,9 @@ async function run() {
     throw new Error("The Electron product is not built. Run 'pnpm --filter @relay/desktop build'.");
   }
   await assertRelayHealthy();
+  const electronExecutable = createRequire(resolve(ROOT, "packages/desktop/package.json"))(
+    "electron",
+  );
   const profile = await mkdtemp(join(tmpdir(), "relay-product-electron-"));
   const { _electron: electron } = coreRequire()("playwright-core");
   const failures = [];
@@ -230,10 +223,13 @@ async function run() {
   let reportChecked = false;
 
   try {
+    const electronEnv = { ...process.env };
+    delete electronEnv.ELECTRON_RUN_AS_NODE;
     application = await electron.launch({
+      executablePath: electronExecutable,
       args: [MAIN, `--user-data-dir=${profile}`],
       env: {
-        ...process.env,
+        ...electronEnv,
         RELAY_URL: API,
         RELAY_ELECTRON_SMOKE: "1",
       },

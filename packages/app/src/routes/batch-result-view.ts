@@ -376,7 +376,6 @@ function tidyProfileId(value: string): string {
     .replaceAll(/\s+/gu, " ")
     .trim();
   next = next.replace(/^(browser|ios|android)\s+/iu, "");
-  const compact = next.replaceAll(/\s+/gu, "-").toLowerCase();
   if (!next) return "";
   return titleCaseIdentity(next);
 }

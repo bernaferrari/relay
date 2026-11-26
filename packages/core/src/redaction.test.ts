@@ -14,8 +14,8 @@ import {
   setRedactionEnabled,
   visualEvidenceAllowed,
 } from "./redaction.js";
-import { initializeRunEvidence } from "./run-evidence.js";
-import type { TestJob } from "./session.js";
+import { initializeRunEvidence } from "./run/run-evidence.js";
+import type { TestJob } from "./session/session.js";
 
 test("frozen redaction and mandatory credential masking do not follow mutable global state", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-redaction-frozen-"));

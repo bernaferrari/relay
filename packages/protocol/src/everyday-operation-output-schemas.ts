@@ -1,9 +1,10 @@
 import * as z from "zod/v4";
+import { recipeStepSchema } from "./recipe/recipe-step-schema.js";
 
 /** Actions that last carried out a plain-English step, replayed before the model. */
 export const plainEnglishStepCacheSchema = z
   .object({
-    steps: z.array(z.record(z.string(), z.unknown())).max(40),
+    steps: z.array(recipeStepSchema).max(40),
     runId: z.string(),
     savedAt: z.number(),
   })

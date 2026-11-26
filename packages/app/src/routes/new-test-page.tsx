@@ -54,7 +54,6 @@ export function NewTestPage() {
     browserSpacesService,
     deviceService,
     queryClient,
-    catalogService,
   } = useRouteContext({
     from: "__root__",
   });

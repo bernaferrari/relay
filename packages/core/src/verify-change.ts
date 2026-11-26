@@ -19,14 +19,14 @@ import {
 import {
   approvalPolicyDecisionFromChangeDecision,
   evaluateChangeDecisionPolicy,
-} from "./change-decision-policy.js";
-import { compileExecutionRisk } from "./execution-risk-compiler.js";
-import { replayPersistedRunOffline } from "./offline-run-replay.js";
-import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "./trace-pack.js";
+} from "./change/change-decision-policy.js";
+import { compileExecutionRisk } from "./execution/execution-risk-compiler.js";
+import { replayPersistedRunOffline } from "./offline/offline-run-replay.js";
+import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "./trace/trace-pack.js";
 
 // Preserve the historical core export while making the full definition
 // server-owned and frozen in the integrity module.
-export { VERIFY_CHANGE_POLICY_DEFINITION as VERIFY_CHANGE_POLICY } from "./change-proof-integrity.js";
+export { VERIFY_CHANGE_POLICY_DEFINITION as VERIFY_CHANGE_POLICY } from "./change/change-proof-integrity.js";
 
 export type FrozenVerifyChangeTest = {
   appMap: AppMap;

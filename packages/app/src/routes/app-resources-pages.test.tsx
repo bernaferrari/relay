@@ -11,7 +11,6 @@ import type { MapProductService } from "../data/map-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
-import type { LiveTargetSession, LiveTargetSnapshot } from "../data/live-target-session";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -190,67 +189,6 @@ function button(name: string, root: ParentNode = document): HTMLButtonElement {
   );
   if (!(match instanceof HTMLButtonElement)) throw new TypeError(`Button not found: ${name}`);
   return match;
-}
-
-function accountPreview(
-  target: LiveTargetSnapshot["target"],
-  input: LiveTargetSession["input"],
-  frame?: { sessionId: string; frameSequence: number },
-): LiveTargetSession {
-  let snapshot: LiveTargetSnapshot = { status: "connecting", target };
-  const listeners = new Set<(snapshot: LiveTargetSnapshot) => void>();
-  return {
-    snapshot: () => snapshot,
-    subscribe(listener) {
-      listeners.add(listener);
-      listener(snapshot);
-      return () => listeners.delete(listener);
-    },
-    mount(canvas) {
-      canvas.width = 320;
-      canvas.height = 240;
-      snapshot = {
-        status: "streaming",
-        target,
-        frameSequence: frame?.frameSequence ?? 1,
-        browserContext: {
-          sessionId: frame?.sessionId ?? `session:${target.targetId}`,
-          engine: "chromium",
-          viewport: { width: 320, height: 240 },
-          locale: "en-US",
-        },
-      };
-      listeners.forEach((listener) => listener(snapshot));
-      return () => {};
-    },
-    input,
-    close() {
-      listeners.clear();
-    },
-  };
-}
-
-async function tapAccountPreview(canvas: HTMLCanvasElement) {
-  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 240 }) as DOMRect;
-  canvas.setPointerCapture = () => {};
-  await act(async () => {
-    canvas.dispatchEvent(
-      new MouseEvent("pointerdown", { bubbles: true, clientX: 80, clientY: 100 }),
-    );
-    canvas.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientX: 80, clientY: 100 }));
-  });
-  await settle();
-}
-
-async function menuItem(trigger: string, label: string) {
-  const opener = document.querySelector<HTMLElement>(`button[aria-label="${trigger}"]`);
-  if (!opener) throw new TypeError(`Menu not found: ${trigger}`);
-  await click(opener);
-  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-    (candidate) => candidate.textContent?.trim() === label,
-  );
-  if (!item) throw new TypeError(`Menu item not found: ${label}`);
-  await click(item);
 }
 
 async function click(target: HTMLElement) {

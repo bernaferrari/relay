@@ -9,10 +9,10 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { promisify } from "node:util";
 import type { Build } from "@relay/protocol";
-import { findWorkspaceRoot } from "./workspace-root.js";
-import type { TargetContext } from "./target-context.js";
-import { artifactDigestForProof, artifactSourceSha256 } from "./artifact-digest.js";
-import { AndroidSdkToolError, resolveAndroidSdkTool } from "./android-sdk-tools.js";
+import { findWorkspaceRoot } from "./workspace/workspace-root.js";
+import type { TargetContext } from "./target/target-context.js";
+import { artifactDigestForProof, artifactSourceSha256 } from "./artifact/artifact-digest.js";
+import { AndroidSdkToolError, resolveAndroidSdkTool } from "./android/android-sdk-tools.js";
 
 const execFileAsync = promisify(execFile);
 

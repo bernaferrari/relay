@@ -291,16 +291,6 @@ describe("Tests library", () => {
   });
 });
 
-async function clickText(label: string) {
-  const target = [...document.querySelectorAll<HTMLElement>("button, a, label")].find(
-    (item) =>
-      item.textContent?.trim() === label || (label !== "Run" && item.textContent?.includes(label)),
-  );
-  if (!target) throw new Error(`Control not found: ${label}`);
-  await act(async () => target.click());
-  await settle();
-}
-
 async function settle() {
   for (let index = 0; index < 5; index += 1) {
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));

@@ -28,13 +28,13 @@ import {
   targetLeaseBelongsToCaller,
 } from "./access-control.js";
 import { HttpError } from "./http.js";
-import { verifyCampaignDurationCohortEvidence } from "./campaign-duration-cohort-evidence.js";
+import { verifyCampaignDurationCohortEvidence } from "./campaign/campaign-duration-cohort-evidence.js";
 import type { RequestContext } from "./security.js";
 import {
   runWithLocalCapacityAdmissionLock,
   runWithTargetControlAdmissionLock,
-} from "./target-control-admission-lock.js";
-import { acquireTargetLeasesAtomically } from "./target-lease-admission.js";
+} from "./target/target-control-admission-lock.js";
+import { acquireTargetLeasesAtomically } from "./target/target-lease-admission.js";
 
 export type { LocalCampaignAdmissionRequest } from "@relay/protocol";
 

@@ -10,7 +10,8 @@ import {
   scrollContentFitsViewport,
   scrollCollectControls,
 } from "./explore.js";
-import { IosMutationOutcomeUnknownError, type Device, type SnapshotNode } from "./device.js";
+import { IosMutationOutcomeUnknownError, type Device, type SnapshotNode } from "./device/device.js";
+import { registerGrokDiscoveryTestProfile } from "./discovery/discovery-test-profile.js";
 
 function unknownIosMutation(operation: "press" | "scroll" | "back") {
   return new IosMutationOutcomeUnknownError(
@@ -30,6 +31,7 @@ function unknownIosMutation(operation: "press" | "scroll" | "back") {
     new Error("connection reset"),
   );
 }
+registerGrokDiscoveryTestProfile();
 
 test("explore chrome filters sheet affordances and language switcher", () => {
   assert.equal(isExploreChromeLabel("Close"), true);

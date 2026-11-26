@@ -3,7 +3,7 @@
  */
 import { PNG } from "pngjs";
 
-import { pngDimensions } from "./ios-geometry.js";
+import { pngDimensions } from "./ios/ios-geometry.js";
 
 export type TapPreviewPoint = { x: number; y: number; label?: string };
 

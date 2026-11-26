@@ -138,28 +138,6 @@ async function settle() {
   }
 }
 
-async function fill(label: string, value: string) {
-  const input = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
-  if (!input) throw new Error(`${label} not found`);
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
-async function choose(label: string, option: string) {
-  const trigger = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
-  if (!trigger) throw new Error(`${label} not found`);
-  await act(async () => trigger.click());
-  await settle();
-  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (candidate) => candidate.textContent?.trim() === option,
-  );
-  if (!item) throw new Error(`Option not found: ${label} / ${option}`);
-  await act(async () => item.click());
-  await settle();
-}
-
 async function clickInDialog(label: string) {
   const dialog = document.querySelector('[role="dialog"]');
   const button = [...(dialog?.querySelectorAll("button") ?? [])].find(
@@ -167,21 +145,6 @@ async function clickInDialog(label: string) {
   );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Dialog button not found: ${label}`);
   await act(async () => button.click());
-  await settle();
-}
-
-async function chooseNth(label: string, index: number, option: string) {
-  const trigger = document.querySelectorAll<HTMLButtonElement>(`button[aria-label="${label}"]`)[
-    index
-  ];
-  if (!trigger) throw new Error(`${label} ${index} not found`);
-  await act(async () => trigger.click());
-  await settle();
-  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (candidate) => candidate.textContent?.trim() === option,
-  );
-  if (!item) throw new Error(`Option not found: ${label} / ${option}`);
-  await act(async () => item.click());
   await settle();
 }
 

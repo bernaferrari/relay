@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { targetSessionName, type TargetContext } from "./target-context.js";
+import { targetSessionName, type TargetContext } from "./target/target-context.js";
 
 /**
  * Job control — cooperative pause + aggressive cancel.

@@ -1,88 +1,34 @@
-import { createOperationManifest } from "./operation-manifest.js";
+import { createOperationManifest } from "./operation/operation-manifest.js";
 import { managedFixtureOperationDefinitions } from "./managed-fixture-operation-definitions.js";
 import { e2eOperationDefinitions } from "./e2e-operation-definitions.js";
-import { replayRunInputParser, runIdInputParser } from "./run-replay-operation-parser.js";
-import { createAuthoringSessionParser } from "./authoring-session-operation-parser.js";
-import { captureReviewOperationDefinition } from "./capture-review-operation-definition.js";
-import { assertTargetRuntimeReadiness } from "./target-runtime-readiness-parser.js";
-import {
-  targetDevicesInputParser,
-  targetDevicesOutputParser,
-} from "./target-inventory-input-parser.js";
-import {
-  authoringInteractionParser,
-  authoringSessionListInputParser,
-  authoringSessionListParser,
-  authoringSessionRefParser,
-  authoringSessionResponseParser,
-  commitAuthoringSessionParser,
-  reorderAuthoringTakeParser,
-  replaceAuthoringActionParser,
-  trimAuthoringTakeParser,
-} from "./authoring-interaction-parsers.js";
-import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
-import { isExecutionTargetRef } from "./execution-target.js";
-import { createTargetRecoveryOperationParsers } from "./target-recovery-operation-parsers.js";
-import { createTargetCaptureOperationParsers } from "./target-capture-operation-parsers.js";
-import { runsParser, runListInputParser } from "./run-list-operation-parser.js";
-import { createTargetSupervisorOperationDefinitions } from "./target-supervisor-operation-definition.js";
-import * as authoringOperations from "./authoring-raw-optimization-operation.js";
+import { authoringOperationDefinitions } from "./authoring/authoring-operation-definitions.js";
+import { captureReviewOperationDefinition } from "./capture/capture-review-operation-definition.js";
+import { createTargetSupervisorOperationDefinitions } from "./target/target-supervisor-operation-definition.js";
+import { createTargetObservationOperationDefinition } from "./target/target-observation-operation-definition.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
-import { browserDeviceOperationDefinitions } from "./browser-device-operation-definitions.js";
-import { targetDeviceControlOperationDefinitions } from "./target-device-control-operation-definitions.js";
+import { browserDeviceOperationDefinitions } from "./browser/browser-device-operation-definitions.js";
+import { targetDeviceControlOperationDefinitions } from "./target/target-device-control-operation-definitions.js";
 import { presenceOperationDefinitions } from "./presence-operation-definitions.js";
-import { runRepairOperationDefinitions } from "./run-repair-operations.js";
-import { runEvidenceOperationDefinitions } from "./run-evidence-operation-definitions.js";
-import { captureReferenceOperationDefinitions } from "./capture-reference-operations.js";
-import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
-import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
+import { runRepairOperationDefinitions } from "./run/run-repair-operations.js";
+import { runEvidenceOperationDefinitions } from "./run/run-evidence-operation-definitions.js";
+import { captureReferenceOperationDefinitions } from "./capture/capture-reference-operations.js";
+import { appMapOperationDefinitions } from "./app-map/app-map-operation-definitions.js";
 import { createEverydayOperationDefinitions } from "./everyday-operation-definitions.js";
-import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
-import { workspaceResourceOperationDefinitions } from "./workspace-resource-operation-definitions.js";
+import { campaignCapacityOperationDefinitions } from "./campaign/campaign-capacity-operation-definitions.js";
+import { workspaceResourceOperationDefinitions } from "./workspace/workspace-resource-operation-definitions.js";
 import { durableOperationDefinitions } from "./durable-operation-definitions.js";
 import { scheduleOperationDefinitions } from "./schedule-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
-import { combineOperationDefinitions } from "./combine-operation-definitions.js";
-import { workspaceOperationDefinitions } from "./workspace-operation-definitions.js";
-import { createOperationBuilders } from "./operation-builders.js";
-import { runEvidenceInputParser } from "./run-evidence-operation-parser.js";
-import { validateOperationDefinitions as validateDefinitions } from "./operation-definition-validation.js";
-import type {
-  ActionSummary,
-  DeviceSummary,
-  AndroidAvdBootResult,
-  AndroidAvdInventory,
-  GenerationRequestDto,
-  GenerationResultDto,
-  HealthSummary,
-  IosMutationAttemptDiagnosticDto,
-  OperationId,
-  OperationInput,
-  OperationOutput,
-  RelayOperationMap,
-  RevisionedDto,
-  TestDataDto,
-} from "./operation-map.js";
+import { combineOperationDefinitions } from "./combine/combine-operation-definitions.js";
+import { workspaceOperationDefinitions } from "./workspace/workspace-operation-definitions.js";
 import {
-  projectRoles,
-  type OperationDefinition,
-  type OperationRecord,
-  type ProjectRole,
-  type RuntimeParser,
-} from "./operation-contract.js";
-import {
-  arrayFieldParser,
-  boolean,
-  emptyInputParser,
-  fail,
-  number,
-  objectFieldParser,
-  objectParser,
-  record,
-  string,
-} from "./operation-parser-primitives.js";
-import { VISUAL_REVIEW_ACTIONS } from "./visual-verification.js";
-import { assertIosMutationAttemptDiagnostic } from "./ios-mutation-attempt-parser.js";
+  createSchemaOperationBuilders,
+  operationInputContractFromSchema,
+  operationOutputContractFromSchema,
+} from "./operation/operation-builders.js";
+import { validateOperationDefinitions as validateDefinitions } from "./operation/operation-definition-validation.js";
+import type { OperationId, OperationInput, OperationOutput } from "./operation/operation-map.js";
+import type { OperationDefinition } from "./operation/operation-contract.js";
 export {
   projectRoleAllows,
   projectRoles,
@@ -94,521 +40,28 @@ export {
   type OperationRecord,
   type OperationTransport,
   type ProjectRole,
-  type RuntimeParser,
-} from "./operation-contract.js";
+} from "./operation/operation-contract.js";
 export type {
   ActionSummary,
   DeviceSummary,
   HealthSummary,
-  IosMutationAttemptDiagnosticDto,
   OperationId,
   OperationInput,
   OperationOutput,
   RelayOperationMap,
   StandaloneStepReview,
   StepRunResult,
-} from "./operation-map.js";
+} from "./operation/operation-map.js";
 
-const okParser = objectParser<{ ok: true }>("success response", (input) => {
-  if (input.ok !== true) fail("success response ok", "must be true");
-});
-
-const healthParser = objectParser<HealthSummary>("health response", (input) => {
-  boolean(input.ok, "health ok");
-  string(input.product, "health product");
-  string(input.version, "health version");
-  number(input.at, "health at");
-  number(input.uptimeMs, "health uptimeMs");
-  if (input.access !== undefined) {
-    const access = record(input.access, "health access");
-    if (!projectRoles.includes(access.role as ProjectRole)) {
-      fail("health access role", "must be viewer, author, runner, or admin");
-    }
-    string(access.organizationId, "health access organizationId");
-    string(access.projectId, "health access projectId");
-  }
-});
-
-const activityExportParser: RuntimeParser<{ export: ActivityExport }> = {
-  description: "project activity export",
-  parse: parseActivityExportResponse,
-};
-
-const { targetRecoverInputParser, targetRecoverOutputParser } =
-  createTargetRecoveryOperationParsers({
-    assertTargetRuntimeReadiness,
-  });
-const androidAvdInventoryParser = objectParser<{ inventory: AndroidAvdInventory }>(
-  "target.avds.list output",
-  (input) => {
-    const inventory = record(input.inventory, "Android AVD inventory");
-    if (inventory.available !== true && inventory.available !== false)
-      fail("Android AVD inventory available", "must be a boolean");
-    if (!Array.isArray(inventory.avds)) fail("Android AVD inventory avds", "must be an array");
-    for (const item of inventory.avds) {
-      const avd = record(item, "Android AVD");
-      string(avd.avdName, "Android AVD name");
-      string(avd.name, "Android AVD display name");
-      string(avd.platform, "Android AVD platform");
-      string(avd.kind, "Android AVD kind");
-    }
-  },
-);
-const androidAvdBootParser = objectParser<{ boot: AndroidAvdBootResult }>(
-  "target.avd.boot output",
-  (input) => {
-    const boot = record(input.boot, "Android AVD boot");
-    string(boot.avdName, "Android AVD name");
-    string(boot.serial, "Android AVD serial");
-    if (boot.booted !== true) fail("Android AVD booted", "must be true");
-  },
-);
-const actionsParser = objectParser<{ actions: ActionSummary[] }>("actions response", (input) => {
-  if (!Array.isArray(input.actions)) fail("actions", "must be an array");
-  for (const item of input.actions) {
-    const action = record(item, "action");
-    string(action.id, "action id");
-    string(action.title, "action title");
-  }
-});
-const {
-  screenshotParser,
-  targetObservationOperationDefinition,
-  targetScrollSurveyInputParser,
-  targetScrollSurveyOutputParser,
-  targetSnapshotOutputParser,
-  targetScreenshotInputParser,
-  targetSnapshotInputParser,
-} = createTargetCaptureOperationParsers({ assertTargetRuntimeReadiness });
-const jobsParser = objectParser<OperationOutput<"job.list">>("jobs response", (input) => {
-  if (!Array.isArray(input.jobs)) fail("jobs", "must be an array");
-  for (const item of input.jobs) {
-    const job = record(item, "job summary");
-    string(job.id, "job summary id");
-    string(job.action, "job summary action");
-    string(job.status, "job summary status");
-    number(job.queuedAt, "job summary queuedAt");
-    number(job.frameCount, "job summary frameCount");
-  }
-});
-
-const leaseListInputParser = objectParser<OperationInput<"lease.list">>(
-  "lease list input",
-  (input) => {
-    if (input.status !== undefined && input.status !== "active" && input.status !== "all") {
-      fail("lease list status", "must be active or all");
-    }
-  },
-);
-
-const leaseCreateInputParser = objectParser<OperationInput<"lease.create">>(
-  "lease create input",
-  (input) => {
-    string(input.poolId, "lease create poolId");
-    string(input.deviceSerial, "lease create deviceSerial");
-    if (input.expiresAt !== undefined && number(input.expiresAt, "lease create expiresAt") <= 0) {
-      fail("lease create expiresAt", "must be positive");
-    }
-  },
-);
-
-const leaseTakeoverInputParser = objectParser<OperationInput<"lease.takeover">>(
-  "lease takeover input",
-  (input) => {
-    string(input.leaseId, "lease takeover leaseId");
-    if (input.expiresAt !== undefined && number(input.expiresAt, "lease takeover expiresAt") <= 0) {
-      fail("lease takeover expiresAt", "must be positive");
-    }
-    string(input.reason, "lease takeover reason");
-    if (input.confirm !== true) fail("lease takeover confirm", "must be true");
-  },
-);
-
-const jobIdInputParser = objectParser<{ jobId: string }>("job input", (input) => {
-  string(input.jobId, "job id");
-});
-
-const offlineRunReplayOutputParser = objectParser<OperationOutput<"run.replay.offline">>(
-  "offline run replay response",
-  (input) => {
-    const report = record(input.report, "offline run replay report");
-    if (report.schemaVersion !== 1) fail("offline run replay report schemaVersion", "must be 1");
-    if (report.mode !== "offline-evidence-replay") {
-      fail("offline run replay report mode", "must be offline-evidence-replay");
-    }
-    string(report.runId, "offline run replay report runId");
-    string(report.sourceRunStatus, "offline run replay report sourceRunStatus");
-    string(report.planDigest, "offline run replay report planDigest");
-    const summary = record(report.summary, "offline run replay report summary");
-    for (const key of [
-      "checks",
-      "proved",
-      "rootFailures",
-      "invalidCascades",
-      "independentFailures",
-    ]) {
-      number(summary[key], `offline run replay report summary ${key}`);
-    }
-    for (const key of ["cursorTimeline", "checks", "blockers"]) {
-      if (!Array.isArray(report[key])) {
-        fail(`offline run replay report ${key}`, "must be an array");
-      }
-    }
-  },
-);
-
-const stepRunOutputParser = objectParser<OperationOutput<"step.run">>(
-  "standalone step response",
-  (input) => {
-    const response = input as unknown as OperationRecord;
-    boolean(response.ok, "standalone step ok");
-    number(response.durationMs, "standalone step durationMs");
-    if (!Array.isArray(response.logs) || response.logs.some((entry) => typeof entry !== "string")) {
-      fail("standalone step logs", "must be an array of strings");
-    }
-    if (response.ok === true) {
-      if (response.terminal !== undefined) {
-        fail("standalone step terminal", "is only valid on failure");
-      }
-      return;
-    }
-    string(response.error, "standalone step error");
-    if (response.code === undefined) {
-      if (response.terminal !== undefined) fail("standalone step terminal", "is unsupported");
-      return;
-    }
-    if (response.code !== "IOS_MUTATION_OUTCOME_UNKNOWN") {
-      fail("standalone step code", "is unsupported");
-    }
-    if (response.terminal !== "review-needed") {
-      fail("standalone step terminal", "must be review-needed for an unknown iOS outcome");
-    }
-    assertIosMutationAttemptDiagnostic(response.iosMutation, "standalone step iOS mutation");
-    const mutation = response.iosMutation as IosMutationAttemptDiagnosticDto;
-    if (
-      mutation.outcome !== "outcome-unknown" ||
-      mutation.retry.decision !== "blocked" ||
-      mutation.retry.reason !== "native-command-outcome-unknown" ||
-      mutation.intervention.required !== true ||
-      mutation.intervention.action !== "capture-current-screen-before-any-retry"
-    ) {
-      fail("standalone step iOS mutation", "must describe a blocked unknown outcome");
-    }
-    if (response.iosSessionLifecycle !== undefined) {
-      assertIosSessionOperationLifecycle(
-        response.iosSessionLifecycle,
-        "standalone step iOS session lifecycle",
-      );
-    }
-    if (response.iosVisualVerification !== undefined) {
-      record(response.iosVisualVerification, "standalone step iOS visual verification");
-    }
-    const review = record(response.stepReview, "standalone step review");
-    const captureCurrent = record(review.captureCurrent, "standalone step review captureCurrent");
-    if (captureCurrent.operationId !== "target.screenshot.capture") {
-      fail("standalone step review captureCurrent operationId", "must capture a target screenshot");
-    }
-    const captureInput = record(
-      captureCurrent.input,
-      "standalone step review captureCurrent input",
-    );
-    string(captureInput.serial, "standalone step review captureCurrent serial");
-  },
-);
-
-const targetAppLaunchInputParser = objectParser<OperationInput<"target.app.launch">>(
-  "target app launch input",
-  (input) => {
-    string(input.serial, "target app launch serial");
-    string(input.app, "target app launch app");
-    if (input.relaunch !== undefined) boolean(input.relaunch, "target app launch relaunch");
-  },
-);
-
-const targetAppLaunchOutputParser = objectParser<OperationOutput<"target.app.launch">>(
-  "target app launch response",
-  (input) => {
-    const launched = record(input.launched, "launched app");
-    string(launched.serial, "launched app serial");
-    string(launched.app, "launched app name");
-    if (
-      launched.platform !== "android" &&
-      launched.platform !== "ios" &&
-      launched.platform !== "browser"
-    ) {
-      fail("launched app platform", "must be android, ios, or browser");
-    }
-    number(launched.launchedAt, "launched app timestamp");
-    const observed = record(input.observed, "observed foreground app");
-    if (observed.app !== undefined) string(observed.app, "observed foreground app name");
-    boolean(observed.matched, "observed foreground app matched");
-    if (observed.coveredBy !== undefined) string(observed.coveredBy, "observed covering app");
-  },
-);
-
-const targetAppLocalesInputParser = objectParser<OperationInput<"target.app.locales">>(
-  "target app locales input",
-  (input) => {
-    string(input.serial, "target app locales serial");
-    string(input.package, "target app locales package");
-  },
-);
-
-const targetAppLocalesOutputParser = objectParser<OperationOutput<"target.app.locales">>(
-  "target app locales response",
-  (input) => {
-    string(input.packageName, "target app locales package name");
-    if (!Array.isArray(input.locales)) fail("target app locales", "must be an array");
-    for (const locale of input.locales) string(locale, "target app locale");
-    if (input.currentLocale !== undefined) string(input.currentLocale, "target app current locale");
-    if (
-      input.source !== undefined &&
-      input.source !== "android-locale-manager" &&
-      input.source !== "android-device-locale"
-    )
-      fail("target app locale source", "must be an Android locale source");
-  },
-);
-
-const targetAppListInputParser = objectParser<OperationInput<"target.app.list">>(
-  "target app list input",
-  (input) => string(input.serial, "target app list serial"),
-);
-
-const targetAppListOutputParser = objectParser<OperationOutput<"target.app.list">>(
-  "target app list response",
-  (input) => {
-    if (!Array.isArray(input.apps)) fail("target app list apps", "must be an array");
-    input.apps.forEach((app, index) => {
-      const item = record(app, `target app list app ${index}`);
-      string(item.package, `target app list app ${index} package`);
-      string(item.name, `target app list app ${index} name`);
-    });
-  },
-);
-
-const targetAppLocaleSetInputParser = objectParser<OperationInput<"target.app.locale.set">>(
-  "target app locale set input",
-  (input) => {
-    string(input.serial, "target app locale set serial");
-    string(input.package, "target app locale set package");
-    string(input.locale, "target app locale set locale");
-  },
-);
-
-const targetAppLocaleSetOutputParser = objectParser<OperationOutput<"target.app.locale.set">>(
-  "target app locale set response",
-  (input) => {
-    string(input.packageName, "target app locale set package name");
-    string(input.locale, "target app locale set locale");
-    if (input.observedLocale !== undefined) {
-      string(input.observedLocale, "target app locale set observed locale");
-    }
-  },
-);
-
-const startJobInputParser = objectParser<OperationInput<"job.start">>("job input", (input) => {
-  string(input.recipe, "job recipe");
-  if (input.executionTarget !== undefined && !isExecutionTargetRef(input.executionTarget)) {
-    fail("job executionTarget", "must be a valid execution target reference");
-  }
-});
-
-const revisionedVariablesParser = objectParser<RevisionedDto<TestDataDto[]>>(
-  "variables response",
-  (input) => {
-    number(input.revision, "variables revision");
-    number(input.updatedAt, "variables updatedAt");
-    if (!Array.isArray(input.value)) fail("variables value", "must be an array");
-  },
-);
-
-const visualCompareInputParser = objectParser<OperationInput<"run.visual.compare">>(
-  "visual comparison input",
-  (input) => string(input.runId, "visual comparison runId"),
-);
-
-const runReviewInputParser = objectParser<OperationInput<"run.review">>(
-  "run review input",
-  (input) => {
-    string(input.runId, "run review runId");
-    if (input.action !== "approve" && input.action !== "reject" && input.action !== "defer") {
-      fail("run review action", 'must be "approve", "reject", or "defer"');
-    }
-    if (input.note !== undefined) string(input.note, "run review note");
-  },
-);
-
-const runReviewOutputParser = objectParser<OperationOutput<"run.review">>(
-  "run review response",
-  (input) => {
-    record(input.run, "run review run");
-    record(input.review, "run review decision");
-  },
-);
-
-const visualReviewInputParser = objectParser<OperationInput<"run.visual.review">>(
-  "visual review input",
-  (input) => {
-    string(input.runId, "visual review runId");
-    string(input.comparisonId, "visual review comparisonId");
-    const action = string(input.action, "visual review action");
-    if (!(VISUAL_REVIEW_ACTIONS as readonly string[]).includes(action)) {
-      fail("visual review action", "is unsupported");
-    }
-    if (input.note !== undefined) string(input.note, "visual review note");
-  },
-);
-
-function assertVisualRegion(value: unknown, index: number): void {
-  const region = record(value, `visual region ${index + 1}`);
-  string(region.id, `visual region ${index + 1} id`);
-  string(region.name, `visual region ${index + 1} name`);
-  if (region.mode !== "compare" && region.mode !== "ignore") {
-    fail(`visual region ${index + 1} mode`, "must be compare or ignore");
-  }
-  const frameIndex = number(region.frameIndex, `visual region ${index + 1} frameIndex`);
-  if (!Number.isInteger(frameIndex) || frameIndex < 0) {
-    fail(`visual region ${index + 1} frameIndex`, "must be a non-negative integer");
-  }
-  const x = number(region.x, `visual region ${index + 1} x`);
-  const y = number(region.y, `visual region ${index + 1} y`);
-  const width = number(region.width, `visual region ${index + 1} width`);
-  const height = number(region.height, `visual region ${index + 1} height`);
-  if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1 || y + height > 1) {
-    fail(`visual region ${index + 1}`, "must fit inside normalized frame bounds");
-  }
-}
-
-const visualPolicyGetInputParser = objectParser<OperationInput<"run.visual-policy.get">>(
-  "visual policy input",
-  (input) => string(input.runId, "visual policy runId"),
-);
-
-const visualPolicyUpdateInputParser = objectParser<OperationInput<"run.visual-policy.update">>(
-  "visual policy update input",
-  (input) => {
-    string(input.runId, "visual policy runId");
-    const revision = number(input.expectedRevision, "visual policy expectedRevision");
-    if (!Number.isInteger(revision) || revision < 0)
-      fail("visual policy expectedRevision", "must be a non-negative integer");
-    const changeThreshold = number(input.changeThreshold, "visual policy changeThreshold");
-    if (changeThreshold < 0 || changeThreshold > 1)
-      fail("visual policy changeThreshold", "must be between 0 and 1");
-    const pixelThreshold = number(input.pixelThreshold, "visual policy pixelThreshold");
-    if (!Number.isInteger(pixelThreshold) || pixelThreshold < 0 || pixelThreshold > 255)
-      fail("visual policy pixelThreshold", "must be an integer from 0 to 255");
-    if (!Array.isArray(input.regions) || input.regions.length > 100)
-      fail("visual policy regions", "must be an array with at most 100 regions");
-    input.regions.forEach(assertVisualRegion);
-  },
-);
-
-const visualBaselineInputParser = objectParser<OperationInput<"run.visual-baseline.update">>(
-  "visual baseline input",
-  (input) => {
-    string(input.runId, "visual baseline runId");
-    if (input.action !== "approve-new-baseline") {
-      fail("visual baseline action", "must be approve-new-baseline");
-    }
-    if (input.note !== undefined) string(input.note, "visual baseline note");
-  },
-);
-
-const visualComparisonOutputParser = objectFieldParser<OperationOutput<"run.visual.compare">>(
-  "visual comparison response",
-  "comparison",
-);
-
-const visualReviewOutputParser = objectParser<OperationOutput<"run.visual.review">>(
-  "visual review response",
-  (input) => {
-    record(input.decision, "visual review decision");
-    if (input.baseline !== null) record(input.baseline, "visual review baseline");
-  },
-);
-
-const visualBaselineOutputParser = objectParser<OperationOutput<"run.visual-baseline.update">>(
-  "visual baseline response",
-  (input) => {
-    record(input.comparison, "visual baseline comparison");
-    record(input.decision, "visual baseline decision");
-    record(input.baseline, "visual baseline");
-  },
-);
-
-const visualPolicyOutputParser = objectParser<OperationOutput<"run.visual-policy.get">>(
-  "visual policy response",
-  (input) => record(input.policy, "visual comparison policy"),
-);
-
-const visualPolicyUpdateOutputParser = objectParser<OperationOutput<"run.visual-policy.update">>(
-  "visual policy update response",
-  (input) => {
-    record(input.policy, "visual comparison policy");
-    record(input.comparison, "visual comparison");
-  },
-);
-
-const generationInputParser = objectParser<GenerationRequestDto>("generation input", (input) => {
-  if (input.purpose !== "variable" && input.purpose !== "test-plan") {
-    fail("generation purpose", "must be variable or test-plan");
-  }
-  string(input.prompt, "generation prompt");
-  if (
-    input.allowedValues !== undefined &&
-    (!Array.isArray(input.allowedValues) ||
-      input.allowedValues.some((value) => typeof value !== "string" || !value.trim()))
-  ) {
-    fail("generation allowedValues", "must contain non-empty strings");
-  }
-});
-
-const generationOutputParser = objectParser<GenerationResultDto>("generation response", (input) => {
-  string(input.provider, "generation provider");
-  string(input.model, "generation model");
-  if (!Array.isArray(input.values) || input.values.some((value) => typeof value !== "string")) {
-    fail("generation values", "must be an array of strings");
-  }
-  number(input.generatedAt, "generation generatedAt");
-  if (input.usage !== undefined) {
-    const usage = record(input.usage, "generation usage");
-    for (const field of ["inputTokens", "outputTokens", "totalTokens", "costUsd"] as const) {
-      if (usage[field] !== undefined) number(usage[field], `generation usage ${field}`);
-    }
-  }
-  if (input.provenance !== undefined) {
-    const provenance = record(input.provenance, "generation provenance");
-    string(provenance.requestId, "generation provenance requestId");
-    string(provenance.promptDigest, "generation provenance promptDigest");
-    number(provenance.startedAt, "generation provenance startedAt");
-    number(provenance.completedAt, "generation provenance completedAt");
-    number(provenance.durationMs, "generation provenance durationMs");
-  }
-});
-
-const { command, query } = createOperationBuilders<RelayOperationMap>();
+const { command, query } = createSchemaOperationBuilders();
 const discoveryOperationDefinitions = createDiscoveryOperationDefinitions();
 const everydayOperationDefinitions = createEverydayOperationDefinitions();
-const appMapOperationDefinitions = createAppMapOperationDefinitions({
-  boolean,
-  emptyInputParser,
-  fail,
-  number,
-  objectFieldParser,
-  objectParser,
-  okParser,
-  record,
-  string,
-});
 type ExactOperationDefinition = {
   [Id in OperationId]: OperationDefinition<Id, OperationInput<Id>, OperationOutput<Id>>;
 }[OperationId];
 export const operationDefinitions = [
   query("system.health.get", "Get Relay health", "/health", {
     category: "system",
-    input: emptyInputParser,
-    output: healthParser,
   }),
   ...everydayOperationDefinitions,
   query("activity.list", "List durable project activity", "/activity", {
@@ -618,8 +71,6 @@ export const operationDefinitions = [
   query("activity.export", "Export project activity", "/activity/export", {
     category: "workspace",
     minimumRole: "admin",
-    input: emptyInputParser,
-    output: activityExportParser,
   }),
   query("event.stream", "Stream Relay events", "/events", {
     category: "system",
@@ -630,18 +81,12 @@ export const operationDefinitions = [
   ...appleDeviceOperationDefinitions,
   query("target.actions.list", "List available actions", "/actions", {
     category: "target",
-    input: emptyInputParser,
-    output: actionsParser,
   }),
   query("target.devices.list", "List connected targets", "/devices", {
     category: "target",
-    input: targetDevicesInputParser,
-    output: targetDevicesOutputParser,
   }),
   query("target.avds.list", "List configured Android emulators", "/devices/avds", {
     category: "target",
-    input: emptyInputParser,
-    output: androidAvdInventoryParser,
   }),
   query("target.list", "List managed targets", "/targets", { category: "target" }),
   command("target.create", "Create managed target", "POST", "/targets", {
@@ -661,12 +106,6 @@ export const operationDefinitions = [
   command("target.boot", "Boot target", "POST", "/device/boot", { category: "target" }),
   command("target.avd.boot", "Boot a named Android emulator", "POST", "/device/avd/boot", {
     category: "target",
-    input: objectParser("Android AVD boot", (input) => {
-      string(input.avdName, "Android AVD name");
-      if (input.timeoutMs !== undefined) number(input.timeoutMs, "Android AVD timeoutMs");
-      if (input.headless !== undefined) boolean(input.headless, "Android AVD headless");
-    }),
-    output: androidAvdBootParser,
     minimumRole: "runner",
     idempotency: "optional",
   }),
@@ -679,21 +118,14 @@ export const operationDefinitions = [
     category: "evidence",
     targetCapabilities: ["snapshot"],
     lease: "shared",
-    input: targetSnapshotInputParser,
-    output: targetSnapshotOutputParser,
   }),
   query("target.screenshot.capture", "Capture target screenshot", "/screenshot", {
     category: "evidence",
     targetCapabilities: ["screenshot"],
     lease: "shared",
-    input: targetScreenshotInputParser,
-    output: screenshotParser,
   }),
-  targetObservationOperationDefinition,
-  ...createTargetSupervisorOperationDefinitions({
-    assertTargetRuntimeReadiness,
-    targetObservation: targetObservationOperationDefinition.output,
-  }),
+  createTargetObservationOperationDefinition(),
+  ...createTargetSupervisorOperationDefinitions(),
   command(
     "target.scroll-survey.capture",
     "Capture a bounded scrollable-page survey",
@@ -703,8 +135,6 @@ export const operationDefinitions = [
       category: "target",
       targetCapabilities: ["scroll", "snapshot", "screenshot"],
       lease: "exclusive",
-      input: targetScrollSurveyInputParser,
-      output: targetScrollSurveyOutputParser,
       progress: false,
       cancellable: false,
     },
@@ -714,38 +144,28 @@ export const operationDefinitions = [
     targetCapabilities: ["launch"],
     lease: "exclusive",
     idempotency: "inherent",
-    input: targetAppLaunchInputParser,
-    output: targetAppLaunchOutputParser,
   }),
   query("target.app.locales", "List app-declared locales", "/device/app/locales", {
     category: "target",
     targetCapabilities: ["snapshot"],
     lease: "shared",
-    input: targetAppLocalesInputParser,
-    output: targetAppLocalesOutputParser,
   }),
   query("target.app.list", "List installed apps", "/device/apps", {
     category: "target",
     targetCapabilities: ["snapshot"],
     lease: "shared",
-    input: targetAppListInputParser,
-    output: targetAppListOutputParser,
   }),
   command("target.app.locale.set", "Set an app's per-app locale", "POST", "/device/app/locale", {
     category: "target",
     targetCapabilities: ["snapshot"],
     lease: "exclusive",
     idempotency: "inherent",
-    input: targetAppLocaleSetInputParser,
-    output: targetAppLocaleSetOutputParser,
   }),
   command("target.recover", "Repair target connection", "POST", "/device/recover", {
     category: "target",
     targetCapabilities: ["snapshot", "tap"],
     lease: "exclusive",
     idempotency: "inherent",
-    input: targetRecoverInputParser,
-    output: targetRecoverOutputParser,
   }),
   command("target.interact", "Interact with target", "POST", "/interact", {
     category: "target",
@@ -813,238 +233,40 @@ export const operationDefinitions = [
   ...workspaceResourceOperationDefinitions,
   query("target-worker.list", "List target workers", "/target-workers", {
     category: "target",
-    input: emptyInputParser,
-    output: arrayFieldParser<OperationOutput<"target-worker.list">>(
-      "target workers response",
-      "workers",
-    ),
   }),
   ...campaignCapacityOperationDefinitions,
-  query("lease.list", "List target leases", "/device-leases", {
-    input: leaseListInputParser,
-    output: arrayFieldParser("leases response", "leases"),
-  }),
+  query("lease.list", "List target leases", "/device-leases", {}),
   command("lease.create", "Lease target", "POST", "/device-leases", {
     confirmation: "confirm",
-    input: leaseCreateInputParser,
-    output: objectFieldParser("lease response", "lease"),
   }),
   command("lease.takeover", "Take over target lease", "POST", "/device-leases/:leaseId/takeover", {
     confirmation: "dangerous",
-    input: leaseTakeoverInputParser,
-    output: objectFieldParser("lease response", "lease"),
   }),
-  command("lease.release", "Release target lease", "POST", "/device-leases/:leaseId/release", {
-    output: objectFieldParser("lease response", "lease"),
-  }),
+  command("lease.release", "Release target lease", "POST", "/device-leases/:leaseId/release", {}),
   command("action.run", "Run action and wait", "POST", "/actions/:actionId/run", {
     category: "execution",
     progress: true,
     cancellable: true,
   }),
-  query("workspace.variables.get", "Get project variables", "/project/variables", {
-    input: emptyInputParser,
-    output: revisionedVariablesParser,
-  }),
-  command("workspace.variables.update", "Update project variables", "PUT", "/project/variables", {
-    output: revisionedVariablesParser,
-  }),
+  query("workspace.variables.get", "Get project variables", "/project/variables", {}),
+  command(
+    "workspace.variables.update",
+    "Update project variables",
+    "PUT",
+    "/project/variables",
+    {},
+  ),
   ...appMapOperationDefinitions,
-  query("authoring.session.list", "List Authoring Sessions", "/authoring-sessions", {
-    category: "authoring",
-    input: authoringSessionListInputParser,
-    output: authoringSessionListParser,
-  }),
-  query("authoring.session.get", "Get Authoring Session", "/authoring-sessions/:sessionId", {
-    category: "authoring",
-    input: authoringSessionRefParser,
-    output: authoringSessionResponseParser,
-  }),
-  command("authoring.session.create", "Create Authoring Session", "POST", "/authoring-sessions", {
-    category: "authoring",
-    input: createAuthoringSessionParser,
-    output: authoringSessionResponseParser,
-    targetCapabilities: ["snapshot", "screenshot"],
-    lease: "exclusive",
-  }),
-  command(
-    "authoring.session.begin",
-    "Create and Start Authoring Take",
-    "POST",
-    "/authoring-sessions/begin",
-    {
-      category: "authoring",
-      input: createAuthoringSessionParser,
-      output: authoringSessionResponseParser,
-      targetCapabilities: ["snapshot", "screenshot"],
-      lease: "exclusive",
-    },
-  ),
-  command(
-    "authoring.session.observe",
-    "Observe Authoring Target",
-    "POST",
-    "/authoring-sessions/:sessionId/observe",
-    {
-      category: "authoring",
-      input: authoringSessionRefParser,
-      output: authoringSessionResponseParser,
-      targetCapabilities: ["snapshot", "screenshot"],
-      lease: "exclusive",
-    },
-  ),
-  command(
-    "authoring.session.capture",
-    "Capture Authoring Screen",
-    "POST",
-    "/authoring-sessions/:sessionId/capture",
-    {
-      category: "authoring",
-      input: authoringSessionRefParser,
-      output: authoringSessionResponseParser,
-      targetCapabilities: ["snapshot", "screenshot"],
-      lease: "exclusive",
-    },
-  ),
-  command(
-    "authoring.session.start",
-    "Start Authoring Take",
-    "POST",
-    "/authoring-sessions/:sessionId/start",
-    {
-      category: "authoring",
-      input: authoringSessionRefParser,
-      output: authoringSessionResponseParser,
-      targetCapabilities: ["snapshot", "screenshot"],
-      lease: "exclusive",
-    },
-  ),
-  command(
-    "authoring.session.interact",
-    "Interact During Authoring",
-    "POST",
-    "/authoring-sessions/:sessionId/interact",
-    {
-      category: "authoring",
-      input: authoringInteractionParser,
-      output: authoringSessionResponseParser,
-      targetCapabilities: ["tap", "type", "scroll"],
-      lease: "exclusive",
-    },
-  ),
-  command(
-    "authoring.session.stop",
-    "Stop Authoring Take",
-    "POST",
-    "/authoring-sessions/:sessionId/stop",
-    {
-      category: "authoring",
-      input: authoringSessionRefParser,
-      output: authoringSessionResponseParser,
-      targetCapabilities: ["snapshot", "screenshot"],
-      lease: "exclusive",
-    },
-  ),
-  authoringOperations.authoringRawOptimizationOperationDefinition,
-  command(
-    "authoring.take.trim",
-    "Trim Authoring Take",
-    "POST",
-    "/authoring-sessions/:sessionId/trim",
-    {
-      category: "authoring",
-      input: trimAuthoringTakeParser,
-      output: authoringSessionResponseParser,
-    },
-  ),
-  command(
-    "authoring.take.reorder",
-    "Reorder Authoring Take",
-    "POST",
-    "/authoring-sessions/:sessionId/reorder",
-    {
-      category: "authoring",
-      input: reorderAuthoringTakeParser,
-      output: authoringSessionResponseParser,
-    },
-  ),
-  command(
-    "authoring.take.replace",
-    "Replace Authoring Action",
-    "POST",
-    "/authoring-sessions/:sessionId/actions/:actionId",
-    {
-      category: "authoring",
-      input: replaceAuthoringActionParser,
-      output: authoringSessionResponseParser,
-    },
-  ),
-  authoringOperations.authoringTakeEditOperationDefinition,
-  command(
-    "authoring.take.replay",
-    "Replay Authoring Take",
-    "POST",
-    "/authoring-sessions/:sessionId/replay",
-    {
-      category: "authoring",
-      input: authoringSessionRefParser,
-      output: authoringSessionResponseParser,
-      targetCapabilities: ["tap", "type", "scroll", "snapshot", "screenshot"],
-      lease: "exclusive",
-      progress: true,
-      cancellable: true,
-    },
-  ),
-  command(
-    "authoring.session.commit",
-    "Commit Authoring Take",
-    "POST",
-    "/authoring-sessions/:sessionId/commit",
-    {
-      category: "authoring",
-      input: commitAuthoringSessionParser,
-      output: authoringSessionResponseParser,
-    },
-  ),
-  command(
-    "authoring.session.discard",
-    "Discard Authoring Take",
-    "POST",
-    "/authoring-sessions/:sessionId/discard",
-    {
-      category: "authoring",
-      input: authoringSessionRefParser,
-      output: authoringSessionResponseParser,
-    },
-  ),
-  command(
-    "authoring.session.cancel",
-    "Cancel Authoring Session",
-    "POST",
-    "/authoring-sessions/:sessionId/cancel",
-    {
-      category: "authoring",
-      input: authoringSessionRefParser,
-      output: authoringSessionResponseParser,
-    },
-  ),
-  command(
-    "authoring.session.cleanup",
-    "Remove Authoring Session",
-    "DELETE",
-    "/authoring-sessions/:sessionId",
-    { category: "authoring", input: authoringSessionRefParser, output: okParser },
-  ),
+  ...authoringOperationDefinitions,
   ...scheduleOperationDefinitions,
   ...managedFixtureOperationDefinitions,
   ...e2eOperationDefinitions,
   ...discoveryOperationDefinitions,
-  query("job.list", "List jobs", "/jobs", { category: "execution", output: jobsParser }),
-  query("job.get", "Get job", "/jobs/:jobId", { category: "execution", input: jobIdInputParser }),
+  query("job.list", "List jobs", "/jobs", { category: "execution" }),
+  query("job.get", "Get job", "/jobs/:jobId", { category: "execution" }),
   ...durableOperationDefinitions,
   command("job.start", "Start job", "POST", "/jobs", {
     category: "execution",
-    input: startJobInputParser,
     progress: true,
     cancellable: true,
   }),
@@ -1055,23 +277,19 @@ export const operationDefinitions = [
   }),
   command("run.replay", "Replay recorded run", "POST", "/runs/:runId/replay", {
     category: "execution",
-    input: replayRunInputParser,
     progress: true,
     cancellable: true,
   }),
   command("job.cancel", "Cancel job", "POST", "/jobs/:jobId/cancel", {
     category: "execution",
-    input: jobIdInputParser,
     idempotency: "inherent",
   }),
   command("job.pause", "Pause job", "POST", "/jobs/:jobId/pause", {
     category: "execution",
-    input: jobIdInputParser,
     idempotency: "inherent",
   }),
   command("job.resume", "Resume job", "POST", "/jobs/:jobId/resume", {
     category: "execution",
-    input: jobIdInputParser,
     idempotency: "inherent",
   }),
   command("job.active.cancel", "Cancel active job", "POST", "/jobs/active/cancel", {
@@ -1102,32 +320,23 @@ export const operationDefinitions = [
   }),
   query("run.list", "List Runs", "/runs", {
     category: "execution",
-    input: runListInputParser,
-    output: runsParser,
   }),
   query("run.get", "Get Run", "/runs/:runId", {
     category: "evidence",
-    input: runIdInputParser,
   }),
   query("run.replay.offline", "Replay Run Offline", "/runs/:runId/replay-offline", {
     category: "evidence",
-    input: runIdInputParser,
-    output: offlineRunReplayOutputParser,
   }),
   ...runRepairOperationDefinitions,
   command("run.review", "Review a deferred run check", "POST", "/runs/:runId/review", {
     category: "evidence",
     confirmation: "confirm",
-    input: runReviewInputParser,
-    output: runReviewOutputParser,
   }),
   query("run.evidence.get", "Get Run Evidence", "/runs/:runId/evidence", {
     category: "evidence",
-    input: runEvidenceInputParser,
   }),
   query("run.story.get", "Get Run story", "/runs/:runId/story", {
     category: "evidence",
-    input: runIdInputParser,
   }),
   ...runEvidenceOperationDefinitions,
   ...captureReferenceOperationDefinitions,
@@ -1147,8 +356,6 @@ export const operationDefinitions = [
     {
       category: "evidence",
       confirmation: "confirm",
-      input: visualBaselineInputParser,
-      output: visualBaselineOutputParser,
     },
   ),
   command(
@@ -1158,21 +365,15 @@ export const operationDefinitions = [
     "/runs/:runId/visual-comparison",
     {
       category: "evidence",
-      input: visualCompareInputParser,
-      output: visualComparisonOutputParser,
     },
   ),
   command("run.visual.review", "Review visual comparison", "POST", "/runs/:runId/visual-review", {
     category: "evidence",
     confirmation: "confirm",
-    input: visualReviewInputParser,
-    output: visualReviewOutputParser,
   }),
   captureReviewOperationDefinition,
   query("run.visual-policy.get", "Get visual comparison policy", "/runs/:runId/visual-policy", {
     category: "evidence",
-    input: visualPolicyGetInputParser,
-    output: visualPolicyOutputParser,
   }),
   command(
     "run.visual-policy.update",
@@ -1182,8 +383,6 @@ export const operationDefinitions = [
     {
       category: "evidence",
       confirmation: "confirm",
-      input: visualPolicyUpdateInputParser,
-      output: visualPolicyUpdateOutputParser,
     },
   ),
   command("run.pin.update", "Pin Run", "POST", "/runs/:runId/pin", { category: "execution" }),
@@ -1193,21 +392,27 @@ export const operationDefinitions = [
     lease: "exclusive",
     progress: true,
     cancellable: true,
-    output: stepRunOutputParser,
   }),
   command("generation.create", "Generate test data", "POST", "/generate", {
     category: "authoring",
-    input: generationInputParser,
-    output: generationOutputParser,
   }),
 ] as const satisfies readonly ExactOperationDefinition[];
+
+const operationDefinitionById = new Map(
+  operationDefinitions.map((definition) => [definition.id, definition] as const),
+);
 
 export function operationDefinition<Id extends OperationId>(
   id: Id,
 ): OperationDefinition<Id, OperationInput<Id>, OperationOutput<Id>> {
-  const definition = operationDefinitions.find((candidate) => candidate.id === id);
+  const definition = operationDefinitionById.get(id);
   if (!definition) throw new Error(`Unknown operation: ${id}`);
-  return definition as OperationDefinition<Id, OperationInput<Id>, OperationOutput<Id>>;
+  return {
+    ...definition,
+    id,
+    input: operationInputContractFromSchema(id),
+    output: operationOutputContractFromSchema(id),
+  };
 }
 
 export function validateOperationDefinitions(
@@ -1216,7 +421,7 @@ export function validateOperationDefinitions(
   validateDefinitions(definitions);
 }
 
-export type { OperationManifestItem } from "./operation-manifest.js";
+export type { OperationManifestItem } from "./operation/operation-manifest.js";
 export function operationManifest(
   definitions: readonly OperationDefinition[] = operationDefinitions,
 ) {

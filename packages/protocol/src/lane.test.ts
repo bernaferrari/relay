@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { operationDefinition } from "./operations.js";
-import { laneSaveInputSchema } from "./lane.js";
+import { laneSaveInputSchema } from "./lane/lane.js";
 
 const browserLane = {
   id: "shop-lab",

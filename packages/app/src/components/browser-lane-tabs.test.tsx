@@ -3,7 +3,6 @@ import { browserLaneHostIdentity } from "@relay/protocol";
 import type { ProductAccountLane } from "../data/app-resources-product-service";
 import {
   browserLaneTabLabel,
-  browserLaneTabOpenBlocker,
   createBrowserLaneTab,
   isolatedBrowserLanesForTarget,
 } from "./browser-lane-tabs";
@@ -50,32 +49,5 @@ describe("browser Lane tabs", () => {
       "grok-daily",
       "grok-lab",
     ]);
-  });
-
-  it("refuses Electron grok-lab SuperGrok when persist:lane:grok-lab is unproven", () => {
-    expect(browserLaneTabOpenBlocker({ laneId: "grok-lab" })).toMatch(
-      /persist:lane:grok-lab is absent/,
-    );
-    expect(
-      browserLaneTabOpenBlocker({
-        laneId: "grok-lab",
-        electronGrokLabPartitionPresent: false,
-      }),
-    ).toMatch(/persist:lane:grok-lab is absent/);
-    expect(
-      browserLaneTabOpenBlocker({
-        laneId: "grok-lab",
-        electronGrokLabPartitionPresent: true,
-      }),
-    ).toBeUndefined();
-    expect(browserLaneTabOpenBlocker({ laneId: "grok-auth-gmail" })).toBeUndefined();
-    expect(() =>
-      createBrowserLaneTab({
-        id: "grok-lab",
-        targetId: "grok-com",
-        kind: "fixture",
-        reference: "authfx:lab:1",
-      }),
-    ).not.toThrow();
   });
 });

@@ -10,8 +10,8 @@ import {
   readProjectVariables,
   resetControlDatabaseCache,
   writeProjectVariables,
-} from "./collaboration.js";
-import { withControlStore } from "./collaboration-store.js";
+} from "./collaboration/collaboration.js";
+import { withControlStore } from "./collaboration/collaboration-store.js";
 import { validateProjectVariables } from "./project-variable-update.js";
 
 const prompt: TestData = {

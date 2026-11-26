@@ -7,11 +7,11 @@ import {
   serializeAuthoringSession,
   summarizeAuthoringOperationResult,
   type AuthoringSession,
-} from "./authoring.js";
+} from "./authoring/authoring.js";
 import {
   CONTROL_AND_RECORD_PROVENANCE,
   parseAuthoringCaptureProvenance,
-} from "./authoring-capture.js";
+} from "./authoring/authoring-capture.js";
 
 function session(state: AuthoringSession["state"]): AuthoringSession {
   return {

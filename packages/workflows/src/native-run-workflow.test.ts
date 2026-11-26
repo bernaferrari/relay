@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ExecutionRisk } from "@relay/protocol";
+import type { AppMapCompiledRawAccessibilityTargetProfile, ExecutionRisk } from "@relay/protocol";
 import { createRelayWorkflows, type RunTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
+import { compiledTestFixture } from "./test-response-fixtures.js";
 
 const target = { kind: "device", platform: "ios", targetId: "ipad" } as const;
 const profiles = [
   { id: "old", targetId: "ipad", platform: "ios", viewport: { width: 834, height: 1112 } },
   { id: "current", targetId: "ipad", platform: "ios", viewport: { width: 1112, height: 834 } },
-] as const;
+] satisfies AppMapCompiledRawAccessibilityTargetProfile[];
 const safe: ExecutionRisk = {
   schemaVersion: 1,
   level: "safe",
@@ -41,7 +42,9 @@ function compile(blockers = [selectionBlocker], executionRisk = safe): ScriptedR
   return {
     id: "app-map.test.compile",
     output: {
-      plan: { rootRecipeId: "root", rawAccessibilityTargetProfiles: profiles },
+      plan: compiledTestFixture("settings", 7, "smoke", "root", {
+        rawAccessibilityTargetProfiles: profiles,
+      }),
       preflight: {
         schemaVersion: 1,
         mode: "offline-test-preflight",
@@ -50,7 +53,18 @@ function compile(blockers = [selectionBlocker], executionRisk = safe): ScriptedR
         testId: "smoke",
         planDigest: "preliminary-plan",
         executionRisk,
-        summary: { blockers: blockers.length },
+        summary: {
+          recipes: 1,
+          checkedSelectors: 0,
+          resolvedSelectors: 0,
+          unknownCursorTransitions: 0,
+          reviewRequiredReturns: 0,
+          blockers: blockers.length,
+          warnings: 0,
+        },
+        selectors: [],
+        cursorTimeline: [],
+        returns: [],
         findings: blockers.map((finding) => ({
           severity: "blocker",
           recipeId: "root",
@@ -69,14 +83,10 @@ function canonicalJob(
   } = {},
 ) {
   const profile = input.omitProfile ? undefined : (input.profile ?? profiles[1]);
-  const plan = {
-    appMapId: "settings",
-    appMapRevision: 7,
-    test: { id: "smoke" },
-    rootRecipeId: "root",
+  const plan = compiledTestFixture("settings", 7, "smoke", "root", {
     rawAccessibilityTargetProfiles: profiles,
     ...(profile ? { runtimeTargetProfile: profile } : {}),
-  };
+  });
   const report = {
     schemaVersion: 1,
     mode: "offline-test-preflight",
@@ -85,7 +95,18 @@ function canonicalJob(
     testId: "smoke",
     planDigest: "canonical-plan",
     executionRisk: safe,
-    summary: { blockers: 0 },
+    summary: {
+      recipes: 1,
+      checkedSelectors: 0,
+      resolvedSelectors: 0,
+      unknownCursorTransitions: 0,
+      reviewRequiredReturns: 0,
+      blockers: 0,
+      warnings: 0,
+    },
+    selectors: [],
+    cursorTimeline: [],
+    returns: [],
     findings: [],
   };
   return {
@@ -138,7 +159,9 @@ function run(job: unknown = canonicalJob()): ScriptedRelayStep {
         testId: "smoke",
         rootRecipeId: "root",
       },
-      plan: { rootRecipeId: "root", runtimeTargetProfile: profiles[1] },
+      plan: compiledTestFixture("settings", 7, "smoke", "root", {
+        runtimeTargetProfile: profiles[1],
+      }),
       job,
     },
   };
@@ -264,7 +287,7 @@ test("lost native Run response recovers its actual profile and digest using the 
   const scripted = createScriptedRelayClient([
     compile(),
     { id: "app-map.test.run", error: new Error("response lost after dispatch") },
-    { id: "job.list", output: { jobs: [canonical] } },
+    { id: "job.list", output: { jobs: [canonical], activeJobs: [canonical] } },
     { id: "job.get", output: { job: canonical } },
   ]);
   const workflows = createRelayWorkflows(scripted.client);

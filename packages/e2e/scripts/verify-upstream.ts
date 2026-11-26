@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, writeFile, readFile, readdir, symlink, rm } from "node:fs/promises";
+import { mkdir, writeFile, readFile, symlink, rm } from "node:fs/promises";
 import { resolve, join, dirname, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -46,7 +46,7 @@ test.skip('not selected for execution',async()=>{});
 await writeFile(join(root, "tests/parity.e2e.ts"), source);
 await writeFile(
   join(root, "tests/cancel.e2e.ts"),
-  `import {test,expect} from 'e2e';test('cancel',async({app,screen})=>{await app.open();await expect(screen.getByRole('status')).toContainText('never')});`,
+  `import { test, expect } from 'e2e';test('cancel',async({app,screen})=>{await app.open();await expect(screen.getByRole('status')).toContainText('never')});`,
 );
 const reporterPath = join(packageRoot, "dist/index.js");
 const reports: any[] = [];
@@ -57,7 +57,7 @@ try {
       imported = join(root, kind + "-import");
     await writeFile(
       join(root, "e2e.config.ts"),
-      `import {web} from '@e2e-dev/web';import {relayReporter} from ${JSON.stringify(reporterPath)};export default {projectId:'conformance',targets:[{name:'web',engine:web(),app:{url:${JSON.stringify(url)}}}],tests:'tests/parity.e2e.ts',workers:1,retries:1,assertionTimeout:150,cache:'off',output:${JSON.stringify(output)},reporters:['json'${kind === "relay" ? `,relayReporter({directory:${JSON.stringify(imported)},requireHumanReview:true})` : ""}]};`,
+      `import { web } from '@e2e-dev/web';import { relayReporter } from ${JSON.stringify(reporterPath)};export default {projectId:'conformance',targets:[{name:'web',engine:web(),app:{url:${JSON.stringify(url)}}}],tests:'tests/parity.e2e.ts',workers:1,retries:1,assertionTimeout:150,cache:'off',output:${JSON.stringify(output)},reporters:['json'${kind === "relay" ? `,relayReporter({directory:${JSON.stringify(imported)},requireHumanReview:true})` : ""}]};`,
     );
     const result = await runE2EProject({
       projectRoot: root,

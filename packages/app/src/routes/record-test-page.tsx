@@ -37,12 +37,7 @@ import {
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
-import {
-  PageLoading,
-  ReconnectLiveViewButton,
-  errorMessage,
-  targetLabel,
-} from "./recording-shared";
+import { PageLoading, ReconnectLiveViewButton, targetLabel } from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
 import { currentAccessibilityInspection } from "../data/talkback-overlay";
 import { conditionTextSuggestions } from "../data/recording-condition-suggestions";

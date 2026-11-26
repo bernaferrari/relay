@@ -3,8 +3,8 @@ import type { AppMap } from "@relay/protocol";
 import type { PlayerMapSnapshot } from "./player-manifest.js";
 import { canonicalSha256, type CanonicalSha256 } from "./canonical-json.js";
 import { buildPlayerManifest, type PlayerManifest } from "./player-manifest.js";
-import { readFrameFile } from "./run-artifact-files.js";
-import type { PersistedRun } from "./runs.js";
+import { readFrameFile } from "./run/run-artifact-files.js";
+import type { PersistedRun } from "./runs/runs.js";
 
 export type WalkthroughPackFrame = {
   runId: string;

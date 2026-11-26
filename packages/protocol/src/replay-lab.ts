@@ -1,6 +1,6 @@
 import * as z from "zod/v4";
-import { tracePackComparisonSchema } from "./trace-pack-comparison.js";
-import { tracePackVisualLocalizationSchema } from "./trace-pack-visual-localization.js";
+import { tracePackComparisonSchema } from "./trace/trace-pack-comparison.js";
+import { tracePackVisualLocalizationSchema } from "./trace/trace-pack-visual-localization.js";
 
 const sha256 = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
 

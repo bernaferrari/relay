@@ -38,7 +38,7 @@ export type RoutineSharingPolicy = (typeof ROUTINE_SHARING_POLICIES)[number];
 export const ROUTINE_ACCOUNT_ISOLATION = ["browser-lane-only", "server-account"] as const;
 export type RoutineAccountIsolation = (typeof ROUTINE_ACCOUNT_ISOLATION)[number];
 
-/** Playwright / Chrome user-data isolation is not a second Grok account. */
+/** Playwright / Chrome user-data isolation is not a second product account. */
 export const BROWSER_LANE_ISOLATION_NOTE =
   "Browser Lane isolation is Playwright/browser storage isolation. It is not server-side account isolation. Same-account concurrent mutation is unsafe even across Lanes.";
 
@@ -244,7 +244,8 @@ const uniqueEnum = <T extends string>(values: readonly T[], label: string) =>
     .superRefine((items, context) => {
       if (new Set(items).size === items.length) return;
       context.addIssue({ code: "custom", message: `${label} must not repeat a value` });
-    });
+    })
+    .readonly();
 
 export const routineEffectsSchema = z
   .object({

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseActivityExportResponse } from "./activity.js";
+import { parseActivityExportResponse } from "./activity/activity.js";
 
 const record = {
   schemaVersion: 1,

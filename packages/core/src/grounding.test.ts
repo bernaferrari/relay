@@ -7,7 +7,8 @@ import {
   groundTarget,
   type Grounder,
 } from "./grounding.js";
-import type { SnapshotNode } from "./device.js";
+import type { SnapshotNode } from "./device/device.js";
+import { registerGrokDiscoveryTestProfile } from "./discovery/discovery-app-profiles.fixtures.js";
 
 const askImagineMenu: SnapshotNode[] = [
   {
@@ -85,41 +86,51 @@ test("InteractInput passthrough skips matching", async () => {
 });
 
 test("Menu heuristic fires when Ask/Imagine are present", async () => {
-  const result = await groundTarget({
-    serial: "fake",
-    target: "Menu",
-    nodes: askImagineMenu,
-    grounder: new StubVisionGrounder(),
-  });
-  assert.equal(result.method, "heuristic");
-  assert.equal(result.interaction.kind, "point");
-  if (result.interaction.kind === "point") {
-    assert.ok(result.interaction.x < 200);
-    assert.ok(result.interaction.y > 100);
+  const unregister = registerGrokDiscoveryTestProfile();
+  try {
+    const result = await groundTarget({
+      serial: "fake",
+      target: "Menu",
+      nodes: askImagineMenu,
+      grounder: new StubVisionGrounder(),
+    });
+    assert.equal(result.method, "heuristic");
+    assert.equal(result.interaction.kind, "point");
+    if (result.interaction.kind === "point") {
+      assert.ok(result.interaction.x < 200);
+      assert.ok(result.interaction.y > 100);
+    }
+  } finally {
+    unregister();
   }
 });
 
 test("structured error lists candidates when nothing matches", async () => {
-  await assert.rejects(
-    () =>
-      groundTarget({
-        serial: "fake",
-        target: "NotARealControl",
-        nodes: askImagineMenu,
-        grounder: new StubVisionGrounder(),
-        screenshot: { base64: "aaa" },
-      }),
-    (error: unknown) => {
-      assert.ok(error instanceof GroundingError);
-      assert.match(error.message, /No unique match/);
-      assert.ok(error.candidates.some((item) => item.label === "Appearance"));
-      assert.ok(error.candidates.some((item) => item.label === "Menu"));
-      const json = error.toJSON();
-      assert.equal(json.code, "grounding_failed");
-      assert.ok(Array.isArray(json.candidates));
-      return true;
-    },
-  );
+  const unregister = registerGrokDiscoveryTestProfile();
+  try {
+    await assert.rejects(
+      () =>
+        groundTarget({
+          serial: "fake",
+          target: "NotARealControl",
+          nodes: askImagineMenu,
+          grounder: new StubVisionGrounder(),
+          screenshot: { base64: "aaa" },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof GroundingError);
+        assert.match(error.message, /No unique match/);
+        assert.ok(error.candidates.some((item) => item.label === "Appearance"));
+        assert.ok(error.candidates.some((item) => item.label === "Menu"));
+        const json = error.toJSON();
+        assert.equal(json.code, "grounding_failed");
+        assert.ok(Array.isArray(json.candidates));
+        return true;
+      },
+    );
+  } finally {
+    unregister();
+  }
 });
 
 test("createDefaultGrounder stubs when OpenRouter key is missing", () => {

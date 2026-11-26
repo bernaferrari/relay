@@ -9,9 +9,9 @@ export {
   approvalPolicyDecisionForChange,
   evaluateChangeDecisionPolicy,
   evaluateChangeVerificationPolicy,
-} from "./change-decision-policy.js";
+} from "./change/change-decision-policy.js";
 
-import { approvalPolicyDecisionForChange } from "./change-decision-policy.js";
+import { approvalPolicyDecisionForChange } from "./change/change-decision-policy.js";
 import type { ApprovalPolicyInput } from "@relay/protocol";
 
 /** Historical approval-policy output, projected from the canonical decision. */

@@ -13,12 +13,11 @@ import {
   REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
   REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
   REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
-} from "./reviewed-document-origin.js";
-import { operationInputSchemas } from "./operation-input-schemas.js";
-import { operationOutputSchemas } from "./operation-output-schemas.js";
-import { graphTest } from "./app-map-test-operation-schemas.js";
+} from "./reviewed/reviewed-document-origin.js";
+import { operationInputSchemas } from "./operation/operation-input-schemas.js";
+import { operationOutputSchemas } from "./operation/operation-output-schemas.js";
+import { graphTest } from "./app-map/app-map-test-operation-schemas.js";
 import { destEndCoverageForRequirement } from "./recipes.js";
-import { RC23_SCREENSHOT_FIRST_TESTS } from "./rc23-screenshot-first.js";
 import * as z from "zod/v4";
 
 test("target inventory accepts an explicit kind and exact id while preserving default discovery", () => {
@@ -29,8 +28,209 @@ test("target inventory accepts an explicit kind and exact id while preserving de
     targetKind: "browser",
     targetId: "browser-1",
   });
-  assert.throws(() => input.parse({ targetKind: "guess" }), /device or browser/u);
+  assert.throws(
+    () => input.parse({ targetKind: "guess" }),
+    /targetKind[\s\S]*device[\s\S]*browser/u,
+  );
   assert.throws(() => input.parse({ targetId: "" }));
+});
+
+test("authoring interactions round-trip recipe steps and reject unsupported step kinds", () => {
+  const interact = operationDefinition("authoring.session.interact").input;
+  const tapped = {
+    sessionId: "session-a",
+    interaction: {
+      kind: "tap" as const,
+      target: { identifier: "settings-cell" },
+      expectedApp: "com.example.app",
+    },
+  };
+  assert.deepEqual(interact.parse(tapped), tapped);
+  const steps = {
+    sessionId: "session-a",
+    interaction: {
+      kind: "steps" as const,
+      label: "reused",
+      applied: true,
+      steps: [{ kind: "wait-for" as const, target: { text: "Ready" } }],
+    },
+  };
+  assert.deepEqual(interact.parse(steps), steps);
+  const unsupported = {
+    sessionId: "session-a",
+    interaction: { kind: "steps" as const, steps: [{ kind: "unsupported" }] },
+  };
+  assert.throws(() => interact.parse(unsupported), /steps/u);
+  assert.equal(interact.presentation.safeParse(unsupported).success, false);
+  const replace = operationDefinition("authoring.take.replace").input;
+  assert.throws(
+    () =>
+      replace.parse({
+        sessionId: "session-a",
+        actionId: "action-1",
+        interaction: unsupported.interaction,
+      }),
+    /steps/u,
+  );
+});
+
+test("run retention applies the genuine storage policy and rejects phantom limits", () => {
+  const input = operationDefinition("run.retention.apply").input;
+  assert.deepEqual(input.parse({ maxAgeDays: 1.5, dryRun: true }), {
+    maxAgeDays: 1.5,
+    dryRun: true,
+  });
+  for (const bad of [
+    { maxRuns: 10 },
+    { olderThanMs: 1000 },
+    { maxAgeDays: -1 },
+    { maxAgeDays: 0 },
+  ]) {
+    assert.throws(() => input.parse(bad));
+    assert.equal(input.presentation.safeParse(bad).success, false);
+  }
+});
+
+test("test compile normalizes singleton and repeated recapture identifiers", () => {
+  const input = operationDefinition("app-map.test.compile").input;
+  assert.deepEqual(
+    input.parse({ appMapId: "app", testId: "test", forceRecaptureScreenIds: "screen" }),
+    { appMapId: "app", testId: "test", forceRecaptureScreenIds: ["screen"] },
+  );
+  assert.deepEqual(
+    input.parse({ appMapId: "app", testId: "test", forceRecaptureScreenIds: ["a", "b"] })
+      .forceRecaptureScreenIds,
+    ["a", "b"],
+  );
+  for (const bad of [
+    { appMapId: "app", testId: "test", forceRecaptureScreenIds: ["a", "a"] },
+    { appMapId: "app", testId: "test", forceRecaptureScreenIds: " " },
+  ]) {
+    assert.throws(() => input.parse(bad));
+    assert.equal(input.presentation.safeParse(bad).success, false);
+  }
+});
+
+test("combine preflight round-trips selection strategy and account capacity", () => {
+  const definition = operationDefinition("app-map.combine.preflight");
+  const input = {
+    appMapId: "grok-web",
+    combineId: "daily",
+    selected: { language: ["en", "ja"] },
+    strategy: "pairwise" as const,
+  };
+  assert.deepEqual(definition.input.parse(input), input);
+  assert.equal(
+    definition.input.presentation.safeParse({ ...input, strategy: "random" }).success,
+    false,
+  );
+  const output = {
+    preflight: {
+      ok: true,
+      appMapId: "grok-web",
+      combineId: "daily",
+      name: "Daily",
+      formula: "language x browser",
+      strategy: "pairwise",
+      variables: [{ id: "language", name: "Language", selectedCount: 2, availableCount: 2 }],
+      tests: [{ id: "smoke", name: "Smoke", kind: "scenario" }],
+      worlds: 2,
+      checks: 2,
+      deviceRuns: 2,
+      blockers: [],
+      warnings: [],
+      cells: [
+        {
+          cellId: "cell-1",
+          testId: "smoke",
+          testName: "Smoke",
+          values: { language: "en" },
+          worldLabel: "en",
+          binding: "bound",
+        },
+      ],
+    },
+    accountCapacity: {
+      estimatedParallelDurationMs: 1200,
+      laneCount: 2,
+      workItems: 2,
+      workItemDurationMs: 600,
+      observedDurationMs: 1100,
+      observedWorkItemCount: 4,
+    },
+  };
+  assert.deepEqual(definition.output.parse(JSON.parse(JSON.stringify(output))), output);
+  const flowOutput = JSON.parse(JSON.stringify(output));
+  flowOutput.preflight.tests[0].kind = "flow";
+  assert.throws(() => definition.output.parse(flowOutput), /kind/u);
+});
+
+test("workspace.evidence.update requires exactly one of mode or channel consent", () => {
+  const input = operationDefinition("workspace.evidence.update").input;
+  assert.deepEqual(input.parse({ mode: "full" }), { mode: "full" });
+  assert.deepEqual(input.parse({ channel: "audio", enabled: true }), {
+    channel: "audio",
+    enabled: true,
+  });
+  for (const bad of [
+    { mode: "full", channel: "audio", enabled: true },
+    { mode: "full", reason: "mixed" },
+    {},
+    { channel: "audio" },
+    { enabled: false },
+  ]) {
+    assert.throws(() => input.parse(bad), /Change either mode/u);
+    assert.equal(input.presentation.safeParse(bad).success, false);
+  }
+});
+
+test("target operations validate their shared schema inputs", () => {
+  const health = operationDefinition("target.health.get").input;
+  assert.throws(() => health.parse({ serial: "  " }), /serial/u);
+  const reconcile = operationDefinition("target.input.reconcile").input;
+  const input = {
+    serial: "ipad",
+    mutationId: "mutation-1",
+    resolutionId: "review-1",
+    outcome: "applied",
+    reconcilePending: true,
+    clientUnknown: false,
+  } as const;
+  assert.deepEqual(reconcile.parse(input), input);
+  assert.throws(() => reconcile.parse({ ...input, mutationId: "  " }), /mutationId/u);
+  const receipt = operationDefinition("target.input.receipt.get").input;
+  assert.throws(
+    () => receipt.parse({ serial: "ipad", mutationId: " ", resolutionId: " " }),
+    /Provide a resolutionId or mutationId/u,
+  );
+  const byResolution = { serial: "ipad", resolutionId: "review-1", mutationId: " " };
+  assert.deepEqual(receipt.parse(byResolution), byResolution);
+});
+
+test("connected target output accepts the managed browser kind without requiring it on native devices", () => {
+  const output = operationDefinition("target.devices.list").output;
+  const browser = {
+    id: "browser-1",
+    serial: "browser-1",
+    name: "Browser",
+    kind: "browser",
+    booted: true,
+    platform: "browser",
+    targetKind: "browser",
+  };
+  const native = {
+    id: "emulator-1",
+    serial: "emulator-1",
+    name: "Emulator",
+    kind: "emulator",
+    booted: true,
+    platform: "android",
+  };
+  assert.deepEqual(output.parse({ devices: [browser, native] }), { devices: [browser, native] });
+  assert.throws(
+    () => output.parse({ devices: [{ ...browser, targetKind: "unknown" }] }),
+    /targetKind/u,
+  );
 });
 
 function jsonSchemaHasKey(schema: unknown, key: string, seen = new Set<unknown>()): boolean {
@@ -144,11 +344,7 @@ test("registered descriptors and schema-first registries stay in exact parity", 
   const registeredIds = operationDefinitions.map(({ id }) => id).sort();
   assert.deepEqual(Object.keys(operationInputSchemas).sort(), registeredIds);
 
-  const schemaBackedOutputIds = operationDefinitions
-    .filter(({ id, output }) => output.description === `${id} output`)
-    .map(({ id }) => id)
-    .sort();
-  assert.deepEqual(Object.keys(operationOutputSchemas).sort(), schemaBackedOutputIds);
+  assert.deepEqual(Object.keys(operationOutputSchemas).sort(), registeredIds);
   assert.throws(
     () => operationDefinition("target.create").output.parse({ target: { id: "target-1" } }),
     /invalid_type|expected/u,
@@ -165,6 +361,30 @@ test("GET Run inputs normalize their HTTP query representations", () => {
     { runId: "run-1", limit: 250, includeBodies: false },
   );
   assert.deepEqual(operationDefinition("run.list").input.parse({ limit: "40" }), { limit: 40 });
+  const invalidCases: Array<[Parameters<typeof operationDefinition>[0], Record<string, unknown>]> =
+    [
+      ["run.list", { limit: true }],
+      ["run.list", { limit: [10] }],
+      ["run.list", { limit: " " }],
+      ["run.list", { appMapId: "" }],
+      ["run.evidence.get", { runId: "run-1", includeBodies: "1" }],
+      ["run.evidence.get", { runId: "run-1", limit: 2001 }],
+    ];
+  for (const [id, input] of invalidCases) {
+    const definition = operationDefinition(id);
+    let runtimeThrew = false;
+    try {
+      definition.input.parse(input);
+    } catch {
+      runtimeThrew = true;
+    }
+    assert.equal(runtimeThrew, true, `${id} runtime parse`);
+    assert.equal(
+      definition.input.presentation.safeParse(input).success,
+      false,
+      `${id} presentation parse`,
+    );
+  }
 });
 
 test("browser target operations round-trip the frozen environment contract", () => {
@@ -386,15 +606,9 @@ test("graph Test transport accepts cross-map native route companions", () => {
   );
 });
 
-test("app-map.test.edit schema accepts capture-view on GQA-004/040; omitted dest-end stays test-action", () => {
+test("app-map.test.edit schema accepts capture-view; omitted dest-end stays test-action", () => {
   const definition = operationDefinition("app-map.test.edit");
-  for (const testId of [
-    RC23_SCREENSHOT_FIRST_TESTS.attach.ios,
-    RC23_SCREENSHOT_FIRST_TESTS.settings.ios,
-    RC23_SCREENSHOT_FIRST_TESTS.attach.android,
-    RC23_SCREENSHOT_FIRST_TESTS.settings.android,
-  ]) {
-    assert.ok(testId);
+  for (const testId of ["test-native-attach", "test-native-settings"]) {
     assert.deepEqual(
       definition.input.parse({
         appMapId: "grok-ios",
@@ -418,8 +632,8 @@ test("campaign capacity preflight remains composed into the central operation re
   const definition = operationDefinition("campaign.capacity.preflight");
   assert.equal(definition.transport.method, "POST");
   assert.equal(definition.transport.path, "/campaign-capacity/preflight");
-  assert.equal(definition.input.description, "campaign capacity preflight input");
-  assert.equal(definition.output.description, "campaign capacity preflight response");
+  assert.equal(definition.input.description, "campaign.capacity.preflight input");
+  assert.equal(definition.output.description, "campaign.capacity.preflight output");
 });
 
 test("campaign capacity preflight schema accepts separate queue members", () => {
@@ -752,8 +966,8 @@ test("run list accepts bounded opaque continuation cursors", () => {
     limit: 100,
     cursor: "opaque-page",
   });
-  assert.throws(() => definition.input.parse({ cursor: "" }), /run list cursor/u);
-  assert.throws(() => definition.input.parse({ cursor: 12 }), /run list cursor/u);
+  assert.throws(() => definition.input.parse({ cursor: "" }), /cursor/u);
+  assert.throws(() => definition.input.parse({ cursor: 12 }), /cursor/u);
   assert.doesNotThrow(() =>
     definition.output.parse({
       runs: [],
@@ -851,14 +1065,66 @@ test("durable Test history operations require only an exact revision fence", () 
   }
 });
 
+function minimalAppMapDocument() {
+  return {
+    schemaVersion: 1 as const,
+    id: "map",
+    organizationId: "org",
+    projectId: "proj",
+    name: "Map",
+    revision: 0,
+    notes: {},
+    groups: {},
+    screens: {},
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function minimalScreenEntity(idSuffix: string) {
+  return {
+    id: idSuffix,
+    organizationId: "org",
+    projectId: "proj",
+    appMapId: "map",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 test("alias-observe output carries the approved logical screen variant", () => {
   const output = operationDefinition("app-map.screen.alias-observe").output.parse({
-    appMap: {},
-    screen: { id: "settings", variantIds: ["variant-browser"] },
+    appMap: minimalAppMapDocument(),
+    screen: {
+      ...minimalScreenEntity("settings"),
+      title: "Settings",
+      variantIds: ["variant-browser"],
+    },
     variant: {
-      id: "variant-browser",
+      ...minimalScreenEntity("variant-browser"),
       screenId: "settings",
-      targetProfile: { id: "browser:settings", targetId: "settings-browser" },
+      targetProfile: {
+        id: "browser:settings",
+        targetId: "settings-browser",
+        source: "browser",
+        platform: "browser",
+        name: "Settings browser",
+        capabilities: ["snapshot", "screenshot"],
+        observedAt: 1,
+      },
+      evidenceIds: [],
     },
     alias: { fingerprint: "a".repeat(64), aliasesNow: ["a".repeat(64)] },
   });
@@ -867,7 +1133,7 @@ test("alias-observe output carries the approved logical screen variant", () => {
   assert.throws(
     () =>
       operationDefinition("app-map.screen.alias-observe").output.parse({
-        appMap: {},
+        appMap: minimalAppMapDocument(),
         alias: { fingerprint: "a".repeat(64), aliasesNow: [] },
       }),
     /screen/u,
@@ -966,6 +1232,18 @@ test("selective repair operations require one exact immutable run check", () => 
       reason: "Not applicable to this campaign",
     },
   );
+  assert.throws(
+    () =>
+      operationDefinition("run.repair.propose").input.parse({
+        runId: "r",
+        checkId: "c",
+        kind: "retarget",
+        reason: "reviewed",
+      }),
+    /selector/u,
+  );
+  assert.throws(() => operationDefinition("run.repair.list").input.parse({ limit: true }));
+  assert.throws(() => operationDefinition("run.repair.list").input.parse({ limit: 501 }));
 });
 
 test("map teach accepts a point tap without expectedRevision", () => {
@@ -1068,7 +1346,7 @@ test("screen consolidation validates a read-only preview request", () => {
         sourceScreenIds: [],
         expectedRevision: 12,
       }),
-    /non-empty array/,
+    /sourceScreenIds/,
   );
 });
 
@@ -1187,7 +1465,7 @@ test("graph Test runs require an exact revision and explicit target", () => {
         ...input,
         startup: { mode: "verified-checkpoint" },
       }),
-    /startup screenId/u,
+    /screenId/u,
   );
   assert.throws(
     () =>
@@ -1195,7 +1473,7 @@ test("graph Test runs require an exact revision and explicit target", () => {
         ...input,
         startup: { mode: "cold", screenId: "settings" },
       }),
-    /only valid for verified-checkpoint/u,
+    /screenId/u,
   );
   assert.throws(
     () =>
@@ -1203,7 +1481,7 @@ test("graph Test runs require an exact revision and explicit target", () => {
         ...input,
         surfaceCapture: { forceRecaptureScreenIds: [] },
       }),
-    /between 1 and 50 screen ids/u,
+    /forceRecaptureScreenIds/u,
   );
   assert.throws(
     () =>
@@ -1211,7 +1489,7 @@ test("graph Test runs require an exact revision and explicit target", () => {
         ...input,
         surfaceCapture: { forceRecaptureScreenIds: ["voice", "voice"] },
       }),
-    /duplicate screen id voice/u,
+    /must not repeat a screen identifier/u,
   );
   assert.throws(
     () =>
@@ -1219,7 +1497,7 @@ test("graph Test runs require an exact revision and explicit target", () => {
         ...input,
         target: { kind: "browser", platform: "android", targetId: "browser-1" },
       }),
-    /kind and platform/u,
+    /platform/u,
   );
   assert.throws(
     () =>
@@ -1314,7 +1592,7 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
         ...input,
         in: { language: [] },
       }),
-    /non-empty array/u,
+    /"in"/u,
   );
   assert.throws(
     () =>
@@ -1322,7 +1600,7 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
         ...input,
         in: { "": ["ja"] },
       }),
-    /Variable/u,
+    /Invalid key in record/u,
   );
   assert.throws(
     () =>
@@ -1330,7 +1608,7 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
         ...input,
         in: { language: ["ja", "ja"] },
       }),
-    /duplicate value id ja/u,
+    /must not repeat a value identifier/u,
   );
   assert.throws(
     () =>
@@ -1338,7 +1616,7 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
         ...input,
         lens: "screenshots",
       }),
-    /visual, smoke/u,
+    /lens/u,
   );
   assert.throws(
     () =>
@@ -1346,7 +1624,7 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
         ...input,
         executionMode: "blast",
       }),
-    /pilot or all/u,
+    /executionMode/u,
   );
   assert.throws(
     () =>
@@ -1467,7 +1745,7 @@ test("graph Test proposals accept only bounded semantic edit batches", () => {
   assert.deepEqual(operationDefinition("app-map.test.propose").input.parse(input), input);
   assert.throws(
     () => operationDefinition("app-map.test.propose").input.parse({ ...input, edits: [] }),
-    /between 1 and 100 semantic edits/u,
+    /edits/u,
   );
   assert.throws(
     () =>
@@ -1475,7 +1753,7 @@ test("graph Test proposals accept only bounded semantic edit batches", () => {
         ...input,
         edits: [{ kind: "replace-source", source: "generated code" }],
       }),
-    /kind.*unsupported/u,
+    /Invalid discriminator value/u,
   );
 });
 
@@ -1603,7 +1881,7 @@ test("target capability outputs keep pixel, semantic, and evidence proofs distin
     interactive: [],
     inspectable: false,
     source: "pixels-only",
-    screenIdentity: {},
+    screenIdentity: { fingerprint: "screen-fp-1", nodes: [], volatileSignals: [] },
     tree: "Window · Settings",
     readiness,
   };
@@ -1617,7 +1895,7 @@ test("target capability outputs keep pixel, semantic, and evidence proofs distin
           semanticControl: { ...readiness.semanticControl, mode: "pixels" },
         },
       }),
-    /semanticControl mode/u,
+    /semanticControl/u,
   );
   const pixelsOnly = {
     ...output,
@@ -1822,7 +2100,7 @@ test("scroll survey has one strict target-operation contract", () => {
     { serial: "ipad-1", dir: "   " },
     { serial: "ipad-1", force: "true" },
   ]) {
-    assert.throws(() => definition.input.parse(input), /scroll survey/u);
+    assert.throws(() => definition.input.parse(input), /serial|dir|maxScrolls|restore|force/u);
   }
 
   const validOutput = {
@@ -1840,7 +2118,7 @@ test("scroll survey has one strict target-operation contract", () => {
           interactive: [],
           inspectable: false,
           source: "pixels-only",
-          screenIdentity: {},
+          screenIdentity: { fingerprint: "survey-fp", nodes: [], volatileSignals: [] },
         },
         appendedHeight: 0,
       },
@@ -1885,13 +2163,10 @@ test("scroll survey has one strict target-operation contract", () => {
     },
   };
   assert.deepEqual(definition.output.parse(persisted), persisted);
-  assert.throws(
-    () => definition.output.parse({ ...validOutput, reason: "unknown" }),
-    /scroll survey reason/u,
-  );
+  assert.throws(() => definition.output.parse({ ...validOutput, reason: "unknown" }), /reason/u);
   assert.throws(
     () => definition.output.parse({ ...validOutput, persist: { dir: "" } }),
-    /scroll survey persist/u,
+    /persist/u,
   );
 });
 
@@ -1955,7 +2230,7 @@ test("app locale set is one verified per-app locale mutation", () => {
     { serial: "pixel-1", package: "", locale: "he" },
     { serial: "pixel-1", package: "ai.x.grok", locale: "" },
   ]) {
-    assert.throws(() => definition.input.parse(input), /target app locale set/u);
+    assert.throws(() => definition.input.parse(input), /serial|package|locale/u);
   }
 
   const validOutput = { packageName: "ai.x.grok", locale: "he", observedLocale: "iw" };
@@ -1966,7 +2241,7 @@ test("app locale set is one verified per-app locale mutation", () => {
   });
   assert.throws(
     () => definition.output.parse({ packageName: "ai.x.grok", locale: "he", observedLocale: 7 }),
-    /target app locale set observed locale/u,
+    /invalid_type|expected/u,
   );
 });
 
@@ -1992,9 +2267,9 @@ test("durable scroll surfaces target exactly one App Map Screen Variant", () => 
   assert.deepEqual(definition.input.parse(input), input);
   assert.throws(
     () => definition.input.parse({ ...input, target: { ...input.target, kind: "browser" } }),
-    /Android or iOS device/u,
+    /target/u,
   );
-  assert.throws(() => definition.input.parse({ ...input, maxScrolls: 13 }), /between 1 and 12/u);
+  assert.throws(() => definition.input.parse({ ...input, maxScrolls: 13 }), /maxScrolls/u);
 
   const regenerate = operationDefinition("app-map.scroll-surface.regenerate");
   assert.equal(regenerate.lease, "none");
@@ -2059,10 +2334,7 @@ test("durable scroll surfaces target exactly one App Map Screen Variant", () => 
 });
 
 test("runtime parsers reject malformed input and output", () => {
-  assert.throws(
-    () => operationDefinition("job.start").input.parse({ serial: "device" }),
-    /job recipe/,
-  );
+  assert.throws(() => operationDefinition("job.start").input.parse({ serial: "device" }), /recipe/);
   const providerTarget = {
     schemaVersion: 1,
     kind: "provider-session",
@@ -2084,7 +2356,7 @@ test("runtime parsers reject malformed input and output", () => {
         recipe: "provider-smoke",
         executionTarget: { ...providerTarget, targetId: "different-session" },
       }),
-    /job executionTarget/,
+    /valid execution target reference/iu,
   );
   assert.deepEqual(
     operationDefinition("run.share.create").input.parse({
@@ -2094,21 +2366,50 @@ test("runtime parsers reject malformed input and output", () => {
     }),
     { runId: "run-1", expiresInHours: 24, includeBatch: true },
   );
+  assert.deepEqual(
+    operationDefinition("run.share.create").input.parse({ runId: "run-1", expiresInHours: "2" }),
+    { runId: "run-1", expiresInHours: 2 },
+  );
   assert.throws(
     () =>
       operationDefinition("run.share.create").input.parse({
         runId: "run-1",
         expiresInHours: 900,
       }),
-    /30 days/u,
+    /expiresInHours/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("run.share.create").input.parse({
+        runId: "run-1",
+        expiresInHours: true,
+      }),
+    /expiresInHours/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("run.share.create").input.parse({
+        runId: "run-1",
+        expiresInHours: 0,
+      }),
+    /expiresInHours/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("run.share.create").input.parse({
+        runId: "run-1",
+        expiresInHours: 2,
+        includeBatch: "true",
+      }),
+    /includeBatch/u,
   );
   assert.throws(
     () => operationDefinition("target.screenshot.capture").output.parse({ path: "shot.png" }),
-    /screenshot base64/,
+    /base64/,
   );
   assert.throws(
     () => operationDefinition("system.health.get").output.parse({ ok: true }),
-    /health/,
+    /uptimeMs/,
   );
   assert.throws(
     () =>
@@ -2143,6 +2444,105 @@ test("runtime parsers reject malformed input and output", () => {
         expiresAt: -1,
       }),
     /expiresAt/u,
+  );
+});
+
+test("app-map diff impact keeps the legacy input guards", () => {
+  assert.throws(
+    () =>
+      operationDefinition("app-map.diff.impact").input.parse({
+        appMapId: "example",
+        changedFiles: [],
+      }),
+    /changedFiles/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.diff.impact").input.parse({
+        appMapId: "example",
+        changedFiles: ["src/index.ts"],
+        sourcePaths: { screen: [""] },
+      }),
+    /sourcePaths/u,
+  );
+});
+
+test("schema-first operation inputs preserve the legacy guard rails", () => {
+  assert.throws(
+    () =>
+      operationDefinition("lease.create").input.parse({
+        poolId: "local",
+        deviceSerial: "demo",
+        expiresAt: 0,
+      }),
+    /expiresAt/u,
+  );
+
+  const generationInput = {
+    purpose: "variable",
+    prompt: "Generate a value",
+    allowedValues: ["alpha"],
+  };
+  assert.deepEqual(
+    operationDefinition("generation.create").input.parse(generationInput),
+    generationInput,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("generation.create").input.parse({
+        purpose: "variable",
+        prompt: "Generate a value",
+        allowedValues: ["  "],
+      }),
+    /allowedValues/u,
+  );
+
+  const visualPolicyInput = {
+    runId: "run-1",
+    expectedRevision: 0,
+    changeThreshold: 0.1,
+    pixelThreshold: 12,
+    regions: [
+      {
+        id: "r",
+        name: "Region",
+        frameIndex: 0,
+        mode: "compare",
+        x: 0.8,
+        y: 0,
+        width: 0.3,
+        height: 1,
+      },
+    ],
+  };
+  assert.throws(
+    () => operationDefinition("run.visual-policy.update").input.parse(visualPolicyInput),
+    /normalized frame bounds/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("run.visual-policy.update").input.parse({
+        ...visualPolicyInput,
+        expectedRevision: 0.5,
+        regions: [],
+      }),
+    /expectedRevision/u,
+  );
+
+  assert.throws(
+    () =>
+      operationDefinition("job.start").input.parse({
+        recipe: "demo",
+        executionTarget: {
+          schemaVersion: 1,
+          kind: "local-device",
+          provider: { key: "relay.local.agent-device", scope: "local" },
+          targetId: "one",
+          platform: "android",
+          identity: { kind: "device-serial", value: "two" },
+        },
+      }),
+    /valid execution target reference/iu,
   );
 });
 
@@ -2181,8 +2581,87 @@ test("authoring interactions expose system controls without opaque custom steps"
   );
   assert.throws(
     () => parse({ sessionId: "session-a", interaction: { kind: "device", action: "volume-up" } }),
-    /device action/u,
+    /action/u,
   );
+});
+
+test("authoring session inputs normalize query booleans without mutating caller objects", () => {
+  const list = operationDefinition("authoring.session.list").input;
+  assert.deepEqual(list.parse({ activeOnly: "false", latestRevisionOnly: "true" }), {
+    activeOnly: false,
+    latestRevisionOnly: true,
+  });
+  assert.deepEqual(list.parse({ includeHistory: "1" }), { includeHistory: true });
+  assert.throws(() => list.parse({ activeOnly: "1" }));
+  assert.throws(() => list.parse({ latestRevisionOnly: "1" }));
+  const frozen = { activeOnly: "true" } as const;
+  list.parse(frozen);
+  assert.deepEqual(frozen, { activeOnly: "true" });
+  const shared = { appMapId: "map-1", activeOnly: "false" };
+  list.parse(shared);
+  list.parse(shared);
+  assert.deepEqual(shared, { appMapId: "map-1", activeOnly: "false" });
+});
+
+test("authoring trim range and session references reject malformed values", () => {
+  const trim = operationDefinition("authoring.take.trim").input;
+  assert.throws(
+    () => trim.parse({ sessionId: "session-a", fromMs: 500, toMs: 100 }),
+    /toMs|fromMs/u,
+  );
+  assert.deepEqual(trim.parse({ sessionId: "session-a", fromMs: 100, toMs: 500 }), {
+    sessionId: "session-a",
+    fromMs: 100,
+    toMs: 500,
+  });
+  assert.throws(() =>
+    operationDefinition("authoring.session.get").input.parse({ sessionId: "  " }),
+  );
+});
+
+test("replace-mode type interactions require a target in interact and edit schemas", () => {
+  const interact = operationDefinition("authoring.session.interact").input;
+  assert.throws(() =>
+    interact.parse({
+      sessionId: "session-a",
+      interaction: { kind: "type", mode: "replace", text: "x" },
+    }),
+  );
+  const targeted = {
+    sessionId: "session-a",
+    interaction: {
+      kind: "type",
+      mode: "replace",
+      text: "x",
+      target: { identifier: "chat_text_input" },
+    },
+  } as const;
+  assert.deepEqual(interact.parse(targeted), targeted);
+  const edit = operationDefinition("authoring.take.edit").input;
+  assert.throws(() =>
+    edit.parse({
+      sessionId: "session-a",
+      edit: {
+        kind: "replace",
+        actionId: "action-1",
+        interaction: { kind: "type", mode: "replace", text: "x" },
+      },
+    }),
+  );
+  const validEdit = {
+    sessionId: "session-a",
+    edit: {
+      kind: "replace",
+      actionId: "action-1",
+      interaction: {
+        kind: "type",
+        mode: "replace",
+        text: "x",
+        target: { identifier: "chat_text_input" },
+      },
+    },
+  } as const;
+  assert.deepEqual(edit.parse(validEdit), validEdit);
 });
 
 test("capability manifest is serializable and contains no parser functions", () => {
@@ -2213,6 +2692,7 @@ test("offline run replay is a frozen-evidence response, not a live run job", () 
         },
         cursorTimeline: [],
         checks: [],
+        repairProposals: [],
         blockers: [],
       },
     }),
@@ -2233,10 +2713,7 @@ test("live replay mode is explicit and validated", () => {
     runId: "run-1",
     mode: "same-configuration",
   });
-  assert.throws(
-    () => definition.input.parse({ runId: "run-1", mode: "current-build" }),
-    /replay mode/u,
-  );
+  assert.throws(() => definition.input.parse({ runId: "run-1", mode: "current-build" }), /mode/u);
 });
 
 test("TracePack export is a persisted-run evidence query with a strict response", () => {
@@ -2329,7 +2806,7 @@ test("standalone step output keeps an unknown iOS command as terminal review evi
           captureCurrent: { operationId: "target.interact", input: { serial: "ipad-1" } },
         },
       }),
-    /target screenshot/,
+    /target\.screenshot\.capture/,
   );
   assert.throws(
     () =>
@@ -2340,7 +2817,7 @@ test("standalone step output keeps an unknown iOS command as terminal review evi
           cancellation: { observedAfterAttemptStarted: false },
         },
       }),
-    /cancellation observedAfterAttemptStarted/,
+    /observedAfterAttemptStarted/,
   );
 });
 
@@ -2425,7 +2902,58 @@ test("same-screen merge is discoverable and rejects scroll evidence or unknown m
   };
   assert.equal(definition.input.parse(input).mode, "same-screen");
   assert.throws(() => definition.input.parse({ ...input, mode: "guess" }), /mode/);
-  assert.throws(() => definition.input.parse({ ...input, surfaceImport: {} }), /cannot be used/);
+  assert.throws(() => definition.input.parse({ ...input, surfaceImport: {} }), /surfaceImport/);
+  const scrollEvidence = (mime: "image/png" | "application/json") => ({
+    id: `evidence-${mime}`,
+    uri: `evidence://scroll/${mime}`,
+    sha256: "a".repeat(64),
+    mime,
+    bytes: 10,
+  });
+  const scrollViewport = (index: number) => ({
+    index,
+    offsetY: index * 100,
+    appendedHeight: 100,
+    capturedAt: 1,
+    width: 100,
+    height: 100,
+    screenshot: scrollEvidence("image/png"),
+    accessibilityTree: scrollEvidence("application/json"),
+  });
+  const validImport = {
+    schemaVersion: 1,
+    id: "surface-1",
+    targetProfileId: "profile-1",
+    message: "imported",
+    restoredStartViewport: false,
+    capturePolicy: {
+      captureMode: "full-surface" as const,
+      source: "explicit" as const,
+      reason: "reviewed",
+      decidedAt: 1,
+    },
+    viewports: [scrollViewport(0), scrollViewport(1)],
+  };
+  assert.deepEqual(
+    definition.input.parse({
+      ...input,
+      mode: "scroll-surface" as const,
+      surfaceImport: validImport,
+    }).surfaceImport,
+    validImport,
+  );
+  assert.throws(
+    () => definition.input.parse({ ...input, mode: "same-screen", surfaceImport: validImport }),
+    /cannot be used/,
+  );
+  assert.throws(
+    () =>
+      definition.input.parse({
+        ...input,
+        surfaceImport: { ...validImport, viewports: [scrollViewport(0)] },
+      }),
+    /viewports/,
+  );
 });
 
 test("interactive input and launch can acknowledge without claiming foreground or visual proof", () => {

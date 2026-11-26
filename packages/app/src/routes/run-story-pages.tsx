@@ -5,7 +5,7 @@ import { RunViewTabs } from "../components/run-view-tabs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import { ChevronLeft, Eye, LoaderCircle, Play, Square } from "lucide-react";
+import { Eye, LoaderCircle, Play, Square } from "lucide-react";
 import type { CaptureReviewAction, CaptureReviewItem } from "@relay/protocol";
 import type { ProductRunReportOverview } from "../data/run-report-model";
 import type { RunProductService } from "../data/run-product-service";

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { registerGrokDiscoveryTestProfile } from "../discovery/discovery-app-profiles.fixtures.js";
 import test from "node:test";
 import type { AppMap, DiscoverySession } from "@relay/protocol";
 import {
@@ -290,38 +291,43 @@ test("matchingScreenId keeps Memory, Kids Mode, and NSFW distinct under shared c
 });
 
 test("land prefers Settings child labels over a misleading Settings title", () => {
-  const map = emptyMap();
-  const settingsSession: DiscoverySession = {
-    ...session(),
-    screens: [
-      { id: "hub", fingerprint: "hub", title: "Settings", capturedAt: 2 },
-      {
-        id: "child",
-        fingerprint: "shared-chrome",
-        title: "Settings",
-        capturedAt: 3,
-        screenshotPath: "screens/child.png",
-      },
-    ],
-    transitions: [
-      {
-        id: "open-nsfw",
-        fromScreenId: "hub",
-        toScreenId: "child",
-        kind: "tap",
-        label: "NSFW Preferences",
-        capturedAt: 4,
-        changedScreen: true,
-      },
-    ],
-  };
-  const changes = discoveryLandChanges({
-    map,
-    session: settingsSession,
-    transitionId: "open-nsfw",
-  });
-  const titles = changes
-    .filter((change) => change.kind === "screen.add")
-    .map((change) => (change.kind === "screen.add" ? change.input.screen.title : ""));
-  assert.deepEqual(titles.sort(), ["NSFW Preferences", "Settings"]);
+  const unregister = registerGrokDiscoveryTestProfile();
+  try {
+    const map = emptyMap();
+    const settingsSession: DiscoverySession = {
+      ...session(),
+      screens: [
+        { id: "hub", fingerprint: "hub", title: "Settings", capturedAt: 2 },
+        {
+          id: "child",
+          fingerprint: "shared-chrome",
+          title: "Settings",
+          capturedAt: 3,
+          screenshotPath: "screens/child.png",
+        },
+      ],
+      transitions: [
+        {
+          id: "open-nsfw",
+          fromScreenId: "hub",
+          toScreenId: "child",
+          kind: "tap",
+          label: "NSFW Preferences",
+          capturedAt: 4,
+          changedScreen: true,
+        },
+      ],
+    };
+    const changes = discoveryLandChanges({
+      map,
+      session: settingsSession,
+      transitionId: "open-nsfw",
+    });
+    const titles = changes
+      .filter((change) => change.kind === "screen.add")
+      .map((change) => (change.kind === "screen.add" ? change.input.screen.title : ""));
+    assert.deepEqual(titles.sort(), ["NSFW Preferences", "Settings"]);
+  } finally {
+    unregister();
+  }
 });

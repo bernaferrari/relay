@@ -17,7 +17,7 @@ import type { RequestContext } from "./security.js";
 import { admitTargetControl } from "./access-control.js";
 import { accountNeedsReloginHttpError } from "./claimed-browser-job-admission.js";
 import { HttpError } from "./http.js";
-import { acquireTargetLeasesAtomically } from "./target-lease-admission.js";
+import { acquireTargetLeasesAtomically } from "./target/target-lease-admission.js";
 
 export type CompatibilityBatchInput = {
   recipe?: string;

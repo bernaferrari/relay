@@ -1,4 +1,4 @@
-import type { TargetProfile } from "./target-contract.js";
+import type { TargetProfile } from "./target/target-contract.js";
 import type { NavigationProofCursorArtifact } from "./navigation-proof.js";
 import type { StateFixture } from "./exploration-policy.js";
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { withControlStore } from "./collaboration-store.js";
+import { withControlStore } from "./collaboration/collaboration-store.js";
 import { canonicalSha256 } from "./canonical-json.js";
 
 const DELIVERY_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;

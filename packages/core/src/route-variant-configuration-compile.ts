@@ -11,18 +11,14 @@ import {
   routeVariantPlatformFromTarget,
   type RouteVariantPlatform,
 } from "@relay/protocol";
-import { grokWebNativeRouteCompanions } from "./grok-native-route-companions.js";
-import { frozenRawAccessibilityTargetProfiles } from "./app-map-test-raw-accessibility.js";
+import {
+  resolveNativeRouteCompanions,
+  resolveRegisteredAppMapPlatform,
+} from "./app-map/app-map-extension-policy.js";
+import { frozenRawAccessibilityTargetProfiles } from "./app-map/app-map-test-raw-accessibility.js";
 
 function platformFromOrigin(origin?: string): RouteVariantPlatform | undefined {
   if (origin && /^https?:\/\//iu.test(origin)) return "web";
-  return undefined;
-}
-
-function platformFromMapId(mapId: string): RouteVariantPlatform | undefined {
-  if (mapId === "grok-web") return "web";
-  if (mapId === "grok-android") return "android";
-  if (mapId === "grok-ios") return "ios";
   return undefined;
 }
 
@@ -43,7 +39,7 @@ export function compileRouteVariantPlatform(
     }),
   );
   if (platforms.size === 1) return [...platforms][0];
-  return platformFromMapId(map.id);
+  return resolveRegisteredAppMapPlatform(map);
 }
 
 export function compileCaptureReviewConfiguration(
@@ -70,11 +66,7 @@ export function compiledRouteVariantConfigurations(
       role: "compiled",
     });
   }
-  const companions = test.nativeRouteCompanions?.length
-    ? test.nativeRouteCompanions
-    : map.id === "grok-web"
-      ? (grokWebNativeRouteCompanions(test.id) ?? [])
-      : [];
+  const companions = resolveNativeRouteCompanions(map, test);
   for (const companion of companions) {
     const companionPlatform = companion.platform === "android" ? "android" : "ios";
     members.push({

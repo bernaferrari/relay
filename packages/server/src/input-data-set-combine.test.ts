@@ -14,7 +14,7 @@ import {
   freezeCombineRunInputs,
   requireCombineRunInputs,
   restoreCombineRunInputs,
-} from "./combine-run-inputs.js";
+} from "./combine/combine-run-inputs.js";
 import { nativeInputDataSetCombineFixture } from "./native-combine-inputs-test-fixture.js";
 import { startServer } from "./index.js";
 import { defaultJobRouteRuntime } from "./job-routes.js";

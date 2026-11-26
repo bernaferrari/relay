@@ -6,15 +6,11 @@ import {
   relayMcpResourceMimeType,
   relayMcpResourceUris,
 } from "./resources.js";
+import { registerCaptureReviewAccountIdentityExclusion } from "@relay/protocol";
 import { createMcpServer, type OperationInvoker } from "./server.js";
 import { relayTaskGuideCatalog, formatRelayTaskGuide } from "@relay/workflows/task-guides";
 import { relayRegisteredToolNames, relayRequiredOperationIds } from "./registered-tools.js";
-import {
-  defaultRelayMcpProfile,
-  relayMcpTools,
-  relayMcpToolsForProfile,
-  type RelayMcpProfile,
-} from "./tools.js";
+import { defaultRelayMcpProfile, relayMcpToolsForProfile, type RelayMcpProfile } from "./tools.js";
 
 type RpcResponse = {
   id: number;
@@ -1777,6 +1773,9 @@ test("runs collection strips SuperGrok fixture display name from dest capture-re
       },
     }),
   );
+  const unregisterExclusion = registerCaptureReviewAccountIdentityExclusion(
+    (key) => key === "super grok" || key.startsWith("supergrok") || key.startsWith("grok-"),
+  );
   try {
     const content = resourceContent(
       await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
@@ -1800,6 +1799,7 @@ test("runs collection strips SuperGrok fixture display name from dest capture-re
     assert.equal(fixture?.captureReview?.[0]?.configuration?.account, labFixture);
     assert.doesNotMatch(content.text, /SuperGrok lab signed-in/);
   } finally {
+    unregisterExclusion();
     await session.close();
   }
 });
@@ -1829,6 +1829,9 @@ test("paged runs collection strips SuperGrok fixture display name from dest capt
       "run.list": { runs },
     }),
   );
+  const unregisterExclusion = registerCaptureReviewAccountIdentityExclusion(
+    (key) => key === "super grok" || key.startsWith("supergrok") || key.startsWith("grok-"),
+  );
   try {
     const content = resourceContent(
       await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
@@ -1848,6 +1851,7 @@ test("paged runs collection strips SuperGrok fixture display name from dest capt
     assert.equal(first?.captureReview?.[0]?.configuration?.app, "Grok.com");
     assert.doesNotMatch(content.text, /SuperGrok lab signed-in/);
   } finally {
+    unregisterExclusion();
     await session.close();
   }
 });

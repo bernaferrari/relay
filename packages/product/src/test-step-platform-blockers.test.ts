@@ -161,7 +161,7 @@ test("iOS recorded airplane is a Settings-handoff compile-block, not a Ready ste
   const blockers = testStepPlatformBlockers(iosAirplaneTest, iosAirplaneMap, ["ios"]);
   assert.equal(
     blockers["ios-airplane"],
-    "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner",
+    "airplane on iOS is a Settings handoff, not an in-app airplane control",
   );
 });
 
@@ -196,7 +196,7 @@ test("iOS recorded lock is a runner compile-block, not a Ready step", () => {
 test("recordedRoutePlatformBlocker names the first iOS compile-block", () => {
   assert.equal(
     recordedRoutePlatformBlocker(iosAirplaneTest, iosAirplaneMap, "ios"),
-    "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner",
+    "airplane on iOS is a Settings handoff, not an in-app airplane control",
   );
   assert.equal(recordedRoutePlatformBlocker(iosAirplaneTest, iosAirplaneMap, "android"), undefined);
 });

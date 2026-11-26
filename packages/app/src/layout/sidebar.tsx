@@ -5,7 +5,6 @@ import {
   Sidebar as SharedSidebar,
   SidebarContent as SharedSidebarContent,
   SidebarFooter,
-  SidebarGroup,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,

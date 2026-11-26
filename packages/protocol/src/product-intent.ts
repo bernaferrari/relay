@@ -1,4 +1,4 @@
-import type { AppMapEntity } from "./app-map.js";
+import type { AppMapEntity } from "./app-map/app-map.js";
 
 /** A reviewed declaration that one captured surface represents a stable
  * product state. Visible titles and platform screen classes are evidence, not

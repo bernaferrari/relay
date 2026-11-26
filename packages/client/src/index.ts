@@ -44,7 +44,6 @@ import {
   startGoal as startGoalSession,
   type GoalControlOptions,
   type GoalPromotionInput,
-  type GoalPromotionResult,
 } from "./goal-client.js";
 import {
   evidenceCollectionPolicy as getEvidenceCollectionPolicy,

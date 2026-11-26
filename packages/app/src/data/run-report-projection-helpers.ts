@@ -198,10 +198,10 @@ export function humanStepTitle(value: unknown): string | undefined {
   const rawTitle = text(value);
   if (!rawTitle) return undefined;
   /** Authored Capture for review / Screenshot · step: / bare step: product
-   * labels — keep even when they contain "selector" (iOS models dest "Model
-   * selector SuperGrok" used to collapse to Captured result on the timeline,
-   * and Screenshots fell back to "Screenshot 1" because the frame caption is
-   * only `step:step-action:Model selector SuperGrok`). */
+   * labels — keep even when they contain "selector" (a model-picker step
+   * caption used to collapse to Captured result on the timeline, and
+   * Screenshots fell back to "Screenshot 1" because the frame caption is
+   * only the bare step-action label). */
   const authoredCaptureLabel =
     /^Screenshot · (?:step:)?[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ??
     /^Capture for review · step:[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ??

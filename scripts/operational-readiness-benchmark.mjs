@@ -319,7 +319,7 @@ async function main(argv) {
       };
     },
     firstProof: async () => {
-      const test = "packages/core/src/change-proof-golden-harness.test.ts";
+      const test = "packages/core/src/change/change-proof-golden-harness.test.ts";
       await command(
         process.execPath,
         ["node_modules/tsx/dist/cli.mjs", "--test", test],

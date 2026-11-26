@@ -1,5 +1,11 @@
 import * as z from "zod/v4";
-import { empty, identifier, natural, text, unknownRecord } from "./operation-schema-primitives.js";
+import {
+  empty,
+  identifier,
+  natural,
+  text,
+  unknownRecord,
+} from "./operation/operation-schema-primitives.js";
 
 const discoveryRef = z.object({ sessionId: identifier("Discovery session identifier") }).strict();
 /** App Map exploration descriptors. */

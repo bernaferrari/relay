@@ -22,7 +22,7 @@ describe("Relay workspace verification", () => {
     expect(root.scripts?.verify).toContain("pnpm run test:packages");
     expect(root.scripts?.verify).toContain("vp test");
     expect(root.scripts?.test).toBe(
-      "pnpm run ios-preview:test && pnpm run test:packages && vp test",
+      "pnpm run ios-hid-tap:test && pnpm run ios-preview:test && pnpm run test:packages && vp test",
     );
   });
 

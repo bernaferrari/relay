@@ -1,5 +1,6 @@
 import type http from "node:http";
 import {
+  operationDefinition,
   operationDefinitions,
   operationManifest,
   parseCommandEnvelope,
@@ -7,6 +8,7 @@ import {
   type CommandIdentity,
   type OperationDefinition,
   type OperationId,
+  type OperationInput,
   type OperationManifestItem,
   type ProjectRole,
 } from "@relay/protocol";
@@ -151,9 +153,26 @@ export function bindOperationRequest(
       `x-relay-operation-id must be ${registration.id}`,
     );
   }
-  let actor;
+  let command: CommandIdentity;
   try {
-    actor = resolveCommandActor(request.headers, scope);
+    const actor = resolveCommandActor(request.headers, scope);
+    command = parseCommandEnvelope(
+      {
+        schemaVersion: 1,
+        ...actor,
+        organizationId: scope.organizationId,
+        projectId: scope.projectId,
+        operationId,
+        requestId: header("x-relay-request-id"),
+        idempotencyKey: header("idempotency-key"),
+        issuedAt: Number(header("x-relay-command-at")),
+        causationId: header("x-relay-causation-id"),
+        correlationId: header("x-relay-correlation-id"),
+        authoringSessionId: header("x-relay-authoring-session-id"),
+        payload: {},
+      },
+      (payload) => payload,
+    );
   } catch (error) {
     throw new OperationContractError(
       "input",
@@ -161,23 +180,6 @@ export function bindOperationRequest(
       error instanceof Error ? error.message : String(error),
     );
   }
-  const command = parseCommandEnvelope(
-    {
-      schemaVersion: 1,
-      ...actor,
-      organizationId: scope.organizationId,
-      projectId: scope.projectId,
-      operationId,
-      requestId: header("x-relay-request-id"),
-      idempotencyKey: header("idempotency-key"),
-      issuedAt: Number(header("x-relay-command-at")),
-      causationId: header("x-relay-causation-id"),
-      correlationId: header("x-relay-correlation-id"),
-      authoringSessionId: header("x-relay-authoring-session-id"),
-      payload: {},
-    },
-    (payload) => payload,
-  );
   const context: RequestOperationContext = {
     definition: registration.definition,
     params: registration.params,
@@ -189,15 +191,7 @@ export function bindOperationRequest(
   enterOperationContext(command);
 
   if (method === "GET" || method === "DELETE") {
-    try {
-      registration.definition.input.parse({ ...context.query, ...context.params });
-    } catch (error) {
-      throw new OperationContractError(
-        "input",
-        registration.id,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+    parseOperationInput(registration.definition, { ...context.query, ...context.params });
   }
   return registration;
 }
@@ -208,23 +202,45 @@ export function operationRequestContext(
   return requestContexts.get(request);
 }
 
-export function validateOperationBody(request: http.IncomingMessage, body: unknown): void {
-  const context = requestContexts.get(request);
-  if (!context) return;
-  const bodyRecord =
-    body && typeof body === "object" && !Array.isArray(body)
-      ? (body as Record<string, unknown>)
-      : { value: body };
-  const input = { ...context.query, ...context.params, ...bodyRecord };
+function parseOperationInput<Id extends OperationId, Input>(
+  definition: OperationDefinition<Id, Input>,
+  value: unknown,
+): Input {
   try {
-    context.definition.input.parse(input);
+    return definition.input.parse(value);
   } catch (error) {
     throw new OperationContractError(
       "input",
-      context.definition.id,
+      definition.id,
       error instanceof Error ? error.message : String(error),
     );
   }
+}
+
+function bodyRecord(body: unknown): Record<string, unknown> {
+  return body && typeof body === "object" && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : { value: body };
+}
+
+export function parseRouteOperationInput<Id extends OperationId>(
+  id: Id,
+  url: URL,
+  params: Record<string, string> = {},
+  body: unknown = {},
+): OperationInput<Id> {
+  return parseOperationInput(operationDefinition(id), {
+    ...queryRecord(url),
+    ...bodyRecord(body),
+    ...params,
+  });
+}
+
+export function validateOperationBody(request: http.IncomingMessage, body: unknown): void {
+  const context = requestContexts.get(request);
+  if (!context) return;
+  const input = { ...context.query, ...context.params, ...bodyRecord(body) };
+  parseOperationInput(context.definition, input);
 }
 
 export function validateOperationResponse(

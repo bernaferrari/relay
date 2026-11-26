@@ -24,7 +24,10 @@ it("bundles browser target profiles without device drivers or Node builtins", as
       write: false,
       minify: false,
       lib: {
-        entry: resolve(import.meta.dirname, "../../../core/src/browser-case-profile-target.ts"),
+        entry: resolve(
+          import.meta.dirname,
+          "../../../core/src/browser/browser-case-profile-target.ts",
+        ),
         formats: ["es"],
       },
     },

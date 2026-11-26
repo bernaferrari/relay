@@ -9,20 +9,21 @@ import type {
   ScrollSurfaceEvidence,
   TargetProfile,
 } from "@relay/protocol";
+import { canonicalJson } from "@relay/protocol";
 import { PNG } from "pngjs";
-import { persistAuthoringEvidence, readAuthoringEvidence } from "./authoring-evidence.js";
+import { persistAuthoringEvidence, readAuthoringEvidence } from "./authoring/authoring-evidence.js";
 import { issueDocumentOriginAttestationAuthorization } from "./document-origin-attestation-authority.js";
 import {
   composeScrollSurveyFrames,
   mergeScrollSurfaceNodes,
   type ScrollSurveyFrame,
   type ScrollSurveyResult,
-} from "./scrollable-survey.js";
+} from "./scrollable/scrollable-survey.js";
 import { validatedDocumentOriginIssuance } from "./document-origin-survey-issuance.js";
 import { appMapFail } from "./app-map/errors.js";
 import { mutateAppMap } from "./app-map/mutation.js";
-import { compileScrollSurfaceSemanticIndex } from "./scroll-surface-semantic-index.js";
-import { deriveScrollSurfaceConfidence } from "./scroll-surface-confidence.js";
+import { compileScrollSurfaceSemanticIndex } from "./scroll/scroll-surface-semantic-index.js";
+import { deriveScrollSurfaceConfidence } from "./scroll/scroll-surface-confidence.js";
 
 type SurfaceWithoutManifest = Omit<LogicalScrollSurface, "manifest">;
 
@@ -478,8 +479,11 @@ export async function materializeLogicalScrollSurfaceImport(input: {
       diagnosticFrames: [],
     }),
   };
+  // Canonical key ordering keeps the content address stable when a surface
+  // round-trips through schema-validated clients, whose object key order
+  // follows the validating schema rather than the original capture.
   const manifestBytes = Buffer.from(
-    JSON.stringify({
+    canonicalJson({
       schemaVersion: 1,
       kind: "relay.logical-scroll-surface",
       targetProfile: input.targetProfile,

@@ -230,7 +230,7 @@ function DeviceSection({
   title,
   devices,
   returnTo,
-  bordered = true,
+  bordered: _bordered = true,
   stale = false,
   groupBrowsers = false,
   searchActive = false,

@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { AppMapScenarioTestStep } from "@relay/protocol";
+
 import { Input } from "@relay/ui-react/components/input";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { Button } from "@relay/ui-react/components/button";
@@ -11,15 +11,9 @@ import { ConditionWaitEditor } from "./test-editor-wait";
 import { JudgeAgreementControls } from "./test-editor-judge-agreement";
 import type { CSSProperties } from "react";
 import {
-  checkpointBindingCopy,
   emptyValidationDraft,
   IDENTITY_IGNORE_PRESETS,
-  isValidationDraftReady,
   parseRegion,
-  stepBindingCopy,
-  validationBindingFromDraft,
-  validationDraft,
-  validationPatch,
   type ValidationDraft,
 } from "./test-editor-assertion-model";
 export {

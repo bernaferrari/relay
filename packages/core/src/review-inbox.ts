@@ -13,9 +13,9 @@ import type {
 } from "@relay/protocol";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { captureReviewQueueForRun } from "./capture-review-queue.js";
-import { catalogRecords, type CatalogRecord } from "./run-catalog.js";
-import { readPersistedRun, type PersistedRun } from "./runs.js";
+import { captureReviewQueueForRun } from "./capture/capture-review-queue.js";
+import { catalogRecords, type CatalogRecord } from "./run/run-catalog.js";
+import { readPersistedRun, type PersistedRun } from "./runs/runs.js";
 
 const DAY_MS = 86_400_000;
 const CACHE_LIMIT = 500;

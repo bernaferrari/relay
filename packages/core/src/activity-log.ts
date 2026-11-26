@@ -8,7 +8,7 @@ import {
   requireOperationContext,
   type OperationContext,
 } from "./operation-context.js";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import { findWorkspaceRoot } from "./workspace/workspace-root.js";
 
 export const MAX_ACTIVITY_PAGE_SIZE = 100;
 const DEFAULT_ACTIVITY_PAGE_SIZE = 50;

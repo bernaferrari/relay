@@ -18,7 +18,6 @@ import { sameValidationDraft } from "./test-editor-assertion-model";
 import {
   checkpointBindingCopy,
   isValidationDraftReady,
-  stepBindingCopy,
   validationBindingFromDraft,
   validationDraft,
   ValidationExpectationEditor,

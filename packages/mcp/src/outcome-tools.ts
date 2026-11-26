@@ -4,13 +4,10 @@ import {
   measureTracePackJson,
   TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
   tracePackSchema,
-  type AuthoringInteraction,
-  type RepeatSpec,
-  type TracePack,
   browserAuthenticationFixtureReferenceSchema,
   operationDefinition,
 } from "@relay/protocol";
-import type { RelayOutcomeJobs, WorkflowRef } from "@relay/workflows";
+import type { RelayOutcomeJobs } from "@relay/workflows";
 import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import * as z from "zod/v4";
 import type { OperationInvoker } from "./server.js";
@@ -44,7 +41,6 @@ const targetId = identifier
   .optional()
   .describe("Device or browser from relay_list_devices; keep it for the whole recording");
 const targetKind = z.enum(["device", "browser"]).optional();
-const phase = z.enum(["android", "ios"]).optional();
 const workflowDecision = {
   workflowId: identifier,
   expectedVersion: z.number().int().positive(),
@@ -129,15 +125,7 @@ const replayLabTracePacks = z
   });
 
 const replayLabTracePackTransport = boundedTracePackArray(boundedTracePackTransport).min(2);
-function goalValues(raw: unknown): { values?: Record<string, string> } {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const entries = Object.entries(raw as Record<string, unknown>).filter(
-    ([, value]) => typeof value === "string",
-  );
-  return entries.length > 0
-    ? { values: Object.fromEntries(entries) as Record<string, string> }
-    : {};
-}
+
 const goalSessionInputSchema = z
   .object({
     goal: z.string().trim().min(1).max(2_048).optional(),

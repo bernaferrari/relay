@@ -4,6 +4,7 @@ import type { TargetPreflight } from "@relay/protocol";
 import { createRelayOutcomeJobs } from "./outcome-jobs.js";
 import type { RelayInvokeClient } from "./operation-port.js";
 import { createScriptedRelayClient } from "./testing.js";
+import { appMapFixture } from "./test-response-fixtures.js";
 
 const pixel = {
   id: "pixel-9",
@@ -12,8 +13,6 @@ const pixel = {
   kind: "emulator",
   booted: true,
   platform: "android",
-  createdAt: 1,
-  updatedAt: 1,
 };
 
 const managedBrowser = {
@@ -291,7 +290,7 @@ test("record freezes the selected browser target before reserving its durable wo
   let durableIdentity: Record<string, unknown> | undefined;
   const scripted = createScriptedRelayClient([
     ...browserDiscoverySteps(),
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("settings", 7) } },
     {
       id: "lease.list",
       output: {
@@ -310,7 +309,7 @@ test("record freezes the selected browser target before reserving its durable wo
         ],
       },
     },
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("settings", 7) } },
     {
       id: "workflow.create",
       error: new Error("workflow store unavailable"),
@@ -493,7 +492,7 @@ test("inspect-failure rejects legacy repair envelopes instead of guessing", asyn
 
   await assert.rejects(
     jobs.inspectFailure({ kind: "inspect-failure", runId: "run-1" }),
-    /run repairs must be an array/u,
+    /"path":\s*\[\s*"repairs"\s*\]/u,
   );
 });
 
@@ -629,10 +628,23 @@ test("propose-repair returns a review-only identity projection", async () => {
         repair: {
           schemaVersion: 1,
           id: "repair-1",
-          source: { runId: "run-1", checkId: "usage" },
+          status: "pending",
+          defaultAction: "continue-and-report",
+          source: {
+            runId: "run-1",
+            runInputDigest: "fixture-digest",
+            checkId: "usage",
+            checkTitle: "Usage",
+            action: "test.run",
+            capturedAt: 1,
+          },
+          expected: {},
+          observed: { error: "Usage check failed" },
+          evidence: { result: { status: "failed" }, frames: [] },
+          lineage: { sourceRunId: "run-1", priorAttempts: [] },
           actions: [],
         },
-        appMap: { id: "map-1", revision: 8, private: "advanced-only" },
+        appMap: appMapFixture("map-1", 8, { description: "advanced-only" }),
       },
     },
   ]);
@@ -910,7 +922,7 @@ test("record preserves the CLI and MCP title as the canonical Authoring Session 
   } as const;
   const scripted = createScriptedRelayClient([
     { id: "target.devices.list", output: { devices: [pixel] } },
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("settings", 7) } },
     {
       id: "lease.list",
       output: {
@@ -928,7 +940,7 @@ test("record preserves the CLI and MCP title as the canonical Authoring Session 
         ],
       },
     },
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("settings", 7) } },
     {
       id: "workflow.create",
       output: {

@@ -1,8 +1,4 @@
-import {
-  destEndCoverageForRequirement,
-  operationDefinitions,
-  RC23_SCREENSHOT_FIRST_TESTS,
-} from "@relay/protocol";
+import { destEndCoverageForRequirement, operationDefinitions } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -44,6 +40,10 @@ test("maps every tool-eligible operation exactly once", () => {
     [
       "event.stream",
       "target.stream.open",
+      "target.browser-device.open",
+      "target.browser-device.frame",
+      "target.browser-device.inspect",
+      "target.browser-device.control",
       "target.browser-device.frame-binary",
       "activity.export",
       "discovery.promote",
@@ -858,10 +858,10 @@ test("app-map.test.edit accepts capture-view on GQA-004/040; omitted dest-end st
   assert.match(edit.description, /capture-view/);
   assert.match(edit.description, /test-action/);
   for (const testId of [
-    RC23_SCREENSHOT_FIRST_TESTS.attach.ios,
-    RC23_SCREENSHOT_FIRST_TESTS.settings.ios,
-    RC23_SCREENSHOT_FIRST_TESTS.attach.android,
-    RC23_SCREENSHOT_FIRST_TESTS.settings.android,
+    "test-ios-attach",
+    "test-ios-settings",
+    "test-android-attach",
+    "test-android-settings",
   ]) {
     assert.ok(testId);
     const parsed = edit.inputSchema.parse({
@@ -876,7 +876,7 @@ test("app-map.test.edit accepts capture-view on GQA-004/040; omitted dest-end st
     });
   }
   assert.equal(destEndCoverageForRequirement({}), "transition");
-  const homeChromeIos = RC23_SCREENSHOT_FIRST_TESTS["home-chrome"].ios;
+  const homeChromeIos = "test-ios-home-chrome";
   assert.ok(homeChromeIos);
   const parsedHome = edit.inputSchema.parse({
     appMapId: "grok-ios",

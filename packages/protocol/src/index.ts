@@ -2,13 +2,13 @@ export * from "./index-barrel.js";
 import type {
   AndroidNetworkEvidenceSummary,
   AndroidPacketCaptureProvenance,
-} from "./android-network-evidence.js";
+} from "./android/android-network-evidence.js";
 import type { ResourceEventPayload } from "./coordination.js";
-import type { ServerConnection, TargetProfile, TargetSelector } from "./target-contract.js";
+import type { ServerConnection, TargetProfile, TargetSelector } from "./target/target-contract.js";
 import type { SourceRevision } from "./source-revision.js";
 import { parseOptionalSourceRevision } from "./source-revision.js";
-import type { RunTestStepEvidence } from "./run-test-step-evidence.js";
-export type { RunReview } from "./run-review.js";
+import type { RunTestStepEvidence } from "./run/run-test-step-evidence.js";
+export type { RunReview } from "./run/run-review.js";
 
 export type EvidenceChannel =
   | "input"
@@ -127,7 +127,7 @@ export type JobSummary = {
   /** Safe frozen target identity; credentials and provider payloads stay out. */
   targetProfileId?: string;
   outcome?: string;
-  review?: import("./run-review.js").RunReview;
+  review?: import("./run/run-review.js").RunReview;
   batchId?: string;
   caseIndex?: number;
   caseCount?: number;
@@ -200,7 +200,7 @@ export type TraceStepDto = {
 };
 
 export type RunSummary = JobSummary & {
-  captureSummary?: import("./capture-review.js").CaptureReviewSummary;
+  captureSummary?: import("./capture/capture-review.js").CaptureReviewSummary;
   writtenAt: number;
   artifactCount: number;
   artifactBytes: number;

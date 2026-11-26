@@ -7,17 +7,17 @@
  * crawl records — no extra device round trip, and nothing at all when the tree
  * was unavailable.
  */
-import type { CombineEvidenceControl } from "./combine-evidence-session.js";
+import type { CombineEvidenceControl } from "./combine/combine-evidence-session.js";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import {
   combineEvidenceControls,
   fingerprintCombineEvidenceScreen,
   titleFromNodes,
-} from "./combine-evidence-screen-analysis.js";
-import type { SnapshotNode } from "./device.js";
+} from "./combine/combine-evidence-screen-analysis.js";
+import type { SnapshotNode } from "./device/device.js";
 import { now } from "./events.js";
-import type { TestJob } from "./session-contract.js";
+import type { TestJob } from "./session/session-contract.js";
 
 export const FRAME_OBSERVATION_KIND = "frame-observation";
 

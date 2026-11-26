@@ -6,7 +6,7 @@ import {
   MAX_FIXTURE_BYTES,
   type ManagedFixture,
 } from "@relay/protocol";
-import { collaborationStateRoot } from "./collaboration-store.js";
+import { collaborationStateRoot } from "./collaboration/collaboration-store.js";
 
 const digest = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const REFERENCE = /^fixture:([a-f0-9]{64})\/([A-Za-z0-9][A-Za-z0-9._ -]{0,159})$/u;

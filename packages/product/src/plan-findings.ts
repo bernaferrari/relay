@@ -75,14 +75,14 @@ export function proposePlanFinding(finding: CombineEvidenceFinding): PlanFinding
     return {
       verdict: "reject",
       reason:
-        "This is Infra (expired or signed-out account), not a grok.com product failure. Open Sign-ins, complete OAuth, then Refresh. This still does not accept a visual baseline.",
+        "This is Infra (expired or signed-out account), not a product failure in the app under test. Open Sign-ins, complete OAuth, then Refresh. This still does not accept a visual baseline.",
     };
   }
   if (finding.code === "HARNESS_FAILURE") {
     return {
       verdict: "reject",
       reason:
-        "This is Infra (harness or runner), not a grok.com product failure. This still does not accept a visual baseline.",
+        "This is Infra (harness or runner), not a product failure in the app under test. This still does not accept a visual baseline.",
     };
   }
   if (finding.code === "USER_CANCELLED") {
@@ -110,13 +110,13 @@ export function proposePlanFinding(finding: CombineEvidenceFinding): PlanFinding
     return {
       verdict: "confirm",
       reason:
-        "Recipe or expect-screen product-failure. Confirm if grok.com missed the expected screen or assertion. This still does not accept a visual baseline.",
+        "Recipe or expect-screen product-failure. Confirm if the app under test missed the expected screen or assertion. This still does not accept a visual baseline.",
     };
   }
   if (finding.code.startsWith("POSSIBLE_")) {
     return {
       verdict: "reject",
-      reason: `${finding.code} is qualified, not a proven product failure. Reject unless you saw the defect on grok.com.`,
+      reason: `${finding.code} is qualified, not a proven product failure. Reject unless you saw the defect in the app under test.`,
     };
   }
   return {

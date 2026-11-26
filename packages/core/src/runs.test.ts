@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { compileBrowserEnvironment } from "@relay/protocol";
-import type { TestJob } from "./session.js";
+import type { TestJob } from "./session/session.js";
 import {
   listPersistedRuns,
   listRunSummaries,
@@ -15,11 +15,11 @@ import {
   RunReviewError,
   runsRoot,
   writeFramePng,
-} from "./runs.js";
+} from "./runs/runs.js";
 import {
   prepareSameConfigurationReplay,
   replayInputFromPersistedRun,
-} from "./session-job-factory.js";
+} from "./session/session-job-factory.js";
 
 function job(root: string, status: TestJob["status"] = "ok"): TestJob {
   const at = Date.now();

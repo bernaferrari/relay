@@ -4,7 +4,7 @@ import {
   readWorkspaceSetting,
   workspaceSettingFile,
   writeWorkspaceSetting,
-} from "./workspace-settings.js";
+} from "./workspace/workspace-settings.js";
 
 const SENSITIVE_KEY =
   /(?:authorization|cookie|password|passwd|secret|token|api[-_]?key|clipboard)/i;

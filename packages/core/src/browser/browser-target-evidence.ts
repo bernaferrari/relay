@@ -1,0 +1,255 @@
+import { createHash } from "node:crypto";
+import type { Page, Request, Response } from "playwright-core";
+import type { SnapshotNode } from "../device/device.js";
+import { installBrowserConsentOverlayHandler } from "./browser-consent-overlay.js";
+
+/** A bounded network event retained for Browser Device evidence. */
+export type BrowserNetworkEntry = {
+  method: string;
+  url: string;
+  status?: number;
+  /** Playwright requestfailed is distinct from an HTTP error response. */
+  failed?: boolean;
+  failureText?: string;
+  at: number;
+  requestHeaders?: Record<string, string>;
+  requestBody?: string;
+  responseHeaders?: Record<string, string>;
+  responseBody?: string;
+  responseBodyEncoding?: "utf8" | "base64";
+  responseBodyTruncated?: boolean;
+};
+
+/**
+ * The evidence collector deliberately depends on a small structural session
+ * shape. Keeping it here means Browser Device lifecycle code does not also
+ * carry the bounded console/network/snapshot implementation.
+ */
+export type BrowserEvidenceSession = {
+  console: Array<{ level: string; text: string; at: number }>;
+  network: BrowserNetworkEntry[];
+  networkByRequest: WeakMap<Request, BrowserNetworkEntry>;
+  networkInclude: "summary" | "headers" | "body" | "all";
+  networkPending: Set<Promise<void>>;
+  crashes: Array<{ at: number; source: string; message: string }>;
+  pageErrors: Array<{ at: number; source: string; message: string }>;
+  pageErrorsDropped: number;
+  crashCapture: boolean;
+  consoleDropped: number;
+  networkDropped: number;
+};
+
+const INTERACTIVE =
+  'button, a[href], input, textarea, select, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+const SEMANTIC_SNAPSHOT = `${INTERACTIVE}, [id], [data-testid], h1, h2, h3, p, label`;
+const MAX_EVIDENCE_ENTRIES = 1_000;
+const MAX_NETWORK_BODY_BYTES = 256 * 1024;
+
+/** Cross-origin taps destroy the page's JS world before the after-snapshot. */
+export function isBrowserExecutionContextDestroyed(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /execution context was destroyed|most likely because of a navigation|Target closed/iu.test(
+    message,
+  );
+}
+
+/** An immediate after-click frame can straddle document replacement and stall
+ * Chromium's capture. Bound that read, then reacquire the current owned page
+ * once. This never re-dispatches the action or manufactures missing evidence. */
+export async function captureBrowserViewportScreenshot(
+  currentPage: () => Promise<Page>,
+  path?: string,
+): Promise<Buffer> {
+  const options = { ...(path ? { path } : {}), fullPage: false, timeout: 3_000 };
+  try {
+    return await (await currentPage()).screenshot(options);
+  } catch (error) {
+    if (
+      (error instanceof Error && error.name === "AbortError") ||
+      (!isBrowserExecutionContextDestroyed(error) &&
+        !(
+          error instanceof Error &&
+          error.name === "TimeoutError" &&
+          error.message.includes("page.screenshot")
+        ))
+    )
+      throw error;
+    const page = await currentPage();
+    await page.waitForLoadState("domcontentloaded", { timeout: 3_000 });
+    return await page.screenshot(options);
+  }
+}
+
+export function attachBrowserEvidence(session: BrowserEvidenceSession, page: Page): void {
+  void installBrowserConsentOverlayHandler(page);
+  page.on("console", (message) => {
+    if (session.console.length >= MAX_EVIDENCE_ENTRIES) {
+      session.console.shift();
+      session.consoleDropped += 1;
+    }
+    session.console.push({ level: message.type(), text: message.text(), at: Date.now() });
+  });
+  page.on("pageerror", (error) => {
+    if (session.pageErrors.length >= MAX_EVIDENCE_ENTRIES) {
+      session.pageErrors.shift();
+      session.pageErrorsDropped += 1;
+    }
+    session.pageErrors.push({
+      at: Date.now(),
+      source: "browser-pageerror",
+      message: error.message,
+    });
+    if (session.crashCapture) {
+      if (session.crashes.length >= MAX_EVIDENCE_ENTRIES) session.crashes.shift();
+      session.crashes.push({ at: Date.now(), source: "browser-pageerror", message: error.message });
+    }
+  });
+  page.on("request", (request) => {
+    if (session.network.length >= MAX_EVIDENCE_ENTRIES) {
+      session.network.shift();
+      session.networkDropped += 1;
+    }
+    const includeHeaders = session.networkInclude === "headers" || session.networkInclude === "all";
+    const includeBody = session.networkInclude === "body" || session.networkInclude === "all";
+    const entry: BrowserNetworkEntry = {
+      method: request.method(),
+      url: request.url(),
+      at: Date.now(),
+      ...(includeHeaders ? { requestHeaders: request.headers() } : {}),
+      ...(includeBody && request.postData() ? { requestBody: request.postData()! } : {}),
+    };
+    session.network.push(entry);
+    session.networkByRequest.set(request, entry);
+  });
+  page.on("response", (response) => {
+    const entry = session.networkByRequest.get(response.request());
+    if (!entry) return;
+    entry.status = response.status();
+    if (session.networkInclude === "headers" || session.networkInclude === "all") {
+      entry.responseHeaders = response.headers();
+    }
+    if (session.networkInclude === "body" || session.networkInclude === "all") {
+      const pending = captureResponseBody(response, entry);
+      session.networkPending.add(pending);
+      void pending.finally(() => session.networkPending.delete(pending));
+    }
+  });
+  page.on("requestfailed", (request) => {
+    const entry = session.networkByRequest.get(request);
+    if (!entry) return;
+    entry.failed = true;
+    const failureText = request.failure()?.errorText?.trim();
+    if (failureText) entry.failureText = failureText.slice(0, 512);
+  });
+}
+
+async function captureResponseBody(response: Response, entry: BrowserNetworkEntry): Promise<void> {
+  try {
+    const body = await response.body();
+    const truncated = body.byteLength > MAX_NETWORK_BODY_BYTES;
+    const bounded = body.subarray(0, MAX_NETWORK_BODY_BYTES);
+    const contentType = response.headers()["content-type"] ?? "";
+    const textual = /(?:json|text|javascript|xml|html|css|form-urlencoded)/i.test(contentType);
+    entry.responseBody = textual ? bounded.toString("utf8") : bounded.toString("base64");
+    entry.responseBodyEncoding = textual ? "utf8" : "base64";
+    if (truncated) entry.responseBodyTruncated = true;
+  } catch {
+    // Redirects, cached responses, and streaming bodies may not be readable.
+  }
+}
+
+export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<SnapshotNode[]> {
+  const capture = () => collectBrowserSnapshotNodes(page, maxNodes);
+  try {
+    return await capture();
+  } catch (error) {
+    if (!isBrowserExecutionContextDestroyed(error)) throw error;
+    await page.waitForLoadState("domcontentloaded", { timeout: 15_000 }).catch(() => undefined);
+    return await capture();
+  }
+}
+
+async function collectBrowserSnapshotNodes(page: Page, maxNodes: number): Promise<SnapshotNode[]> {
+  return await page.locator(`${SEMANTIC_SNAPSHOT}, div, span, li, td, th, dt, dd`).evaluateAll(
+    (elements, options) => {
+      const identifierCounts = new Map<string, number>();
+      for (const element of elements) {
+        const identifier = element.getAttribute("data-testid") || element.id;
+        if (identifier)
+          identifierCounts.set(identifier, (identifierCounts.get(identifier) ?? 0) + 1);
+      }
+      const visible = elements.filter((element) => {
+        // Plain feature copy is evidence too. Keep only text-bearing wrappers,
+        // not every layout div, so extra structure cannot exhaust the budget.
+        if (
+          !element.matches(options.semantic) &&
+          !Array.from(element.childNodes).some(
+            (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+          )
+        )
+          return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
+      });
+      const bounded = visible.slice(0, options.limit);
+      return bounded.map((element, index) => {
+        const html = element as HTMLElement;
+        const input = element as HTMLInputElement;
+        const rect = element.getBoundingClientRect();
+        const role = element.matches(options.semantic)
+          ? element.getAttribute("role") || element.tagName.toLowerCase()
+          : "text";
+        const identifier = element.getAttribute("data-testid") || element.id || undefined;
+        const hittable = element.matches(options.interactive);
+        const renderedText = html.innerText?.trim() ?? "";
+        const formControl = /^(INPUT|TEXTAREA|SELECT)$/u.test(element.tagName);
+        const renderedContent = formControl ? String(input.value ?? "") : renderedText;
+        const label =
+          element.getAttribute("aria-label") ||
+          element.getAttribute("title") ||
+          (input.labels?.[0]?.textContent ?? "") ||
+          html.innerText?.trim() ||
+          input.placeholder ||
+          input.name ||
+          "";
+        let parentIndex: number | undefined;
+        let ancestor = element.parentElement;
+        while (ancestor) {
+          const found = bounded.indexOf(ancestor);
+          if (found !== -1) {
+            parentIndex = found;
+            break;
+          }
+          ancestor = ancestor.parentElement;
+        }
+        return {
+          index,
+          ...(parentIndex !== undefined ? { parentIndex } : {}),
+          role,
+          type: role,
+          label: label.slice(0, 500),
+          content: (input.type === "password" ? "••••••••" : renderedContent).slice(0, 500),
+          value:
+            input.type === "password"
+              ? "••••••••"
+              : String(formControl ? (input.value ?? "") : renderedText).slice(0, 500),
+          identifier: identifier && identifierCounts.get(identifier) === 1 ? identifier : undefined,
+          enabled: !(input.disabled || element.getAttribute("aria-disabled") === "true"),
+          selected: element.getAttribute("aria-selected") === "true",
+          focused: document.activeElement === element,
+          visibleToUser: true,
+          hittable,
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        };
+      });
+    },
+    { limit: maxNodes, interactive: INTERACTIVE, semantic: SEMANTIC_SNAPSHOT },
+  );
+}
+
+/** Fingerprint the same bounded JPEG surface that the Browser Device paints. */
+export async function browserPageVisualFingerprint(page: Page): Promise<string> {
+  const buffer = await page.screenshot({ type: "jpeg", quality: 76, animations: "disabled" });
+  return createHash("sha256").update(buffer).digest("base64url");
+}

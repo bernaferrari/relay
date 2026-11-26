@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import type http from "node:http";
 import {
+  bootDevice,
   captureScrollableSurveyForTarget,
   captureScreenshot,
   captureSnapshot,
@@ -14,17 +15,19 @@ import {
   getActiveJob,
   interact,
   IosMutationOutcomeUnknownError,
+  listDevices,
   persistScrollSurvey,
   scrollCollectControls,
   SurveyPersistError,
   formatSnapshotTree,
+  requestAndroidAuthorization,
   runWithOperationContext,
 } from "@relay/core";
 import type { OperationInput } from "@relay/protocol";
 import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
-import { assertAndroidLiveInputPlatform } from "./live-input-platform.js";
+import { assertAndroidLiveInputPlatform } from "./live/live-input-platform.js";
 import {
   ANDROID_LIVE_INPUT_NOT_DISPATCHED,
   injectAndroidKey,
@@ -32,17 +35,17 @@ import {
   injectAndroidTouch,
   type AndroidKeyboardInput,
   type AndroidTouchAction,
-} from "./live-video.js";
+} from "./live/live-video.js";
 import {
   iosVideoUnavailableResponse,
   readIosVideoTake,
   startIosVideoTake,
   stopIosVideoTake,
-} from "./ios-video-capture.js";
+} from "./ios/ios-video-capture.js";
 import { applyLaneToInteractOrThrow, runtimeOverlayFromLaneResolution } from "./lane-run-route.js";
 import { optionalFiniteSearchNumber } from "./search-params.js";
 import { recordAudit, type RequestContext } from "./security.js";
-import { livePreviewOperationContext } from "./target-stream-context.js";
+import { livePreviewOperationContext } from "./target/target-stream-context.js";
 
 export type ManualTargetRouteInput = {
   method: string;
@@ -86,6 +89,48 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
     captureTargetScreenshot,
     captureTargetSnapshot = captureSnapshot,
   } = input;
+
+  if (method === "POST" && pathname === "/device/boot") {
+    const body = (await parseJsonBody(req)) as {
+      serial?: string;
+      platform?: "android" | "ios";
+    };
+    if (!body.serial?.trim()) throw new HttpError(400, "serial is required");
+    await assertTargetControl(scope, body.serial);
+    const known = (await listDevices().catch(() => [])).find(
+      (device) => device.serial === body.serial,
+    );
+    if (known?.kind && !/simulator|emulator/i.test(known.kind)) {
+      throw new HttpError(400, "Only simulators and emulators can be booted from Relay");
+    }
+    try {
+      await bootDevice(body.serial.trim(), body.platform ?? known?.platform ?? "ios");
+    } catch (error) {
+      throw new HttpError(502, error instanceof Error ? error.message : String(error));
+    }
+    json(res, 200, { ok: true, serial: body.serial.trim() });
+    return true;
+  }
+
+  if (method === "POST" && pathname === "/device/authorize") {
+    const body = (await parseJsonBody(req)) as { serial?: string };
+    if (!body.serial?.trim()) throw new HttpError(400, "serial is required");
+    await assertTargetControl(scope, body.serial);
+    const known = (await listDevices().catch(() => [])).find(
+      (device) => device.serial === body.serial,
+    );
+    if (!known) throw new HttpError(404, "Android device is no longer attached");
+    if (known.platform !== "android" || known.kind !== "Physical device") {
+      throw new HttpError(400, "Only attached Android hardware can be authorized");
+    }
+    try {
+      await requestAndroidAuthorization(body.serial);
+    } catch (error) {
+      throw new HttpError(502, error instanceof Error ? error.message : String(error));
+    }
+    json(res, 200, { ok: true, serial: body.serial });
+    return true;
+  }
 
   if (method === "GET" && pathname === "/snapshot") {
     const serial = url.searchParams.get("serial") ?? undefined;

@@ -1,6 +1,6 @@
 import type { ApprovalPolicyDecision, ExecutionRisk } from "./approval-policy.js";
 import type { SourceRevision } from "./source-revision.js";
-import type { TracePack } from "./trace-pack.js";
+import type { TracePack } from "./trace/trace-pack.js";
 
 export const VERIFY_CHANGE_MAX_IDS = 128;
 export const VERIFY_CHANGE_MAX_TRACE_PACKS = 32;

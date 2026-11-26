@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { PersistedRun } from "./runs.js";
-import type { RunVerdict, RunVerdictStatus, RunVerdictStep } from "./run-verdict.js";
+import type { PersistedRun } from "./runs/runs.js";
+import type { RunVerdict, RunVerdictStatus, RunVerdictStep } from "./run/run-verdict.js";
 
 /** Imported traces are already upstream executions. Keep their final attempt's
  * steps rather than inventing native authored-step joins or collapsing retries. */

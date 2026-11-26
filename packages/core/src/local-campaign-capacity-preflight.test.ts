@@ -15,7 +15,7 @@ import {
   preflightLocalCampaignCapacity,
   preflightLocalCampaignTargetCriticalPath,
 } from "./local-campaign-capacity-preflight.js";
-import type { ListedDevice } from "./workspace-devices.js";
+import type { ListedDevice } from "./workspace/workspace-devices.js";
 
 function device(
   serial: string,

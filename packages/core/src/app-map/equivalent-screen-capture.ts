@@ -1,7 +1,7 @@
 import type { AuthoringObservation } from "@relay/protocol";
-import { hasCurrentAuthoringSemantics } from "../authoring-observation-proof.js";
-import { observeScreenIdentity } from "../screen-identity.js";
-import type { SnapshotNode } from "../device.js";
+import { hasCurrentAuthoringSemantics } from "../authoring/authoring-observation-proof.js";
+import { observeScreenIdentity } from "../screen/screen-identity.js";
+import type { SnapshotNode } from "../device/device.js";
 import type { AppMap, Screen } from "./model.js";
 
 /** Reuse a unique, exact application structure when only input focus or system keyboard state changed. */

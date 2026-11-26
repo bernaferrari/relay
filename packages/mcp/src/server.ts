@@ -83,7 +83,7 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
   );
   if (profile === "device") return instructions.join(" ");
   instructions.push(
-    "relay_<operation> tools expose every other Relay operation. Prefer the named tools and use these only for what the named tools cannot do; pass confirm: true where a tool requires it.",
+    "Use the named tools when they fit. The full profile also includes relay_<operation> tools for advanced tasks. Pass confirm: true where a tool requires it.",
     "For a gated, human-reviewed check of a code change, use relay_prove_change and relay_inspect_proof; the proof.* operations cover plan review, recovery, cancellation, publication and reruns with the returned Proof id and exact version. Only a person may approve a Proof plan.",
     "Proof publication recovery is bounded: inspect first, retry one exhausted publication at most once with its exact Proof version, inspect again, and stop on a new failure.",
   );
@@ -127,10 +127,10 @@ function recoveryOptionsForProfile(profile: RelayMcpProfile): RelayMcpErrorOptio
     availableOperationIds,
     profile,
     availableProfilesForOperation: (operationId) =>
-      relayMcpProfiles.filter(
-        (candidate) =>
-          candidate === "full" ||
-          relayRequiredOperationIds(candidate).some((id) => id === operationId),
+      relayMcpProfiles.filter((candidate) =>
+        candidate === "full"
+          ? relayMcpTools.some((tool) => tool.operationId === operationId)
+          : relayRequiredOperationIds(candidate).some((id) => id === operationId),
       ),
     // The selected tool is always registered. This keeps the generic
     // refresh-and-retry action valid while canonical recoveryAction

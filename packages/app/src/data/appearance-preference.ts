@@ -7,12 +7,7 @@ export const RELAY_COLOR_SCHEME_STORAGE_KEY = "relay-color-scheme";
 
 const THEME_STYLE_ID = "relay-theme";
 const PRELOAD_STYLE_ID = "relay-theme-preload";
-const CACHED_THEME_CSS_KEYS = [
-  "relay-theme-css-light",
-  "relay-theme-css-dark",
-  "grok-device-theme-css-light",
-  "grok-device-theme-css-dark",
-] as const;
+const CACHED_THEME_CSS_KEYS = ["relay-theme-css-light", "relay-theme-css-dark"] as const;
 
 let appliedVersion = 0;
 export function colorSchemeVersion(): number {

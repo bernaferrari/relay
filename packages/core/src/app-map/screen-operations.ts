@@ -12,16 +12,16 @@ import { captureAppMapScreenVariant } from "./recording-operations.js";
 import { mutateAppMap } from "./mutation.js";
 import { actionOwners } from "./validation.js";
 import { assertAddScreenInput, assertUpdateScreenInput, identifier } from "./validation-shapes.js";
-import { hasCurrentAuthoringSemantics } from "../authoring-observation-proof.js";
-import type { SnapshotNode } from "../device.js";
-import { observeScreenIdentityForHost } from "../screen-identity.js";
+import { hasCurrentAuthoringSemantics } from "../authoring/authoring-observation-proof.js";
+import type { SnapshotNode } from "../device/device.js";
+import { observeScreenIdentityForHost } from "../screen/screen-identity.js";
 import type {
   AuthoringEvidence,
   AuthoringObservation,
   AuthoringTarget,
   TargetProfile,
 } from "@relay/protocol";
-import { recommendScrollSurfaceCapturePolicy } from "../scroll-surface-policy.js";
+import { recommendScrollSurfaceCapturePolicy } from "../scroll/scroll-surface-policy.js";
 
 export type AppMapScreenVariantCaptureInput = {
   map: AppMap;

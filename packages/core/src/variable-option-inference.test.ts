@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SnapshotNode } from "./device.js";
+import type { SnapshotNode } from "./device/device.js";
 import {
   extractVariableOptionsFromNodes,
   inferOptionId,
   inferVariableOptionsFromTeach,
 } from "./variable-option-inference.js";
+import { registerGrokDiscoveryTestProfile } from "./discovery/discovery-test-profile.js";
 
 test("stable option ids cover language and non-language Variables", () => {
   assert.equal(inferOptionId("English"), "en");
@@ -65,6 +66,34 @@ test("Variable extraction ignores picker chrome and preserves row identifiers", 
     extractVariableOptionsFromNodes(nodes).map((option) => option.id),
     ["en", "pt-BR", "it"],
   );
+});
+
+test("registered profile noise stays out of Variable options", () => {
+  const unregister = registerGrokDiscoveryTestProfile();
+  try {
+    const options = extractVariableOptionsFromNodes([
+      {
+        index: 1,
+        type: "Cell",
+        label: "Allow Grok to Access",
+        rect: { x: 600, y: 80, width: 400, height: 44 },
+        hittable: true,
+      },
+      {
+        index: 2,
+        type: "Cell",
+        label: "English",
+        rect: { x: 600, y: 140, width: 400, height: 44 },
+        hittable: true,
+      },
+    ]);
+    assert.deepEqual(
+      options.map((option) => option.id),
+      ["en"],
+    );
+  } finally {
+    unregister();
+  }
 });
 
 test("one or two taught rows anchor every inferred Variable option", () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TargetProfile } from "@relay/protocol";
-import type { AppMap, Flow } from "../app-map.js";
+import type { AppMap, Flow } from "./app-map.js";
 import { recordAppMapRun } from "./run-operations.js";
 
 const at = 1_000;

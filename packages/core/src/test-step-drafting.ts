@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import { APP_MAP_TEST_INTENT_LIMITS, type AppMap } from "@relay/protocol";
-import { createOpenRouterClient } from "./openrouter-ai-sdk.js";
+import { createOpenRouterClient } from "./openrouter/openrouter-ai-sdk.js";
 
 export type DraftedTestStep = { kind: "instruction" | "validation"; intent: string };
 

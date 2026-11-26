@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Build, WebBuildProviderReceipt } from "@relay/protocol";
 import { canonicalSha256 } from "./canonical-json.js";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import { findWorkspaceRoot } from "./workspace/workspace-root.js";
 
 const AUTHORITY_SECRET = ".web-build-provider-authority";
 const EXACT_SHA = /^[a-f0-9]{40}$/u;

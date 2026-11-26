@@ -161,7 +161,7 @@ test("a saved sign-in drives the browser without a targetId", async () => {
     await run(name, { laneId: "signed-in", ...args }, invoker);
     assert.equal(calls.length, 1);
     assert.equal(calls[0]?.operationId, operationId);
-    assert.equal((calls[0]?.input as Record<string, unknown>).laneId, "signed-in");
+    assert.equal((calls[0]!.input as Record<string, unknown>).laneId, "signed-in");
     assert.equal(Object.hasOwn(calls[0]?.input as object, "serial"), false);
     for (const selection of [{}, { targetId: "other", laneId: "signed-in" }, { serial: "old" }]) {
       await assert.rejects(run(name, { ...selection, ...args }, invoker));

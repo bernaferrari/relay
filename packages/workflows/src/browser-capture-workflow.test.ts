@@ -5,6 +5,7 @@ import {
   type BrowserCapturePlan,
 } from "./browser-capture-workflow.js";
 import { createScriptedRelayClient } from "./testing.js";
+import { appMapFixture } from "./test-response-fixtures.js";
 
 const plan: BrowserCapturePlan = {
   appMapId: "plans",
@@ -24,7 +25,7 @@ const plan: BrowserCapturePlan = {
   ],
 };
 function result(revision: number) {
-  return { appMap: { id: "plans", organizationId: "local", projectId: "default", revision } };
+  return { appMap: appMapFixture("plans", revision) };
 }
 
 test("capture plan authors one shared data set and Test with two explicit captures", async () => {

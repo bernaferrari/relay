@@ -8,15 +8,15 @@
  */
 import type { ExecutionTargetRef } from "@relay/protocol";
 import { writeFile } from "node:fs/promises";
-import type { Device } from "./device.js";
+import type { Device } from "./device/device.js";
 import {
   createTargetDriver,
   targetContextFromExecutionTargetRef,
   type TargetDriver,
   type TargetDriverRecoveryRequest,
   type TargetDriverTargetRunner,
-} from "./target-driver.js";
-import { runWithTargetContext } from "./target-context.js";
+} from "./target/target-driver.js";
+import { runWithTargetContext } from "./target/target-context.js";
 
 export const DETERMINISTIC_PROVIDER_TEST_KEY = "relay.test.deterministic-provider";
 

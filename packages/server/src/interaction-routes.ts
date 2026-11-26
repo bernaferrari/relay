@@ -26,7 +26,7 @@ import type { OperationInput } from "@relay/protocol";
 import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
 import { applyLaneToInteractOrThrow, runtimeOverlayFromLaneResolution } from "./lane-run-route.js";
-import { assertAndroidLiveInputPlatform } from "./live-input-platform.js";
+import { assertAndroidLiveInputPlatform } from "./live/live-input-platform.js";
 import type { RequestContext } from "./security.js";
 
 type InteractionRouteInput = {

@@ -7,7 +7,7 @@ import {
   unsavedDraftInstructionProblem,
   type ReviewTransitionIntent,
 } from "./recording-review-state";
-import type { ProductRecordingState } from "../data/recording-product-service";
+
 import { AuthoringHeader } from "./authoring-header";
 import { RecordingReviewLayout } from "./recording-review-layout";
 import { RecordingTrimPanel } from "./recording-trim-panel";

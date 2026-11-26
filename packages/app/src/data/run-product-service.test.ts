@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { registerCaptureReviewAccountIdentityExclusion } from "@relay/protocol";
 import {
   findPersistedRunWorkflowId,
   framePathsForTraceStep,
@@ -520,62 +521,69 @@ describe("run report projection", () => {
   });
 
   it("does not name a selected account when sign-in was not usable", () => {
-    const blocked = projectRunReport(
-      "run-blocked",
-      {
-        outcome: "blocked",
-        resolvedInputs: { account: "member" },
-        authenticationHealth: { status: "needs-relogin" },
-      },
-      { channels: {} },
+    const unregister = registerCaptureReviewAccountIdentityExclusion(
+      (key) => key === "super grok" || key.startsWith("supergrok") || key.startsWith("grok-"),
     );
-    expect(blocked.executionContext?.account).toBeUndefined();
+    try {
+      const blocked = projectRunReport(
+        "run-blocked",
+        {
+          outcome: "blocked",
+          resolvedInputs: { account: "member" },
+          authenticationHealth: { status: "needs-relogin" },
+        },
+        { channels: {} },
+      );
+      expect(blocked.executionContext?.account).toBeUndefined();
 
-    const used = projectRunReport(
-      "run-used",
-      {
-        outcome: "passed",
-        resolvedInputs: { account: "member" },
-        authenticationHealth: { status: "ready", identity: "Bernardo Ferrari" },
-      },
-      { channels: {} },
-    );
-    expect(used.executionContext?.account).toBe("Bernardo Ferrari");
+      const used = projectRunReport(
+        "run-used",
+        {
+          outcome: "passed",
+          resolvedInputs: { account: "member" },
+          authenticationHealth: { status: "ready", identity: "Bernardo Ferrari" },
+        },
+        { channels: {} },
+      );
+      expect(used.executionContext?.account).toBe("Bernardo Ferrari");
 
-    const standIn = projectRunReport(
-      "run-stand-in",
-      {
-        outcome: "passed",
-        resolvedInputs: { account: "SuperGrok" },
-        authenticationHealth: { status: "ready", identity: "grok-lab" },
-      },
-      { channels: {} },
-    );
-    expect(standIn.executionContext?.account).toBeUndefined();
+      const standIn = projectRunReport(
+        "run-stand-in",
+        {
+          outcome: "passed",
+          resolvedInputs: { account: "SuperGrok" },
+          authenticationHealth: { status: "ready", identity: "grok-lab" },
+        },
+        { channels: {} },
+      );
+      expect(standIn.executionContext?.account).toBeUndefined();
 
-    const device = projectRunReport(
-      "run-device",
-      {
-        outcome: "passed",
-        platform: "ios",
-        resolvedInputs: { account: "signed-out" },
-        authenticationHealth: { status: "ready" },
-      },
-      { channels: {} },
-    );
-    expect(device.executionContext?.account).toBeUndefined();
+      const device = projectRunReport(
+        "run-device",
+        {
+          outcome: "passed",
+          platform: "ios",
+          resolvedInputs: { account: "signed-out" },
+          authenticationHealth: { status: "ready" },
+        },
+        { channels: {} },
+      );
+      expect(device.executionContext?.account).toBeUndefined();
 
-    const browser = projectRunReport(
-      "run-browser",
-      {
-        outcome: "passed",
-        platform: "browser",
-        resolvedInputs: { account: "signed-out" },
-        authenticationHealth: { status: "ready" },
-      },
-      { channels: {} },
-    );
-    expect(browser.executionContext?.account).toBe("signed-out");
+      const browser = projectRunReport(
+        "run-browser",
+        {
+          outcome: "passed",
+          platform: "browser",
+          resolvedInputs: { account: "signed-out" },
+          authenticationHealth: { status: "ready" },
+        },
+        { channels: {} },
+      );
+      expect(browser.executionContext?.account).toBe("signed-out");
+    } finally {
+      unregister();
+    }
   });
 
   it("projects persisted TraceStep frames and log as observed legacy evidence", () => {

@@ -8,8 +8,8 @@ import {
   routeVariantQuotesShareATestAcrossPlatforms,
 } from "@relay/protocol";
 import { compileAppMapTest } from "./map-work.js";
-import { preflightAppMapCombine } from "./app-map-combine-preflight.js";
-import { parseCanonicalAppMapTestPlan } from "./app-map-test-execution-intent.js";
+import { preflightAppMapCombine } from "./app-map/app-map-combine-preflight.js";
+import { parseCanonicalAppMapTestPlan } from "./app-map/app-map-test-execution-intent.js";
 
 const at = 1;
 
@@ -39,11 +39,11 @@ function iosProfile(): TargetProfile {
 
 function browserProfile(): TargetProfile {
   return {
-    id: "browser:grok-com",
-    targetId: "grok-com",
+    id: "browser:shop-com",
+    targetId: "shop-com",
     source: "browser",
     platform: "browser",
-    name: "Grok.com",
+    name: "Shop Example",
     browserCaseProfile: compileBrowserEnvironment({}),
     capabilities: ["screenshot", "tap"],
     observedAt: at,
@@ -158,67 +158,67 @@ function destEndMap(input: {
 
 test("P0.4 compile JSON lists Android vs iOS vs web Home chrome as separate configurations", () => {
   const android = destEndMap({
-    id: "grok-android",
+    id: "shop-android",
     profile: androidProfile(),
-    testId: "test-grok-android-home-chrome",
-    originApplication: "ai.x.grok",
+    testId: "test-shop-android-home-chrome",
+    originApplication: "com.example.shop.android",
     label: "Home chrome",
     capture: true,
   });
   const ios = destEndMap({
-    id: "grok-ios",
+    id: "shop-ios",
     profile: iosProfile(),
-    testId: "test-grok-ios-home-chrome",
-    originApplication: "ai.x.GrokApp",
+    testId: "test-shop-ios-home-chrome",
+    originApplication: "com.example.shop.ios",
     label: "Home chrome",
     capture: true,
   });
   const web = destEndMap({
-    id: "grok-web",
+    id: "shop-web",
     profile: browserProfile(),
-    testId: "test-grok-web-signed-in-home",
-    originApplication: "https://grok.com",
+    testId: "test-shop-web-signed-in-home",
+    originApplication: "https://shop.example",
     label: "Home chrome",
     capture: true,
     companions: [
       {
         platform: "android",
-        appMapId: "grok-android",
-        testId: "test-grok-android-home-chrome",
+        appMapId: "shop-android",
+        testId: "test-shop-android-home-chrome",
       },
-      { platform: "ios", appMapId: "grok-ios", testId: "test-grok-ios-home-chrome" },
+      { platform: "ios", appMapId: "shop-ios", testId: "test-shop-ios-home-chrome" },
     ],
   });
 
   const androidPlan = compileAppMapTest(
     android,
-    android.tests["test-grok-android-home-chrome"]!,
+    android.tests["test-shop-android-home-chrome"]!,
   ).plan;
-  const iosPlan = compileAppMapTest(ios, ios.tests["test-grok-ios-home-chrome"]!).plan;
-  const webPlan = compileAppMapTest(web, web.tests["test-grok-web-signed-in-home"]!).plan;
+  const iosPlan = compileAppMapTest(ios, ios.tests["test-shop-ios-home-chrome"]!).plan;
+  const webPlan = compileAppMapTest(web, web.tests["test-shop-web-signed-in-home"]!).plan;
 
   assert.deepEqual(androidPlan.routeVariantConfigurations, [
     {
       platform: "android",
       configuration: { app: "android" },
-      testId: "test-grok-android-home-chrome",
+      testId: "test-shop-android-home-chrome",
       role: "compiled",
     },
   ]);
   assert.deepEqual(iosPlan.routeVariantConfigurations, [
     {
       platform: "ios",
-      configuration: { app: "ai.x.GrokApp" },
-      testId: "test-grok-ios-home-chrome",
+      configuration: { app: "ios" },
+      testId: "test-shop-ios-home-chrome",
       role: "compiled",
     },
   ]);
   assert.deepEqual(
     webPlan.routeVariantConfigurations?.map((quote) => [quote.platform, quote.testId, quote.role]),
     [
-      ["web", "test-grok-web-signed-in-home", "compiled"],
-      ["android", "test-grok-android-home-chrome", "companion"],
-      ["ios", "test-grok-ios-home-chrome", "companion"],
+      ["web", "test-shop-web-signed-in-home", "compiled"],
+      ["android", "test-shop-android-home-chrome", "companion"],
+      ["ios", "test-shop-ios-home-chrome", "companion"],
     ],
   );
   assert.equal(
@@ -226,8 +226,8 @@ test("P0.4 compile JSON lists Android vs iOS vs web Home chrome as separate conf
     false,
   );
   assert.equal(androidPlan.plannedSlots?.[0]?.configuration?.app, "android");
-  assert.equal(iosPlan.plannedSlots?.[0]?.configuration?.app, "ai.x.GrokApp");
-  assert.equal(webPlan.plannedSlots?.[0]?.configuration?.browser, "grok-com");
+  assert.equal(iosPlan.plannedSlots?.[0]?.configuration?.app, "ios");
+  assert.equal(webPlan.plannedSlots?.[0]?.configuration?.browser, "browser");
   assert.notEqual(
     captureReviewSlotId(androidPlan.plannedSlots![0]!),
     captureReviewSlotId(iosPlan.plannedSlots![0]!),
@@ -245,28 +245,28 @@ test("P0.4 compile JSON lists Android vs iOS vs web Home chrome as separate conf
 
 test("P0.4 Plan JSON does not treat a shared caption as one Test covering three platforms", async (context) => {
   const map = destEndMap({
-    id: "grok-web",
+    id: "shop-web",
     profile: browserProfile(),
-    testId: "test-grok-web-signed-in-home",
-    originApplication: "https://grok.com",
+    testId: "test-shop-web-signed-in-home",
+    originApplication: "https://shop.example",
     label: "Home chrome",
     companions: [
       {
         platform: "android",
-        appMapId: "grok-android",
-        testId: "test-grok-android-home-chrome",
+        appMapId: "shop-android",
+        testId: "test-shop-android-home-chrome",
       },
-      { platform: "ios", appMapId: "grok-ios", testId: "test-grok-ios-home-chrome" },
+      { platform: "ios", appMapId: "shop-ios", testId: "test-shop-ios-home-chrome" },
     ],
   });
   const language = {
     organizationId: "org",
     projectId: "project",
-    appMapId: "grok-web",
+    appMapId: "shop-web",
     id: "language",
     name: "Language",
     kind: "language" as const,
-    apply: { kind: "appLocale" as const, app: "ai.x.grok" },
+    apply: { kind: "appLocale" as const, app: "com.example.shop.android" },
     options: [{ id: "en", label: "English" }],
     restoreId: "en",
     createdAt: at,
@@ -275,18 +275,18 @@ test("P0.4 Plan JSON does not treat a shared caption as one Test covering three 
   const combine = {
     organizationId: "org",
     projectId: "project",
-    appMapId: "grok-web",
+    appMapId: "shop-web",
     id: "home-chrome",
     name: "Home chrome",
     createdAt: at,
     updatedAt: at,
     variableIds: ["language"],
-    testIds: ["test-grok-web-signed-in-home"],
+    testIds: ["test-shop-web-signed-in-home"],
     cellRuntimeProfiles: [
       {
-        testId: "test-grok-web-signed-in-home",
+        testId: "test-shop-web-signed-in-home",
         values: { language: "en" },
-        targetProfileId: "browser:grok-com",
+        targetProfileId: "browser:shop-com",
       },
     ],
   };
@@ -296,7 +296,7 @@ test("P0.4 Plan JSON does not treat a shared caption as one Test covering three 
   assert.equal(preflight.ok, true, JSON.stringify(preflight.blockers));
   await context.test("a browser profile without its frozen environment stays blocked", async () => {
     const incompleteBrowser = structuredClone(map);
-    delete incompleteBrowser.screenVariants["grok-web-home"]!.targetProfile.browserCaseProfile;
+    delete incompleteBrowser.screenVariants["shop-web-home"]!.targetProfile.browserCaseProfile;
     const blocked = await preflightAppMapCombine(incompleteBrowser, combine);
     assert.equal(blocked.ok, false);
     assert.ok(
@@ -313,9 +313,9 @@ test("P0.4 Plan JSON does not treat a shared caption as one Test covering three 
       quote.role,
     ]),
     [
-      ["web", "test-grok-web-signed-in-home", "compiled"],
-      ["android", "test-grok-android-home-chrome", "companion"],
-      ["ios", "test-grok-ios-home-chrome", "companion"],
+      ["web", "test-shop-web-signed-in-home", "compiled"],
+      ["android", "test-shop-android-home-chrome", "companion"],
+      ["ios", "test-shop-ios-home-chrome", "companion"],
     ],
   );
   assert.equal(new Set(preflight.routeVariantConfigurations?.map((quote) => quote.testId)).size, 3);

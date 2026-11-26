@@ -4,7 +4,7 @@ import {
   createOpenRouterGenerationProvider,
   generateValues,
   registerGenerationProvider,
-} from "./generation.js";
+} from "./generation/generation.js";
 
 test("deterministic generation is reproducible", async () => {
   const input = {

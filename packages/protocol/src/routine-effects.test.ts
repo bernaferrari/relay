@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { graphTest } from "./app-map-test-operation-schemas.js";
+import { graphTest } from "./app-map/app-map-test-operation-schemas.js";
 import {
   BROWSER_LANE_ISOLATION_NOTE,
   leftoverContradictedFacts,

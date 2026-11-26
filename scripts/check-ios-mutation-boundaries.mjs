@@ -12,21 +12,21 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * deliberate architecture review rather than an accidental fallback.
  */
 export const rawDeviceMutationBoundaryPaths = new Set([
-  "packages/core/src/device.ts",
-  "packages/core/src/device-mutation-adapter.ts",
+  "packages/core/src/device/device.ts",
+  "packages/core/src/device/device-mutation-adapter.ts",
   // These modules are cohesive implementation seams extracted from device.ts.
   // They still sit below the public workflow boundary and deliberately own
   // the dispatcher/native transport calls they contain.
-  "packages/core/src/device-dispatch.ts",
-  "packages/core/src/device-text-entry.ts",
-  "packages/core/src/device-clipboard.ts",
+  "packages/core/src/device/device-dispatch.ts",
+  "packages/core/src/device/device-text-entry.ts",
+  "packages/core/src/device/device-clipboard.ts",
   // Canonical SDK-client construction (0.21.x method rebinding + facade).
   // It builds the transport device.ts dispatches through; no workflow code
   // may import it.
-  "packages/core/src/device-client-bindings.ts",
+  "packages/core/src/device/device-client-bindings.ts",
   // Android text entry is a platform-specific dispatcher seam. It owns the
   // clipboard/IME fallback and must remain below the public Device facade.
-  "packages/core/src/device-android-text.ts",
+  "packages/core/src/device/device-android-text.ts",
 ]);
 
 /**
@@ -36,56 +36,56 @@ export const rawDeviceMutationBoundaryPaths = new Set([
  */
 export const privateDeviceCapabilityPaths = new Set([
   ...rawDeviceMutationBoundaryPaths,
-  "packages/core/src/device-capabilities.ts",
-  "packages/core/src/device-observation-membrane.ts",
-  "packages/core/src/device-client-bindings.ts",
+  "packages/core/src/device/device-capabilities.ts",
+  "packages/core/src/device/device-observation-membrane.ts",
+  "packages/core/src/device/device-client-bindings.ts",
   "packages/core/src/testing.ts",
 ]);
 
 const rawSdkBoundaryPaths = new Set([
   "packages/core/src/control.ts",
-  "packages/core/src/device-capabilities.ts",
-  "packages/core/src/device-client-bindings.ts",
-  "packages/core/src/device-mutation-adapter.ts",
-  "packages/core/src/device.ts",
-  "packages/core/src/device-android-text.ts",
-  "packages/core/src/device-clipboard.ts",
+  "packages/core/src/device/device-capabilities.ts",
+  "packages/core/src/device/device-client-bindings.ts",
+  "packages/core/src/device/device-mutation-adapter.ts",
+  "packages/core/src/device/device.ts",
+  "packages/core/src/device/device-android-text.ts",
+  "packages/core/src/device/device-clipboard.ts",
   // Read-only Android app discovery is a narrow host SDK adapter; it never
   // launches or mutates a target and is exported only through core.
-  "packages/core/src/android-installed-apps.ts",
+  "packages/core/src/android/android-installed-apps.ts",
 ]);
 
 const internalDeviceModuleOwners = new Map([
   [
     "device-capabilities",
     new Set([
-      "packages/core/src/device.ts",
-      "packages/core/src/device-dispatch.ts",
-      "packages/core/src/device-client-bindings.ts",
+      "packages/core/src/device/device.ts",
+      "packages/core/src/device/device-dispatch.ts",
+      "packages/core/src/device/device-client-bindings.ts",
       "packages/core/src/testing.ts",
-      "packages/core/src/ios-runner-listener-command.ts",
-      "packages/core/src/device-android-text.ts",
-      "packages/core/src/device-clipboard.ts",
+      "packages/core/src/ios/ios-runner-listener-command.ts",
+      "packages/core/src/device/device-android-text.ts",
+      "packages/core/src/device/device-clipboard.ts",
     ]),
   ],
   [
     "device-mutation-adapter",
     new Set([
-      "packages/core/src/device.ts",
-      "packages/core/src/device-client-bindings.ts",
-      "packages/core/src/device-dispatch.ts",
-      "packages/core/src/device-text-entry.ts",
-      "packages/core/src/device-android-text.ts",
+      "packages/core/src/device/device.ts",
+      "packages/core/src/device/device-client-bindings.ts",
+      "packages/core/src/device/device-dispatch.ts",
+      "packages/core/src/device/device-text-entry.ts",
+      "packages/core/src/device/device-android-text.ts",
     ]),
   ],
   [
     "device-observation-membrane",
     new Set([
-      "packages/core/src/browser-target.ts",
-      "packages/core/src/device-client-bindings.ts",
-      "packages/core/src/device-factory.ts",
-      "packages/core/src/device.ts",
-      "packages/core/src/device-dispatch.ts",
+      "packages/core/src/browser/browser-target.ts",
+      "packages/core/src/device/device-client-bindings.ts",
+      "packages/core/src/device/device-factory.ts",
+      "packages/core/src/device/device.ts",
+      "packages/core/src/device/device-dispatch.ts",
       "packages/core/src/testing.ts",
     ]),
   ],
@@ -98,11 +98,11 @@ const forbiddenCorePackageEntries = new Set([
   "./device-observation-membrane",
 ]);
 const runtimeObservationFacadeOwners = new Set([
-  "packages/core/src/browser-target.ts",
+  "packages/core/src/browser/browser-target.ts",
   // device-client-bindings constructs the canonical Device; the facade call
   // itself lives there (device.ts composes it).
-  "packages/core/src/device-client-bindings.ts",
-  "packages/core/src/device-factory.ts",
+  "packages/core/src/device/device-client-bindings.ts",
+  "packages/core/src/device/device-factory.ts",
   "packages/core/src/testing.ts",
 ]);
 
@@ -225,7 +225,7 @@ export function evaluateIosMutationBoundaries(entries) {
       for (const match of source.matchAll(nativeCapabilityEscape)) {
         violations.push(
           `${path}:${lineAt(source, match.index ?? 0)} accesses ${match[0]}; ` +
-            "workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
+            "workflow code receives the safe Device facade and must use packages/core/src/device/device.ts helpers.",
         );
       }
     }
@@ -233,7 +233,7 @@ export function evaluateIosMutationBoundaries(entries) {
       for (const match of source.matchAll(rawMutationCall)) {
         violations.push(
           `${path}:${lineAt(source, match.index ?? 0)} directly invokes ${match[0].trim()}; ` +
-            "route physical input through packages/core/src/device.ts instead.",
+            "route physical input through packages/core/src/device/device.ts instead.",
         );
       }
       for (const match of source.matchAll(rawFindCall)) {
@@ -242,7 +242,7 @@ export function evaluateIosMutationBoundaries(entries) {
         if (/\baction\s*:\s*["']exists["']/u.test(match[1] ?? "")) continue;
         violations.push(
           `${path}:${lineAt(source, match.index ?? 0)} directly invokes device.interactions.find(; ` +
-            "route physical input through packages/core/src/device.ts instead.",
+            "route physical input through packages/core/src/device/device.ts instead.",
         );
       }
       for (const match of source.matchAll(rawClipboardCall)) {
@@ -251,7 +251,7 @@ export function evaluateIosMutationBoundaries(entries) {
         if (/\baction\s*:\s*["']read["']/u.test(match[1] ?? "")) continue;
         violations.push(
           `${path}:${lineAt(source, match.index ?? 0)} directly invokes device.command.clipboard(; ` +
-            "route physical input through packages/core/src/device.ts instead.",
+            "route physical input through packages/core/src/device/device.ts instead.",
         );
       }
     }

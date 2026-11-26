@@ -5,11 +5,11 @@ import type {
   AppMapScenarioTest,
   RecipeStep,
 } from "@relay/protocol";
-import { compileAppMapScenarioTest } from "./app-map-test-compiler.js";
-import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
-export { AppMapTestCompileError } from "./app-map-test-compiler.js";
-export type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
-import { compileOptionsForVisualSurface } from "./combine-visual-surface.js";
+import { compileAppMapScenarioTest } from "./app-map/app-map-test-compiler.js";
+import type { AppMapTestCompileOptions } from "./app-map/app-map-test-compiler.js";
+export { AppMapTestCompileError } from "./app-map/app-map-test-compiler.js";
+export type { AppMapTestCompileOptions } from "./app-map/app-map-test-compiler.js";
+import { compileOptionsForVisualSurface } from "./combine/combine-visual-surface.js";
 import type { Recipe } from "./recipes.js";
 import {
   assessSequentialStartingState,

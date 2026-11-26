@@ -25,7 +25,7 @@ First agent task:
   Run relay-mcp doctor --profile qa with the same connection options.
   In your MCP host, call relay_health, then relay_list_apps and relay_list_tests.
   Call relay_get_guide for how-to guides and relay_list_devices to pick a target.
-  Use --profile device to drive a device and record; full adds every raw operation.
+  Use --profile device to drive a device and record; full adds advanced raw operations.
 
 RELAY_URL keeps attachment to an existing service; it overrides workspace startup.
 RELAY_WORKSPACE_ROOT and RELAY_RUNTIME_PORT configure workspace startup.

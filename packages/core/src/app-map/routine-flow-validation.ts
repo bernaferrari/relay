@@ -10,7 +10,6 @@ import type { AppMapScope, Flow, Routine } from "./model.js";
 import { assertActions } from "./action-validation.js";
 import { assertEntity } from "./entity-validation.js";
 import {
-  finiteTimestamp,
   identifier,
   objectValue,
   optionalText,

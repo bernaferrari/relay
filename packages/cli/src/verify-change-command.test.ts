@@ -497,7 +497,7 @@ test("verify-change resumes server-owned Proof execution with one stable proof.r
   const client = {
     async invoke(
       id: OperationId,
-      input: unknown,
+      _input: unknown,
       options?: { requestId?: string; idempotencyKey?: string },
     ) {
       identities.push({ id, ...options });

@@ -1,8 +1,8 @@
 /**
  * Structured job reports for CI (JSON / JUnit) and product surfaces.
  */
-import type { JobStatus, TestJob } from "./session.js";
-import type { Glyph, StepKind } from "./trace.js";
+import type { JobStatus, TestJob } from "./session/session.js";
+import type { Glyph, StepKind } from "./trace/trace.js";
 import type { FailureCategory, RunOutcome, RunReview, TargetProfile } from "@relay/protocol";
 import { classifyRunOutcome } from "./outcomes.js";
 

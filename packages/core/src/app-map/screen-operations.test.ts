@@ -8,7 +8,7 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import { compileBrowserEnvironment } from "@relay/protocol";
-import { observeScreenIdentity } from "../screen-identity.js";
+import { observeScreenIdentity } from "../screen/screen-identity.js";
 import { observeAppMapScreenAlias } from "./screen-operations.js";
 
 const primaryFingerprint = "a".repeat(64);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertionRecipeStep } from "./app-map-test-assertion.js";
+import { assertionRecipeStep } from "./app-map/app-map-test-assertion.js";
 import { assertActions } from "./app-map/action-validation.js";
 import type {
   ActionSpec,
@@ -9,10 +9,10 @@ import type {
   AppMapScenarioTestStep,
 } from "./app-map/model.js";
 import { contentAssertionPassed, contentContains } from "./content-assertion-match.js";
-import { runRecipeStep } from "./recipe-runner.js";
-import { parseRecipeYaml } from "./recipe-yaml.js";
+import { runRecipeStep } from "./recipe/recipe-runner.js";
+import { parseRecipeYaml } from "./recipe/recipe-yaml.js";
 import { validateRecipeSteps } from "./recipes.js";
-import { runWithTargetContext } from "./target-context.js";
+import { runWithTargetContext } from "./target/target-context.js";
 
 const SUPERGROK_LIMIT = "17 hours 42 minutes before limit is gone";
 const ASSISTANT_FOUR = "4";

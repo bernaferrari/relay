@@ -16,33 +16,42 @@ test("workflow modules cannot bypass the canonical physical mutation dispatcher"
   ].join("\n");
 
   assert.deepEqual(evaluateIosMutationBoundaries([{ path: "packages/core/src/tour.ts", source }]), [
-    "packages/core/src/tour.ts:2 directly invokes device.interactions.press(; route physical input through packages/core/src/device.ts instead.",
+    "packages/core/src/tour.ts:2 directly invokes device.interactions.press(; route physical input through packages/core/src/device/device.ts instead.",
   ]);
 });
 
 test("only the canonical dispatcher and native adapter own the raw transport", () => {
   const source = 'await target.device.apps.open({ platform: "android", app: "com.example.app" });';
-  assert.equal(rawDeviceMutationBoundaryPaths.has("packages/core/src/device.ts"), true);
+  assert.equal(rawDeviceMutationBoundaryPaths.has("packages/core/src/device/device.ts"), true);
   assert.equal(
-    rawDeviceMutationBoundaryPaths.has("packages/core/src/device-mutation-adapter.ts"),
+    rawDeviceMutationBoundaryPaths.has("packages/core/src/device/device-mutation-adapter.ts"),
     true,
   );
-  assert.equal(rawDeviceMutationBoundaryPaths.has("packages/core/src/device-dispatch.ts"), true);
-  assert.equal(rawDeviceMutationBoundaryPaths.has("packages/core/src/device-text-entry.ts"), true);
   assert.equal(
-    rawDeviceMutationBoundaryPaths.has("packages/core/src/device-capabilities.ts"),
+    rawDeviceMutationBoundaryPaths.has("packages/core/src/device/device-dispatch.ts"),
+    true,
+  );
+  assert.equal(
+    rawDeviceMutationBoundaryPaths.has("packages/core/src/device/device-text-entry.ts"),
+    true,
+  );
+  assert.equal(
+    rawDeviceMutationBoundaryPaths.has("packages/core/src/device/device-capabilities.ts"),
     false,
   );
   assert.equal(
-    privateDeviceCapabilityPaths.has("packages/core/src/device-observation-membrane.ts"),
+    privateDeviceCapabilityPaths.has("packages/core/src/device/device-observation-membrane.ts"),
     true,
   );
   assert.equal(privateDeviceCapabilityPaths.has("packages/core/src/testing.ts"), true);
-  assert.equal(rawDeviceMutationBoundaryPaths.has("packages/core/src/workspace-capture.ts"), false);
+  assert.equal(
+    rawDeviceMutationBoundaryPaths.has("packages/core/src/workspace/workspace-capture.ts"),
+    false,
+  );
   assert.deepEqual(
     evaluateIosMutationBoundaries([
-      { path: "packages/core/src/device.ts", source },
-      { path: "packages/core/src/device-mutation-adapter.ts", source },
+      { path: "packages/core/src/device/device.ts", source },
+      { path: "packages/core/src/device/device-mutation-adapter.ts", source },
     ]),
     [],
   );
@@ -56,15 +65,15 @@ test("workflow modules cannot import a native transport or test-double escape ha
     'import { createDeviceObservationFacade } from "./device-observation-membrane.js";',
   ].join("\n");
   assert.deepEqual(
-    evaluateIosMutationBoundaries([{ path: "packages/core/src/recipe-runner.ts", source }]),
+    evaluateIosMutationBoundaries([{ path: "packages/core/src/recipe/recipe-runner.ts", source }]),
     [
-      "packages/core/src/recipe-runner.ts:1 accesses bindNativeDeviceMutations; workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
-      "packages/core/src/recipe-runner.ts:2 accesses nativeDevice; workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
-      "packages/core/src/recipe-runner.ts:2 accesses DeviceTransport; workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
-      "packages/core/src/recipe-runner.ts:3 accesses deviceTestDouble; workflow code receives the safe Device facade and must use packages/core/src/device.ts helpers.",
-      "packages/core/src/recipe-runner.ts:1 imports ./device-mutation-adapter.js; internal device capability modules are private—use the public device helpers instead.",
-      "packages/core/src/recipe-runner.ts:2 imports ./device-capabilities.js; internal device capability modules are private—use the public device helpers instead.",
-      "packages/core/src/recipe-runner.ts:4 imports ./device-observation-membrane.js; internal device capability modules are private—use the public device helpers instead.",
+      "packages/core/src/recipe/recipe-runner.ts:1 accesses bindNativeDeviceMutations; workflow code receives the safe Device facade and must use packages/core/src/device/device.ts helpers.",
+      "packages/core/src/recipe/recipe-runner.ts:2 accesses nativeDevice; workflow code receives the safe Device facade and must use packages/core/src/device/device.ts helpers.",
+      "packages/core/src/recipe/recipe-runner.ts:2 accesses DeviceTransport; workflow code receives the safe Device facade and must use packages/core/src/device/device.ts helpers.",
+      "packages/core/src/recipe/recipe-runner.ts:3 accesses deviceTestDouble; workflow code receives the safe Device facade and must use packages/core/src/device/device.ts helpers.",
+      "packages/core/src/recipe/recipe-runner.ts:1 imports ./device-mutation-adapter.js; internal device capability modules are private—use the public device helpers instead.",
+      "packages/core/src/recipe/recipe-runner.ts:2 imports ./device-capabilities.js; internal device capability modules are private—use the public device helpers instead.",
+      "packages/core/src/recipe/recipe-runner.ts:4 imports ./device-observation-membrane.js; internal device capability modules are private—use the public device helpers instead.",
     ],
   );
 });
@@ -135,9 +144,9 @@ test("read-only device inspection stays available to workflow modules", () => {
 
 test("supported adapters must all create the shared runtime observation facade", () => {
   const ownerSources = [
-    "packages/core/src/browser-target.ts",
-    "packages/core/src/device-client-bindings.ts",
-    "packages/core/src/device-factory.ts",
+    "packages/core/src/browser/browser-target.ts",
+    "packages/core/src/device/device-client-bindings.ts",
+    "packages/core/src/device/device-factory.ts",
     "packages/core/src/testing.ts",
   ].map((path) => ({
     path,
@@ -147,10 +156,10 @@ test("supported adapters must all create the shared runtime observation facade",
   assert.deepEqual(evaluateRuntimeObservationFacadeBindings(ownerSources), []);
   assert.deepEqual(
     evaluateRuntimeObservationFacadeBindings(
-      ownerSources.filter((entry) => entry.path !== "packages/core/src/browser-target.ts"),
+      ownerSources.filter((entry) => entry.path !== "packages/core/src/browser/browser-target.ts"),
     ),
     [
-      "packages/core/src/browser-target.ts is missing its required runtime Device observation facade binding.",
+      "packages/core/src/browser/browser-target.ts is missing its required runtime Device observation facade binding.",
     ],
   );
   assert.deepEqual(
@@ -173,8 +182,8 @@ test("direct find clicks and clipboard writes are also physical mutation bypasse
   assert.deepEqual(
     evaluateIosMutationBoundaries([{ path: "packages/core/src/recipe-runner-tour.ts", source }]),
     [
-      "packages/core/src/recipe-runner-tour.ts:1 directly invokes device.interactions.find(; route physical input through packages/core/src/device.ts instead.",
-      "packages/core/src/recipe-runner-tour.ts:2 directly invokes device.command.clipboard(; route physical input through packages/core/src/device.ts instead.",
+      "packages/core/src/recipe-runner-tour.ts:1 directly invokes device.interactions.find(; route physical input through packages/core/src/device/device.ts instead.",
+      "packages/core/src/recipe-runner-tour.ts:2 directly invokes device.command.clipboard(; route physical input through packages/core/src/device/device.ts instead.",
     ],
   );
 });

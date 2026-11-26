@@ -14,8 +14,7 @@ export const SCRIPT_SOURCE_LIMIT = 650;
  * recorded ceiling in the same change.
  */
 export const grandfatheredSourceLimits = Object.freeze({
-  "packages/core/src/device.ts": 1073,
-  "packages/protocol/src/operations.ts": 1224,
+  "packages/core/src/device/device.ts": 1026,
 });
 
 const componentSourceRoots = [

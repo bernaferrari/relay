@@ -9,7 +9,7 @@
 import {
   isSettingsChildTitle as isProfileSettingsChildTitle,
   isSettingsHubTitle,
-} from "../discovery-app-profiles.js";
+} from "../discovery/discovery-app-profiles.js";
 
 /** True for a distinct Settings child page title (not the Settings hub). */
 export function isSettingsChildTitle(title: string | undefined): boolean {

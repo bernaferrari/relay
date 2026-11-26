@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GROK_WEB_APP_POLICY } from "./app-identity-policy.js";
+import { GROK_WEB_APP_TEST_POLICY } from "./app/app-identity-test-policies.js";
 import { evaluateApprovalPolicy } from "./approval-policy.js";
 import type { ApprovalPolicyInput } from "@relay/protocol";
-import { classifyBrowserAuthenticationHealth, signedInFromPage } from "./browser-auth-health.js";
+import {
+  classifyBrowserAuthenticationHealth,
+  signedInFromPage,
+} from "./browser/browser-auth-health.js";
 import { contentAssertionPassed } from "./content-assertion-match.js";
-import { extractNewestCompletedAssistantTurn } from "./recipe-extract.js";
-import { observeScreenIdentity } from "./screen-identity.js";
-import { isTargetUnavailableError } from "./target-unavailable.js";
+import { extractNewestCompletedAssistantTurn } from "./recipe/recipe-extract.js";
+import { observeScreenIdentity } from "./screen/screen-identity.js";
+import { isTargetUnavailableError } from "./target/target-unavailable.js";
 
 const UNCHANGED_NUMBER_CHECK = { expected: "4", match: "number-equals" as const };
 
@@ -41,8 +44,8 @@ test("seeded missing permission control stays failed until the same control is p
 test("seeded wrong account stays needs-relogin until the selected app pack sees signed-in chrome", () => {
   const signedOut = { title: "Grok", bodyText: "Sign in\nContinue with Google" };
   const signedIn = { title: "Grok", bodyText: "Ask Grok anything\nNew chat" };
-  assert.equal(signedInFromPage(signedOut, GROK_WEB_APP_POLICY), false);
-  assert.equal(signedInFromPage(signedIn, GROK_WEB_APP_POLICY), true);
+  assert.equal(signedInFromPage(signedOut, GROK_WEB_APP_TEST_POLICY), false);
+  assert.equal(signedInFromPage(signedIn, GROK_WEB_APP_TEST_POLICY), true);
 });
 
 test("seeded expired fixture stays expired until the same health check sees a live expiry", () => {

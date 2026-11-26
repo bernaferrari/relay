@@ -1012,12 +1012,6 @@ test("saved path replays with every model credential absent and no provider cons
   };
   try {
     const runtime = operations();
-    const runner = createGoalSessionRunner({
-      operations: runtime.port,
-      store: memoryStore(),
-      decisionProvider: refusingProvider,
-      id: () => "goal-model-free-replay",
-    });
     // Complete the session normally first, then replay it through a second
     // runner whose provider refuses every call.
     const store = memoryStore();

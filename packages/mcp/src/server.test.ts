@@ -318,8 +318,6 @@ test("device profile registers the qa loop plus live control and recording", asy
                 kind: "emulator",
                 booted: true,
                 platform: "android",
-                createdAt: 1,
-                updatedAt: 1,
               },
             ],
           };

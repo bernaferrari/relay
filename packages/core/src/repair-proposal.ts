@@ -10,8 +10,8 @@
  */
 import type { AppMap } from "@relay/protocol";
 import { StubVisionGrounder, type Grounder } from "./grounding.js";
-import type { SnapshotNode } from "./device.js";
-import { observeScreenIdentity, resolveScreenIdentity } from "./screen-identity.js";
+import type { SnapshotNode } from "./device/device.js";
+import { observeScreenIdentity, resolveScreenIdentity } from "./screen/screen-identity.js";
 
 /** Evidence captured by the failing step: what was expected and what was
  * actually observed. Mirrors the `destination-repair-hint` artifact data. */

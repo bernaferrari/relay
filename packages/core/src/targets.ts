@@ -1,4 +1,4 @@
-import { BROWSER_TARGET_CAPABILITIES } from "./browser-target-capabilities.js";
+import { BROWSER_TARGET_CAPABILITIES } from "./browser/browser-target-capabilities.js";
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -11,9 +11,9 @@ import {
 import type { BrowserEnvironmentInput, BrowserViewport } from "@relay/protocol";
 import { chromium, firefox, webkit } from "playwright-core";
 import type { BrowserType } from "playwright-core";
-import { unsupportedBrowserCaseProfileFields } from "./browser-profile-support.js";
-import { findWorkspaceRoot } from "./workspace-root.js";
-import { MACOS_CHROME, resolveBrowserExecutable } from "./browser-executable.js";
+import { unsupportedBrowserCaseProfileFields } from "./browser/browser-profile-support.js";
+import { findWorkspaceRoot } from "./workspace/workspace-root.js";
+import { MACOS_CHROME, resolveBrowserExecutable } from "./browser/browser-executable.js";
 
 export function browserExecutable(target?: TargetDefinition): string {
   const configured = process.env.RELAY_BROWSER_EXECUTABLE?.trim();
@@ -213,7 +213,7 @@ export async function deleteTarget(id: string): Promise<void> {
 }
 
 /** Capabilities implemented by the managed Playwright adapter. */
-export { BROWSER_TARGET_CAPABILITIES } from "./browser-target-capabilities.js";
+export { BROWSER_TARGET_CAPABILITIES } from "./browser/browser-target-capabilities.js";
 
 const PREFLIGHT_PASS_TTL_MS = 5 * 60_000;
 const PREFLIGHT_FAIL_TTL_MS = 30_000;

@@ -10,14 +10,10 @@ import type {
 } from "@relay/protocol";
 import { GOAL_FINDING_SCHEMA_VERSION, GOAL_SESSION_MAX_ACTIONS } from "@relay/protocol";
 import {
-  appendFinding,
   assertOpenedTarget,
   currentBrowserFrame,
   dispatchGoalAction,
   ensureFreshBrowserTarget,
-  findingForStop,
-  findingEvidenceRefs,
-  interactionInput,
   isOutcomeUnknown,
   isProvablePreDispatchRejection,
   normalizeError,

@@ -3,7 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createAppMap, readAppMap, resetControlDatabaseCache } from "./collaboration.js";
+import {
+  createAppMap,
+  readAppMap,
+  resetControlDatabaseCache,
+} from "./collaboration/collaboration.js";
 import { readTarget, saveBrowserTarget } from "./targets.js";
 import {
   LANE_FIXTURE_PERSIST_ERROR,
@@ -16,7 +20,7 @@ import {
   removeLane,
   resolveLaneExecution,
   saveLane,
-} from "./lane.js";
+} from "./lane/lane.js";
 
 const fixtureAccount = {
   kind: "fixture" as const,

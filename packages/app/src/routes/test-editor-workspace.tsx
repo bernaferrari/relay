@@ -10,10 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { StageModeContext, type StageMode } from "./test-stage";
-import type {
-  ProductTestEditorDocument,
-  ProductTestRepair,
-} from "../data/test-editor-product-service";
+import type { ProductTestEditorDocument } from "../data/test-editor-product-service";
 import type { StepEntry } from "../components/test-editor-step";
 import { TestEditorStepOutline } from "../components/test-editor-step-list";
 import { HistorySection, RepairSection } from "./test-editor-context-panels";
@@ -30,7 +27,6 @@ export function TestEditorWorkspace({
   onWorkspaceViewChange,
   saveState,
   settingsOpen,
-  onToggleSettings,
   editorExpanded,
   hasPendingCheckpoint,
   stepEditor,
@@ -63,7 +59,6 @@ export function TestEditorWorkspace({
   onWorkspaceViewChange(view: "steps" | "browser"): void;
   saveState: ReactNode;
   settingsOpen: boolean;
-  onToggleSettings(): void;
   editorExpanded: boolean;
   hasPendingCheckpoint: boolean;
   stepEditor: ReactNode;

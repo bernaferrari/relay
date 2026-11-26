@@ -4,7 +4,7 @@ import {
   currentSelectorEntrance,
   recordedStepDigest,
   requestedNativeTap,
-} from "../recorded-entrance-proof.js";
+} from "../recorded/recorded-entrance-proof.js";
 
 /** Preserve the immutable action entrance, independently of latest Screen Variants. */
 export function recordedActions(input: AppMapRecordingInput): ActionSpec[] {

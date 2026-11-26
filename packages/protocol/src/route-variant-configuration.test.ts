@@ -1,56 +1,47 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureReviewSlotId } from "./capture-review.js";
-import {
-  RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION,
-  materializeRc23ScreenshotFirstSlots,
-} from "./rc23-screenshot-first.js";
 import {
   ROUTE_VARIANT_CONFIGURATION_ASSUMPTION,
   captureReviewConfigurationForRoutePlatform,
   listDeclaredRouteVariantConfigurations,
-  listRc23RouteVariantConfigurations,
   routeVariantConfigurationsFromPlatformWork,
   routeVariantQuotesShareATestAcrossPlatforms,
 } from "./route-variant-configuration.js";
 
-test("P0.4 lists Android vs iOS vs web dest-ends as separate configurations", () => {
-  const quotes = listRc23RouteVariantConfigurations();
-  assert.equal(quotes.length, 30);
-  assert.equal(quotes.filter((quote) => quote.platform === "web").length, 10);
-  assert.equal(quotes.filter((quote) => quote.platform === "android").length, 10);
-  assert.equal(quotes.filter((quote) => quote.platform === "ios").length, 10);
-  assert.equal(routeVariantQuotesShareATestAcrossPlatforms(quotes), false);
-  const home = quotes.filter((quote) => quote.checkpointId === "home-chrome");
-  assert.equal(home.length, 3);
-  assert.deepEqual(home.map((quote) => quote.testId).sort(), [
-    "test-grok-android-home-chrome",
-    "test-grok-ios-home-chrome",
-    "test-grok-web-signed-in-home",
+test("route variants list Android, iOS, and web as separate generic configurations", () => {
+  const quotes = listDeclaredRouteVariantConfigurations([
+    {
+      platform: "web",
+      configuration: captureReviewConfigurationForRoutePlatform("web"),
+      testId: "web-home",
+      checkpointId: "home",
+      role: "compiled",
+    },
+    {
+      platform: "android",
+      configuration: captureReviewConfigurationForRoutePlatform("android"),
+      testId: "android-home",
+      checkpointId: "home",
+      role: "compiled",
+    },
+    {
+      platform: "ios",
+      configuration: captureReviewConfigurationForRoutePlatform("ios"),
+      testId: "ios-home",
+      checkpointId: "home",
+      role: "compiled",
+    },
   ]);
-  assert.equal(new Set(home.map((quote) => quote.testId)).size, 3);
-  const settings = quotes.filter((quote) => quote.checkpointId === "settings");
-  assert.equal(settings.length, 3);
-  assert.equal(
-    settings.every((quote) => quote.checkpointId === "settings"),
-    true,
-  );
-  const settingsSlots = materializeRc23ScreenshotFirstSlots().filter(
-    (slot) => slot.checkpointId === "settings",
-  );
-  assert.equal(new Set(settingsSlots.map((slot) => captureReviewSlotId(slot))).size, 3);
+  assert.equal(quotes.length, 3);
   assert.deepEqual(
-    captureReviewConfigurationForRoutePlatform("android"),
-    RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION.android,
+    quotes.map((quote) => [quote.platform, quote.testId, quote.configuration]),
+    [
+      ["web", "web-home", { browser: "browser" }],
+      ["android", "android-home", { app: "android" }],
+      ["ios", "ios-home", { app: "ios" }],
+    ],
   );
-  assert.deepEqual(
-    captureReviewConfigurationForRoutePlatform("ios"),
-    RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION.ios,
-  );
-  assert.deepEqual(
-    captureReviewConfigurationForRoutePlatform("web"),
-    RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION.web,
-  );
+  assert.equal(routeVariantQuotesShareATestAcrossPlatforms(quotes), false);
   assert.match(ROUTE_VARIANT_CONFIGURATION_ASSUMPTION, /separate configurations/u);
   assert.match(ROUTE_VARIANT_CONFIGURATION_ASSUMPTION, /not one Test covering three platforms/u);
 });
@@ -64,9 +55,9 @@ test("capacity JSON lists platform partitions as configurations, not a shared Te
   assert.deepEqual(
     quotes.map((quote) => [quote.platform, quote.workItems, quote.configuration]),
     [
-      ["web", 8, { browser: "grok-com" }],
+      ["web", 8, { browser: "browser" }],
       ["android", 3, { app: "android" }],
-      ["ios", 12, { app: "ai.x.GrokApp" }],
+      ["ios", 12, { app: "ios" }],
     ],
   );
   assert.equal(
@@ -76,7 +67,7 @@ test("capacity JSON lists platform partitions as configurations, not a shared Te
   const collapsed = listDeclaredRouteVariantConfigurations([
     {
       platform: "web",
-      configuration: { browser: "grok-com" },
+      configuration: { browser: "browser" },
       testId: "Home chrome",
       role: "compiled",
     },
@@ -88,7 +79,7 @@ test("capacity JSON lists platform partitions as configurations, not a shared Te
     },
     {
       platform: "ios",
-      configuration: { app: "ai.x.GrokApp" },
+      configuration: { app: "ios" },
       testId: "Home chrome",
       role: "compiled",
     },

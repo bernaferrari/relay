@@ -1,5 +1,5 @@
 import http from "node:http";
-import { sendCombineExport } from "./combine-export-download.js";
+import { sendCombineExport } from "./combine/combine-export-download.js";
 import {
   appMapTestExecutionSourceFromJob,
   appMapTestExecutionSourceFromRun,
@@ -49,7 +49,7 @@ import { admitTargetControl, assertJobAccess, assertTargetControl } from "./acce
 import {
   appMapTestExecutionReviewHttpError,
   requireScopedAppMapTestExecution,
-} from "./app-map-test-execution-guard.js";
+} from "./app-map/app-map-test-execution-guard.js";
 import {
   browserCaseProfileForAdmission,
   browserJobTargetId,
@@ -63,13 +63,20 @@ import {
   assertPersistedRunExecutionTargetRouteControl,
 } from "./execution-target-route-control.js";
 import { preflightLocalCampaignAdmission } from "./local-combine-campaign-admission.js";
-import { handleCombineStartRoute } from "./combine-start-route.js";
-import { HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
+import { handleCombineStartRoute } from "./combine/combine-start-route.js";
+import {
+  HttpError,
+  json,
+  matchPath,
+  parseJsonBody,
+  parseJsonOperationInput,
+  parseLimit,
+} from "./http.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
-import { handleCombineCampaignRoute } from "./combine-campaign-routes.js";
-import { assertCurrentBrowserExecutionProfile } from "./browser-execution-profile-admission.js";
+import { handleCombineCampaignRoute } from "./combine/combine-campaign-routes.js";
+import { assertCurrentBrowserExecutionProfile } from "./browser/browser-execution-profile-admission.js";
 import { sendHumanInterventionReproofEvidence } from "./human-intervention-reproof-evidence.js";
-import type { verifyCampaignDurationCohortEvidence } from "./campaign-duration-cohort-evidence.js";
+import type { verifyCampaignDurationCohortEvidence } from "./campaign/campaign-duration-cohort-evidence.js";
 import {
   assertExecutionTargetRef,
   CAPTURE_REVIEW_ACTIONS,
@@ -283,11 +290,9 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       run,
       assertLocalTargetControl: runtime.assertTargetControl,
     });
-    const body = (await parseJsonBody(req)) as { mode?: unknown };
-    const mode = body.mode === undefined ? "saved-steps" : body.mode;
-    if (mode !== "saved-steps" && mode !== "same-configuration") {
-      throw new HttpError(400, "Replay mode must be saved-steps or same-configuration");
-    }
+    const { mode = "saved-steps" } = await parseJsonOperationInput(req, "run.replay", url, {
+      runId: run.id,
+    });
     const authenticationHealth = await rejectBlockedClaimedBrowserJob({
       projectId: run.projectId ?? scope.projectId,
       targetId: browserJobTargetId(run),

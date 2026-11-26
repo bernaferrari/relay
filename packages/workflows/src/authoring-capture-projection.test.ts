@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AuthoringSession } from "@relay/protocol";
 import { snapshotFromAuthoringSession } from "./authoring-projection.js";
+import { registerRecordedControlDisplayAliasResolver } from "./recorded-step-presentation.js";
 import type { FrozenAuthorTestIdentity, WorkflowRef } from "./types.js";
 
 const session: AuthoringSession = {
@@ -64,7 +65,14 @@ const frozen: FrozenAuthorTestIdentity = {
   target: session.target,
 };
 
-test("recording review projects a captured Grok identifier without renaming custom intent", () => {
+test("recording review projects a registered control alias without renaming custom intent", (t) => {
+  t.after(
+    registerRecordedControlDisplayAliasResolver(({ control }) =>
+      control.bundleId === "example.chat" && control.identifier === "input_send_button"
+        ? "Send message"
+        : undefined,
+    ),
+  );
   const recorded = structuredClone(session);
   const revision = recorded.take!.revisions[0]!;
   const action = revision.actions[0]!;
@@ -76,7 +84,7 @@ test("recording review projects a captured Grok identifier without renaming cust
     capturedAt: 1,
     evidenceIds: [],
     screen: { id: "composer", fingerprint: "composer", capturedAt: 1, source: "recording" },
-    nodes: [{ identifier: "input_send_button", bundleId: "ai.x.grok", hittable: true }],
+    nodes: [{ identifier: "input_send_button", bundleId: "example.chat", hittable: true }],
   };
   const projected = snapshotFromAuthoringSession({ frozen, session: recorded }).review!.actions[0]!;
   assert.equal(projected.intent, "Tap “Send message”");

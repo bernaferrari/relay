@@ -6,11 +6,11 @@
  * that node can open a chip or a drawer instead of placing the caret, so focus
  * lands on a point inside the editable that no nested control claims.
  */
-import type { SnapshotNode } from "./device.js";
+import type { SnapshotNode } from "./device/device.js";
 import {
   resolveNamedControlOutcome,
   type NamedControlResolution,
-} from "./device-target-resolution.js";
+} from "./device/device-target-resolution.js";
 import { GroundingError } from "./grounding.js";
 
 export type TextEntryTarget = {

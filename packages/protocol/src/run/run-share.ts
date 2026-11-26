@@ -1,0 +1,380 @@
+import {
+  operationInputContractFromSchema,
+  operationOutputContractFromSchema,
+} from "../operation/operation-builders.js";
+import { parseOptionalSourceRevision, type SourceRevision } from "../source-revision.js";
+import type { CaptureReviewSummary } from "../capture/capture-review.js";
+
+export type RunOutcome =
+  | "passed"
+  | "product-failure"
+  | "harness-failure"
+  | "uncertain"
+  | "cancelled";
+
+/** A capability link is intentionally narrower than a persisted run. It never
+ * exposes selectors, logs, resolved inputs, raw evidence, or device identity. */
+export type RunShareSummary = {
+  schemaVersion: 1;
+  id: string;
+  runId: string;
+  batchId?: string;
+  title: string;
+  createdAt: number;
+  expiresAt: number;
+  createdBy: string;
+  runCount: number;
+  frameCount: number;
+  status: "active" | "expired" | "revoked";
+  revokedAt?: number;
+};
+
+export type RunShareCreateResult = {
+  share: RunShareSummary;
+  /** Opaque bearer capability. Returned once when the share is created. */
+  token: string;
+  /** Relative so a reverse proxy or desktop host can choose its public origin. */
+  path: string;
+  /** Absolute public link. Present only while the host configures
+   * RELAY_PUBLIC_BASE_URL; otherwise recipients resolve `path` themselves. */
+  url?: string;
+};
+
+export type RunShareFrame = {
+  index: number;
+  caption: string;
+  capturedAt: number;
+  width?: number;
+  height?: number;
+  /** The file exists but its bytes no longer match the recorded digest. */
+  withheld?: true;
+};
+
+export type RunShareReportRun = {
+  id: string;
+  title: string;
+  status: string;
+  outcome?: RunOutcome;
+  platform?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  durationMs?: number;
+  caseIndex?: number;
+  caseCount?: number;
+  /** Redacted, bounded reason a failed run stopped; absent for healthy runs. */
+  errorHeadline?: string;
+  /** Where a failed run stopped, projected from its persisted step trace. */
+  failedStep?: { index: number; total: number; label: string };
+  /** Bounded failure taxonomy already persisted on the run. */
+  failureCategory?: string;
+  frames: RunShareFrame[];
+};
+
+/** Read-only correspondence projected from frozen capture obligations. A
+ * missing tile never substitutes another capture or changes a Run verdict. */
+export type RunShareGalleryGroup = {
+  id: string;
+  caption: string;
+  iteration?: number;
+  attempt?: number;
+  phase?: string;
+  tiles: Array<{
+    label: string;
+    runId?: string;
+    frameIndex?: number;
+  }>;
+};
+
+/** Audit-grade identity block for one share report: what was executed,
+ * against what build and plan revision, and when. Every field is a
+ * projection of data already persisted on the runs. */
+export type RunShareReportProvenance = {
+  appVersion?: string;
+  platform?: string;
+  profileId?: string;
+  deviceName?: string;
+  appMapRevision?: number;
+  testRevision?: number;
+  sourceRevision?: { sha: string; prNumber?: number };
+  startedAt?: number;
+  completedAt?: number;
+  durationMs?: number;
+};
+
+export type RunShareReport = {
+  schemaVersion: 1;
+  share: Pick<RunShareSummary, "id" | "title" | "createdAt" | "expiresAt">;
+  /** What this proves: build, plan revision, and execution window projected
+   * from the persisted runs behind the share. */
+  provenance?: RunShareReportProvenance;
+  totals: {
+    runs: number;
+    passed: number;
+    problems: number;
+    screenshots: number;
+    /** Queued/running/paused runs are not verdicts; they never count as
+     * problems. */
+    inProgress: number;
+  };
+  /** Aggregated human review across the shared runs, present when any capture
+   * was planned. Independent of the machine totals above — reported issues
+   * never count as execution problems, and passes never erase them. */
+  captureReview?: CaptureReviewSummary;
+  /** Captures with no trustworthy cross-run identity remain separate groups. */
+  gallery?: RunShareGalleryGroup[];
+  runs: RunShareReportRun[];
+};
+
+/** Machine verdict for one proof: `pass` means the flow ran and held,
+ * `fail` means it ran and found a product problem, and `unproven` means
+ * Relay could not execute (no device, no build) — deliberately distinct so
+ * a missing capability never reads as a regression. */
+export type ProofVerdict = "pass" | "fail" | "unproven";
+
+export type ProofReportFlow = {
+  testId: string;
+  title: string;
+  status: string;
+  durationMs?: number;
+  /** Bounded digest of the failure headline; absent for healthy flows. */
+  failureDigest?: string;
+  /** Where a failed flow stopped, projected from its persisted step trace. */
+  failureStep?: { index: number; total: number; label: string };
+  /** Relative share-report path for this run, when a share link exists. */
+  sharePath?: string;
+};
+
+/** Versioned proof projection of a completed run: the PR-check payload.
+ * Every field projects data already persisted on the run — nothing here is
+ * authoritative execution state. */
+export type ProofReport = {
+  schemaVersion: 1;
+  verdict: ProofVerdict;
+  /** Immutable commit/build identity frozen at enqueue time, when known. */
+  sourceRevision?: SourceRevision;
+  flows: ProofReportFlow[];
+  /** Human capture-review accounting, reported beside the machine verdict.
+   * Present only when the run planned at least one capture; never folded
+   * into `verdict` — execution, checks, and review are independent outcomes. */
+  captureReview?: CaptureReviewSummary;
+  relayServerUrl?: string;
+  generatedAt: number;
+};
+
+/** A minimal step trace shape both the app workspace and the share report
+ * project from. Core `TraceStep` and the app `TraceStepDto` both satisfy it. */
+export type RunShareStepTraceInput = {
+  steps?: Array<{ title: string; tone: string; status?: string }>;
+};
+
+/**
+ * Project where a run stopped from its persisted step trace. Shared by the
+ * app runs-workspace and share reports so both surfaces name the exact same
+ * step and can never drift. Returns undefined when the trace shows no failed
+ * step — callers then fall back to their own stop presentation.
+ */
+export function failedStepFromTrace(
+  trace: RunShareStepTraceInput,
+): { index: number; total: number; label: string } | undefined {
+  const steps = trace.steps ?? [];
+  if (steps.length === 0) return undefined;
+  const failed = steps.findIndex(
+    (step) =>
+      step.status === "error" ||
+      step.status === "failed" ||
+      step.tone === "fail" ||
+      step.tone === "danger",
+  );
+  if (failed < 0) return undefined;
+  return { index: failed, total: steps.length, label: steps[failed]?.title || "Unnamed step" };
+}
+
+type Parser<T> = { readonly description: string; parse(value: unknown): T };
+
+export type RunShareOperationMap = {
+  "run.share.list": { input: { runId: string }; output: { shares: RunShareSummary[] } };
+  "run.share.create": {
+    input: { runId: string; expiresInHours: number; includeBatch?: boolean };
+    output: RunShareCreateResult;
+  };
+  "run.share.revoke": {
+    input: { runId: string; shareId: string };
+    output: { share: RunShareSummary };
+  };
+};
+
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value) throw new Error(`${label} must be a non-empty string`);
+  return value;
+}
+
+function finiteNumber(value: unknown, label: string): number {
+  const parsed = typeof value === "string" && value.trim() ? Number(value) : value;
+  if (typeof parsed !== "number" || !Number.isFinite(parsed)) {
+    throw new Error(`${label} must be a number`);
+  }
+  return parsed;
+}
+
+export const runShareListInputParser = operationInputContractFromSchema("run.share.list");
+
+export const runShareCreateInputParser = operationInputContractFromSchema("run.share.create");
+
+export const runShareRevokeInputParser = operationInputContractFromSchema("run.share.revoke");
+
+export const proofReportOutputParser: Parser<ProofReport> = {
+  description: "proof report response",
+  parse(value) {
+    const input = object(value, this.description);
+    if (input.schemaVersion !== 1) throw new Error("proof report schemaVersion must be 1");
+    if (input.verdict !== "pass" && input.verdict !== "fail" && input.verdict !== "unproven") {
+      throw new Error("proof report verdict must be pass, fail, or unproven");
+    }
+    if (!Array.isArray(input.flows)) throw new Error("proof report flows must be an array");
+    if (typeof input.generatedAt !== "number" || !Number.isFinite(input.generatedAt)) {
+      throw new Error("proof report generatedAt must be a number");
+    }
+    return {
+      schemaVersion: 1,
+      verdict: input.verdict,
+      ...(input.sourceRevision !== undefined
+        ? { sourceRevision: parseOptionalSourceRevision(input.sourceRevision)! }
+        : {}),
+      flows: input.flows.map((flow, index): ProofReportFlow => {
+        const item = object(flow, `proof report flow ${index + 1}`);
+        if (typeof item.testId !== "string" || !item.testId) {
+          throw new Error("proof report flow testId must be a non-empty string");
+        }
+        if (typeof item.title !== "string" || !item.title) {
+          throw new Error("proof report flow title must be a non-empty string");
+        }
+        if (typeof item.status !== "string") {
+          throw new Error("proof report flow status must be a string");
+        }
+        let durationMs: number | undefined;
+        if (item.durationMs !== undefined) {
+          durationMs = finiteNumber(item.durationMs, "proof report flow durationMs");
+        }
+        let failureDigest: string | undefined;
+        if (item.failureDigest !== undefined) {
+          failureDigest = requiredString(item.failureDigest, "proof report flow failureDigest");
+        }
+        let failureStep: ProofReportFlow["failureStep"];
+        if (item.failureStep !== undefined) {
+          const step = object(item.failureStep, "proof report flow failureStep");
+          failureStep = {
+            index: finiteNumber(step.index, "proof report failureStep index"),
+            total: finiteNumber(step.total, "proof report failureStep total"),
+            label: requiredString(step.label, "proof report failureStep label"),
+          };
+        }
+        let sharePath: string | undefined;
+        if (item.sharePath !== undefined) {
+          sharePath = requiredString(item.sharePath, "proof report flow sharePath");
+        }
+        return {
+          testId: item.testId,
+          title: item.title,
+          status: item.status,
+          ...(durationMs !== undefined ? { durationMs } : {}),
+          ...(failureDigest !== undefined ? { failureDigest } : {}),
+          ...(failureStep !== undefined ? { failureStep } : {}),
+          ...(sharePath !== undefined ? { sharePath } : {}),
+        };
+      }),
+      ...(input.captureReview !== undefined
+        ? {
+            captureReview: (() => {
+              const summary = object(input.captureReview, "proof report captureReview");
+              const counts = [
+                "captured",
+                "missing",
+                "pending",
+                "accepted",
+                "issue",
+                "needMoreEvidence",
+              ] as const;
+              const parsed: Record<string, number> = {};
+              for (const key of counts) {
+                parsed[key] = finiteNumber(
+                  (summary as Record<string, unknown>)[key],
+                  `proof report captureReview ${key}`,
+                );
+              }
+              return parsed as unknown as CaptureReviewSummary;
+            })(),
+          }
+        : {}),
+      ...(input.relayServerUrl !== undefined
+        ? { relayServerUrl: requiredString(input.relayServerUrl, "proof report relayServerUrl") }
+        : {}),
+      generatedAt: input.generatedAt,
+    };
+  },
+};
+
+export const runShareOperationDefinitions = [
+  {
+    id: "run.share.list",
+    version: 1,
+    label: "List signed Run shares",
+    category: "evidence",
+    mode: "query",
+    input: runShareListInputParser,
+    output: operationOutputContractFromSchema("run.share.list"),
+    idempotency: "inherent",
+    targetCapabilities: [],
+    lease: "none",
+    confirmation: "none",
+    minimumRole: "admin",
+    progress: false,
+    cancellable: false,
+    transport: { method: "GET", path: "/runs/:runId/shares" },
+  },
+  {
+    id: "run.share.create",
+    label: "Create signed Run share",
+    path: "/runs/:runId/shares",
+    input: runShareCreateInputParser,
+    output: operationOutputContractFromSchema("run.share.create"),
+    version: 1 as const,
+    category: "evidence" as const,
+    mode: "command" as const,
+    idempotency: "optional" as const,
+    targetCapabilities: [],
+    lease: "none" as const,
+    confirmation: "confirm" as const,
+    minimumRole: "admin" as const,
+    progress: false,
+    cancellable: false,
+    transport: { method: "POST" as const, path: "/runs/:runId/shares" },
+  },
+  {
+    id: "run.share.revoke",
+    label: "Revoke signed Run share",
+    path: "/runs/:runId/shares/:shareId/revoke",
+    input: runShareRevokeInputParser,
+    output: operationOutputContractFromSchema("run.share.revoke"),
+    version: 1 as const,
+    category: "evidence" as const,
+    mode: "command" as const,
+    idempotency: "optional" as const,
+    targetCapabilities: [],
+    lease: "none" as const,
+    confirmation: "confirm" as const,
+    minimumRole: "admin" as const,
+    progress: false,
+    cancellable: false,
+    transport: {
+      method: "POST" as const,
+      path: "/runs/:runId/shares/:shareId/revoke",
+    },
+  },
+] as const;

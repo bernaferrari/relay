@@ -1,11 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { access, readFile, readdir } from "node:fs/promises";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const readmePath = resolve(repositoryRoot, "README.md");
 const packagePath = resolve(repositoryRoot, "package.json");
+const markdownRoots = ["docs", "advisor-plans"];
+const additionalMarkdownFiles = ["README.md", "packages/mcp/README.md"];
 const publicContractCandidates = [
   "docs/PRODUCT_FLOWS.md",
   "docs/RECORDING_FORMAT.md",
@@ -14,15 +16,22 @@ const publicContractCandidates = [
   "packages/mcp/README.md",
 ];
 
+function markdownWithoutCode(markdown) {
+  return markdown.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+}
+
 function bashBlocks(markdown) {
   return [...markdown.matchAll(/```bash\s*\n([\s\S]*?)```/g)].map((match) => match[1]);
 }
 
-function localLinks(markdown) {
-  return [...markdown.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)]
-    .map((match) => match[1].trim())
-    .filter((target) => target.startsWith("./"))
-    .map((target) => target.split("#", 1)[0]);
+export function localMarkdownLinks(markdown) {
+  return [...markdownWithoutCode(markdown).matchAll(/\[[^\]]*\]\(([^)]+)\)/g)]
+    .map((match) => match[1].trim().split(/\s+/u, 1)[0])
+    .filter((target) => target && !/^(?:[a-z][a-z0-9+.-]:)?\/\//iu.test(target))
+    .filter((target) => !/^(?:[a-z][a-z0-9+.-]*:|#)/iu.test(target))
+    .filter((target) => !target.startsWith("/"))
+    .map((target) => target.split("#", 1)[0])
+    .filter(Boolean);
 }
 
 function documentedPnpmScripts(markdown) {
@@ -36,6 +45,23 @@ function documentedPnpmScripts(markdown) {
     }
   }
   return scripts;
+}
+
+async function markdownFiles(directory) {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+  const files = [];
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await markdownFiles(path)));
+    else if ([".md", ".mdx"].includes(extname(entry.name))) files.push(path);
+  }
+  return files;
 }
 
 const readme = await readFile(readmePath, "utf8");
@@ -53,11 +79,30 @@ for (const path of publicContractCandidates) {
 const packageJson = JSON.parse(packageSource);
 const violations = [];
 
-for (const link of localLinks(readme)) {
+const checkedMarkdownPaths = new Set(additionalMarkdownFiles);
+for (const root of markdownRoots) {
+  for (const path of await markdownFiles(resolve(repositoryRoot, root))) {
+    checkedMarkdownPaths.add(relative(repositoryRoot, path));
+  }
+}
+
+let checkedLocalLinkCount = 0;
+for (const path of checkedMarkdownPaths) {
+  const absolutePath = resolve(repositoryRoot, path);
+  let markdown;
   try {
-    await access(resolve(repositoryRoot, link));
-  } catch {
-    violations.push(`README.md links to missing file: ${link}`);
+    markdown = await readFile(absolutePath, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") continue;
+    throw error;
+  }
+  for (const link of localMarkdownLinks(markdown)) {
+    checkedLocalLinkCount += 1;
+    try {
+      await access(resolve(dirname(absolutePath), decodeURIComponent(link)));
+    } catch {
+      violations.push(`${path} links to missing file: ${link}`);
+    }
   }
 }
 
@@ -114,6 +159,6 @@ if (violations.length) {
   process.exitCode = 1;
 } else {
   console.log(
-    `Documentation verification passed: ${localLinks(readme).length} local links, ${documentedPnpmScripts(readme).size} root commands, and ${publicContractPaths.length} public contracts checked.`,
+    `Documentation verification passed: ${checkedLocalLinkCount} local links across ${checkedMarkdownPaths.size} Markdown files, ${documentedPnpmScripts(readme).size} root commands, and ${publicContractPaths.length} public contracts checked.`,
   );
 }

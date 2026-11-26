@@ -38,14 +38,6 @@ export function createBrowserCaptureWorkflow(client: RelayInvokeClient) {
         throw new Error(
           "The App Map changed. Read its current revision before saving the capture plan.",
         );
-      const at = Date.now();
-      const scope = {
-        organizationId: initial.organizationId,
-        projectId: initial.projectId,
-        appMapId: initial.id,
-        createdAt: at,
-        updatedAt: at,
-      };
       const variableId = `${plan.id}-language`,
         routineId = `${plan.id}-captures`;
       const routine = {
@@ -89,8 +81,6 @@ export function createBrowserCaptureWorkflow(client: RelayInvokeClient) {
         variableId,
         expectedRevision: initial.revision,
         variable: {
-          ...scope,
-          id: variableId,
           name: `${plan.name} languages`,
           kind: "language",
           ...plan.language,

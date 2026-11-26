@@ -1,17 +1,17 @@
 import type http from "node:http";
 import type { AuthoringRuntime } from "@relay/core";
-import type { AppMapTestRunRouteRuntime } from "./app-map-test-run-runtime.js";
-import { handleAppMapRunRoute } from "./app-map-run-routes.js";
-import { handleAppMapRoute } from "./app-map-routes.js";
-import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
+import type { AppMapTestRunRouteRuntime } from "./app-map/app-map-test-run-runtime.js";
+import { handleAppMapRunRoute } from "./app-map/app-map-run-routes.js";
+import { handleAppMapRoute } from "./app-map/app-map-routes.js";
+import type { CampaignDurationRouteRuntime } from "./campaign/campaign-duration-routes.js";
 import type { JobRouteRuntime } from "./job-routes.js";
 import type { RequestContext } from "./security.js";
-import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
-import { handleTargetRuntimeRoute } from "./target-runtime-routes.js";
-import type { WorkflowRouteRuntime } from "./workflow-routes.js";
-import { handleWorkflowRoute } from "./workflow-routes.js";
-import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
-import { handleChangeVerificationRoute } from "./change-verification-routes.js";
+import type { TargetRuntimeRouteRuntime } from "./target/target-runtime-routes.js";
+import { handleTargetRuntimeRoute } from "./target/target-runtime-routes.js";
+import type { WorkflowRouteRuntime } from "./workflow/workflow-routes.js";
+import { handleWorkflowRoute } from "./workflow/workflow-routes.js";
+import type { ChangeVerificationRouteRuntime } from "./change/change-verification-routes.js";
+import { handleChangeVerificationRoute } from "./change/change-verification-routes.js";
 
 export type PrimaryOperationRouteRuntimes = {
   authoring?: AuthoringRuntime;

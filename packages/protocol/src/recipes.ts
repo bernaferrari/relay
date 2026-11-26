@@ -1,12 +1,12 @@
 /** Canonical recipe contract shared by persistence, execution, HTTP, and UI. */
 import type { RecordedEntrance } from "./recorded-entrance.js";
-import type { DestinationEvidenceSurface, ScreenIdentityObservation } from "./app-map.js";
+import type { DestinationEvidenceSurface, ScreenIdentityObservation } from "./app-map/app-map.js";
 import type {
   ScrollSurfaceDocumentOriginProof,
   ScrollSurfaceViewport,
   SemanticRevealPlan,
 } from "./scroll-surface.js";
-import type { ReviewedDocumentOriginExecutionReference } from "./reviewed-document-origin.js";
+import type { ReviewedDocumentOriginExecutionReference } from "./reviewed/reviewed-document-origin.js";
 import type { ReviewedExternalEffects } from "./approval-policy.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
@@ -486,6 +486,11 @@ export type RecipeStep = RecipeStepMetadata &
         destinationSurvey?: {
           maxScrolls: number;
         };
+        /** Gesture-only navigation replayed before the expectation when a
+         * compiled warm suite must first leave the frozen origin surface. */
+        preludeSteps?: Array<Extract<RecipeStep, { kind: "tap" | "key" | "swipe" | "scroll" }>>;
+        /** Identity of the surface on which the prelude is safe to begin. */
+        preludeStartFingerprint?: string;
       }
     | {
         kind: "extract";

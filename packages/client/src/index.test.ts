@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { operationDefinition } from "@relay/protocol";
+import { operationDefinition, type HealthSummary, type OperationOutput } from "@relay/protocol";
 import { ApiError, parseRegisteredOperationOutput, RelayClient } from "./index.js";
 
 const health = {
@@ -10,12 +10,16 @@ const health = {
   mode: "local",
   at: 1,
   uptimeMs: 10,
+  pid: 1234,
+  startedAt: 0,
   activeJob: null,
+  activeJobs: [],
+  targetWorkers: [],
   jobs: 0,
   deviceCount: 0,
   sseClients: 0,
   runsDir: "/tmp/runs",
-};
+} satisfies HealthSummary;
 
 test("RelayClient applies scope and bearer authentication", async () => {
   let request: Request | undefined;
@@ -151,9 +155,58 @@ test("invoke derives path, query, and method from the operation registry", async
           );
         }
         if (String(input).includes("/app-maps/checkout/tests/smoke/compile")) {
-          return new Response(JSON.stringify({ plan: {}, preflight: {} }), { status: 200 });
+          const compiled = {
+            plan: {
+              schemaVersion: 1,
+              appMapId: "checkout",
+              appMapRevision: 1,
+              test: { id: "smoke", name: "Smoke", kind: "scenario", intentSchemaVersion: 1 },
+              rootRecipeId: "root",
+              recipes: { root: { id: "root", title: "Smoke", parameters: [], steps: [] } },
+              stepProvenance: [],
+              performance: {
+                executableOperations: 0,
+                moduleCalls: 0,
+                operationCounts: {},
+                screenshotCount: 0,
+                destinationProofCount: 0,
+              },
+              startup: { mode: "verified-checkpoint", screenId: "settings" },
+            },
+            preflight: {
+              schemaVersion: 1,
+              mode: "offline-test-preflight",
+              appMapId: "checkout",
+              appMapRevision: 1,
+              testId: "smoke",
+              planDigest: "fixture-digest",
+              executionRisk: {
+                schemaVersion: 1,
+                level: "safe",
+                reasons: [],
+                externalEffects: [],
+                confirmation: "none",
+                expectedAppBoundaries: [],
+                cleanupRequired: false,
+              },
+              summary: {
+                recipes: 1,
+                checkedSelectors: 0,
+                resolvedSelectors: 0,
+                unknownCursorTransitions: 0,
+                reviewRequiredReturns: 0,
+                blockers: 0,
+                warnings: 0,
+              },
+              selectors: [],
+              cursorTimeline: [],
+              returns: [],
+              findings: [],
+            },
+          } satisfies OperationOutput<"app-map.test.compile">;
+          return new Response(JSON.stringify(compiled), { status: 200 });
         }
-        return new Response(JSON.stringify({ jobs: [] }), { status: 200 });
+        return new Response(JSON.stringify({ jobs: [], activeJobs: [] }), { status: 200 });
       },
     },
   );
@@ -285,7 +338,11 @@ test("invoke strips additive output keys instead of 502ing an older operator cli
     probe: false,
   });
   assert.equal(health.summary.liveCount, 1);
-  assert.equal(health.summary.electronGrokLabPartitionPresent, false);
+  assert.equal(
+    (health.summary as { electronGrokLabPartitionPresent?: unknown })
+      .electronGrokLabPartitionPresent,
+    undefined,
+  );
   assert.equal(
     (health.summary as { futureAdditiveField?: unknown }).futureAdditiveField,
     undefined,
@@ -436,7 +493,7 @@ test("device discovery accepts the registered fast Android phase", async () => {
   assert.equal(request?.url, "https://relay.test/devices?phase=android");
   await assert.rejects(
     () => client.resource("/devices?phase=apple"),
-    /target devices phase must be android or ios/,
+    /phase[\s\S]*android[\s\S]*ios/u,
   );
 });
 

@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import type http from "node:http";
 import { redactPrivateJobs, redactValue } from "@relay/core";
-import { validateOperationBody, validateOperationResponse } from "./operations.js";
+import type { OperationId, OperationInput } from "@relay/protocol";
+import {
+  parseRouteOperationInput,
+  validateOperationBody,
+  validateOperationResponse,
+} from "./operations.js";
 
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -113,24 +118,32 @@ function readBody(req: http.IncomingMessage, maxBytes: number): Promise<string> 
   });
 }
 
+async function readJsonBody(req: http.IncomingMessage, maxBytes: number): Promise<unknown> {
+  const raw = await readBody(req, maxBytes);
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw new HttpError(400, "Invalid JSON body");
+  }
+}
+
 export async function parseJsonBody(
   req: http.IncomingMessage,
   maxBytes = MAX_BODY_BYTES,
 ): Promise<unknown> {
-  const raw = await readBody(req, maxBytes);
-  if (!raw.trim()) {
-    const body = {};
-    validateOperationBody(req, body);
-    return body;
-  }
-  let body: unknown;
-  try {
-    body = JSON.parse(raw) as unknown;
-  } catch {
-    throw new HttpError(400, "Invalid JSON body");
-  }
+  const body = await readJsonBody(req, maxBytes);
   validateOperationBody(req, body);
   return body;
+}
+
+export async function parseJsonOperationInput<Id extends OperationId>(
+  req: http.IncomingMessage,
+  id: Id,
+  url: URL,
+  params: Record<string, string>,
+): Promise<OperationInput<Id>> {
+  return parseRouteOperationInput(id, url, params, await readJsonBody(req, MAX_BODY_BYTES));
 }
 
 export function matchPath(pathname: string, pattern: string): Record<string, string> | null {

@@ -16,7 +16,10 @@ import type {
   StepTarget,
 } from "@relay/protocol";
 import { evaluateExplorationActionPolicy, rankExplorationFrontier } from "./exploration-policy.js";
-import { semanticTargetKey, semanticTargetMatches } from "./scroll-surface-semantic-index.js";
+import {
+  semanticTargetKey,
+  semanticTargetMatches,
+} from "./scroll/scroll-surface-semantic-index.js";
 
 const DESTRUCTIVE =
   /\b(delete|erase|remove account|sign out|log out|purchase|subscribe|buy|reset|deactivate|clear all)\b/iu;

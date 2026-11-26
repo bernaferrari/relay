@@ -1,11 +1,10 @@
-import { createOperationBuilders } from "./operation-builders.js";
-import type { RelayOperationMap } from "./operation-map.js";
+import { createSchemaOperationBuilders } from "./operation/operation-builders.js";
 
 type AppleDeviceOperationId =
   | "workspace.apple-device.update"
   | "workspace.apple-live-preview.update";
 
-const { command } = createOperationBuilders<Pick<RelayOperationMap, AppleDeviceOperationId>>();
+const { command } = createSchemaOperationBuilders<AppleDeviceOperationId>();
 
 export const appleDeviceOperationDefinitions = [
   command(

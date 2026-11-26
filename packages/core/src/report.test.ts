@@ -7,7 +7,7 @@ import {
   toJunitXml,
   type JobReport,
 } from "./report.js";
-import type { TestJob } from "./session.js";
+import type { TestJob } from "./session/session.js";
 
 function fakeJob(partial: Partial<TestJob> & Pick<TestJob, "status">): TestJob {
   return {

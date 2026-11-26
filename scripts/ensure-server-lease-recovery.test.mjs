@@ -257,7 +257,7 @@ test("the adapter invokes the core bootstrap helper and preserves its JSON resul
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, process.execPath);
   assert.deepEqual(calls[0].args.slice(1), [
-    "/workspace/relay/packages/core/src/relay-state-server-lease-bootstrap.ts",
+    "/workspace/relay/packages/core/src/relay/relay-state-server-lease-bootstrap.ts",
     "--workspace-root",
     "/workspace/relay",
     "--local-port-listener",

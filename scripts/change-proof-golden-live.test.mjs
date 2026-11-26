@@ -98,7 +98,7 @@ async function writeCanonicalTracePack(path, overrides = {}) {
       events: [],
     },
   };
-  const script = `import { writeFile } from "node:fs/promises"; import { exportTracePack } from "./packages/core/src/trace-pack.ts"; (async()=>{const run=JSON.parse(process.env.RUN); const pack=await exportTracePack(run); await writeFile(process.env.OUT, JSON.stringify(pack)); if (process.env.RUN_OUT) await writeFile(process.env.RUN_OUT, JSON.stringify(pack.objects.find((object)=>object.kind === "frozen-run").content));})().catch(error=>{console.error(error);process.exitCode=1});`;
+  const script = `import { writeFile } from "node:fs/promises"; import { exportTracePack } from "./packages/core/src/trace/trace-pack.ts"; (async()=>{const run=JSON.parse(process.env.RUN); const pack=await exportTracePack(run); await writeFile(process.env.OUT, JSON.stringify(pack)); if (process.env.RUN_OUT) await writeFile(process.env.RUN_OUT, JSON.stringify(pack.objects.find((object)=>object.kind === "frozen-run").content));})().catch(error=>{console.error(error);process.exitCode=1});`;
   await execFileAsync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "--eval", script], {
     cwd: new URL("..", import.meta.url),
     env: {

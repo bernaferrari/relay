@@ -10,7 +10,7 @@ import {
   waitForTargetVisible,
   type WaitForReadinessTiming,
 } from "./still-screen-wait.js";
-import { isIosRunnerPresenceDrainError } from "./ios-runtime-recovery.js";
+import { isIosRunnerPresenceDrainError } from "./ios/ios-runtime-recovery.js";
 
 test("default wait-for budget is short and still-screen compare is exact", () => {
   assert.equal(RECIPE_WAIT_DEFAULT_MS, 8_000);

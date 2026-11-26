@@ -1,9 +1,8 @@
-import { createOperationBuilders } from "./operation-builders.js";
-import type { RelayOperationMap } from "./operation-map.js";
+import { createSchemaOperationBuilders } from "./operation/operation-builders.js";
 
 type PresenceOperationId = "presence.list" | "presence.upsert" | "presence.clear";
 
-const { command, query } = createOperationBuilders<Pick<RelayOperationMap, PresenceOperationId>>();
+const { command, query } = createSchemaOperationBuilders<PresenceOperationId>();
 
 export const presenceOperationDefinitions = [
   query("presence.list", "List project presence", "/presence", { category: "system" }),

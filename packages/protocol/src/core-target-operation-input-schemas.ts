@@ -1,48 +1,65 @@
 import * as z from "zod/v4";
-import { identifier, queryBoolean, targetReference } from "./operation-schema-primitives.js";
+import {
+  identifier,
+  queryBoolean,
+  targetReference,
+} from "./operation/operation-schema-primitives.js";
 
-export const executionTargetInputSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      schemaVersion: z.literal(1),
-      kind: z.literal("local-device"),
-      provider: z
-        .object({ key: z.literal("relay.local.agent-device"), scope: z.literal("local") })
-        .strict(),
-      targetId: identifier("Target identifier"),
-      platform: z.enum(["android", "ios"]),
-      identity: z
-        .object({ kind: z.literal("device-serial"), value: identifier("Device serial") })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      schemaVersion: z.literal(1),
-      kind: z.literal("local-browser"),
-      provider: z
-        .object({ key: z.literal("relay.local.browser"), scope: z.literal("local") })
-        .strict(),
-      targetId: identifier("Target identifier"),
-      platform: z.literal("browser"),
-      identity: z
-        .object({ kind: z.literal("browser-target"), value: identifier("Browser target") })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      schemaVersion: z.literal(1),
-      kind: z.literal("provider-session"),
-      provider: z.object({ key: identifier("Provider key"), scope: z.literal("remote") }).strict(),
-      targetId: identifier("Target identifier"),
-      platform: z.enum(["android", "ios"]),
-      identity: z
-        .object({ kind: z.literal("provider-session"), value: identifier("Provider session") })
-        .strict(),
-    })
-    .strict(),
-]);
+export const executionTargetInputSchema = z
+  .discriminatedUnion("kind", [
+    z
+      .object({
+        schemaVersion: z.literal(1),
+        kind: z.literal("local-device"),
+        provider: z
+          .object({ key: z.literal("relay.local.agent-device"), scope: z.literal("local") })
+          .strict(),
+        targetId: identifier("Target identifier"),
+        platform: z.enum(["android", "ios"]),
+        identity: z
+          .object({ kind: z.literal("device-serial"), value: identifier("Device serial") })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        schemaVersion: z.literal(1),
+        kind: z.literal("local-browser"),
+        provider: z
+          .object({ key: z.literal("relay.local.browser"), scope: z.literal("local") })
+          .strict(),
+        targetId: identifier("Target identifier"),
+        platform: z.literal("browser"),
+        identity: z
+          .object({ kind: z.literal("browser-target"), value: identifier("Browser target") })
+          .strict(),
+      })
+      .strict(),
+    z
+      .object({
+        schemaVersion: z.literal(1),
+        kind: z.literal("provider-session"),
+        provider: z
+          .object({ key: identifier("Provider key"), scope: z.literal("remote") })
+          .strict(),
+        targetId: identifier("Target identifier"),
+        platform: z.enum(["android", "ios"]),
+        identity: z
+          .object({ kind: z.literal("provider-session"), value: identifier("Provider session") })
+          .strict(),
+      })
+      .strict(),
+  ])
+  .refine(
+    ({ targetId, identity, provider }) =>
+      targetId === identity.value && targetId.trim().length > 0 && provider.key.trim().length > 0,
+    "Must be a valid execution target reference",
+  );
+
+const targetSupervisorSerial = targetReference.serial.refine(
+  (value) => value.trim().length > 0,
+  "Target serial must not be blank",
+);
 
 /** Exact schemas for core target observations and the generic execution entry point. */
 export const coreTargetOperationInputSchemas = {
@@ -97,27 +114,40 @@ export const coreTargetOperationInputSchemas = {
         });
       }
     }),
-  "target.observation.capture": z.object(targetReference).strict(),
-  "target.health.get": z.object(targetReference).strict(),
+  "target.observation.capture": z.object({ serial: targetSupervisorSerial }).strict(),
+  "target.health.get": z.object({ serial: targetSupervisorSerial }).strict(),
   "target.input.reconcile": z
     .object({
-      ...targetReference,
-      mutationId: identifier("Uncertain mutation identifier"),
+      serial: targetSupervisorSerial,
+      mutationId: identifier("Uncertain mutation identifier").refine(
+        (value) => value.trim().length > 0,
+        "Mutation identifier must not be blank",
+      ),
       resolutionId: identifier("Idempotent reconciliation attempt identifier").optional(),
       outcome: z.enum(["applied", "not-applied", "ambiguous"]),
-      reconcilePending: z.boolean().optional(),
-      clientUnknown: z.boolean().optional(),
+      reconcilePending: z
+        .boolean()
+        .optional()
+        .describe(
+          "A person reviewed the input currently pending on this target, even if its ID differs from mutationId.",
+        ),
+      clientUnknown: z
+        .boolean()
+        .optional()
+        .describe(
+          "Review this exact legacy client-only Android mutation, only when there is no pending server input.",
+        ),
     })
     .strict(),
   "target.input.receipt.get": z
     .object({
-      ...targetReference,
+      serial: targetSupervisorSerial,
       mutationId: identifier("Reconciled mutation identifier").optional(),
       resolutionId: identifier("Durable reconciliation receipt identifier").optional(),
     })
     .strict()
     .superRefine((value, context) => {
-      if (!value.mutationId && !value.resolutionId) {
+      if (!value.mutationId?.trim() && !value.resolutionId?.trim()) {
         context.addIssue({
           code: "custom",
           message: "Provide a resolutionId or mutationId.",
@@ -130,7 +160,12 @@ export const coreTargetOperationInputSchemas = {
       ...targetReference,
       force: z.boolean().optional(),
       reason: z.enum(["connect", "observe", "control", "record", "auto"]).optional(),
-      recoveryFenceAssignmentId: identifier("Interrupted durable assignment identifier").optional(),
+      recoveryFenceAssignmentId: identifier("Interrupted durable assignment identifier")
+        .refine(
+          (value) => value.trim().length > 0 && value.trim().length <= 256,
+          "Must be a non-empty identifier of at most 256 characters",
+        )
+        .optional(),
     })
     .strict(),
   "job.start": z

@@ -1,10 +1,10 @@
-import type { Connection, ScreenVariant } from "./app-map.js";
+import type { Connection, ScreenVariant } from "./app-map/app-map.js";
 import type {
   ExplorationActionPolicyDecision,
   ExplorationFrontierRanking,
 } from "./exploration-policy.js";
 import type { StepTarget } from "./recipes.js";
-import type { AppMapScenarioTest } from "./test-intent.js";
+import type { AppMapScenarioTest } from "./test/test-intent.js";
 
 export type GraphExplorationControl = {
   key: string;

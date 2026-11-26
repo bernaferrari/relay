@@ -12,7 +12,7 @@ import {
   reorderScenarioTestSteps,
   selectScenarioTestStep,
   unbindScenarioTestStep,
-} from "../app-map.js";
+} from "./app-map.js";
 
 const unresolved = { status: "unresolved" as const, reason: "Choose a binding" };
 

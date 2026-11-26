@@ -8,6 +8,11 @@ import type {
 } from "@relay/protocol";
 import { createRelayWorkflows, type RepeatTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
+import {
+  appMapFixture,
+  appMapVariableFixture,
+  compiledTestFixture,
+} from "./test-response-fixtures.js";
 
 const target = { kind: "device", platform: "android", targetId: "pixel-9" } as const;
 const values = ["en", "it", "fr"] as const;
@@ -34,18 +39,17 @@ function mapStep(revision = 7): ScriptedRelayStep {
   return {
     id: "app-map.get",
     output: {
-      appMap: {
-        revision,
+      appMap: appMapFixture("settings", revision, {
         variables: {
-          language: {
+          language: appMapVariableFixture({
             id: "language",
             name: "Language",
             kind: "language",
             apply: { kind: "appLocale", app: "com.example.app" },
             options: values.map((id) => ({ id })),
-          },
+          }),
         },
-      },
+      }),
     },
   };
 }
@@ -94,7 +98,10 @@ function compileStep(
 ): ScriptedRelayStep {
   return {
     id: "app-map.test.compile",
-    output: { plan: { rootRecipeId: "base-test" }, preflight: preflight(revision, executionRisk) },
+    output: {
+      plan: compiledTestFixture("settings", revision, "data-controls", "base-test"),
+      preflight: preflight(revision, executionRisk),
+    },
   };
 }
 
@@ -113,7 +120,7 @@ function runStep(checkInput?: (input: unknown) => void): ScriptedRelayStep {
         testId: "data-controls",
         rootRecipeId: "repeat-root",
       },
-      plan: { rootRecipeId: "repeat-root" },
+      plan: compiledTestFixture("settings", 8, "data-controls", "repeat-root"),
       job: job(),
       jobs: [job()],
       combine: { id: "generated-repeat", revision: 8 },
@@ -652,25 +659,24 @@ test("multi-dimensional recovery preserves exact case tuples and rejects tuple d
     {
       id: "app-map.get",
       output: {
-        appMap: {
-          revision: 7,
+        appMap: appMapFixture("settings", 7, {
           variables: {
-            language: {
+            language: appMapVariableFixture({
               id: "language",
               name: "Language",
               kind: "language",
               apply: { kind: "appLocale", app: "com.example.app" },
               options: [{ id: "en" }, { id: "it" }],
-            },
-            theme: {
+            }),
+            theme: appMapVariableFixture({
               id: "theme",
               name: "Theme",
               kind: "theme",
               apply: { kind: "appLocale", app: "com.example.app" },
               options: [{ id: "light" }, { id: "dark" }],
-            },
+            }),
           },
-        },
+        }),
       },
     },
     compileStep(),
@@ -688,7 +694,7 @@ test("multi-dimensional recovery preserves exact case tuples and rejects tuple d
           testId: "data-controls",
           rootRecipeId: "repeat-root",
         },
-        plan: { rootRecipeId: "repeat-root" },
+        plan: compiledTestFixture("settings", 8, "data-controls", "repeat-root"),
         job: job(),
         jobs: [job()],
         combine: { id: "generated-repeat", revision: 8 },

@@ -1,7 +1,5 @@
 import { BrowserWindow, session } from "electron";
 import {
-  assertElectronGrokLabTabAllowed,
-  electronGrokLabPartitionPresentOnDisk,
   laneHttpUrl,
   laneSessionPartition,
   laneTabSessionKey,
@@ -15,10 +13,6 @@ export async function openLaneBrowserTab(input: { url: string; laneId: string })
   tabSessionKey: string;
 }> {
   const parsed = laneHttpUrl(input.url);
-  assertElectronGrokLabTabAllowed({
-    laneId: input.laneId,
-    partitionPresent: electronGrokLabPartitionPresentOnDisk(),
-  });
   const partition = laneSessionPartition(input.laneId);
   const tabSessionKey = laneTabSessionKey(input.laneId, parsed.host);
   const existing = laneWindows.get(partition);
@@ -54,10 +48,6 @@ export async function setLaneSessionCookie(input: {
   name: string;
   value: string;
 }): Promise<void> {
-  assertElectronGrokLabTabAllowed({
-    laneId: input.laneId,
-    partitionPresent: electronGrokLabPartitionPresentOnDisk(),
-  });
   const ses = session.fromPartition(laneSessionPartition(input.laneId));
   const url = laneHttpUrl(input.url).toString();
   await ses.cookies.set({
@@ -71,10 +61,6 @@ export async function getLaneSessionCookies(input: {
   laneId: string;
   url: string;
 }): Promise<Array<{ name: string; value: string }>> {
-  assertElectronGrokLabTabAllowed({
-    laneId: input.laneId,
-    partitionPresent: electronGrokLabPartitionPresentOnDisk(),
-  });
   const ses = session.fromPartition(laneSessionPartition(input.laneId));
   const cookies = await ses.cookies.get({ url: laneHttpUrl(input.url).toString() });
   return cookies.map((cookie) => ({ name: cookie.name, value: cookie.value }));

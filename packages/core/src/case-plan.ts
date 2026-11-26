@@ -7,7 +7,7 @@ import type {
   TestData,
 } from "@relay/protocol";
 import { CaseExpansionError, expandCaseIndexes } from "@relay/protocol";
-import { generateValues } from "./generation.js";
+import { generateValues } from "./generation/generation.js";
 
 export type CasePlanStrategy = "repeat" | CaseExpansionStrategy;
 

@@ -12,9 +12,9 @@ import type {
   ScreenIdentityObservation,
   TargetProfile,
 } from "@relay/protocol";
-import { hasCurrentAuthoringSemantics } from "../authoring-observation-proof.js";
-import { observeScreenIdentity } from "../screen-identity.js";
-import type { SnapshotNode } from "../device.js";
+import { hasCurrentAuthoringSemantics } from "../authoring/authoring-observation-proof.js";
+import { observeScreenIdentity } from "../screen/screen-identity.js";
+import type { SnapshotNode } from "../device/device.js";
 import type {
   ActionSpec,
   AppMap,
@@ -34,7 +34,7 @@ import { recordedSourceAnchor } from "./recording-source-anchor.js";
 import {
   isNativeCaptureTargetProfile,
   nativeCaptureTargetProfile,
-} from "../native-target-profile.js";
+} from "../native/native-target-profile.js";
 
 export type AppMapRecordingInput = {
   sessionId: string;

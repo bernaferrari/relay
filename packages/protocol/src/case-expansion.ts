@@ -1,4 +1,4 @@
-import type { CaseExpansionStrategy } from "./app-map.js";
+import type { CaseExpansionStrategy } from "./app-map/app-map.js";
 
 export class CaseExpansionError extends Error {
   constructor(

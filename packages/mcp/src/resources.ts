@@ -177,7 +177,7 @@ export function registerRelayResources(
           ),
         })),
         guidance:
-          "Choose one profile at server startup: qa (default), device for live control and recording, or full for every raw operation.",
+          "Choose one profile at server startup: qa (default), device for live control and recording, or full for advanced raw operations.",
       };
     },
     scope,

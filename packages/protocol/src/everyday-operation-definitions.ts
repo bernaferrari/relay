@@ -1,12 +1,11 @@
-import type { RelayOperationMap } from "./operation-map.js";
-import { createOperationBuilders } from "./operation-builders.js";
+import { createSchemaOperationBuilders } from "./operation/operation-builders.js";
 
 /**
  * The everyday loop and local setup: describe a Test, read a Run's verdict,
  * and check or change what Relay needs on this computer.
  */
 export function createEverydayOperationDefinitions() {
-  const { command, query } = createOperationBuilders<RelayOperationMap>();
+  const { command, query } = createSchemaOperationBuilders();
   return [
     query("system.doctor.get", "Inspect Relay prerequisites", "/doctor", { category: "system" }),
     command(

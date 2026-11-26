@@ -1,0 +1,743 @@
+import { encodeIosRunnerCommand, decodeIosRunnerReply } from "./ios-runner-listener-http.js";
+/**
+ * Talk to a LISTENER_READY testCommand runner over usbmux without taking
+ * the lease or spawning xcodebuild. Relay’s agent-device session is
+ * `relay-ios-<serial>` and does not own the daemon’s live runner; recipes
+ * still need named controls. A healthy listener is not a recover-kill.
+ */
+import {
+  IOS_CHROME_QUERY_TIMEOUT_MS,
+  chromeValuesToQuery,
+  queryIosChromeSelectorsViaListener,
+} from "./ios-snapshot-chrome.js";
+export {
+  iosSnapshotCatalogProfileForBundle,
+  registerIosSnapshotCatalogProfile,
+  type IosSnapshotCatalogProfile,
+} from "./ios-snapshot-chrome.js";
+
+import { openUsbmuxRunnerSocket, readUntilClose, writeAll } from "./ios-usbmux.js";
+export { readUsbmuxDeviceId } from "./ios-usbmux.js";
+import type { SnapshotNode } from "../device/device-capabilities.js";
+import {
+  INTERACTIVE_SNAPSHOT_ROLES,
+  resolveNamedControl,
+} from "../device/device-target-resolution.js";
+import { probeLiveIosRunnerListener, type LiveIosRunnerListener } from "./ios-runner-listener.js";
+import type { TargetContext } from "../target/target-context.js";
+import { rememberedTargetApplication } from "../device/device.js";
+import {
+  adoptedIosMutationFailure,
+  postSupervisedAdoptedIosMutation,
+} from "./ios-adopted-mutation.js";
+import { finishRejectedIosIdentifierDispatch } from "./ios-mutation-policy.js";
+import { IosRunnerReadError } from "./ios-runner-read-error.js";
+import { queryIosSnapshotCatalogViaListener } from "./ios-snapshot-catalog.js";
+
+export type LiveIosRunnerCommand = Record<string, unknown>;
+
+export type LiveIosRunnerCommandResult = {
+  ok?: boolean;
+  runnerMainThreadBusy?: boolean;
+  error?: string | { message?: string; code?: string };
+  data?: {
+    nodes?: SnapshotNode[];
+    message?: string;
+    found?: boolean;
+    truncated?: boolean;
+    systemSurface?: { bundleId?: string };
+    selectorCandidateReceipt?: unknown;
+    applicationState?: string;
+    appBundleId?: string;
+    selectorCatalog?: unknown;
+    coordinateSpace?: string;
+    targetActivation?: unknown;
+  };
+  nodes?: SnapshotNode[];
+};
+
+export type LiveIosRunnerCommandPost = (
+  listener: LiveIosRunnerListener,
+  command: LiveIosRunnerCommand,
+  timeoutMs: number,
+) => Promise<LiveIosRunnerCommandResult>;
+
+let injectedPost: LiveIosRunnerCommandPost | undefined;
+
+/** Test-only seam. Production always posts over usbmuxd. */
+export function setLiveIosRunnerCommandPostForTests(post?: LiveIosRunnerCommandPost): () => void {
+  const previous = injectedPost;
+  injectedPost = post;
+  return () => {
+    injectedPost = previous;
+  };
+}
+
+/** Same adopted transport and test seam used by the existing listener routes. */
+export function postAdoptedIosRunnerCommand(
+  listener: LiveIosRunnerListener,
+  command: LiveIosRunnerCommand,
+  timeoutMs: number,
+): Promise<LiveIosRunnerCommandResult> {
+  return (injectedPost ?? postLiveIosRunnerCommand)(listener, command, timeoutMs);
+}
+
+export function isIosSessionMissingSnapshotError(error: unknown): boolean {
+  return /session|open first/i.test(unknownErrorMessage(error));
+}
+
+/** Runner failures arrive as `{message, code}` objects. `String(error)` is `[object Object]`. */
+export function unknownErrorMessage(error: unknown, fallback = "unknown error"): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const record = error as { message?: unknown; code?: unknown; error?: unknown };
+    if (typeof record.message === "string" && record.message.trim()) return record.message;
+    if (typeof record.error === "string" && record.error.trim()) return record.error;
+    if (typeof record.code === "string" && record.code.trim()) return record.code;
+  }
+  return fallback;
+}
+
+function liveIosRunnerFailureMessage(result: LiveIosRunnerCommandResult, fallback: string): string {
+  return unknownErrorMessage(result.error, unknownErrorMessage(result.data?.message, fallback));
+}
+
+const IOS_RUNNER_HOST_PROBE_IDS = new Set([
+  "agent-device.clipboard.probe",
+  "agent-device.clipboard.copy",
+]);
+
+/** The live listener answered, but XCTest is still parked on AgentDeviceRunner. */
+export function isIosRunnerHostProbeTree(nodes: readonly SnapshotNode[]): boolean {
+  return nodes.some((node) => {
+    const identifier = node.identifier?.trim() ?? "";
+    const label = node.label?.trim() ?? "";
+    if (IOS_RUNNER_HOST_PROBE_IDS.has(identifier)) return true;
+    return label === "Copy probe" || label === "AgentDeviceRunner";
+  });
+}
+
+const IOS_APPLICATION_ROOT_DEPTH = 0;
+const IOS_BOUNDED_SNAPSHOT_DEPTH = 4;
+const IOS_DISAMBIGUATION_SNAPSHOT_DEPTH = 16;
+
+function iosRunnerCommandIsAmbiguous(result: LiveIosRunnerCommandResult): boolean {
+  const code = result.error && typeof result.error === "object" ? result.error.code : undefined;
+  if (code === "AMBIGUOUS_MATCH") return true;
+  return /AMBIGUOUS_MATCH|selector matched multiple/i.test(unknownErrorMessage(result.error, ""));
+}
+
+function catalogApplicationFromSnapshot(
+  result: LiveIosRunnerCommandResult,
+  appBundleId: string | undefined,
+  bounds: { x: number; y: number; width: number; height: number },
+): SnapshotNode {
+  const nodes = result.data?.nodes ?? result.nodes ?? [];
+  if (isIosRunnerHostProbeTree(nodes)) {
+    throw new Error(
+      "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
+    );
+  }
+  if (
+    result.ok !== true ||
+    result.data?.targetActivation !== undefined ||
+    result.data?.systemSurface !== undefined ||
+    (result.data?.coordinateSpace !== undefined &&
+      result.data.coordinateSpace !== "application-logical") ||
+    (result.data?.appBundleId !== undefined && result.data.appBundleId !== appBundleId) ||
+    nodes.some(
+      (node) =>
+        node.logicalCoordinates === false ||
+        (node.bundleId !== undefined && node.bundleId !== appBundleId),
+    )
+  ) {
+    throw new Error(
+      "iOS selector catalog Application snapshot belongs to another application or coordinate space",
+    );
+  }
+  const application = nodes.find((node) => node.depth === 0 && node.type === "Application");
+  const frame = application?.rect;
+  if (
+    !application ||
+    !frame ||
+    frame.width < 100 ||
+    frame.height < 100 ||
+    frame.x !== bounds.x ||
+    frame.y !== bounds.y ||
+    frame.width !== bounds.width ||
+    frame.height !== bounds.height
+  ) {
+    throw new Error("iOS selector catalog could not associate current Application geometry");
+  }
+  return application;
+}
+
+/** Abandoned AX work: refuse fast. Do not fall through to another XCTest command. */
+export function liveIosRunnerCommandIsBusy(result: LiveIosRunnerCommandResult): boolean {
+  const code = result.error && typeof result.error === "object" ? result.error.code : undefined;
+  if (code === "RUNNER_BUSY" || code === "RUNNER_WEDGED") return true;
+  return /RUNNER_BUSY|RUNNER_WEDGED|still finishing a previous command|execution watchdog|main thread has been stuck/i.test(
+    unknownErrorMessage(result.error, ""),
+  );
+}
+
+/** Depth-0 Application only — logical viewport for preview scale, not a list walk. */
+async function snapshotIosApplicationRootViaListener(
+  listener: LiveIosRunnerListener,
+  post: LiveIosRunnerCommandPost,
+  input: {
+    appBundleId?: string;
+    separateRequestedSelectorEvidence?: boolean;
+    catalogWindowBounds?: { x: number; y: number; width: number; height: number };
+  },
+  timeoutMs: number,
+): Promise<SnapshotNode | undefined> {
+  const result = await post(
+    listener,
+    {
+      command: "snapshot",
+      interactiveOnly: false,
+      depth: IOS_APPLICATION_ROOT_DEPTH,
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+    },
+    timeoutMs,
+  );
+  if (result.ok === false) return undefined;
+  if (input.catalogWindowBounds)
+    return catalogApplicationFromSnapshot(result, input.appBundleId, input.catalogWindowBounds);
+  const nodes = result.data?.nodes ?? result.nodes ?? [];
+  if (input.separateRequestedSelectorEvidence && result.data?.systemSurface) return undefined;
+  if (isIosRunnerHostProbeTree(nodes)) return undefined;
+  const application = nodes.find(
+    (node) =>
+      node.depth === 0 &&
+      node.type === "Application" &&
+      node.rect !== undefined &&
+      node.rect.width >= 100 &&
+      node.rect.height >= 100,
+  );
+  return application;
+}
+
+/** Full tree for same-id ranking. Chrome-bounded snapshot omits Settings close. */
+async function snapshotIosDisambiguationTreeViaListener(
+  listener: LiveIosRunnerListener,
+  post: LiveIosRunnerCommandPost,
+  input: { appBundleId?: string; timeoutMs?: number; requireComplete?: boolean },
+): Promise<SnapshotNode[]> {
+  const result = await post(
+    listener,
+    {
+      command: "snapshot",
+      interactiveOnly: false,
+      ...(input.requireComplete ? {} : { depth: IOS_DISAMBIGUATION_SNAPSHOT_DEPTH }),
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+    },
+    input.timeoutMs ?? 20_000,
+  );
+  if (result.ok === false || (input.requireComplete && result.ok !== true)) {
+    throw new IosRunnerReadError(
+      result,
+      liveIosRunnerFailureMessage(result, "Live XCTest listener snapshot failed"),
+    );
+  }
+  if (input.requireComplete && result.data?.truncated !== false) {
+    throw new Error("Live XCTest listener did not return a complete current accessibility tree");
+  }
+  if (
+    input.requireComplete &&
+    result.data?.systemSurface &&
+    result.data.systemSurface.bundleId !== input.appBundleId
+  ) {
+    throw new Error("Live XCTest listener accessibility tree belongs to another application");
+  }
+  const nodes = result.data?.nodes ?? result.nodes ?? [];
+  if (isIosRunnerHostProbeTree(nodes)) {
+    throw new Error(
+      "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
+    );
+  }
+  // The current runner normalizes full-tree frames before presenting them.
+  // Carry that provenance so Relay does not rotate landscape descendants twice.
+  return nodes.map((node) => ({ ...node, logicalCoordinates: true }));
+}
+
+/** Coordinate fallback needs a current whole-tree receipt, not the selector
+ * query's preferred match or a retained authoring capture. Older/sparse runner
+ * responses cannot prove uniqueness and therefore cannot authorize a point. */
+export async function snapshotCompleteIosTreeForTargetApplication(
+  context: TargetContext,
+  appBundleId: string,
+): Promise<SnapshotNode[]> {
+  if (
+    context.kind !== "device" ||
+    context.platform !== "ios" ||
+    (await rememberedTargetApplication(context)) !== appBundleId
+  ) {
+    throw new Error("Live XCTest listener is not bound to the recording application");
+  }
+  const listener = await probeLiveIosRunnerListener(context.serial);
+  if (!listener) throw new Error("iOS coordinate fallback needs an active XCTest session");
+  const nodes = await snapshotIosDisambiguationTreeViaListener(
+    listener,
+    injectedPost ?? postLiveIosRunnerCommand,
+    { appBundleId, requireComplete: true },
+  );
+  if (nodes.some((node) => node.bundleId && node.bundleId !== appBundleId)) {
+    throw new Error("Live XCTest listener accessibility tree belongs to another application");
+  }
+  const application = nodes.find((node) => node.depth === 0 && node.type === "Application");
+  const rect = application?.rect;
+  if (
+    !rect ||
+    ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) ||
+    rect.width < 100 ||
+    rect.height < 100
+  ) {
+    throw new Error("Live XCTest listener could not establish current application geometry");
+  }
+  return nodes;
+}
+
+async function snapshotRequestedIosChromeViaListener(
+  listener: LiveIosRunnerListener,
+  post: LiveIosRunnerCommandPost,
+  input: {
+    appBundleId?: string;
+    includeIdentifiers?: readonly string[];
+    includeLabels?: readonly string[];
+    controlBoundsOnlyForApp?: string;
+    separateRequestedSelectorEvidence?: boolean;
+  },
+  timeoutMs: number,
+): Promise<SnapshotNode[]> {
+  if (input.controlBoundsOnlyForApp && input.appBundleId !== input.controlBoundsOnlyForApp) {
+    throw new Error("Live XCTest listener is not bound to the recording application");
+  }
+  const identifiers = await queryIosChromeSelectorsViaListener(
+    listener,
+    post,
+    {
+      selectorKey: "id",
+      values: chromeValuesToQuery([], input.includeIdentifiers),
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      ...(input.controlBoundsOnlyForApp ? { preserveNonlogicalBounds: true } : {}),
+    },
+    timeoutMs,
+  );
+  const labels = await queryIosChromeSelectorsViaListener(
+    listener,
+    post,
+    {
+      selectorKey: "label",
+      values: chromeValuesToQuery([], input.includeLabels),
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      ...(input.controlBoundsOnlyForApp ? { preserveNonlogicalBounds: true } : {}),
+    },
+    timeoutMs,
+  );
+  const chrome = [...identifiers, ...labels];
+  if (isIosRunnerHostProbeTree(chrome)) {
+    throw new Error(
+      "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
+    );
+  }
+  if (
+    input.controlBoundsOnlyForApp &&
+    chrome.some((node) => node.bundleId && node.bundleId !== input.controlBoundsOnlyForApp)
+  ) {
+    throw new Error("Live XCTest listener control belongs to another application");
+  }
+  // Pure recording selectors use the freshly queried control's own logical
+  // frame. Their native dispatch still resolves current uniqueness. This is
+  // not a full-tree receipt and must never establish screen/capture geometry.
+  if (
+    input.controlBoundsOnlyForApp &&
+    chrome.length === 1 &&
+    chrome.every((node) => {
+      const role = (node.role ?? node.type ?? "").toLowerCase().split(".").at(-1) ?? "";
+      const rect = node.rect;
+      return (
+        node.logicalCoordinates === true &&
+        node.hittable === true &&
+        INTERACTIVE_SNAPSHOT_ROLES.has(role) &&
+        rect &&
+        [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    })
+  ) {
+    return chrome;
+  }
+  const application = await snapshotIosApplicationRootViaListener(listener, post, input, timeoutMs);
+  if (input.controlBoundsOnlyForApp) {
+    if (application?.bundleId && application.bundleId !== input.controlBoundsOnlyForApp) {
+      throw new Error("Live XCTest listener Application belongs to another application");
+    }
+    const rect = application?.rect;
+    if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) {
+      throw new Error("Live XCTest listener could not establish current application geometry");
+    }
+  }
+  return application ? [application, ...chrome] : chrome;
+}
+
+export async function snapshotViaLiveIosRunnerListener(input: {
+  serial: string;
+  interactiveOnly?: boolean;
+  appBundleId?: string;
+  timeoutMs?: number;
+  includeIdentifiers?: readonly string[];
+  includeLabels?: readonly string[];
+  /** Query only includeIdentifiers/includeLabels — never the home/library catalog. */
+  requestedChromeOnly?: boolean;
+  controlBoundsOnlyForApp?: string;
+  separateRequestedSelectorEvidence?: boolean;
+}): Promise<SnapshotNode[]> {
+  const listener = await probeLiveIosRunnerListener(input.serial);
+  if (!listener) {
+    throw new Error("iOS snapshot needs an active XCTest session");
+  }
+  const post = injectedPost ?? postLiveIosRunnerCommand;
+  const timeoutMs = input.timeoutMs ?? 20_000;
+  if (input.requestedChromeOnly) {
+    return snapshotRequestedIosChromeViaListener(listener, post, input, timeoutMs);
+  }
+  const catalog = await queryIosSnapshotCatalogViaListener(listener, post, input, timeoutMs);
+  const chrome = catalog.nodes;
+  if (chrome.length > 0) {
+    if (isIosRunnerHostProbeTree(chrome)) {
+      throw new Error(
+        "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
+      );
+    }
+    const application = await snapshotIosApplicationRootViaListener(
+      listener,
+      post,
+      { ...input, catalogWindowBounds: catalog.bounds },
+      timeoutMs,
+    );
+    if (!application) throw new Error("iOS selector catalog Application root unavailable");
+    return [application, ...chrome];
+  }
+  if (input.separateRequestedSelectorEvidence) {
+    const application = await snapshotIosApplicationRootViaListener(
+      listener,
+      post,
+      { ...input, catalogWindowBounds: catalog.bounds },
+      timeoutMs,
+    );
+    if (!application) throw new Error("iOS selector catalog Application root unavailable");
+    return [application];
+  }
+  const command: LiveIosRunnerCommand = {
+    command: "snapshot",
+    interactiveOnly: input.interactiveOnly ?? true,
+    depth: IOS_BOUNDED_SNAPSHOT_DEPTH,
+    ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+  };
+  const result = await post(listener, command, timeoutMs);
+  if (result.ok === false) {
+    throw new IosRunnerReadError(
+      result,
+      liveIosRunnerFailureMessage(result, "Live XCTest listener snapshot failed"),
+    );
+  }
+  const nodes = result.data?.nodes ?? result.nodes ?? [];
+  catalogApplicationFromSnapshot(result, input.appBundleId, catalog.bounds);
+  return nodes.map((node) => ({ ...node, logicalCoordinates: true }));
+}
+
+/** `true`/`false` when the adopted listener answered. `undefined` if no listener. */
+export async function identifierPresentViaLiveIosRunnerListener(input: {
+  serial: string;
+  identifier: string;
+  appBundleId?: string;
+  timeoutMs?: number;
+}): Promise<boolean | undefined> {
+  const listener = await probeLiveIosRunnerListener(input.serial);
+  if (!listener) return undefined;
+  const post = injectedPost ?? postLiveIosRunnerCommand;
+  const result = await post(
+    listener,
+    {
+      command: "querySelector",
+      selectorKey: "id",
+      selectorValue: input.identifier,
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+    },
+    input.timeoutMs ?? IOS_CHROME_QUERY_TIMEOUT_MS,
+  );
+  if (result.ok === false) {
+    if (liveIosRunnerCommandIsBusy(result)) {
+      throw new Error(
+        liveIosRunnerFailureMessage(
+          result,
+          "The iOS runner is still finishing a previous command that exceeded its execution watchdog (usually an accessibility capture on a heavy or animating screen).",
+        ),
+      );
+    }
+    if (!iosRunnerCommandIsAmbiguous(result)) return undefined;
+    try {
+      const tree = await snapshotIosDisambiguationTreeViaListener(listener, post, {
+        appBundleId: input.appBundleId,
+        timeoutMs: input.timeoutMs,
+      });
+      return resolveNamedControl(tree, { identifier: input.identifier }) !== undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  const nodes = result.data?.nodes ?? result.nodes ?? [];
+  if (isIosRunnerHostProbeTree(nodes)) return undefined;
+  if (typeof result.data?.found === "boolean") return result.data.found;
+  return nodes.some((node) => (node.identifier?.trim() || input.identifier) === input.identifier);
+}
+
+/** Unique-id nodes for interact/preview when chrome-bounded snapshot omitted them. */
+export async function identifierNodesViaLiveIosRunnerListener(input: {
+  serial: string;
+  identifier: string;
+  appBundleId?: string;
+  timeoutMs?: number;
+}): Promise<SnapshotNode[] | undefined> {
+  const listener = await probeLiveIosRunnerListener(input.serial);
+  if (!listener) return undefined;
+  const post = injectedPost ?? postLiveIosRunnerCommand;
+  const result = await post(
+    listener,
+    {
+      command: "querySelector",
+      selectorKey: "id",
+      selectorValue: input.identifier,
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+    },
+    input.timeoutMs ?? IOS_CHROME_QUERY_TIMEOUT_MS,
+  );
+  if (result.ok === false) {
+    if (liveIosRunnerCommandIsBusy(result)) {
+      throw new Error(
+        liveIosRunnerFailureMessage(
+          result,
+          "The iOS runner is still finishing a previous command that exceeded its execution watchdog (usually an accessibility capture on a heavy or animating screen).",
+        ),
+      );
+    }
+    if (!iosRunnerCommandIsAmbiguous(result)) return [];
+    try {
+      return await snapshotIosDisambiguationTreeViaListener(listener, post, {
+        appBundleId: input.appBundleId,
+        timeoutMs: input.timeoutMs,
+      });
+    } catch {
+      return [];
+    }
+  }
+  const nodes = uniqueIdentifierNodes(
+    result.data?.nodes ?? result.nodes ?? [],
+    input.identifier,
+  ).map((node) => ({ ...node, logicalCoordinates: true }));
+  if (isIosRunnerHostProbeTree(nodes)) return undefined;
+  return nodes;
+}
+
+/** Unique-label nodes for interact/preview when chrome-bounded snapshot omitted them. */
+export async function labelNodesViaLiveIosRunnerListener(input: {
+  serial: string;
+  label: string;
+  appBundleId?: string;
+  timeoutMs?: number;
+}): Promise<SnapshotNode[] | undefined> {
+  const listener = await probeLiveIosRunnerListener(input.serial);
+  if (!listener) return undefined;
+  const post = injectedPost ?? postLiveIosRunnerCommand;
+  const result = await post(
+    listener,
+    {
+      command: "querySelector",
+      selectorKey: "label",
+      selectorValue: input.label,
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+    },
+    input.timeoutMs ?? IOS_CHROME_QUERY_TIMEOUT_MS,
+  );
+  if (result.ok === false) return [];
+  const nodes = uniqueLabelNodes(result.data?.nodes ?? result.nodes ?? [], input.label).map(
+    (node) => ({
+      ...node,
+      label: node.label?.trim() || input.label,
+      logicalCoordinates: true,
+    }),
+  );
+  if (isIosRunnerHostProbeTree(nodes)) return undefined;
+  return nodes;
+}
+
+export async function tapViaLiveIosRunnerListener(input: {
+  serial: string;
+  selectorKey?: "label" | "id";
+  selectorValue?: string;
+  /** Viewport point. Skips the runner's own label lookup, which picks the
+   * first same-label element and misses the row Relay already resolved. */
+  point?: { x: number; y: number };
+  appBundleId?: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  const listener = await probeLiveIosRunnerListener(input.serial);
+  if (!listener) {
+    throw new Error("iOS snapshot needs an active XCTest session");
+  }
+  const command: LiveIosRunnerCommand = input.point
+    ? {
+        command: "tap",
+        synthesized: true,
+        x: input.point.x,
+        y: input.point.y,
+        ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      }
+    : {
+        command: "tap",
+        selectorKey: input.selectorKey,
+        selectorValue: input.selectorValue,
+        allowNonHittableCoordinateFallback: true,
+        synthesized: true,
+        ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      };
+  const timeoutMs = input.timeoutMs ?? 20_000;
+  const post = injectedPost ?? postLiveIosRunnerCommand;
+  const result = await postSupervisedAdoptedIosMutation(listener, post, command, timeoutMs);
+  if (result.ok === true) return;
+  const failure = adoptedIosMutationFailure(
+    result,
+    liveIosRunnerFailureMessage(result, "Live XCTest listener tap failed"),
+  );
+  if (
+    input.selectorKey === "id" &&
+    failure.code === "AMBIGUOUS_MATCH" &&
+    failure.dispatched === "no"
+  ) {
+    await finishRejectedIosIdentifierDispatch(input.serial, failure);
+    const tree = await snapshotIosDisambiguationTreeViaListener(listener, post, {
+      appBundleId: input.appBundleId,
+      timeoutMs,
+    });
+    const resolved = resolveNamedControl(tree, { identifier: input.selectorValue });
+    if (!resolved) {
+      throw new Error(
+        "No unique control matched identifier after ranking same-id nodes. Snapshot the screen and retry with a unique identifier or label.",
+      );
+    }
+    const ranked = await postSupervisedAdoptedIosMutation(
+      listener,
+      post,
+      {
+        command: "tap",
+        synthesized: true,
+        x: resolved.point.x,
+        y: resolved.point.y,
+        ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      },
+      timeoutMs,
+    );
+    if (ranked.ok === false) {
+      throw adoptedIosMutationFailure(
+        ranked,
+        liveIosRunnerFailureMessage(ranked, "Live XCTest listener tap failed"),
+      );
+    }
+    return;
+  }
+  throw failure;
+}
+
+function uniqueIdentifierNodes(nodes: readonly SnapshotNode[], identifier: string): SnapshotNode[] {
+  return nodes.filter((node) => (node.identifier?.trim() || identifier) === identifier);
+}
+
+function uniqueLabelNodes(nodes: readonly SnapshotNode[], label: string): SnapshotNode[] {
+  return nodes.filter((node) => (node.label?.trim() || label) === label);
+}
+
+export async function typeViaLiveIosRunnerListener(input: {
+  serial: string;
+  text: string;
+  appBundleId?: string;
+  selectorKey?: "label" | "id";
+  selectorValue?: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  const listener = await probeLiveIosRunnerListener(input.serial);
+  if (!listener) {
+    throw new Error("iOS snapshot needs an active XCTest session");
+  }
+  const timeoutMs = input.timeoutMs ?? 20_000;
+  const selectorKey = input.selectorKey;
+  const selectorValue = input.selectorValue;
+  const command: LiveIosRunnerCommand = {
+    command: "type",
+    text: input.text,
+    allowNonHittableCoordinateFallback: true,
+    ...(selectorKey && selectorValue ? { selectorKey, selectorValue } : {}),
+    ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+  };
+  const result = await postSupervisedAdoptedIosMutation(
+    listener,
+    injectedPost ?? postLiveIosRunnerCommand,
+    command,
+    timeoutMs,
+  );
+  if (result.ok === false) {
+    throw adoptedIosMutationFailure(
+      result,
+      liveIosRunnerFailureMessage(result, "Live XCTest listener type failed"),
+    );
+  }
+}
+
+export async function postLiveIosRunnerCommand(
+  listener: LiveIosRunnerListener,
+  command: LiveIosRunnerCommand,
+  timeoutMs: number,
+): Promise<LiveIosRunnerCommandResult> {
+  const request = encodeIosRunnerCommand(listener.runnerToken, command);
+  const socket = await openUsbmuxRunnerSocket(listener.serial, listener.port, timeoutMs);
+  try {
+    await writeAll(socket, request);
+    const raw = await readUntilClose(socket, timeoutMs);
+    return decodeIosRunnerReply(raw) as LiveIosRunnerCommandResult;
+  } finally {
+    socket.destroy();
+  }
+}
+
+export async function snapshotFromLiveIosRunnerListenerIfReady(
+  context: TargetContext,
+  opts?: {
+    interactiveOnly?: boolean;
+    timeoutMs?: number;
+    includeIdentifiers?: readonly string[];
+    includeLabels?: readonly string[];
+    requestedChromeOnly?: boolean;
+    controlBoundsOnlyForApp?: string;
+    separateRequestedSelectorEvidence?: boolean;
+  },
+): Promise<SnapshotNode[] | undefined> {
+  if (context.kind !== "device" || context.platform !== "ios") return undefined;
+  const live = await probeLiveIosRunnerListener(context.serial);
+  if (!live) return undefined;
+  return await snapshotViaLiveIosRunnerListener({
+    serial: context.serial,
+    interactiveOnly: opts?.interactiveOnly ?? false,
+    appBundleId: await rememberedTargetApplication(context),
+    timeoutMs: opts?.timeoutMs,
+    ...(opts?.includeIdentifiers?.length ? { includeIdentifiers: opts.includeIdentifiers } : {}),
+    ...(opts?.includeLabels?.length ? { includeLabels: opts.includeLabels } : {}),
+    ...(opts?.requestedChromeOnly ? { requestedChromeOnly: true } : {}),
+    ...(opts?.separateRequestedSelectorEvidence ? { separateRequestedSelectorEvidence: true } : {}),
+    ...(opts?.controlBoundsOnlyForApp
+      ? { controlBoundsOnlyForApp: opts.controlBoundsOnlyForApp }
+      : {}),
+  });
+}

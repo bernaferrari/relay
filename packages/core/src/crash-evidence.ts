@@ -3,8 +3,8 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
-import { currentTargetContext } from "./target-context.js";
+import { resolveAndroidSdkTool } from "./android/android-sdk-tools.js";
+import { currentTargetContext } from "./target/target-context.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_CRASH_OUTPUT_BYTES = 2 * 1024 * 1024;

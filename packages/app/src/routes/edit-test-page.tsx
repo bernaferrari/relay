@@ -10,7 +10,7 @@ import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage } from "../components/page-layout";
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
 import { ApiError } from "@relay/client";
-import { Button } from "@relay/ui-react/components/button";
+
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -575,7 +575,6 @@ function TestEditorDocument({
           onWorkspaceViewChange={setWorkspaceView}
           saveState={saveState}
           settingsOpen={settingsOpen}
-          onToggleSettings={() => setSettingsOpen((open) => !open)}
           editorExpanded={editorExpanded}
           hasPendingCheckpoint={Boolean(pendingCheckpoint)}
           stepEditor={stepEditor}

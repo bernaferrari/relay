@@ -1,5 +1,5 @@
 import * as z from "zod/v4";
-import { browserCaseProfileSchema } from "./browser-case-profile.js";
+import { browserCaseProfileSchema } from "./browser/browser-case-profile.js";
 import { stateFixtureSchema } from "./exploration-policy.js";
 
 const pointSchema = z.object({ x: z.number(), y: z.number() }).strict();

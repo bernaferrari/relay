@@ -1,5 +1,4 @@
-import { createOperationBuilders } from "./operation-builders.js";
-import type { RelayOperationMap } from "./operation-map.js";
+import { createSchemaOperationBuilders } from "./operation/operation-builders.js";
 
 type ScheduleOperationId =
   | "schedule.occurrences"
@@ -12,7 +11,7 @@ type ScheduleOperationId =
   | "matrix.delete"
   | "matrix.import"
   | "matrix.resolve";
-const { command, query } = createOperationBuilders<Pick<RelayOperationMap, ScheduleOperationId>>();
+const { command, query } = createSchemaOperationBuilders<ScheduleOperationId>();
 
 export const scheduleOperationDefinitions = [
   query("schedule.occurrences", "List scheduled occurrences", "/schedules/:scheduleId/occurrences"),

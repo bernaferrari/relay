@@ -6,7 +6,7 @@ import {
   evaluationCostUsd,
   normalizeEvaluationResult,
   registerEvaluationProvider,
-} from "./evaluation.js";
+} from "./evaluation/evaluation.js";
 
 describe("semantic evaluation providers", () => {
   it("does not allow a claimed pass to override missing criteria", () => {

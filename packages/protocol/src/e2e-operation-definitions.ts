@@ -1,6 +1,6 @@
-import { createOperationBuilders } from "./operation-builders.js";
+import { createSchemaOperationBuilders } from "./operation/operation-builders.js";
 import type { E2EOperationMap } from "./e2e-project.js";
-const { query, command } = createOperationBuilders<E2EOperationMap>();
+const { query, command } = createSchemaOperationBuilders<keyof E2EOperationMap & string>();
 export const e2eOperationDefinitions = [
   query("e2e.project.list", "List e2e projects", "/e2e/projects"),
   command("e2e.project.open", "Trust and open e2e project", "POST", "/e2e/projects", {

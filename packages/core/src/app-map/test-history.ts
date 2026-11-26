@@ -3,7 +3,7 @@ import type {
   AppMapTestMutationHistory,
   AppMapTestMutationHistoryEntry,
 } from "./test-history-model.js";
-import type { ControlStore } from "../collaboration-store.js";
+import type { ControlStore } from "../collaboration/collaboration-store.js";
 
 export function readAppMapTestMutationHistory(
   store: ControlStore,

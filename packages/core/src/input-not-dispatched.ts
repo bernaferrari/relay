@@ -1,4 +1,4 @@
-import type { AndroidTextEntryReceipt } from "./android-text-entry-verification.js";
+import type { AndroidTextEntryReceipt } from "./android/android-text-entry-verification.js";
 
 /** Proof supplied only at a boundary before any native input has been attempted. */
 export class InputNotDispatchedError extends Error {

@@ -3,6 +3,7 @@ import test from "node:test";
 import type { DurableWorkflowRead, ExecutionRisk, OperationInput } from "@relay/protocol";
 import { createRelayWorkflows, type RunTestIntent } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
+import { compiledTestFixture } from "./test-response-fixtures.js";
 
 const target = { kind: "device", platform: "android", targetId: "pixel-9" } as const;
 const frozen = {
@@ -60,7 +61,7 @@ function compile(): ScriptedRelayStep {
   return {
     id: "app-map.test.compile",
     output: {
-      plan: { rootRecipeId: "open-settings" },
+      plan: compiledTestFixture("settings", 7, "smoke", "open-settings"),
       preflight: {
         schemaVersion: 1,
         mode: "offline-test-preflight",
@@ -128,7 +129,7 @@ test("durable Run reserves identity before enqueue and returns only workflow id 
           testId: "smoke",
           rootRecipeId: "open-settings",
         },
-        plan: { rootRecipeId: "open-settings" },
+        plan: compiledTestFixture("settings", 7, "smoke", "open-settings"),
         job,
       },
     },
@@ -312,7 +313,7 @@ test("a malformed post-enqueue response retains the reserved durable handle", as
           testId: "different-test",
           rootRecipeId: "open-settings",
         },
-        plan: { rootRecipeId: "open-settings" },
+        plan: compiledTestFixture("settings", 7, "smoke", "open-settings"),
         job,
       },
     },
@@ -394,7 +395,7 @@ test("a Run Lane resolves the saved who-and-where before compile and dispatch", 
           testId: "smoke",
           rootRecipeId: "open-settings",
         },
-        plan: { rootRecipeId: "open-settings" },
+        plan: compiledTestFixture("settings", 7, "smoke", "open-settings"),
         job,
       },
     },

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { operationDefinition } from "./operations.js";
-import { summarizeTargetOperationResult } from "./target-summary.js";
+import { summarizeTargetOperationResult } from "./target/target-summary.js";
 
 const resolution = {
   method: "label" as const,

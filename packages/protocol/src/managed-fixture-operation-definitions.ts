@@ -1,8 +1,6 @@
-import { createOperationBuilders } from "./operation-builders.js";
-import type { RelayOperationMap } from "./operation-map.js";
+import { createSchemaOperationBuilders } from "./operation/operation-builders.js";
 
-const { command, query } =
-  createOperationBuilders<Pick<RelayOperationMap, "fixture.import" | "fixture.list">>();
+const { command, query } = createSchemaOperationBuilders<"fixture.import" | "fixture.list">();
 export const managedFixtureOperationDefinitions = [
   command("fixture.import", "Import a test file", "POST", "/fixtures", {
     category: "authoring",

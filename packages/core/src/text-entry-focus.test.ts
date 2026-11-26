@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SnapshotNode } from "./device-capabilities.js";
+import type { SnapshotNode } from "./device/device-capabilities.js";
 import { planTextEntryFocus } from "./text-entry-focus.js";
 
 /** Grok's composer on a 1080×2340 Galaxy: one EditText holding the chips. */

@@ -1,7 +1,7 @@
 import type { ConnectionNavigationTarget, ScreenIdentity } from "@relay/protocol";
-import type { SnapshotNode } from "../device.js";
-import { observeScreenIdentity } from "../screen-identity.js";
-import type { SnapshotPayload } from "../workspace-capture.js";
+import type { SnapshotNode } from "../device/device.js";
+import { observeScreenIdentity } from "../screen/screen-identity.js";
+import type { SnapshotPayload } from "../workspace/workspace-capture.js";
 
 const DESTRUCTIVE =
   /\b(?:delete|uninstall|erase|wipe|factory\s*reset|remove account|clear(?: all)? data|reset (?:phone|tablet|device)|destroy|permanently)\b/iu;

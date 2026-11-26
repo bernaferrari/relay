@@ -217,7 +217,6 @@ export function createPlanInputDataSetService(
       const name = input.name.trim();
       if (!name) throw new TypeError("Give this Data set a name.");
       const variableId = `input-${crypto.randomUUID()}`;
-      const now = Date.now();
       const { appMap } = await (
         await client()
       ).invoke("app-map.variable.save", {
@@ -225,12 +224,6 @@ export function createPlanInputDataSetService(
         variableId,
         expectedRevision: input.expectedRevision,
         variable: {
-          id: variableId,
-          organizationId: current.appMap.organizationId,
-          projectId: current.appMap.projectId,
-          appMapId: current.appMap.id,
-          createdAt: now,
-          updatedAt: now,
           name,
           kind: "custom",
           apply: { kind: "input", inputId: definition.id },

@@ -7,8 +7,8 @@
  */
 import { mkdir, readdir, writeFile, unlink, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { ACTIONS, isActionId } from "./actions.js";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import { isActionId, listActions } from "./actions.js";
+import { findWorkspaceRoot } from "./workspace/workspace-root.js";
 import { now } from "./events.js";
 import {
   CURRENT_RECORDING_FORMAT_VERSION,
@@ -42,9 +42,9 @@ export type {
   StepTarget,
   VerticalCoordinateAnchor,
 } from "@relay/protocol";
-import { validateRecipeParameters, validateRecipeSteps } from "./recipe-validation.js";
+import { validateRecipeParameters, validateRecipeSteps } from "./recipe/recipe-validation.js";
 export { validateRecipeParameters, validateRecipeSteps };
-export { describeTarget, describeRecipeStep, glyphsForStep } from "./recipe-presentation.js";
+export { describeTarget, describeRecipeStep, glyphsForStep } from "./recipe/recipe-presentation.js";
 import {
   saveRecipeEvidenceImage,
   readRecipeEvidenceImage,
@@ -52,7 +52,7 @@ import {
   projectStoredRecipeEvidenceImageArtifact,
   evidencePart,
   evidenceDir,
-} from "./recipe-evidence-store.js";
+} from "./recipe/recipe-evidence-store.js";
 export {
   saveRecipeEvidenceImage,
   readRecipeEvidenceImage,
@@ -67,7 +67,7 @@ import {
   readStoredRecipeYaml,
   recipeYamlPath,
   validateRecipeVariables,
-} from "./recipe-yaml.js";
+} from "./recipe/recipe-yaml.js";
 
 export type Recipe = {
   /** slug, unique; custom ones are "custom-<slug>" */
@@ -107,7 +107,7 @@ export function testsRoot(): string {
 
 /** Built-in plans: one per coded flow, each a single opaque `flow` step. */
 export function builtinRecipes(): Recipe[] {
-  return ACTIONS.map((a) => ({
+  return listActions().map((a) => ({
     id: a.id,
     title: a.title,
     description: a.description,

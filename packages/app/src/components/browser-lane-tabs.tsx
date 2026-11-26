@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { browserLaneHostIdentity, electronGrokLabProductPathBlocker } from "@relay/protocol";
+import { browserLaneHostIdentity } from "@relay/protocol";
 import { Button } from "@relay/ui-react/components/button";
 import { useState } from "react";
 import type { ProductAccountLane } from "../data/app-resources-product-service";
@@ -46,39 +46,21 @@ export function createBrowserLaneTab(lane: ProductAccountLane): BrowserLaneTab {
   };
 }
 
-export function browserLaneTabOpenBlocker(input: {
-  laneId: string;
-  electronGrokLabPartitionPresent?: boolean;
-}): string | undefined {
-  return electronGrokLabProductPathBlocker({
-    laneId: input.laneId,
-    presentation: "embedded",
-    electronGrokLabPartitionPresent: input.electronGrokLabPartitionPresent,
-  });
-}
-
 export function BrowserLaneTabs({
   lanes,
   targetId,
   disabled,
   onOpen,
-  electronGrokLabPartitionPresent,
 }: {
   lanes: readonly ProductAccountLane[];
   targetId: string;
   disabled?: boolean;
-  electronGrokLabPartitionPresent?: boolean;
   onOpen: (tab: BrowserLaneTab) => void;
 }) {
   const isolated = isolatedBrowserLanesForTarget(lanes, targetId);
   const [tabs, setTabs] = useState<BrowserLaneTab[]>([]);
 
   function openLane(lane: ProductAccountLane) {
-    const blocker = browserLaneTabOpenBlocker({
-      laneId: lane.id,
-      electronGrokLabPartitionPresent,
-    });
-    if (blocker) throw new Error(blocker);
     const next = createBrowserLaneTab(lane);
     const shared = tabs.find((tab) => tab.tabSessionKey === next.tabSessionKey);
     const tab = shared ?? next;
@@ -105,18 +87,13 @@ export function BrowserLaneTabs({
       </div>
       <div role="group" aria-label="Open a browser session" className="mt-3 flex flex-wrap gap-2">
         {isolated.map((lane) => {
-          const blocker = browserLaneTabOpenBlocker({
-            laneId: lane.id,
-            electronGrokLabPartitionPresent,
-          });
           return (
             <Button
               key={lane.id}
               type="button"
               variant="outline"
               size="sm"
-              title={blocker ? "This saved session is not available here." : undefined}
-              disabled={disabled || Boolean(blocker)}
+              disabled={disabled}
               onClick={() => openLane(lane)}
               className="min-h-9"
             >

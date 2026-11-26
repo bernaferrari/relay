@@ -9,6 +9,7 @@ import {
 } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
 import { parseCanonicalJob } from "./job-projection.js";
+import { appMapFixture, compiledTestFixture } from "./test-response-fixtures.js";
 
 const target = { kind: "device", platform: "android", targetId: "pixel-9" } as const;
 const browserTarget = { kind: "browser", platform: "browser", targetId: "browser-golden" } as const;
@@ -112,7 +113,9 @@ function compileStep(
   return {
     id: "app-map.test.compile",
     output: {
-      plan: { rootRecipeId: "open-settings", startup },
+      plan: compiledTestFixture("settings", revision, "data-controls", "open-settings", {
+        startup,
+      }),
       preflight: preflight(revision, blockers, executionRisk),
     },
   };
@@ -142,7 +145,9 @@ function runStep(
         testId: "data-controls",
         rootRecipeId: "open-settings",
       },
-      plan: { rootRecipeId: "open-settings", startup },
+      plan: compiledTestFixture("settings", revision, "data-controls", "open-settings", {
+        startup,
+      }),
       job: job(status),
     },
   };
@@ -152,7 +157,9 @@ function browserCompileStep(profiles: ReturnType<typeof browserProfile>[]): Scri
   return {
     id: "app-map.test.compile",
     output: {
-      plan: { rootRecipeId: "open-settings", rawAccessibilityTargetProfiles: profiles },
+      plan: compiledTestFixture("settings", 7, "data-controls", "open-settings", {
+        rawAccessibilityTargetProfiles: profiles,
+      }),
       preflight: preflight(7),
     },
   };
@@ -170,8 +177,7 @@ function deviceCompileStep(selectedProfileId?: string): ScriptedRelayStep {
   return {
     id: "app-map.test.compile",
     output: {
-      plan: {
-        rootRecipeId: "open-settings",
+      plan: compiledTestFixture("settings", 7, "data-controls", "open-settings", {
         rawAccessibilityTargetProfiles: profiles,
         rawAccessibilityVariantsByScreenId: {
           "screen-current": [
@@ -202,7 +208,7 @@ function deviceCompileStep(selectedProfileId?: string): ScriptedRelayStep {
             ],
           },
         },
-      },
+      }),
       preflight: preflight(7),
     },
     ...(selectedProfileId
@@ -225,13 +231,9 @@ function queuedCompileArtifacts(
   return [
     {
       kind: "app-map-test-plan",
-      data: {
-        appMapId: "settings",
-        appMapRevision: 7,
-        test: { id: "data-controls" },
-        rootRecipeId: "open-settings",
+      data: compiledTestFixture("settings", 7, "data-controls", "open-settings", {
         runtimeTargetProfile,
-      },
+      }),
     },
     {
       kind: "app-map-test-preflight",
@@ -316,8 +318,7 @@ test("Member v7 cannot enqueue a Test against a saved Member v4 profile", async 
     {
       id: "app-map.test.compile",
       output: {
-        plan: {
-          rootRecipeId: "open-settings",
+        plan: compiledTestFixture("settings", 7, "data-controls", "open-settings", {
           rawAccessibilityTargetProfiles: [
             {
               id: "browser-profile-1",
@@ -327,7 +328,7 @@ test("Member v7 cannot enqueue a Test against a saved Member v4 profile", async 
               browserCaseProfile: savedV4,
             },
           ],
-        },
+        }),
         preflight: preflight(7),
       },
     },
@@ -466,7 +467,7 @@ for (const [label, profiles] of [
 
 test("current revision is read once, compiled offline, and frozen into the exact run", async () => {
   const scripted = createScriptedRelayClient([
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("settings", 7) } },
     compileStep(7),
     runStep(7),
   ]);
@@ -588,7 +589,7 @@ test("runtime prompts reach saved Test admission without entering the public fro
 
 test("a revision that changes before compile fails closed without a run", async () => {
   const scripted = createScriptedRelayClient([
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("settings", 7) } },
     compileStep(8),
   ]);
   const workflows = createRelayWorkflows(scripted.client);
@@ -823,7 +824,13 @@ test("an uncertain Run is recovered from its immutable execution intent", async 
     ],
   });
   const scripted = createScriptedRelayClient([
-    { id: "job.list", output: { jobs: [{ ...canonical, frameCount: 0 }] } },
+    {
+      id: "job.list",
+      output: {
+        jobs: [{ ...canonical, frameCount: 0 }],
+        activeJobs: [{ ...canonical, frameCount: 0 }],
+      },
+    },
     { id: "job.get", output: { job: canonical } },
   ]);
 
@@ -874,7 +881,13 @@ test("fresh-capture recovery adopts by its pre-dispatch request identity", async
   const scripted = createScriptedRelayClient([
     compileStep(3),
     { id: "app-map.test.run", error: new Error("response lost after dispatch") },
-    { id: "job.list", output: { jobs: [{ ...canonical, frameCount: 0 }] } },
+    {
+      id: "job.list",
+      output: {
+        jobs: [{ ...canonical, frameCount: 0 }],
+        activeJobs: [{ ...canonical, frameCount: 0 }],
+      },
+    },
     { id: "job.get", output: { job: canonical } },
   ]);
   const workflows = createRelayWorkflows(scripted.client);
@@ -1030,7 +1043,7 @@ test("authoring starts recording against one frozen App Map revision", async () 
     group: "Settings",
   });
   const scripted = createScriptedRelayClient([
-    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "app-map.get", output: { appMap: appMapFixture("settings", 7) } },
     authoringStep("authoring.session.begin", recording, (input) =>
       assert.deepEqual(input, {
         appMapId: "settings",
@@ -1388,7 +1401,7 @@ test("an uncertain authoring mutation is not retried and permits inspection only
 
 test("screen refresh with a new observed profile preserves the saved Test runtime selection", async () => {
   const { frozenRawAccessibilityTargetProfiles, frozenRawAccessibilityVariants } =
-    await import("../../core/src/app-map-test-raw-accessibility.js");
+    await import("../../core/src/app-map/app-map-test-raw-accessibility.js");
   const original = {
     id: "variant-current",
     screenId: "screen-current",
@@ -1420,9 +1433,10 @@ test("screen refresh with a new observed profile preserves the saved Test runtim
   const compile = deviceCompileStep();
   const output =
     compile.output as import("@relay/protocol").OperationOutput<"app-map.test.compile">;
-  output.plan.rawAccessibilityTargetProfiles = frozenRawAccessibilityTargetProfiles(map);
+  const frozenProfiles = JSON.parse(JSON.stringify(frozenRawAccessibilityTargetProfiles(map)));
+  output.plan.rawAccessibilityTargetProfiles = frozenProfiles;
   output.plan.rawAccessibilityVariantsByScreenId = frozenRawAccessibilityVariants(map);
-  assert.equal(output.plan.rawAccessibilityTargetProfiles.length, 1);
+  assert.equal(frozenProfiles.length, 1);
   assert.deepEqual(
     output.plan.rawAccessibilityVariantsByScreenId["screen-current"]?.map((v) => v.id),
     [original.id],
@@ -1448,13 +1462,10 @@ test("screen refresh with a new observed profile preserves the saved Test runtim
               rootRecipeId: "open-settings",
               digest: "canonical-refresh-plan",
             },
-            selectedRuntimeTargetProfile: output.plan.rawAccessibilityTargetProfiles[0],
+            selectedRuntimeTargetProfile: frozenProfiles[0],
           },
         },
-        ...queuedCompileArtifacts(
-          "canonical-refresh-plan",
-          output.plan.rawAccessibilityTargetProfiles[0]!,
-        ),
+        ...queuedCompileArtifacts("canonical-refresh-plan", frozenProfiles[0]!),
       ],
     }),
   };

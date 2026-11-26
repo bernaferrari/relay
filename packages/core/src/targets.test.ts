@@ -4,7 +4,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { closeBrowserTarget, getBrowserDevice } from "./browser-target.js";
+import { closeBrowserTarget, getBrowserDevice } from "./browser/browser-target.js";
 import {
   BrowserDeviceConflictError,
   captureBrowserDeviceFrame,
@@ -15,9 +15,9 @@ import {
   openBrowserDeviceSession,
   readBrowserDeviceSession,
   resetBrowserDeviceSessionsForTests,
-} from "./browser-device-session.js";
-import { createBrowserContextFactory } from "./browser-context.js";
-import { browserAccountSchedulingKey } from "./browser-account-lane.js";
+} from "./browser/browser-device-session.js";
+import { createBrowserContextFactory } from "./browser/browser-context.js";
+import { browserAccountSchedulingKey } from "./browser/browser-account-lane.js";
 import {
   pressIdentifier,
   pressLabel,
@@ -25,9 +25,12 @@ import {
   recordDeviceVideo,
   screenshot,
   typeText,
-} from "./device.js";
-import { runWithTargetContext } from "./target-context.js";
-import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-supervisor-store.js";
+} from "./device/device.js";
+import { runWithTargetContext } from "./target/target-context.js";
+import {
+  runWithTargetSupervisorStore,
+  TargetSupervisorStore,
+} from "./target/target-supervisor-store.js";
 import {
   browserProfileDir,
   deleteTarget,

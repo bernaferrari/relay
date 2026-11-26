@@ -4,10 +4,10 @@ import type {
   ConnectionScreenProof,
   Proposal,
 } from "@relay/protocol";
-import type { SnapshotNode } from "../device.js";
-import { observeScreenIdentity } from "../screen-identity.js";
-import { IosMutationOutcomeUnknownError } from "../ios-mutation-policy.js";
-import { captureSnapshot, interact, type InteractInput } from "../workspace.js";
+import type { SnapshotNode } from "../device/device.js";
+import { observeScreenIdentity } from "../screen/screen-identity.js";
+import { IosMutationOutcomeUnknownError } from "../ios/ios-mutation-policy.js";
+import { captureSnapshot, interact, type InteractInput } from "../workspace/workspace.js";
 
 function fingerprintOf(nodes: Parameters<typeof observeScreenIdentity>[0]): string | undefined {
   return observeScreenIdentity(nodes).fingerprint;

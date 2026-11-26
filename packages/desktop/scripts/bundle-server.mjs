@@ -47,7 +47,9 @@ export async function bundleServer() {
     target: "node24",
   });
   await esbuild.build({
-    entryPoints: [resolve(workspaceRoot, "packages/core/src/screenshot-analysis-worker.ts")],
+    entryPoints: [
+      resolve(workspaceRoot, "packages/core/src/screenshot/screenshot-analysis-worker.ts"),
+    ],
     outfile: resolve(outDir, "screenshot-analysis-worker.cjs"),
     bundle: true,
     platform: "node",

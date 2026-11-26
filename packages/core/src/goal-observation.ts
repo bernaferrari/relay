@@ -53,10 +53,6 @@ function safeFinite(value: number | undefined): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function isEditableControl(role: string | undefined, identifier: string | undefined): boolean {
-  return EDITABLE_CONTROL.test(`${role ?? ""} ${identifier ?? ""}`);
-}
-
 function controlTarget(control: TargetObservation["semantics"]["controls"][number]) {
   const target = {
     ...(safeText(control.identifier) ? { identifier: safeText(control.identifier) } : {}),

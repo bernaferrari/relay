@@ -3,7 +3,7 @@ import { libraryRowSurface, libraryRowContent } from "../components/library-row-
 import { RunThumb } from "../components/run-thumb";
 import { StatusPill, runStateOf } from "../components/run-status";
 import { formatDuration } from "../components/run-report-formatters";
-import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog";
+import type { ProductRunSummary } from "@relay/product/catalog";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
 
@@ -17,7 +17,7 @@ import {
 } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
-import { EmptyState, OutcomeMark } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run-history-list";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -436,11 +436,6 @@ function emptyRunTitle(view: RunView) {
   if (view === "failed") return "Nothing failed";
   if (view === "needs-review") return "Nothing to review";
   return "No runs match";
-}
-
-function phaseOutcome(run: ProductRunSummary): ProductRunPhase | "uncertain" {
-  if (run.review?.status === "pending") return "uncertain";
-  return run.phase;
 }
 
 function phaseDetail(run: ProductRunSummary) {

@@ -2,7 +2,7 @@ import { KeyedSerialQueue } from "./coordination-store.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import { findWorkspaceRoot } from "./workspace/workspace-root.js";
 import type { TargetInputManualReview, TargetInputReconciliationOutcome } from "@relay/protocol";
 
 /** Durable reconcile receipts. A lost HTTP response can retrieve the same

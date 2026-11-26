@@ -16,9 +16,9 @@ const retiredPatterns = [
 ];
 
 const canonicalTeachingBoundary = new Map([
-  ["packages/protocol/src/app-map-operation-definitions.ts", "app-map.variable.infer"],
+  ["packages/protocol/src/app-map/app-map-operation-definitions.ts", "app-map.variable.infer"],
   [
-    "packages/server/src/app-map-capture-routes.ts",
+    "packages/server/src/app-map/app-map-capture-routes.ts",
     "/app-maps/:appMapId/variables/:variableId/infer",
   ],
   ["packages/cli/src/cli-operation-descriptors.ts", '"app-map.variable.infer"'],

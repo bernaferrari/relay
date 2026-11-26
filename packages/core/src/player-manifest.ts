@@ -27,7 +27,7 @@ import {
   playerVariantIdForConfiguration,
   type AppMap,
 } from "@relay/protocol";
-import type { PersistedRun } from "./runs.js";
+import type { PersistedRun } from "./runs/runs.js";
 
 export const PLAYER_MANIFEST_SCHEMA_VERSION = 1;
 export const PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND = "app-map-player-snapshot";
@@ -247,7 +247,7 @@ type CaptureReviewArtifactData = {
 
 /** The variant identity combines the declared configuration with the
  * OBSERVED lane/profile. A compiled plan may carry a stale route label
- * (two different lanes once both declared browser=grok-com); observation
+ * (two different lanes once both declared browser=example-com); observation
  * is the truth that keeps two configurations from collapsing into one
  * substitutable variant (plan §6.5). */
 function variantKeyOf(data: {

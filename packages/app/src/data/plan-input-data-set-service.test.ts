@@ -18,8 +18,26 @@ const map = {
   id: "grok",
   organizationId: "local",
   projectId: "default",
+  name: "Grok",
   revision: 4,
   variables: {},
+  notes: {},
+  groups: {},
+  screens: {},
+  screenVariants: {},
+  connections: {},
+  caseStacks: {},
+  tests: {},
+  combines: {},
+  routines: {},
+  flows: {},
+  runs: {},
+  targetResults: {},
+  proposals: {},
+  activity: {},
+  schemaVersion: 1,
+  createdAt: 1,
+  updatedAt: 1,
 } as AppMap;
 function fixture(
   definitions: TestData[] = [definition],
@@ -152,9 +170,13 @@ describe("Plan input Data sets", () => {
         options: [{ id: "value-1", value: prompt, label: expect.any(String) }],
       },
     });
-    const variable = (write as { variable: { id: string; options: { label: string }[] } }).variable;
+    const { variableId, variable } = write as {
+      variableId: string;
+      variable: { options: { label: string }[] };
+    };
     expect(variable.options[0]!.label.length).toBeLessThanOrEqual(72);
-    expect(result.variableId).toBe(variable.id);
+    expect(result.variableId).toBe(variableId);
+    expect(variable).not.toHaveProperty("id");
     expect(result.editor.revision).toBe(5);
     expect(project).toHaveBeenCalledOnce();
   });

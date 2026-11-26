@@ -3,13 +3,13 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { listAdbDevices } from "./adb-devices.js";
+import { listAdbDevices } from "./adb/adb-devices.js";
 import {
   AndroidSdkRootConfigurationError,
   AndroidSdkToolError,
   resolveAndroidSdkTool,
-} from "./android-sdk-tools.js";
-import { listDevices } from "./workspace.js";
+} from "./android/android-sdk-tools.js";
+import { listDevices } from "./workspace/workspace.js";
 
 const execFileAsync = promisify(execFile);
 

@@ -6,18 +6,21 @@ import test from "node:test";
 import {
   durableWorkerAssignmentStore,
   resetDurableWorkerAssignmentStoreForTests,
-} from "./durable-worker-assignments.js";
-import { setCloudDeviceProvider, setLocalDeviceProvider } from "./device-factory.js";
+} from "./durable/durable-worker-assignments.js";
+import { setCloudDeviceProvider, setLocalDeviceProvider } from "./device/device-factory.js";
 import { createDeterministicProviderTestDriver } from "./deterministic-provider-test-driver.js";
 import { runWithOperationContext } from "./operation-context.js";
 import type { Recipe } from "./recipes.js";
-import { readPersistedRun } from "./runs.js";
-import { prepareJobBatch, runJobSync, waitForJobCompletion } from "./session.js";
-import { TargetDriverRegistry, runWithTargetDriverRegistry } from "./target-driver-registry.js";
+import { readPersistedRun } from "./runs/runs.js";
+import { prepareJobBatch, runJobSync, waitForJobCompletion } from "./session/session.js";
+import {
+  TargetDriverRegistry,
+  runWithTargetDriverRegistry,
+} from "./target/target-driver-registry.js";
 import {
   runColdAppMapStartup,
   shouldHardStopPreparedSession,
-} from "./session-provider-execution.js";
+} from "./session/session-provider-execution.js";
 
 test("cold App Map startup fails with an actionable error when origin app is unbound", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cold-startup-origin-"));

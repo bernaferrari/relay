@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap } from "./app-map.js";
-import { summarizeAppMapOperationResult } from "./app-map-summary.js";
+import type { AppMap } from "./app-map/app-map.js";
+import { summarizeAppMapOperationResult } from "./app-map/app-map-summary.js";
 
 test("App Map command summaries preserve topology without semantic evidence", () => {
   const appMap: AppMap = {

@@ -2,6 +2,48 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createProductMapService, projectProductMap } from "./map-exploration.js";
 
+function validTestAppMap(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    id: "app-1",
+    organizationId: "org-1",
+    projectId: "project-1",
+    name: "Checkout",
+    revision: 2,
+    notes: {},
+    groups: {},
+    screens: {},
+    screenVariants: {},
+    connections: {},
+    caseStacks: {},
+    variables: {},
+    tests: {},
+    combines: {},
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function validTestScreen(id: string, title: string) {
+  return {
+    organizationId: "org-1",
+    projectId: "project-1",
+    appMapId: "app-1",
+    id,
+    title,
+    variantIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 test("map projection presents bounded known screens, paths, coverage, and failures", () => {
   const map = {
     id: "app-1",
@@ -218,15 +260,9 @@ test("map projection exposes selectable variants only for canonical screenshot e
 });
 
 test("map drilldowns reuse the canonical app Map snapshot and fail closed for unknown ids", async () => {
-  const map = {
-    id: "app-1",
-    name: "Checkout",
-    revision: 2,
-    screens: { home: { id: "home", title: "Home", variantIds: [] } },
-    connections: {},
-    tests: {},
-    targetResults: {},
-  } as never;
+  const map = validTestAppMap({
+    screens: { home: validTestScreen("home", "Home") },
+  });
   const calls: string[] = [];
   const service = createProductMapService({
     async invoke(id: string) {
@@ -241,25 +277,22 @@ test("map drilldowns reuse the canonical app Map snapshot and fail closed for un
 });
 
 test("map proposal review forwards revision-guarded canonical mutations", async () => {
-  const map = {
-    id: "app-1",
-    name: "Checkout",
-    revision: 2,
-    screens: {},
-    connections: {},
-    tests: {},
-    targetResults: {},
+  const map = validTestAppMap({
     proposals: {
       proposal: {
+        organizationId: "org-1",
+        projectId: "project-1",
+        appMapId: "app-1",
         id: "proposal",
         title: "Repair checkout path",
         status: "pending",
         createdAt: 1,
         updatedAt: 2,
         baseRevision: 1,
+        changes: [],
       },
     },
-  } as never;
+  });
   const calls: Array<{ id: string; input: unknown }> = [];
   const service = createProductMapService({
     async invoke(id: string, input: unknown) {

@@ -246,7 +246,7 @@ export async function inspectManagedBrowserTargets({ env = process.env, targetFi
 async function canonicalTracePackProjection(path) {
   const verifier = String.raw`
     import { readFile } from "node:fs/promises";
-    import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "./packages/core/src/trace-pack.ts";
+    import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "./packages/core/src/trace/trace-pack.ts";
     (async () => {
     const value = JSON.parse(await readFile(process.env.RELAY_TRACE_PACK_FILE, "utf8"));
     const pack = verifyTracePack(value);
@@ -365,7 +365,7 @@ export async function inspectPersistedRun(path, artifactDir, phase, expected = {
 async function exportRunToTracePack(runPath, outputPath) {
   const exporter = String.raw`
     import { readFile, writeFile } from "node:fs/promises";
-    import { exportTracePack } from "./packages/core/src/trace-pack.ts";
+    import { exportTracePack } from "./packages/core/src/trace/trace-pack.ts";
     (async () => {
       const run = JSON.parse(await readFile(process.env.RELAY_GOLDEN_RUN_FILE, "utf8"));
       const pack = await exportTracePack(run);

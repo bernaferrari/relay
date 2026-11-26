@@ -3,11 +3,11 @@
  * Order: InteractInput passthrough → unique a11y → heuristics → optional vision.
  */
 import { z } from "zod";
-import type { SnapshotNode } from "./device.js";
-import { profileHeaderAffordances } from "./discovery-semantic-tap.js";
-import { createOpenRouterClient } from "./openrouter-ai-sdk.js";
-import { captureScreenshot, captureSnapshot } from "./workspace-capture.js";
-import { interact, type InteractInput } from "./workspace-interact.js";
+import type { SnapshotNode } from "./device/device.js";
+import { profileHeaderAffordances } from "./discovery/discovery-semantic-tap.js";
+import { createOpenRouterClient } from "./openrouter/openrouter-ai-sdk.js";
+import { captureScreenshot, captureSnapshot } from "./workspace/workspace-capture.js";
+import { interact, type InteractInput } from "./workspace/workspace-interact.js";
 
 export type GroundingMethod = "a11y" | "heuristic" | "vision";
 

@@ -16,9 +16,9 @@ import {
   type LocalCampaignCapacityTargetInput,
   type TargetWorkerStatus,
 } from "@relay/protocol";
-import { planCampaignCapacity } from "./campaign-capacity-plan.js";
-import { defaultTargetWorkerAssignment } from "./target-worker.js";
-import type { ListedDevice } from "./workspace-devices.js";
+import { planCampaignCapacity } from "./campaign/campaign-capacity-plan.js";
+import { defaultTargetWorkerAssignment } from "./target/target-worker.js";
+import type { ListedDevice } from "./workspace/workspace-devices.js";
 
 type LocalCampaignCapacityPreflightFacts = {
   devices: readonly ListedDevice[];
