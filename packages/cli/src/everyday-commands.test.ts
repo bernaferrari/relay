@@ -251,7 +251,7 @@ test("relay.json in the caller's directory supplies app and device defaults", as
       /unknown field "ap"/u,
     );
     await writeFile(join(dir, "input.json"), '{"limit":1}');
-    const parsed = parseCli(["run", "list", "--input-file", "input.json"], {
+    const parsed = parseCli(["operation", "invoke", "job.list", "--input-file", "input.json"], {
       RELAY_CALLER_CWD: dir,
     });
     assert.deepEqual(parsed.command === "invoke" && parsed.input, { limit: 1 });

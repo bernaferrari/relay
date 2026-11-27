@@ -42,3 +42,12 @@ test("tour prelude steps cap at 16", () => {
   const within = Array.from({ length: 16 }, () => ({ kind: "key", key: "back" }));
   assert.equal(recipeStepSchema.safeParse({ ...tour, preludeSteps: within }).success, true);
 });
+
+test("inbox steps have a strict type-code schema", () => {
+  assert.equal(recipeStepSchema.safeParse({ kind: "inbox", action: "type-code" }).success, true);
+  assert.equal(recipeStepSchema.safeParse({ kind: "inbox", action: "open-link" }).success, false);
+  assert.equal(
+    recipeStepSchema.safeParse({ kind: "inbox", action: "type-code", secret: "x" }).success,
+    false,
+  );
+});

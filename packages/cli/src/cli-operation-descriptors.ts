@@ -19,6 +19,7 @@ import { runEvidenceCommandDescriptors } from "./run-share-commands.js";
 import { proofCommandDescriptors } from "./proof-commands.js";
 import { targetCommandDescriptors } from "./target-commands.js";
 import { signInCommandDescriptors } from "./sign-in-commands.js";
+import { inboxCommandDescriptors } from "./inbox-commands.js";
 import { laneCommandDescriptors } from "./lane-commands.js";
 
 export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
@@ -119,6 +120,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   },
   ...laneCommandDescriptors,
   ...signInCommandDescriptors,
+  ...inboxCommandDescriptors,
 
   mapped("workspace.privacy.get", path("proof privacy get")),
   mapped("workspace.privacy.update", path("proof privacy update")),
@@ -445,7 +447,12 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("discovery.cancel", path("map explore cancel", ["sessionId"])),
   mapped("discovery.promote", path("map explore promote", ["sessionId"])),
 
-  mapped("job.list", path("run list", [], undefined, { summary: "List execution jobs" })),
+  {
+    operationId: "job.list",
+    exclusion: "internal",
+    reason:
+      "Workflow recovery and the TUI read raw jobs; relay runs is the everyday execution list.",
+  },
   mapped(
     "job.get",
     path("run watch", ["jobId"], undefined, {
@@ -454,22 +461,17 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       behavior: "job-watch",
     }),
   ),
-  mapped(
-    "job.start",
-    path("run start", [], undefined, {
-      summary: "Start a compiled job (prefer relay map flow run for map paths)",
-      examples: [
-        'relay map flow run checkout main --input \'{"serial":"<phone-serial>","platform":"ios"}\'',
-      ],
-    }),
-  ),
-  mapped(
-    "job.retry",
-    path("run retry", ["jobId"], undefined, {
-      summary: "Retry an execution job",
-      argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
-    }),
-  ),
+  {
+    operationId: "job.start",
+    exclusion: "internal",
+    reason:
+      "Outcome commands compile and start execution; nobody starts a raw compiled plan by hand.",
+  },
+  {
+    operationId: "job.retry",
+    exclusion: "internal",
+    reason: "Running the Test or Plan again owns retrying; the raw job retry stays off the CLI.",
+  },
   mapped(
     "job.cancel",
     path("run cancel", ["jobId"], undefined, {
@@ -477,40 +479,36 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
     }),
   ),
-  mapped(
-    "job.pause",
-    path("run pause", ["jobId"], undefined, {
-      summary: "Pause an execution job",
-      argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
-    }),
-  ),
-  mapped(
-    "job.resume",
-    path("run resume", ["jobId"], undefined, {
-      summary: "Resume an execution job",
-      argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
-    }),
-  ),
-  mapped(
-    "job.active.cancel",
-    path("run cancel-all", [], undefined, { summary: "Cancel every active job" }),
-  ),
-  mapped(
-    "job.matrix.start",
-    path("run matrix", [], undefined, { summary: "Run one action across explicit matrix cases" }),
-  ),
-  mapped(
-    "job.compatibility-matrix.start",
-    path("plan matrix run", [], undefined, {
-      summary: "Run one action across a saved compatibility matrix",
-    }),
-  ),
-  mapped(
-    "job.soak.start",
-    path("run soak", [], undefined, {
-      summary: "Soak-run a compiled plan across a compatibility matrix",
-    }),
-  ),
+  {
+    operationId: "job.pause",
+    exclusion: "internal",
+    reason: "The TUI owns interactive pause and resume; the CLI watches or cancels a job.",
+  },
+  {
+    operationId: "job.resume",
+    exclusion: "internal",
+    reason: "The TUI owns interactive pause and resume; the CLI watches or cancels a job.",
+  },
+  {
+    operationId: "job.active.cancel",
+    exclusion: "internal",
+    reason: "The TUI owns bulk cancellation; the CLI cancels one job at a time.",
+  },
+  {
+    operationId: "job.matrix.start",
+    exclusion: "internal",
+    reason: "Repeat and Plan runs own matrix execution; the raw matrix start stays off the CLI.",
+  },
+  {
+    operationId: "job.compatibility-matrix.start",
+    exclusion: "internal",
+    reason: "Plan runs own saved-matrix execution; the raw compatibility start stays off the CLI.",
+  },
+  {
+    operationId: "job.soak.start",
+    exclusion: "internal",
+    reason: "The workspace client owns soak runs; no friendly CLI spelling.",
+  },
   mapped("job.combine.start", planRunCommandPath),
   mapped(
     "job.combine.campaign.get",

@@ -1703,7 +1703,7 @@ test("run watch prints an unchanged heartbeat only once", async () => {
   assert.equal(io.stderr().match(/recipe: Wi-Fi/g)?.length, 1);
 });
 
-test("run watch emits a one-time paused hint naming job resume and backs off polling", async () => {
+test("run watch emits a one-time paused hint naming job cancel and backs off polling", async () => {
   const io = capture();
   const responses = [
     { job: { id: "abc", status: "running" } },
@@ -1727,8 +1727,8 @@ test("run watch emits a one-time paused hint naming job resume and backs off pol
 
   assert.equal(code, ExitCode.success);
   // One hint per stream surface, despite three paused polls.
-  assert.equal(io.stderr().match(/run resume abc/g)?.length, 1);
-  assert.match(io.stderr(), /relay_job_resume/);
+  assert.equal(io.stderr().match(/run cancel abc/g)?.length, 1);
+  assert.doesNotMatch(io.stderr(), /run resume/);
   const progressEvents = io
     .stderr()
     .split("\n")
@@ -2807,7 +2807,42 @@ test("plan export --json dest identity is dest wait-for 003, not leftover Close 
   );
 });
 
-test("run retry --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+test("retired raw execution spellings exit 2 with a migration pointer and never invoke", async () => {
+  const cases = [
+    [["run", "list"], "'relay run list' moved. Use 'relay runs'."],
+    [["run", "start"], "'relay run start' moved. Use 'relay run <test>'."],
+    [["run", "retry", "job-1"], "'relay run retry' moved. Use one of:"],
+    [["run", "pause", "job-1"], "'relay run pause' moved. Use one of:"],
+    [["run", "resume", "job-1"], "'relay run resume' moved. Use one of:"],
+    [["run", "cancel-all"], "'relay run cancel-all' moved. Use 'relay run cancel'."],
+    [["run", "matrix"], "'relay run matrix' moved. Use 'relay plan run'."],
+    [["run", "soak"], "'relay run soak' moved. Use 'relay plan run'."],
+    [["plan", "matrix", "run"], "'relay plan matrix run' moved. Use 'relay plan run'."],
+  ] as const;
+  for (const [argv, message] of cases) {
+    const io = capture();
+    let invoked = false;
+    const code = await runCli([...argv, "--json"], {
+      streams: io.streams,
+      createClient: () => ({
+        async invoke() {
+          invoked = true;
+          return {};
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+    assert.equal(code, ExitCode.usage, argv.join(" "));
+    assert.equal(invoked, false, argv.join(" "));
+    const lines = io.stdout().trim().split("\n");
+    assert.equal(lines.length, 1, argv.join(" "));
+    assert.ok(JSON.parse(lines[0]!).error.message.includes(message), argv.join(" "));
+  }
+});
+
+test("run cancel --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {
     id: leftoverDestEndRun.id,
@@ -2815,11 +2850,10 @@ test("run retry --json dest identity is dest wait-for, not leftover Close 004 la
     frames: leftoverDestEndRun.frames,
     artifacts: leftoverDestEndRun.artifacts,
   };
-  const code = await runCli(["run", "retry", leftoverDestEndRun.id, "--json"], {
+  const code = await runCli(["run", "cancel", leftoverDestEndRun.id, "--json"], {
     streams: io.streams,
     createClient: () => ({
-      async invoke(operationId) {
-        assert.equal(operationId, "job.retry");
+      async invoke() {
         return { job: leftoverJob };
       },
       events: async () => {},
@@ -2844,53 +2878,6 @@ test("run retry --json dest identity is dest wait-for, not leftover Close 004 la
     result.result?.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
     false,
   );
-});
-
-test("run start/pause/resume/cancel --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
-  const leftoverJob = {
-    id: leftoverDestEndRun.id,
-    status: "ok",
-    frames: leftoverDestEndRun.frames,
-    artifacts: leftoverDestEndRun.artifacts,
-  };
-  for (const argv of [
-    ["run", "start", "--input", '{"recipe":"smoke"}'],
-    ["run", "pause", leftoverDestEndRun.id],
-    ["run", "resume", leftoverDestEndRun.id],
-    ["run", "cancel", leftoverDestEndRun.id],
-    ["run", "cancel-all"],
-  ] as const) {
-    const io = capture();
-    const code = await runCli([...argv, "--json"], {
-      streams: io.streams,
-      createClient: () => ({
-        async invoke() {
-          return { job: leftoverJob };
-        },
-        events: async () => {},
-      }),
-      registerSignalHandlers: false,
-      env: {},
-    });
-    assert.equal(code, ExitCode.success, argv.join(" "));
-    const result = JSON.parse(io.stdout()) as {
-      result?: {
-        job?: {
-          destIdentity?: Array<{ path?: string }>;
-          captureReview?: Array<{ framePath?: string }>;
-        };
-      };
-    };
-    assert.deepEqual(
-      result.result?.job?.destIdentity?.map((frame) => frame.path),
-      ["frames/003.png"],
-    );
-    assert.equal(
-      result.result?.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
-      false,
-      argv.join(" "),
-    );
-  }
 });
 
 test("run repair retry --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
@@ -2989,45 +2976,6 @@ test("run review --json dest identity is dest wait-for 003, not leftover Close 0
   );
   assert.equal(
     result.result?.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
-    false,
-  );
-});
-
-test("run list --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
-  const io = capture();
-  const leftoverJob = {
-    id: leftoverDestEndRun.id,
-    status: "ok",
-    frames: leftoverDestEndRun.frames,
-    artifacts: leftoverDestEndRun.artifacts,
-  };
-  const code = await runCli(["run", "list", "--json"], {
-    streams: io.streams,
-    createClient: () => ({
-      async invoke(operationId) {
-        assert.equal(operationId, "job.list");
-        return { jobs: [leftoverJob] };
-      },
-      events: async () => {},
-    }),
-    registerSignalHandlers: false,
-    env: {},
-  });
-  assert.equal(code, ExitCode.success);
-  const result = JSON.parse(io.stdout()) as {
-    result?: {
-      jobs?: Array<{
-        destIdentity?: Array<{ path?: string }>;
-        captureReview?: Array<{ framePath?: string }>;
-      }>;
-    };
-  };
-  assert.deepEqual(
-    result.result?.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
-    ["frames/003.png"],
-  );
-  assert.equal(
-    result.result?.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
     false,
   );
 });

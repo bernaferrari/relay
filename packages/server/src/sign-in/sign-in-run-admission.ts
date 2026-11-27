@@ -1,4 +1,9 @@
-import { assertSavedSignInsAvailable, SavedSignInResolutionError } from "@relay/core";
+import {
+  assertSavedSignInsAvailable,
+  assertTestInboxesAvailable,
+  SavedSignInResolutionError,
+  TestInboxResolutionError,
+} from "@relay/core";
 import type { Recipe } from "@relay/core";
 import { HttpError } from "../http.js";
 
@@ -11,7 +16,21 @@ export async function assertRunSavedSignInsAvailable(input: {
 }): Promise<void> {
   try {
     await assertSavedSignInsAvailable(input);
+    await assertTestInboxesAvailable(input);
   } catch (error) {
+    if (error instanceof TestInboxResolutionError) {
+      throw new HttpError(409, error.message, {
+        code: "TEST_INBOX_UNAVAILABLE",
+        inboxKey: error.key,
+        inboxStatus: error.code,
+        recovery: error.recovery,
+        recoveryAction: {
+          operationId: "inbox.check",
+          input: { key: error.key },
+          cli: { argv: ["inbox", "check", error.key] },
+        },
+      });
+    }
     if (error instanceof SavedSignInResolutionError) {
       throw new HttpError(409, error.message, {
         code: "SAVED_SIGN_IN_UNAVAILABLE",

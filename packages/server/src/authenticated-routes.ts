@@ -10,6 +10,7 @@ import { handlePresenceRoute } from "./presence-routes.js";
 import { handleSettingsRoute } from "./settings-routes.js";
 import { handleTargetRoute } from "./target/target-routes.js";
 import { handleSavedSignInRoute } from "./sign-in/sign-in-routes.js";
+import { handleTestInboxRoute } from "./sign-in/inbox-routes.js";
 import { handleManualTargetRoute } from "./manual-target-routes.js";
 import { handleTargetObservationRoute } from "./target/target-observation-route.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
@@ -61,6 +62,7 @@ const authenticatedRoutes: readonly AuthenticatedRoute[] = [
   (input, { sse, liveness }) => handleServerLivenessRoute({ ...input, sse, liveness }),
   handleAndroidAvdRoute,
   handleSavedSignInRoute,
+  handleTestInboxRoute,
   handleTargetRoute,
   handleTargetObservationRoute,
   handleControlPlaneRoute,

@@ -1,6 +1,7 @@
 import * as z from "zod/v4";
 import type { RecipeStep } from "../recipes.js";
 import { savedSignInKeySchema } from "../sign-in/saved-sign-in.js";
+import { createInboxStepSchema } from "./recipe-step-inbox-schema.js";
 import {
   reviewedDocumentOriginReferenceSchema,
   scrollSurfaceDocumentOriginProofSchema,
@@ -361,7 +362,6 @@ const mappedPreludeStepSchema = z.union([
   swipeStepSchema,
   scrollStepSchema,
 ]);
-
 const recipeStepSchemaUnion = z.union([
   tapStepSchema,
   z
@@ -531,6 +531,7 @@ const recipeStepSchemaUnion = z.union([
       cached: z.array(z.lazy(() => recipeStepSchema)).optional(),
     })
     .strict(),
+  createInboxStepSchema(recipeStepMetadataShape),
   z
     .object({
       ...recipeStepMetadataShape,
@@ -893,7 +894,6 @@ const recipeStepSchemaUnion = z.union([
     })
     .strict(),
 ]) satisfies z.ZodType<RecipeStep>;
-
 /** Canonical recursive Recipe Step contract. The union above is structurally
  * strict; the canonical annotation keeps API inference exact through the
  * recursive `act.cached` / `tour.preludeSteps` references. */

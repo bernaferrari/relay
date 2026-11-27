@@ -229,6 +229,7 @@ test("secret references resolve only in an active sign-in context and fail close
     username: usernameCanary,
     password: passwordCanary,
     source: "local" as const,
+    startedAt: 1,
   };
   assert.equal(resolveSecretReference(SIGN_IN_USERNAME_REFERENCE, active), usernameCanary);
   assert.equal(resolveSecretReference(SIGN_IN_PASSWORD_REFERENCE, active), passwordCanary);

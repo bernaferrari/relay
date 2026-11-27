@@ -77,6 +77,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Evaluate ${step.input} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
     case "act":
       return step.intent;
+    case "inbox":
+      return "Enter the code from the email";
     case "evaluate-visual":
       return `Evaluate screenshot against ${step.criteria.length} visual criterion${step.criteria.length === 1 ? "" : "s"}`;
     case "identity-ignore":
@@ -208,6 +210,8 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "evaluate-visual":
       return ["ai", "ok"];
     case "act":
+      return ["ai", "tap"];
+    case "inbox":
       return ["ai", "tap"];
     case "identity-ignore":
       return ["ok"];

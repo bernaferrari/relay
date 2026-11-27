@@ -29,6 +29,7 @@ const nouns = [
   ["file", "Project-scoped test files: import and list reusable fixtures"],
   ["system", "Activity log, projects, and the local control database"],
   ["sign-in", "Saved sign-ins: metadata-only list and human-only secret rotation"],
+  ["inbox", "Test inboxes: metadata-only list, connectivity checks, human-only rotation"],
   ["import", "Convert Maestro and Playwright tests into Relay test files"],
 ] as const;
 

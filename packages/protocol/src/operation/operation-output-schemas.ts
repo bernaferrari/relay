@@ -1,5 +1,6 @@
 import { managedFixtureOutputSchemas } from "../managed-fixture.js";
 import { savedSignInOperationOutputSchemas } from "../sign-in/saved-sign-in.js";
+import { testInboxOperationOutputSchemas } from "../sign-in/test-inbox.js";
 import { e2eOperationOutputSchemas } from "../e2e-project.js";
 import type * as z from "zod/v4";
 import { coreOperationOutputSchemas } from "../core-operation-output-schemas.js";
@@ -54,6 +55,7 @@ export const operationFamilyOutputSchemas = {
   ...workspaceTargetOperationOutputSchemas,
   ...managedFixtureOutputSchemas,
   ...savedSignInOperationOutputSchemas,
+  ...testInboxOperationOutputSchemas,
   ...laneOperationOutputSchemas,
   ...observationOperationOutputSchemas,
   ...executionOperationOutputSchemas,

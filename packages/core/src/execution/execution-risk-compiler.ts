@@ -293,6 +293,15 @@ function leafBounds(step: RecipeStep): Bounds {
       return { maximumActions: 1 };
     case "act":
       return { maximumActions: (step.maxActions ?? 5) * 2 };
+    case "inbox": {
+      const actions = 10;
+      return {
+        maximumActions: actions,
+        ...(step.timeoutMs === undefined
+          ? {}
+          : { maximumDurationMs: step.timeoutMs + actions * 5_000 }),
+      };
+    }
     case "reveal":
       return step.maxAttempts === undefined ? {} : { maximumActions: step.maxAttempts };
     case "alert":

@@ -32,3 +32,13 @@ export function signInAuthForIntent(intent: string): SignInActAuth | undefined {
 export function intentHasSignInAuth(intent: string): boolean {
   return signInAuthForIntent(intent) !== undefined;
 }
+
+export type InboxStepIntent = Readonly<{ action: "type-code" }>;
+
+/** Deliberately exact canonical code-entry phrase. Near misses remain ordinary
+ * act text and never acquire inbox authority by accident. */
+export function inboxStepForIntent(intent: string): InboxStepIntent | undefined {
+  return normalizeIntent(intent) === "enter the code from the email"
+    ? Object.freeze({ action: "type-code" })
+    : undefined;
+}

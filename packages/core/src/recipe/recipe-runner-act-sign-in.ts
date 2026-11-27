@@ -113,6 +113,8 @@ export async function prepareActiveSignIn(input: {
     password: resolved.password,
     source: resolved.source,
     ...(resolved.reference ? { reference: resolved.reference } : {}),
+    ...(resolved.metadata?.inboxKey ? { inboxKey: resolved.metadata.inboxKey } : {}),
+    startedAt: Date.now(),
   });
   const usernameInput = `signin.${accountKey}.username`;
   const passwordInput = `signin.${accountKey}.password`;

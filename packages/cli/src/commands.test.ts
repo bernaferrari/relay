@@ -122,6 +122,7 @@ test("the advanced surface includes the e2e harness noun with one spelling per o
     "file",
     "system",
     "sign-in",
+    "inbox",
   ]);
   const families = new Set(
     [
@@ -151,7 +152,7 @@ test("every old spelling points at a current command and none still runs", () =>
     ...mappedCommandDescriptors.flatMap(({ paths }) => paths.map(({ command }) => command)),
     ...cliResourceDescriptors.map(({ path }) => path.command),
   ]);
-  const everyday = new Set(["apps", "devices", "doctor"]);
+  const everyday = new Set(["apps", "devices", "doctor", "runs"]);
   const special = new Set(["test capture-plan", "proof report", "proof verify", "system db"]);
   for (const [old, replacement] of renamedCommands) {
     assert.ok(
@@ -184,6 +185,38 @@ test("every old spelling points at a current command and none still runs", () =>
   );
   assert.throws(() => parseCli(["prove", "--base", "main"], {}), /relay proof verify --base/u);
   assert.throws(() => renderHelp("session"), /moved to relay recording/u);
+});
+
+test("retired raw execution spellings fail with a pointer to the modern path", () => {
+  const cases = [
+    [["run", "list"], /'relay run list' moved\. Use 'relay runs'\./u],
+    [["run", "start"], /'relay run start' moved\. Use 'relay run <test>'\./u],
+    [
+      ["run", "retry", "job-1"],
+      /'relay run retry' moved\. Use one of: 'relay run <test>', 'relay runs'\./u,
+    ],
+    [
+      ["run", "pause", "job-1"],
+      /'relay run pause' moved\. Use one of: 'relay run watch', 'relay run cancel'\./u,
+    ],
+    [
+      ["run", "resume", "job-1"],
+      /'relay run resume' moved\. Use one of: 'relay run watch', 'relay run cancel'\./u,
+    ],
+    [["run", "cancel-all"], /'relay run cancel-all' moved\. Use 'relay run cancel'\./u],
+    [["run", "matrix"], /'relay run matrix' moved\. Use 'relay plan run'\./u],
+    [["run", "soak"], /'relay run soak' moved\. Use 'relay plan run'\./u],
+    [["plan", "matrix", "run"], /'relay plan matrix run' moved\. Use 'relay plan run'\./u],
+  ] as const;
+  for (const [argv, pattern] of cases) {
+    // The spelling no longer resolves to an operation…
+    assert.throws(() => resolveCommand([...argv]), argv.join(" "));
+    // …and the parse layer hard-errors with the migration pointer.
+    assert.throws(() => parseCli([...argv], {}), pattern, argv.join(" "));
+  }
+  // The surviving job commands still resolve.
+  assert.equal(resolveCommand(["run", "watch", "job-1"]).operationId, "job.get");
+  assert.equal(resolveCommand(["run", "cancel", "job-1"]).operationId, "job.cancel");
 });
 
 test("compiled Recipe storage has no public CLI namespace", () => {
@@ -980,6 +1013,7 @@ test("root help documents exit codes, --confirm, and the machine envelopes", () 
     "file",
     "system",
     "sign-in",
+    "inbox",
   ]) {
     assert.match(advanced, new RegExp(`^${noun} — `, "mu"), noun);
   }

@@ -265,7 +265,13 @@ export * from "./recorded/recorded-control-label.js";
 export * from "./sign-in/secret-vault.js";
 export * from "./sign-in/saved-sign-ins.js";
 export * from "./sign-in/environment-overlays.js";
+export * from "./sign-in/test-inboxes.js";
+export * from "./sign-in/test-inbox-resolution.js";
+export * from "./sign-in/imap-test-inbox.js";
+export * from "./sign-in/email-secret-extraction.js";
+
 export * from "./sign-in/sign-in-resolution.js";
 export * from "./sign-in/secret-references.js";
 export * from "./sign-in/auth-step-intents.js";
 export * from "./sign-in/sign-in-admission.js";
+export * from "./sign-in/inbox-admission.js";

@@ -24,6 +24,12 @@ import {
   signInCachedStepsAreExecutable,
   signInPromptLines,
 } from "./recipe-runner-act-sign-in.js";
+import {
+  assertInboxCodeActDecision,
+  inboxCodePromptLines,
+  scrubInboxCodeCandidates,
+  scrubInboxCodeText,
+} from "./recipe-runner-act-inbox.js";
 
 export const DEFAULT_ACT_MAX_ACTIONS = 5;
 const MAX_CANDIDATES = 80;
@@ -59,8 +65,8 @@ export type ActDecisionInput = {
   history: string[];
   screenshot?: { mimeType: string; data: string };
   model?: string;
-  /** Non-secret saved-sign-in context. Secret values are never part of a prompt. */
-  auth?: { type: "sign-in"; accountKey: string };
+  /** Non-secret authentication context. Secret values are never part of a prompt. */
+  auth?: { type: "sign-in"; accountKey: string } | { type: "inbox-code"; inboxKey: string };
 };
 
 export type ActDecider = (input: ActDecisionInput) => Promise<ActDecision>;
@@ -140,6 +146,7 @@ function actPrompt(input: ActDecisionInput): string {
       ? `Actions already taken for this step: ${JSON.stringify(input.history)}`
       : "No actions taken yet for this step.",
     ...(input.auth?.type === "sign-in" ? signInPromptLines(input.auth.accountKey) : []),
+    ...(input.auth?.type === "inbox-code" ? inboxCodePromptLines(input.auth.inboxKey) : []),
     "Visible controls (choose by id):",
     JSON.stringify(input.candidates.map(({ target: _target, ...candidate }) => candidate)),
     "Reply with exactly one next action:",
@@ -330,8 +337,19 @@ async function runActStepLoop(
   ctx: RecipeStepContext,
   runConcrete: (concrete: RecipeStep) => Promise<void>,
   observeScreen: ActScreenObserver,
+  inboxCodePolicy?: { inboxKey: string },
 ): Promise<void> {
   const signIn = step.auth?.type === "sign-in" ? ctx.runtime?.activeSignIn : undefined;
+  const inboxCode = inboxCodePolicy ? ctx.runtime?.activeInboxCode : undefined;
+  if (inboxCodePolicy && (!inboxCode || inboxCode.inboxKey !== inboxCodePolicy.inboxKey)) {
+    throw new Error(`Test inbox code "${inboxCodePolicy.inboxKey}" is not active in this run`);
+  }
+  const secretText = (value: string) =>
+    signIn
+      ? scrubSignInText(value, signIn)
+      : inboxCode
+        ? scrubInboxCodeText(value, inboxCode)
+        : value;
   const decide = registeredDecider ?? decideViaOpenRouter;
   const max = Math.max(1, Math.min(step.maxActions ?? DEFAULT_ACT_MAX_ACTIONS, 20));
   const history: string[] = [];
@@ -388,7 +406,7 @@ async function runActStepLoop(
       rethrowIosMutationOutcomeUnknown(error);
       rethrowInputOutcomeUnknown(error);
       const rawMessage = error instanceof Error ? error.message : String(error);
-      const message = signIn ? scrubSignInText(rawMessage, signIn) : rawMessage;
+      const message = secretText(rawMessage);
       record({ action: "cache-miss", reason: message, replayed: executed.length });
       ctx.log(`act: saved path no longer fits (${message}); asking the model`);
       history.push(...executed.map((concrete) => describeRecipeStep(concrete)));
@@ -396,24 +414,31 @@ async function runActStepLoop(
   }
   for (let attempt = 0; attempt <= max; attempt += 1) {
     const observation = await observeScreen(device, {
-      includeScreenshot: signIn === undefined,
+      includeScreenshot: signIn === undefined && inboxCode === undefined,
     });
     const candidates = signIn
       ? scrubSignInCandidates(observation.candidates, signIn)
-      : observation.candidates;
+      : inboxCode
+        ? scrubInboxCodeCandidates(observation.candidates, inboxCode)
+        : observation.candidates;
     // Conservative sign-in discipline: even a custom observation hook never
     // supplies pixels to the model while credentials are active.
-    const screenshot = signIn ? undefined : observation.screenshot;
+    const screenshot = signIn || inboxCode ? undefined : observation.screenshot;
     const decision = await decide({
       intent: step.intent,
       candidates,
       history,
       ...(screenshot ? { screenshot } : {}),
       ...(step.model ? { model: step.model } : {}),
-      ...(signIn ? { auth: { type: "sign-in", accountKey: signIn.accountKey } } : {}),
+      ...(signIn
+        ? { auth: { type: "sign-in" as const, accountKey: signIn.accountKey } }
+        : inboxCode
+          ? { auth: { type: "inbox-code" as const, inboxKey: inboxCode.inboxKey } }
+          : {}),
     });
     if (signIn) assertSignInActDecision(decision, candidates);
-    const reason = signIn ? scrubSignInText(decision.reason, signIn) : decision.reason;
+    if (inboxCode) assertInboxCodeActDecision(decision, candidates);
+    const reason = secretText(decision.reason);
     if (decision.action === "done") {
       record({ action: "done", reason, history });
       ctx.log(`act: done — ${reason}`);
@@ -426,7 +451,7 @@ async function runActStepLoop(
     }
     if (attempt === max) break;
     const { steps, summary: decisionSummary } = concreteStepsForDecision(decision, candidates);
-    const summary = signIn ? scrubSignInText(decisionSummary, signIn) : decisionSummary;
+    const summary = secretText(decisionSummary);
     record({ action: decision.action, summary, reason, steps });
     ctx.log(`act: ${summary} — ${reason}`);
     for (const concrete of steps) await runAndKeep(concrete);
@@ -441,6 +466,17 @@ async function runActStepLoop(
   );
 }
 
+export async function runInboxCodeActStep(
+  device: Device,
+  step: Extract<RecipeStep, { kind: "act" }>,
+  ctx: RecipeStepContext,
+  runConcrete: (concrete: RecipeStep) => Promise<void>,
+  inboxKey: string,
+  observeScreen: ActScreenObserver = observe,
+): Promise<void> {
+  await runActStepLoop(device, step, ctx, runConcrete, observeScreen, { inboxKey });
+}
+
 export async function runActStep(
   device: Device,
   step: Extract<RecipeStep, { kind: "act" }>,
@@ -453,14 +489,11 @@ export async function runActStep(
   }
   ctx.runtime ??= {};
   const active = await prepareActiveSignIn({ ctx, accountKey: step.auth.accountKey });
-  const previous = ctx.runtime.activeSignIn;
+  // The active account deliberately remains in the run-local runtime after
+  // this act. A later test-inbox step in the same run uses its start time and
+  // inbox link; the runtime object itself is discarded when the run ends.
   ctx.runtime.activeSignIn = active;
-  try {
-    await runActStepLoop(device, step, ctx, runConcrete, observeScreen);
-  } finally {
-    if (previous) ctx.runtime.activeSignIn = previous;
-    else delete ctx.runtime.activeSignIn;
-  }
+  await runActStepLoop(device, step, ctx, runConcrete, observeScreen);
 }
 
 function lowerFirst(text: string): string {

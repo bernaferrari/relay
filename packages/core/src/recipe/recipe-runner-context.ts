@@ -11,7 +11,7 @@ import type { TestJob } from "../session/session.js";
 import type { AppIdentityPolicy } from "../app/app-identity-policy.js";
 import { identityPolicyForTarget } from "../app/app-identity-policy.js";
 import type { ResponseBoundary } from "./recipe-response-boundary.js";
-import type { ActiveSignInSecrets } from "../sign-in/secret-references.js";
+import type { ActiveInboxCodeSecrets, ActiveSignInSecrets } from "../sign-in/secret-references.js";
 import {
   identityIgnoreRegionsForObservation,
   type IdentityIgnoreObservation,
@@ -96,9 +96,12 @@ export type RecipeRuntimeState = {
    * following leftover when:present tap must not find either — that find
    * recycles the one in-request XCTest snapshot and dest-wait then dies. */
   leftoverInspectUnproven?: boolean;
-  /** Ephemeral plaintext available only to secret references inside the
-   * active saved-sign-in act. Never written to artifacts or the run record. */
+  /** Ephemeral plaintext for the latest saved sign-in in this run. It remains
+   * available to later inbox steps and disappears with this run-local object. */
   activeSignIn?: ActiveSignInSecrets;
+  /** Ephemeral plaintext for the fetched email code, available only to the
+   * code-entry act inside this run. Never written to artifacts or the run record. */
+  activeInboxCode?: ActiveInboxCodeSecrets;
 };
 
 function previousProof(
@@ -261,6 +264,7 @@ export function campaignCoverageForbiddenEffect(
 
 const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([
   "act",
+  "inbox",
   "tour",
   "wait-for",
   "wait-response",

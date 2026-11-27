@@ -8,6 +8,7 @@ import { createTargetObservationOperationDefinition } from "./target/target-obse
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
 import { browserDeviceOperationDefinitions } from "./browser/browser-device-operation-definitions.js";
 import { savedSignInOperationDefinitions } from "./sign-in/saved-sign-in-operation-definitions.js";
+import { testInboxOperationDefinitions } from "./sign-in/test-inbox-operation-definitions.js";
 import { targetDeviceControlOperationDefinitions } from "./target/target-device-control-operation-definitions.js";
 import { presenceOperationDefinitions } from "./presence-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run/run-repair-operations.js";
@@ -104,6 +105,7 @@ export const operationDefinitions = [
   }),
   ...browserDeviceOperationDefinitions,
   ...savedSignInOperationDefinitions,
+  ...testInboxOperationDefinitions,
   ...targetDeviceControlOperationDefinitions,
   command("target.boot", "Boot target", "POST", "/device/boot", { category: "target" }),
   command("target.avd.boot", "Boot a named Android emulator", "POST", "/device/avd/boot", {

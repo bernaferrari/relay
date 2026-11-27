@@ -96,6 +96,35 @@ export function parseJudgeRecipeStep(
   index: number,
   note?: string,
 ): RecipeStep | undefined {
+  if (kind === "inbox") {
+    if (raw.action !== "type-code") throw stepErr(index, 'inbox.action must be "type-code"');
+    const keyPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
+    for (const field of ["accountKey", "inboxKey"] as const) {
+      if (
+        raw[field] !== undefined &&
+        (!isString(raw[field]) || !keyPattern.test(raw[field] as string))
+      ) {
+        throw stepErr(index, `inbox.${field} is invalid`);
+      }
+    }
+    if (
+      raw.timeoutMs !== undefined &&
+      (typeof raw.timeoutMs !== "number" ||
+        !Number.isInteger(raw.timeoutMs) ||
+        raw.timeoutMs < 1 ||
+        raw.timeoutMs > 900_000)
+    ) {
+      throw stepErr(index, "inbox.timeoutMs must be an integer from 1 to 900000");
+    }
+    return {
+      kind: "inbox",
+      action: "type-code",
+      ...(isString(raw.accountKey) ? { accountKey: raw.accountKey } : {}),
+      ...(isString(raw.inboxKey) ? { inboxKey: raw.inboxKey } : {}),
+      ...(typeof raw.timeoutMs === "number" ? { timeoutMs: raw.timeoutMs } : {}),
+      ...(note ? { note } : {}),
+    };
+  }
   if (kind === "act") {
     if (!isString(raw.intent) || !raw.intent.trim()) throw stepErr(index, "act.intent is required");
     if (

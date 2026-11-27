@@ -13,6 +13,7 @@ import { appMapPatchSchema } from "../app-map/app-map-mutation-schemas.js";
 import { recipeParameterSchema } from "../recipe/recipe-step-schema.js";
 import { browserAuthenticationFixtureOperationInputSchemas } from "../browser/browser-authentication-fixture.js";
 import { savedSignInOperationInputSchemas } from "../sign-in/saved-sign-in.js";
+import { testInboxOperationInputSchemas } from "../sign-in/test-inbox.js";
 import {
   appMapTestCompileInputSchema,
   appMapTestRunInputSchema,
@@ -74,6 +75,7 @@ export const operationInputSchemas = {
   ...proofSetupOperationInputSchemas,
   ...browserAuthenticationFixtureOperationInputSchemas,
   ...savedSignInOperationInputSchemas,
+  ...testInboxOperationInputSchemas,
   ...targetOperationInputSchemas,
   ...targetDeviceControlInputSchemas,
   "project.save": z

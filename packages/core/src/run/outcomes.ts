@@ -39,6 +39,15 @@ export function classifyRunOutcome(input: {
   if (input.errorCode === "INTERNAL") {
     return { outcome: "harness-failure", failureCategory: "harness-defect" };
   }
+  if (/^inbox blocked:.*(?:not found|revoked|requires|not connected)/.test(message)) {
+    return { outcome: "uncertain", failureCategory: "environment" };
+  }
+  if (/^inbox blocked:/.test(message)) {
+    return { outcome: "uncertain", failureCategory: "extraction" };
+  }
+  if (/^inbox:/.test(message)) {
+    return { outcome: "harness-failure", failureCategory: "extraction" };
+  }
   if (/extract:/.test(message)) {
     return { outcome: "harness-failure", failureCategory: "extraction" };
   }

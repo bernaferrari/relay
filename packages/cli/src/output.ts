@@ -163,7 +163,7 @@ export class CliOutput {
    * JSON/ndjson get it as a stderr progress event; humans get plain text. */
   pausedHint(jobId: string): void {
     if (this.quiet) return;
-    const hint = `Job ${jobId} is paused. Resume with: relay run resume ${jobId} (MCP: relay_job_resume)`;
+    const hint = `Job ${jobId} is paused. Resume it from the client that paused it, or cancel with: relay run cancel ${jobId}`;
     if (this.mode === "human") {
       this.streams.stderr.write(`${hint}\n`);
       return;

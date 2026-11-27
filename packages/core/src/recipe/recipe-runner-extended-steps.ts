@@ -121,7 +121,11 @@ export async function runTypeStep(
 ): Promise<void> {
   // Secret references resolve at this boundary only. The recipe step remains
   // the non-secret reference; plaintext is a local variable for the device call.
-  const text = resolveSecretReference(step.text, ctx.runtime?.activeSignIn);
+  const text = resolveSecretReference(
+    step.text,
+    ctx.runtime?.activeSignIn,
+    ctx.runtime?.activeInboxCode,
+  );
   if (step.mode === "replace" && !step.target) throw new Error("replace text requires a target");
   ctx.runtime ??= {};
   delete ctx.runtime.responseBoundary;

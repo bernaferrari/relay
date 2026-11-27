@@ -6,9 +6,11 @@ import { redactPrivateValue } from "../input/private-inputs.js";
 import { runWithTargetContext } from "../target/target-context.js";
 import type { TestJob } from "../session/session-contract.js";
 import {
+  INBOX_CODE_REFERENCE,
   SIGN_IN_PASSWORD_REFERENCE,
   SIGN_IN_USERNAME_REFERENCE,
 } from "../sign-in/secret-references.js";
+import { registerTestInboxClientFactory, runInboxStep } from "./recipe-runner-inbox.js";
 import { runTypeStep } from "./recipe-runner-extended-steps.js";
 import {
   registerActDecider,
@@ -91,7 +93,7 @@ test("sign-in act types plaintext only at the device boundary and artifacts keep
   const unregister = registerActDecider(async (input) => {
     screenshots.push(input.screenshot);
     prompts.push(JSON.stringify(input.candidates));
-    assert.equal(input.auth?.accountKey, "member");
+    assert.equal(input.auth?.type === "sign-in" ? input.auth.accountKey : undefined, "member");
     return decisions.shift() ?? { action: "done", reason: "done" };
   });
   t.after(unregister);
@@ -143,7 +145,10 @@ test("sign-in act types plaintext only at the device boundary and artifacts keep
   assert.equal(artifactJson.includes(passwordCanary), false);
   assert.equal(artifactJson.includes(SIGN_IN_USERNAME_REFERENCE), true);
   assert.equal(artifactJson.includes(SIGN_IN_PASSWORD_REFERENCE), true);
-  assert.equal((runtime as { activeSignIn?: unknown }).activeSignIn, undefined);
+  const active = (runtime as { activeSignIn?: { accountKey?: string; startedAt?: number } })
+    .activeSignIn;
+  assert.equal(active?.accountKey, "member");
+  assert.equal(typeof active?.startedAt, "number");
   assert.equal(job.resolvedInputs["signin.member.username"], usernameCanary);
   assert.deepEqual(
     job.sensitiveInputNames,
@@ -241,4 +246,105 @@ test("a sign-in model cannot type invented credential text", async (t) => {
   );
   assert.deepEqual(calls.fill, []);
   assert.equal(JSON.stringify(artifacts).includes("invented@example.test"), false);
+});
+
+test("inbox code polls after sign-in start, types only through the opaque reference, and artifacts stay metadata-only", async (t) => {
+  const codeCanary = "246810";
+  process.env.RELAY_INBOX_MEMBER_HOST = "imap.example.test";
+  process.env.RELAY_INBOX_MEMBER_PORT = "993";
+  process.env.RELAY_INBOX_MEMBER_SECURE = "true";
+  process.env.RELAY_INBOX_MEMBER_MAILBOX = "INBOX";
+  process.env.RELAY_INBOX_MEMBER_USERNAME = "inbox-user";
+  process.env.RELAY_INBOX_MEMBER_PASSWORD = "inbox-pass";
+  t.after(() => {
+    for (const name of ["HOST", "PORT", "SECURE", "MAILBOX", "USERNAME", "PASSWORD"]) {
+      delete process.env[`RELAY_INBOX_MEMBER_${name}`];
+    }
+  });
+  const unregisterInbox = registerTestInboxClientFactory(async () => ({
+    async fetchMessagesSince(input) {
+      return [
+        {
+          uid: 9,
+          internalDateMs: input.sinceMs + 1000,
+          recipients: ["member@example.test"],
+          subject: "Your sign-in code",
+          bodyText: `Your sign-in code is ${codeCanary}.`,
+        },
+      ];
+    },
+    async close() {},
+  }));
+  const decisions: ActDecision[] = [
+    {
+      action: "type",
+      text: INBOX_CODE_REFERENCE,
+      candidateId: "c1",
+      reason: "code field",
+      finishesIntent: true,
+    },
+  ];
+  const prompts: unknown[] = [];
+  const unregisterAct = registerActDecider(async (input) => {
+    prompts.push(input.auth);
+    assert.equal(input.screenshot, undefined);
+    return decisions.shift() ?? { action: "done", reason: "done" };
+  });
+  t.after(() => {
+    unregisterInbox();
+    unregisterAct();
+  });
+  const calls = { fill: [] as string[], type: [] as string[], press: [] as unknown[] };
+  const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
+  const job = {
+    id: "job-inbox",
+    projectId: "project",
+    resolvedInputs: {},
+    sensitiveInputNames: [],
+    artifacts,
+  } as unknown as TestJob;
+  const runtime = {
+    activeSignIn: {
+      accountKey: "member",
+      username: usernameCanary,
+      password: passwordCanary,
+      source: "environment" as const,
+      inboxKey: "member",
+      startedAt: Date.now(),
+    },
+  };
+  const ctx = { log: () => {}, artifacts, job, runtime };
+  await runWithTargetContext(
+    { kind: "browser", platform: "browser", targetId: "browser-test" },
+    () =>
+      runInboxStep(
+        fakeDevice(calls),
+        { kind: "inbox", action: "type-code", timeoutMs: 1_000 },
+        ctx,
+        async (step: RecipeStep) => {
+          if (step.kind === "type") await runTypeStep(fakeDevice(calls), step, ctx);
+        },
+        async () => ({
+          candidates: [
+            {
+              id: "c1",
+              identifier: "code",
+              label: "Verification code",
+              editable: true,
+              target: { identifier: "code", label: "Verification code" },
+            },
+          ],
+          screenshot: { mimeType: "image/png", data: "c2hvdWxkLW5vdC1iZS1zZW50" },
+        }),
+      ),
+  );
+
+  assert.deepEqual(calls.fill, [codeCanary]);
+  assert.deepEqual(prompts, [{ type: "inbox-code", inboxKey: "member" }]);
+  const artifactJson = JSON.stringify(artifacts);
+  assert.equal(artifactJson.includes(codeCanary), false);
+  assert.equal(artifactJson.includes(INBOX_CODE_REFERENCE), true);
+  assert.equal(artifactJson.includes("Your sign-in code"), false);
+  assert.equal(job.resolvedInputs["inbox.member.code"], codeCanary);
+  assert.ok(job.sensitiveInputNames?.includes("inbox.member.code"));
 });

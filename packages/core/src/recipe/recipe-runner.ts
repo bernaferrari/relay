@@ -119,6 +119,7 @@ import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js"
 import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
 import { runPauseStep } from "./recipe-runner-pause.js";
 import { runActStep } from "./recipe-runner-act.js";
+import { runInboxStep } from "./recipe-runner-inbox.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
 async function runRequiredRecipeStep(
@@ -411,6 +412,9 @@ async function runRequiredRecipeStep(
       break;
     case "act":
       await runActStep(device, step, ctx, (concrete) => runRecipeStep(device, concrete, ctx));
+      break;
+    case "inbox":
+      await runInboxStep(device, step, ctx, (concrete) => runRecipeStep(device, concrete, ctx));
       break;
     case "identity-ignore":
       runIdentityIgnoreStep(step, ctx);
