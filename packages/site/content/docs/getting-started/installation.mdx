@@ -61,10 +61,10 @@ Open **Devices** and check that the preview shows the app and account you intend
 
 Recorded steps replay without a model. Describing tests and model-assisted actions do.
 
-Open **Settings → Advanced** and add your OpenRouter key, or set it in your shell before starting Relay:
+Open **Settings → Advanced** and add a model key, or set one in your shell before starting Relay — Anthropic, OpenAI, Google, and OpenRouter keys all work:
 
 ```bash
-export OPENROUTER_API_KEY="your-key"
+export ANTHROPIC_API_KEY="your-key"  # or OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY
 pnpm dev:web
 ```
 

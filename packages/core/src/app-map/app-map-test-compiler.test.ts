@@ -565,7 +565,7 @@ test("compiles visual judge consensus onto evaluate-visual", () => {
       requireAgreement: true,
       provider: "openrouter",
       secondProvider: "openrouter",
-      secondModel: "google/gemini-2.5-flash",
+      secondModel: "~google/gemini-flash-latest",
       id: "relay-test-visual-consensus-1",
     },
   );

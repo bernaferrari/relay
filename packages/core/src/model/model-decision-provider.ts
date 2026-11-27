@@ -12,13 +12,14 @@ import type {
 import { measureBoundedJsonValue } from "@relay/protocol";
 import { canonicalSha256 } from "../canonical-json.js";
 import {
-  createOpenRouterClient,
-  OPENROUTER_CHAT_COMPLETIONS,
-  type OpenRouterClient,
-} from "../openrouter/openrouter-ai-sdk.js";
+  createModelClient,
+  modelEgressBlockedReason as relayModelEgressBlockedReason,
+  ModelProviderNotConfiguredError,
+  type RelayModelProvider,
+} from "./model-provider.js";
+import { OPENROUTER_CHAT_COMPLETIONS } from "../openrouter/openrouter-ai-sdk.js";
 import { redactSensitiveEvidenceValue } from "../evidence/redaction-primitives.js";
 
-export const DEFAULT_OPENROUTER_DECISION_MODEL = "~typesafe/jev-latest" as const;
 const MAX_QUESTIONS = 16;
 const MAX_ATTEMPTS = 3;
 const RETRYABLE_STATUSES = new Set([429, 529]);
@@ -31,33 +32,19 @@ const JSON_LIMITS = {
   maxSerializedBytes: 256 * 1024,
 } as const;
 
-const DEFAULT_MODEL_EGRESS_ORIGINS = ["https://openrouter.ai"];
-
 /** Egress policy gate for model calls. Redaction bounds WHAT leaves this
  * process; this bounds WHERE it may go. Returns a blocking reason or null. */
 export function modelEgressBlockedReason(
   endpoint: string,
   allowedEndpointOrigins: readonly string[] = [],
+  activeProvider: RelayModelProvider = "openrouter",
 ): string | null {
-  if (process.env.RELAY_MODEL_EGRESS === "disabled") {
-    return "model egress is disabled by policy (RELAY_MODEL_EGRESS=disabled)";
-  }
-  let origin: string;
-  try {
-    origin = new URL(endpoint).origin;
-  } catch {
-    return `model endpoint ${endpoint} is not a valid URL`;
-  }
-  const allowed = new Set([...DEFAULT_MODEL_EGRESS_ORIGINS, ...allowedEndpointOrigins]);
-  if (!allowed.has(origin)) {
-    return `model endpoint origin ${origin} is not allowed; allow it explicitly via allowedEndpointOrigins`;
-  }
-  return null;
+  return relayModelEgressBlockedReason(endpoint, allowedEndpointOrigins, activeProvider) ?? null;
 }
 
 type JsonSchema = Record<string, unknown>;
 
-export type OpenRouterDecisionProviderOptions = {
+export type RelayDecisionProviderOptions = {
   apiKey?: string;
   model?: string;
   endpoint?: string;
@@ -74,9 +61,11 @@ export type OpenRouterDecisionProviderOptions = {
 };
 
 export type ModelDecisionProvider = {
-  id: "openrouter";
+  id: string;
   decide(request: ModelDecisionRequest): Promise<ModelDecisionRecord>;
 };
+
+export type OpenRouterDecisionProviderOptions = RelayDecisionProviderOptions;
 
 function finiteNumber(
   value: unknown,
@@ -261,7 +250,10 @@ function responseSchema(questions: Record<string, ModelDecisionQuestion>): JsonS
 
 function requestError(request: ModelDecisionRequest): string | null {
   if (!request || typeof request !== "object") return "request is not an object";
-  if (request.schemaVersion !== 1 || request.provider !== "openrouter") {
+  if (
+    request.schemaVersion !== 1 ||
+    !["anthropic", "openai", "google", "openrouter", "openai-compatible"].includes(request.provider)
+  ) {
     return "request schema or provider is not supported";
   }
   if (typeof request.model !== "string" || !request.model.trim()) return "request model is empty";
@@ -333,7 +325,7 @@ function errorText(error: unknown): string {
       return record.responseBody;
     }
   }
-  return "OpenRouter request failed";
+  return "Model provider request failed";
 }
 
 function isInvalidProviderResponse(error: unknown, status: number | undefined): boolean {
@@ -366,6 +358,7 @@ function sdkUsage(usage: {
 
 function recordBase(
   request: ModelDecisionRequest,
+  decisionProvider: string,
   requestId: string,
   startedAt: number,
   completedAt: number,
@@ -375,7 +368,7 @@ function recordBase(
   ).filter((value): value is string => typeof value === "string");
   return {
     schemaVersion: 1,
-    provider: "openrouter",
+    provider: decisionProvider,
     requestId,
     observationDigest: request.observationDigest,
     questionDigest: request.questionDigest ?? canonicalSha256(request.questions),
@@ -387,12 +380,12 @@ function recordBase(
 }
 
 /**
- * One OpenRouter-only adapter for optional, review-only Jev suggestions.
- * It never mutates a target and returns a durable invalid/unavailable record
- * instead of making model output a control-flow dependency.
+ * Review-only model decision adapter. It never mutates a target and returns a
+ * durable invalid/unavailable record instead of making model output a
+ * control-flow dependency.
  */
-export function createOpenRouterDecisionProvider(
-  options: OpenRouterDecisionProviderOptions = {},
+export function createModelDecisionProvider(
+  options: RelayDecisionProviderOptions = {},
 ): ModelDecisionProvider {
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const now = options.now ?? Date.now;
@@ -400,51 +393,65 @@ export function createOpenRouterDecisionProvider(
   const sleep =
     options.sleep ??
     ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-  const apiKey = options.apiKey ?? process.env.OPENROUTER_API_KEY;
-  const model =
-    options.model ?? process.env.OPENROUTER_DECISION_MODEL ?? DEFAULT_OPENROUTER_DECISION_MODEL;
   const endpoint = options.endpoint ?? OPENROUTER_CHAT_COMPLETIONS;
   const maxAttempts = Math.max(
     1,
     Math.min(MAX_ATTEMPTS, Math.trunc(options.maxAttempts ?? MAX_ATTEMPTS)),
   );
-  let openRouterAiSdkPromise: Promise<OpenRouterClient> | undefined;
 
   return {
-    id: "openrouter",
+    id: "relay-model",
     async decide(request) {
       const id = requestId();
       const startedAt = now();
+      let decisionProvider = request.provider || "openrouter";
       const invalidRequest = requestError(request);
       if (invalidRequest) {
         const completedAt = now();
         return {
-          ...recordBase(request, id, startedAt, completedAt),
+          ...recordBase(request, decisionProvider, id, startedAt, completedAt),
           status: "invalid",
-          model: request.model || model,
+          model: request.model || options.model || "",
           error: { code: "request-rejected", message: invalidRequest },
         };
       }
-      if (!apiKey || !fetchImpl) {
+
+      let client;
+      try {
+        client = await createModelClient("decision", {
+          env: { ...process.env, RELAY_MODEL_PROVIDER: request.provider },
+          ...(options.model || request.model ? { model: request.model || options.model } : {}),
+          ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+          endpoint,
+          fetch: fetchImpl,
+          httpReferer: options.httpReferer,
+          appTitle: options.appTitle,
+          allowedEndpointOrigins: options.allowedEndpointOrigins ?? [],
+        });
+      } catch (error) {
         const completedAt = now();
+        const unavailable = error instanceof ModelProviderNotConfiguredError || !fetchImpl;
         return {
-          ...recordBase(request, id, startedAt, completedAt),
+          ...recordBase(request, decisionProvider, id, startedAt, completedAt),
           status: "unavailable",
-          model: request.model || model,
-          error: { code: "provider-unavailable", message: "OpenRouter is not configured" },
+          model: request.model || options.model || "",
+          error: {
+            code: "provider-unavailable",
+            message: unavailable
+              ? errorText(error)
+              : `Model provider is unavailable: ${errorText(error)}`,
+          },
         };
       }
-      const egressBlocked = modelEgressBlockedReason(
-        endpoint,
-        options.allowedEndpointOrigins ?? [],
-      );
-      if (egressBlocked) {
+      decisionProvider = client.providerId;
+      const requestedModel = client.model;
+      if (!fetchImpl) {
         const completedAt = now();
         return {
-          ...recordBase(request, id, startedAt, completedAt),
+          ...recordBase(request, decisionProvider, id, startedAt, completedAt),
           status: "unavailable",
-          model: request.model || model,
-          error: { code: "provider-unavailable", message: egressBlocked },
+          model: requestedModel,
+          error: { code: "provider-unavailable", message: "Model provider is not configured" },
         };
       }
 
@@ -453,7 +460,6 @@ export function createOpenRouterDecisionProvider(
         string,
         ModelDecisionQuestion
       >;
-      const requestedModel = request.model || model;
       let generated:
         | {
             output: { answers: unknown };
@@ -464,14 +470,7 @@ export function createOpenRouterDecisionProvider(
       let lastError: unknown;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          openRouterAiSdkPromise ??= createOpenRouterClient({
-            apiKey,
-            endpoint,
-            fetch: fetchImpl,
-            httpReferer: options.httpReferer,
-            appTitle: options.appTitle,
-          });
-          const { sdk, provider } = await openRouterAiSdkPromise;
+          const { sdk, provider } = client;
           const output = sdk.Output.object({
             schema: sdk.jsonSchema<{ answers: unknown }>(responseSchema(request.questions)),
             name: "relay_model_decision",
@@ -503,7 +502,7 @@ export function createOpenRouterDecisionProvider(
         const rejected = typeof status === "number" && status >= 400 && status < 500;
         const invalidResponse = isInvalidProviderResponse(lastError, status);
         return {
-          ...recordBase(request, id, startedAt, completedAt),
+          ...recordBase(request, decisionProvider, id, startedAt, completedAt),
           status: rejected || invalidResponse ? "invalid" : "unavailable",
           model: requestedModel,
           error: {
@@ -512,7 +511,7 @@ export function createOpenRouterDecisionProvider(
               : invalidResponse
                 ? "invalid-response"
                 : "provider-unavailable",
-            message: `${retryable ? "OpenRouter remained unavailable" : rejected ? "OpenRouter rejected the request" : invalidResponse ? "OpenRouter returned an invalid response" : "OpenRouter request failed"}: ${errorText(lastError)}`,
+            message: `${retryable ? "The model provider remained unavailable" : rejected ? "The model provider rejected the request" : invalidResponse ? "The model provider returned an invalid response" : "Model provider request failed"}: ${errorText(lastError)}`,
           },
         };
       }
@@ -520,7 +519,7 @@ export function createOpenRouterDecisionProvider(
       const validated = validateAnswers(generated.output, request.questions);
       if ("error" in validated) {
         return {
-          ...recordBase(request, id, startedAt, completedAt),
+          ...recordBase(request, decisionProvider, id, startedAt, completedAt),
           status: "invalid",
           model: generated.response.modelId || requestedModel,
           usage: sdkUsage(generated.usage),
@@ -528,7 +527,7 @@ export function createOpenRouterDecisionProvider(
         };
       }
       return {
-        ...recordBase(request, id, startedAt, completedAt),
+        ...recordBase(request, decisionProvider, id, startedAt, completedAt),
         status: "ok",
         model: generated.response.modelId || requestedModel,
         answers: validated.answers,
@@ -536,4 +535,11 @@ export function createOpenRouterDecisionProvider(
       };
     },
   };
+}
+
+/** Backwards-compatible name for the original OpenRouter-only integration. */
+export function createOpenRouterDecisionProvider(
+  options: OpenRouterDecisionProviderOptions = {},
+): ModelDecisionProvider {
+  return createModelDecisionProvider(options);
 }

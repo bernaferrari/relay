@@ -62,6 +62,24 @@ export * from "./collaboration/presence.js";
 export * from "./generation/generation.js";
 export * from "./evaluation/evaluation.js";
 export * from "./model/model-decision-provider.js";
+export {
+  createModelClient,
+  defaultModelEgressOrigin,
+  modelEgressBlockedReason,
+  ModelProviderNotConfiguredError,
+  modelProviderNotConfiguredMessage,
+  OLLAMA_BASE_URL,
+  resolveActiveRelayModelProvider,
+  resolveRelayModelProvider,
+  resolveRelayTaskModel,
+  type ModelEnvironment,
+  type RelayModelClient,
+  type RelayModelClientOptions,
+  type RelayModelProvider,
+  type RelayModelResolution,
+  type RelayModelResolutionSource,
+  type RelayModelTask,
+} from "./model/model-provider.js";
 export * from "./evidence/evidence-triage.js";
 export * from "./discovery/goal-observation.js";
 export * from "./run/outcomes.js";

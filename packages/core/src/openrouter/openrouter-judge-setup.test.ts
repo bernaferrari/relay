@@ -1,22 +1,58 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  inspectModelJudgeSetup,
   inspectOpenRouterJudgeSetup,
-  OPENROUTER_JUDGE_NOT_CONFIGURED,
+  MODEL_JUDGE_NOT_CONFIGURED,
 } from "./openrouter-judge-setup.js";
 
-test("a missing OpenRouter key stays needs-attention and never echoes a secret", () => {
-  const status = inspectOpenRouterJudgeSetup({});
+const key = "sk-test-0123456789abcdef";
+
+test("a missing model provider stays needs-attention and never echoes a secret", () => {
+  const status = inspectModelJudgeSetup({}, null);
   assert.equal(status.status, "needs-attention");
   assert.equal(status.configured, false);
-  assert.equal(status.detail, OPENROUTER_JUDGE_NOT_CONFIGURED);
-  assert.equal(inspectOpenRouterJudgeSetup({ OPENROUTER_API_KEY: "   " }).configured, false);
+  assert.equal(status.detail, MODEL_JUDGE_NOT_CONFIGURED);
+  assert.equal(inspectModelJudgeSetup({ OPENROUTER_API_KEY: "   " }, null).configured, false);
 });
 
-test("a present OpenRouter key is ready without returning the key", () => {
-  const status = inspectOpenRouterJudgeSetup({ OPENROUTER_API_KEY: "sk-or-v1-test" });
+test("every zero-config provider key is ready without returning the key", () => {
+  for (const env of [
+    { ANTHROPIC_API_KEY: key },
+    { OPENAI_API_KEY: key },
+    { GEMINI_API_KEY: key },
+    { GOOGLE_GENERATIVE_AI_API_KEY: key },
+    { OPENROUTER_API_KEY: key },
+  ]) {
+    const status = inspectModelJudgeSetup(env, null);
+    assert.equal(status.status, "ready");
+    assert.equal(status.configured, true);
+    assert.match(status.detail, /Model provider found/u);
+    assert.doesNotMatch(status.detail, new RegExp(key, "u"));
+  }
+});
+
+test("settings keys and keyless compatible endpoints count as configured", () => {
+  const settings = inspectModelJudgeSetup(
+    {},
+    {
+      version: 1,
+      provider: "anthropic",
+      key,
+    },
+  );
+  assert.equal(settings.status, "ready");
+  assert.equal(settings.provider, "anthropic");
+  const compatible = inspectModelJudgeSetup(
+    { RELAY_MODEL_BASE_URL: "http://localhost:11434/v1" },
+    null,
+  );
+  assert.equal(compatible.status, "ready");
+  assert.equal(compatible.provider, "openai-compatible");
+});
+
+test("the legacy probe name now reports the active provider", () => {
+  const status = inspectOpenRouterJudgeSetup({ ANTHROPIC_API_KEY: key });
   assert.equal(status.status, "ready");
-  assert.equal(status.configured, true);
-  assert.match(status.detail, /OpenRouter key found/u);
-  assert.doesNotMatch(status.detail, /sk-or-v1-test/u);
+  assert.equal(status.provider, "anthropic");
 });

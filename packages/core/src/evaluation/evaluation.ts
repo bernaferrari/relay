@@ -1,10 +1,11 @@
 import type { SemanticEvaluationRequest, SemanticEvaluationResult } from "@relay/protocol";
 import { z } from "zod";
+import { openRouterCostUsd, type OpenRouterAiSdkOptions } from "../openrouter/openrouter-ai-sdk.js";
 import {
-  createOpenRouterClient,
-  openRouterCostUsd,
-  type OpenRouterAiSdkOptions,
-} from "../openrouter/openrouter-ai-sdk.js";
+  createModelClient,
+  resolveActiveRelayModelProvider,
+  type RelayModelProvider,
+} from "../model/model-provider.js";
 
 export type EvaluationProvider = {
   id: string;
@@ -191,64 +192,72 @@ function registerBuiltins(): void {
       },
     });
   }
-
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-  if (openRouterKey) {
-    registerEvaluationProvider(
-      createOpenRouterEvaluationProvider({
-        apiKey: openRouterKey,
-        model: process.env.OPENROUTER_MODEL,
-        httpReferer: process.env.OPENROUTER_HTTP_REFERER,
-        appTitle: process.env.OPENROUTER_APP_TITLE ?? "Relay",
-      }),
-    );
-  }
 }
 
 registerBuiltins();
 
+const MODEL_PROVIDER_IDS = new Set([
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+  "openai-compatible",
+]);
+
 export async function evaluateSemantic(
   input: SemanticEvaluationRequest,
 ): Promise<SemanticEvaluationResult> {
-  const providerId = input.provider ?? process.env.RELAY_EVALUATION_PROVIDER ?? "openrouter";
-  const provider = providers.get(providerId);
+  const explicitProvider = input.provider ?? process.env.RELAY_EVALUATION_PROVIDER;
+  const active = resolveActiveRelayModelProvider();
+  const providerId = explicitProvider ?? active.provider ?? "openrouter";
+  const registered = providers.get(providerId);
+  const provider =
+    registered ??
+    (MODEL_PROVIDER_IDS.has(providerId)
+      ? createModelEvaluationProvider({
+          ...(explicitProvider ? { provider: providerId as RelayModelProvider } : {}),
+        })
+      : undefined);
   if (!provider)
     throw new Error(`semantic judge unavailable: provider is not configured (${providerId})`);
   const result = await provider.evaluate(input);
   // Every provider result — builtin or custom — passes the same policy gate.
   // Registration alone never grants authority to declare an unearned pass.
+  const resultProvider =
+    typeof result.provider === "string" && result.provider ? result.provider : providerId;
   const enforced = normalizeEvaluationResult(
     result,
     input,
-    providerId,
+    resultProvider,
     typeof result.model === "string" && result.model ? result.model : "unknown",
   );
   return typeof result.costUsd === "number" ? { ...enforced, costUsd: result.costUsd } : enforced;
 }
 
-export type OpenRouterEvaluationProviderOptions = Omit<OpenRouterAiSdkOptions, "apiKey"> & {
+export type ModelEvaluationProviderOptions = Omit<OpenRouterAiSdkOptions, "apiKey"> & {
   apiKey?: string;
   model?: string;
+  provider?: RelayModelProvider;
 };
+
+export type OpenRouterEvaluationProviderOptions = ModelEvaluationProviderOptions;
 
 const semanticEvaluationSchema = z.record(z.string(), z.unknown());
 
-/** Optional semantic evaluation through the one OpenRouter/Vercel AI SDK seam. */
-export function createOpenRouterEvaluationProvider(
-  options: OpenRouterEvaluationProviderOptions = {},
+/** Optional semantic evaluation through Relay's configured Vercel AI SDK provider. */
+export function createModelEvaluationProvider(
+  options: ModelEvaluationProviderOptions = {},
 ): EvaluationProvider {
   return {
-    id: "openrouter",
+    id: options.provider ?? "relay-model",
     async evaluate(input) {
-      const apiKey = options.apiKey ?? process.env.OPENROUTER_API_KEY;
-      if (!apiKey) {
-        throw new Error("semantic judge unavailable: OPENROUTER_API_KEY is not configured");
-      }
-      const model =
-        input.model ?? options.model ?? process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini";
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      if (options.provider) env.RELAY_MODEL_PROVIDER = options.provider;
       try {
-        const { sdk, provider } = await createOpenRouterClient({
-          apiKey,
+        const { sdk, provider, providerId, model } = await createModelClient("semantic", {
+          env,
+          ...((input.model ?? options.model) ? { model: input.model ?? options.model } : {}),
+          ...(options.apiKey ? { apiKey: options.apiKey } : {}),
           endpoint: options.endpoint,
           fetch: options.fetch,
           httpReferer: options.httpReferer ?? process.env.OPENROUTER_HTTP_REFERER,
@@ -264,15 +273,23 @@ export function createOpenRouterEvaluationProvider(
         const result = normalizeEvaluationResult(
           generated.object,
           input,
-          "openrouter",
+          providerId,
           generated.response.modelId || model,
         );
-        const costUsd = openRouterCostUsd(generated.providerMetadata);
+        const costUsd =
+          providerId === "openrouter" ? openRouterCostUsd(generated.providerMetadata) : undefined;
         return costUsd === undefined ? result : { ...result, costUsd };
       } catch (error) {
         const message = error instanceof Error ? error.message : "request failed";
-        throw new Error(`semantic judge unavailable: OpenRouter ${message}`);
+        throw new Error(`semantic judge unavailable: ${message}`);
       }
     },
   };
+}
+
+/** Backwards-compatible constructor for the original OpenRouter integration. */
+export function createOpenRouterEvaluationProvider(
+  options: OpenRouterEvaluationProviderOptions = {},
+): EvaluationProvider {
+  return createModelEvaluationProvider({ ...options, provider: "openrouter" });
 }

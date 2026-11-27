@@ -91,8 +91,9 @@ replay exactly, without a model.
 
 Prefer to write it? Author the Test as plain-English YAML in Git, or write _"Creating an API key
 shows it in the list"_ and let Relay draft the steps. Description-based steps use a model unless
-their interactions have been recorded or otherwise made exact: add an
-[OpenRouter](https://openrouter.ai) key in **Settings → Advanced**, or set `OPENROUTER_API_KEY`.
+their interactions have been recorded or otherwise made exact: add a model key in
+**Settings → Advanced**, or set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or
+`OPENROUTER_API_KEY`.
 
 ### 2 · Run
 

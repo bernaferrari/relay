@@ -5,7 +5,7 @@
 import { z } from "zod";
 import type { SnapshotNode } from "../device/device.js";
 import { profileHeaderAffordances } from "./discovery-semantic-tap.js";
-import { createOpenRouterClient } from "../openrouter/openrouter-ai-sdk.js";
+import { createModelClient, resolveActiveRelayModelProvider } from "../model/model-provider.js";
 import { captureScreenshot, captureSnapshot } from "../workspace/workspace-capture.js";
 import { interact, type InteractInput } from "../workspace/workspace-interact.js";
 
@@ -62,7 +62,7 @@ export interface Grounder {
   groundVision(request: VisionGroundRequest): Promise<VisionGroundHit | null>;
 }
 
-/** No-op when OpenRouter keys are absent — never crashes the control path. */
+/** No-op when no model provider is configured — never crashes the control path. */
 export class StubVisionGrounder implements Grounder {
   async groundVision(_request: VisionGroundRequest): Promise<VisionGroundHit | null> {
     return null;
@@ -78,34 +78,44 @@ const visionSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
 });
 
-export type OpenRouterVisionGrounderOptions = {
-  apiKey: string;
+export type RelayVisionGrounderOptions = {
+  apiKey?: string;
   model?: string;
   siteUrl?: string;
   siteName?: string;
+  env?: NodeJS.ProcessEnv;
 };
 
 /**
- * Vision grounding via Vercel AI SDK + OpenRouter.
- * Construct only when OPENROUTER_API_KEY (or an explicit key) is present.
+ * Vision grounding through the configured Relay model provider.
+ * Provider failures deliberately degrade to no vision hit.
  */
-export class OpenRouterVisionGrounder implements Grounder {
-  private readonly apiKey: string;
-  private readonly model: string;
+export class RelayVisionGrounder implements Grounder {
+  private readonly apiKey?: string;
+  private readonly model?: string;
   private readonly siteUrl?: string;
   private readonly siteName?: string;
+  private readonly env?: NodeJS.ProcessEnv;
 
-  constructor(options: OpenRouterVisionGrounderOptions) {
+  constructor(options: RelayVisionGrounderOptions = {}) {
     this.apiKey = options.apiKey;
-    this.model = options.model ?? process.env.OPENROUTER_GROUND_MODEL ?? "google/gemini-2.0-flash";
+    this.model = options.model;
     this.siteUrl = options.siteUrl ?? process.env.OPENROUTER_SITE_URL;
     this.siteName = options.siteName ?? process.env.OPENROUTER_SITE_NAME ?? "Relay";
+    this.env = options.env;
   }
 
   async groundVision(request: VisionGroundRequest): Promise<VisionGroundHit | null> {
     try {
-      const { sdk, provider } = await createOpenRouterClient({
-        apiKey: this.apiKey,
+      const env: NodeJS.ProcessEnv = { ...process.env, ...this.env };
+      if (this.apiKey) {
+        // The legacy constructor contract meant an explicit OpenRouter key.
+        env.RELAY_MODEL_PROVIDER = "openrouter";
+        env.OPENROUTER_API_KEY = this.apiKey;
+      }
+      const { sdk, provider, model } = await createModelClient("ground", {
+        ...(this.model ? { model: this.model } : {}),
+        env,
         httpReferer: this.siteUrl,
         appTitle: this.siteName,
       });
@@ -122,7 +132,7 @@ export class OpenRouterVisionGrounder implements Grounder {
         .join("\n");
       const mime = request.mime ?? "image/png";
       const { object } = await sdk.generateObject({
-        model: provider.chat(this.model),
+        model: provider.chat(model),
         schema: visionSchema,
         messages: [
           {
@@ -146,10 +156,6 @@ export class OpenRouterVisionGrounder implements Grounder {
             ],
           },
         ],
-        headers: {
-          ...(this.siteUrl ? { "HTTP-Referer": this.siteUrl } : {}),
-          ...(this.siteName ? { "X-Title": this.siteName } : {}),
-        },
       });
       const interaction = visionObjectToInteraction(object);
       if (!interaction) return null;
@@ -160,6 +166,15 @@ export class OpenRouterVisionGrounder implements Grounder {
     } catch {
       return null;
     }
+  }
+}
+
+export type OpenRouterVisionGrounderOptions = RelayVisionGrounderOptions & { apiKey: string };
+
+/** Backwards-compatible constructor for callers that explicitly pass an OpenRouter key. */
+export class OpenRouterVisionGrounder extends RelayVisionGrounder {
+  constructor(options: OpenRouterVisionGrounderOptions) {
+    super(options);
   }
 }
 
@@ -185,9 +200,15 @@ function visionObjectToInteraction(
 }
 
 export function createDefaultGrounder(env: NodeJS.ProcessEnv = process.env): Grounder {
-  const apiKey = env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) return new StubVisionGrounder();
-  return new OpenRouterVisionGrounder({ apiKey });
+  const resolution = resolveActiveRelayModelProvider(env);
+  if (!resolution.provider) return new StubVisionGrounder();
+  if (resolution.provider !== "openai-compatible" && !resolution.apiKey) {
+    return new StubVisionGrounder();
+  }
+  if (resolution.provider === "openai-compatible" && !resolution.baseURL) {
+    return new StubVisionGrounder();
+  }
+  return new RelayVisionGrounder({ env });
 }
 
 export function isInteractInput(value: unknown): value is InteractInput {

@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { compactGoalObservation, isEditableGoalControl } from "@relay/core/goal-observation";
 import {
-  createOpenRouterDecisionProvider,
-  DEFAULT_OPENROUTER_DECISION_MODEL,
+  createModelDecisionProvider,
   type ModelDecisionProvider,
 } from "@relay/core/model-decision-provider";
+import { resolveActiveRelayModelProvider, resolveRelayTaskModel } from "@relay/core/model-provider";
 import type {
   CompactGoalObservation,
   GoalSessionAction,
@@ -127,7 +127,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
     // Loop-level cancellation checks; the provider call itself is bounded by
     // its own retry/timeout policy.
     const signal = callSignal ?? options.signal;
-    const provider = options.decisionProvider ?? createOpenRouterDecisionProvider();
+    const provider = options.decisionProvider ?? createModelDecisionProvider();
     let record = starting;
     if (record.pendingAction) {
       record = stop(
@@ -213,10 +213,13 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           ]),
         ),
       };
+      const modelResolution = resolveActiveRelayModelProvider();
+      const requestProvider = modelResolution.provider ?? "openrouter";
       const request = {
         schemaVersion: 1 as const,
-        provider: "openrouter",
-        model: record.model ?? DEFAULT_OPENROUTER_DECISION_MODEL,
+        provider: requestProvider,
+        model:
+          record.model ?? resolveRelayTaskModel("decision", requestProvider, process.env) ?? "",
         state: observation,
         observationDigest: observation.observationDigest,
         evidenceRefs: record.observations.at(-1)?.evidenceRefs,
@@ -291,7 +294,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           record,
           "blocked",
           code,
-          decision.error?.message ?? "OpenRouter did not return a usable decision.",
+          decision.error?.message ?? "The model provider did not return a usable decision.",
           now(),
         );
         await persist(record);

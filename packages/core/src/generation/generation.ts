@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { GenerationRequest, GenerationResult, GenerationUsage } from "@relay/protocol";
 import { z } from "zod";
-import { createOpenRouterClient, openRouterCostUsd } from "../openrouter/openrouter-ai-sdk.js";
+import { openRouterCostUsd } from "../openrouter/openrouter-ai-sdk.js";
+import { createModelClient, type RelayModelProvider } from "../model/model-provider.js";
 
 export type GenerationProvider = {
   id: string;
@@ -75,21 +76,27 @@ function generationPrompt(input: GenerationRequest): string {
   return `Generate ${count} varied test value(s) for this request: ${input.prompt}. Return only JSON {"values":[...]}.`;
 }
 
-export function createOpenRouterGenerationProvider(
-  apiKey: string,
-  options: {
-    model?: string;
-    siteUrl?: string;
-    siteName?: string;
-    fetch?: typeof globalThis.fetch;
-  } = {},
+export type ModelGenerationProviderOptions = {
+  model?: string;
+  siteUrl?: string;
+  siteName?: string;
+  fetch?: typeof globalThis.fetch;
+  provider?: RelayModelProvider;
+  apiKey?: string;
+};
+
+export function createModelGenerationProvider(
+  options: ModelGenerationProviderOptions = {},
 ): GenerationProvider {
   return {
-    id: "openrouter",
+    id: options.provider ?? "relay-model",
     async generate(input) {
-      const model = input.model ?? options.model ?? "openai/gpt-4.1-mini";
-      const { sdk, provider } = await createOpenRouterClient({
-        apiKey,
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      if (options.provider) env.RELAY_MODEL_PROVIDER = options.provider;
+      const { sdk, provider, providerId, model } = await createModelClient("generation", {
+        env,
+        ...((input.model ?? options.model) ? { model: input.model ?? options.model } : {}),
+        ...(options.apiKey ? { apiKey: options.apiKey } : {}),
         fetch: options.fetch,
         httpReferer: options.siteUrl,
         appTitle: options.siteName ?? "Relay",
@@ -103,9 +110,10 @@ export function createOpenRouterGenerationProvider(
         maxRetries: 0,
       });
       const values = generated.object.values.map(String).slice(0, input.count ?? 1);
-      const costUsd = openRouterCostUsd(generated.providerMetadata);
+      const costUsd =
+        providerId === "openrouter" ? openRouterCostUsd(generated.providerMetadata) : undefined;
       return {
-        provider: "openrouter",
+        provider: providerId,
         model: generated.response.modelId || model,
         values,
         generatedAt: Date.now(),
@@ -120,18 +128,14 @@ export function createOpenRouterGenerationProvider(
   };
 }
 
-function registerBuiltins(): void {
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-  if (openRouterKey) {
-    registerGenerationProvider(
-      createOpenRouterGenerationProvider(openRouterKey, {
-        model: process.env.OPENROUTER_MODEL,
-        siteUrl: process.env.OPENROUTER_SITE_URL,
-        siteName: process.env.OPENROUTER_SITE_NAME ?? "Relay",
-      }),
-    );
-  }
+export function createOpenRouterGenerationProvider(
+  apiKey: string,
+  options: Omit<ModelGenerationProviderOptions, "apiKey" | "provider"> = {},
+): GenerationProvider {
+  return createModelGenerationProvider({ ...options, apiKey, provider: "openrouter" });
+}
 
+function registerBuiltins(): void {
   const localUrl = process.env.RELAY_LOCAL_GENERATION_URL;
   if (localUrl) {
     registerGenerationProvider({
@@ -156,7 +160,12 @@ registerBuiltins();
 
 export async function generateValues(input: GenerationRequest): Promise<GenerationResult> {
   const providerId = input.provider ?? process.env.RELAY_GENERATION_PROVIDER ?? "deterministic";
-  const provider = providers.get(providerId);
+  const registered = providers.get(providerId);
+  const provider = ["anthropic", "openai", "google", "openrouter", "openai-compatible"].includes(
+    providerId,
+  )
+    ? (registered ?? createModelGenerationProvider({ provider: providerId as RelayModelProvider }))
+    : registered;
   if (!provider) throw new Error(`Generation provider is not configured: ${providerId}`);
   const startedAt = Date.now();
   const result = await provider.generate(input);

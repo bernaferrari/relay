@@ -42,7 +42,7 @@ npm run dev
 Then run the scaffolded test:
 
 ```bash
-export OPENROUTER_API_KEY="your-key"
+export ANTHROPIC_API_KEY="your-key"  # or OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY
 npx -y @relay/cli ci .relay/tests --confirm
 ```
 
@@ -112,7 +112,7 @@ jobs:
 
 Two honest caveats:
 
-- **The model key is not optional here.** CI starts from a fresh workspace, so every step executes from its plain-English description. Set `OPENROUTER_API_KEY` in the repository secrets as shown. Job-level `env` propagates into the action's steps.
+- **The model key is not optional here.** CI starts from a fresh workspace, so every step executes from its plain-English description. Set a model key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`) in the repository secrets as shown. Job-level `env` propagates into the action's steps.
 - **The URL must match.** The tests above target port `3000`, which is what `next start` uses by default. If your `start` script sets another port, update the test files or pass the matching port.
 
 The action uploads machine-readable verdicts, JUnit XML, screenshots, and trace evidence as a build artifact. Evidence can include screenshots of your app; treat the artifact as confidential build output. All files in one run must belong to the same Relay app — split multi-app suites into separate steps with distinct `artifact-name` and `comment-key` values.

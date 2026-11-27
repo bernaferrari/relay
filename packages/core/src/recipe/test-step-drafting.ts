@@ -5,7 +5,7 @@
  */
 import { z } from "zod";
 import { APP_MAP_TEST_INTENT_LIMITS, type AppMap } from "@relay/protocol";
-import { createOpenRouterClient } from "../openrouter/openrouter-ai-sdk.js";
+import { createModelClient } from "../model/model-provider.js";
 
 export type DraftedTestStep = { kind: "instruction" | "validation"; intent: string };
 
@@ -88,17 +88,12 @@ const draftSchema = z.object({
     .max(MAX_DRAFT_STEPS),
 });
 
-async function draftViaOpenRouter(input: {
+async function draftViaModel(input: {
   goal: string;
   startUrl?: string;
   knownScreens: string[];
 }): Promise<{ name: string; steps: DraftedTestStep[] } | undefined> {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) return undefined;
-  const model =
-    process.env.OPENROUTER_DRAFT_MODEL ?? process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini";
-  const { sdk, provider } = await createOpenRouterClient({
-    apiKey: key,
+  const { sdk, provider, model } = await createModelClient("draft", {
     httpReferer: process.env.OPENROUTER_HTTP_REFERER,
     appTitle: process.env.OPENROUTER_APP_TITLE ?? "Relay",
   });
@@ -151,7 +146,7 @@ export async function draftTestSteps(input: {
   });
   // A list the author already wrote is respected as-is.
   if (goal.split(/\r?\n/u).filter((line) => line.trim()).length > 1) return fallback();
-  const drafter = registeredDrafter ?? draftViaOpenRouter;
+  const drafter = registeredDrafter ?? draftViaModel;
   try {
     const drafted = await drafter({
       goal,

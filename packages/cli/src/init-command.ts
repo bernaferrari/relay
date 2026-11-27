@@ -306,7 +306,7 @@ function nextSteps(input: {
   if (!input.running)
     steps.push(`Start the app: ${input.devCommand ?? "start your development server"}`);
   if (input.needsModelKey)
-    steps.push("Set the model key: export OPENROUTER_API_KEY=<your OpenRouter key>");
+    steps.push("Set a model key, for example: export ANTHROPIC_API_KEY=<your Anthropic key>");
   steps.push("Run the first check: relay ci .relay/tests --confirm");
   steps.push("Add Relay to Claude Code: claude mcp add relay -- npx -y @relay/mcp");
   return steps;
@@ -318,7 +318,14 @@ export async function runInitCommand(
 ): Promise<InitResult> {
   const detection = await detectProject(input.cwd);
   const probe = dependencies.probeUrl ?? defaultProbeUrl;
-  const needsModelKey = !input.env?.OPENROUTER_API_KEY;
+  const needsModelKey = ![
+    input.env?.ANTHROPIC_API_KEY,
+    input.env?.OPENAI_API_KEY,
+    input.env?.GEMINI_API_KEY,
+    input.env?.GOOGLE_GENERATIVE_AI_API_KEY,
+    input.env?.OPENROUTER_API_KEY,
+    input.env?.RELAY_MODEL_BASE_URL,
+  ].some((value) => value?.trim());
   const mobile = ["expo", "react-native", "ios", "android"].includes(detection.kind) && !input.url;
   if (mobile) {
     return {

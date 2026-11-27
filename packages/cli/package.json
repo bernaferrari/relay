@@ -32,6 +32,10 @@
     "test:clean-host": "node scripts/test-clean-host.mjs"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.106",
+    "@ai-sdk/google": "4.0.122",
+    "@ai-sdk/openai": "4.0.121",
+    "@ai-sdk/openai-compatible": "3.0.93",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "@yume-chan/adb": "2.6.4",
     "@yume-chan/adb-scrcpy": "2.3.2",

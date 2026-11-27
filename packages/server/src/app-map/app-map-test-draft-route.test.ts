@@ -95,12 +95,12 @@ test("the model key can be saved and removed but is never read back", async () =
     const client = clientFor(server.port);
     await assert.rejects(
       () => client.invoke("system.model-key.set", { key: "nope" }),
-      /does not look like an OpenRouter key/,
+      /does not look like a model provider key/,
     );
     const saved = await client.invoke("system.model-key.set", {
       key: "sk-or-v1-test-0000000000000000000000",
     });
-    assert.deepEqual(saved, { configured: true, source: "settings" });
+    assert.deepEqual(saved, { configured: true, source: "settings", provider: "openrouter" });
     assert.equal(JSON.stringify(saved).includes("sk-or"), false);
     const removed = await client.invoke("system.model-key.set", { key: "" });
     assert.deepEqual(removed, { configured: false, source: "none" });

@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { RecipeStep, StepTarget } from "@relay/protocol";
 import { snapshot, type Device, type SnapshotNode } from "../device/device.js";
 import { captureScreenshot, cleanupScreenshot } from "../workspace/workspace-capture.js";
-import { createOpenRouterClient } from "../openrouter/openrouter-ai-sdk.js";
+import { createModelClient } from "../model/model-provider.js";
 import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { isCancel } from "./recipe-runner-support.js";
@@ -160,22 +160,18 @@ function actPrompt(input: ActDecisionInput): string {
   ].join("\n");
 }
 
-async function decideViaOpenRouter(input: ActDecisionInput): Promise<ActDecision> {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) {
-    throw new Error(
-      "This step is written in plain English and needs a model. Set OPENROUTER_API_KEY, or record the step.",
-    );
-  }
-  const model =
-    input.model ??
-    process.env.OPENROUTER_ACT_MODEL ??
-    process.env.OPENROUTER_VISION_MODEL ??
-    "openai/gpt-4o-mini";
-  const { sdk, provider } = await createOpenRouterClient({
-    apiKey: key,
+async function decideViaModel(input: ActDecisionInput): Promise<ActDecision> {
+  const { sdk, provider, model } = await createModelClient("act", {
+    ...(input.model ? { model: input.model } : {}),
     httpReferer: process.env.OPENROUTER_HTTP_REFERER,
     appTitle: process.env.OPENROUTER_APP_TITLE ?? "Relay",
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.name === "ModelProviderNotConfiguredError") {
+      throw new Error(
+        "This step is written in plain English and needs a model. Configure a model provider in Settings, or record the step.",
+      );
+    }
+    throw error;
   });
   const generated = await sdk.generateObject({
     model: provider.chat(model),
@@ -350,7 +346,7 @@ async function runActStepLoop(
       : inboxCode
         ? scrubInboxCodeText(value, inboxCode)
         : value;
-  const decide = registeredDecider ?? decideViaOpenRouter;
+  const decide = registeredDecider ?? decideViaModel;
   const max = Math.max(1, Math.min(step.maxActions ?? DEFAULT_ACT_MAX_ACTIONS, 20));
   const history: string[] = [];
   const executed: RecipeStep[] = [];

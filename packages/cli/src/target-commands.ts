@@ -453,7 +453,7 @@ export const targetCommandDescriptors: readonly CliOperationDescriptor[] = [
         'relay device ground emulator-5554 --input \'{"target":"Appearance"}\' --json',
         'relay device ground emulator-5554 --input \'{"target":"Menu"}\' --actor agent:mapper --json',
       ],
-      note: "Uses a11y → product header heuristics → optional OpenRouter vision. Does not tap. Prefer device do to ground+tap in one step.",
+      note: "Uses a11y → product header heuristics → optional model vision. Does not tap. Prefer device do to ground+tap in one step.",
     }),
   ),
   mapped(

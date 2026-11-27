@@ -51,7 +51,7 @@ function report(): CombineEvidenceAnalysisReport {
           locale: "en",
           baselineLocale: "en",
           testId: "home",
-          detail: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+          detail: "visual judge unavailable: No model provider is configured",
         },
       ],
       critical: 2,

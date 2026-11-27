@@ -28,7 +28,7 @@ import {
 } from "./app-map-observed.js";
 import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
 import { mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.js";
-import { createOpenRouterClient } from "../openrouter/openrouter-ai-sdk.js";
+import { createModelClient, ModelProviderNotConfiguredError } from "../model/model-provider.js";
 import { readFrameTreeNodes } from "../run/run-frame-tree.js";
 import { runsRoot, type PersistedRun } from "../run/run-store.js";
 import { resolveScreenIdentity } from "../screen/screen-identity.js";
@@ -49,18 +49,21 @@ export function registerScreenNamer(namer: ScreenNamer): () => void {
   };
 }
 
-async function nameViaOpenRouter(input: {
+async function nameViaModel(input: {
   screenshot: Buffer;
   guess: string;
 }): Promise<string | undefined> {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) return undefined;
-  const model = process.env.OPENROUTER_VISION_MODEL ?? "openai/gpt-4o-mini";
-  const { sdk, provider } = await createOpenRouterClient({
-    apiKey: key,
-    httpReferer: process.env.OPENROUTER_HTTP_REFERER,
-    appTitle: process.env.OPENROUTER_APP_TITLE ?? "Relay",
-  });
+  let client;
+  try {
+    client = await createModelClient("growth", {
+      httpReferer: process.env.OPENROUTER_HTTP_REFERER,
+      appTitle: process.env.OPENROUTER_APP_TITLE ?? "Relay",
+    });
+  } catch (error) {
+    if (error instanceof ModelProviderNotConfiguredError) return undefined;
+    throw error;
+  }
+  const { sdk, provider, model } = client;
   const generated = await sdk.generateText({
     model: provider.chat(model),
     maxRetries: 1,
@@ -264,7 +267,7 @@ export async function growAppMapFromRun(run: PersistedRun): Promise<number> {
   const plan = planRunGrowth(map, observed.frames);
   if (!plan.screens.length && !plan.paths.length) return 0;
   const profile = profileForRun(run);
-  const namer = registeredNamer ?? nameViaOpenRouter;
+  const namer = registeredNamer ?? nameViaModel;
   const screens: NewScreen[] = [];
   for (const { screenId, frame } of plan.screens) {
     const { variant, screenshot } = profile

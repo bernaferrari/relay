@@ -1920,7 +1920,7 @@ test("plan run --findings prints Infra markdown after cells fail closed without 
                 status: "error",
                 outcome: "harness-failure",
                 failureCategory: "environment",
-                error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+                error: "visual judge unavailable: No model provider is configured",
               },
             };
           }
@@ -1945,7 +1945,7 @@ test("plan run --findings prints Infra markdown after cells fail closed without 
                     screenLabel: "Judge logged-out home chrome",
                     locale: "logged-out",
                     baselineLocale: "logged-out",
-                    detail: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+                    detail: "visual judge unavailable: No model provider is configured",
                   },
                   {
                     id: "harness-failure-hello-judged",
@@ -1956,7 +1956,7 @@ test("plan run --findings prints Infra markdown after cells fail closed without 
                     screenLabel: "Judge logged-out hello paywall chrome",
                     locale: "logged-out",
                     baselineLocale: "logged-out",
-                    detail: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+                    detail: "visual judge unavailable: No model provider is configured",
                   },
                 ],
                 critical: 2,
@@ -1984,7 +1984,7 @@ test("plan run --findings prints Infra markdown after cells fail closed without 
   assert.match(io.stdout(), /HARNESS_FAILURE/u);
   assert.match(io.stdout(), /Incomplete — 0 of 2 planned cases verified/u);
   assert.match(io.stdout(), /Incomplete \/ harness — not a product pass/u);
-  assert.match(io.stdout(), /OPENROUTER_API_KEY/u);
+  assert.match(io.stdout(), /No model provider is configured/u);
   assert.doesNotMatch(io.stdout(), /100%/u);
   assert.doesNotMatch(io.stdout(), /All selected cases passed/u);
 });

@@ -248,7 +248,7 @@ export const combineEvidenceAnalysisReportSchema = z
       .object({
         schemaVersion: z.literal(1),
         status: z.enum(["suggested", "invalid", "unavailable"]),
-        provider: z.literal("openrouter"),
+        provider: z.string(),
         batchId: z.string(),
         findingIds: z.array(z.string()),
         rationale: z.string(),
@@ -256,7 +256,7 @@ export const combineEvidenceAnalysisReportSchema = z
           .object({
             schemaVersion: z.literal(1),
             status: z.enum(["ok", "invalid", "unavailable"]),
-            provider: z.literal("openrouter"),
+            provider: z.string(),
             model: z.string(),
             requestId: z.string(),
             observationDigest: z.string().optional(),

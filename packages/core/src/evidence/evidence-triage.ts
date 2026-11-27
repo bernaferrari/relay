@@ -7,10 +7,10 @@ import type {
 } from "@relay/protocol";
 import { canonicalSha256 } from "../canonical-json.js";
 import {
-  DEFAULT_OPENROUTER_DECISION_MODEL,
-  createOpenRouterDecisionProvider,
+  createModelDecisionProvider,
   type ModelDecisionProvider,
 } from "../model/model-decision-provider.js";
+import { resolveActiveRelayModelProvider, resolveRelayTaskModel } from "../model/model-provider.js";
 import { redactSensitiveEvidenceValue } from "./redaction.js";
 import { findWorkspaceRoot } from "../workspace/workspace-root.js";
 
@@ -46,11 +46,12 @@ export function evidenceTriageRequest(
     })),
   } as const;
   const safeState = redactSensitiveEvidenceValue(state);
+  const resolution = resolveActiveRelayModelProvider();
+  const provider = resolution.provider ?? "openrouter";
   return {
     schemaVersion: 1,
-    provider: "openrouter",
-    model:
-      options.model ?? process.env.OPENROUTER_DECISION_MODEL ?? DEFAULT_OPENROUTER_DECISION_MODEL,
+    provider,
+    model: options.model ?? resolveRelayTaskModel("decision", provider, process.env) ?? "",
     state: safeState as ModelDecisionRequest["state"],
     questions: {
       review_scope: {
@@ -83,12 +84,12 @@ function idsForScope(report: CombineEvidenceAnalysisReport, scope: string): stri
 }
 
 /**
- * Ask OpenRouter to sort an existing result for human attention. This does not
+ * Ask the configured model provider to sort an existing result for human attention. This does not
  * mutate jobs, findings, screenshot decisions, execution state, or approval.
  */
 export async function triageEvidenceReport(
   report: CombineEvidenceAnalysisReport,
-  provider: ModelDecisionProvider = createOpenRouterDecisionProvider(),
+  provider: ModelDecisionProvider = createModelDecisionProvider(),
   options: EvidenceTriageOptions = {},
 ): Promise<JevEvidenceTriage> {
   const decision = await provider.decide(evidenceTriageRequest(report, options));
@@ -96,10 +97,11 @@ export async function triageEvidenceReport(
     return {
       schemaVersion: 1,
       status: decision.status,
-      provider: "openrouter",
+      provider: decision.provider,
       batchId: report.batchId,
       findingIds: [],
-      rationale: decision.error?.message ?? "OpenRouter did not return a usable triage suggestion.",
+      rationale:
+        decision.error?.message ?? "The model provider did not return a usable triage suggestion.",
       decision,
     };
   }
@@ -108,10 +110,10 @@ export async function triageEvidenceReport(
     return {
       schemaVersion: 1,
       status: "invalid",
-      provider: "openrouter",
+      provider: decision.provider,
       batchId: report.batchId,
       findingIds: [],
-      rationale: "OpenRouter returned no valid review scope.",
+      rationale: "The model provider returned no valid review scope.",
       decision: {
         ...decision,
         status: "invalid",
@@ -124,7 +126,7 @@ export async function triageEvidenceReport(
   return {
     schemaVersion: 1,
     status: "suggested",
-    provider: "openrouter",
+    provider: decision.provider,
     batchId: report.batchId,
     findingIds,
     rationale: `Suggested human review scope: ${answer.choice}. This is triage only; it does not approve or reject evidence.`,

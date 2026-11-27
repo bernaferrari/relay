@@ -116,6 +116,9 @@ export const everydayOperationOutputSchemas = {
     .object({
       configured: z.boolean(),
       source: z.enum(["settings", "environment", "none"]),
+      provider: z
+        .enum(["anthropic", "openai", "google", "openrouter", "openai-compatible"])
+        .optional(),
     })
     .strict(),
 } as const;

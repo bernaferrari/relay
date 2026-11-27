@@ -63,7 +63,7 @@ describe("classifyRunOutcome", () => {
     assert.deepEqual(
       classifyRunOutcome({
         status: "error",
-        error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+        error: "visual judge unavailable: No model provider is configured",
       }),
       { outcome: "harness-failure", failureCategory: "environment" },
     );
@@ -71,7 +71,7 @@ describe("classifyRunOutcome", () => {
       classifyRunOutcome({
         status: "error",
         error:
-          "judge uncertain: Primary judge unavailable: visual judge unavailable: OPENROUTER_API_KEY is not configured",
+          "judge uncertain: Primary judge unavailable: visual judge unavailable: No model provider is configured",
       }),
       { outcome: "harness-failure", failureCategory: "environment" },
     );

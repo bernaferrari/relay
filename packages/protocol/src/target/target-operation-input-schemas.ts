@@ -139,7 +139,18 @@ export const targetOperationInputSchemas = {
     .strict(),
   "system.model-key.set": z
     .object({
-      key: z.string().max(512).describe("OpenRouter key, or an empty string to remove it"),
+      key: z.string().max(512).describe("Model provider key, or an empty string to remove it"),
+      provider: z
+        .enum(["anthropic", "openai", "google", "openrouter", "openai-compatible"])
+        .optional()
+        .describe("Provider that owns the key"),
+      baseURL: z
+        .string()
+        .trim()
+        .url()
+        .max(500)
+        .optional()
+        .describe("OpenAI-compatible endpoint base URL"),
     })
     .strict(),
   "target.list": empty,

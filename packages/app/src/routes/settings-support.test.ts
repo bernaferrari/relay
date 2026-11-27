@@ -65,22 +65,22 @@ it("is ready only when lab-server launchd is running", () => {
   ).toBe("ready");
 });
 
-it("fails closed when the OpenRouter judge key is missing from the payload", () => {
+it("fails closed when the model provider key is missing from the payload", () => {
   const checks = judgeProviderChecks({
     checks: [{ id: "relay", label: "Relay runner", status: "ready", detail: "Ready" }],
   });
   expect(checks[0]?.status).toBe("needs-attention");
-  expect(checks[0]?.detail).toMatch(/OpenRouter key/u);
+  expect(checks[0]?.detail).toMatch(/model provider key/u);
   expect(checks[0]?.detail).toMatch(/instead of passing/u);
 });
 
-it("is ready only when OPENROUTER_API_KEY is configured", () => {
+it("is ready only when a model provider is configured", () => {
   expect(
     judgeProviderChecks({
       judgeProvider: {
         status: "ready",
         configured: true,
-        detail: "OPENROUTER_API_KEY is set. Visual and semantic judges can run.",
+        detail: "Model provider found (anthropic). Visual and semantic judges can run.",
       },
     })[0]?.status,
   ).toBe("ready");

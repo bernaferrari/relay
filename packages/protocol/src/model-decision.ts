@@ -99,7 +99,7 @@ export type ModelDecisionRecord = {
 export type JevEvidenceTriage = {
   schemaVersion: typeof MODEL_DECISION_SCHEMA_VERSION;
   status: "suggested" | "invalid" | "unavailable";
-  provider: "openrouter";
+  provider: string;
   batchId: string;
   findingIds: string[];
   rationale: string;

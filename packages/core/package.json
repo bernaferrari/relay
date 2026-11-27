@@ -30,6 +30,7 @@
     "./goal-observation": "./src/discovery/goal-observation.ts",
     "./evaluation": "./src/evaluation/evaluation.ts",
     "./model-decision-provider": "./src/model/model-decision-provider.ts",
+    "./model-provider": "./src/model/model-provider.ts",
     "./evidence-triage": "./src/evidence/evidence-triage.ts",
     "./outcomes": "./src/run/outcomes.ts",
     "./run-evidence": "./src/run/run-evidence.ts",
@@ -65,6 +66,10 @@
     "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-exclude=\"**/*.test.{ts,mjs}\" --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.106",
+    "@ai-sdk/google": "4.0.122",
+    "@ai-sdk/openai": "4.0.121",
+    "@ai-sdk/openai-compatible": "3.0.93",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "@relay/protocol": "workspace:*",
     "agent-device": "link:../../vendor/agent-device",

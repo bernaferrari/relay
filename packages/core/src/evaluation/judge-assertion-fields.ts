@@ -1,7 +1,7 @@
 import type { AssertionSpec, RecipeStep } from "@relay/protocol";
 
 export const DEFAULT_JUDGE_PROVIDER = "openrouter";
-export const DEFAULT_INDEPENDENT_JUDGE_MODEL = "google/gemini-2.5-flash";
+export const DEFAULT_INDEPENDENT_JUDGE_MODEL = "~google/gemini-flash-latest";
 
 type JudgeAssertion = Extract<AssertionSpec, { kind: "visual" | "semantic" }>;
 type JudgeFields = Pick<

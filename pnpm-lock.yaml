@@ -326,6 +326,18 @@ importers:
 
   packages/cli:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: 4.0.106
+        version: 4.0.106(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: 4.0.122
+        version: 4.0.122(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: 4.0.121
+        version: 4.0.121(zod@4.6.5)
+      '@ai-sdk/openai-compatible':
+        specifier: 3.0.93
+        version: 3.0.93(zod@4.6.5)
       '@openrouter/ai-sdk-provider':
         specifier: ^3.1.0
         version: 3.1.0(ai@7.0.133(zod@4.6.5))(zod@4.6.5)
@@ -412,6 +424,18 @@ importers:
 
   packages/core:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: 4.0.106
+        version: 4.0.106(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: 4.0.122
+        version: 4.0.122(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: 4.0.121
+        version: 4.0.121(zod@4.6.5)
+      '@ai-sdk/openai-compatible':
+        specifier: 3.0.93
+        version: 3.0.93(zod@4.6.5)
       '@openrouter/ai-sdk-provider':
         specifier: ^3.1.0
         version: 3.1.0(ai@7.0.133(zod@4.6.5))(zod@4.6.5)
@@ -515,13 +539,13 @@ importers:
     devDependencies:
       '@e2e-dev/web':
         specifier: 0.14.0
-        version: 0.14.0(e2e@0.20.0(ai@7.0.133(zod@4.6.5)))
+        version: 0.14.0(e2e@0.20.0(@ai-sdk/anthropic@4.0.106(zod@4.6.5))(@ai-sdk/google@4.0.122(zod@4.6.5))(@ai-sdk/openai-compatible@3.0.93(zod@4.6.5))(@ai-sdk/openai@4.0.121(zod@4.6.5))(ai@7.0.133(zod@4.6.5)))
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4
       e2e:
         specifier: 0.20.0
-        version: 0.20.0(ai@7.0.133(zod@4.6.5))
+        version: 0.20.0(@ai-sdk/anthropic@4.0.106(zod@4.6.5))(@ai-sdk/google@4.0.122(zod@4.6.5))(@ai-sdk/openai-compatible@3.0.93(zod@4.6.5))(@ai-sdk/openai@4.0.121(zod@4.6.5))(ai@7.0.133(zod@4.6.5))
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -618,6 +642,18 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: 4.0.106
+        version: 4.0.106(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: 4.0.122
+        version: 4.0.122(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: 4.0.121
+        version: 4.0.121(zod@4.6.5)
+      '@ai-sdk/openai-compatible':
+        specifier: 3.0.93
+        version: 3.0.93(zod@4.6.5)
       '@openrouter/ai-sdk-provider':
         specifier: ^3.1.0
         version: 3.1.0(ai@7.0.133(zod@4.6.5))(zod@4.6.5)
@@ -886,8 +922,32 @@ importers:
 
 packages:
 
+  '@ai-sdk/anthropic@4.0.106':
+    resolution: {integrity: sha512-CKqIoPG91+uqmZxxxQEaS2anQlDxA+4UPeYB0TgcHAit1HZgx0m2y9JJ7QwJVYmgBuZHO1OXowMovV0kwvrTcQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/gateway@4.0.108':
     resolution: {integrity: sha512-UgtnyyuIpMSzhha89MAK6c2pTeQW8s9jLSmDeYI92NzqDsoyEYFZ/lYAXTXLUQxA25j5iTWPEnzGVl5adIy+8w==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/google@4.0.122':
+    resolution: {integrity: sha512-ErJYG+W6VRwdq6msurPVBDLsPswgdv54ldl0BSo7bgzmdHGtwOsE1q5wbS7PRBDgXuLKIhFnm5m+JV16Yqxg3g==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/openai-compatible@3.0.93':
+    resolution: {integrity: sha512-6/eIx/Y0/4xt6ncUovieFp5HFa0+LW1hy8TcgJQonBJ+5qZpdK5zqdBZ6RRoQ8cSSpuQC6X5kYhzDKrom9Q7+g==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/openai@4.0.121':
+    resolution: {integrity: sha512-7rDVkDk/nTHlryx/gOglSDL0Zh1Hq7rMtEcVgRCDsKKf/F/CcIJ3RnCmudYeyeLyuDE5fEcZQAdaNWYgOuwvSQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -898,12 +958,22 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/provider-utils@5.0.82':
+    resolution: {integrity: sha512-9s3Le9LsTR0exy14H8SERw4uMgFhiP0yJVoLefzfQCnnptj71noYh1AoVEsjfJjmMH1y16+1OqBVTDpTpU6M3Q==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/provider@4.0.21':
     resolution: {integrity: sha512-UpbC9C1oht8dhfKPbVXSLRZS3DI8uk8n5v2uMjBPNIYGsC2kL045ywq7D8Hh9KgnH9rP5W/GxQdYtWScRouqlA==}
     engines: {node: '>=22'}
 
   '@ai-sdk/provider@4.0.25':
     resolution: {integrity: sha512-vG0l7MUavfhn6c5+Z0y1/E6lKUrzecsLtFkuIknnHjAGAIiuwFDucafzebJuFVTZcLyhf8qhYYU2zeKP55Mymw==}
+    engines: {node: '>=22'}
+
+  '@ai-sdk/provider@4.0.39':
+    resolution: {integrity: sha512-jRvAhvW23+TeMGVCME2WGejP/TjzyDg7TplUep3t8HcEYnC2/8zqhCy9RRrjjVs1ljcygABZ8pQ21MbCRdF01w==}
     engines: {node: '>=22'}
 
   '@alloc/quick-lru@5.3.0':
@@ -7337,11 +7407,35 @@ packages:
 
 snapshots:
 
+  '@ai-sdk/anthropic@4.0.106(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.39
+      '@ai-sdk/provider-utils': 5.0.82(zod@4.6.5)
+      zod: 4.6.5
+
   '@ai-sdk/gateway@4.0.108(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.25
       '@ai-sdk/provider-utils': 5.0.57(zod@4.6.5)
       '@vercel/oidc': 3.2.0
+      zod: 4.6.5
+
+  '@ai-sdk/google@4.0.122(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.39
+      '@ai-sdk/provider-utils': 5.0.82(zod@4.6.5)
+      zod: 4.6.5
+
+  '@ai-sdk/openai-compatible@3.0.93(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.39
+      '@ai-sdk/provider-utils': 5.0.82(zod@4.6.5)
+      zod: 4.6.5
+
+  '@ai-sdk/openai@4.0.121(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.39
+      '@ai-sdk/provider-utils': 5.0.82(zod@4.6.5)
       zod: 4.6.5
 
   '@ai-sdk/provider-utils@5.0.57(zod@4.6.5)':
@@ -7353,11 +7447,23 @@ snapshots:
       undici: 7.30.0
       zod: 4.6.5
 
+  '@ai-sdk/provider-utils@5.0.82(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.39
+      '@standard-schema/spec': 1.1.0
+      '@workflow/serde': 4.1.0
+      eventsource-parser: 3.1.1
+      zod: 4.6.5
+
   '@ai-sdk/provider@4.0.21':
     dependencies:
       json-schema: 0.4.0
 
   '@ai-sdk/provider@4.0.25':
+    dependencies:
+      json-schema: 0.4.0
+
+  '@ai-sdk/provider@4.0.39':
     dependencies:
       json-schema: 0.4.0
 
@@ -7632,9 +7738,9 @@ snapshots:
 
   '@dotenvx/primitives@0.8.0': {}
 
-  '@e2e-dev/web@0.14.0(e2e@0.20.0(ai@7.0.133(zod@4.6.5)))':
+  '@e2e-dev/web@0.14.0(e2e@0.20.0(@ai-sdk/anthropic@4.0.106(zod@4.6.5))(@ai-sdk/google@4.0.122(zod@4.6.5))(@ai-sdk/openai-compatible@3.0.93(zod@4.6.5))(@ai-sdk/openai@4.0.121(zod@4.6.5))(ai@7.0.133(zod@4.6.5)))':
     dependencies:
-      e2e: 0.20.0(ai@7.0.133(zod@4.6.5))
+      e2e: 0.20.0(@ai-sdk/anthropic@4.0.106(zod@4.6.5))(@ai-sdk/google@4.0.122(zod@4.6.5))(@ai-sdk/openai-compatible@3.0.93(zod@4.6.5))(@ai-sdk/openai@4.0.121(zod@4.6.5))(ai@7.0.133(zod@4.6.5))
       playwright-core: 1.63.0
 
   '@electron-internal/extract-zip@1.0.5': {}
@@ -10411,7 +10517,7 @@ snapshots:
     dependencies:
       readable-stream: 2.3.8
 
-  e2e@0.20.0(ai@7.0.133(zod@4.6.5)):
+  e2e@0.20.0(@ai-sdk/anthropic@4.0.106(zod@4.6.5))(@ai-sdk/google@4.0.122(zod@4.6.5))(@ai-sdk/openai-compatible@3.0.93(zod@4.6.5))(@ai-sdk/openai@4.0.121(zod@4.6.5))(ai@7.0.133(zod@4.6.5)):
     dependencies:
       '@ai-sdk/provider': 4.0.21
       '@clack/prompts': 1.8.1
@@ -10428,6 +10534,10 @@ snapshots:
       pixelmatch: 8.0.0
       zod: 4.6.1
     optionalDependencies:
+      '@ai-sdk/anthropic': 4.0.106(zod@4.6.5)
+      '@ai-sdk/google': 4.0.122(zod@4.6.5)
+      '@ai-sdk/openai': 4.0.121(zod@4.6.5)
+      '@ai-sdk/openai-compatible': 3.0.93(zod@4.6.5)
       ai: 7.0.133(zod@4.6.5)
 
   ee-first@1.1.1: {}

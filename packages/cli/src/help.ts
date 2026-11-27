@@ -246,7 +246,7 @@ Durable workflows (start from one client, inspect or cancel from another):
   relay goal run --url <url> --goal <task> [--value <key=value>] --confirm
   relay goal inspect|resume|cancel|reproduce|promote <sessionId> [--confirm]
   relay explore --url <url> --goal <task> [--mission <mission>...] --confirm [--agents <1-4>]
-    [--judge jev] [--model <openrouter-model>] [--auth-fixture <reference>]
+    [--judge jev] [--model <model>] [--auth-fixture <reference>]
   relay explore --resume <explorationId> --confirm | relay explore --inspect <explorationId>
 
 These resolve the sole connected Device and current Test workspace automatically. Use

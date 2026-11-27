@@ -66,7 +66,7 @@ export const planRunCommandPath = path(
       {
         name: "triage",
         type: '"jev"',
-        description: "Optional read-only OpenRouter sorting of saved findings for human review.",
+        description: "Optional read-only model sorting of saved findings for human review.",
       },
       {
         name: "serial",
@@ -137,7 +137,7 @@ export const planFindingsCommandPath = path("plan findings", ["batchId"], undefi
     {
       name: "triage",
       type: '"jev"',
-      description: "Optional read-only OpenRouter sorting of saved findings for human review.",
+      description: "Optional read-only model sorting of saved findings for human review.",
     },
   ],
   note: "Confirm and Reject never accept a visual baseline. Use relay run visual review for that.",

@@ -67,7 +67,7 @@ The default `qa` profile runs Tests and reads verdicts. Recording through an age
 
 Mobile CI is possible but you own the device layer. The [Relay GitHub Action](https://github.com/bernaferrari/relay) accepts a `device` input, and its own documentation is direct: iOS tests need a macOS runner with a simulator Relay can control, Android tests need an emulator or attached device already configured, and mobile device setup is deliberately outside the action.
 
-In practice that means a `macos` runner (hosted or self-hosted) for iOS, or a runner with Android emulator acceleration for Android, plus your own steps that build and install the app before Relay runs — xcodebuild, Gradle, or an EAS build artifact. As with web tests, steps that were never recorded execute from their plain-English descriptions in CI and need `OPENROUTER_API_KEY`.
+In practice that means a `macos` runner (hosted or self-hosted) for iOS, or a runner with Android emulator acceleration for Android, plus your own steps that build and install the app before Relay runs — xcodebuild, Gradle, or an EAS build artifact. As with web tests, steps that were never recorded execute from their plain-English descriptions in CI and need a model key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`).
 
 Start local. Qualify one short flow on one device you control before automating anything.
 

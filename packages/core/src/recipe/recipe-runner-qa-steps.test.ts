@@ -227,7 +227,7 @@ describe("daily QA recipe steps", () => {
               { log: () => {}, job: job() },
             ),
           ),
-        /visual judge unavailable: OPENROUTER_API_KEY is not configured/u,
+        /visual judge unavailable: No model provider is configured/u,
       );
     } finally {
       if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
@@ -255,7 +255,7 @@ describe("daily QA recipe steps", () => {
           ),
         (error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
-          assert.match(message, /visual judge unavailable: OPENROUTER_API_KEY is not configured/u);
+          assert.match(message, /visual judge unavailable: No model provider is configured/u);
           assert.doesNotMatch(message, /^judge uncertain:/u);
           return true;
         },

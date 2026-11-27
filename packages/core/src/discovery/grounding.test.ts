@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   GroundingError,
+  RelayVisionGrounder,
   StubVisionGrounder,
   createDefaultGrounder,
   groundTarget,
@@ -133,9 +134,18 @@ test("structured error lists candidates when nothing matches", async () => {
   }
 });
 
-test("createDefaultGrounder stubs when OpenRouter key is missing", () => {
-  const grounder = createDefaultGrounder({} as NodeJS.ProcessEnv);
-  assert.ok(grounder instanceof StubVisionGrounder);
+test("createDefaultGrounder stubs without a usable provider and uses configured providers", () => {
+  assert.ok(createDefaultGrounder({} as NodeJS.ProcessEnv) instanceof StubVisionGrounder);
+  assert.ok(
+    createDefaultGrounder({
+      ANTHROPIC_API_KEY: "sk-ant-test-0123456789",
+    } as NodeJS.ProcessEnv) instanceof RelayVisionGrounder,
+  );
+  assert.ok(
+    createDefaultGrounder({
+      RELAY_MODEL_BASE_URL: "http://localhost:11434/v1",
+    } as NodeJS.ProcessEnv) instanceof RelayVisionGrounder,
+  );
 });
 
 test("vision grounder can supply a hit after a11y/heuristic miss", async () => {

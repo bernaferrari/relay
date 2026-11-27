@@ -7,7 +7,7 @@ function request(): ModelDecisionRequest {
   return {
     schemaVersion: 1,
     provider: "openrouter",
-    model: "~typesafe/jev-latest",
+    model: "openai/gpt-4o-mini",
     observationDigest: "sha256:observation",
     state: {
       screen: "profile",
@@ -34,7 +34,7 @@ function responseBody() {
     id: "chatcmpl-test",
     object: "chat.completion",
     created: 1,
-    model: "typesafe/jev-1.13",
+    model: "openai/gpt-4o-mini",
     choices: [
       {
         index: 0,
@@ -68,7 +68,7 @@ function requestBodyText(init: unknown): string {
   return body;
 }
 
-test("OpenRouter decision provider stays offline when no key is configured", async () => {
+test("Model decision provider stays offline when no key is configured", async () => {
   let fetchCalls = 0;
   const provider = createOpenRouterDecisionProvider({
     apiKey: "",
@@ -82,11 +82,11 @@ test("OpenRouter decision provider stays offline when no key is configured", asy
 
   assert.equal(result.status, "unavailable");
   assert.equal(result.error?.code, "provider-unavailable");
-  assert.equal(result.model, "~typesafe/jev-latest");
+  assert.equal(result.model, "openai/gpt-4o-mini");
   assert.equal(fetchCalls, 0);
 });
 
-test("OpenRouter decision provider returns validated typed answers and redacts egress", async () => {
+test("Model decision provider returns validated typed answers and redacts egress", async () => {
   let sent: Record<string, unknown> | undefined;
   const provider = createOpenRouterDecisionProvider({
     apiKey: "test-key",
@@ -102,7 +102,7 @@ test("OpenRouter decision provider returns validated typed answers and redacts e
 
   assert.equal(result.status, "ok");
   assert.equal(result.requestId, "decision-1");
-  assert.equal(result.model, "typesafe/jev-1.13");
+  assert.equal(result.model, "openai/gpt-4o-mini");
   assert.deepEqual(result.answers?.route, {
     type: "choice",
     choice: "review",
@@ -114,14 +114,14 @@ test("OpenRouter decision provider returns validated typed answers and redacts e
   const serialized = JSON.stringify(sent);
   assert.equal(serialized.includes("do-not-send"), false);
   assert.equal(serialized.includes("Bearer do-not-send"), false);
-  assert.equal(sent?.model as string, "~typesafe/jev-latest");
+  assert.equal(sent?.model as string, "openai/gpt-4o-mini");
   const responseFormat = sent?.response_format as {
     json_schema: { schema: { properties: Record<string, unknown> } };
   };
   assert.ok(responseFormat.json_schema.schema.properties.answers);
 });
 
-test("OpenRouter decision provider retries only rate limits and overloads", async () => {
+test("Model decision provider retries only rate limits and overloads", async () => {
   let calls = 0;
   const delays: number[] = [];
   const provider = createOpenRouterDecisionProvider({
@@ -145,7 +145,7 @@ test("OpenRouter decision provider retries only rate limits and overloads", asyn
   assert.deepEqual(delays, [250]);
 });
 
-test("OpenRouter decision provider rejects incomplete or contradictory answers", async () => {
+test("Model decision provider rejects incomplete or contradictory answers", async () => {
   const provider = createOpenRouterDecisionProvider({
     apiKey: "test-key",
     fetch: async () =>
@@ -154,7 +154,7 @@ test("OpenRouter decision provider rejects incomplete or contradictory answers",
           id: "chatcmpl-invalid",
           object: "chat.completion",
           created: 1,
-          model: "typesafe/jev-1.13",
+          model: "openai/gpt-4o-mini",
           choices: [
             {
               index: 0,
@@ -177,7 +177,7 @@ test("OpenRouter decision provider rejects incomplete or contradictory answers",
   assert.equal(result.error?.code, "invalid-response");
 });
 
-test("OpenRouter decision provider classifies a malformed successful SDK response as invalid", async () => {
+test("Model decision provider classifies a malformed successful SDK response as invalid", async () => {
   const provider = createOpenRouterDecisionProvider({
     apiKey: "test-key",
     fetch: async () => new Response(JSON.stringify({ choices: [] }), { status: 200 }),
@@ -196,7 +196,7 @@ test("egress policy blocks disallowed endpoints and disabled mode", async () => 
     fetch: async () => new Response("{}", { status: 200 }),
   }).decide(request());
   assert.equal(blocked.status, "unavailable");
-  assert.match(blocked.error?.message ?? "", /not allowed/u);
+  assert.match(blocked.error?.message ?? "", /not in the Relay egress allowlist/u);
 
   const allowed = await createOpenRouterDecisionProvider({
     apiKey: "test-key",
@@ -206,7 +206,7 @@ test("egress policy blocks disallowed endpoints and disabled mode", async () => 
   }).decide(request());
   // Passes the gate (fails later for unrelated response reasons, never for egress).
   assert.notEqual(allowed.error?.message ?? "", undefined);
-  assert.equal((allowed.error?.message ?? "").includes("not allowed"), false);
+  assert.equal((allowed.error?.message ?? "").includes("not in the Relay egress allowlist"), false);
 
   const previous = process.env.RELAY_MODEL_EGRESS;
   process.env.RELAY_MODEL_EGRESS = "disabled";
@@ -216,7 +216,7 @@ test("egress policy blocks disallowed endpoints and disabled mode", async () => 
       fetch: async () => new Response("{}", { status: 200 }),
     }).decide(request());
     assert.equal(disabled.status, "unavailable");
-    assert.match(disabled.error?.message ?? "", /disabled by policy/u);
+    assert.match(disabled.error?.message ?? "", /disabled/u);
   } finally {
     if (previous === undefined) delete process.env.RELAY_MODEL_EGRESS;
     else process.env.RELAY_MODEL_EGRESS = previous;

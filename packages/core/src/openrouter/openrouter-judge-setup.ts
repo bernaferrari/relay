@@ -1,31 +1,59 @@
 /**
- * Judge provider presence for Settings and Morning review.
- * Never returns the key. A missing key is Infra, never a silent pass.
+ * Model provider presence for Settings and Morning review.
+ * Never returns a key. Missing configuration is Infra, never a silent pass.
  */
+import { resolveRelayModelProvider, type RelayModelResolution } from "../model/model-provider.js";
+import { readSavedModelKey, type SavedModelKey } from "../model/model-key.js";
 
-export type OpenRouterJudgeSetup = {
+export type ModelJudgeSetup = {
   status: "ready" | "needs-attention";
   configured: boolean;
+  provider?: string;
   detail: string;
 };
 
-export const OPENROUTER_JUDGE_NOT_CONFIGURED =
-  "Add an OpenRouter key in Settings › Advanced so Relay can run plain-English steps and check screenshots. Until then, those steps say they couldn’t run instead of passing.";
+export type OpenRouterJudgeSetup = ModelJudgeSetup;
 
-const OPENROUTER_JUDGE_CONFIGURED =
-  "OpenRouter key found. Relay can run plain-English steps and judge screenshots.";
+export const MODEL_JUDGE_NOT_CONFIGURED =
+  "Add a model provider key in Settings › Advanced so Relay can run plain-English steps and check screenshots. Until then, those steps say they couldn’t run instead of passing.";
 
-/** Presence-only. Empty, whitespace, and unset are all not configured. */
-export function inspectOpenRouterJudgeSetup(
+export const OPENROUTER_JUDGE_NOT_CONFIGURED = MODEL_JUDGE_NOT_CONFIGURED;
+
+function usable(resolution: RelayModelResolution): boolean {
+  if (!resolution.provider) return false;
+  if (resolution.provider === "openai-compatible") return Boolean(resolution.baseURL);
+  return Boolean(resolution.apiKey);
+}
+
+function configuredDetail(provider: string): string {
+  return `Model provider found (${provider}). Relay can run plain-English steps and judge screenshots.`;
+}
+
+/** Presence-only. Empty, whitespace, and unset values are all not configured. */
+export function inspectModelJudgeSetup(
   env: NodeJS.Dict<string | undefined> = process.env,
-): OpenRouterJudgeSetup {
-  const configured = Boolean(env.OPENROUTER_API_KEY?.trim());
-  if (!configured) {
+  savedKey: SavedModelKey | null | undefined = readSavedModelKey(),
+): ModelJudgeSetup {
+  const resolution = resolveRelayModelProvider(env, savedKey);
+  if (!usable(resolution)) {
     return {
       status: "needs-attention",
       configured: false,
-      detail: OPENROUTER_JUDGE_NOT_CONFIGURED,
+      detail: MODEL_JUDGE_NOT_CONFIGURED,
     };
   }
-  return { status: "ready", configured: true, detail: OPENROUTER_JUDGE_CONFIGURED };
+  const provider = resolution.provider!;
+  return {
+    status: "ready",
+    configured: true,
+    provider,
+    detail: configuredDetail(provider),
+  };
+}
+
+/** Backwards-compatible name for the original OpenRouter-only probe. */
+export function inspectOpenRouterJudgeSetup(
+  env: NodeJS.Dict<string | undefined> = process.env,
+): OpenRouterJudgeSetup {
+  return inspectModelJudgeSetup(env);
 }

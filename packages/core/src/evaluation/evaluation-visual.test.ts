@@ -13,7 +13,7 @@ function requestBodyText(init: unknown): string {
   return body;
 }
 
-test("visual judge fails closed without OPENROUTER_API_KEY", async () => {
+test("visual judge fails closed without a model provider", async () => {
   const previous = process.env.OPENROUTER_API_KEY;
   const previousProvider = process.env.RELAY_EVALUATION_PROVIDER;
   delete process.env.OPENROUTER_API_KEY;
@@ -21,7 +21,7 @@ test("visual judge fails closed without OPENROUTER_API_KEY", async () => {
   try {
     await assert.rejects(
       () => evaluateVisual({ criteria: ["Composer is empty"], image }),
-      /visual judge unavailable: OPENROUTER_API_KEY is not configured/u,
+      /visual judge unavailable: No model provider is configured/u,
     );
   } finally {
     if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
@@ -45,9 +45,11 @@ test("visual judge never silently passes an unknown provider", async () => {
 
 test("visual judge uses the Vercel AI SDK OpenRouter boundary", async () => {
   const previousKey = process.env.OPENROUTER_API_KEY;
+  const previousModelProvider = process.env.RELAY_MODEL_PROVIDER;
   const originalFetch = globalThis.fetch;
   let requestBody: unknown;
   process.env.OPENROUTER_API_KEY = "test-key";
+  process.env.RELAY_MODEL_PROVIDER = "openrouter";
   globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
     requestBody = JSON.parse(requestBodyText(init));
     return new Response(
@@ -89,5 +91,57 @@ test("visual judge uses the Vercel AI SDK OpenRouter boundary", async () => {
     globalThis.fetch = originalFetch;
     if (previousKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = previousKey;
+    if (previousModelProvider === undefined) delete process.env.RELAY_MODEL_PROVIDER;
+    else process.env.RELAY_MODEL_PROVIDER = previousModelProvider;
+  }
+});
+
+test("visual judge uses the active anthropic provider and its vision default", async () => {
+  const previousProvider = process.env.RELAY_MODEL_PROVIDER;
+  const previousAnthropic = process.env.ANTHROPIC_API_KEY;
+  let requestBody: Record<string, unknown> | undefined;
+  process.env.RELAY_MODEL_PROVIDER = "anthropic";
+  process.env.ANTHROPIC_API_KEY = "sk-ant-test-0123456789";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    requestBody = JSON.parse(requestBodyText(init)) as Record<string, unknown>;
+    return new Response(
+      JSON.stringify({
+        id: "msg_visual",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-5-5",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_visual",
+            name: "json",
+            input: {
+              status: "pass",
+              confidence: 0.95,
+              score: 1,
+              summary: "The composer is empty.",
+              criteria: [{ id: "criterion-1", passed: true, score: 1 }],
+            },
+          },
+        ],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+  try {
+    const result = await evaluateVisual({ criteria: ["Composer is empty"], image });
+    assert.equal(result.status, "pass");
+    assert.equal(result.provider, "anthropic");
+    assert.equal(result.model, "claude-sonnet-5-5");
+    assert.equal(requestBody?.model, "claude-sonnet-5-5");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousProvider === undefined) delete process.env.RELAY_MODEL_PROVIDER;
+    else process.env.RELAY_MODEL_PROVIDER = previousProvider;
+    if (previousAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousAnthropic;
   }
 });

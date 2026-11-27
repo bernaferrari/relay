@@ -139,7 +139,7 @@ test("qualified locale findings propose Reject without accepting a baseline", ()
   assert.doesNotMatch(proposal.reason, /accept a visual baseline/i);
 });
 
-test("OPENROUTER harness findings stay Incomplete, never a product pass", () => {
+test("model-provider harness findings stay Incomplete, never a product pass", () => {
   const jobs = ["home", "settings"];
   const markdown = renderPlanFindingsMarkdown({
     schemaVersion: 1,
@@ -159,7 +159,7 @@ test("OPENROUTER harness findings stay Incomplete, never a product pass", () => 
         screenLabel: id,
         locale: "logged-out",
         baselineLocale: "logged-out",
-        detail: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+        detail: "visual judge unavailable: No model provider is configured",
       })),
       critical: 2,
       warnings: 0,
@@ -171,7 +171,7 @@ test("OPENROUTER harness findings stay Incomplete, never a product pass", () => 
   assert.match(markdown, /Incomplete — 0 of 2 planned cases verified/u);
   assert.match(markdown, /Incomplete \/ harness — not a product pass/u);
   assert.match(markdown, /HARNESS_FAILURE/);
-  assert.match(markdown, /OPENROUTER_API_KEY/);
+  assert.match(markdown, /No model provider is configured/);
   assert.doesNotMatch(markdown, /100%/u);
   assert.doesNotMatch(markdown, /All selected cases passed/u);
 });

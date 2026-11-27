@@ -30,7 +30,7 @@ export const fixtureSettingsService: SettingsProductService = {
       status: "needs-attention",
       configured: false,
       detail:
-        "Add an OpenRouter key in Settings › Advanced so Relay can run plain-English steps and check screenshots. Until then, those steps say they couldn’t run instead of passing.",
+        "Add a model provider key in Settings › Advanced so Relay can run plain-English steps and check screenshots. Until then, those steps say they couldn’t run instead of passing.",
     },
   }),
   androidSetup: async () => ({

@@ -45,7 +45,7 @@ test("relay init detects Vite, prefers the running localhost server, and writes 
     assert.match(yaml, /- check: The home page renders without an error page/u);
     const text = formatInitResult(result);
     assert.match(text, /Initialized Relay for a Vite project/u);
-    assert.match(text, /export OPENROUTER_API_KEY=/u);
+    assert.match(text, /export ANTHROPIC_API_KEY=/u);
     assert.match(text, /relay ci \.relay\/tests/u);
     assert.match(text, /claude mcp add relay -- npx -y @relay\/mcp/u);
     assert.doesNotMatch(text, /Start the app/u, "a running server is not started again");

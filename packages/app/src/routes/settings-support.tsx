@@ -113,8 +113,8 @@ export function judgeProviderChecks(value: unknown): readonly SetupCheck[] {
   ) {
     return [
       {
-        id: "openrouter",
-        label: "OPENROUTER_API_KEY",
+        id: "model-provider",
+        label: "Model provider",
         status: judgeProvider.status,
         detail: judgeProvider.detail,
       },
@@ -126,7 +126,7 @@ export function judgeProviderChecks(value: unknown): readonly SetupCheck[] {
       label: "OPENROUTER_API_KEY",
       status: "needs-attention",
       detail:
-        "Add an OpenRouter key in Settings › Advanced so Relay can run plain-English steps and check screenshots. Until then, those steps say they couldn’t run instead of passing.",
+        "Add a model provider key in Settings › Advanced so Relay can run plain-English steps and check screenshots. Until then, those steps say they couldn’t run instead of passing.",
     },
   ];
 }

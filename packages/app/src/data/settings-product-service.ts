@@ -48,7 +48,10 @@ export type SettingsProductService = {
   ): Promise<EvidenceCollectionPolicy>;
   appleSetup(): Promise<unknown>;
   /** Save (or with "", remove) the model key. The key is never read back. */
-  setModelKey?(key: string): Promise<{ configured: boolean; source: string }>;
+  setModelKey?(
+    key: string,
+    options?: { provider?: string; baseURL?: string },
+  ): Promise<{ configured: boolean; source: string; provider?: string }>;
   androidSetup(): Promise<unknown>;
   /** Optional for existing settings fixture adapters; production exposes the read-only integration seam. */
   integrations?: IntegrationsProductService;
@@ -59,8 +62,21 @@ export function createSettingsProductService(platform: Platform): SettingsProduc
   const client = () =>
     (clientPromise ??= productClientForPlatform(platform)).then(({ client }) => client);
   return {
-    async setModelKey(key) {
-      return (await client()).invoke("system.model-key.set", { key });
+    async setModelKey(key, options) {
+      return (await client()).invoke("system.model-key.set", {
+        key,
+        ...(options?.provider
+          ? {
+              provider: options.provider as
+                | "anthropic"
+                | "openai"
+                | "google"
+                | "openrouter"
+                | "openai-compatible",
+            }
+          : {}),
+        ...(options?.baseURL ? { baseURL: options.baseURL } : {}),
+      });
     },
     async privacy() {
       return (await client()).invoke("workspace.privacy.get", {}).then((result) => result.policy);

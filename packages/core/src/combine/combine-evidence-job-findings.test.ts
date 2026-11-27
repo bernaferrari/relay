@@ -70,7 +70,7 @@ test("a passing evaluate-visual cell is not a finding and does not accept a base
   assert.deepEqual(findings, []);
 });
 
-test("visual judge unavailable without OPENROUTER is HARNESS_FAILURE", () => {
+test("visual judge unavailable without a model provider is HARNESS_FAILURE", () => {
   const findings = jobOutcomeFindings(
     [
       {
@@ -78,7 +78,7 @@ test("visual judge unavailable without OPENROUTER is HARNESS_FAILURE", () => {
         action: "cell-home-judged",
         status: "error",
         title: "Grok.com logged-out judged chrome · logged-out · Judge logged-out home chrome",
-        error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+        error: "visual judge unavailable: No model provider is configured",
         outcome: "harness-failure",
         failureCategory: "environment",
       },
@@ -86,7 +86,7 @@ test("visual judge unavailable without OPENROUTER is HARNESS_FAILURE", () => {
     () => "logged-out",
   );
   assert.equal(findings[0]?.code, "HARNESS_FAILURE");
-  assert.match(findings[0]?.detail ?? "", /OPENROUTER_API_KEY/);
+  assert.match(findings[0]?.detail ?? "", /No model provider is configured/);
 });
 
 test("visual assertion fail stays PRODUCT_ASSERTION, not a baseline accept", () => {
@@ -271,7 +271,7 @@ test("job Test id is copied onto the finding and never invented from the title",
         action: "cell-home",
         status: "error",
         title: "Grok.com daily · login",
-        error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+        error: "visual judge unavailable: No model provider is configured",
         outcome: "harness-failure",
         testId: "test-grok-web-open",
       },
@@ -285,7 +285,7 @@ test("job Test id is copied onto the finding and never invented from the title",
         action: "cell-home",
         status: "error",
         title: "Grok.com daily · login",
-        error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+        error: "visual judge unavailable: No model provider is configured",
         outcome: "harness-failure",
       },
     ],

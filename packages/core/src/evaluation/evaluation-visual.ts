@@ -1,7 +1,12 @@
 import type { SemanticEvaluationResult, VisualEvaluationRequest } from "@relay/protocol";
 import { z } from "zod";
 import { normalizeEvaluationResult } from "./evaluation.js";
-import { createOpenRouterClient, openRouterCostUsd } from "../openrouter/openrouter-ai-sdk.js";
+import { openRouterCostUsd } from "../openrouter/openrouter-ai-sdk.js";
+import {
+  createModelClient,
+  resolveActiveRelayModelProvider,
+  type RelayModelProvider,
+} from "../model/model-provider.js";
 
 function visualPrompt(input: VisualEvaluationRequest): string {
   return [
@@ -32,15 +37,24 @@ export function registerVisualEvaluationProvider(provider: {
   return () => visualProviders.delete(provider.id);
 }
 
-async function evaluateViaOpenRouter(
+const MODEL_PROVIDER_IDS = new Set([
+  "anthropic",
+  "openai",
+  "google",
+  "openrouter",
+  "openai-compatible",
+]);
+
+async function evaluateViaModel(
   input: VisualEvaluationRequest,
+  requestedProvider?: string,
 ): Promise<SemanticEvaluationResult> {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) throw new Error("visual judge unavailable: OPENROUTER_API_KEY is not configured");
-  const model = input.model ?? process.env.OPENROUTER_VISION_MODEL ?? "openai/gpt-4o-mini";
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (requestedProvider) env.RELAY_MODEL_PROVIDER = requestedProvider;
   try {
-    const { sdk, provider } = await createOpenRouterClient({
-      apiKey: key,
+    const { sdk, provider, providerId, model } = await createModelClient("vision", {
+      env,
+      ...(input.model ? { model: input.model } : {}),
       httpReferer: process.env.OPENROUTER_HTTP_REFERER,
       appTitle: process.env.OPENROUTER_APP_TITLE ?? "Relay",
     });
@@ -66,25 +80,31 @@ async function evaluateViaOpenRouter(
     const result = normalizeEvaluationResult(
       generated.object,
       input,
-      "openrouter",
+      providerId,
       generated.response.modelId || model,
     );
-    const costUsd = openRouterCostUsd(generated.providerMetadata);
+    const costUsd =
+      providerId === "openrouter" ? openRouterCostUsd(generated.providerMetadata) : undefined;
     return costUsd === undefined ? result : { ...result, costUsd };
   } catch (error) {
     const message = error instanceof Error ? error.message : "request failed";
-    throw new Error(`visual judge unavailable: OpenRouter ${message}`);
+    throw new Error(`visual judge unavailable: ${message}`);
   }
 }
 
 export async function evaluateVisual(
   input: VisualEvaluationRequest,
 ): Promise<SemanticEvaluationResult> {
-  const providerId = input.provider ?? process.env.RELAY_EVALUATION_PROVIDER ?? "openrouter";
+  const explicitProvider = input.provider ?? process.env.RELAY_EVALUATION_PROVIDER;
+  const active = resolveActiveRelayModelProvider();
+  const providerId = explicitProvider ?? active.provider ?? "openrouter";
   const registered = visualProviders.get(providerId);
   if (registered) return registered.evaluate(input);
-  if (providerId === "openrouter") {
-    return evaluateViaOpenRouter(input);
+  if (MODEL_PROVIDER_IDS.has(providerId)) {
+    return evaluateViaModel(
+      input,
+      explicitProvider ? (providerId as RelayModelProvider) : undefined,
+    );
   }
   throw new Error(`visual judge unavailable: provider is not configured (${providerId})`);
 }
