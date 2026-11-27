@@ -51,9 +51,11 @@ import { captureReviewQueueForRun } from "../capture/capture-review-queue.js";
 import { JobRegistry } from "../job/job-registry.js";
 import { releaseTargetControl, reserveTargetControl } from "../target/target-control.js";
 import {
+  acquireSessionUnsignedBrowserOverlap,
   classifySessionError,
   createJobLeaseValidator,
   failedCampaignChecks,
+  finalizeCancelledJob,
 } from "./session-job-support.js";
 import type { EnqueueJobInput, RetryEnqueueOptions, TestJob } from "./session-contract.js";
 
@@ -360,31 +362,6 @@ async function finishPreExecutionFailure(job: TestJob, error: string): Promise<v
   jobRegistry.pruneTerminalHistory();
 }
 
-function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
-  job.finishedAt = now();
-  job.status = "cancelled";
-  job.error = "Cancelled by user";
-  job.errorCode = "CANCELLED";
-  setOutcome(job);
-  if (primary) finishStep(primary, "error", "✗ cancelled");
-  publish({
-    type: "job.cancelled",
-    at: job.finishedAt,
-    jobId: job.id,
-    action: job.action,
-  });
-  publish({
-    type: "job.finished",
-    at: job.finishedAt,
-    jobId: job.id,
-    action: job.action,
-    ok: false,
-    error: job.error,
-    durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),
-    cancelled: true,
-  });
-}
-
 /** Cancel a queued or in-flight job. A currently armed compensating cleanup
  * gets one bounded chance to finish; every other run is hard-stopped. */
 export function cancelJob(id: string): TestJob {
@@ -415,7 +392,7 @@ export function cancelJob(id: string): TestJob {
     scheduler.remove(id);
     if (job.targetContext.kind === "device") releaseTargetControl(job.targetContext.serial, job.id);
     job.startedAt = job.startedAt ?? now();
-    finalizeCancelled(job);
+    finalizeCancelledJob(job);
     void persistRun(job)
       .then(() => {
         try {
@@ -596,7 +573,7 @@ async function executeJobOnTarget(
     } catch (error) {
       job.startedAt = now();
       if (isJobCancellation(error)) {
-        finalizeCancelled(job);
+        finalizeCancelledJob(job);
       } else {
         const message =
           error instanceof JobControlOwnershipError ||
@@ -663,6 +640,7 @@ async function executeJobOnTarget(
   const primary = () => currentRecipeStep ?? job.steps[job.steps.length - 1];
   let device: Device | undefined;
   let evidence: RunEvidenceHandle | undefined = initializeRunEvidence(job);
+  let releaseUnsignedOverlap: (() => void) | undefined;
   const releaseOccupiedTarget =
     job.targetContext.kind === "device"
       ? reserveTargetControl(job.targetContext.serial, job.id)
@@ -686,6 +664,8 @@ async function executeJobOnTarget(
           : `device missing: ${job.serial} is no longer connected`,
       );
     }
+
+    releaseUnsignedOverlap = await acquireSessionUnsignedBrowserOverlap(job, pushLog);
 
     device = await acquirePreparedSessionDevice(job, target, pushLog, {
       requirePhysicalIosSemantics: startupMode !== undefined,
@@ -789,7 +769,7 @@ async function executeJobOnTarget(
       for (const s of job.steps) {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error", "✗ cancelled");
       }
-      finalizeCancelled(job, primary());
+      finalizeCancelledJob(job, primary());
       // The terminal timestamp must exist before the buffered evidence
       // timeline closes, and cancellation must never query a hard-stopped
       // native session.
@@ -843,6 +823,10 @@ async function executeJobOnTarget(
           unsignedLaneId: job.unsignedLaneId,
         }).catch(() => undefined);
       }
+      // The overlap slot outlives the context close exactly once: releasing
+      // before the close would admit the next writer while this browser is
+      // still tearing down its mutations.
+      releaseUnsignedOverlap?.();
       releaseOccupiedTarget();
       activeJobIds.delete(id);
       clearControl(id);

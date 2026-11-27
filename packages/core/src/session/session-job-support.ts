@@ -1,4 +1,12 @@
 import { classifyJobError } from "../run/report.js";
+import { now, publish } from "../collaboration/events.js";
+import { finishStep } from "./session-trace-steps.js";
+import { setOutcome } from "./session-job-projection.js";
+import type { TraceStep } from "../trace/trace.js";
+import {
+  acquireUnsignedBrowserOverlap,
+  unsignedBrowserOverlapAdmissionForJob,
+} from "../browser/browser-unsigned-overlap.js";
 import { createDevice, type DevicePlatform } from "../device/device.js";
 import { JobControlOwnershipError } from "../execution/control.js";
 import { isDeviceLeaseSessionActive } from "../collaboration/collaboration.js";
@@ -75,4 +83,47 @@ export function failedCampaignChecks(job: TestJob): Array<{ title: string; error
       ? [{ title: data.title, error: typeof data.error === "string" ? data.error : "failed" }]
       : [];
   });
+}
+
+/** Terminal cancellation bookkeeping shared by every cancellation path. */
+export function finalizeCancelledJob(job: TestJob, primary?: TraceStep): void {
+  job.finishedAt = now();
+  job.status = "cancelled";
+  job.error = "Cancelled by user";
+  job.errorCode = "CANCELLED";
+  setOutcome(job);
+  if (primary) finishStep(primary, "error", "✗ cancelled");
+  publish({
+    type: "job.cancelled",
+    at: job.finishedAt,
+    jobId: job.id,
+    action: job.action,
+  });
+  publish({
+    type: "job.finished",
+    at: job.finishedAt,
+    jobId: job.id,
+    action: job.action,
+    ok: false,
+    error: job.error,
+    durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),
+    cancelled: true,
+  });
+}
+
+/** Unsigned browser runs share no Playwright state, but the application
+ * backend behind one managed target is still a shared surface. Independent
+ * runs are readers and fan out; fail-closed and unclassified work stays the
+ * exclusive writer it was when one shared lane serialized it. */
+export async function acquireSessionUnsignedBrowserOverlap(
+  job: TestJob,
+  pushLog: (line: string) => void,
+): Promise<(() => void) | undefined> {
+  const admission = unsignedBrowserOverlapAdmissionForJob(job);
+  if (!admission) return undefined;
+  const waitStartedAt = now();
+  const release = await acquireUnsignedBrowserOverlap({ ...admission, jobId: job.id });
+  const waitedMs = now() - waitStartedAt;
+  if (waitedMs >= 20) pushLog(`overlap: waited ${waitedMs} ms for unsigned browser admission`);
+  return release;
 }

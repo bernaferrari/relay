@@ -104,6 +104,7 @@ export * from "./browser/browser-mutation-admission.js";
 export * from "./browser/browser-context.js";
 export * from "./browser/browser-execution-identity.js";
 export * from "./browser/browser-account-lane.js";
+export * from "./browser/browser-unsigned-overlap.js";
 export * from "./browser/browser-account-health-summary.js";
 export * from "./browser/browser-authentication-fixtures.js";
 export * from "./browser/browser-auth-health.js";
@@ -243,7 +244,13 @@ export { requirePublicInputDataSet } from "./input/input-data-set.js";
 
 export * from "./app-map/app-map-combine-cell-inputs.js";
 
-export { loadSavedModelKey, saveModelKey, validModelKey } from "./model/model-key.js";
+export {
+  loadSavedModelKey,
+  readSavedModelKey,
+  saveModelKey,
+  validModelKey,
+  type SavedModelKey,
+} from "./model/model-key.js";
 export {
   buildRunVerdict,
   plainReason,

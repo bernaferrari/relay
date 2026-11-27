@@ -63,6 +63,11 @@ export type TestJob = {
   /** Unsigned Lane identity so two signed-out browser Lanes do not share a
    * scheduler slot or Playwright session. Fixture Lanes omit this. */
   unsignedLaneId?: string;
+  /** Effects-aware admission classification for an unsigned browser proof
+   * run. `independent` runs own a per-run scheduler lane and Playwright
+   * session so unrelated tests fan out; absence keeps the legacy shared
+   * unsigned lane and its exclusive overlap admission. */
+  browserIsolation?: "independent";
   /** Last remembered fixture health at enqueue. Capture-review fail-closes
    * when this is not ready instead of labeling pixels as the saved account. */
   authenticationHealth?: BrowserAuthenticationHealth;
@@ -164,6 +169,10 @@ export type EnqueueJobInput = {
   laneId?: string;
   /** Distinct unsigned Lane for signed-out overlap. Ignored when a fixture is set. */
   unsignedLaneId?: string;
+  /** Opt-in per-run isolation for one unsigned browser proof run, frozen by
+   * an effects-aware admission path. Ignored for fixture, explicit-Lane, and
+   * batched work, which keep their existing serialization. */
+  browserIsolation?: "independent";
   /** Remembered fixture health frozen with the job for capture-review labels. */
   authenticationHealth?: BrowserAuthenticationHealth;
   /** Frozen at enqueue time into the run manifest; never rewritten. */

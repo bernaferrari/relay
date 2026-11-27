@@ -419,15 +419,40 @@ export function createSessionJob(
   const selectedTargetProfile = suppliedTargetProfile
     ? freezeTargetProfile(suppliedTargetProfile)
     : undefined;
-  const unsignedLaneId = unsignedBrowserLaneId({
-    laneId: input.unsignedLaneId ?? parent?.unsignedLaneId ?? input.laneId ?? parent?.laneId,
+  // A per-run `unsigned-run:` identity is single-use: a retry is a new run
+  // and earns its own isolated lane rather than inheriting the parent's,
+  // keeping scheduler lane and proof-session key unique per execution.
+  const rawUnsignedLaneId = input.unsignedLaneId ?? parent?.unsignedLaneId;
+  const inheritedUnsignedLaneId = rawUnsignedLaneId?.startsWith("unsigned-run:")
+    ? undefined
+    : rawUnsignedLaneId;
+  const admittedUnsignedLaneId = unsignedBrowserLaneId({
+    laneId: inheritedUnsignedLaneId ?? input.laneId ?? parent?.laneId,
     authenticationFixtureId: browserCaseProfile?.authenticationFixtureId,
     targetKind,
   });
   const laneId = invokedBrowserLaneId({
     laneId: input.laneId ?? parent?.laneId,
-    unsignedLaneId: input.unsignedLaneId ?? parent?.unsignedLaneId ?? unsignedLaneId,
+    unsignedLaneId: inheritedUnsignedLaneId ?? admittedUnsignedLaneId,
   });
+  const browserIsolation = input.browserIsolation ?? parent?.browserIsolation;
+  // An effects-aware admission may mark one unsigned browser proof run as
+  // independent. It then owns a per-run unsigned lane identity, which is at
+  // once its scheduler lane and its Playwright session key — the two must
+  // never disagree, because two concurrent runs sharing one session key
+  // would drive one page. Fixture accounts, invoked Lanes, and batched
+  // Combine/scheduler cells keep their existing serialization: account state
+  // and batch ordering are real shared state a fresh context does not erase.
+  const isolatedUnsignedLaneId =
+    targetKind === "browser" &&
+    browserIsolation === "independent" &&
+    !browserCaseProfile?.authenticationFixtureId &&
+    !laneId &&
+    !admittedUnsignedLaneId &&
+    !(input.batchId ?? parent?.batchId)
+      ? `unsigned-run:${id}`
+      : undefined;
+  const unsignedLaneId = admittedUnsignedLaneId ?? isolatedUnsignedLaneId;
   const authenticationHealth = input.authenticationHealth ?? parent?.authenticationHealth;
   if (
     browserCaseProfile &&
@@ -486,6 +511,10 @@ export function createSessionJob(
     referenceReviewMode: input.referenceReviewMode ?? parent?.referenceReviewMode,
     ...(laneId ? { laneId } : {}),
     ...(unsignedLaneId ? { unsignedLaneId } : {}),
+    // Persisted only when the classification actually took effect: overlap
+    // admission reads this flag to place the run in the shared reader group
+    // instead of the exclusive unsigned writer lane.
+    ...(isolatedUnsignedLaneId ? { browserIsolation: "independent" as const } : {}),
     ...(authenticationHealth
       ? { authenticationHealth: structuredClone(authenticationHealth) }
       : {}),

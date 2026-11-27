@@ -1,7 +1,14 @@
 /**
- * `relay ci`: run every ready Test of an App, one after another, wait for each
- * verdict, print one table, and exit 0 (all passed), 1 (a Test failed), or 3
+ * `relay ci`: run every ready Test of an App, wait for each verdict, print
+ * one table in Test order, and exit 0 (all passed), 1 (a Test failed), or 3
  * (Relay could not run something). The same verdicts go to --output/--junit.
+ *
+ * Independent Tests start together instead of strictly one after another:
+ * the server already serializes what genuinely shares state (one physical
+ * device, one account fixture, one invoked Lane, restrictive declared
+ * effects), so queueing everything serially here only ever added wall-clock
+ * time to unsigned browser suites. Starts are bounded so a cancellation
+ * still leaves most of the suite unstarted rather than orphaned.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -41,6 +48,11 @@ export type CiOptions = {
   junit?: string;
   confirmRisk?: true;
 };
+
+/** How many Tests may be in flight at once. Mirroring the default browser
+ * host ceiling keeps a cancellation small: unpulled Tests never start, and
+ * the server already queues any overflow behind its own target lanes. */
+export const CI_START_CONCURRENCY = 8;
 
 export type CiReport = {
   schemaVersion: 1;
@@ -173,52 +185,65 @@ export async function runCiCommand(input: {
   if (!tests.length) {
     output.heartbeat(`No ready Tests in ${appName(app)}. Run 'relay tests ${app.id}' to see why.`);
   }
-  const verdicts: Verdict[] = [];
+  // Tests pipeline through a bounded pool in suite order. Verdicts are
+  // assembled by index afterwards, so parallel execution never reorders the
+  // report, and a cancellation still leaves unpulled Tests unstarted.
+  const settled: (Verdict | undefined)[] = tests.map(() => undefined);
   let interrupted = false;
-  for (const [index, test] of tests.entries()) {
-    output.heartbeat(`[${index + 1}/${tests.length}] ${test.name}`);
-    try {
-      const settled = await runTest({
-        appMapId: app.id,
-        testId: test.id,
-        ...(targetId ? { targetId } : {}),
-        ...(options.confirmRisk ? { confirmRisk: true } : {}),
-      });
-      const verdict = await readVerdict(input.client, settled, signal);
-      verdicts.push(
-        verdict && verdict.status !== "running"
-          ? {
-              ...verdict,
-              title: verdict.title || test.name,
-              review: {
-                pending: (settled.kind === "run-test" ? settled.review?.pending : undefined) ?? 0,
-              },
-            }
-          : verdictWithoutRun(test, settled),
-      );
-    } catch (error) {
-      const classified = classifyError(error);
-      if (classified.exitCode === ExitCode.cancellation || signal.aborted) {
-        interrupted = true;
-        verdicts.push({
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (!interrupted && !signal.aborted) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= tests.length) return;
+      const test = tests[index]!;
+      output.heartbeat(`[${index + 1}/${tests.length}] ${test.name}`);
+      try {
+        const result = await runTest({
+          appMapId: app.id,
+          testId: test.id,
+          ...(targetId ? { targetId } : {}),
+          ...(options.confirmRisk ? { confirmRisk: true } : {}),
+        });
+        const verdict = await readVerdict(input.client, result, signal);
+        settled[index] =
+          verdict && verdict.status !== "running"
+            ? {
+                ...verdict,
+                title: verdict.title || test.name,
+                review: {
+                  pending: (result.kind === "run-test" ? result.review?.pending : undefined) ?? 0,
+                },
+              }
+            : verdictWithoutRun(test, result);
+      } catch (error) {
+        const classified = classifyError(error);
+        if (classified.exitCode === ExitCode.cancellation || signal.aborted) {
+          interrupted = true;
+          settled[index] = {
+            runId: "",
+            title: test.name,
+            status: "cancelled",
+            summary: "Stopped",
+            steps: [],
+          };
+          return;
+        }
+        settled[index] = {
           runId: "",
           title: test.name,
-          status: "cancelled",
-          summary: "Stopped",
+          status: "blocked",
+          summary: "Relay could not run this Test",
+          reason: classified.message,
           steps: [],
-        });
-        break;
+        };
       }
-      verdicts.push({
-        runId: "",
-        title: test.name,
-        status: "blocked",
-        summary: "Relay could not run this Test",
-        reason: classified.message,
-        steps: [],
-      });
     }
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(CI_START_CONCURRENCY, tests.length) }, () => worker()),
+  );
+  const verdicts: Verdict[] = settled.flatMap((verdict) => (verdict ? [verdict] : []));
   const totals = ciTotals(verdicts, skipped.length);
   const report: CiReport = {
     schemaVersion: 1,

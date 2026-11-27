@@ -1,47 +1,31 @@
 import {
   AppMapCombineWorldError,
-  AppMapCompileError,
-  accountReloginFindingsReport,
   currentOperationContext,
   bindRegisteredWebDeploymentToProof,
   unsignedBrowserLaneId,
   invokedBrowserLaneId,
   rememberedBrowserAuthenticationHealth,
-  claimedBrowserJobStartBlocker,
-  CasePlanError,
   buildTargetProfiles,
-  compileAppMapConnection,
-  compileAppMapFlow,
+  collectTestEffects,
   findActiveCombineCampaignForCombine,
   frozenRawAccessibilityTargetProfiles,
   listDevices,
   listDeviceLeases,
   listTargets,
   loadFrozenRawAccessibilityEvidence,
-  prepareCaseStackPlan,
   preflightCompiledAppMapTestOffline,
   prepareRegisteredBuildForProof,
   readAppMap,
-  readProjectVariables,
-  referencedRuntimeInputs,
-  redactCasePlan,
-  resolveJobDevicePlatform,
   savedAppMapTargetProfileIdsForTarget,
   saveAppMapCombine,
-  sensitiveInputNames,
-  unsupportedBrowserCaseProfileFields,
   upsertAppMapCombineFromTest,
   type Recipe,
 } from "@relay/core";
-import type { OperationInput } from "@relay/protocol";
-import {
-  assertTargetControl,
-  assertTargetObservation,
-  targetLeaseBelongsToCaller,
-} from "../access-control.js";
+import { effectiveSharingPolicy } from "@relay/protocol";
+import { assertTargetObservation, targetLeaseBelongsToCaller } from "../access-control.js";
 import { executeCombineStart } from "../combine/combine-start-route.js";
 import { applyAppMapMutation } from "./app-map-route-mutations.js";
-import { HttpError, json, matchPath, parseJsonBody } from "../http.js";
+import { HttpError, json, matchPath } from "../http.js";
 import { parseLaneAwareTestRunBody } from "../lane-run-route.js";
 import { defaultJobRouteRuntime } from "../job-routes.js";
 import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
@@ -58,6 +42,7 @@ import { appMapProofExecutionAdmission } from "./app-map-proof-execution-admissi
 import { assertTestRunInputAvailability, prepareTestRunInputs } from "./app-map-test-run-inputs.js";
 import { queuedAppMapTestArtifacts } from "./app-map-test-run-artifacts.js";
 import { assertAppMapTestBrowserIdentity } from "./app-map-browser-identity-admission.js";
+import { handleAppMapFlowOrConnectionRun } from "./app-map-flow-run-routes.js";
 
 export {
   frozenTestRunTargetProfile,
@@ -604,6 +589,20 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     const authenticationHealth = fixtureReference
       ? await rememberedBrowserAuthenticationHealth(fixtureReference)
       : undefined;
+    // Effects-aware unsigned isolation. A browser proof run owns a fresh
+    // ephemeral context, so tests whose declared effects permit shared
+    // placement have no shared browser or account state left to serialize:
+    // they fan out across isolated per-run lanes under the browser host
+    // ceiling. Restrictive declarations (and every non-browser, Lane-bound,
+    // or fixture-signed run) keep the legacy shared unsigned lane.
+    const unsignedTestSharing = effectiveSharingPolicy(collectTestEffects(map, test));
+    const browserIsolation =
+      executionTarget.kind === "browser" &&
+      !body.laneId?.trim() &&
+      !fixtureReference &&
+      unsignedTestSharing === "safe-shared-read"
+        ? ("independent" as const)
+        : undefined;
     const job = runtime.enqueueJob({
       recipe: recipeSnapshot.id,
       title: recipeSnapshot.title,
@@ -618,6 +617,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       ...(targetProfile ? { targetProfile } : {}),
       ...(laneId ? { laneId } : {}),
       ...(unsignedLaneId ? { unsignedLaneId } : {}),
+      ...(browserIsolation ? { browserIsolation } : {}),
       ...(authenticationHealth ? { authenticationHealth } : {}),
       ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
       ...(proofEvidencePolicy ? { evidencePolicy: proofEvidencePolicy } : {}),
@@ -647,253 +647,5 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     });
     return true;
   }
-  const flowMatch = matchPath(input.pathname, "/app-maps/:appMapId/flows/:flowId/run");
-  const connectionMatch = matchPath(
-    input.pathname,
-    "/app-maps/:appMapId/connections/:connectionId/run",
-  );
-  if (!flowMatch && !connectionMatch) return false;
-  const appMapId = (flowMatch ?? connectionMatch)!.appMapId!;
-  const operationKind = flowMatch ? "flow" : "connection";
-
-  const body = (await parseJsonBody(input.request)) as Omit<
-    OperationInput<"app-map.flow.run"> | OperationInput<"app-map.connection.run">,
-    "appMapId" | "flowId" | "connectionId"
-  >;
-  const targetId = body.browserTargetId?.trim() || body.serial?.trim();
-  if (!targetId) throw new HttpError(400, "Choose a target before running this flow");
-  const targetKind = body.browserTargetId ? ("browser" as const) : (body.targetKind ?? "device");
-
-  // A stale physical serial should not produce a lease-recovery message. A
-  // valid existing lease remains authoritative for remote and test-double
-  // targets, so only preflight when this actor does not already hold one.
-  let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
-  const observedTargets = await listTargets();
-  const observedBrowserTarget = observedTargets.find(
-    (target) => target.id === targetId && target.kind === "browser",
-  );
-  if (targetKind === "browser" && !observedBrowserTarget) {
-    throw new HttpError(409, `Managed browser target ${targetId} is unavailable`, {
-      code: "TARGET_NOT_CONNECTED",
-      targetId,
-      recovery: "Restore or recreate the managed browser target before running this flow.",
-    });
-  }
-  if (targetKind === "browser" && observedBrowserTarget) {
-    const browserProfile = buildTargetProfiles({ devices: [], targets: [observedBrowserTarget] })[0]
-      ?.browserCaseProfile;
-    const unsupported = browserProfile ? unsupportedBrowserCaseProfileFields(browserProfile) : [];
-    if (unsupported.length) {
-      throw new HttpError(
-        409,
-        `Managed browser target ${targetId} requires unavailable host resolvers: ${unsupported.join(", ")}`,
-        {
-          code: "BROWSER_PROFILE_UNSUPPORTED",
-          targetId,
-          unsupported,
-          recovery:
-            "Remove unsupported fixture references or install their host resolvers before running this flow.",
-        },
-      );
-    }
-  }
-  if (targetKind === "device" && body.serial?.trim()) {
-    const operation = currentOperationContext();
-    const activeLease = operation
-      ? (await listDeviceLeases(input.scope.projectId)).some(
-          (lease) =>
-            lease.deviceSerial === targetId &&
-            targetLeaseBelongsToCaller(input.scope, lease, operation.actorId) &&
-            lease.status === "leased" &&
-            lease.expiresAt > Date.now(),
-        )
-      : false;
-    if (!activeLease) {
-      try {
-        observedDevices = await listDevices();
-      } catch (error) {
-        throw new HttpError(503, "Relay cannot verify the selected device", {
-          code: "TARGET_DISCOVERY_UNAVAILABLE",
-          targetId,
-          detail: error instanceof Error ? error.message : String(error),
-          recovery:
-            "Reconnect the device or restart Relay, then refresh the target list before retrying.",
-          recoveryAction: { operationId: "target.devices.list", cli: { argv: ["device", "list"] } },
-        });
-      }
-      const availability = explicitTargetAvailability(targetId, observedDevices);
-      if (availability === "missing") {
-        throw new HttpError(409, `Target ${targetId} is not connected`, {
-          code: "TARGET_NOT_CONNECTED",
-          targetId,
-          recovery: "Connect the device, unlock it, and refresh the target list before retrying.",
-          recoveryAction: { operationId: "target.devices.list", cli: { argv: ["device", "list"] } },
-        });
-      }
-      if (availability === "not-ready") {
-        throw new HttpError(409, `Target ${targetId} is not ready for control`, {
-          code: "TARGET_NOT_READY",
-          targetId,
-          recovery: "Unlock or authorize the device, then refresh the target list before retrying.",
-          recoveryAction: { operationId: "target.devices.list", cli: { argv: ["device", "list"] } },
-        });
-      }
-    }
-  }
-  await assertTargetControl(input.scope, targetId);
-
-  const map = await readAppMap(input.scope.projectId, appMapId);
-  if (!map) throw new HttpError(404, `App Map ${appMapId} not found`);
-
-  let plan;
-  try {
-    const throughConnectionId = flowMatch
-      ? (body as OperationInput<"app-map.flow.run">).throughConnectionId?.trim()
-      : undefined;
-    plan = flowMatch
-      ? compileAppMapFlow(
-          map,
-          flowMatch.flowId!,
-          throughConnectionId ? { throughConnectionId } : {},
-        )
-      : compileAppMapConnection(map, connectionMatch!.connectionId!);
-  } catch (error) {
-    if (error instanceof AppMapCompileError) {
-      throw new HttpError(
-        error.code === "missing-flow" || error.code === "missing-connection" ? 404 : 409,
-        error.message,
-        {
-          code: error.code,
-          recovery:
-            error.code === "draft-connection"
-              ? "Finish or remove the draft connection, then run the flow again."
-              : "Capture and approve the destination screen, then run the flow again.",
-        },
-      );
-    }
-    throw error;
-  }
-
-  const recipeGraph: Record<string, Recipe> = Object.fromEntries(
-    Object.values(plan.recipes).map((compiled) => [
-      compiled.id,
-      {
-        id: compiled.id,
-        title: compiled.title,
-        ...(compiled.description ? { description: compiled.description } : {}),
-        ...(compiled.parameters.length ? { parameters: compiled.parameters } : {}),
-        source: "custom" as const,
-        steps: compiled.steps,
-        createdAt: map.createdAt,
-        updatedAt: map.updatedAt,
-      },
-    ]),
-  );
-  const recipeSnapshot = recipeGraph[plan.rootRecipeId]!;
-  const operation = currentOperationContext();
-  if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
-  const definitions = await readProjectVariables(input.scope.projectId);
-  let matrix;
-  try {
-    matrix = plan.caseStacks.length
-      ? await prepareCaseStackPlan({
-          variables: definitions.value,
-          caseStacks: plan.caseStacks,
-          runtimeValues: body.variables,
-        })
-      : undefined;
-  } catch (error) {
-    if (error instanceof CasePlanError) {
-      throw new HttpError(409, error.message, {
-        code: error.code,
-        recovery:
-          error.code === "missing-private-value"
-            ? "Set your private value locally or pass it in this run request."
-            : error.code === "generation-failed"
-              ? "Check the generation provider or add a fallback value to this variable."
-              : "Open the Case Stack and adjust its variables or coverage strategy.",
-      });
-    }
-    throw error;
-  }
-  const constantVariables = referencedRuntimeInputs(recipeGraph, definitions.value, body.variables);
-  const cases = matrix?.cases ?? [
-    { id: "default", name: "Default", index: 0, values: {}, provenance: [] },
-  ];
-  const safeMatrix = matrix ? redactCasePlan(matrix, definitions.value) : undefined;
-  const targetProfile = buildTargetProfiles({
-    devices: observedDevices ?? (await listDevices().catch(() => [])),
-    targets: observedTargets,
-  }).find(
-    (profile) =>
-      profile.targetId === targetId &&
-      profile.source === targetKind &&
-      (targetKind === "browser" ||
-        profile.platform === body.platform ||
-        body.platform === undefined),
-  );
-  const platform =
-    targetKind === "browser"
-      ? undefined
-      : (body.platform ?? (await resolveJobDevicePlatform(body.serial)));
-  const flowAccount = await claimedBrowserJobStartBlocker({
-    projectId: input.scope.projectId,
-    targetId,
-    browserCaseProfile: targetProfile?.browserCaseProfile,
-    targetProfile,
-  });
-  if (flowAccount.blocker) {
-    throw new HttpError(409, flowAccount.blocker, {
-      code: "ACCOUNT_NEEDS_RELOGIN",
-      recovery: "Open Sign-ins, complete OAuth, then Refresh.",
-      findings: accountReloginFindingsReport({ detail: flowAccount.blocker }),
-    });
-  }
-  const jobs = cases.map((item) => {
-    const variables = { ...constantVariables, ...item.values };
-    return runtime.enqueueJob({
-      recipe: recipeSnapshot.id,
-      title: cases.length > 1 ? `${recipeSnapshot.title} · ${item.name}` : recipeSnapshot.title,
-      recipeSnapshot,
-      recipeGraph,
-      serial: body.serial,
-      platform,
-      targetKind,
-      browserTargetId: body.browserTargetId,
-      ...(targetProfile ? { targetProfile } : {}),
-      ...(flowAccount.authenticationHealth
-        ? { authenticationHealth: flowAccount.authenticationHealth }
-        : {}),
-      variables,
-      sensitiveInputNames: sensitiveInputNames(definitions.value, variables),
-      ...(matrix
-        ? { batchId: matrix.id, caseIndex: item.index, caseCount: matrix.cases.length }
-        : {}),
-      artifacts: [
-        {
-          kind: operationKind === "flow" ? "app-map-flow-plan" : "app-map-connection-plan",
-          capturedAt: Date.now(),
-          data: plan,
-        },
-        ...(safeMatrix
-          ? [
-              {
-                kind: "frozen-inputs",
-                capturedAt: safeMatrix.createdAt,
-                data: safeMatrix.cases[item.index],
-              },
-            ]
-          : []),
-      ],
-      projectId: input.scope.projectId,
-      ownerId: operation.actorId,
-    });
-  });
-  json(input.response, 202, {
-    job: jobs[0]!,
-    jobs,
-    plan,
-    ...(safeMatrix ? { matrix: safeMatrix } : {}),
-  });
-  return true;
+  return handleAppMapFlowOrConnectionRun(input, runtime);
 }
