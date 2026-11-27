@@ -335,7 +335,7 @@ test("a cache-miss re-resolution keeps the replayed prefix and its resolution ev
     (item) =>
       item.kind === "act-decision" && (item.data as { action?: string }).action === "cache-miss",
   );
-  assert.equal((miss?.data as { recipeStepId?: string }).recipeStepId, "act-1");
+  assert.equal((miss?.data as { recipeStepId?: string } | undefined)?.recipeStepId, "act-1");
   const result = artifacts.find((item) => item.kind === "act-result")?.data as {
     source: string;
     steps: RecipeStep[];
