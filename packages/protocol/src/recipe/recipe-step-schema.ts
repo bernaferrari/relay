@@ -377,6 +377,9 @@ const recipeStepSchemaUnion = z.union([
   actuationStepSchemas.hoverStepSchema,
   actuationStepSchemas.selectStepSchema,
   actuationStepSchemas.pressKeyStepSchema,
+  actuationStepSchemas.dragStepSchema,
+  actuationStepSchemas.uploadFileStepSchema,
+  actuationStepSchemas.switchTabStepSchema,
   z
     .object({
       ...recipeStepMetadataShape,

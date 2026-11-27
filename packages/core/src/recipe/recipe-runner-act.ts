@@ -7,7 +7,7 @@
  */
 import type { RecipeStep } from "@relay/protocol";
 import { snapshot, type Device } from "../device/device.js";
-import { captureScreenshot, cleanupScreenshot } from "../workspace/workspace-capture.js";
+import { captureScreenshotInMemory } from "../workspace/workspace-capture-memory.js";
 import { createModelClient } from "../model/model-provider.js";
 import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
@@ -187,9 +187,10 @@ async function observe(
   let screenshot: { mimeType: string; data: string } | undefined;
   if (options.includeScreenshot !== false) {
     try {
-      const shot = await captureScreenshot({ device, ephemeral: true, includeScreenMatch: false });
+      // Model input only: the frame is obsolete the moment the next decision
+      // lands, so it is captured straight into memory and never touches disk.
+      const shot = await captureScreenshotInMemory({ device });
       screenshot = { mimeType: "image/png", data: shot.base64 };
-      await cleanupScreenshot(shot.path);
     } catch {
       screenshot = undefined;
     }
@@ -230,9 +231,12 @@ function decisionNeedsUnavailableGeometry(
 ): boolean {
   if (geometry) return false;
   const atomicPoint = (item: ActAtomicDecision) =>
-    (item.action === "tap" || item.action === "hover") &&
-    item.point !== undefined &&
-    !item.candidateId;
+    ((item.action === "tap" || item.action === "hover") &&
+      item.point !== undefined &&
+      !item.candidateId) ||
+    (item.action === "drag" &&
+      ((item.point !== undefined && !item.candidateId) ||
+        (item.targetPoint !== undefined && !item.targetCandidateId)));
   if (decision.action === "batch") return decision.actions.some(atomicPoint);
   if (decision.action === "done" || decision.action === "impossible") return false;
   return atomicPoint(decision);
@@ -398,8 +402,9 @@ async function runActStepLoop(
         batchFailure = error;
       }
       const ranSteps = executed.length - executedBefore;
-      history.push(summary);
-      if (batchFailure !== undefined) {
+      if (batchFailure === undefined) {
+        history.push(summary);
+      } else {
         record({
           action: "batch-failed",
           summary,
@@ -407,7 +412,27 @@ async function runActStepLoop(
           executedSteps: ranSteps,
           totalSteps: steps.length,
         });
-        throw batchFailure;
+        // Never re-plan around a cancel, or an input whose outcome is unknown:
+        // the device state is not honest enough for the model to revise a plan.
+        if (isCancel(batchFailure)) throw batchFailure;
+        rethrowIosMutationOutcomeUnknown(batchFailure);
+        rethrowInputOutcomeUnknown(batchFailure);
+        // Any other failure ends the batch honestly but not the step. The
+        // model re-observes the real screen — validation modals, conditional
+        // fields, everything the batch assumed away — and revises its plan
+        // with exactly what ran and why the rest did not. Recovery consumes
+        // ordinary roundtrip budget: the loop bound caps it like any action,
+        // so a persistently failing batch can never loop forever.
+        const ran = executed
+          .slice(executedBefore)
+          .map((concrete) => describeRecipeStep(concrete))
+          .join(" → ");
+        const feedback = secretText(
+          `${ran || "Nothing"} — batch aborted after ${ranSteps} of ${steps.length} action(s): ${unknownErrorText(batchFailure)}; the remaining actions did not run`,
+        );
+        history.push(feedback);
+        ctx.log(`act: batch aborted after ${ranSteps}/${steps.length} — re-observing to re-plan`);
+        continue;
       }
     } else {
       for (const concrete of steps) await runAndKeep(concrete);

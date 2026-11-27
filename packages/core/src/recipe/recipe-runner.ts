@@ -120,7 +120,7 @@ import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js"
 import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
 import { runPauseStep } from "./recipe-runner-pause.js";
 import { runActStep } from "./recipe-runner-act.js";
-import { runBrowserActuationStep } from "../browser/browser-actuation.js";
+import { runRecipeActuationStep } from "./recipe-runner-actuation.js";
 import { runInboxStep } from "./recipe-runner-inbox.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
@@ -184,7 +184,10 @@ async function runRequiredRecipeStep(
     case "hover":
     case "select":
     case "press-key":
-      await runBrowserActuationStep(device, step, () => invalidateVerifiedScreen(ctx));
+    case "drag":
+    case "upload-file":
+    case "switch-tab":
+      await runRecipeActuationStep(device, step, ctx);
       break;
     case "sleep":
       invalidateVerifiedScreen(ctx);

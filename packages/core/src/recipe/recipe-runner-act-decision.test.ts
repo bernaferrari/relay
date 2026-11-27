@@ -139,7 +139,125 @@ test("new verbs translate into ordinary recipe steps", () => {
   assert.deepEqual(horizontal.steps, [{ kind: "scroll", direction: "right" }]);
 });
 
-test("batch steps concatenate in order with joined summary", () => {
+test("drag decisions normalize with both ends and translate honestly", () => {
+  // Both ends are required; half a drag is not a draggable instruction.
+  assert.equal(
+    normalizeActDecision({ action: "drag", candidateId: "c1", reason: "no destination" }).action,
+    "impossible",
+  );
+  assert.equal(
+    normalizeActDecision({ action: "drag", targetCandidateId: "c2", reason: "no source" }).action,
+    "impossible",
+  );
+  const candidates = actCandidates([
+    { identifier: "card-1", label: "Card one", rect: { x: 0, y: 0, width: 50, height: 20 } },
+    { identifier: "column-done", label: "Done", rect: { x: 100, y: 0, width: 80, height: 200 } },
+  ]);
+  const concrete = concreteStepsForDecision(
+    normalizeActDecision({
+      action: "drag",
+      candidateId: "c1",
+      targetCandidateId: "c2",
+      reason: "move the card",
+    }),
+    candidates,
+  );
+  assert.equal(concrete.steps.length, 1);
+  const step = concrete.steps[0]!;
+  assert.equal(step.kind, "drag");
+  if (step.kind !== "drag") return;
+  assert.deepEqual(step.from, { identifier: "card-1", label: "Card one" });
+  assert.deepEqual(step.to, { identifier: "column-done", label: "Done" });
+  assert.equal(concrete.coordinateVisual, false);
+  assert.match(concrete.summary, /Drag Card one to Done/u);
+});
+
+test("a point drag translates both ends through the screenshot geometry", () => {
+  const concrete = concreteStepsForDecision(
+    normalizeActDecision({
+      action: "drag",
+      point: { x: 200, y: 100 },
+      targetPoint: { x: 600, y: 400 },
+      reason: "canvas drag",
+    }),
+    [],
+    geometry,
+  );
+  const step = concrete.steps[0]!;
+  assert.equal(step.kind, "drag");
+  if (step.kind !== "drag") return;
+  // scale 2: screenshot pixels halve into logical coordinates.
+  assert.deepEqual(step.from.point, {
+    x: 100,
+    y: 50,
+    referenceBounds: { width: 800, height: 600 },
+  });
+  assert.deepEqual(step.to.point, {
+    x: 300,
+    y: 200,
+    referenceBounds: { width: 800, height: 600 },
+  });
+  assert.equal(concrete.coordinateVisual, true);
+});
+
+test("upload-file requires its file and keeps the input target", () => {
+  assert.equal(
+    normalizeActDecision({ action: "upload-file", candidateId: "c1", reason: "no file" }).action,
+    "impossible",
+  );
+  const candidates = actCandidates([
+    { identifier: "avatar", label: "Avatar", rect: { x: 0, y: 0, width: 50, height: 20 } },
+  ]);
+  const concrete = concreteStepsForDecision(
+    normalizeActDecision({
+      action: "upload-file",
+      file: "fixtures/avatar.png",
+      candidateId: "c1",
+      reason: "attach the avatar",
+    }),
+    candidates,
+  );
+  assert.deepEqual(concrete.steps, [
+    {
+      kind: "upload-file",
+      file: "fixtures/avatar.png",
+      target: { identifier: "avatar", label: "Avatar" },
+    },
+  ]);
+  const targetless = concreteStepsForDecision(
+    normalizeActDecision({ action: "upload-file", file: "fixtures/a.png", reason: "attach" }),
+    candidates,
+  );
+  assert.deepEqual(targetless.steps, [{ kind: "upload-file", file: "fixtures/a.png" }]);
+});
+
+test("switch-tab carries exactly one honest selector", () => {
+  assert.equal(
+    normalizeActDecision({ action: "switch-tab", reason: "nothing chosen" }).action,
+    "impossible",
+  );
+  assert.equal(
+    normalizeActDecision({ action: "switch-tab", index: 0, url: "x", reason: "both" }).action,
+    "impossible",
+  );
+  assert.equal(
+    normalizeActDecision({ action: "switch-tab", index: 1.5, reason: "fractional" }).action,
+    "impossible",
+  );
+  const byIndex = concreteStepsForDecision(
+    normalizeActDecision({ action: "switch-tab", index: 1, reason: "second tab" }),
+    [],
+  );
+  assert.deepEqual(byIndex.steps, [{ kind: "switch-tab", index: 1 }]);
+  assert.match(byIndex.summary, /tab 2/u);
+  const byUrl = concreteStepsForDecision(
+    normalizeActDecision({ action: "switch-tab", url: "checkout", reason: "the checkout tab" }),
+    [],
+  );
+  assert.deepEqual(byUrl.steps, [{ kind: "switch-tab", url: "checkout" }]);
+});
+
+test("batch decisions concatenate in order with joined summary", () => {
   const candidates = actCandidates([
     { identifier: "first", type: "TextField", rect: { x: 0, y: 0, width: 50, height: 20 } },
     { identifier: "last", type: "TextField", rect: { x: 0, y: 30, width: 50, height: 20 } },

@@ -284,6 +284,9 @@ function leafBounds(step: RecipeStep): Bounds {
     case "hover":
     case "select":
     case "press-key":
+    case "drag":
+    case "upload-file":
+    case "switch-tab":
     case "clipboard":
     case "app":
     case "device":
@@ -476,6 +479,7 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
       return;
     case "offline":
     case "upload":
+    case "upload-file":
       accumulator.addRisk({
         level: "guarded",
         code: EXECUTION_RISK_CODES.deviceState,
@@ -611,6 +615,8 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
     case "hover":
     case "select":
     case "press-key":
+    case "drag":
+    case "switch-tab":
     case "sleep":
     case "wait-for":
     case "wait-response":

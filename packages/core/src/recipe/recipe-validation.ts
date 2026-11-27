@@ -28,6 +28,7 @@ export { validateRecipeParameters } from "./recipe-validation-support.js";
 import type { HumanCheckpointReason, RecipeStep, StepTarget } from "@relay/protocol";
 import { sequenceAfterIsPlaceholder } from "@relay/protocol";
 import { parseTourStops } from "./recipe-validation-campaign.js";
+import { parseActuationRecipeStep } from "./recipe-validation-actuation.js";
 import { parseDeviceRecipeStep } from "./recipe-validation-device-steps.js";
 import { parseJudgeRecipeStep } from "./recipe-validation-judges.js";
 import { parseScreenshotReview } from "./recipe-validation-screenshot-review.js";
@@ -53,6 +54,11 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
     const judgeStep = parseJudgeRecipeStep(raw, kind, index, note);
     if (judgeStep) {
       out.push(judgeStep);
+      return;
+    }
+    const actuationStep = parseActuationRecipeStep(raw, kind, index, note);
+    if (actuationStep) {
+      out.push(actuationStep);
       return;
     }
     switch (kind) {
@@ -95,69 +101,6 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       }
       case "scroll": {
         out.push(parseScrollStep(raw, index, note));
-        break;
-      }
-      case "hover": {
-        const target = parseTarget(raw.target, index, "target");
-        if (!targetHasStrategy(target)) {
-          throw stepErr(index, "hover requires target with at least one of identifier/label/point");
-        }
-        out.push({ kind: "hover", target, ...(note ? { note } : {}) });
-        break;
-      }
-      case "select": {
-        const target = parseTarget(raw.target, index, "target");
-        if (!target.identifier && !target.label) {
-          throw stepErr(index, "select requires a semantic identifier or label target");
-        }
-        if (!isString(raw.option) || !raw.option.trim()) {
-          throw stepErr(index, "select requires option: string");
-        }
-        out.push({ kind: "select", target, option: raw.option, ...(note ? { note } : {}) });
-        break;
-      }
-      case "press-key": {
-        const keys = [
-          "escape",
-          "tab",
-          "enter",
-          "backspace",
-          "delete",
-          "arrowup",
-          "arrowdown",
-          "arrowleft",
-          "arrowright",
-          "home",
-          "end",
-          "pageup",
-          "pagedown",
-          "a",
-          "c",
-          "k",
-          "v",
-          "x",
-          "z",
-        ] as const;
-        if (!isString(raw.key) || !(keys as readonly string[]).includes(raw.key)) {
-          throw stepErr(index, `press-key requires key: one of ${keys.join(", ")}`);
-        }
-        const modifierNames = ["control", "meta", "shift", "alt", "controlOrMeta"] as const;
-        let modifiers: Extract<RecipeStep, { kind: "press-key" }>["modifiers"];
-        if (raw.modifiers !== undefined) {
-          if (
-            !Array.isArray(raw.modifiers) ||
-            raw.modifiers.some((m) => !(modifierNames as readonly string[]).includes(m as string))
-          ) {
-            throw stepErr(index, `press-key modifiers must be some of ${modifierNames.join(", ")}`);
-          }
-          modifiers = raw.modifiers as Extract<RecipeStep, { kind: "press-key" }>["modifiers"];
-        }
-        out.push({
-          kind: "press-key",
-          key: raw.key as (typeof keys)[number],
-          ...(modifiers?.length ? { modifiers } : {}),
-          ...(note ? { note } : {}),
-        });
         break;
       }
       case "reveal": {

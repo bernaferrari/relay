@@ -8,6 +8,14 @@ import type {
 } from "./scroll-surface.js";
 import type { ReviewedDocumentOriginExecutionReference } from "./reviewed/reviewed-document-origin.js";
 import type { ReviewedExternalEffects } from "./approval-policy.js";
+import type {
+  DragStep,
+  HoverStep,
+  PressKeyStep,
+  SelectStep,
+  SwitchTabStep,
+  UploadFileStep,
+} from "./recipe/recipe-actuation-steps.js";
 export type HorizontalCoordinateAnchor = "left" | "center" | "right";
 export type VerticalCoordinateAnchor = "top" | "center" | "bottom";
 
@@ -412,27 +420,12 @@ export type RecipeStep = RecipeStepMetadata &
         durationMs?: number;
       }
     | { kind: "key"; key: "back" | "home" | "recents" }
-    | {
-        /** Hover the pointer over a semantic target without clicking. Browser
-         * targets only: reveals hover-only menus, tooltips, and affordances. */
-        kind: "hover";
-        target: StepTarget;
-      }
-    | {
-        /** Choose a visible option of a native HTML select. Browser targets
-         * only; custom listbox widgets are ordinary taps instead. */
-        kind: "select";
-        target: StepTarget;
-        option: string;
-      }
-    | {
-        /** One bounded keyboard key or shortcut chord. Browser targets only.
-         * Letter keys are shortcut chords and require a control-ish modifier;
-         * literal text entry belongs to `type` steps. */
-        kind: "press-key";
-        key: PressKeyName;
-        modifiers?: PressKeyModifier[];
-      }
+    | HoverStep
+    | SelectStep
+    | PressKeyStep
+    | DragStep
+    | UploadFileStep
+    | SwitchTabStep
     | { kind: "sleep"; ms: number }
     | {
         kind: "wait-for";

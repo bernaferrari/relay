@@ -59,6 +59,16 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Select ${JSON.stringify(step.option)} in ${describeTarget(step.target)}`;
     case "press-key":
       return `Press ${[...(step.modifiers ?? []), step.key].join("+")}`;
+    case "drag":
+      return `Drag ${describeTarget(step.from)} to ${describeTarget(step.to)}`;
+    case "upload-file":
+      return step.target
+        ? `Attach ${step.file} to ${describeTarget(step.target)}`
+        : `Attach ${step.file}`;
+    case "switch-tab":
+      return step.index !== undefined
+        ? `Switch to browser tab ${step.index + 1}`
+        : `Switch to browser tab matching ${JSON.stringify(step.url)}`;
     case "sleep":
       return `Sleep ${step.ms}ms`;
     case "wait-for":
@@ -197,6 +207,16 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["swipe"];
     case "swipe":
       return ["swipe"];
+    case "drag":
+      return ["swipe"];
+    case "hover":
+    case "select":
+    case "switch-tab":
+      return ["tap"];
+    case "press-key":
+      return ["type"];
+    case "upload-file":
+      return ["store"];
     case "key":
       return ["tap"];
     case "sleep":

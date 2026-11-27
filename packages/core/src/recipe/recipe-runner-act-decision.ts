@@ -125,7 +125,19 @@ const pressKeyNames = [
 const pressKeyModifierNames = ["control", "meta", "shift", "alt", "controlOrMeta"] as const;
 
 const atomicActionSchema = z.object({
-  action: z.enum(["tap", "type", "scroll", "back", "wait", "hover", "select", "press-key"]),
+  action: z.enum([
+    "tap",
+    "type",
+    "scroll",
+    "back",
+    "wait",
+    "hover",
+    "select",
+    "press-key",
+    "drag",
+    "upload-file",
+    "switch-tab",
+  ]),
   candidateId: z.string().optional(),
   /** Screenshot-pixel coordinate for a visual tap/hover when no candidate
    * fits. Fallback only — semantic candidates always win. */
@@ -137,6 +149,16 @@ const atomicActionSchema = z.object({
   key: z.enum(pressKeyNames).optional(),
   modifiers: z.array(z.enum(pressKeyModifierNames)).max(3).optional(),
   ms: z.number().optional(),
+  /** Drag destination: the candidate to drop onto. */
+  targetCandidateId: z.string().optional(),
+  /** Drag destination in screenshot pixels when no candidate describes it. */
+  targetPoint: z.object({ x: z.number(), y: z.number() }).optional(),
+  /** Workspace-relative file reference for upload-file. */
+  file: z.string().optional(),
+  /** Zero-based open-page index for switch-tab. */
+  index: z.number().optional(),
+  /** URL substring matching exactly one open page for switch-tab. */
+  url: z.string().optional(),
 });
 
 export const actDecisionSchema = atomicActionSchema.extend({
@@ -151,6 +173,9 @@ export const actDecisionSchema = atomicActionSchema.extend({
     "hover",
     "select",
     "press-key",
+    "drag",
+    "upload-file",
+    "switch-tab",
   ]),
   /** Ordered batch of actions executed within one round trip. Use only when
    * intermediate actions do not change the screen's meaning — typing across
@@ -168,7 +193,16 @@ export type ActAtomicDecision =
   | { action: "back" }
   | { action: "wait"; ms?: number }
   | { action: "select"; candidateId: string; option: string }
-  | { action: "press-key"; key: PressKeyName; modifiers?: PressKeyModifier[] };
+  | { action: "press-key"; key: PressKeyName; modifiers?: PressKeyModifier[] }
+  | {
+      action: "drag";
+      candidateId?: string;
+      point?: { x: number; y: number };
+      targetCandidateId?: string;
+      targetPoint?: { x: number; y: number };
+    }
+  | { action: "upload-file"; file: string; candidateId?: string }
+  | { action: "switch-tab"; index?: number; url?: string };
 
 export type ActDecision =
   | { action: "done"; reason: string }
@@ -230,6 +264,36 @@ export function normalizeAtomicDecision(
         key: raw.key,
         ...(raw.modifiers?.length ? { modifiers: raw.modifiers } : {}),
       };
+    case "drag": {
+      const hasSource = Boolean(raw.candidateId || raw.point);
+      const hasDestination = Boolean(raw.targetCandidateId || raw.targetPoint);
+      if (!hasSource || !hasDestination) return undefined;
+      return {
+        action: "drag",
+        ...(raw.candidateId ? { candidateId: raw.candidateId } : {}),
+        ...(raw.point ? { point: raw.point } : {}),
+        ...(raw.targetCandidateId ? { targetCandidateId: raw.targetCandidateId } : {}),
+        ...(raw.targetPoint ? { targetPoint: raw.targetPoint } : {}),
+      };
+    }
+    case "upload-file":
+      if (!raw.file?.trim()) return undefined;
+      return {
+        action: "upload-file",
+        file: raw.file.trim(),
+        ...(raw.candidateId ? { candidateId: raw.candidateId } : {}),
+      };
+    case "switch-tab": {
+      const index = raw.index;
+      const url = raw.url?.trim();
+      if ((index === undefined) === !url) return undefined;
+      if (index !== undefined && (!Number.isInteger(index) || index < 0)) return undefined;
+      return {
+        action: "switch-tab",
+        ...(index !== undefined ? { index } : {}),
+        ...(url ? { url } : {}),
+      };
+    }
     default:
       return undefined;
   }
@@ -299,9 +363,13 @@ export function actPrompt(input: {
     '- "hover" with candidateId to reveal hover-only menus or tooltips.',
     '- "select" with candidateId and option for a native dropdown.',
     '- "press-key" with key (and modifiers) for keyboard shortcuts like Escape, Tab, or controlOrMeta+k.',
+    '- "drag" with candidateId (what to drag) and targetCandidateId (where to drop it) for reordering, drag-and-drop, or a slider.',
+    '- "upload-file" with file (a workspace-relative path) and candidateId of the file input when the step attaches a file.',
+    '- "switch-tab" with index (zero-based) or url (matching exactly one open page) when the step continues in another browser tab.',
     ...(input.coordinateActuation
       ? [
           '- "tap" or "hover" with point {x, y} in screenshot pixels ONLY when no candidate describes the control you need (an unlabeled icon, a canvas region). This is a last resort.',
+          '- "drag" may use point and targetPoint in screenshot pixels instead of candidates under the same last-resort rule.',
         ]
       : []),
     `To batch: reply with "actions" (at most ${MAX_BATCH_ACTIONS}) instead of a single action. Batch only when intermediate actions cannot change what the screen means — typing across form fields is the canonical case. A batch item that fails cancels the rest.`,
@@ -407,6 +475,65 @@ export function concreteStepsForAtomic(
           },
         ],
         summary: `Press ${[...(decision.modifiers ?? []), decision.key].join("+")}`,
+        coordinateVisual: false,
+      };
+    case "drag": {
+      const source = find(decision.candidateId);
+      const destination = find(decision.targetCandidateId);
+      if (!source && !decision.point) {
+        throw new Error(`act: the model chose an unknown drag source (${decision.candidateId})`);
+      }
+      if (!destination && !decision.targetPoint) {
+        throw new Error(
+          `act: the model chose an unknown drag destination (${decision.targetCandidateId})`,
+        );
+      }
+      const from = source ? source.target : pointTargetForDecision(decision.point!, geometry);
+      const to = destination
+        ? destination.target
+        : pointTargetForDecision(decision.targetPoint!, geometry);
+      const sourceLabel =
+        source?.label ?? source?.identifier ?? `(${decision.point?.x}, ${decision.point?.y})`;
+      const destinationLabel =
+        destination?.label ??
+        destination?.identifier ??
+        `(${decision.targetPoint?.x}, ${decision.targetPoint?.y})`;
+      return {
+        steps: [{ kind: "drag", from, to }],
+        summary: `Drag ${sourceLabel} to ${destinationLabel}`,
+        coordinateVisual: !source || !destination,
+      };
+    }
+    case "upload-file": {
+      const candidate = find(decision.candidateId);
+      if (decision.candidateId && !candidate) {
+        throw new Error(`act: the model chose an unknown control (${decision.candidateId})`);
+      }
+      return {
+        steps: [
+          {
+            kind: "upload-file",
+            file: decision.file,
+            ...(candidate ? { target: candidate.target } : {}),
+          },
+        ],
+        summary: `Attach ${JSON.stringify(decision.file)}${candidate?.label ? ` to ${candidate.label}` : ""}`,
+        coordinateVisual: false,
+      };
+    }
+    case "switch-tab":
+      return {
+        steps: [
+          {
+            kind: "switch-tab",
+            ...(decision.index !== undefined ? { index: decision.index } : {}),
+            ...(decision.url ? { url: decision.url } : {}),
+          },
+        ],
+        summary:
+          decision.index !== undefined
+            ? `Switch to browser tab ${decision.index + 1}`
+            : `Switch to the browser tab matching ${JSON.stringify(decision.url)}`,
         coordinateVisual: false,
       };
     case "scroll":

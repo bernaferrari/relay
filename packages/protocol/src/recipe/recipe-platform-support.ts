@@ -40,6 +40,15 @@ export function recipeStepPlatformBlocker(
   if (step.kind === "press-key" && platform !== "browser") {
     return "press-key keyboard chords are only supported on browser targets";
   }
+  if (step.kind === "drag" && platform !== "browser") {
+    return "drag is a browser step; native drag-and-drop has no trusted path here";
+  }
+  if (step.kind === "upload-file" && platform !== "browser") {
+    return "upload-file is a browser step for HTML file inputs; record a reviewed native file handoff instead";
+  }
+  if (step.kind === "switch-tab" && platform !== "browser") {
+    return "switch-tab is a browser step; native platforms have no page tabs";
+  }
   if (
     step.kind === "scroll" &&
     (step.direction === "left" || step.direction === "right") &&
