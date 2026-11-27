@@ -1,0 +1,66 @@
+---
+title: Test inboxes
+description: Sign in with email codes — Relay reads the code from a connected inbox and the model never sees it.
+---
+
+A test inbox is an encrypted IMAP connection owned by the workspace. When a product emails a sign-in code, Relay polls the inbox during the step, extracts the code locally, and types it straight into the product — the model chooses the destination field but never sees the code, the message, or the mailbox credentials.
+
+Use a dedicated mailbox for testing. Many teams use a plus-addressed alias (`relay-tests+member@example.com`) or a small mail provider account that receives only test mail.
+
+## Connect an inbox
+
+```bash
+relay inbox save member --input '{
+  "name": "Member test inbox",
+  "host": "imap.example.com",
+  "port": 993,
+  "secure": true,
+  "mailbox": "INBOX",
+  "username": "relay-tests+member@example.com",
+  "password": "…"
+}' --confirm
+```
+
+The key (`member`) links the inbox to a [saved sign-in](/docs/workflows/sign-ins) of the same key, so a Test that signs in as `member` automatically reads codes from the `member` inbox. Saving is human-only, and the plaintext crosses the boundary once for encrypted local storage — there is no command that reads or exports it.
+
+```bash
+relay inbox list              # metadata only
+relay inbox check member      # connectivity, without exposing mail or credentials
+relay inbox rotate member --input '{"host":"…","port":993,"secure":true,"mailbox":"INBOX","username":"…","password":"…"}' --confirm
+relay inbox revoke member --confirm
+```
+
+## Use it in a Test
+
+After the sign-in step, write the exact sentence:
+
+```yaml
+steps:
+  - Sign in with the saved account "member"
+  - Enter the code from the email
+```
+
+The phrasing is deliberately exact — near misses stay ordinary steps and never acquire inbox authority.
+
+During the step, Relay polls the mailbox **read-only**: nothing is marked read, moved, or deleted. Only messages newer than the sign-in start are considered, polling stops as soon as a usable code arrives (60-second default deadline, fifteen-minute hard ceiling), and if the newest message contains two equally plausible codes the step fails honestly rather than guessing.
+
+## CI and other machines
+
+Provide the inbox through environment variables — for key `member`:
+
+```bash
+RELAY_INBOX_MEMBER_HOST=imap.example.com
+RELAY_INBOX_MEMBER_PORT=993
+RELAY_INBOX_MEMBER_SECURE=true
+RELAY_INBOX_MEMBER_MAILBOX=INBOX
+RELAY_INBOX_MEMBER_USERNAME=relay-tests+member@example.com
+RELAY_INBOX_MEMBER_PASSWORD=…
+```
+
+`RELAY_INBOX_MEMBER_RECIPIENT` is optional and narrows which messages count. Every required variable must be set: partial configuration fails the Run closed rather than falling back to local storage, and the CI job needs network access to the IMAP host.
+
+## What Relay guarantees
+
+- The code is typed through an opaque reference; it never appears in prompts, artifacts, screenshots, or saved paths. Evidence frames for the step are not captured.
+- The mailbox is opened read-only and treated as append-only mail owned by someone else.
+- A missing, revoked, or partially configured inbox fails the Run before it acquires a device — never mid-test after half the steps ran.
