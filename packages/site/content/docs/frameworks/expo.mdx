@@ -1,0 +1,81 @@
+---
+title: Test an Expo or React Native app
+description: Get the app onto a device Relay can control, record one flow, and replay it — with honest prerequisites.
+---
+
+Relay pilots the device, not the JavaScript bundle. It does not know or care whether the app came from Expo Go, a development build, or a bare React Native binary — if the app is installed and open on a device Relay controls, it can be tested. The Expo-specific work ends at getting the app running; everything after that is Relay's ordinary [device workflow](/docs/devices/android).
+
+## What works today, honestly
+
+- **iOS simulators and physical devices**, on macOS with Xcode.
+- **Android emulators and physical devices**, with `adb` installed and USB debugging authorized.
+- **Recording** taps, typing, and swipes into a Test, then replaying it deterministically.
+- **Plain-English steps** executed with a configured model key, or recorded steps replayed at zero model cost.
+
+`relay init` will not scaffold anything in a mobile project. Run it and it tells you so directly: it detects the Expo or React Native dependency, prints the manual mobile path, and writes no files. Mobile bootstrapping is not automatic in v1 — the sections below are that manual path.
+
+## Prerequisites
+
+- **Node.js 24 or newer** for the Relay CLI.
+- For iOS: **macOS with Xcode**, a booted simulator or a trusted, unlocked device with Developer Mode enabled.
+- For Android: **Android platform tools** (`adb` on your PATH), a booted emulator or a USB-connected device authorized for debugging.
+- Your app **installed and open** on that device: `npx expo run:ios`, `npx expo run:android`, or `npx expo start` with Expo Go. A development build gives the app its own identity; inside Expo Go, the app Relay sees is Expo Go itself.
+
+## Verify control before anything else
+
+Start Relay and open the local workspace:
+
+```bash
+npx -y @relay/cli
+```
+
+Open **Devices** and select the exact device. Confirm three things in the preview: the app is the one you intend to test, the screen responds, and control is enabled — **View only** means pixels are available but input has not been established. Use **Open app → Choose installed app** to bring your app forward by name. Keep a physical device unlocked, awake, and reserved for the session.
+
+The device guides cover the failure modes in detail: [iPhone and iPad setup](/docs/devices/ios), [Android setup](/docs/devices/android).
+
+## Record the first test
+
+1. From the device's live control, choose **Record test** and select the App that should own it — or open **Tests → New test**, pick **Phone or tablet**, and start recording.
+2. Perform one short journey: the thing you check by hand today. Each tap and keystroke becomes a step. Wait for an action to finish saving before sending the next.
+3. Add a **check** where something must be true and a named **screenshot** where you want evidence.
+4. Choose **Stop and review**, then **Save test**.
+
+Prefer identified controls over coordinate taps when inspection offers them; coordinate steps depend on the captured layout. The full recording workflow is in [Record a flow](/docs/workflows/recording).
+
+## Run it again
+
+In the workspace, open the Test and press **Run**. From the shell:
+
+```bash
+npx -y @relay/cli tests "My app"
+npx -y @relay/cli run "Checkout" --app "My app" --device android
+```
+
+`relay devices` lists the exact targets `--device` accepts. `relay guide record` prints the bundled recording guide without needing the server at all.
+
+Readiness is explicit: `relay tests` labels each Test **ready**, **ready (plain English)**, or one of the not-ready states such as **needs recording**, **needs setup**, **needs start screen**, or **blocked**. A Test is ready when it has been recorded on the target platform, or when every step can run from its plain-English words — which requires a model key at execution time. `relay ci` runs the ready Tests and lists the rest as skipped; it does not silently weaken them into passes.
+
+## Connect your coding agent
+
+```bash
+claude mcp add relay -- npx -y @relay/mcp
+```
+
+The default `qa` profile runs Tests and reads verdicts. Recording through an agent requires the `device` profile — see [MCP setup](/docs/agents/mcp) for the exact configuration.
+
+## CI, honestly
+
+Mobile CI is possible but you own the device layer. The [Relay GitHub Action](https://github.com/bernaferrari/relay) accepts a `device` input, and its own documentation is direct: iOS tests need a macOS runner with a simulator Relay can control, Android tests need an emulator or attached device already configured, and mobile device setup is deliberately outside the action.
+
+In practice that means a `macos` runner (hosted or self-hosted) for iOS, or a runner with Android emulator acceleration for Android, plus your own steps that build and install the app before Relay runs — xcodebuild, Gradle, or an EAS build artifact. As with web tests, steps that were never recorded execute from their plain-English descriptions in CI and need `OPENROUTER_API_KEY`.
+
+Start local. Qualify one short flow on one device you control before automating anything.
+
+## Where to go next
+
+| Your goal                                | Guide                                      |
+| ---------------------------------------- | ------------------------------------------ |
+| Fix input admission or preview problems  | [iPhone and iPad setup](/docs/devices/ios) |
+| Authorize or reconnect an Android target | [Android setup](/docs/devices/android)     |
+| Add waits for background work            | [Waits and checks](/docs/workflows/waits)  |
+| Recover a stuck device                   | [Troubleshooting](/docs/reference/troubleshooting) |

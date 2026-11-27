@@ -13,6 +13,8 @@ export function SiteFooter() {
         ["How it works", "/#loop"],
         ["For agents", "/#agents"],
         ["Compare: Revyl", "/compare/revyl"],
+        ["Compare: Maestro", "/compare/maestro"],
+        ["Compare: Playwright", "/compare/playwright"],
         ["Your first test", "/docs/getting-started/first-test"],
       ],
     },
@@ -20,6 +22,8 @@ export function SiteFooter() {
       title: "Guides",
       links: [
         ["Install", "/docs/getting-started/installation"],
+        ["Next.js", "/docs/frameworks/nextjs"],
+        ["Expo and React Native", "/docs/frameworks/expo"],
         ["Tests as YAML", "/docs/agents/test-files"],
         ["Connect over MCP", "/docs/agents/mcp"],
       ],

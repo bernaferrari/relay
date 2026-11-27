@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bernaferrari/relay",
+  "title": "Relay",
+  "description": "Local-first verification for coding agents across web, Android, and iOS",
+  "version": "0.1.0",
+  "websiteUrl": "https://relay-lime-pi.vercel.app",
+  "repository": {
+    "url": "https://github.com/bernaferrari/relay",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@relay/mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

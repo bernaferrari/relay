@@ -79,5 +79,6 @@
   },
   "engines": {
     "node": ">=24"
-  }
+  },
+  "mcpName": "io.github.bernaferrari/relay"
 }

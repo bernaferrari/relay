@@ -6,6 +6,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: siteOrigin, priority: 1 },
     { url: `${siteOrigin}/compare/revyl`, priority: 0.9 },
+    { url: `${siteOrigin}/compare/maestro`, priority: 0.9 },
+    { url: `${siteOrigin}/compare/playwright`, priority: 0.9 },
     ...source.getPages().map((page) => ({ url: `${siteOrigin}${page.url}`, priority: 0.8 })),
   ];
 }

@@ -1,0 +1,54 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config
+# The Relay MCP server launches as `npx -y @relay/mcp` and needs no
+# configuration to attach to the local Relay service. Every property below
+# is optional; the schema drives Smithery's install-time configuration form.
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    description: No configuration is required to start the Relay MCP server.
+    properties:
+      profile:
+        type: string
+        title: Tool profile
+        enum: ["qa", "device", "full"]
+        default: "qa"
+        description: >-
+          Tool profile exposed to the agent. qa: create and run Tests, read
+          verdicts, diagnose failures. device: adds live control and
+          recording. full: adds Change Proof and evidence review.
+      server:
+        type: string
+        title: Relay service URL
+        description: >-
+          URL of a running Relay service, for example
+          http://127.0.0.1:8787. Omit to use the default local service.
+      credentialSource:
+        type: string
+        title: Credential source
+        description: >-
+          Credential source for an authenticated Relay service: "none" for an
+          explicitly unauthenticated local service, or env:NAME to read the
+          credential from environment variable NAME. Omit for the default
+          env:RELAY_AUTH_TOKEN behavior.
+      workspace:
+        type: string
+        title: Workspace path
+        description: >-
+          Absolute path of the project for the optional packaged runtime's
+          local startup. Not needed when attaching to an already-running
+          Relay service.
+    exampleConfig: {}
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: [
+        '-y',
+        '@relay/mcp',
+        ...(config.profile ? ['--profile', config.profile] : []),
+        ...(config.server ? ['--server', config.server] : []),
+        ...(config.credentialSource ? ['--credential-source', config.credentialSource] : []),
+        ...(config.workspace ? ['--workspace', config.workspace] : []),
+      ],
+      env: {},
+    })

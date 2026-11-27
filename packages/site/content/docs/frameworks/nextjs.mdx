@@ -1,0 +1,127 @@
+---
+title: Test a Next.js app
+description: Detect the dev server, run a first check in about a minute, and add Relay to CI with the GitHub Action.
+---
+
+Relay treats your Next.js dev or production server as a website target: it drives a real browser against the URL, so anything Next.js serves on localhost works — the app router, the pages router, or both.
+
+## Prerequisites
+
+- **Node.js 24 or newer** and Chrome, Chromium, or Edge installed.
+- A Next.js project. The examples assume the default port `3000`; substitute yours.
+
+## Initialize in the project
+
+From the project root:
+
+```bash
+npx -y @relay/cli init
+```
+
+The init command detects the `next` dependency, prefers a running localhost server, and otherwise falls back to the framework default port. It writes two files:
+
+- `.relay/config.json` — the project default device (`browser`) and URL.
+- `.relay/tests/smoke.yaml` — one plain-English starter check.
+
+Existing files are kept unless you pass `--force`. Pass `--url` when detection cannot work, for example a nonstandard port or a remote preview:
+
+```bash
+npx -y @relay/cli init --url http://127.0.0.1:3100
+```
+
+Commit `.relay/config.json` and `.relay/tests/` so CI runs the same tests. Keep `.relay/state/` — the local workspace database Relay creates when it runs — out of version control.
+
+## Run the first check
+
+Start your dev server if it is not running:
+
+```bash
+npm run dev
+```
+
+Then run the scaffolded test:
+
+```bash
+export OPENROUTER_API_KEY="your-key"
+npx -y @relay/cli ci .relay/tests --confirm
+```
+
+`--confirm` accepts once-per-run guarded risk, such as opening the website under test. The CLI starts or reuses the local Relay service by itself; you do not need to start anything else.
+
+The starter check is written in plain English, so a model key is required: the step is resolved semantically. Prefer saving the key in the workspace under **Settings → Advanced** over exporting it in every shell. If you want tests that need no model at all, [record them](/docs/workflows/recording) instead — recorded interactions replay deterministically.
+
+A passing run prints one table. A failure prints what the step **expected** and what it **saw**. `npx -y @relay/cli inspect <run-id>` revisits any run.
+
+## Write the tests you actually care about
+
+Add files under `.relay/tests/`. One short journey per file:
+
+```yaml title=".relay/tests/checkout.yaml"
+id: checkout-total
+name: Checkout shows the order total
+url: http://127.0.0.1:3000
+steps:
+  - Add any product to the cart
+  - Open the checkout page
+  - check: The order total is visible
+  - check: There is no error message
+```
+
+A plain string is an action, `check:` is a validation. These are descriptions, not selectors — see [Tests as YAML files](/docs/agents/test-files) for the supported fields. Rerun the folder with the same `ci` command as above.
+
+## Connect your coding agent
+
+```bash
+claude mcp add relay -- npx -y @relay/mcp
+```
+
+Cursor and Codex launch the same `npx -y @relay/mcp` command through their MCP settings. The agent can then run tests, read verdicts, and repair failures in the same workspace — see [MCP setup](/docs/agents/mcp).
+
+## Add CI with the GitHub Action
+
+The action runs your YAML tests and keeps one sticky pull-request comment up to date. The workflow must build and start Next.js itself — Relay tests the running app, it does not start it for you:
+
+```yaml title=".github/workflows/relay.yml"
+name: Relay
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write # lets the action update its PR comment
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run start & npx wait-on http://127.0.0.1:3000
+      - uses: bernaferrari/relay@v1
+        with:
+          tests: ".relay/tests/*.yaml"
+```
+
+Two honest caveats:
+
+- **The model key is not optional here.** CI starts from a fresh workspace, so every step executes from its plain-English description. Set `OPENROUTER_API_KEY` in the repository secrets as shown. Job-level `env` propagates into the action's steps.
+- **The URL must match.** The tests above target port `3000`, which is what `next start` uses by default. If your `start` script sets another port, update the test files or pass the matching port.
+
+The action uploads machine-readable verdicts, JUnit XML, screenshots, and trace evidence as a build artifact. Evidence can include screenshots of your app; treat the artifact as confidential build output. All files in one run must belong to the same Relay app — split multi-app suites into separate steps with distinct `artifact-name` and `comment-key` values.
+
+## Where to go next
+
+| Your goal                                    | Guide                                            |
+| -------------------------------------------- | ------------------------------------------------ |
+| Record deterministic, model-free flows       | [Record a flow](/docs/workflows/recording)       |
+| Test a signed-in deployment preview          | [Saved accounts](/docs/workflows/accounts)       |
+| Run the same test across inputs or languages | [Data sets and Plans](/docs/workflows/data-sets) |
+| Read verdicts and evidence from the CLI      | [Use the CLI](/docs/agents/cli)                  |
