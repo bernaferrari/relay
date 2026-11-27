@@ -11,8 +11,14 @@
  * later. Blocked runs prove nothing in either direction.
  */
 import type { AppMapScenarioTestStep, PlainEnglishStepCacheV2, RecipeStep } from "@relay/protocol";
-import { mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.js";
+import {
+  mutateStoredAppMap,
+  readAppMap,
+  writeStoredAppMapObservation,
+} from "../collaboration/collaboration.js";
 import { mutateAppMap } from "./mutation.js";
+import { appMapFail } from "./errors.js";
+import type { AppMap, AppMapMutationContext } from "./model.js";
 import type { PersistedRun } from "../run/run-store.js";
 import { sanitizedActCacheSteps, type ActCacheStepResolution } from "./act-cache-steps.js";
 
@@ -37,6 +43,30 @@ function actResults(run: PersistedRun): ActResult[] {
       ? [data as ActResult]
       : [];
   });
+}
+
+/** Steps whose saved path replayed successfully, keyed by the compiled
+ * recipe step id. The count tracks how often the path served this run; the
+ * timestamp is the latest replay completion. */
+function actCacheHits(run: PersistedRun): Map<string, { count: number; at: number }> {
+  const hits = new Map<string, { count: number; at: number }>();
+  for (const artifact of run.artifacts) {
+    const data = artifact.data as { source?: unknown; recipeStepId?: unknown } | undefined;
+    if (
+      artifact.kind !== "act-result" ||
+      data?.source !== "cache" ||
+      typeof data.recipeStepId !== "string"
+    ) {
+      continue;
+    }
+    const at = Number.isFinite(artifact.capturedAt) ? artifact.capturedAt : (run.finishedAt ?? 0);
+    const previous = hits.get(data.recipeStepId);
+    hits.set(data.recipeStepId, {
+      count: (previous?.count ?? 0) + 1,
+      at: Math.max(previous?.at ?? 0, at),
+    });
+  }
+  return hits;
 }
 
 /** Steps whose saved path no longer fit during this run, keyed by the
@@ -122,6 +152,86 @@ export function withoutCache(
   return { steps: visit(steps), changed };
 }
 
+function visitSteps(
+  list: AppMapScenarioTestStep[],
+  each: (step: AppMapScenarioTestStep) => void,
+): void {
+  for (const step of list) {
+    each(step);
+    if (step.kind === "decision") {
+      visitSteps(step.thenSteps, each);
+      if (step.elseSteps) visitSteps(step.elseSteps, each);
+    }
+    if (step.kind === "loop") visitSteps(step.steps, each);
+  }
+}
+
+function hasSavedPath(step: AppMapScenarioTestStep): boolean {
+  return (
+    step.kind === "instruction" &&
+    step.binding.status === "unresolved" &&
+    step.binding.cache !== undefined
+  );
+}
+
+/** Forget saved actions a person no longer trusts, for one step or every
+ * step of a test. The saved path is derived runtime data, not part of what
+ * the test means, so validation and the step words stay exactly as they are;
+ * the next run re-resolves from the model. */
+export function forgetAppMapTestActions(
+  map: AppMap,
+  testId: string,
+  context: AppMapMutationContext,
+  stepId?: string,
+): AppMap {
+  const test = map.tests[testId];
+  if (!test) appMapFail("missing-reference", `Test ${testId} does not exist`);
+  let drops: Set<string>;
+  if (stepId) {
+    let found = false;
+    visitSteps(test.steps, (step) => {
+      if (step.id === stepId) found = true;
+    });
+    if (!found) {
+      appMapFail("missing-reference", `Step ${stepId} does not exist in Test ${testId}`);
+    }
+    drops = new Set([stepId]);
+  } else {
+    drops = new Set<string>();
+    visitSteps(test.steps, (step) => {
+      if (hasSavedPath(step)) drops.add(step.id);
+    });
+  }
+  const next = withoutCache(test.steps, drops);
+  if (!next.changed) {
+    appMapFail(
+      "invalid-map",
+      stepId
+        ? `Step ${stepId} has no saved actions to forget`
+        : `Test ${testId} has no saved actions to forget`,
+    );
+  }
+  const summary =
+    `Forgot saved actions for ${next.changed} plain-English step${next.changed === 1 ? "" : "s"}` +
+    ` in ${test.name}`;
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "test.actions-dropped",
+      subject: { kind: "test", id: testId },
+      touched: [`test:${testId}:actions`],
+      summary,
+    },
+    (draft) => {
+      draft.tests = {
+        ...draft.tests,
+        [testId]: { ...test, steps: next.steps },
+      };
+    },
+  );
+}
+
 export function withCache(
   steps: AppMapScenarioTestStep[],
   updates: Map<string, ActCacheUpdate>,
@@ -159,6 +269,44 @@ export function withCache(
                 },
               }
             : {}),
+        };
+        return { ...step, binding: { ...step.binding, cache } };
+      }
+      if (step.kind === "decision")
+        return {
+          ...step,
+          thenSteps: visit(step.thenSteps),
+          ...(step.elseSteps ? { elseSteps: visit(step.elseSteps) } : {}),
+        };
+      if (step.kind === "loop") return { ...step, steps: visit(step.steps) };
+      return step;
+    });
+  return { steps: visit(steps), changed };
+}
+
+/** Count replay servings into v2 entries. Hits are usage telemetry, so they
+ * never rewrite the path itself and never touch legacy entries. */
+export function withCacheHits(
+  steps: AppMapScenarioTestStep[],
+  hits: Map<string, { count: number; at: number }>,
+): { steps: AppMapScenarioTestStep[]; changed: number } {
+  let changed = 0;
+  const visit = (list: AppMapScenarioTestStep[]): AppMapScenarioTestStep[] =>
+    list.map((step) => {
+      const hit = hits.get(step.id);
+      if (
+        hit &&
+        step.kind === "instruction" &&
+        step.binding.status === "unresolved" &&
+        step.binding.cache !== undefined &&
+        (step.binding.cache as { schemaVersion?: unknown }).schemaVersion === 2
+      ) {
+        const cached = step.binding.cache as PlainEnglishStepCacheV2;
+        changed += hit.count;
+        const cache: PlainEnglishStepCacheV2 = {
+          ...cached,
+          hits: (cached.hits ?? 0) + hit.count,
+          lastHitAt: Math.max(cached.lastHitAt ?? 0, hit.at),
         };
         return { ...step, binding: { ...step.binding, cache } };
       }
@@ -251,6 +399,47 @@ export async function saveActCachesFromRun(run: PersistedRun): Promise<number> {
     );
   });
   return saved;
+}
+
+/** Count replay servings from a passed run into hit telemetry. Hits share the
+ * write acceptance gate: a failed or blocked run proves nothing good about a
+ * path, even one that happened to replay. The write is observational — it
+ * must not advance the revision, because the revision is the user-visible
+ * "the test changed" signal and usage telemetry is not a person editing the
+ * test. Idempotent per run through the control store, so reprojection after a
+ * restart never double-counts. */
+export async function recordActCacheHitsFromRun(run: PersistedRun): Promise<number> {
+  if (run.outcome !== "passed") return 0;
+  const hits = actCacheHits(run);
+  const plan = planOf(run);
+  if (!hits.size || !plan || !run.projectId) return 0;
+  const stepHits = new Map<string, { count: number; at: number }>();
+  for (const [recipeStepId, hit] of hits) {
+    const testStepId = plan.provenance.get(recipeStepId);
+    if (!testStepId) continue;
+    const previous = stepHits.get(testStepId);
+    stepHits.set(testStepId, {
+      count: (previous?.count ?? 0) + hit.count,
+      at: Math.max(previous?.at ?? 0, hit.at),
+    });
+  }
+  if (!stepHits.size) return 0;
+  const idempotencyKey = `${run.projectId}:${plan.appMapId}:act-cache-hits:${run.id}`;
+  let counted = 0;
+  await writeStoredAppMapObservation(run.projectId, plan.appMapId, (map, store) => {
+    if (store.idempotency(idempotencyKey) !== undefined) return undefined;
+    store.upsertIdempotency(idempotencyKey, run.id);
+    const test = map.tests[plan.testId];
+    if (!test) return undefined;
+    const next = withCacheHits(test.steps, stepHits);
+    if (!next.changed) return undefined;
+    counted = next.changed;
+    return {
+      ...map,
+      tests: { ...map.tests, [plan.testId]: { ...test, steps: next.steps } },
+    };
+  });
+  return counted;
 }
 
 /** Drop the saved path of every step that missed in a failed run. The miss

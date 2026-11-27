@@ -108,6 +108,7 @@ export const operationFamilyOutputSchemas = {
   "app-map.screen.add": appMapEnvelopeSchema,
   "app-map.screen.remove": appMapEnvelopeSchema,
   "app-map.screen.update": appMapEnvelopeSchema,
+  "app-map.test.actions.forget": appMapEnvelopeSchema,
   "app-map.test.edit": appMapEnvelopeSchema,
   "app-map.test.redo": appMapEnvelopeSchema,
   "app-map.test.remove": appMapEnvelopeSchema,

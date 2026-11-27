@@ -293,12 +293,16 @@ test("resolutions executed by concrete steps are captured in order alongside the
 });
 
 test("a cache-miss re-resolution keeps the replayed prefix and its resolution evidence", async () => {
-  const unregister = registerActDecider(async () => ({
-    action: "tap",
-    candidateId: "c1",
-    reason: "Settings is visible",
-    finishesIntent: true,
-  }));
+  const seenHistory: string[][] = [];
+  const unregister = registerActDecider(async (input) => {
+    seenHistory.push([...input.history]);
+    return {
+      action: "tap",
+      candidateId: "c1",
+      reason: "Settings is visible",
+      finishesIntent: true,
+    };
+  });
   const { ctx, artifacts } = context();
   try {
     await runActStep(
@@ -336,6 +340,9 @@ test("a cache-miss re-resolution keeps the replayed prefix and its resolution ev
       item.kind === "act-decision" && (item.data as { action?: string }).action === "cache-miss",
   );
   assert.equal((miss?.data as { recipeStepId?: string } | undefined)?.recipeStepId, "act-1");
+  // The model continues mid-sequence with the concrete steps it is
+  // continuing from, not a generic replay marker.
+  assert.deepEqual(seenHistory[0], ['Tap label "Still here"']);
   const result = artifacts.find((item) => item.kind === "act-result")?.data as {
     source: string;
     steps: RecipeStep[];

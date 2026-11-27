@@ -82,6 +82,7 @@ export * from "./app-map/app-map-test-compiler.js";
 export * from "./app-map/app-map-test-route-variants.js";
 export * from "./app-map/app-map-test-raw-accessibility.js";
 export * from "./app-map/app-map-test-execution-gate.js";
+export { forgetAppMapTestActions } from "./app-map/app-map-act-cache.js";
 export * from "./campaign/campaign-repair.js";
 export * from "./campaign/campaign-repair-proposal.js";
 export * from "./input/case-plan.js";

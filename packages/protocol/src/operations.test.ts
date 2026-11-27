@@ -1025,6 +1025,7 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.test.edit",
       "app-map.test.undo",
       "app-map.test.redo",
+      "app-map.test.actions.forget",
       "app-map.test.propose",
       "app-map.test.compile",
       "app-map.test.from-intent",

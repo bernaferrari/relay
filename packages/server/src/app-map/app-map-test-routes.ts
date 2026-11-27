@@ -12,6 +12,7 @@ import {
   draftTestSteps,
   currentOperationContext,
   editAppMapScenarioTest,
+  forgetAppMapTestActions,
   listDevices,
   preflightCompiledAppMapTestOffline,
   preflightAppMapCombine,
@@ -301,6 +302,29 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       json(response, 200, { appMap });
       return true;
     }
+  }
+  const testActionsForget = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/actions/forget");
+  if (method === "POST" && testActionsForget) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.test.actions.forget">,
+      "appMapId" | "testId"
+    >;
+    const stepId = body.stepId?.trim() || undefined;
+    const appMap = await applyAppMapMutation(
+      scope,
+      testActionsForget.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => forgetAppMapTestActions(map, testActionsForget.testId!, context, stepId),
+      {
+        recordTestEdit: {
+          testId: testActionsForget.testId!,
+          touched: [`test:${testActionsForget.testId!}:actions`],
+        },
+      },
+    );
+    json(response, 200, { appMap });
+    return true;
   }
   const testProposal = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/proposals");
   if (method === "POST" && testProposal) {

@@ -163,6 +163,37 @@ test("generic invocation calls the operation client with parsed input", async ()
   assert.equal(io.stderr(), "");
 });
 
+test("test forget resolves positionals and merges input into the operation call", async () => {
+  const io = capture();
+  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      return { appMap: { revision: 8 } };
+    },
+    events: async () => {},
+  };
+  const code = await runCli(
+    [
+      "test",
+      "forget",
+      "checkout",
+      "smoke",
+      "--input",
+      '{"expectedRevision":7,"stepId":"submit-order"}',
+      "--json",
+    ],
+    { streams: io.streams, createClient: () => client, registerSignalHandlers: false, env: {} },
+  );
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(calls, [
+    {
+      operationId: "app-map.test.actions.forget",
+      input: { appMapId: "checkout", testId: "smoke", expectedRevision: 7, stepId: "submit-order" },
+    },
+  ]);
+});
+
 test("only implicit-local outcome commands ensure the Relay daemon", async () => {
   for (const testCase of [
     { env: {}, expectedEnsures: 1 },

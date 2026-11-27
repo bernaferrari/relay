@@ -109,6 +109,35 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
     }),
   ),
   mapped(
+    "app-map.test.actions.forget",
+    path("test forget", ["appMapId", "testId"], undefined, {
+      summary:
+        "Forget saved actions so the next run re-resolves them; one step with stepId, or the whole Test",
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "stepId",
+          type: "string",
+          description: "Plain-English step identifier; omit to forget every saved path",
+        },
+        {
+          name: "eventId",
+          type: "string",
+          description: "Stable idempotency key for safe retries",
+        },
+      ],
+      examples: [
+        "relay test forget checkout smoke --input '{\"expectedRevision\":7}'",
+        'relay test forget checkout smoke --input \'{"expectedRevision":7,"stepId":"submit-order"}\'',
+      ],
+    }),
+  ),
+  mapped(
     "app-map.test.propose",
     path("test propose", ["appMapId", "testId"], undefined, {
       summary: "Submit stable-ID Test edits for human review",

@@ -12,6 +12,7 @@ import { createOpenRouterClient } from "../openrouter/openrouter-ai-sdk.js";
 import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { isCancel } from "./recipe-runner-support.js";
+import { describeRecipeStep } from "./recipe-presentation.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
 import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
 
@@ -358,7 +359,7 @@ export async function runActStep(
       const message = error instanceof Error ? error.message : String(error);
       record({ action: "cache-miss", reason: message, replayed: executed.length });
       ctx.log(`act: saved actions no longer fit (${message}); asking the model`);
-      history.push(...executed.map(() => "Replayed a saved action"));
+      history.push(...executed.map((concrete) => describeRecipeStep(concrete)));
     }
   }
   for (let attempt = 0; attempt <= max; attempt += 1) {

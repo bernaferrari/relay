@@ -442,6 +442,16 @@ export type AppMapOperationMap = {
     };
     output: { appMap: AppMap };
   };
+  "app-map.test.actions.forget": {
+    input: {
+      appMapId: string;
+      testId: string;
+      expectedRevision: number;
+      eventId?: string;
+      stepId?: string;
+    };
+    output: { appMap: AppMap };
+  };
   "app-map.test.propose": {
     input: {
       appMapId: string;

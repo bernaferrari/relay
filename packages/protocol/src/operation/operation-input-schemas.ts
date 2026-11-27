@@ -511,6 +511,17 @@ export const operationInputSchemas = {
       eventId: identifier("Optional idempotent activity event identifier").optional(),
     })
     .strict(),
+  "app-map.test.actions.forget": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Graph-native Test identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      stepId: identifier(
+        "Optional plain-English step identifier; omit to forget every saved path in the Test",
+      ).optional(),
+    })
+    .strict(),
   "app-map.test.propose": z
     .object({
       appMapId: identifier("App Map identifier"),

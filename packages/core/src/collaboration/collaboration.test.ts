@@ -32,6 +32,7 @@ import {
   saveDevicePool,
   saveCompatibilityMatrix,
   mutateStoredAppMap,
+  writeStoredAppMapObservation,
   writeProjectVariables,
   recoverCollaborationState,
 } from "./collaboration.js";
@@ -312,6 +313,65 @@ test("App Maps persist normalized revisions and reject unsafe stored mutations",
     assert.equal(await deleteAppMap("mobile", "store-copy"), true);
     assert.equal(await readAppMap("mobile", "store"), null);
     assert.equal(await deleteAppMap("mobile", "store"), false);
+  } finally {
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("observational writes persist without revision semantics and reject semantic writes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-map-observation-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  try {
+    const created = await createAppMap({
+      organizationId: "acme",
+      projectId: "mobile",
+      appMapId: "store",
+      name: "Store",
+      at: 100,
+    });
+    const events: string[] = [];
+    const unsubscribe = subscribe((event) => events.push(event.payload.type));
+    try {
+      const observed = await writeStoredAppMapObservation("mobile", "store", (map) => ({
+        ...map,
+        description: "derived runtime telemetry",
+      }));
+      assert.equal(observed?.description, "derived runtime telemetry");
+      const reread = await readAppMap("mobile", "store");
+      assert.equal(reread?.description, "derived runtime telemetry");
+      assert.equal(reread?.revision, created.revision);
+      assert.equal(reread?.updatedAt, created.updatedAt);
+      assert.deepEqual(reread?.activity, {});
+      assert.deepEqual(events, []);
+      assert.equal(
+        await writeStoredAppMapObservation("mobile", "store", () => undefined),
+        undefined,
+      );
+      assert.equal(
+        await writeStoredAppMapObservation("mobile", "missing", () => undefined),
+        undefined,
+      );
+      await assert.rejects(
+        writeStoredAppMapObservation("mobile", "store", (map) => ({
+          ...map,
+          revision: map.revision + 1,
+        })),
+        /must not advance revision/u,
+      );
+      await assert.rejects(
+        writeStoredAppMapObservation("mobile", "store", (map) => ({
+          ...map,
+          updatedAt: map.updatedAt + 1,
+        })),
+        /must not advance revision/u,
+      );
+    } finally {
+      unsubscribe();
+    }
   } finally {
     resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

@@ -6,8 +6,11 @@ import test from "node:test";
 import type { AppMapScenarioTestStep, RecipeStep } from "@relay/protocol";
 import {
   dropStaleActCachesFromRun,
+  forgetAppMapTestActions,
+  recordActCacheHitsFromRun,
   saveActCachesFromRun,
   withCache,
+  withCacheHits,
   withoutCache,
   type ActCacheUpdate,
 } from "./app-map-act-cache.js";
@@ -640,6 +643,259 @@ test(
       );
       map = await readAppMap("project", "map");
       assert.equal(stepOf(map).binding.cache?.schemaVersion, 2);
+    });
+  },
+);
+
+const v2cache = {
+  schemaVersion: 2,
+  steps: [{ kind: "tap", target: { label: "Settings" } }],
+  runId: "run-old",
+  savedAt: 1,
+  targetKind: "browser",
+  resolution: [{ strategy: "label", key: "Settings" }],
+  verification: { runOutcome: "passed" },
+};
+
+function cacheHitResult(capturedAt = 21) {
+  return {
+    kind: "act-result",
+    capturedAt,
+    data: {
+      intent: "Open Settings",
+      recipeStepId: "relay-test-s1-1",
+      source: "cache",
+      steps: [{ kind: "tap", target: { label: "Settings" } }],
+    },
+  };
+}
+
+test("withCacheHits counts servings into v2 entries only, including nested steps", () => {
+  const cached = (extra?: object) => textStep("x", "Open Settings", { ...v2cache, ...extra });
+  const legacy = textStep("legacy", "Legacy", { steps: [tap], runId: "run-0", savedAt: 1 });
+  const steps = [
+    cached(),
+    { ...cached(), id: "nested" },
+    legacy,
+    textStep("plain", "No path"),
+    {
+      id: "loop",
+      kind: "loop",
+      intent: "For each row",
+      binding: { status: "resolved", kind: "repeat", count: 2 },
+      steps: [{ ...cached(), id: "in-loop" }],
+    } as AppMapScenarioTestStep,
+  ];
+  steps[1] = { ...steps[1]!, id: "untouched" };
+  const hits = new Map([
+    ["x", { count: 2, at: 50 }],
+    ["in-loop", { count: 1, at: 60 }],
+    ["legacy", { count: 1, at: 60 }],
+    ["plain", { count: 1, at: 60 }],
+  ]);
+  const next = withCacheHits(steps, hits);
+  assert.equal(next.changed, 3);
+  const cacheOf = (list: AppMapScenarioTestStep[], index: number) =>
+    (list[index]! as { binding: { cache?: Record<string, unknown> } }).binding.cache;
+  assert.equal(cacheOf(next.steps, 0)?.hits, 2);
+  assert.equal(cacheOf(next.steps, 0)?.lastHitAt, 50);
+  assert.equal(cacheOf(next.steps, 1)?.hits, undefined);
+  assert.equal(cacheOf(next.steps, 2)?.hits, undefined);
+  assert.equal(cacheOf(next.steps, 3)?.hits, undefined);
+  const loop = next.steps[4] as { steps: AppMapScenarioTestStep[] };
+  assert.equal(cacheOf(loop.steps, 0)?.hits, 1);
+  // Existing counters accumulate; lastHitAt never rewinds.
+  const again = withCacheHits(
+    [textStep("x", "Open Settings", { ...v2cache, hits: 5, lastHitAt: 99 })],
+    new Map([["x", { count: 1, at: 50 }]]),
+  );
+  const updated = (again.steps[0]! as { binding: { cache?: Record<string, unknown> } }).binding
+    .cache;
+  assert.equal(updated?.hits, 6);
+  assert.equal(updated?.lastHitAt, 99);
+});
+
+test(
+  "a passed run counts replay servings without advancing revision semantics",
+  { concurrency: false },
+  async () => {
+    await withMap([textStep("s1", "Open Settings", { ...v2cache })], async () => {
+      const before = await readAppMap("project", "map");
+      const counted = await recordActCacheHitsFromRun(
+        actRun({ outcome: "passed", artifacts: [planArtifact(), cacheHitResult(33)] }) as never,
+      );
+      assert.equal(counted, 1);
+      const after = await readAppMap("project", "map");
+      const step = after?.tests.checkout?.steps[0] as {
+        binding: { cache?: { hits?: number; lastHitAt?: number } };
+      };
+      assert.equal(step.binding.cache?.hits, 1);
+      assert.equal(step.binding.cache?.lastHitAt, 33);
+      // Usage telemetry is not a person editing the test: the revision, its
+      // timestamps, and the activity log all stay exactly as they were.
+      assert.equal(after?.revision, before?.revision);
+      assert.equal(after?.updatedAt, before?.updatedAt);
+      assert.deepEqual(after?.activity, before?.activity);
+    });
+  },
+);
+
+test(
+  "hit bookkeeping is idempotent per run and accumulates across distinct runs",
+  { concurrency: false },
+  async () => {
+    await withMap([textStep("s1", "Open Settings", { ...v2cache })], async () => {
+      const run = actRun({
+        outcome: "passed",
+        artifacts: [planArtifact(), cacheHitResult(33), cacheHitResult(40)],
+      }) as never;
+      assert.equal(await recordActCacheHitsFromRun(run), 2);
+      assert.equal(await recordActCacheHitsFromRun(run), 0);
+      const later = {
+        ...actRun({ outcome: "passed", artifacts: [planArtifact(), cacheHitResult(70)] }),
+        id: "run-passed-later",
+      } as never;
+      assert.equal(await recordActCacheHitsFromRun(later), 1);
+      const map = await readAppMap("project", "map");
+      const step = map?.tests.checkout?.steps[0] as {
+        binding: { cache?: { hits?: number; lastHitAt?: number } };
+      };
+      assert.equal(step.binding.cache?.hits, 3);
+      assert.equal(step.binding.cache?.lastHitAt, 70);
+    });
+  },
+);
+
+test(
+  "hit counting shares the write acceptance gate: failed and blocked runs count nothing",
+  { concurrency: false },
+  async () => {
+    await withMap([textStep("s1", "Open Settings", { ...v2cache })], async () => {
+      for (const outcome of [
+        "product-failure",
+        "harness-failure",
+        "uncertain",
+        "cancelled",
+      ] as const) {
+        const counted = await recordActCacheHitsFromRun(
+          actRun({ outcome, artifacts: [planArtifact(), cacheHitResult()] }) as never,
+        );
+        assert.equal(counted, 0, `${outcome} must not count hits`);
+      }
+      const map = await readAppMap("project", "map");
+      const step = map?.tests.checkout?.steps[0] as {
+        binding: { cache?: { hits?: number } };
+      };
+      assert.equal(step.binding.cache?.hits, undefined);
+    });
+  },
+);
+
+test(
+  "the acceptance gate counts hits for passed runs through projectPersistedAppMapRun",
+  { concurrency: false },
+  async () => {
+    const { projectPersistedAppMapRun } = await import("./app-map-run-history.js");
+    await withMap([textStep("s1", "Open Settings", { ...v2cache })], async () => {
+      await projectPersistedAppMapRun(
+        actRun({ outcome: "passed", artifacts: [planArtifact(), cacheHitResult(44)] }) as never,
+      );
+      const map = await readAppMap("project", "map");
+      const step = map?.tests.checkout?.steps[0] as {
+        binding: { cache?: { hits?: number; lastHitAt?: number } };
+      };
+      assert.equal(step.binding.cache?.hits, 1);
+      assert.equal(step.binding.cache?.lastHitAt, 44);
+    });
+  },
+);
+
+test(
+  "forgetting saved actions drops one step or the whole test and records a user-visible event",
+  { concurrency: false },
+  async () => {
+    const steps = [
+      textStep("s1", "Open Settings", { ...v2cache }),
+      textStep("s2", "Checkout", { ...v2cache }),
+    ];
+    await withMap(steps, async () => {
+      const map = await readAppMap("project", "map");
+      const test = map!.tests.checkout!;
+      const context = {
+        expectedRevision: map!.revision,
+        eventId: "forget-1",
+        actorId: "user-1",
+        actorKind: "human" as const,
+        at: Math.max(Date.now(), map!.updatedAt),
+      };
+      const one = forgetAppMapTestActions(map!, "checkout", context, "s1");
+      const first = one.tests.checkout!.steps[0] as { binding: { cache?: unknown } };
+      const second = one.tests.checkout!.steps[1] as { binding: { cache?: unknown } };
+      assert.equal(first.binding.cache, undefined);
+      assert.ok(second.binding.cache);
+      assert.equal(one.revision, map!.revision + 1);
+      const event = one.activity["forget-1"];
+      assert.equal(event?.eventType, "test.actions-dropped");
+      assert.equal(event?.summary, "Forgot saved actions for 1 plain-English step in Checkout");
+      // The saved path is derived runtime data: the step words, validation,
+      // and test timestamps are not part of what was forgotten.
+      assert.equal(one.tests.checkout!.updatedAt, test.updatedAt);
+      assert.deepEqual(one.tests.checkout!.validation, test.validation);
+      // Forgetting the whole test drops every remaining saved path.
+      const all = forgetAppMapTestActions(map!, "checkout", { ...context, eventId: "forget-2" });
+      for (const step of all.tests.checkout!.steps) {
+        assert.equal((step as { binding: { cache?: unknown } }).binding.cache, undefined);
+      }
+      assert.equal(
+        all.activity["forget-2"]?.summary,
+        "Forgot saved actions for 2 plain-English steps in Checkout",
+      );
+    });
+  },
+);
+
+test(
+  "forgetting reports missing references and nothing-to-forget instead of empty mutations",
+  { concurrency: false },
+  async () => {
+    await withMap([textStep("s1", "Open Settings", { ...v2cache })], async () => {
+      const map = await readAppMap("project", "map");
+      const context = {
+        expectedRevision: map!.revision,
+        eventId: "forget-1",
+        actorId: "user-1",
+        actorKind: "human" as const,
+        at: Math.max(Date.now(), map!.updatedAt),
+      };
+      assert.throws(
+        () => forgetAppMapTestActions(map!, "missing", context),
+        /Test missing does not exist/,
+      );
+      assert.throws(
+        () => forgetAppMapTestActions(map!, "checkout", context, "missing-step"),
+        /Step missing-step does not exist/,
+      );
+      // s1 carries a saved path here, so forgetting it succeeds.
+      const forgotten = forgetAppMapTestActions(map!, "checkout", context, "s1");
+      assert.ok(forgotten);
+    });
+    await withMap([textStep("s1", "Open Settings")], async () => {
+      const map = await readAppMap("project", "map");
+      const context = {
+        expectedRevision: map!.revision,
+        eventId: "forget-1",
+        actorId: "user-1",
+        actorKind: "human" as const,
+        at: Math.max(Date.now(), map!.updatedAt),
+      };
+      assert.throws(
+        () => forgetAppMapTestActions(map!, "checkout", context, "s1"),
+        /Step s1 has no saved actions to forget/,
+      );
+      assert.throws(
+        () => forgetAppMapTestActions(map!, "checkout", context),
+        /Test checkout has no saved actions to forget/,
+      );
     });
   },
 );
