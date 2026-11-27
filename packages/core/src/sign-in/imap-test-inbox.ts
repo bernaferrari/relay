@@ -47,10 +47,24 @@ export type TestInboxClientFactory = (
 ) => Promise<TestInboxClient>;
 
 export function isTestInboxAuthenticationFailure(error: unknown): boolean {
-  return (
-    error instanceof AuthenticationFailure ||
-    (error instanceof Error &&
-      /authentication|invalid credentials|authenticationfailed|invalid login/i.test(error.message))
+  if (!(error instanceof Error)) return false;
+  // imapflow only raises AuthenticationFailure for client-side detection (no
+  // password configured, LOGINDISABLED). A server that refuses LOGIN with a
+  // tagged NO surfaces as a plain Error("Command failed") instead, carrying
+  // its classification on these properties — the message never carries it.
+  const properties = error as Error & {
+    authenticationFailed?: unknown;
+    serverResponseCode?: unknown;
+  };
+  if (error instanceof AuthenticationFailure || properties.authenticationFailed === true)
+    return true;
+  if (
+    typeof properties.serverResponseCode === "string" &&
+    properties.serverResponseCode.toUpperCase() === "AUTHENTICATIONFAILED"
+  )
+    return true;
+  return /authentication|invalid credentials|authenticationfailed|invalid login/i.test(
+    error.message,
   );
 }
 
