@@ -22,7 +22,11 @@ jobs:
       - uses: bernaferrari/relay@v1
         with:
           tests: ".relay/tests/*.yaml"
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
+
+Steps that were never recorded execute from their plain-English descriptions, and that execution needs a model. Set `OPENROUTER_API_KEY` in the repository secrets and pass it through `env` as shown — without it those steps stop in setup with a missing-model-key error. Fully recorded steps replay without a model, but most real suites mix both kinds.
 
 The pull-request comment is a single sticky comment. It is replaced on every run rather than added as another comment.
 
