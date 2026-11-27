@@ -44,13 +44,19 @@ import { currentTargetContext, type TargetContext } from "../target/target-conte
  * - `explicit-point`: actuation through a caller-supplied coordinate.
  * - `direct`: no geometry participated (key presses, directional scrolls,
  *   text insertion at the caret).
+ * - `unobserved`: an actuation happened but nothing evidences how it was
+ *   transported — the daemon did not report an actuation outcome (older or
+ *   skewed peer), or the report's geometry fact was itself unknown. Never
+ *   reads as a purer classification: for replay safety it ranks with the
+ *   "may have participated" middle.
  */
 export type ActivationTransport =
   | "native-selector"
   | "selector-point-assisted"
   | "snapshot-point"
   | "explicit-point"
-  | "direct";
+  | "direct"
+  | "unobserved";
 
 /** The physical wire an actuation was dispatched over. */
 export type ActivationChannel = "daemon" | "listener" | "hid" | "adb";
@@ -92,6 +98,15 @@ export type ActivationTransportRecord = {
   /** The actuation recovered from a semantic collision (a same-key match
    * had to be re-ranked against a fresh tree before a coordinate tap). */
   collisionRecovery?: boolean;
+  /** The daemon-reported actuation outcome facts, when the peer reported
+   * them (actuation-outcome reporting, vendored `actuation` object). Raw
+   * axes are preserved verbatim; the transport classification above is the
+   * conservative derivation replay safety reads. */
+  actuationTargeting?: string;
+  actuationGeometry?: string;
+  actuationExecutor?: string;
+  actuationCoordinateFallbackReason?: string;
+  actuationMechanismFallbackReason?: string;
   at: number;
 };
 
@@ -118,6 +133,7 @@ const TRANSPORT_GEOMETRY_RANK: Record<ActivationTransport, number> = {
   "snapshot-point": 3,
   "explicit-point": 3,
   "selector-point-assisted": 2,
+  unobserved: 2,
   "native-selector": 1,
   direct: 0,
 };
@@ -193,6 +209,11 @@ export function noteActivationTransport(input: {
   pointContribution?: boolean;
   coordinateFallbackPermitted?: boolean;
   collisionRecovery?: boolean;
+  actuationTargeting?: string;
+  actuationGeometry?: string;
+  actuationExecutor?: string;
+  actuationCoordinateFallbackReason?: string;
+  actuationMechanismFallbackReason?: string;
   at?: number;
 }): void {
   const { key, platform } = currentContextKey();
@@ -209,6 +230,15 @@ export function noteActivationTransport(input: {
     coordinateFallbackPermitted: input.coordinateFallbackPermitted ?? false,
     ...(input.resolutionMethod ? { resolutionMethod: input.resolutionMethod } : {}),
     ...(input.collisionRecovery ? { collisionRecovery: true } : {}),
+    ...(input.actuationTargeting ? { actuationTargeting: input.actuationTargeting } : {}),
+    ...(input.actuationGeometry ? { actuationGeometry: input.actuationGeometry } : {}),
+    ...(input.actuationExecutor ? { actuationExecutor: input.actuationExecutor } : {}),
+    ...(input.actuationCoordinateFallbackReason
+      ? { actuationCoordinateFallbackReason: input.actuationCoordinateFallbackReason }
+      : {}),
+    ...(input.actuationMechanismFallbackReason
+      ? { actuationMechanismFallbackReason: input.actuationMechanismFallbackReason }
+      : {}),
     at: input.at ?? Date.now(),
   };
   journal.records = [...journal.records, record].slice(-ACTIVATION_JOURNAL_LIMIT);
@@ -222,24 +252,114 @@ export function activationTransportSequence(): number {
 }
 
 /**
+ * The daemon's actuation outcome report, parsed defensively off a press/fill
+ * success response. Anything malformed or absent reads as unreported — skew
+ * in either direction must never throw and never upgrade purity.
+ */
+export type DaemonActuationReport = {
+  targeting?: string;
+  geometry?: string;
+  executor?: string;
+  coordinateFallbackReason?: string;
+  mechanismFallbackReason?: string;
+};
+
+/** Parse the additive `actuation` object off a daemon interaction response.
+ * Unknown future versions still parse their v1-shaped fields; fields that
+ * are missing or mistyped are simply absent. */
+export function parseDaemonActuationReport(value: unknown): DaemonActuationReport | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Record<string, unknown>;
+  const readFallbackReason = (raw: unknown): string | undefined => {
+    if (!raw || typeof raw !== "object") return undefined;
+    const reason = (raw as Record<string, unknown>).reason;
+    return typeof reason === "string" && reason.length > 0 ? reason : undefined;
+  };
+  const report: DaemonActuationReport = {
+    ...(typeof candidate.targeting === "string" ? { targeting: candidate.targeting } : {}),
+    ...(typeof candidate.geometry === "string" ? { geometry: candidate.geometry } : {}),
+    ...(typeof candidate.executor === "string" ? { executor: candidate.executor } : {}),
+    ...(readFallbackReason(candidate.coordinateFallback)
+      ? { coordinateFallbackReason: readFallbackReason(candidate.coordinateFallback) }
+      : {}),
+    ...(readFallbackReason(candidate.mechanismFallback)
+      ? { mechanismFallbackReason: readFallbackReason(candidate.mechanismFallback) }
+      : {}),
+  };
+  return Object.keys(report).length > 0 ? report : undefined;
+}
+
+/**
+ * Map the reported axes into the transport taxonomy. Only execution-time
+ * geometry earns `native-selector`; externally frozen geometry is the point
+ * transport its provenance describes; anything unknown stays unobserved.
+ */
+function transportForDaemonActuation(report: DaemonActuationReport): ActivationTransport {
+  if (report.targeting === "direct" && report.geometry === "none") return "direct";
+  if (report.targeting === "element") {
+    switch (report.geometry) {
+      case "daemon-snapshot":
+      case "runner-element-frame":
+      case "provider-element":
+      case "none":
+        return "native-selector";
+      case "relay-snapshot":
+      case "runner-expected-point":
+        return "snapshot-point";
+      case "caller-point":
+        return "explicit-point";
+      default:
+        return "unobserved";
+    }
+  }
+  if (report.targeting === "point") {
+    // A numeric input fully involved its geometry; Relay cannot tell its own
+    // derived points from caller-supplied ones on this axis, so the answer is
+    // the geometry-dependent classification either way.
+    return report.geometry === "caller-point" || report.geometry === "relay-snapshot"
+      ? "snapshot-point"
+      : "unobserved";
+  }
+  return "unobserved";
+}
+
+/**
  * Record a daemon-mediated selector actuation whose payload was built with
- * the non-hittable coordinate allowance (`iosNonHittablePressFields`). The
- * vendored daemon resolves the selector against its own fresh accessibility
- * capture and actuates the resolved point; Relay-supplied geometry cannot
- * participate, so every daemon selector actuation is `native-selector`
- * regardless of what Relay's snapshot saw locally.
+ * the non-hittable coordinate allowance (`iosNonHittablePressFields`). When
+ * the daemon reported its actuation outcome (the additive `actuation` object
+ * on the success response), the reported axes decide the transport:
+ * execution-time geometry (`daemon-snapshot` and kin) is `native-selector`,
+ * externally frozen geometry is the point transport its provenance describes.
+ * An absent or geometry-unknown report records `unobserved` — never a purer
+ * classification than the evidence earns.
  */
 export function noteDaemonSelectorActuation(input: {
   operation: ActivationOperation;
   resolutionMethod?: ActivationResolutionPath;
+  /** The raw `actuation` value off the daemon success response, when one came back. */
+  actuation?: unknown;
 }): void {
   const { platform } = currentContextKey();
+  const report = parseDaemonActuationReport(input.actuation);
   noteActivationTransport({
     operation: input.operation,
-    transport: "native-selector",
+    transport: report ? transportForDaemonActuation(report) : "unobserved",
     channel: "daemon",
     ...(input.resolutionMethod ? { resolutionMethod: input.resolutionMethod } : {}),
     coordinateFallbackPermitted: platform === "ios",
+    ...(report
+      ? {
+          ...(report.targeting ? { actuationTargeting: report.targeting } : {}),
+          ...(report.geometry ? { actuationGeometry: report.geometry } : {}),
+          ...(report.executor ? { actuationExecutor: report.executor } : {}),
+          ...(report.coordinateFallbackReason
+            ? { actuationCoordinateFallbackReason: report.coordinateFallbackReason }
+            : {}),
+          ...(report.mechanismFallbackReason
+            ? { actuationMechanismFallbackReason: report.mechanismFallbackReason }
+            : {}),
+        }
+      : {}),
   });
 }
 

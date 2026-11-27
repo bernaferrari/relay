@@ -1,0 +1,1625 @@
+diff --git a/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.test.ts b/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.test.ts
+new file mode 100644
+index 000000000..de9bbc9b5
+--- /dev/null
++++ b/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.test.ts
+@@ -0,0 +1,141 @@
++import assert from 'node:assert/strict';
++import { test } from 'vitest';
++import {
++  selectorSnapshot,
++  fillableSnapshot,
++  createInteractionDevice,
++  clickRefE2,
++} from './__tests__/test-utils/index.ts';
++import { ref, selector } from './selector-read-utils.ts';
++
++/**
++ * The actuation outcome report a runtime-resolved interaction constructs:
++ * the daemon-owned targeting/geometry facts derive from the resolution path,
++ * the platform-owned executor facts merge in from the backend result's
++ * actuation fragment, and the unmerged fragment never survives on the result.
++ */
++
++test('a selector press reports element targeting with daemon-snapshot geometry', async () => {
++  const device = createInteractionDevice(selectorSnapshot());
++
++  const result = await device.interactions.press(selector('label=Continue'), {
++    session: 'default',
++  });
++
++  assert.deepEqual(result.actuation, {
++    version: 1,
++    targeting: 'element',
++    geometry: 'daemon-snapshot',
++    executor: 'unknown',
++  });
++});
++
++test('the backend actuation fragment merges into the outcome and leaves the backend result', async () => {
++  const device = createInteractionDevice(selectorSnapshot(), {
++    tap: async () => ({
++      actuation: {
++        executor: 'android-adb-input',
++        mechanismFallback: { reason: 'automation-helper-input-not-confirmed' },
++      },
++    }),
++  });
++
++  const result = await device.interactions.press(selector('label=Continue'), {
++    session: 'default',
++  });
++
++  assert.deepEqual(result.actuation, {
++    version: 1,
++    targeting: 'element',
++    geometry: 'daemon-snapshot',
++    executor: 'android-adb-input',
++    mechanismFallback: { reason: 'automation-helper-input-not-confirmed' },
++  });
++  assert.equal(
++    result.backendResult && 'actuation' in result.backendResult,
++    false,
++    'the unmerged fragment must not survive on the backend result',
++  );
++});
++
++test('a malformed backend fragment is unknown executor, never a passthrough', async () => {
++  const device = createInteractionDevice(selectorSnapshot(), {
++    tap: async () => ({ actuation: { executor: 'adb-injected-everything' } }),
++  });
++
++  const result = await device.interactions.press(selector('label=Continue'), {
++    session: 'default',
++  });
++
++  assert.equal(result.actuation?.executor, 'unknown');
++  assert.equal(result.backendResult && 'actuation' in result.backendResult, false);
++});
++
++test('a delegated direct dispatch reports the coordinateFallback fact with its detail', async () => {
++  const device = createInteractionDevice(selectorSnapshot());
++
++  const result = await device.interactions.click(selector('label=Continue'), {
++    session: 'default',
++    directDelegation: { detail: 'COMMAND_FAILED' },
++  });
++
++  assert.deepEqual(result.actuation?.coordinateFallback, {
++    reason: 'direct-dispatch-delegated',
++    detail: 'COMMAND_FAILED',
++  });
++  assert.equal(result.actuation?.targeting, 'element');
++  assert.equal(result.actuation?.geometry, 'daemon-snapshot');
++});
++
++test('an undelagated runtime interaction carries no fallback facts', async () => {
++  const device = createInteractionDevice(selectorSnapshot());
++
++  const result = await device.interactions.click(selector('label=Continue'), {
++    session: 'default',
++  });
++
++  assert.equal(result.actuation?.coordinateFallback, undefined);
++  assert.equal(result.actuation?.mechanismFallback, undefined);
++});
++
++test('a native-ref click reports provider-element geometry', async () => {
++  const device = createInteractionDevice(selectorSnapshot(), {
++    platform: 'web',
++    tapTarget: async (_context, target) => ({ ref: target.ref.replace(/^@/, '') }),
++  });
++
++  const result = await clickRefE2(device);
++
++  assert.equal(result.actuation?.targeting, 'element');
++  assert.equal(result.actuation?.geometry, 'provider-element');
++});
++
++test('a longpress reports the merged actuation outcome', async () => {
++  const device = createInteractionDevice(selectorSnapshot(), {
++    longPress: async () => ({ actuation: { executor: 'android-uiautomation-helper' } }),
++  });
++
++  const result = await device.interactions.longPress(ref('@e1'), {
++    session: 'default',
++    durationMs: 500,
++  });
++
++  assert.deepEqual(result.actuation, {
++    version: 1,
++    targeting: 'element',
++    geometry: 'daemon-snapshot',
++    executor: 'android-uiautomation-helper',
++  });
++});
++
++test('a fill reports the merged actuation outcome', async () => {
++  const device = createInteractionDevice(fillableSnapshot(), {
++    fill: async () => ({ actuation: { executor: 'keyboard' } }),
++  });
++
++  const result = await device.interactions.fill(ref('@e1'), 'hello', { session: 'default' });
++
++  assert.equal(result.actuation?.targeting, 'element');
++  assert.equal(result.actuation?.geometry, 'daemon-snapshot');
++  assert.equal(result.actuation?.executor, 'keyboard');
++});
+diff --git a/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.ts b/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.ts
+new file mode 100644
+index 000000000..30c48399e
+--- /dev/null
++++ b/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.ts
+@@ -0,0 +1,117 @@
++import {
++  ACTUATION_COORDINATE_FALLBACK_DIRECT_DELEGATED,
++  ACTUATION_OUTCOME_VERSION,
++  type ActuationBackendFragment,
++  type ActuationExecutor,
++  type ActuationGeometry,
++  type ActuationOutcome,
++  type ActuationTargeting,
++} from '@agent-device/contracts/actuation-outcome';
++import type { ResolvedInteractionTarget } from '@agent-device/contracts/interaction';
++
++/**
++ * Construction of the actuation outcome report for runtime-resolved
++ * interactions. The daemon owns targeting/geometry here — they derive from
++ * the resolution path the interaction just took — while the platform backend
++ * owns executor/mechanism facts, which arrive as a fragment on the backend
++ * result under the `actuation` key. The fragment is consumed into the merged
++ * outcome and stripped from the backend result so the unmerged partial shape
++ * never reaches a response.
++ */
++
++const ACTUATION_EXECUTORS: ReadonlySet<string> = new Set<ActuationExecutor>([
++  'xctest-element-coordinate',
++  'xctest-coordinate',
++  'xctest-synthesized-touch',
++  'android-adb-input',
++  'android-uiautomation-helper',
++  'android-provider-native',
++  'provider-native',
++  'keyboard',
++  'unknown',
++]);
++
++/** The fragment a backend reported on its action result, or undefined when absent or malformed. */
++export function extractActuationBackendFragment(
++  backendResult: Record<string, unknown> | undefined,
++): ActuationBackendFragment | undefined {
++  const raw = backendResult?.actuation;
++  if (!raw || typeof raw !== 'object') return undefined;
++  const candidate = raw as Record<string, unknown>;
++  if (typeof candidate.executor !== 'string' || !ACTUATION_EXECUTORS.has(candidate.executor)) {
++    return undefined;
++  }
++  const mechanismFallback = readFallbackFact(candidate.mechanismFallback);
++  return {
++    executor: candidate.executor as ActuationExecutor,
++    ...(typeof candidate.executorDetail === 'string'
++      ? { executorDetail: candidate.executorDetail }
++      : {}),
++    ...(mechanismFallback ? { mechanismFallback } : {}),
++  };
++}
++
++/** The backend result minus the consumed fragment key; the input object is not mutated. */
++export function stripActuationBackendFragment(
++  backendResult: Record<string, unknown> | undefined,
++): Record<string, unknown> | undefined {
++  if (!backendResult || !('actuation' in backendResult)) return backendResult;
++  const { actuation: _consumed, ...rest } = backendResult;
++  return rest;
++}
++
++function readFallbackFact(raw: unknown): { reason: string; detail?: string } | undefined {
++  if (!raw || typeof raw !== 'object') return undefined;
++  const candidate = raw as Record<string, unknown>;
++  if (typeof candidate.reason !== 'string' || candidate.reason.length === 0) return undefined;
++  return {
++    reason: candidate.reason,
++    ...(typeof candidate.detail === 'string' ? { detail: candidate.detail } : {}),
++  };
++}
++
++/**
++ * Targeting/geometry for a runtime-resolved interaction: a point target is
++ * caller geometry by construction, an element target resolved through the
++ * daemon's tree is daemon-snapshot geometry. The native-ref fast path
++ * overrides geometry to `provider-element` — the provider's own element
++ * handle actuated without a derived point.
++ */
++export function actuationTargetingGeometry(
++  resolved: ResolvedInteractionTarget,
++  geometryOverride?: ActuationGeometry,
++): { targeting: ActuationTargeting; geometry: ActuationGeometry } {
++  if (resolved.kind === 'point') return { targeting: 'point', geometry: 'caller-point' };
++  return { targeting: 'element', geometry: geometryOverride ?? 'daemon-snapshot' };
++}
++
++export function buildInteractionActuation(params: {
++  targeting: ActuationTargeting;
++  geometry: ActuationGeometry;
++  backendResult?: Record<string, unknown>;
++  /**
++   * The refused direct platform dispatch this runtime interaction delegates
++   * for. Present only when the semantic target was meant to actuate through
++   * a direct platform dispatch and became numeric input instead; `detail`
++   * carries the refusal's error code when one was disclosed.
++   */
++  directDelegation?: { detail?: string };
++}): ActuationOutcome {
++  const fragment = extractActuationBackendFragment(params.backendResult);
++  return {
++    version: ACTUATION_OUTCOME_VERSION,
++    targeting: params.targeting,
++    geometry: params.geometry,
++    executor: fragment?.executor ?? 'unknown',
++    ...(fragment?.executorDetail ? { executorDetail: fragment.executorDetail } : {}),
++    ...(params.directDelegation
++      ? {
++          coordinateFallback: {
++            reason: ACTUATION_COORDINATE_FALLBACK_DIRECT_DELEGATED,
++            ...(params.directDelegation.detail ? { detail: params.directDelegation.detail } : {}),
++          },
++        }
++      : {}),
++    ...(fragment?.mechanismFallback ? { mechanismFallback: fragment.mechanismFallback } : {}),
++  };
++}
+diff --git a/packages/command-runtime/src/commands/interaction/runtime/gestures.ts b/packages/command-runtime/src/commands/interaction/runtime/gestures.ts
+index daf2d269f..f56b65d88 100644
+--- a/packages/command-runtime/src/commands/interaction/runtime/gestures.ts
++++ b/packages/command-runtime/src/commands/interaction/runtime/gestures.ts
+@@ -36,6 +36,11 @@ import {
+   type ResolvedInteractionTarget,
+ } from './resolution.ts';
+ import { dispatchNativeRefInteraction } from './native-ref-interaction.ts';
++import {
++  actuationTargetingGeometry,
++  buildInteractionActuation,
++  stripActuationBackendFragment,
++} from './actuation-outcome.ts';
+ import type { ExpectedResolvedTarget } from './interaction-resolution-request.ts';
+ import { captureInteractionSnapshot } from './interaction-snapshot-capture.ts';
+ import { resolveVisibleSnapshotViewport } from './viewport.ts';
+@@ -131,14 +136,21 @@ export const longPressCommand: RuntimeCommand<
+     durationMs,
+   });
+   const formattedBackendResult = toBackendResult(backendResult);
++  const actuation = buildInteractionActuation({
++    ...actuationTargetingGeometry(resolved),
++    backendResult: formattedBackendResult,
++  });
+   return await applyPostActionObservation(
+     runtime,
+     options,
+     resolved,
+     {
+       ...resolved,
++      actuation,
+       ...(durationMs !== undefined ? { durationMs } : {}),
+-      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
++      ...(formattedBackendResult
++        ? { backendResult: stripActuationBackendFragment(formattedBackendResult) }
++        : {}),
+       ...successText(`Long pressed (${point.x}, ${point.y})`),
+     },
+     observation,
+@@ -170,13 +182,20 @@ export const hoverCommand: RuntimeCommand<HoverCommandOptions, HoverCommandResul
+   const point = requireResolvedPoint(resolved);
+   const backendResult = await runtime.backend.hover(toBackendContext(runtime, options), point);
+   const formattedBackendResult = toBackendResult(backendResult);
++  const actuation = buildInteractionActuation({
++    ...actuationTargetingGeometry(resolved),
++    backendResult: formattedBackendResult,
++  });
+   return await applyPostActionObservation(
+     runtime,
+     options,
+     resolved,
+     {
+       ...resolved,
+-      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
++      actuation,
++      ...(formattedBackendResult
++        ? { backendResult: stripActuationBackendFragment(formattedBackendResult) }
++        : {}),
+       ...successText(`Hovered (${point.x}, ${point.y})`),
+     },
+     observation,
+diff --git a/packages/command-runtime/src/commands/interaction/runtime/interactions.test.ts b/packages/command-runtime/src/commands/interaction/runtime/interactions.test.ts
+index ed9fead95..00bb76557 100644
+--- a/packages/command-runtime/src/commands/interaction/runtime/interactions.test.ts
++++ b/packages/command-runtime/src/commands/interaction/runtime/interactions.test.ts
+@@ -32,7 +32,16 @@ test('runtime click taps an explicit point without requiring a snapshot', async
+   const result = await device.interactions.click({ kind: 'point', x: 10, y: 20 }, { count: 2 });
+ 
+   assert.deepEqual(calls, [{ point: { x: 10, y: 20 }, count: 2 }]);
+-  assert.deepEqual(result, { kind: 'point', point: { x: 10, y: 20 } });
++  assert.deepEqual(result, {
++    kind: 'point',
++    point: { x: 10, y: 20 },
++    actuation: {
++      version: 1,
++      targeting: 'point',
++      geometry: 'caller-point',
++      executor: 'unknown',
++    },
++  });
+ });
+ 
+ test('runtime click with verify captures a baseline for point targets and reports evidence', async () => {
+diff --git a/packages/command-runtime/src/commands/interaction/runtime/interactions.ts b/packages/command-runtime/src/commands/interaction/runtime/interactions.ts
+index c5c8da8a6..0caa99b02 100644
+--- a/packages/command-runtime/src/commands/interaction/runtime/interactions.ts
++++ b/packages/command-runtime/src/commands/interaction/runtime/interactions.ts
+@@ -24,6 +24,11 @@ import { resolveInteractionTarget, type InteractionRequestTarget } from './resol
+ import { admitResolvedTarget } from './pre-dispatch-admission.ts';
+ import { pointObservationOf } from './target-visibility-stages.ts';
+ import { dispatchNativeRefInteraction } from './native-ref-interaction.ts';
++import {
++  actuationTargetingGeometry,
++  buildInteractionActuation,
++  stripActuationBackendFragment,
++} from './actuation-outcome.ts';
+ import type {
+   ExpectedResolvedTarget,
+   ResolveInteractionTargetParams,
+@@ -56,6 +61,12 @@ export type PressCommandOptions = CommandContext &
+     preresolvedTarget?: PreresolvedInteractionTarget;
+     /** Internal Maestro replay policy: replay taps resolved bounds, so admission skips the hittability read. */
+     allowNonHittableCoordinateFallback?: boolean;
++    /**
++     * Internal: this runtime interaction delegates for a refused direct
++     * platform dispatch (interaction-touch-direct-ios.ts); reported as the
++     * actuation outcome's coordinateFallback.
++     */
++    directDelegation?: { detail?: string };
+   } & PostActionObservationOptions;
+ 
+ export type ClickCommandOptions = PressCommandOptions;
+@@ -131,6 +142,10 @@ export const fillCommand: RuntimeCommand<FillCommandOptions, FillCommandResult>
+     nodeType && !isResolvedTextInput
+       ? `fill target ${formatTargetForWarning(resolved)} resolved to "${nodeType}", attempting fill anyway.`
+       : undefined;
++  const actuation = buildInteractionActuation({
++    ...actuationTargetingGeometry(resolved),
++    backendResult: formattedBackendResult,
++  });
+   return await applyPostActionObservation(
+     runtime,
+     options,
+@@ -138,8 +153,11 @@ export const fillCommand: RuntimeCommand<FillCommandOptions, FillCommandResult>
+     {
+       ...resolved,
+       text: options.text,
++      actuation,
+       ...(warning ? { warning } : {}),
+-      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
++      ...(formattedBackendResult
++        ? { backendResult: stripActuationBackendFragment(formattedBackendResult) }
++        : {}),
+     },
+     observation,
+   );
+@@ -195,13 +213,21 @@ async function tapCommand(
+     throw error;
+   }
+   const formattedBackendResult = toBackendResult(backendResult);
++  const actuation = buildInteractionActuation({
++    ...actuationTargetingGeometry(atRest),
++    backendResult: formattedBackendResult,
++    ...(options.directDelegation ? { directDelegation: options.directDelegation } : {}),
++  });
+   return await applyPostActionObservation(
+     runtime,
+     options,
+     atRest,
+     {
+       ...atRest,
+-      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
++      actuation,
++      ...(formattedBackendResult
++        ? { backendResult: stripActuationBackendFragment(formattedBackendResult) }
++        : {}),
+     },
+     observation,
+   );
+@@ -316,13 +342,20 @@ async function tapRefPlanCommand(
+   // sequence.points.
+   const finalTarget: ResolvedInteractionTarget = members[0]!.atRest;
+   const formattedBackendResult = toBackendResult(lastBackendResult);
++  const actuation = buildInteractionActuation({
++    ...actuationTargetingGeometry(finalTarget),
++    backendResult: formattedBackendResult,
++  });
+   const result = await applyPostActionObservation(
+     runtime,
+     options,
+     finalTarget,
+     {
+       ...finalTarget,
+-      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
++      actuation,
++      ...(formattedBackendResult
++        ? { backendResult: stripActuationBackendFragment(formattedBackendResult) }
++        : {}),
+     },
+     observation,
+   );
+diff --git a/packages/command-runtime/src/commands/interaction/runtime/native-ref-interaction.ts b/packages/command-runtime/src/commands/interaction/runtime/native-ref-interaction.ts
+index 68bf80b5a..b33641977 100644
+--- a/packages/command-runtime/src/commands/interaction/runtime/native-ref-interaction.ts
++++ b/packages/command-runtime/src/commands/interaction/runtime/native-ref-interaction.ts
+@@ -26,6 +26,8 @@ import {
+   runInteractionPipelineStages,
+   throwIfOffscreenInteractionTarget,
+ } from './target-visibility-stages.ts';
++import { buildInteractionActuation, stripActuationBackendFragment } from './actuation-outcome.ts';
++import type { ActuationOutcome } from '@agent-device/contracts/actuation-outcome';
+ 
+ /**
+  * ADR 0011 native-ref preflight: `click @ref` / `fill @ref` fast paths
+@@ -125,7 +127,10 @@ export async function dispatchNativeRefInteraction(
+     refTarget: BackendRefTarget,
+   ) => Promise<BackendActionResult>,
+ ): Promise<
+-  Extract<ResolvedInteractionTarget, { kind: 'ref' }> & { backendResult?: Record<string, unknown> }
++  Extract<ResolvedInteractionTarget, { kind: 'ref' }> & {
++    backendResult?: Record<string, unknown>;
++    actuation?: ActuationOutcome;
++  }
+ > {
+   const preflight = await preflightNativeRefInteraction(runtime, options, target, action);
+   const backendResult = await dispatch(toBackendContext(runtime, options), {
+@@ -134,11 +139,21 @@ export async function dispatchNativeRefInteraction(
+     ...(target.fallbackLabel ? { fallbackLabel: target.fallbackLabel } : {}),
+   });
+   const formattedBackendResult = toBackendResult(backendResult);
++  // The ref IS the provider's own element handle: actuation targets the
++  // element through provider geometry, never a daemon-derived point.
++  const actuation = buildInteractionActuation({
++    targeting: 'element',
++    geometry: 'provider-element',
++    backendResult: formattedBackendResult,
++  });
+   return {
+     kind: 'ref',
+     target: { kind: 'ref', ref: target.ref },
+     ...preflight,
+     resolution: preflight.resolution ?? EXACT_REF_RESOLUTION,
+-    ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
++    actuation,
++    ...(formattedBackendResult
++      ? { backendResult: stripActuationBackendFragment(formattedBackendResult) }
++      : {}),
+   };
+ }
+diff --git a/packages/contracts/package.json b/packages/contracts/package.json
+index bcdc02268..b6ab60367 100644
+--- a/packages/contracts/package.json
++++ b/packages/contracts/package.json
+@@ -8,6 +8,10 @@
+     "@agent-device/kernel": "workspace:*"
+   },
+   "exports": {
++    "./actuation-outcome": {
++      "types": "./src/actuation-outcome.ts",
++      "default": "./src/actuation-outcome.ts"
++    },
+     "./alert-contract": {
+       "types": "./src/alert-contract.ts",
+       "default": "./src/alert-contract.ts"
+diff --git a/packages/contracts/src/actuation-outcome.ts b/packages/contracts/src/actuation-outcome.ts
+new file mode 100644
+index 000000000..d0d192515
+--- /dev/null
++++ b/packages/contracts/src/actuation-outcome.ts
+@@ -0,0 +1,84 @@
++/**
++ * Actuation outcome reporting: for every actuating interaction success, the
++ * response MAY carry an additive `actuation` object describing three
++ * orthogonal facts of the dispatch that just happened:
++ *
++ * - `targeting`: who chose the target — an element reference/selector, a
++ *   numeric point, or a direct platform dispatch with no daemon-side target
++ *   resolution.
++ * - `geometry`: whose geometry the actuated position came from. The frames a
++ *   consumer captured before dispatch are frozen geometry; a frame the
++ *   platform read at execution time is fresh. `none` means no geometry
++ *   participated (for example a direct keypress injection).
++ * - `executor`: which injector performed the input.
++ *
++ * The three axes compose. `coordinateFallback` and `mechanismFallback` are two
++ * deliberately separate substitution facts: the first means a semantic target
++ * became numeric input contrary to the attempted actuation mode, the second
++ * means one injector substituted for another. Ownership is split: the daemon
++ * owns targeting/geometry for runtime-resolved interactions, the platform
++ * backend owns executor/mechanism facts. Fields absent from the object are
++ * unknown — absence never upgrades to a purer reading.
++ */
++export const ACTUATION_OUTCOME_VERSION = 1;
++
++export type ActuationTargeting = 'element' | 'point' | 'direct';
++
++export type ActuationGeometry =
++  | 'none'
++  | 'runner-element-frame'
++  | 'runner-expected-point'
++  | 'daemon-snapshot'
++  | 'relay-snapshot'
++  | 'caller-point'
++  | 'provider-element'
++  | 'unknown';
++
++export type ActuationExecutor =
++  | 'xctest-element-coordinate'
++  | 'xctest-coordinate'
++  | 'xctest-synthesized-touch'
++  | 'android-adb-input'
++  | 'android-uiautomation-helper'
++  | 'android-provider-native'
++  | 'provider-native'
++  | 'keyboard'
++  | 'unknown';
++
++/**
++ * A typed substitution fact. `reason` is the typed category; `detail` carries
++ * an optional machine-readable refinement (for example the refused dispatch's
++ * error code).
++ */
++export type ActuationFallback = {
++  reason: string;
++  detail?: string;
++};
++
++/** A direct platform dispatch attempt delegated to runtime resolution, so the semantic target was actuated through numeric input. */
++export const ACTUATION_COORDINATE_FALLBACK_DIRECT_DELEGATED = 'direct-dispatch-delegated';
++
++/** A live preferred injector did not confirm the input, so a lesser injector substituted for it. */
++export const ACTUATION_MECHANISM_FALLBACK_HELPER_INPUT_NOT_CONFIRMED =
++  'automation-helper-input-not-confirmed';
++
++export type ActuationOutcome = {
++  version: number;
++  targeting: ActuationTargeting;
++  geometry: ActuationGeometry;
++  executor: ActuationExecutor;
++  executorDetail?: string;
++  coordinateFallback?: ActuationFallback;
++  mechanismFallback?: ActuationFallback;
++};
++
++/**
++ * The platform-owned slice of an actuation outcome. Backends attach this
++ * fragment to their action results under the `actuation` key; the command
++ * runtime consumes and merges it into the complete outcome and never exposes
++ * the unmerged fragment on a response.
++ */
++export type ActuationBackendFragment = Pick<
++  ActuationOutcome,
++  'executor' | 'executorDetail' | 'mechanismFallback'
++>;
+diff --git a/packages/contracts/src/interaction.ts b/packages/contracts/src/interaction.ts
+index 2ba662085..f06c61d9f 100644
+--- a/packages/contracts/src/interaction.ts
++++ b/packages/contracts/src/interaction.ts
+@@ -8,6 +8,7 @@ import type {
+ import type { ResponseCost } from '@agent-device/kernel/contracts';
+ import type { ClickButton } from './click-button.ts';
+ import type { FillUnconfirmedVerification } from './fill-evidence.ts';
++import type { ActuationOutcome } from './actuation-outcome.ts';
+ 
+ export type InteractionSelectorTarget = {
+   kind: 'selector';
+@@ -396,6 +397,12 @@ type TouchResponseDataBase = {
+   maestroNonHittableCoordinateFallbackAllowed?: boolean;
+   maestroNonHittableCoordinateFallbackUsed?: boolean;
+   maestroFallbackReason?: 'non-hittable-coordinate';
++  /**
++   * Actuation outcome report (actuation-outcome.ts): who chose the target,
++   * whose geometry the actuated position came from, and which injector
++   * performed the input. Absent means unreported — never a purer reading.
++   */
++  actuation?: ActuationOutcome;
+ };
+ 
+ type TouchResponsePoint = TouchResponseDataBase & {
+@@ -496,6 +503,7 @@ export type PressSequenceSummary = {
+  */
+ export type PressCommandResult = ResolvedInteractionTarget & {
+   backendResult?: Record<string, unknown>;
++  actuation?: ActuationOutcome;
+   message?: string;
+   warning?: string;
+   evidence?: InteractionEvidence;
+@@ -511,6 +519,7 @@ export type FillCommandResult = ResolvedInteractionTarget & {
+   text: string;
+   warning?: string;
+   backendResult?: Record<string, unknown>;
++  actuation?: ActuationOutcome;
+   message?: string;
+   evidence?: InteractionEvidence;
+   settle?: SettleObservation;
+@@ -523,6 +532,7 @@ export type FillCommandResult = ResolvedInteractionTarget & {
+ export type LongPressCommandResult = ResolvedInteractionTarget & {
+   durationMs?: number;
+   backendResult?: Record<string, unknown>;
++  actuation?: ActuationOutcome;
+   message?: string;
+   warning?: string;
+   settle?: SettleObservation;
+@@ -534,6 +544,7 @@ export type LongPressCommandResult = ResolvedInteractionTarget & {
+  */
+ export type HoverCommandResult = ResolvedInteractionTarget & {
+   backendResult?: Record<string, unknown>;
++  actuation?: ActuationOutcome;
+   message?: string;
+   warning?: string;
+   settle?: SettleObservation;
+diff --git a/packages/daemon/src/__tests__/support/touch-command-surface-fake.ts b/packages/daemon/src/__tests__/support/touch-command-surface-fake.ts
+index 42ba420ea..0329672a6 100644
+--- a/packages/daemon/src/__tests__/support/touch-command-surface-fake.ts
++++ b/packages/daemon/src/__tests__/support/touch-command-surface-fake.ts
+@@ -17,6 +17,7 @@ import type {
+   SettleParams,
+ } from '@agent-device/contracts/interaction';
+ import type { AgentDeviceRuntimeConfig } from '@agent-device/contracts/runtime-contract';
++import type { ActuationOutcome } from '@agent-device/contracts/actuation-outcome';
+ import { attachResolvedInteractionTarget } from '@agent-device/host-kit/interaction-outcome';
+ import {
+   buildDragGesturePlan,
+@@ -592,12 +593,77 @@ async function finish<TExtra extends Record<string, unknown>>(
+     : undefined;
+   return {
+     ...resolved,
+-    ...extra,
++    actuation: actuationOutcomeFor(resolved, options, extra.backendResult),
++    ...stripActuationFragmentKey(extra),
+     ...(evidence ? { evidence } : {}),
+     ...(settle ? { settle } : {}),
+   } as never;
+ }
+ 
++/**
++ * The actuation outcome the real command family constructs for the same
++ * dispatch, mirrored at the seam: targeting/geometry derive from the
++ * resolution path (a ref dispatched as the backend's own element handle —
++ * no point — is provider geometry), the executor fact reads the backend
++ * result's fragment loosely, and a delegation the daemon forwarded becomes
++ * the coordinateFallback fact.
++ */
++function actuationOutcomeFor(
++  resolved: ResolvedInteractionTarget,
++  options: CommandOptions,
++  backendResult: unknown,
++): ActuationOutcome {
++  const fragment = readActuationFragment(backendResult);
++  const delegation = (options as { directDelegation?: { detail?: string } }).directDelegation;
++  return {
++    version: 1,
++    targeting: resolved.kind === 'point' ? 'point' : 'element',
++    geometry:
++      resolved.kind === 'point'
++        ? 'caller-point'
++        : resolved.kind === 'ref' && !resolved.point
++          ? 'provider-element'
++          : 'daemon-snapshot',
++    executor: fragment?.executor ?? 'unknown',
++    ...(delegation
++      ? {
++          coordinateFallback: {
++            reason: 'direct-dispatch-delegated',
++            ...(delegation.detail ? { detail: delegation.detail } : {}),
++          },
++        }
++      : {}),
++    ...(fragment?.mechanismFallback ? { mechanismFallback: fragment.mechanismFallback } : {}),
++  };
++}
++
++function readActuationFragment(
++  backendResult: unknown,
++): { executor?: ActuationOutcome['executor']; mechanismFallback?: { reason: string } } | undefined {
++  if (!backendResult || typeof backendResult !== 'object') return undefined;
++  const raw = (backendResult as Record<string, unknown>).actuation;
++  if (!raw || typeof raw !== 'object') return undefined;
++  const candidate = raw as Record<string, unknown>;
++  return {
++    ...(typeof candidate.executor === 'string'
++      ? { executor: candidate.executor as ActuationOutcome['executor'] }
++      : {}),
++    ...(candidate.mechanismFallback && typeof candidate.mechanismFallback === 'object'
++      ? { mechanismFallback: candidate.mechanismFallback as { reason: string } }
++      : {}),
++  };
++}
++
++/** The fragment key leaves the backend result once the outcome is constructed, as in production. */
++function stripActuationFragmentKey<TExtra extends Record<string, unknown>>(extra: TExtra): TExtra {
++  const backendResult = extra.backendResult;
++  if (!backendResult || typeof backendResult !== 'object' || !('actuation' in backendResult)) {
++    return extra;
++  }
++  const { actuation: _consumed, ...rest } = backendResult as Record<string, unknown>;
++  return { ...extra, backendResult: rest };
++}
++
+ async function verifyEvidence(
+   config: AgentDeviceRuntimeConfig,
+   resolved: ResolvedInteractionTarget,
+diff --git a/packages/daemon/src/core/fill-backend-result.ts b/packages/daemon/src/core/fill-backend-result.ts
+index 40a203552..8bcb5970a 100644
+--- a/packages/daemon/src/core/fill-backend-result.ts
++++ b/packages/daemon/src/core/fill-backend-result.ts
+@@ -4,6 +4,7 @@ import {
+   type FillBackendResult,
+ } from '@agent-device/contracts/interactor-types';
+ import type { FillVerificationTarget } from '@agent-device/contracts/fill-evidence';
++import type { ActuationBackendFragment } from '@agent-device/contracts/actuation-outcome';
+ 
+ type RawUnconfirmedVerification = Record<string, unknown> & {
+   requested: string;
+@@ -17,7 +18,17 @@ export function readFillBackendResult(result: Record<string, unknown> | void): F
+     ? { textEntryReadiness: readiness }
+     : {};
+   const unconfirmed = readFillUnconfirmedVerification(result);
+-  return unconfirmed ? { ...textEntryReadiness, ...unconfirmed } : textEntryReadiness;
++  // The actuation fragment is the platform-owned channel the command runtime
++  // merges into the response's actuation outcome: forwarded opaquely, never
++  // interpreted at this boundary.
++  const actuation =
++    result && 'actuation' in result
++      ? // Opaque by contract: the command runtime's extractActuationBackendFragment
++        // validates the shape before merging it.
++        { actuation: result.actuation as ActuationBackendFragment }
++      : {};
++  const base = { ...textEntryReadiness, ...actuation };
++  return unconfirmed ? { ...base, ...unconfirmed } : base;
+ }
+ 
+ function readFillUnconfirmedVerification(
+diff --git a/packages/daemon/src/execution/interaction/internal/interaction-response-data-transform.ts b/packages/daemon/src/execution/interaction/internal/interaction-response-data-transform.ts
+index 556f945f7..98118ec94 100644
+--- a/packages/daemon/src/execution/interaction/internal/interaction-response-data-transform.ts
++++ b/packages/daemon/src/execution/interaction/internal/interaction-response-data-transform.ts
+@@ -12,6 +12,10 @@ const internalInteractionDiagnosticFieldNames = new Set([
+   'gestureEndUptimeMs',
+   'gestureStartUptimeMs',
+   'sequenceResults',
++  // The platform-owned actuation fragment rides backend results up to the
++  // command runtime, which merges it into the response's complete actuation
++  // outcome; the unmerged partial shape never passes through raw.
++  'actuation',
+ ]);
+ 
+ export function stripInternalInteractionDiagnostics(
+diff --git a/packages/daemon/src/execution/interaction/internal/interaction-touch-actuation-outcome.test.ts b/packages/daemon/src/execution/interaction/internal/interaction-touch-actuation-outcome.test.ts
+new file mode 100644
+index 000000000..9e277382e
+--- /dev/null
++++ b/packages/daemon/src/execution/interaction/internal/interaction-touch-actuation-outcome.test.ts
+@@ -0,0 +1,177 @@
++import { beforeEach, expect, test } from 'vitest';
++import { AppError } from '@agent-device/kernel/errors';
++import { makeSessionStore } from '../../../__tests__/support/store-factory.ts';
++import {
++  installInteractorSnapshotResolution,
++  mockInteractorSnapshot,
++} from '../../../__tests__/support/interactor-resolution-fixture.ts';
++import { runInteraction } from '../../../__tests__/support/touch-interaction-runner.ts';
++import {
++  getRuntimeBindings,
++  mockTapElementSelector,
++  mockTapPoint,
++  resetGetRuntimeFixture,
++} from '../../__tests__/interaction-get-runtime-fixture.ts';
++import { makeStaleRefSession, makeTwoButtonNodes } from './__tests__/interaction-touch-fixtures.ts';
++import { handleInteractionCommands } from '../index.ts';
++import { touchCreateCommandSurface } from '../../../__tests__/support/touch-command-surface-fake.ts';
++import { contextFromFlags } from './__tests__/interaction-touch-fixtures.ts';
++
++/**
++ * The actuation outcome report on interaction success responses: the daemon
++ * owns targeting/geometry for runtime-resolved interactions, a delegated
++ * direct dispatch discloses its coordinateFallback, and the direct runner
++ * payload path carries no report — the platform runner owns that outcome.
++ */
++
++beforeEach(() => {
++  resetGetRuntimeFixture();
++  installInteractorSnapshotResolution();
++  mockInteractorSnapshot.mockReset();
++});
++
++function publishTreeSession(
++  sessionStore: ReturnType<typeof makeSessionStore>,
++  sessionName: string,
++) {
++  sessionStore.publish(sessionName, makeStaleRefSession(sessionName));
++  mockInteractorSnapshot.mockResolvedValue({
++    nodes: makeTwoButtonNodes(),
++    backend: 'xctest',
++    producer: 'apple-runner',
++  });
++}
++
++test('a selector press reports element targeting with daemon-snapshot geometry', async () => {
++  const sessionStore = makeSessionStore();
++  const sessionName = 'actuation-selector-press';
++  publishTreeSession(sessionStore, sessionName);
++
++  const response = await runInteraction(sessionStore, sessionName, 'press', ['label=Continue']);
++
++  expect(response?.ok).toBe(true);
++  if (!response?.ok) return;
++  expect(response.data?.actuation).toEqual({
++    version: 1,
++    targeting: 'element',
++    geometry: 'daemon-snapshot',
++    executor: 'unknown',
++  });
++});
++
++test('a point press reports point targeting with caller-point geometry', async () => {
++  const sessionStore = makeSessionStore();
++  const sessionName = 'actuation-point-press';
++  publishTreeSession(sessionStore, sessionName);
++
++  const response = await runInteraction(sessionStore, sessionName, 'press', ['100', '200']);
++
++  expect(response?.ok).toBe(true);
++  if (!response?.ok) return;
++  expect(response.data?.actuation).toEqual({
++    version: 1,
++    targeting: 'point',
++    geometry: 'caller-point',
++    executor: 'unknown',
++  });
++});
++
++test('a direct-dispatch delegation reports its coordinateFallback reason and detail', async () => {
++  const sessionStore = makeSessionStore();
++  const sessionName = 'actuation-direct-delegation';
++  publishTreeSession(sessionStore, sessionName);
++  mockTapElementSelector.mockRejectedValueOnce(
++    new AppError('COMMAND_FAILED', 'Runner did not accept connection', {
++      runnerConnectFailureReason: 'runner_connect_refused',
++      dispatched: 'no',
++    }),
++  );
++
++  const response = await runInteraction(sessionStore, sessionName, 'click', ['label=Continue'], {
++    maestro: { allowNonHittableCoordinateFallback: true },
++  });
++
++  expect(mockTapElementSelector).toHaveBeenCalledOnce();
++  expect(mockTapPoint).toHaveBeenCalledOnce();
++  expect(response?.ok).toBe(true);
++  if (!response?.ok) return;
++  const actuation = response.data?.actuation as Record<string, unknown> | undefined;
++  expect(actuation?.targeting).toBe('element');
++  expect(actuation?.geometry).toBe('daemon-snapshot');
++  expect(actuation?.coordinateFallback).toEqual({
++    reason: 'direct-dispatch-delegated',
++    detail: 'COMMAND_FAILED',
++  });
++});
++
++test('an undelegated selector click carries no fallback facts', async () => {
++  const sessionStore = makeSessionStore();
++  const sessionName = 'actuation-no-fallbacks';
++  publishTreeSession(sessionStore, sessionName);
++
++  const response = await runInteraction(sessionStore, sessionName, 'click', ['label=Continue'], {
++    maestro: { allowNonHittableCoordinateFallback: true },
++  });
++
++  expect(response?.ok).toBe(true);
++  if (!response?.ok) return;
++  const actuation = response.data?.actuation as Record<string, unknown> | undefined;
++  expect(actuation?.coordinateFallback).toBeUndefined();
++  expect(actuation?.mechanismFallback).toBeUndefined();
++});
++
++test('the direct runner payload path carries no actuation report', async () => {
++  const sessionStore = makeSessionStore();
++  const sessionName = 'actuation-direct-success';
++  publishTreeSession(sessionStore, sessionName);
++  mockTapElementSelector.mockResolvedValueOnce({ x: 60, y: 40 });
++
++  const response = await runInteraction(sessionStore, sessionName, 'click', ['label=Continue'], {
++    maestro: { allowNonHittableCoordinateFallback: true },
++  });
++
++  expect(mockTapElementSelector).toHaveBeenCalledOnce();
++  expect(mockTapPoint).not.toHaveBeenCalled();
++  expect(response?.ok).toBe(true);
++  if (!response?.ok) return;
++  expect(response.data?.actuation).toBeUndefined();
++});
++
++test('the backend actuation fragment merges into the response outcome', async () => {
++  const sessionStore = makeSessionStore();
++  const sessionName = 'actuation-fragment-merge';
++  publishTreeSession(sessionStore, sessionName);
++  mockTapPoint.mockImplementationOnce(async (input) => ({
++    x: input.point.x,
++    y: input.point.y,
++    actuation: {
++      executor: 'android-adb-input',
++      mechanismFallback: { reason: 'automation-helper-input-not-confirmed' },
++    },
++  }));
++
++  const response = await handleInteractionCommands({
++    createCommandSurface: touchCreateCommandSurface,
++    req: {
++      token: 't',
++      session: sessionName,
++      command: 'press',
++      positionals: ['label=Continue'],
++      flags: {},
++    },
++    sessionName,
++    sessionStore,
++    contextFromFlags,
++    ...getRuntimeBindings(),
++  });
++
++  expect(response?.ok).toBe(true);
++  if (!response?.ok) return;
++  expect(response.data?.actuation).toEqual({
++    version: 1,
++    targeting: 'element',
++    geometry: 'daemon-snapshot',
++    executor: 'android-adb-input',
++    mechanismFallback: { reason: 'automation-helper-input-not-confirmed' },
++  });
++});
+diff --git a/packages/daemon/src/execution/interaction/internal/interaction-touch-direct-ios.ts b/packages/daemon/src/execution/interaction/internal/interaction-touch-direct-ios.ts
+index f470e366e..d4ee94c3d 100644
+--- a/packages/daemon/src/execution/interaction/internal/interaction-touch-direct-ios.ts
++++ b/packages/daemon/src/execution/interaction/internal/interaction-touch-direct-ios.ts
+@@ -1,6 +1,6 @@
+ import type { DaemonResponse } from '@agent-device/kernel/contracts';
+ import type { GestureReferenceFrame } from '@agent-device/contracts/scroll-gesture';
+-import { normalizeError } from '@agent-device/kernel/errors';
++import { asAppError, normalizeError } from '@agent-device/kernel/errors';
+ import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
+ import {
+   isDirectIosSelectorFallbackError,
+@@ -30,12 +30,23 @@ import {
+  * interaction-touch-direct-ios-eligibility.ts.
+  */
+ 
++/**
++ * The direct iOS selector tap's outcome: a finished response (success,
++ * corroborated failure, or terminal error), or a pre-dispatch delegation to
++ * the runtime tree path. `detail` on the delegation carries the refused
++ * dispatch's error code — the runtime path reports it as the actuation
++ * outcome's coordinateFallback detail.
++ */
++export type DirectIosSelectorTapOutcome =
++  | { kind: 'response'; response: DaemonResponse }
++  | { kind: 'delegated'; detail?: string };
++
+ export async function dispatchDirectIosSelectorTap(
+   params: InteractionRouteInput & { captureSnapshotForSession: CaptureSnapshotForSession },
+   session: SessionState,
+   selector: DirectIosSelectorTarget,
+   tapElementSelector: NonNullable<BoundTouchExecutor['tapElementSelector']>,
+-): Promise<DaemonResponse | null> {
++): Promise<DirectIosSelectorTapOutcome> {
+   const handlerParams = params;
+   const extra = { selector: selector.raw };
+   const actionStartedAt = Date.now();
+@@ -74,17 +85,20 @@ export async function dispatchDirectIosSelectorTap(
+         ...maestroFallback.extra,
+       },
+     });
+-    return finalizeTouchInteraction({
+-      ref: handlerParams.sessionRef!,
+-      sessionStore: handlerParams.sessionStore,
+-      command: handlerParams.req.command,
+-      positionals: handlerParams.req.positionals ?? [],
+-      flags: handlerParams.req.flags,
+-      result,
+-      responseData,
+-      actionStartedAt,
+-      actionFinishedAt,
+-    });
++    return {
++      kind: 'response',
++      response: finalizeTouchInteraction({
++        ref: handlerParams.sessionRef!,
++        sessionStore: handlerParams.sessionStore,
++        command: handlerParams.req.command,
++        positionals: handlerParams.req.positionals ?? [],
++        flags: handlerParams.req.flags,
++        result,
++        responseData,
++        actionStartedAt,
++        actionFinishedAt,
++      }),
++    };
+   } catch (error) {
+     const corroboratedResponse = await buildDirectIosCorroboratedResponse({
+       error,
+@@ -93,7 +107,7 @@ export async function dispatchDirectIosSelectorTap(
+       positionals: [],
+       actionStartedAt,
+     });
+-    if (corroboratedResponse) return corroboratedResponse;
++    if (corroboratedResponse) return { kind: 'response', response: corroboratedResponse };
+     // ADR 0011 delegation-on-error: only a failure disclosed `dispatched: no`
+     // falls back to the tree path, which taps again; Maestro replay keeps the
+     // runner's selector refusal shapes.
+@@ -101,7 +115,7 @@ export async function dispatchDirectIosSelectorTap(
+       delegateSemanticFailures: selector.allowNonHittableCoordinateFallback !== true,
+     });
+     if (!fallback) {
+-      return { ok: false, error: normalizeError(error) };
++      return { kind: 'response', response: { ok: false, error: normalizeError(error) } };
+     }
+     emitDiagnostic({
+       level: 'debug',
+@@ -111,7 +125,7 @@ export async function dispatchDirectIosSelectorTap(
+         error: error instanceof Error ? error.message : String(error),
+       },
+     });
+-    return null;
++    return { kind: 'delegated', detail: asAppError(error).code };
+   }
+ }
+ 
+diff --git a/packages/daemon/src/execution/interaction/internal/interaction-touch-press.ts b/packages/daemon/src/execution/interaction/internal/interaction-touch-press.ts
+index 44875cbfc..d85df572b 100644
+--- a/packages/daemon/src/execution/interaction/internal/interaction-touch-press.ts
++++ b/packages/daemon/src/execution/interaction/internal/interaction-touch-press.ts
+@@ -72,18 +72,23 @@ export async function dispatchTargetedTouchViaRuntime(
+         flags: params.req.flags,
+         tapElementSelectorAvailable: touchExecutor.tapElementSelector !== undefined,
+       });
++  let directDelegation: { detail?: string } | undefined;
+   if (directSelector && touchExecutor.tapElementSelector) {
+-    const directResponse = await dispatchDirectIosSelectorTap(
++    const directOutcome = await dispatchDirectIosSelectorTap(
+       params,
+       boundAdmitted.session,
+       directSelector,
+       touchExecutor.tapElementSelector,
+     );
+-    if (directResponse) return directResponse;
++    if (directOutcome.kind === 'response') return directOutcome.response;
++    // ADR 0011 delegation-on-error: the semantic target the direct dispatch
++    // was meant to actuate now becomes numeric input through the runtime tree
++    // path — the actuation outcome's coordinateFallback fact.
++    directDelegation = directOutcome.detail ? { detail: directOutcome.detail } : {};
+   }
+ 
+   return await dispatchRuntimeInteraction(params, {
+-    ...buildTargetedRuntimeOptions(params, command, boundAdmitted),
++    ...buildTargetedRuntimeOptions(params, command, boundAdmitted, directDelegation),
+     touchExecutor,
+     settleObservationCapture: prepared.settleObservationCapture,
+   });
+@@ -95,6 +100,7 @@ function buildTargetedRuntimeOptions(
+   admitted: AdmittedTargetedTouch & {
+     androidFreshnessBaseline: AdmittedTargetedTouch['session']['snapshot'];
+   },
++  directDelegation?: { detail?: string },
+ ): Omit<Parameters<typeof dispatchRuntimeInteraction<TargetedTouchResult>>[1], 'touchExecutor'> {
+   const { req, sessionName } = params;
+   const { session, target, durationMs, staleRefsWarning, resultButtonTag } = admitted;
+@@ -121,6 +127,7 @@ function buildTargetedRuntimeOptions(
+         durationMs,
+         expectedResolvedTarget: req.internal?.replayTargetGuard,
+         preresolvedTarget: req.internal?.findResolvedTarget,
++        directDelegation,
+       }),
+     afterRun: async (result, readiness) => {
+       if (session.lease?.leaseProvider) return undefined;
+@@ -172,6 +179,8 @@ async function runTargetedTouchInteraction(params: {
+   expectedResolvedTarget?: ReplayTargetGuardDenotation;
+   /** #1654: a mutating `find`'s already-resolved node; see daemon/daemon-request.ts. */
+   preresolvedTarget?: PreresolvedInteractionTarget;
++  /** The refused direct platform dispatch this runtime interaction delegates for. */
++  directDelegation?: { detail?: string };
+ }): Promise<TargetedTouchResult> {
+   const { runtime, command, target, sessionName, requestId, flags, expectedResolvedTarget } =
+     params;
+@@ -202,6 +211,7 @@ function pressRuntimeOptions(
+     flags: CommandFlags | undefined;
+     refs: readonly string[] | undefined;
+     preresolvedTarget?: PreresolvedInteractionTarget;
++    directDelegation?: { detail?: string };
+   },
+   shared: {
+     session: string;
+@@ -231,6 +241,7 @@ function pressRuntimeOptions(
+     ...(flags?.maestro?.allowNonHittableCoordinateFallback === true
+       ? { allowNonHittableCoordinateFallback: true }
+       : {}),
++    ...(params.directDelegation ? { directDelegation: params.directDelegation } : {}),
+   };
+ }
+ 
+diff --git a/packages/daemon/src/execution/interaction/internal/interaction-touch-targets.ts b/packages/daemon/src/execution/interaction/internal/interaction-touch-targets.ts
+index ffb637294..1f9c9b15f 100644
+--- a/packages/daemon/src/execution/interaction/internal/interaction-touch-targets.ts
++++ b/packages/daemon/src/execution/interaction/internal/interaction-touch-targets.ts
+@@ -294,7 +294,14 @@ export function interactionResultExtra(
+   const evidence = 'evidence' in result ? result.evidence : undefined;
+   const settle = result.settle;
+   const sequence = 'sequence' in result ? result.sequence : undefined;
+-  const shared = sequence ? { sequence } : {};
++  // The actuation outcome report is additive on every runtime-resolved
++  // interaction success; absent for the direct runner payload paths, which
++  // the platform runner owns.
++  const actuation = result.actuation;
++  const shared = {
++    ...(sequence ? { sequence } : {}),
++    ...(actuation ? { actuation } : {}),
++  };
+   if (result.kind === 'ref') {
+     return {
+       ref: stripAtPrefix(result.target.ref),
+diff --git a/packages/platform-android/src/__tests__/text-input-fill.test.ts b/packages/platform-android/src/__tests__/text-input-fill.test.ts
+index bbfffd23c..66f7c4795 100644
+--- a/packages/platform-android/src/__tests__/text-input-fill.test.ts
++++ b/packages/platform-android/src/__tests__/text-input-fill.test.ts
+@@ -288,6 +288,7 @@ test('fillAndroid returns target-bound unconfirmed evidence when an input mask r
+       const result = await fillAndroid(ANDROID_EMULATOR, 100, 50, '0501234567');
+ 
+       assert.deepEqual(result, {
++        actuation: { executor: 'android-provider-native' },
+         verification: 'unconfirmed',
+         requested: '0501234567',
+         before: '12 123 4567',
+diff --git a/packages/platform-android/src/__tests__/text-input-test-ime-retry.test.ts b/packages/platform-android/src/__tests__/text-input-test-ime-retry.test.ts
+index 62054998f..f435028d6 100644
+--- a/packages/platform-android/src/__tests__/text-input-test-ime-retry.test.ts
++++ b/packages/platform-android/src/__tests__/text-input-test-ime-retry.test.ts
+@@ -72,7 +72,11 @@ test('fillAndroid rebinds when the clear lands and the text then reaches no edit
+     { serial: ANDROID_EMULATOR.id },
+     async () => await fillAndroid(ANDROID_EMULATOR, 10, 10, 'new value'),
+   );
+-  assert.equal(result, undefined, 'a verified fill, not unconfirmed evidence');
++  assert.deepEqual(
++    result,
++    { actuation: { executor: 'keyboard' } },
++    'a verified fill carries only its actuation fragment, not unconfirmed evidence',
++  );
+   assert.equal(state.currentText, 'new value');
+   assert.deepEqual(
+     calls.filter((args) => args[1] === 'ime').map((args) => args[2]),
+diff --git a/packages/platform-android/src/__tests__/text-input-test-ime.test.ts b/packages/platform-android/src/__tests__/text-input-test-ime.test.ts
+index 2f1e41b6f..8cfee3d92 100644
+--- a/packages/platform-android/src/__tests__/text-input-test-ime.test.ts
++++ b/packages/platform-android/src/__tests__/text-input-test-ime.test.ts
+@@ -378,7 +378,7 @@ test.each([true, false])(
+       async () => await fillAndroid(ANDROID_EMULATOR, 10, 10, requested),
+     );
+     if (matches) {
+-      assert.equal(await fill, undefined);
++      assert.deepEqual(await fill, { actuation: { executor: 'keyboard' } });
+     } else {
+       await assert.rejects(fill, (error: AppError) => {
+         assert.equal(error.details?.dispatchKind, 'commit-returned-false');
+@@ -436,7 +436,11 @@ test.for([
+       async () => await fillAndroid(ANDROID_EMULATOR, 10, 10, 'Jane'),
+     );
+ 
+-    assert.equal(result, undefined, 'a verified fill, not unconfirmed evidence');
++    assert.deepEqual(
++      result,
++      { actuation: { executor: 'keyboard' } },
++      'a verified fill carries only its actuation fragment, not unconfirmed evidence',
++    );
+     assert.equal(state.currentText, 'Jane');
+     assert.equal(calls.filter((args) => args.includes(INPUT_ACTION)).length, 2);
+     assert.deepEqual(
+diff --git a/packages/platform-android/src/__tests__/touch-executor.test.ts b/packages/platform-android/src/__tests__/touch-executor.test.ts
+index 94ec9061e..a5e007dad 100644
+--- a/packages/platform-android/src/__tests__/touch-executor.test.ts
++++ b/packages/platform-android/src/__tests__/touch-executor.test.ts
+@@ -29,7 +29,11 @@ test('provider-native touch receives the plan as its only source of truth', asyn
+     async () => await executeAndroidTouchPlan(ANDROID_EMULATOR, plan),
+   );
+   assert.deepEqual(calls, [plan]);
+-  assert.deepEqual(result, { backend: 'provider-native-touch', injected: true });
++  assert.deepEqual(result, {
++    backend: 'provider-native-touch',
++    injected: true,
++    actuation: { executor: 'android-provider-native' },
++  });
+ });
+ 
+ test('provider-native touch receives linear one-pointer samples at the Android transport cadence', async () => {
+diff --git a/packages/platform-android/src/actuation-outcome.test.ts b/packages/platform-android/src/actuation-outcome.test.ts
+new file mode 100644
+index 000000000..088b24a61
+--- /dev/null
++++ b/packages/platform-android/src/actuation-outcome.test.ts
+@@ -0,0 +1,161 @@
++import { afterEach, expect, test } from 'vitest';
++import { withAndroidAdbProvider } from './adb-executor.ts';
++import { fillAndroid } from './text-input.ts';
++import { pressAndroid } from './input-actions.ts';
++import { readAndroidFillTargetBeforeMutation } from './fill-verification.ts';
++import { resetAndroidSnapshotHelperSessions } from './snapshot-helper-session-lifecycle.ts';
++import { createPersistentSnapshotHelperProvider } from './__tests__/snapshot-helper-session.fixtures.ts';
++import { ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT } from './__tests__/test-utils/android-snapshot-helper.ts';
++import { ANDROID_EMULATOR as device } from './__tests__/test-utils/device-fixtures.ts';
++
++/**
++ * The platform-owned executor facts Android reports on its action results:
++ * which injector fired (the uiautomation helper or adb input), and the
++ * mechanismFallback fact when a live helper's input came back unconfirmed
++ * and adb substituted for it.
++ */
++
++afterEach(resetAndroidSnapshotHelperSessions);
++
++const helper = { helperSessionScope: 'daemon-session' } as const;
++
++function fixture(response: Record<string, string>) {
++  const calls: (readonly string[])[] = [];
++  const requests: string[] = [];
++  let value = '';
++  const provider = createPersistentSnapshotHelperProvider({
++    calls,
++    processes: [],
++    spawnArgs: [],
++    sessionRequests: requests,
++    sessionCommands: ['input', 'screenshot', 'focus', 'snapshot-immediate'],
++    sessionCommand: (command) => {
++      if (/^input /.test(command)) {
++        // The helper's fill writes its text into the focused field; the
++        // request rides as base64 JSON in the session frame.
++        const encoded = command.split(' ')[2];
++        if (encoded) {
++          try {
++            const payload = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8')) as {
++              kind?: string;
++              text?: string;
++            };
++            if (payload.kind === 'fill' && typeof payload.text === 'string') {
++              value = payload.text;
++            }
++          } catch {
++            // Not a JSON payload frame — nothing lands in the field.
++          }
++        }
++        return response;
++      }
++      if (/^(screenshot|focus) /.test(command)) return response;
++      return undefined;
++    },
++    sessionXml: () =>
++      `<hierarchy><node package="com.example" resource-id="com.example:id/field" class="android.widget.EditText" focused="true" editable="true" text="${value}" bounds="[0,0][200,100]"/></hierarchy>`,
++  });
++  const exec = provider.exec;
++  provider.exec = async (args, options) => {
++    if (args[0] === 'shell' && args[1] === 'input') {
++      calls.push(args);
++      if (args[2] === 'text') value += args[3] ?? '';
++      if (args.includes('KEYCODE_DEL')) value = '';
++      return { exitCode: 0, stdout: '', stderr: '' };
++    }
++    return await exec(args, options);
++  };
++  return {
++    calls,
++    requests,
++    provider: { ...provider, snapshotHelperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT },
++  };
++}
++
++const refused = {
++  ok: 'false',
++  errorType: 'java.lang.IllegalStateException',
++  message: 'No editable field at the fill point',
++  injected: 'false',
++};
++
++type ActuationFragment = {
++  executor?: string;
++  mechanismFallback?: { reason: string };
++};
++
++function fragmentOf(result: unknown): ActuationFragment | undefined {
++  if (!result || typeof result !== 'object') return undefined;
++  return (result as Record<string, unknown>).actuation as ActuationFragment | undefined;
++}
++
++test('a helper-confirmed press reports the uiautomation helper executor', async () => {
++  const f = fixture({ ok: 'true' });
++  let fragment: ActuationFragment | undefined;
++  await withAndroidAdbProvider(f.provider, { serial: device.id }, async () => {
++    await readAndroidFillTargetBeforeMutation(device, 10, 10, helper);
++    fragment = fragmentOf(await pressAndroid(device, 10, 10));
++  });
++  expect(fragment).toEqual({ executor: 'android-uiautomation-helper' });
++  expect(f.calls.some((args) => args[0] === 'shell' && args[2] === 'tap')).toBe(false);
++});
++
++test('an unconfirmed helper input reports adb input with the mechanismFallback fact', async () => {
++  const f = fixture(refused);
++  let fragment: ActuationFragment | undefined;
++  await withAndroidAdbProvider(f.provider, { serial: device.id }, async () => {
++    await readAndroidFillTargetBeforeMutation(device, 10, 10, helper);
++    fragment = fragmentOf(await pressAndroid(device, 10, 10));
++  });
++  expect(fragment).toEqual({
++    executor: 'android-adb-input',
++    mechanismFallback: { reason: 'automation-helper-input-not-confirmed' },
++  });
++  expect(f.calls.filter((args) => args[0] === 'shell' && args[2] === 'tap')).toHaveLength(1);
++});
++
++test('a press without a live helper reports plain adb input, never a fallback', async () => {
++  const f = fixture({ ok: 'true' });
++  let fragment: ActuationFragment | undefined;
++  await withAndroidAdbProvider(f.provider, { serial: device.id }, async () => {
++    fragment = fragmentOf(await pressAndroid(device, 10, 10));
++  });
++  expect(fragment).toEqual({ executor: 'android-adb-input' });
++  expect(f.calls.filter((args) => args[0] === 'shell' && args[2] === 'tap')).toHaveLength(1);
++  expect(f.requests.some((request) => request.startsWith('input '))).toBe(false);
++});
++
++test('a helper-confirmed fill reports the uiautomation helper executor', async () => {
++  const f = fixture({ ok: 'true' });
++  let fragment: ActuationFragment | undefined;
++  await withAndroidAdbProvider(f.provider, { serial: device.id }, async () => {
++    fragment = fragmentOf(await fillAndroid(device, 10, 10, 'chips', 0, helper));
++  });
++  expect(fragment).toEqual({ executor: 'android-uiautomation-helper' });
++  expect(f.requests.some((request) => request.startsWith('input '))).toBe(true);
++  expect(f.calls.some((args) => args[0] === 'shell' && args[2] === 'text')).toBe(false);
++});
++
++test('a fill displaced to the shell writer by an unconfirmed helper reports both facts', async () => {
++  const f = fixture(refused);
++  let fragment: ActuationFragment | undefined;
++  await withAndroidAdbProvider(f.provider, { serial: device.id }, async () => {
++    await readAndroidFillTargetBeforeMutation(device, 10, 10, helper);
++    fragment = fragmentOf(await fillAndroid(device, 10, 10, 'chips', 0, helper));
++  });
++  expect(fragment).toEqual({
++    executor: 'android-adb-input',
++    mechanismFallback: { reason: 'automation-helper-input-not-confirmed' },
++  });
++  expect(f.calls.some((args) => args[0] === 'shell' && args[2] === 'text')).toBe(true);
++});
++
++test('a delayed fill on the shell writer is the designed route, not a substitution', async () => {
++  const f = fixture({ ok: 'true' });
++  let fragment: ActuationFragment | undefined;
++  await withAndroidAdbProvider(f.provider, { serial: device.id }, async () => {
++    await readAndroidFillTargetBeforeMutation(device, 10, 10, helper);
++    fragment = fragmentOf(await fillAndroid(device, 10, 10, 'hi', 5, helper));
++  });
++  expect(fragment).toEqual({ executor: 'android-adb-input' });
++});
+diff --git a/packages/platform-android/src/automation-helper.ts b/packages/platform-android/src/automation-helper.ts
+index 2eaa8fab4..eb1dae961 100644
+--- a/packages/platform-android/src/automation-helper.ts
++++ b/packages/platform-android/src/automation-helper.ts
+@@ -57,6 +57,18 @@ const INPUT_ANSWER_MARGIN_MS = 5_000;
+  */
+ const MIN_INPUT_ATTEMPT_MS = 2_000;
+ 
++/**
++ * Whether a live helper session may take `input` actions right now — the exact
++ * probe `runAndroidAutomationHelper` applies before preparing anything, exported
++ * so input dispatchers can tell "no helper, adb is the natural injector" apart
++ * from "a live helper did not confirm the input, adb substituted for it" (the
++ * actuation outcome's mechanismFallback fact).
++ */
++export async function androidAutomationHelperInputSupported(device: DeviceInfo): Promise<boolean> {
++  const deviceKey = getAndroidSnapshotHelperSessionDeviceKey(device);
++  return (await getLiveAndroidSnapshotHelperSession(deviceKey))?.commands.has('input') === true;
++}
++
+ /** Reuses the session's automation context without starting instrumentation for sessionless input. */
+ export function runAndroidAutomationHelper(
+   device: DeviceInfo,
+diff --git a/packages/platform-android/src/input-actions.ts b/packages/platform-android/src/input-actions.ts
+index e7042acb3..af9b8313e 100644
+--- a/packages/platform-android/src/input-actions.ts
++++ b/packages/platform-android/src/input-actions.ts
+@@ -44,19 +44,35 @@ export async function pressAndroid(
+   x: number,
+   y: number,
+   options?: AndroidInputDispatchOptions,
+-): Promise<void> {
+-  const { runAndroidAutomationHelper } = await import('./automation-helper.ts');
++): Promise<Record<string, unknown>> {
++  const { androidAutomationHelperInputSupported, runAndroidAutomationHelper } =
++    await import('./automation-helper.ts');
+   try {
++    // The probe and the attempt use the same liveness check, so a skipped
++    // helper means adb was the only injector — no substitution. A live helper
++    // whose input comes back unconfirmed means adb substituted for it.
++    const helperSupported = options?.signal
++      ? false
++      : await androidAutomationHelperInputSupported(device);
+     if (
+-      !options?.signal &&
++      helperSupported &&
+       (await runAndroidAutomationHelper(device, { action: 'input', input: { kind: 'tap', x, y } }))
+-    )
+-      return;
++    ) {
++      return { actuation: { executor: 'android-uiautomation-helper' } };
++    }
+     // Picked field by field so no runtime caller can smuggle `allowFailure: true` past the type.
+     await runAndroidShell(device, ['input', 'tap', x, y], {
+       allowFailure: false,
+       ...(options?.signal ? { signal: options.signal } : {}),
+     });
++    return {
++      actuation: {
++        executor: 'android-adb-input',
++        ...(helperSupported
++          ? { mechanismFallback: { reason: 'automation-helper-input-not-confirmed' } }
++          : {}),
++      },
++    };
+   } catch (error) {
+     throw discloseAdbInputDispatch(error);
+   }
+diff --git a/packages/platform-android/src/text-input.ts b/packages/platform-android/src/text-input.ts
+index 2055e4de4..f521bf8b3 100644
+--- a/packages/platform-android/src/text-input.ts
++++ b/packages/platform-android/src/text-input.ts
+@@ -40,6 +40,7 @@ import {
+   sendAndroidImeHelperTextCommitted,
+ } from './ime-helper.ts';
+ import { getAndroidTestImeOwnership } from './ime-state.ts';
++import type { ActuationBackendFragment } from '@agent-device/contracts/actuation-outcome';
+ import { discloseAdbInputDispatch } from './adb-failure.ts';
+ import { focusAndroid } from './input-actions.ts';
+ import type { AndroidHelperSessionOptions } from './snapshot-helper-types.ts';
+@@ -88,6 +89,18 @@ export async function typeAndroid(device: DeviceInfo, text: string, delayMs = 0)
+   });
+ }
+ 
++export type FillAndroidResult =
++  | (FillUnconfirmedVerification & { actuation?: ActuationBackendFragment })
++  | { actuation: ActuationBackendFragment }
++  | void;
++
++/**
++ * Which injector wrote the fill's text, as the actuation outcome's platform-owned fragment:
++ * the provider's own injection, the automation helper, the test IME (a keyboard write), or the
++ * adb shell writer. The shell writer is the designed route whenever the helper could not take
++ * the fill (`delayMs > 0`, or no live session) — it is a substitution, reported as
++ * mechanismFallback, only when a live helper came back unconfirmed.
++ */
+ export async function fillAndroid(
+   device: DeviceInfo,
+   x: number,
+@@ -95,7 +108,7 @@ export async function fillAndroid(
+   text: string,
+   delayMs = 0,
+   helper: AndroidHelperSessionOptions = {},
+-): Promise<FillUnconfirmedVerification | void> {
++): Promise<FillAndroidResult> {
+   const beforeCapture = await readAndroidFillTargetBeforeMutation(device, x, y, helper);
+   const beforeTarget = beforeCapture?.targetInput ?? null;
+   const providerText = resolveAndroidTextInjector(device);
+@@ -103,11 +116,15 @@ export async function fillAndroid(
+     await providerText({ action: 'fill', target: { x, y }, text, delayMs });
+     emitAndroidTextDiagnostic('fill', 'provider-native', text);
+     const verification = await verifyAndroidFilledText(device, x, y, text, helper);
+-    return completeAndroidFillVerification(text, beforeTarget, verification);
++    return withFillActuation(completeAndroidFillVerification(text, beforeTarget, verification), {
++      executor: 'android-provider-native',
++    });
+   }
+-  const { runAndroidAutomationHelper } = await import('./automation-helper.ts');
++  const { androidAutomationHelperInputSupported, runAndroidAutomationHelper } =
++    await import('./automation-helper.ts');
++  const helperLive = delayMs === 0 && (await androidAutomationHelperInputSupported(device));
+   if (
+-    delayMs === 0 &&
++    helperLive &&
+     (await runAndroidAutomationHelper(device, {
+       action: 'input',
+       input: { kind: 'fill', x, y, text },
+@@ -115,8 +132,16 @@ export async function fillAndroid(
+   ) {
+     emitAndroidTextDiagnostic('fill', 'android-helper', text);
+     const verification = await verifyAndroidFilledText(device, x, y, text, helper, beforeCapture);
+-    return completeAndroidFillVerification(text, beforeTarget, verification);
++    return withFillActuation(completeAndroidFillVerification(text, beforeTarget, verification), {
++      executor: 'android-uiautomation-helper',
++    });
+   }
++  const shellActuation: ActuationBackendFragment = {
++    executor: 'android-adb-input',
++    ...(helperLive
++      ? { mechanismFallback: { reason: 'automation-helper-input-not-confirmed' } }
++      : {}),
++  };
+   let lastVerification: AndroidFillVerification | null = null;
+   let dispatchedSteps = 0;
+   try {
+@@ -134,7 +159,15 @@ export async function fillAndroid(
+           beforeTarget,
+           helper,
+         );
+-        return completeAndroidFillVerification(text, beforeTarget, verification);
++        return withFillActuation(
++          completeAndroidFillVerification(text, beforeTarget, verification),
++          {
++            executor: 'keyboard',
++            ...(shellActuation.mechanismFallback
++              ? { mechanismFallback: shellActuation.mechanismFallback }
++              : {}),
++          },
++        );
+       }
+       const verification = await runAndroidShellFillAttempt(
+         device,
+@@ -142,9 +175,12 @@ export async function fillAndroid(
+         helper,
+       );
+       lastVerification = verification;
+-      if (verification.ok) return;
++      if (verification.ok) return withFillActuation(undefined, shellActuation);
+       if (verification.reason === 'ime_capture') {
+-        return completeAndroidFillVerification(text, beforeTarget, verification);
++        return withFillActuation(
++          completeAndroidFillVerification(text, beforeTarget, verification),
++          shellActuation,
++        );
+       }
+       const unconfirmed = buildAndroidFillUnconfirmedVerification(text, beforeTarget, verification);
+       if (unconfirmed) return reportAndroidFillUnconfirmed(unconfirmed);
+@@ -153,7 +189,17 @@ export async function fillAndroid(
+     throw discloseDispatchAfterSteps(error, dispatchedSteps);
+   }
+ 
+-  return completeAndroidFillVerification(text, beforeTarget, lastVerification);
++  return withFillActuation(
++    completeAndroidFillVerification(text, beforeTarget, lastVerification),
++    shellActuation,
++  );
++}
++
++function withFillActuation(
++  verification: FillUnconfirmedVerification | void,
++  fragment: ActuationBackendFragment,
++): FillAndroidResult {
++  return { ...(verification ?? {}), actuation: fragment };
+ }
+ 
+ type AndroidShellFillAttempt = {
+diff --git a/packages/platform-android/src/touch-executor.ts b/packages/platform-android/src/touch-executor.ts
+index 13606f2dc..359f7f8eb 100644
+--- a/packages/platform-android/src/touch-executor.ts
++++ b/packages/platform-android/src/touch-executor.ts
+@@ -29,9 +29,14 @@ export async function executeAndroidTouchPlan(
+           }
+         : loweredPlan;
+     const result = (await provider.touch(providerPlan)) ?? {};
+-    return { backend: 'provider-native-touch', ...result };
++    return {
++      backend: 'provider-native-touch',
++      ...result,
++      actuation: { executor: 'android-provider-native' },
++    };
+   }
+-  return await executeAndroidTouchHelperPlan(device, loweredPlan, signal);
++  const helperResult = await executeAndroidTouchHelperPlan(device, loweredPlan, signal);
++  return { ...helperResult, actuation: { executor: 'android-uiautomation-helper' } };
+ }
+ 
+ export async function readAndroidGestureViewport(

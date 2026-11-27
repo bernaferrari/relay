@@ -39,6 +39,7 @@ const TRANSPORTS: ActivationTransport[] = [
   "snapshot-point",
   "explicit-point",
   "direct",
+  "unobserved",
 ];
 
 /** Aggregate the target-resolution artifacts of one run. Artifacts from other

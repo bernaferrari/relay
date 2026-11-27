@@ -156,7 +156,7 @@ export async function replaceText(
   await replaceTextValue(text, {
     fill: async (value) => {
       try {
-        await controlledMutation("fill", () =>
+        const fillResponse = await controlledMutation("fill", () =>
           nativeDevice(device).interactions.fill({
             ...base(),
             ...interactionTarget,
@@ -164,7 +164,10 @@ export async function replaceText(
             text: value,
           }),
         );
-        noteDaemonSelectorActuation({ operation: "fill" });
+        noteDaemonSelectorActuation({
+          operation: "fill",
+          actuation: (fillResponse as { actuation?: unknown } | undefined)?.actuation,
+        });
       } catch (error) {
         const point = await iosSnapshotFallbackPoint(device, target, error, fillPoint);
         await controlledMutation("fill", () =>

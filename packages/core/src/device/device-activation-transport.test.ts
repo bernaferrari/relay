@@ -28,10 +28,18 @@ async function inContext<T>(
 
 test("daemon selector actuation is semantic regardless of the local snapshot", async () => {
   resetActivationTransportJournalsForTests();
+  // The pinned vendored daemon's report: runtime-resolved, daemon-capture geometry.
+  const daemonReport = {
+    version: 1,
+    targeting: "element",
+    geometry: "daemon-snapshot",
+    executor: "unknown",
+  };
   await inContext(iosContext, async () => {
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "label",
+      actuation: daemonReport,
     });
     const evidence = activationTransportEvidence();
     // The daemon resolves against its own fresh capture; Relay-supplied
@@ -44,6 +52,7 @@ test("daemon selector actuation is semantic regardless of the local snapshot", a
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "label",
+      actuation: daemonReport,
     });
     const evidence = activationTransportEvidence();
     assert.equal(evidence?.transport, "native-selector");
@@ -236,4 +245,153 @@ test("native resolution metrics aggregate artifact evidence", () => {
   assert.equal(metrics.collisionRecoveries, 1);
   assert.equal(metrics.treeQuality.observed, 2);
   assert.equal(metrics.treeQuality.meanNodeCount, 30);
+});
+
+test("a full actuation report records its raw axes alongside the derived transport", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(androidContext, async () => {
+    noteDaemonSelectorActuation({
+      operation: "press",
+      resolutionMethod: "label",
+      actuation: {
+        version: 1,
+        targeting: "element",
+        geometry: "daemon-snapshot",
+        executor: "android-adb-input",
+        mechanismFallback: { reason: "automation-helper-input-not-confirmed" },
+      },
+    });
+    const records = activationTransportsSince(0);
+    assert.equal(records.length, 1);
+    const record = records[0]!;
+    assert.equal(record.transport, "native-selector");
+    assert.equal(record.actuationTargeting, "element");
+    assert.equal(record.actuationGeometry, "daemon-snapshot");
+    assert.equal(record.actuationExecutor, "android-adb-input");
+    assert.equal(record.actuationMechanismFallbackReason, "automation-helper-input-not-confirmed");
+    assert.equal(record.actuationCoordinateFallbackReason, undefined);
+  });
+});
+
+test("externally frozen geometry never earns the semantic classification", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(iosContext, async () => {
+    for (const geometry of ["relay-snapshot", "runner-expected-point"]) {
+      noteDaemonSelectorActuation({
+        operation: "press",
+        actuation: { version: 1, targeting: "element", geometry, executor: "unknown" },
+      });
+    }
+    noteDaemonSelectorActuation({
+      operation: "press",
+      actuation: {
+        version: 1,
+        targeting: "element",
+        geometry: "caller-point",
+        executor: "unknown",
+      },
+    });
+    const records = activationTransportsSince(0);
+    assert.equal(records[0]!.transport, "snapshot-point");
+    assert.equal(records[1]!.transport, "snapshot-point");
+    assert.equal(records[2]!.transport, "explicit-point");
+    assert.equal(activationTransportEvidence()?.pointContribution, true);
+  });
+});
+
+test("a partial actuation report with unknown geometry records unobserved", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(androidContext, async () => {
+    noteDaemonSelectorActuation({
+      operation: "press",
+      actuation: {
+        version: 1,
+        targeting: "element",
+        geometry: "unknown",
+        executor: "android-adb-input",
+      },
+    });
+    noteDaemonSelectorActuation({
+      operation: "press",
+      // Geometry absent entirely: partial reports never upgrade purity.
+      actuation: { version: 1, targeting: "element", executor: "android-adb-input" },
+    });
+    const records = activationTransportsSince(0);
+    assert.equal(records[0]!.transport, "unobserved");
+    assert.equal(records[1]!.transport, "unobserved");
+    // Unobserved never reads as geometry-free.
+    assert.equal(records[0]!.pointContribution, true);
+  });
+});
+
+test("an absent actuation report records unobserved, never the purer semantic class", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(iosContext, async () => {
+    noteDaemonSelectorActuation({ operation: "press", resolutionMethod: "label" });
+    const evidence = activationTransportEvidence();
+    assert.equal(evidence?.transport, "unobserved");
+    assert.equal(evidence?.pointContribution, true);
+  });
+});
+
+test("skew safety: malformed actuation values parse as unreported", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(androidContext, async () => {
+    for (const malformed of [null, 42, "actuation", [], { targeting: 7 }, { geometry: {} }]) {
+      noteDaemonSelectorActuation({ operation: "press", actuation: malformed });
+    }
+    const records = activationTransportsSince(0);
+    assert.equal(records.length, 6);
+    for (const record of records) {
+      assert.equal(record.transport, "unobserved");
+    }
+    // A well-formed report with extra future fields parses its known fields.
+    noteDaemonSelectorActuation({
+      operation: "press",
+      actuation: {
+        version: 99,
+        targeting: "element",
+        geometry: "daemon-snapshot",
+        executor: "a-future-executor",
+        futureField: { nested: true },
+      },
+    });
+    const after = activationTransportsSince(0).at(-1)!;
+    assert.equal(after.transport, "native-selector");
+    assert.equal(after.actuationExecutor, "a-future-executor");
+  });
+});
+
+test("unobserved dominates the purer classifications in one logical action", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(iosContext, async () => {
+    noteDaemonSelectorActuation({
+      operation: "press",
+      actuation: {
+        version: 1,
+        targeting: "element",
+        geometry: "daemon-snapshot",
+        executor: "unknown",
+      },
+    });
+    noteDaemonSelectorActuation({ operation: "fill" });
+    noteDirectActuation("type", "daemon");
+    const evidence = activationTransportEvidence();
+    assert.equal(evidence?.transport, "unobserved");
+    assert.equal(evidence?.pointContribution, true);
+    assert.equal(evidence?.actuations, 3);
+  });
+});
+
+test("a direct-injection report classifies as direct", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(androidContext, async () => {
+    noteDaemonSelectorActuation({
+      operation: "press",
+      actuation: { version: 1, targeting: "direct", geometry: "none", executor: "keyboard" },
+    });
+    const records = activationTransportsSince(0);
+    assert.equal(records[0]!.transport, "direct");
+    assert.equal(records[0]!.pointContribution, false);
+  });
 });

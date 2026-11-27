@@ -1,8 +1,10 @@
-# Actuation outcome reporting (unimplemented design)
+# Actuation outcome reporting
 
-This is the design for the vendored `agent-device` instrumentation that native replay-cache
-admission is gated on. Nothing here is built. The Relay-side ledger it feeds lives in
-`packages/core/src/device/device-activation-transport.ts`.
+Vendored `agent-device` instrumentation that native replay-cache admission is gated on.
+Phase 1 is built: the contracts, daemon-runtime construction, Android executor reporting,
+and Relay ledger consumption ship in `patches/agent-device/0002-actuation-outcome-reporting.patch`
+and `packages/core/src/device/device-activation-transport.ts`. iOS executor facts remain
+`unknown` until Phase 2 instruments the Apple runner.
 
 ## Why
 
@@ -38,7 +40,7 @@ keep vendored type names upstream-neutral (no Relay vocabulary).
 
 ## Phasing
 
-1. Contracts + daemon-runtime construction + Android executor reporting + Relay ledger
+1. (done) Contracts + daemon-runtime construction + Android executor reporting + Relay ledger
    consumption. Corrects the dominant unknowability without any runner upgrade.
 2. Apple runner outcome reporting + direct-iOS delegation reasons + Relay adopted-listener
    parsing. Makes physical-iOS selector presses honest.

@@ -253,7 +253,7 @@ export async function pressLabel(
   const semantic = { label, ...(scopedHeading ? { heading: scopedHeading } : {}) };
   const point = resolveSnapshotTargetPoint(await snapshot(device), semantic);
   try {
-    await controlledMutation("press", () =>
+    const pressResponse = await controlledMutation("press", () =>
       nativeDevice(device).interactions.press({
         ...base(),
         selector: `label="${label.replaceAll('"', '\\"')}"`,
@@ -265,6 +265,7 @@ export async function pressLabel(
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "label",
+      actuation: (pressResponse as { actuation?: unknown } | undefined)?.actuation,
     });
   } catch (error) {
     if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
@@ -287,7 +288,7 @@ export async function pressIdentifier(
   if (await pressViaLiveIosListener("id", identifier)) return;
   const point = resolveSnapshotTargetPoint(await snapshot(device), { identifier });
   try {
-    await controlledMutation("press", () =>
+    const pressResponse = await controlledMutation("press", () =>
       nativeDevice(device).interactions.press({
         ...base(),
         selector: `id="${identifier.replaceAll('"', '\\"')}"`,
@@ -298,6 +299,7 @@ export async function pressIdentifier(
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "identifier",
+      actuation: (pressResponse as { actuation?: unknown } | undefined)?.actuation,
     });
   } catch (error) {
     if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
@@ -522,7 +524,7 @@ export async function pressText(
   repeated?: RepeatedPress,
 ): Promise<void> {
   try {
-    await controlledMutation("press", () =>
+    const pressResponse = await controlledMutation("press", () =>
       nativeDevice(device).interactions.press({
         ...base(),
         selector: `label*="${text.replaceAll('"', '\\"')}"`,
@@ -530,7 +532,11 @@ export async function pressText(
         ...repeated,
       } as never),
     );
-    noteDaemonSelectorActuation({ operation: "press", resolutionMethod: "text" });
+    noteDaemonSelectorActuation({
+      operation: "press",
+      resolutionMethod: "text",
+      actuation: (pressResponse as { actuation?: unknown } | undefined)?.actuation,
+    });
   } catch (error) {
     const point = await iosSnapshotFallbackPoint(device, { text }, error);
     await pressPoint(device, point.x, point.y, repeated, {
@@ -548,7 +554,7 @@ export async function findClick(
   opts?: { first?: boolean; last?: boolean },
 ): Promise<void> {
   try {
-    await controlledMutation("press", () =>
+    const findResponse = await controlledMutation("press", () =>
       nativeDevice(device).interactions.find({
         ...base(),
         query,
@@ -559,7 +565,11 @@ export async function findClick(
       } as never),
     );
     // The daemon resolves the query itself; Relay contributes no geometry.
-    noteDaemonSelectorActuation({ operation: "find", resolutionMethod: "text" });
+    noteDaemonSelectorActuation({
+      operation: "find",
+      resolutionMethod: "text",
+      actuation: (findResponse as { actuation?: unknown } | undefined)?.actuation,
+    });
   } catch (error) {
     const point = await iosSnapshotFallbackPoint(device, { text: query }, error).catch(
       async (err) => iosSnapshotFallbackPoint(device, { label: query }, err),
@@ -685,7 +695,7 @@ export async function pressMatchingText(device: Device, match: string): Promise<
     resolveSnapshotTargetPoint(nodes, { text: match }) ??
     resolveSnapshotTargetPoint(nodes, { label: match });
   try {
-    await controlledMutation("press", () =>
+    const pressResponse = await controlledMutation("press", () =>
       nativeDevice(device).interactions.press({
         ...base(),
         selector: `label*="${match.replaceAll('"', '\\"')}"`,
@@ -695,6 +705,7 @@ export async function pressMatchingText(device: Device, match: string): Promise<
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "text",
+      actuation: (pressResponse as { actuation?: unknown } | undefined)?.actuation,
     });
     return;
   } catch (error) {
