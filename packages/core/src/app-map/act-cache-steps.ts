@@ -102,6 +102,7 @@ type CompileTimeCache = {
   steps?: unknown;
   targetKind?: unknown;
   platform?: unknown;
+  viewport?: unknown;
 };
 
 /** The last gate before execution. A saved path is copied into a compiled act
@@ -112,7 +113,9 @@ type CompileTimeCache = {
  * still degrade to a silent coordinate tap. */
 export function cacheableSavedSteps(
   cache: CompileTimeCache | undefined,
-  runtimeTargetProfile: { platform?: string } | undefined,
+  runtimeTargetProfile:
+    | { platform?: string; viewport?: { width: number; height: number } }
+    | undefined,
 ): RecipeStep[] | undefined {
   if (!cache || cache.schemaVersion !== 2) return undefined;
   if (!Array.isArray(cache.steps) || !cache.steps.length) return undefined;
@@ -121,5 +124,16 @@ export function cacheableSavedSteps(
   if (!steps.every(isCacheableActStepKind)) return undefined;
   if (cache.targetKind !== "browser") return undefined;
   if (runtimeTargetProfile?.platform !== "browser") return undefined;
+  const cacheViewport = cache.viewport as { width?: number; height?: number } | undefined;
+  const runtimeViewport = runtimeTargetProfile.viewport;
+  if (
+    cacheViewport?.width !== undefined &&
+    cacheViewport?.height !== undefined &&
+    runtimeViewport &&
+    (cacheViewport.width !== runtimeViewport.width ||
+      cacheViewport.height !== runtimeViewport.height)
+  ) {
+    return undefined;
+  }
   return steps;
 }
