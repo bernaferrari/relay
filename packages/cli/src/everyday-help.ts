@@ -83,6 +83,20 @@ Test in place and keeps recorded steps whose words did not change.`,
   show: `relay show "<test name>" [--app <name>]
 
 Prints a Test as its file, ready to save in your repo.`,
+  fix: `relay fix <runId> [<step>]
+
+Writes a ready-to-paste prompt for a coding agent (Claude Code, Cursor,
+Codex): the failed step's expected and saw, the screenshot and evidence
+references, the exact command that re-runs the same saved Test, and the
+scope the agent should keep. Paste it into your agent — or let the agent
+run relay fix itself.
+
+The run must have failed or been blocked; a passed run has nothing to fix.
+<step> is a step position or id, for the rare run with several failed steps.
+
+Examples:
+  relay fix run-abc123
+  relay fix run-abc123 2 --json`,
   apps: `relay apps
 
 Lists your apps with their number of Tests.`,

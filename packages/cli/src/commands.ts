@@ -191,6 +191,7 @@ const everydayWords = [
   "connect",
   "observe",
   "inspect",
+  "fix",
   "review",
   "export",
   "doctor",

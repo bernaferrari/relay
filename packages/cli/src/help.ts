@@ -182,6 +182,7 @@ Also:
   relay record "<title>" [--app <name>] --confirm  Record a Test by using the app
   relay connect [device] | relay observe [device]  Open a device and look at it
   relay inspect <runId>                            What happened in a run
+  relay fix <runId>                                Prompt for a coding agent to fix a failed run
   relay review [--app <name>]                      Review screenshots that changed
   relay export <runId> --out ./review              Save a run's evidence
   relay doctor                                     Check that Relay is set up

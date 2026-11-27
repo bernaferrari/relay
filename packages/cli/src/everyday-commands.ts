@@ -20,6 +20,7 @@ import {
   type ProjectConfig,
 } from "./everyday-names.js";
 import { renderEverydayHelp } from "./everyday-help.js";
+import { runFixCommand } from "./fix-command.js";
 import { formatInitResult, runInitCommand } from "./init-command.js";
 import { invokeOperation, type ClientFactory } from "./invoke.js";
 import type { LocalServerResult } from "./local-server.js";
@@ -49,14 +50,19 @@ type Verb =
   | "new"
   | "ci"
   | "apply"
-  | "show";
+  | "show"
+  | "fix";
 
 /** Positionals after the verb word, e.g. `new <goal>` → [<goal>]. */
 function everydayVerb(tokens: ParsedTokens): { verb: Verb; args: string[] } | undefined {
   const [first] = tokens.positionals;
   if (!first) return tokens.switches.has("--version") ? { verb: "version", args: [] } : undefined;
   if (first === "version") return { verb: "version", args: tokens.positionals.slice(1) };
-  if (["init", "apps", "tests", "runs", "devices", "new", "ci", "apply", "show"].includes(first)) {
+  if (
+    ["init", "apps", "tests", "runs", "devices", "new", "ci", "apply", "show", "fix"].includes(
+      first,
+    )
+  ) {
     return { verb: first as Verb, args: tokens.positionals.slice(1) };
   }
   return undefined;
@@ -81,6 +87,7 @@ const verbFlags: Record<Verb, readonly string[]> = {
   ci: ["--app", "--test", "--device", "--output", "--junit"],
   apply: [],
   show: ["--app"],
+  fix: [],
 };
 
 function assertFlags(verb: Verb, tokens: ParsedTokens): void {
@@ -330,6 +337,18 @@ export async function runEverydayCommand(
         yaml: string;
       };
       output.result(operationId, result, true, result.yaml.trimEnd());
+      return ExitCode.success;
+    }
+    if (verb === "fix") {
+      if (!args.length || args.length > 2) {
+        throw new UsageError("Expected: relay fix <runId> [<step>]");
+      }
+      const handoff = await runFixCommand({
+        runId: args[0]!,
+        ...(args[1] !== undefined ? { stepRef: args[1] } : {}),
+        invoke,
+      });
+      output.result(operationId, handoff, true, handoff.prompt);
       return ExitCode.success;
     }
     if (verb === "new") {
