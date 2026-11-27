@@ -160,11 +160,11 @@ export async function replaceText(
           nativeDevice(device).interactions.fill({
             ...base(),
             ...interactionTarget,
-            ...iosNonHittablePressFields(fillPoint),
+            ...iosNonHittablePressFields(),
             text: value,
           }),
         );
-        noteDaemonSelectorActuation({ operation: "fill", snapshotPoint: fillPoint });
+        noteDaemonSelectorActuation({ operation: "fill" });
       } catch (error) {
         const point = await iosSnapshotFallbackPoint(device, target, error, fillPoint);
         await controlledMutation("fill", () =>

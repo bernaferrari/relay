@@ -21,16 +21,26 @@ import { currentTargetContext, type TargetContext } from "../target/target-conte
  * How one physical actuation was transported, classified by geometry
  * provenance — the axis cached replay safety depends on:
  *
- * - `native-selector`: the platform resolved and activated the control
- *   on-device from a semantic selector. Relay supplied no geometry, though
- *   an iOS runner may still coordinate-activate a non-hittable control (see
- *   `coordinateFallbackPermitted` on the record).
- * - `selector-point-assisted`: a semantic selector carried a snapshot-derived
- *   point contribution (`expectedTapPoint`) the runner could fall back to.
- *   Whether geometry actuated is unknowable from Relay's side; the honest
- *   classification is that it may have.
+ * - `native-selector`: the control was resolved semantically at execution
+ *   time and any actuation geometry was derived fresh during that execution;
+ *   no geometry Relay captured earlier participated. This is intentionally
+ *   not a claim about literal platform element actuation, which barely
+ *   exists: the vendored daemon resolves selectors against its own fresh
+ *   accessibility capture and taps the resulting point, the adopted iOS
+ *   runner synthesizes touch at the live element frame, and even XCTest's
+ *   element tap is an element-anchored coordinate. For replay safety those
+ *   are equivalent — the resolution happens at execution time, so a changed
+ *   screen resolves differently rather than hitting frozen geometry.
+ * - `selector-point-assisted`: legacy classification, no longer produced.
+ *   It was recorded when a selector dispatch carried a snapshot-derived
+ *   `expectedTapPoint`, but the vendored daemon never reads that field on
+ *   the press/fill paths Relay exercises — it is consumed only by the
+ *   click-only direct-iOS runner route Relay does not use (verified against
+ *   pinned vendor 0.21.45). The point could never actuate, so the "may
+ *   have" classification was a knowable falsehood. The variant remains in
+ *   the type only so artifacts persisted before the correction still parse.
  * - `snapshot-point`: actuation through a coordinate Relay derived from
- *   accessibility-tree geometry.
+ *   accessibility-tree geometry before dispatch.
  * - `explicit-point`: actuation through a caller-supplied coordinate.
  * - `direct`: no geometry participated (key presses, directional scrolls,
  *   text insertion at the caret).
@@ -73,7 +83,10 @@ export type ActivationTransportRecord = {
   channel: ActivationChannel;
   /** Relay-supplied geometry participated (or may have participated) in the actuation. */
   pointContribution: boolean;
-  /** The runner was explicitly allowed to coordinate-activate despite the selector. */
+  /** The dispatch carried the non-hittable coordinate allowance: the daemon may
+   * actuate the resolved point for a control its probe marks non-hittable (SwiftUI
+   * rows) instead of refusing. On the daemon path actuation is always coordinate
+   * actuation; this bit records that the hittability refusal was relaxed. */
   coordinateFallbackPermitted: boolean;
   resolutionMethod?: ActivationResolutionPath;
   /** The actuation recovered from a semantic collision (a same-key match
@@ -209,25 +222,24 @@ export function activationTransportSequence(): number {
 }
 
 /**
- * Record a daemon selector actuation whose payload was built with the
- * non-hittable coordinate allowance (`iosNonHittablePressFields`). That helper
- * only attaches the allowance — and any snapshot-derived `expectedTapPoint` —
- * on iOS, so this recorder applies the same gate: on Android and browser
- * targets the selector travels alone no matter what was resolved locally.
+ * Record a daemon-mediated selector actuation whose payload was built with
+ * the non-hittable coordinate allowance (`iosNonHittablePressFields`). The
+ * vendored daemon resolves the selector against its own fresh accessibility
+ * capture and actuates the resolved point; Relay-supplied geometry cannot
+ * participate, so every daemon selector actuation is `native-selector`
+ * regardless of what Relay's snapshot saw locally.
  */
 export function noteDaemonSelectorActuation(input: {
   operation: ActivationOperation;
   resolutionMethod?: ActivationResolutionPath;
-  snapshotPoint?: { x: number; y: number };
 }): void {
   const { platform } = currentContextKey();
-  const ios = platform === "ios";
   noteActivationTransport({
     operation: input.operation,
-    transport: ios && input.snapshotPoint ? "selector-point-assisted" : "native-selector",
+    transport: "native-selector",
     channel: "daemon",
     ...(input.resolutionMethod ? { resolutionMethod: input.resolutionMethod } : {}),
-    coordinateFallbackPermitted: ios,
+    coordinateFallbackPermitted: platform === "ios",
   });
 }
 

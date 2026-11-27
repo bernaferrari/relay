@@ -251,7 +251,6 @@ test("a native selector miss is the reviewed exception that can use the current 
       selector: 'label="Settings"',
       maestro: {
         allowNonHittableCoordinateFallback: true,
-        expectedTapPoint: { x: 140, y: 62 },
       },
     },
     { platform: "ios", udid: serial, x: 140, y: 62 },

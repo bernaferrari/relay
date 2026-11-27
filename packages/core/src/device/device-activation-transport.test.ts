@@ -26,28 +26,26 @@ async function inContext<T>(
   return runWithTargetContext(context, operation);
 }
 
-test("daemon selector actuation carries the point contribution only on ios", async () => {
+test("daemon selector actuation is semantic regardless of the local snapshot", async () => {
   resetActivationTransportJournalsForTests();
   await inContext(iosContext, async () => {
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "label",
-      snapshotPoint: { x: 10, y: 20 },
     });
     const evidence = activationTransportEvidence();
-    assert.equal(evidence?.transport, "selector-point-assisted");
-    assert.equal(evidence?.pointContribution, true);
+    // The daemon resolves against its own fresh capture; Relay-supplied
+    // geometry cannot participate, so no point contribution is ever recorded.
+    assert.equal(evidence?.transport, "native-selector");
+    assert.equal(evidence?.pointContribution, false);
     assert.equal(evidence?.coordinateFallbackPermitted, true);
   });
   await inContext(androidContext, async () => {
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "label",
-      snapshotPoint: { x: 10, y: 20 },
     });
     const evidence = activationTransportEvidence();
-    // Android payloads never carry the contribution even when one was resolved
-    // locally — the same gate as iosNonHittablePressFields.
     assert.equal(evidence?.transport, "native-selector");
     assert.equal(evidence?.pointContribution, false);
     assert.equal(evidence?.coordinateFallbackPermitted, false);

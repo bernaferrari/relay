@@ -36,20 +36,20 @@ export function base() {
 }
 
 /**
- * agent-device's iOS runner can coordinate-activate controls XCTest marks
- * non-hittable (SwiftUI rows). The SDK maps press options → daemon flags via
- * a shallow merge: `maestro` must be a top-level press field, not nested under
- * `flags`. Optional expectedTapPoint steers the coordinate fallback.
+ * The vendored daemon resolves every selector against its own fresh capture
+ * and actuates the resolved point; its admission probe refuses controls it
+ * marks non-hittable (SwiftUI rows) unless the allowance travels with the
+ * dispatch. The SDK maps press options → daemon flags via a shallow merge:
+ * `maestro` must be a top-level press field, not nested under `flags`.
+ * No snapshot point is attached: `expectedTapPoint` is only read by the
+ * click-only direct-iOS runner route Relay does not exercise, so passing it
+ * here could never steer anything.
  */
-export function iosNonHittablePressFields(point?: {
-  x: number;
-  y: number;
-}): Record<string, unknown> {
+export function iosNonHittablePressFields(): Record<string, unknown> {
   if (selectedPlatform() !== "ios") return {};
   return {
     maestro: {
       allowNonHittableCoordinateFallback: true,
-      ...(point ? { expectedTapPoint: { x: point.x, y: point.y } } : {}),
     },
   };
 }

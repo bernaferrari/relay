@@ -258,14 +258,13 @@ export async function pressLabel(
         ...base(),
         selector: `label="${label.replaceAll('"', '\\"')}"`,
         ...(scopedHeading ? { heading: scopedHeading } : {}),
-        ...iosNonHittablePressFields(point),
+        ...iosNonHittablePressFields(),
         ...repeated,
       } as never),
     );
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "label",
-      snapshotPoint: point,
     });
   } catch (error) {
     if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
@@ -292,14 +291,13 @@ export async function pressIdentifier(
       nativeDevice(device).interactions.press({
         ...base(),
         selector: `id="${identifier.replaceAll('"', '\\"')}"`,
-        ...iosNonHittablePressFields(point),
+        ...iosNonHittablePressFields(),
         ...repeated,
       } as never),
     );
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "identifier",
-      snapshotPoint: point,
     });
   } catch (error) {
     if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
@@ -680,9 +678,8 @@ export async function iosSnapshotFallbackPoint(
 }
 
 export async function pressMatchingText(device: Device, match: string): Promise<void> {
-  // Prefer selector + native non-hittable coordinate fallback (one round-trip).
-  // Snapshot-derived x/y are supplied so the runner taps the row center even when
-  // XCTest refuses element.activate() on SwiftUI list cells.
+  // Prefer the daemon-resolved selector press (one round-trip); the snapshot
+  // point only serves the local fallback when the selector dispatch fails.
   const nodes = await snapshot(device);
   const point =
     resolveSnapshotTargetPoint(nodes, { text: match }) ??
@@ -692,13 +689,12 @@ export async function pressMatchingText(device: Device, match: string): Promise<
       nativeDevice(device).interactions.press({
         ...base(),
         selector: `label*="${match.replaceAll('"', '\\"')}"`,
-        ...iosNonHittablePressFields(point),
+        ...iosNonHittablePressFields(),
       } as never),
     );
     noteDaemonSelectorActuation({
       operation: "press",
       resolutionMethod: "text",
-      snapshotPoint: point,
     });
     return;
   } catch (error) {
