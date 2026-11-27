@@ -11,6 +11,7 @@ import type { TestJob } from "../session/session.js";
 import type { AppIdentityPolicy } from "../app/app-identity-policy.js";
 import { identityPolicyForTarget } from "../app/app-identity-policy.js";
 import type { ResponseBoundary } from "./recipe-response-boundary.js";
+import type { ActiveSignInSecrets } from "../sign-in/secret-references.js";
 import {
   identityIgnoreRegionsForObservation,
   type IdentityIgnoreObservation,
@@ -95,6 +96,9 @@ export type RecipeRuntimeState = {
    * following leftover when:present tap must not find either — that find
    * recycles the one in-request XCTest snapshot and dest-wait then dies. */
   leftoverInspectUnproven?: boolean;
+  /** Ephemeral plaintext available only to secret references inside the
+   * active saved-sign-in act. Never written to artifacts or the run record. */
+  activeSignIn?: ActiveSignInSecrets;
 };
 
 function previousProof(

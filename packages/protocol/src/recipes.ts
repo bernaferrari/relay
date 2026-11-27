@@ -534,6 +534,9 @@ export type RecipeStep = RecipeStepMetadata &
         /** Upper bound on concrete actions for this intent. Default 5. */
         maxActions?: number;
         model?: string;
+        /** Non-secret authentication context for a canonical saved-sign-in
+         * intent. Credentials never appear on the recipe step. */
+        auth?: { type: "sign-in"; accountKey?: string };
         /** Taps a previous run chose for this intent. Replayed first; the
          * model is asked only when one of them no longer fits the screen. */
         cached?: RecipeStep[];

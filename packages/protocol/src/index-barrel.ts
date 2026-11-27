@@ -89,6 +89,7 @@ export * from "./browser/browser-device.js";
 export * from "./browser/browser-device-telemetry.js";
 export * from "./browser/browser-lane-session.js";
 export * from "./browser/browser-authentication-fixture.js";
+export * from "./sign-in/saved-sign-in.js";
 export * from "./target/target-observation.js";
 export * from "./goal/goal-observation.js";
 export * from "./goal/goal-session.js";

@@ -7,6 +7,7 @@ import { createTargetSupervisorOperationDefinitions } from "./target/target-supe
 import { createTargetObservationOperationDefinition } from "./target/target-observation-operation-definition.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
 import { browserDeviceOperationDefinitions } from "./browser/browser-device-operation-definitions.js";
+import { savedSignInOperationDefinitions } from "./sign-in/saved-sign-in-operation-definitions.js";
 import { targetDeviceControlOperationDefinitions } from "./target/target-device-control-operation-definitions.js";
 import { presenceOperationDefinitions } from "./presence-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run/run-repair-operations.js";
@@ -102,6 +103,7 @@ export const operationDefinitions = [
     idempotency: "inherent",
   }),
   ...browserDeviceOperationDefinitions,
+  ...savedSignInOperationDefinitions,
   ...targetDeviceControlOperationDefinitions,
   command("target.boot", "Boot target", "POST", "/device/boot", { category: "target" }),
   command("target.avd.boot", "Boot a named Android emulator", "POST", "/device/avd/boot", {

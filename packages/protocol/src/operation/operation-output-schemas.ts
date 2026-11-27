@@ -1,4 +1,5 @@
 import { managedFixtureOutputSchemas } from "../managed-fixture.js";
+import { savedSignInOperationOutputSchemas } from "../sign-in/saved-sign-in.js";
 import { e2eOperationOutputSchemas } from "../e2e-project.js";
 import type * as z from "zod/v4";
 import { coreOperationOutputSchemas } from "../core-operation-output-schemas.js";
@@ -52,6 +53,7 @@ const appMapEnvelopeSchema = zod.object({ appMap: appMapDocumentSchema }).strict
 export const operationFamilyOutputSchemas = {
   ...workspaceTargetOperationOutputSchemas,
   ...managedFixtureOutputSchemas,
+  ...savedSignInOperationOutputSchemas,
   ...laneOperationOutputSchemas,
   ...observationOperationOutputSchemas,
   ...executionOperationOutputSchemas,

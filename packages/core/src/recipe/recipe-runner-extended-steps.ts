@@ -52,6 +52,7 @@ import {
 import { recordInitiatingResponseBoundary } from "./recipe-response-completion.js";
 import { observeRecipeResponse } from "./recipe-response-observation.js";
 import { NativeTextEntryVerificationError } from "../device/input-not-dispatched.js";
+import { resolveSecretReference } from "../sign-in/secret-references.js";
 import {
   advanceSemanticRevealNavigation,
   estimateSemanticRevealMovement,
@@ -118,6 +119,9 @@ export async function runTypeStep(
   step: Extract<RecipeStep, { kind: "type" }>,
   ctx: RecipeStepContext,
 ): Promise<void> {
+  // Secret references resolve at this boundary only. The recipe step remains
+  // the non-secret reference; plaintext is a local variable for the device call.
+  const text = resolveSecretReference(step.text, ctx.runtime?.activeSignIn);
   if (step.mode === "replace" && !step.target) throw new Error("replace text requires a target");
   ctx.runtime ??= {};
   delete ctx.runtime.responseBoundary;
@@ -149,8 +153,8 @@ export async function runTypeStep(
       await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
     const receipt =
       step.mode === "replace"
-        ? (await replaceText(device, step.target!, step.text)).receipt
-        : await typeText(device, step.text);
+        ? (await replaceText(device, step.target!, text)).receipt
+        : await typeText(device, text);
     if (receipt) retainReceipt(receipt);
   } catch (error) {
     if (error instanceof NativeTextEntryVerificationError && error.textEntry)

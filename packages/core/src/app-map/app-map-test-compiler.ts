@@ -53,6 +53,7 @@ import {
 import { compileAppMapTestPlan } from "./app-map-test-plan.js";
 import { cacheableSavedSteps } from "./act-cache-steps.js";
 import { testInstructionDisplayTitle } from "../recorded/recorded-control-label.js";
+import { signInAuthForIntent } from "../sign-in/auth-step-intents.js";
 
 export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
@@ -379,9 +380,10 @@ export function compileAppMapScenarioTest(
           step.kind === "validation" ? "check" : "action",
         );
         const cached = savedSteps ? { cached: structuredClone(savedSteps) } : {};
+        const auth = step.kind === "instruction" ? signInAuthForIntent(step.intent) : undefined;
         recipeSteps.push(
           step.kind === "instruction"
-            ? { kind: "act", intent: step.intent, ...cached }
+            ? { kind: "act", intent: step.intent, ...(auth ? { auth } : {}), ...cached }
             : { kind: "evaluate-visual", criteria: [step.intent], ...cached },
         );
         if (step.capture) {

@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 import type { RecipeStep } from "../recipes.js";
+import { savedSignInKeySchema } from "../sign-in/saved-sign-in.js";
 import {
   reviewedDocumentOriginReferenceSchema,
   scrollSurfaceDocumentOriginProofSchema,
@@ -520,6 +521,13 @@ const recipeStepSchemaUnion = z.union([
       intent: z.string(),
       maxActions: z.number().optional(),
       model: z.string().optional(),
+      auth: z
+        .object({
+          type: z.literal("sign-in"),
+          accountKey: savedSignInKeySchema.optional(),
+        })
+        .strict()
+        .optional(),
       cached: z.array(z.lazy(() => recipeStepSchema)).optional(),
     })
     .strict(),

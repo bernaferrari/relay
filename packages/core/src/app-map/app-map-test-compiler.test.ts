@@ -3883,3 +3883,30 @@ test("manual screen refresh preserves a saved Test's frozen replay evidence prof
   );
   assert.equal(current.screenVariants[refresh.id]!.targetProfile.id, refresh.targetProfile.id);
 });
+
+test("canonical saved-account phrases compile to act steps with non-secret sign-in context", () => {
+  const work = scenario();
+  work.steps = [
+    {
+      id: "sign-in",
+      kind: "instruction",
+      intent: "Sign in with the saved account “member”!",
+      binding: { status: "unresolved", reason: "Runs from text", fromText: true },
+    },
+    {
+      id: "near-miss",
+      kind: "instruction",
+      intent: "Sign in with a saved account",
+      binding: { status: "unresolved", reason: "Runs from text", fromText: true },
+    },
+  ];
+  const compiled = compileAppMapTest(fixture(), work);
+  const acts = compiled.root.steps.filter((step) => step.kind === "act");
+  assert.deepEqual(acts[0], {
+    kind: "act",
+    intent: "Sign in with the saved account “member”!",
+    auth: { type: "sign-in", accountKey: "member" },
+    id: acts[0]!.id,
+  });
+  assert.equal(acts[1]!.auth, undefined);
+});

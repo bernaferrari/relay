@@ -16,6 +16,14 @@ import { describeRecipeStep } from "./recipe-presentation.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
 import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
 import { savedPathStepsAreExecutable } from "../app-map/act-cache-steps.js";
+import {
+  assertSignInActDecision,
+  prepareActiveSignIn,
+  scrubSignInCandidates,
+  scrubSignInText,
+  signInCachedStepsAreExecutable,
+  signInPromptLines,
+} from "./recipe-runner-act-sign-in.js";
 
 export const DEFAULT_ACT_MAX_ACTIONS = 5;
 const MAX_CANDIDATES = 80;
@@ -51,6 +59,8 @@ export type ActDecisionInput = {
   history: string[];
   screenshot?: { mimeType: string; data: string };
   model?: string;
+  /** Non-secret saved-sign-in context. Secret values are never part of a prompt. */
+  auth?: { type: "sign-in"; accountKey: string };
 };
 
 export type ActDecider = (input: ActDecisionInput) => Promise<ActDecision>;
@@ -129,6 +139,7 @@ function actPrompt(input: ActDecisionInput): string {
     input.history.length
       ? `Actions already taken for this step: ${JSON.stringify(input.history)}`
       : "No actions taken yet for this step.",
+    ...(input.auth?.type === "sign-in" ? signInPromptLines(input.auth.accountKey) : []),
     "Visible controls (choose by id):",
     JSON.stringify(input.candidates.map(({ target: _target, ...candidate }) => candidate)),
     "Reply with exactly one next action:",
@@ -272,15 +283,22 @@ export type ActObservation = {
   screenshot?: { mimeType: string; data: string };
 };
 
-async function observe(device: Device): Promise<ActObservation> {
+export type ActObservationOptions = { includeScreenshot?: boolean };
+
+async function observe(
+  device: Device,
+  options: ActObservationOptions = {},
+): Promise<ActObservation> {
   const nodes = await snapshot(device, { interactiveOnly: false });
   let screenshot: { mimeType: string; data: string } | undefined;
-  try {
-    const shot = await captureScreenshot({ device, ephemeral: true, includeScreenMatch: false });
-    screenshot = { mimeType: "image/png", data: shot.base64 };
-    await cleanupScreenshot(shot.path);
-  } catch {
-    screenshot = undefined;
+  if (options.includeScreenshot !== false) {
+    try {
+      const shot = await captureScreenshot({ device, ephemeral: true, includeScreenMatch: false });
+      screenshot = { mimeType: "image/png", data: shot.base64 };
+      await cleanupScreenshot(shot.path);
+    } catch {
+      screenshot = undefined;
+    }
   }
   return { candidates: actCandidates(nodes), ...(screenshot ? { screenshot } : {}) };
 }
@@ -301,13 +319,19 @@ function resolutionEvidence(data: unknown): ActStepResolutionEvidence | undefine
   };
 }
 
-export async function runActStep(
+export type ActScreenObserver = (
+  device: Device,
+  options?: ActObservationOptions,
+) => Promise<ActObservation>;
+
+async function runActStepLoop(
   device: Device,
   step: Extract<RecipeStep, { kind: "act" }>,
   ctx: RecipeStepContext,
   runConcrete: (concrete: RecipeStep) => Promise<void>,
-  observeScreen: (device: Device) => Promise<ActObservation> = observe,
+  observeScreen: ActScreenObserver,
 ): Promise<void> {
+  const signIn = step.auth?.type === "sign-in" ? ctx.runtime?.activeSignIn : undefined;
   const decide = registeredDecider ?? decideViaOpenRouter;
   const max = Math.max(1, Math.min(step.maxActions ?? DEFAULT_ACT_MAX_ACTIONS, 20));
   const history: string[] = [];
@@ -345,11 +369,17 @@ export async function runActStep(
   };
 
   // Replay what worked last time; ask the model only if the screen changed.
-  if (step.cached?.length && savedPathStepsAreExecutable(step.cached, "action")) {
+  // A sign-in path is cacheable only when every typed value is an opaque
+  // secret reference. Anything else is ignored without being echoed.
+  const cached =
+    step.cached?.length && (!signIn || signInCachedStepsAreExecutable(step.cached))
+      ? step.cached
+      : undefined;
+  if (cached?.length && savedPathStepsAreExecutable(cached, "action")) {
     try {
-      for (const concrete of step.cached) await runAndKeep(structuredClone(concrete));
-      record({ action: "cached", steps: step.cached });
-      ctx.log(`act: replayed ${step.cached.length} saved action(s) for “${step.intent}”`);
+      for (const concrete of cached) await runAndKeep(structuredClone(concrete));
+      record({ action: "cached", steps: cached });
+      ctx.log(`act: replayed ${cached.length} saved action(s) for “${step.intent}”`);
       finish("cache");
       return;
     } catch (error) {
@@ -357,35 +387,48 @@ export async function runActStep(
       if (isCancel(error)) throw error;
       rethrowIosMutationOutcomeUnknown(error);
       rethrowInputOutcomeUnknown(error);
-      const message = error instanceof Error ? error.message : String(error);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const message = signIn ? scrubSignInText(rawMessage, signIn) : rawMessage;
       record({ action: "cache-miss", reason: message, replayed: executed.length });
       ctx.log(`act: saved path no longer fits (${message}); asking the model`);
       history.push(...executed.map((concrete) => describeRecipeStep(concrete)));
     }
   }
   for (let attempt = 0; attempt <= max; attempt += 1) {
-    const { candidates, screenshot } = await observeScreen(device);
+    const observation = await observeScreen(device, {
+      includeScreenshot: signIn === undefined,
+    });
+    const candidates = signIn
+      ? scrubSignInCandidates(observation.candidates, signIn)
+      : observation.candidates;
+    // Conservative sign-in discipline: even a custom observation hook never
+    // supplies pixels to the model while credentials are active.
+    const screenshot = signIn ? undefined : observation.screenshot;
     const decision = await decide({
       intent: step.intent,
       candidates,
       history,
       ...(screenshot ? { screenshot } : {}),
       ...(step.model ? { model: step.model } : {}),
+      ...(signIn ? { auth: { type: "sign-in", accountKey: signIn.accountKey } } : {}),
     });
+    if (signIn) assertSignInActDecision(decision, candidates);
+    const reason = signIn ? scrubSignInText(decision.reason, signIn) : decision.reason;
     if (decision.action === "done") {
-      record({ action: "done", reason: decision.reason, history });
-      ctx.log(`act: done — ${decision.reason}`);
+      record({ action: "done", reason, history });
+      ctx.log(`act: done — ${reason}`);
       finish("model");
       return;
     }
     if (decision.action === "impossible") {
-      record({ action: "impossible", reason: decision.reason, history });
-      throw new Error(`Could not ${lowerFirst(step.intent)}: ${decision.reason}`);
+      record({ action: "impossible", reason, history });
+      throw new Error(`Could not ${lowerFirst(step.intent)}: ${reason}`);
     }
     if (attempt === max) break;
-    const { steps, summary } = concreteStepsForDecision(decision, candidates);
-    record({ action: decision.action, summary, reason: decision.reason, steps });
-    ctx.log(`act: ${summary} — ${decision.reason}`);
+    const { steps, summary: decisionSummary } = concreteStepsForDecision(decision, candidates);
+    const summary = signIn ? scrubSignInText(decisionSummary, signIn) : decisionSummary;
+    record({ action: decision.action, summary, reason, steps });
+    ctx.log(`act: ${summary} — ${reason}`);
     for (const concrete of steps) await runAndKeep(concrete);
     history.push(summary);
     if ("finishesIntent" in decision && decision.finishesIntent) {
@@ -396,6 +439,28 @@ export async function runActStep(
   throw new Error(
     `Could not ${lowerFirst(step.intent)} within ${max} actions (tried: ${history.join(", ") || "nothing"})`,
   );
+}
+
+export async function runActStep(
+  device: Device,
+  step: Extract<RecipeStep, { kind: "act" }>,
+  ctx: RecipeStepContext,
+  runConcrete: (concrete: RecipeStep) => Promise<void>,
+  observeScreen: ActScreenObserver = observe,
+): Promise<void> {
+  if (step.auth?.type !== "sign-in") {
+    return runActStepLoop(device, step, ctx, runConcrete, observeScreen);
+  }
+  ctx.runtime ??= {};
+  const active = await prepareActiveSignIn({ ctx, accountKey: step.auth.accountKey });
+  const previous = ctx.runtime.activeSignIn;
+  ctx.runtime.activeSignIn = active;
+  try {
+    await runActStepLoop(device, step, ctx, runConcrete, observeScreen);
+  } finally {
+    if (previous) ctx.runtime.activeSignIn = previous;
+    else delete ctx.runtime.activeSignIn;
+  }
 }
 
 function lowerFirst(text: string): string {

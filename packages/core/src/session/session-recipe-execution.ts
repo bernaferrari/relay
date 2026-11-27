@@ -19,7 +19,10 @@ import {
 import { parseAppMapTestExecutionIntentArtifact } from "../app-map/app-map-test-execution-intent.js";
 import { parseAppMapCombineCellExecutionIntentArtifact } from "../app-map/app-map-combine-cell-intent.js";
 import { attachDestinationRepairProposals } from "./session-repair-attachment.js";
-import { automaticEvidencePhases } from "./session-evidence-phases.js";
+import {
+  automaticEvidencePhases,
+  automaticFailureEvidenceAllowed,
+} from "./session-evidence-phases.js";
 
 function isJobCancellation(error: unknown): boolean {
   return (
@@ -118,7 +121,11 @@ export async function runRecipeSteps(
         await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
       finishCheckedStep(ts, resolvedStep.check?.id, job.artifacts.slice(artifactStart));
     } catch (err) {
-      if (!isJobCancellation(err) && !isTargetUnavailableError(err)) {
+      if (
+        !isJobCancellation(err) &&
+        !isTargetUnavailableError(err) &&
+        automaticFailureEvidenceAllowed(step)
+      ) {
         await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
       }
       await attachDestinationRepairProposals(job, err, runtime).catch(() => undefined);

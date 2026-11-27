@@ -121,6 +121,7 @@ test("the advanced surface includes the e2e harness noun with one spelling per o
     "build",
     "file",
     "system",
+    "sign-in",
   ]);
   const families = new Set(
     [
@@ -978,6 +979,7 @@ test("root help documents exit codes, --confirm, and the machine envelopes", () 
     "build",
     "file",
     "system",
+    "sign-in",
   ]) {
     assert.match(advanced, new RegExp(`^${noun} — `, "mu"), noun);
   }

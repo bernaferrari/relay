@@ -184,6 +184,20 @@ export const relayEverydayTools = Object.freeze([
     annotations: readOnly,
   },
   {
+    name: "relay_list_sign_ins",
+    title: "List saved sign-ins",
+    description:
+      'List saved sign-in metadata (keys, names, revision state and expiry) without usernames or passwords. Use the key in a Test phrase such as Sign in with the saved account "member".',
+    requiresConfirmation: false,
+    inputSchema: z
+      .object({
+        appMapId: identifier.optional().describe("Optional App id filter"),
+        key: identifier.optional().describe("Optional saved sign-in key filter"),
+      })
+      .strict(),
+    annotations: readOnly,
+  },
+  {
     name: "relay_get_guide",
     title: "Read a guide",
     description:
@@ -267,6 +281,37 @@ export async function invokeRelayEverydayTool(input: {
         steps,
         ready,
       })),
+    };
+  }
+  if (input.name === "relay_list_sign_ins") {
+    const result = object(
+      await input.invoker.invoke(
+        "sign-in.list",
+        {
+          ...(typeof parsed.appMapId === "string" ? { appMapId: parsed.appMapId } : {}),
+          ...(typeof parsed.key === "string" ? { key: parsed.key } : {}),
+        },
+        { signal: input.signal },
+      ),
+    );
+    return {
+      signIns: (Array.isArray(result.signIns) ? result.signIns : []).map((item) => {
+        const signIn = object(item);
+        return {
+          key: signIn.key,
+          name: signIn.name,
+          kind: signIn.kind,
+          revision: signIn.revision,
+          reference: signIn.reference,
+          appMapId: signIn.appMapId,
+          usernameHint: signIn.usernameHint,
+          inboxKey: signIn.inboxKey,
+          createdAt: signIn.createdAt,
+          updatedAt: signIn.updatedAt,
+          expiresAt: signIn.expiresAt,
+          revokedAt: signIn.revokedAt,
+        };
+      }),
     };
   }
   if (input.name === "relay_list_devices") {

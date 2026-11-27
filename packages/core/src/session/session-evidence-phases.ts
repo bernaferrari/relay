@@ -65,7 +65,20 @@ export function automaticEvidencePhases(
       return ["after"];
     case "identity-ignore":
       return [];
+    case "act":
+      // Saved sign-in acts enter credentials. Even though nested concrete
+      // steps do not capture their own automatic frames, the outer act must
+      // not retain before/after pixels or trees as a side effect.
+      if (step.auth?.type === "sign-in") return [];
+      return ["before", "after"];
     default:
       return ["before", "after"];
   }
+}
+
+/** Failure evidence is normally always captured, even for steps whose settled
+ * success phases are elided. Sign-in is the conservative exception: a failure
+ * can occur with credentials present in fields, so no extra capture is taken. */
+export function automaticFailureEvidenceAllowed(step: RecipeStep): boolean {
+  return !(step.kind === "act" && step.auth?.type === "sign-in");
 }

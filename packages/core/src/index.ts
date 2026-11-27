@@ -261,3 +261,11 @@ export {
 
 export * from "./workspace/managed-fixtures.js";
 export * from "./recorded/recorded-control-label.js";
+
+export * from "./sign-in/secret-vault.js";
+export * from "./sign-in/saved-sign-ins.js";
+export * from "./sign-in/environment-overlays.js";
+export * from "./sign-in/sign-in-resolution.js";
+export * from "./sign-in/secret-references.js";
+export * from "./sign-in/auth-step-intents.js";
+export * from "./sign-in/sign-in-admission.js";

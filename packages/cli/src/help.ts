@@ -28,6 +28,7 @@ const nouns = [
   ["build", "App builds: save, preflight, install, launch"],
   ["file", "Project-scoped test files: import and list reusable fixtures"],
   ["system", "Activity log, projects, and the local control database"],
+  ["sign-in", "Saved sign-ins: metadata-only list and human-only secret rotation"],
   ["import", "Convert Maestro and Playwright tests into Relay test files"],
 ] as const;
 

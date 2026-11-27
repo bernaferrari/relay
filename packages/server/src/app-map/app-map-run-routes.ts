@@ -46,6 +46,7 @@ import { parseLaneAwareTestRunBody } from "../lane-run-route.js";
 import { defaultJobRouteRuntime } from "../job-routes.js";
 import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
 import { prepareAppMapCompanionTestRun } from "./app-map-test-run-prepare.js";
+import { assertRunSavedSignInsAvailable } from "../sign-in/sign-in-run-admission.js";
 import { defaultTestRunRuntime, type AppMapRunRouteContext } from "./app-map-test-run-runtime.js";
 import { assertRepeatWorkflowMutation } from "../repeat-workflow-receipt.js";
 import {
@@ -254,9 +255,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     ) {
       observedDevices = await runtime.listDevices().catch(() => undefined);
     }
-    // One target snapshot for the whole admission: the managed browser
-    // environment frozen into compile must be the same identity the
-    // observed-profile validation compares against after preflight.
+    // One target snapshot ties compile identity to post-preflight validation.
     const observedTargets = await listTargets();
     const prepared = await prepareAppMapCompanionTestRun({
       map,
@@ -345,14 +344,16 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       preflight,
     });
 
-    // Freeze and validate every executable byte before Relay asks the target
-    // controller for a lease. A malformed graph or intent is an offline
-    // review problem, never a reason to touch the selected target first.
+    // Freeze and validate every executable byte before target control or lease admission.
     const recipeGraph: Record<string, Recipe> = Object.fromEntries(
       Object.values(compiled.graph).map((recipe) => [recipe.id, structuredClone(recipe)]),
     );
     const recipeSnapshot = recipeGraph[plan.rootRecipeId];
     if (!recipeSnapshot) throw new HttpError(500, "Compiled Test has no root recipe");
+    await assertRunSavedSignInsAvailable({
+      projectId: input.scope.projectId,
+      recipeGraph,
+    });
     const operation = currentOperationContext();
     if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
     const queuedAt = Date.now();

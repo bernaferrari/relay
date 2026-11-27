@@ -18,6 +18,7 @@ import {
 import { runEvidenceCommandDescriptors } from "./run-share-commands.js";
 import { proofCommandDescriptors } from "./proof-commands.js";
 import { targetCommandDescriptors } from "./target-commands.js";
+import { signInCommandDescriptors } from "./sign-in-commands.js";
 import { laneCommandDescriptors } from "./lane-commands.js";
 
 export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
@@ -117,6 +118,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     reason: "Outcome commands own authorized CAS transitions for Runs and recordings.",
   },
   ...laneCommandDescriptors,
+  ...signInCommandDescriptors,
 
   mapped("workspace.privacy.get", path("proof privacy get")),
   mapped("workspace.privacy.update", path("proof privacy update")),
