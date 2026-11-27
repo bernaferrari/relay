@@ -1,6 +1,6 @@
 ---
 title: Test inboxes
-description: Sign in with email codes — Relay reads the code from a connected inbox and the model never sees it.
+description: Sign in with email codes or links — Relay reads them from a connected inbox and the model never sees them.
 ---
 
 A test inbox is an encrypted IMAP connection owned by the workspace. When a product emails a sign-in code, Relay polls the inbox during the step, extracts the code locally, and types it straight into the product — the model chooses the destination field but never sees the code, the message, or the mailbox credentials.
@@ -32,7 +32,7 @@ relay inbox revoke member --confirm
 
 ## Use it in a Test
 
-After the sign-in step, write the exact sentence:
+After the sign-in step, write the exact sentence for the kind of email the product sends:
 
 ```yaml
 steps:
@@ -40,9 +40,17 @@ steps:
   - Enter the code from the email
 ```
 
+For products that email a sign-in link instead of a code:
+
+```yaml
+steps:
+  - Sign in with the saved account "member"
+  - Open the sign-in link from the email
+```
+
 The phrasing is deliberately exact — near misses stay ordinary steps and never acquire inbox authority.
 
-During the step, Relay polls the mailbox **read-only**: nothing is marked read, moved, or deleted. Only messages newer than the sign-in start are considered, polling stops as soon as a usable code arrives (60-second default deadline, fifteen-minute hard ceiling), and if the newest message contains two equally plausible codes the step fails honestly rather than guessing.
+During the step, Relay polls the mailbox **read-only**: nothing is marked read, moved, or deleted. Only messages newer than the sign-in start are considered, polling stops as soon as a usable message arrives (60-second default deadline, fifteen-minute hard ceiling), and if the newest message contains two equally plausible codes or links the step fails honestly rather than guessing. Unsubscribe and privacy-footnote links never compete with the sign-in link, and the link opens straight in the controlled browser or device — the model is not involved at all.
 
 ## CI and other machines
 
@@ -61,6 +69,6 @@ RELAY_INBOX_MEMBER_PASSWORD=…
 
 ## What Relay guarantees
 
-- The code is typed through an opaque reference; it never appears in prompts, artifacts, screenshots, or saved paths. Evidence frames for the step are not captured.
+- The code or link travels through an opaque reference; it never appears in prompts, artifacts, screenshots, or saved paths. Evidence frames for the step are not captured, and the link is masked out of browser network evidence too.
 - The mailbox is opened read-only and treated as append-only mail owned by someone else.
 - A missing, revoked, or partially configured inbox fails the Run before it acquires a device — never mid-test after half the steps ran.
