@@ -3,7 +3,7 @@ import test from "node:test";
 import type { Device } from "../device/device.js";
 import { redactPrivateValue } from "../input/private-inputs.js";
 import type { TestJob } from "../session/session-contract.js";
-import { INBOX_LINK_REFERENCE } from "../sign-in/secret-references.js";
+import { INBOX_LINK_REFERENCE, type ActiveSignInSecrets } from "../sign-in/secret-references.js";
 import type { TestInboxMessage } from "../sign-in/imap-test-inbox.js";
 import {
   currentTargetContext,
@@ -84,10 +84,10 @@ function harness(messages: TestInboxMessage[]) {
         accountKey: "member",
         username: usernameCanary,
         password: passwordCanary,
-        source: "environment" as const,
+        source: "environment",
         inboxKey: "member",
         startedAt: Date.now(),
-      },
+      } satisfies ActiveSignInSecrets as ActiveSignInSecrets,
     },
   };
   const unregisterInbox = registerTestInboxClientFactory(async () => ({
@@ -229,8 +229,14 @@ test("a sign-in without an explicit link uses the inbox that shares its key", as
   useInboxEnvironment(t);
   const { ctx, unregisterInbox } = harness([message(`Sign in [${linkCanary}]`)]);
   t.after(unregisterInbox);
-  const { inboxKey: _dropped, ...unlinked } = ctx.runtime.activeSignIn as Record<string, unknown>;
-  ctx.runtime.activeSignIn = unlinked;
+  const linked = ctx.runtime.activeSignIn as ActiveSignInSecrets;
+  ctx.runtime.activeSignIn = {
+    accountKey: linked.accountKey,
+    username: linked.username,
+    password: linked.password,
+    source: linked.source,
+    startedAt: linked.startedAt,
+  };
   const calls = { opens: [] as OpenCall[] };
   await runLinkStep(fakeDevice(calls), ctx, {
     kind: "browser",
