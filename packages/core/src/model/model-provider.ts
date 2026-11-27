@@ -189,7 +189,7 @@ const DEFAULT_MODELS: Record<
   anthropic: { vision: "claude-sonnet-5-5", text: "claude-haiku-5-5" },
   openai: { vision: "gpt-5.1", text: "gpt-5-mini" },
   google: { vision: "gemini-flash-latest", text: "gemini-flash-lite-latest" },
-  openrouter: { vision: "openai/gpt-5.1", text: "openai/gpt-5-mini" },
+  openrouter: { vision: "~openai/gpt-terra-latest", text: "~openai/gpt-luna-latest" },
 };
 
 /** Resolve a task model using neutral names first and legacy OpenRouter names as fallback. */

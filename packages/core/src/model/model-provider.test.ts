@@ -140,7 +140,7 @@ test("provider defaults match the required vision and text matrix", () => {
     anthropic: ["claude-sonnet-5-5", "claude-haiku-5-5"],
     openai: ["gpt-5.1", "gpt-5-mini"],
     google: ["gemini-flash-latest", "gemini-flash-lite-latest"],
-    openrouter: ["openai/gpt-5.1", "openai/gpt-5-mini"],
+    openrouter: ["~openai/gpt-terra-latest", "~openai/gpt-luna-latest"],
   } as const;
   for (const [provider, [vision, text]] of Object.entries(expected) as Array<
     [RelayModelProvider, readonly [string, string]]
