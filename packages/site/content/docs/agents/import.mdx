@@ -1,0 +1,102 @@
+---
+title: Import Maestro or Playwright
+description: Convert existing Maestro flows or Playwright specs into reviewable Relay YAML files.
+---
+
+`relay import` translates existing Maestro flows or Playwright specs into Relay's small YAML format. It is a starting point, not proof that the conversion is faithful. Treat every output file as a draft: read its warnings, edit it, and run it yourself before adding it to CI.
+
+Conversion is local file translation; it does not need a running Relay server or a model. Saving and running the result do. A newly imported Test executes from descriptions, so its first resolution needs the configured model. Passing Runs can then create [saved paths](/docs/workflows/saved-paths).
+
+## Start with a dry run
+
+Point the command at one file or a folder. `--dry-run` prints the converted YAML and writes nothing:
+
+```bash
+npx -y @relay/cli import maestro maestro/checkout.yaml --dry-run
+npx -y @relay/cli import playwright tests/checkout.spec.ts --dry-run
+```
+
+A Maestro folder contributes its `.yaml` and `.yml` files. A Playwright folder contributes TypeScript and JavaScript files whose names end in `.spec.*` or `.test.*`. Folders are searched recursively; hidden entries and `node_modules` are skipped.
+
+When the output looks useful, write the draft files:
+
+```bash
+npx -y @relay/cli import maestro maestro --out .relay/tests
+npx -y @relay/cli import playwright tests/e2e --out .relay/tests
+```
+
+`.relay/tests` is the default output folder. Existing files are never overwritten: if `checkout.yaml` already exists, the import writes a suffixed file such as `checkout-2.yaml` and reports that suffix in its summary. Remove obsolete duplicates before applying the whole folder.
+
+For automation, `--json` returns `result.files`. Each entry carries `source`, `output`, `name`, `steps`, `warnings`, `written`, `renamed`, and `yaml`; `renamed` means the numeric suffix was added.
+
+Use `--input` for information the source does not provide or should not keep:
+
+```bash
+npx -y @relay/cli import playwright tests/checkout.spec.ts \
+  --input '{"url":"https://shop.example"}'
+
+npx -y @relay/cli import maestro maestro/checkout.yaml \
+  --input '{"app":"Shop","name":"Checkout"}'
+```
+
+`url` supplies or overrides the website target and resolves relative Playwright navigation. `app` names an existing Relay App when there is no URL. `name` overrides the output name only when conversion produces one Test. These are conversion inputs, not secrets.
+
+## Review, save, then run
+
+Importing only writes YAML. Apply it when you are ready to save the Tests in Relay:
+
+```bash
+npx -y @relay/cli apply .relay/tests
+npx -y @relay/cli run "Checkout" --device browser
+```
+
+Before applying:
+
+1. Read every warning comment. A warning means source behavior was omitted, approximated, or needs human judgment. Comments are documentation; Relay does not reproduce the missing behavior or warn again at runtime.
+2. Check the target URL or App name. Do not test a production or third-party target merely because the source file named it.
+3. Remove credentials and personal data from the YAML. Use [saved accounts](/docs/workflows/accounts) and private-input handling rather than committing a plaintext password.
+4. Compare the draft with the original test. Unsupported setup can make an imported test easier to pass than the original.
+5. Run one imported Test interactively before applying a large folder or scheduling it.
+
+`apply` saves the YAML; it does not execute it. A successful `apply` response also is not a test result.
+
+## What Maestro converts well
+
+The importer expects ordinary Maestro YAML: optional config, a `---` document separator, then a list of commands. A single-document form with a `commands` list is also accepted. Static, declarative interactions convert best:
+
+| Maestro source                                     | Relay draft                                                                                  |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `tapOn` / `longPressOn` by visible text or ID      | Plain-English tap or long-press steps, including simple repeat counts                        |
+| `inputText` and `eraseText`                        | Typing or erasing steps                                                                      |
+| `assertVisible` / `assertNotVisible`               | Plain-English checks; enabled, checked, focused, and selected states are preserved when used |
+| Directional `swipe` and `scroll`                   | Directional movement steps                                                                   |
+| `back`, `pressKey`, `hideKeyboard`, and `openLink` | Matching navigation, keyboard, or link steps                                                 |
+| Small numeric `repeat` counts                      | Repeated steps, flattened within the importer's bounded expansion limit                      |
+| Simple inline `runFlow`                            | Its steps are inlined                                                                        |
+| `${MAESTRO_VALUE}`-style environment references    | Relay `{{NAME}}` placeholders, with a warning to provide values                              |
+
+Maestro's `appId` is copied to the Relay `app` field with a confirmation warning. A website `url` is copied as the target. If neither exists, supply one through `--input`; otherwise the import stops instead of creating an untargeted Test.
+
+Expect review warnings for behavior that does not have a safe plain-English equivalent: JavaScript execution, clipboard manipulation, timing-only waits, coordinate gestures, external flow files, conditional or complex repetition, launch arguments, permissions, state clearing, stop behavior, and extra target constraints. A non-HTTP target `url` is not copied as the Test target, and file-based subflows are not inlined.
+
+Only the target and name are read from Maestro config. Environment blocks, hooks, tags, and other flow configuration are not executable Relay YAML and may be absent rather than itemized as warnings. Recreate needed setup deliberately before trusting the draft.
+
+## What Playwright converts well
+
+Playwright import is static extraction. It does not execute TypeScript, evaluate expressions, or understand your fixtures. It handles straightforward specs whose actions are visible in the source:
+
+- Static `page.goto()` calls. The first absolute URL becomes the Test target; later absolute navigation becomes an `Open` step. Relative navigation needs `--input` with the base `url`.
+- Clicks on static `getByText`, `getByRole` with a static accessible name, `getByTestId`, simple `locator()` targets, or static `page.click()` targets.
+- Fills on static `getByLabel`, `getByPlaceholder`, `getByRole` with a static accessible name, `getByTestId`, or static `page.fill()` targets.
+- Static `keyboard.press()` calls.
+- Visibility and text assertions such as `toBeVisible()`, `not.toBeVisible()`, `toHaveText()`, and `toContainText()` on readable static targets.
+- `beforeEach` bodies, which are merged into every Test in the file with a warning. The importer does not enforce Playwright suite scope, so a hook nested in one `describe` can affect every imported Test from that file.
+- Multiple `test()` or `it()` blocks, which become multiple YAML files.
+
+Statements the importer sees but cannot translate become warning comments. Examples include fixed sleeps, dynamic expressions, variables, loops, branches, page objects, helper calls, and unsupported assertions. If a spec has no static test block, no resolvable target, or no high-confidence steps, the command fails rather than writing an empty Test.
+
+Playwright execution semantics do not transfer wholesale. Fixtures, retries, timeouts, `beforeAll` and cleanup hooks, `describe`-level state, and dynamic control flow are not represented as executable Relay behavior. `test.only`, `test.skip`, and `test.fixme` annotations do not control whether the imported Relay Test runs. Structure outside scanned `beforeEach` and test bodies may be absent without an itemized warning, so compare the draft with the original spec before relying on it.
+
+## Keep both suites honest
+
+A converted Relay Test is not proof that the original Maestro or Playwright test can be deleted. Run the Relay version against the same build and compare what it actually verifies. Keep the original suite for behavior the importer warned about until you have deliberately replaced that coverage.

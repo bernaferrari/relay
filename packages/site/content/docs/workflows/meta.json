@@ -1,4 +1,14 @@
 {
   "title": "Workflows",
-  "pages": ["recording", "waits", "running", "review", "accounts", "map", "data-sets", "scheduling"]
+  "pages": [
+    "recording",
+    "waits",
+    "running",
+    "saved-paths",
+    "review",
+    "accounts",
+    "map",
+    "data-sets",
+    "scheduling"
+  ]
 }

@@ -46,7 +46,7 @@ npx -y @relay/cli run "Cart total" --app Shop --device browser --out ./evidence
 
 Use names from your workspace or their IDs. Targets also accept platform selections such as `ios`, `android`, and `browser`; use an exact device ID when several targets are available.
 
-Add `--json` for machine output. A verdict includes each step's **expected** and **saw**, so an agent can diagnose the failure before attempting a repair.
+Add `--json` for machine output. A verdict includes each step's **expected** and **saw**, so an agent can diagnose the failure before attempting a repair. Plain-English steps also carry replay provenance when available; see [saved paths](/docs/workflows/saved-paths).
 
 ## Inspect and export the same Run
 
@@ -84,4 +84,4 @@ Exit code 4 is authentication, 5 is invalid input, 6 is a conflict such as a bus
 
 ## A useful agent loop
 
-Inspect the saved Test and target, run the smallest relevant flow, read the verdict and evidence, repair the cause, and repeat the same Test. Use [MCP](/docs/agents/mcp) when your agent host supports tools, or [e2e](/docs/agents/e2e) for code-managed upstream Tests.
+Inspect the saved Test and target, run the smallest relevant flow, read the verdict and evidence, repair the cause, and repeat the same Test. [`relay fix`](/docs/agents/fix) packages one failure for that repair loop. Use [MCP](/docs/agents/mcp) when your agent host supports tools, [import existing coverage](/docs/agents/import) when it already exists in Maestro or Playwright, or [e2e](/docs/agents/e2e) for code-managed upstream Tests.

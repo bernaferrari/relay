@@ -19,7 +19,7 @@ steps:
   - check: There is no error message
 ```
 
-A plain string is an action. `do:` is the explicit action form; `check:` is a validation. These are descriptions, not browser selectors or deterministic waits.
+A plain string is an action. `do:` is the explicit action form; `check:` is a validation. These are descriptions of intent, not exact browser locations or deterministic waits.
 
 ## Save and run
 
@@ -30,7 +30,7 @@ npx -y @relay/cli apply ./settings.yaml
 npx -y @relay/cli run settings-opens --device browser --out ./evidence
 ```
 
-`apply` saves the Test; it does not execute it. New or changed description-based steps need a configured model during execution. Applying YAML does not make those steps model-free. To make interactions exact, record them and verify a replay.
+`apply` saves the Test; it does not execute it. New or changed description-based steps need a configured model during execution. Applying YAML does not make those steps model-free. After a passing Run, successful browser actions and directly visible checks can replay through [saved paths](/docs/workflows/saved-paths); native actions and visual checks still evaluate live. To choose exact interactions yourself, record them and verify a replay.
 
 ## Supported fields
 
@@ -53,7 +53,7 @@ npx -y @relay/cli apply ./settings.yaml
 
 The App name is an example. Use the one returned by `npx -y @relay/cli apps`.
 
-Keep the exported ID. Steps whose words and kind remain unchanged can retain their recorded interactions. Changed steps run from their descriptions until recorded or bound again. Inspect the saved Test and replay after editing.
+Keep the exported ID. Steps whose words and kind remain unchanged can retain their recorded interactions. Changed steps run from their descriptions until exact interactions are recorded again or a passing Run saves a new path. Inspect the saved Test and replay after editing.
 
 The YAML export is a description of actions and checks. It does **not** preserve every recorded locator, screenshot obligation, branch, or loop. Do not use it as a lossless backup of a complex visual Test or flatten arbitrary e2e code into it.
 

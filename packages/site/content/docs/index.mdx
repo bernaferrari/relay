@@ -17,16 +17,19 @@ Relay is local verification for coding agents on websites, Android apps, and iOS
 
 ## Pick your next task
 
-| I want to…                                       | Start here                                       |
-| ------------------------------------------------ | ------------------------------------------------ |
-| Test a Next.js app                               | [Next.js guide](/docs/frameworks/nextjs)         |
-| Test an Expo or React Native app                 | [Expo guide](/docs/frameworks/expo)              |
-| Record clicks and taps                           | [Record a flow](/docs/workflows/recording)       |
-| Wait for a generated result or save confirmation | [Waits and checks](/docs/workflows/waits)        |
-| Test a signed-in website                         | [Saved accounts](/docs/workflows/accounts)       |
-| Repeat with different inputs or languages        | [Data sets and Plans](/docs/workflows/data-sets) |
-| Run every 30 minutes                             | [Schedule a Plan](/docs/workflows/scheduling)    |
-| Maintain simple Tests as files                   | [YAML Tests](/docs/agents/test-files)            |
+| I want to…                                       | Start here                                          |
+| ------------------------------------------------ | --------------------------------------------------- |
+| Test a Next.js app                               | [Next.js guide](/docs/frameworks/nextjs)            |
+| Test an Expo or React Native app                 | [Expo guide](/docs/frameworks/expo)                 |
+| Record clicks and taps                           | [Record a flow](/docs/workflows/recording)          |
+| Wait for a generated result or save confirmation | [Waits and checks](/docs/workflows/waits)           |
+| Test a signed-in website                         | [Saved accounts](/docs/workflows/accounts)          |
+| Repeat with different inputs or languages        | [Data sets and Plans](/docs/workflows/data-sets)    |
+| Run every 30 minutes                             | [Schedule a Plan](/docs/workflows/scheduling)       |
+| Maintain simple Tests as files                   | [YAML Tests](/docs/agents/test-files)               |
+| Replay plain-English steps without the model     | [Saved paths](/docs/workflows/saved-paths)          |
+| Convert existing Maestro or Playwright coverage  | [Import Maestro or Playwright](/docs/agents/import) |
+| Hand a failing Run to a coding agent             | [Fix a failing run](/docs/agents/fix)               |
 
 ## Four things to know
 
@@ -43,7 +46,7 @@ A completed Run and an accepted screenshot are separate facts. Automated checks 
 
 - **Record** clicks and typing for deterministic steps.
 - **Describe** what should work and let a configured model help write or execute steps.
-- **Use YAML** for a simple [list of instructions and checks](/docs/agents/test-files). New description-based steps need a model during execution.
+- **Use YAML** for a simple [list of instructions and checks](/docs/agents/test-files). New description-based steps need a model during execution; passing browser Runs can create [saved paths](/docs/workflows/saved-paths) for later executions.
 - **Use code** through the opt-in [upstream e2e integration](/docs/agents/e2e). The integration runs the original program; the web pilot opens trusted projects, runs unchanged Tests, and retains results and human review in Relay.
 
 ## Where your work lives

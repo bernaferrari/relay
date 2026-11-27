@@ -1,0 +1,83 @@
+---
+title: Saved paths
+description: Replay successful plain-English steps without asking the model again, and re-resolve only what changed.
+---
+
+A plain-English step starts as words such as “Open checkout.” When that step succeeds as part of a passing Run, Relay remembers the concrete actions or visible evidence that carried it out as a **saved path**. The next Run tries that path before asking a model.
+
+This is automatic. There is nothing to enable and no step syntax to add. The words remain the meaning of the Test; a saved path is derived runtime data.
+
+## What Relay remembers
+
+A saved path is written only after a passing Run. A failed, blocked, or cancelled attempt does not prove a new path.
+
+- **Website actions:** successful taps, typing, scrolling, keys, and short action sequences can be remembered for browser targets.
+- **Checks:** positive visibility checks can be remembered when their target has a semantic identity, such as accessible text, a label, or an identifier, rather than only a position. The first semantic resolution is accepted only when a separate visual confirmation also passes. Checks about layout, color, imagery, absence, ordering, counting, style, or another visual judgment still evaluate live.
+- **Android and iOS:** passive visibility checks can be remembered for the exact same platform. Mutating actions such as tapping and typing are not remembered on native targets today.
+
+A path is used only for the kind of target where it was proven. A browser path is not used on Android or iOS, and an Android check path is not used on iOS. When the target evidence includes a viewport, a changed viewport also means the path is not used.
+
+Not every plain-English step can have a saved path. Coordinate-only and relative-position interactions are excluded because they do not provide enough stable evidence that the same control was found again. Typing marked as private input is never remembered; plaintext typed directly into a step is not automatically treated as private merely because it looks secret. Complex control flow and unresolved model judgments continue to run live.
+
+Saved paths are workspace data. They are not part of the small hand-authored YAML file, so a fresh CI workspace resolves plain-English steps live until its own passing Run saves them again.
+
+## Read what happened in a verdict
+
+Use machine output to see per-step replay provenance:
+
+```bash
+npx -y @relay/cli run verdict <run-id> --json
+```
+
+In `result.verdict`, `replayedSteps` and `reResolvedSteps` count the plain-English steps with each outcome. These fields are omitted when zero. Each plain-English step can carry `replay.source`:
+
+- `"model"` means the model resolved this step live; either no usable path existed or this was its first resolution.
+- `"re-resolved"` means the saved path no longer matched, so the model resolved this step again from its original words.
+- The remaining machine label is legacy internal vocabulary and means **replayed**: the saved path executed without asking the model for this step. It is not a separate pass or failure status.
+
+The human terminal table summarizes pass and failure but does not print these per-step fields. MCP's `relay_get_verdict` returns the same verdict data to a coding agent.
+
+Replay provenance does not change the verdict. **Re-resolved** is not a product failure by itself, and **replayed** is not a stronger pass than any other passing step.
+
+## What happens when the screen changes
+
+1. Relay tries the saved path first.
+2. If that path can no longer complete, only the affected plain-English step is resolved live from its original words. Other steps can still use their own paths.
+3. If the Run passes, an eligible new resolution can replace the old path. Either way, the step is marked **re-resolved** in that Run's verdict because the old path missed.
+4. If the Run fails, the unproven resolution is not saved and the stale path is dropped. A blocked Run neither saves nor drops a path because it proves nothing about the product behavior.
+
+This makes a moved button or renamed implementation detail cheap to recover from. It does not make an outdated expectation correct. If the product intentionally changed what the step means, edit the step; do not rely on re-resolution to invent a new requirement.
+
+## Forget a saved path
+
+Forget paths when the app changed deliberately and you want fresh resolution, or when a saved path keeps reaching the wrong control. Forgetting leaves the Test words, checks, and recordings unchanged; the next Run resolves the affected plain-English steps live.
+
+The command needs the exact App Map revision as protection against overwriting someone else's newer edit. Find the IDs and revision first:
+
+```bash
+npx -y @relay/cli apps
+npx -y @relay/cli tests <app-id>
+npx -y @relay/cli map get <app-id> --json
+```
+
+In the map JSON, read `result.appMap.revision`. The full map also includes each Test step's stable ID. Then forget every saved path in the Test:
+
+```bash
+npx -y @relay/cli test forget <appMapId> <testId> \
+  --input '{"expectedRevision":42}'
+```
+
+Or forget one plain-English step:
+
+```bash
+npx -y @relay/cli test forget <appMapId> <testId> \
+  --input '{"expectedRevision":42,"stepId":"<step-id>"}'
+```
+
+Replace `42` with the current revision. If Relay reports a revision conflict, read the map again and retry with the newer value. `eventId` is an optional idempotency key for a safe retry; it is not needed for a one-off command. If the Test or step has no saved path, the command says so instead of inventing a change.
+
+A successful result is an updated App Map, not a Run verdict. The next Run needs a model for the forgotten steps. If that Run passes, it can save a replacement path. The removal is undoable in the app: open the Test editor and use its undo control. Undo restores the Test document; it does not re-run the Test or change the app.
+
+## Keep the model boundary clear
+
+A replayed step avoids model cost for that step only. Other plain-English actions and checks in the same Run can still need the configured model. Recording remains the way to author deterministic interactions by hand; saved paths are learned from successful plain-English execution. See [record a flow](/docs/workflows/recording) when you want to choose the exact interaction yourself.

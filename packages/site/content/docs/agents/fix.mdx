@@ -1,0 +1,85 @@
+---
+title: Fix a failing run
+description: Hand one failure to a coding agent with evidence, scope, and the exact re-run command.
+---
+
+`relay fix` turns a failed or blocked Run into a ready-to-paste markdown prompt for a coding agent. It does not change your app, edit the Test, or ask a model to fix anything. It packages the evidence and the verification loop so the agent can make a scoped code change.
+
+Use it after you have looked at the failure enough to know which step matters. It is not a replacement for human review.
+
+## Generate the handoff
+
+Run IDs appear in `relay run` output and in the Runs list:
+
+```bash
+npx -y @relay/cli runs
+npx -y @relay/cli fix <run-id>
+```
+
+When several steps failed, the default is the first failed step. Choose another failed step by its position in the Run's step list or by its stable step ID:
+
+```bash
+npx -y @relay/cli fix <run-id> 3
+npx -y @relay/cli fix <run-id> <step-id>
+```
+
+The position is the position in the whole Run, not the position among failed steps. Selecting a passing step is rejected; one handoff covers one failed step even when the Run has several.
+
+For automation, use stable JSON and read the `prompt` field:
+
+```bash
+npx -y @relay/cli fix <run-id> --json
+```
+
+The JSON result carries `runId`, `status`, `title`, `summary`, the selected `step` object, `failedSteps`, and `prompt`. It adds `reason`, `device`, `durationMs`, `test`, and `reproduce` only when the Run record provides them. `test` has `appMapId` and `testId`; `reproduce` is the canonical re-run command string. A step's `expected`, `saw`, `screenshot`, and replay provenance are likewise omitted when missing rather than replaced with a guess.
+
+Only failed or blocked Runs are accepted. A passed, cancelled, or still-running Run has nothing to hand off. An unknown Run is reported as not found; an unsuitable status or step selection is a validation error.
+
+## What the prompt tells the agent
+
+The markdown names the exact Run and step, including what was expected and what Relay saw when those details were recorded. It points the agent to:
+
+- the failure screenshot, with an instruction to read the image before changing code;
+- `relay_inspect_failure` or `relay inspect-failure <run-id>` for fuller failure detail;
+- `relay export <run-id> --out ./relay-evidence` for the frozen evidence pack;
+- a note when the step's saved path no longer matched and Relay re-resolved it live;
+- a caution on blocked Runs, because a device, sign-in, or harness problem is often not app code;
+- a note when other steps also failed but are outside this handoff.
+
+The instruction is deliberately narrow: make the smallest app change that makes the selected step pass, do not refactor beyond the fix, and do not edit the Test to hide a product regression. If the expectation itself is outdated, the agent is told to stop and explain why. A person should make that Test edit deliberately.
+
+Inspect evidence before sharing it outside your environment. Screenshots, screen structure, and diagnostics can contain account or user data. See [evidence and privacy](/docs/reference/evidence).
+
+## Fix, then verify
+
+When the Run carries the saved Test's identity, the prompt includes the exact canonical re-run command:
+
+```bash
+relay run <test-id> --app <app-map-id>
+```
+
+Use the CLI invocation available in your environment while preserving those arguments. In these docs that is `npx -y @relay/cli run <test-id> --app <app-map-id>`; in a source checkout it is usually `pnpm relay run <test-id> --app <app-map-id>`.
+
+The loop is:
+
+1. Inspect the screenshot and failure detail.
+2. Let the coding agent make the smallest app change.
+3. Re-run the same saved Test.
+4. Treat the fix as complete only when every step passes.
+5. If it still fails, run `relay fix` with the **new** Run ID. Do not reuse the old prompt as if it described the new attempt.
+
+Older Runs, Runs started outside the saved-Test path, and Runs whose lineage cannot be read may not carry enough identity for Relay to write the exact command. In that case the prompt says so; re-run the Test the way the original Run was started.
+
+A blocked Run is a different signal from a product failure. Confirm the device, account, permissions, or harness state before asking an agent to change application code.
+
+## Use the same loop through MCP
+
+If the coding agent already has Relay's MCP tools, it does not need you to paste terminal output. After a failure, call:
+
+```text
+relay_inspect_failure {"runId":"<run-id>"}
+```
+
+The response keeps the failing step's expectation, observation, screenshot reference, and replay provenance when present, plus a bounded evidence summary and a `repairProposals` array that can be empty. It does not infer the saved Test IDs. If the agent started the Run, reuse the `testId` and `appMapId` from its original `relay_run_test` call; otherwise use the handoff prompt or the person's original run setup. Poll `relay_get_verdict` and repeat with the new Run ID if needed.
+
+The default `qa` [MCP profile](/docs/agents/mcp) includes the run, verdict, and failure-inspection tools for this loop. Keep the same discipline: fix the app, verify with a fresh Run, and stop to ask before editing a Test expectation. A passing automated Run still does not approve how a screenshot looks to a person.
