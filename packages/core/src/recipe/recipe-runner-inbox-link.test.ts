@@ -224,3 +224,47 @@ test("magic-link open errors never echo the token carrier", async (t) => {
       !error.message.includes(linkCanary),
   );
 });
+
+test("a sign-in without an explicit link uses the inbox that shares its key", async (t) => {
+  useInboxEnvironment(t);
+  const { ctx, unregisterInbox } = harness([message(`Sign in [${linkCanary}]`)]);
+  t.after(unregisterInbox);
+  const { inboxKey: _dropped, ...unlinked } = ctx.runtime.activeSignIn as Record<string, unknown>;
+  ctx.runtime.activeSignIn = unlinked;
+  const calls = { opens: [] as OpenCall[] };
+  await runLinkStep(fakeDevice(calls), ctx, {
+    kind: "browser",
+    platform: "browser",
+    targetId: "browser-test",
+  });
+  assert.equal(calls.opens.length, 1);
+  assert.equal(calls.opens[0]!.input.url, linkCanary);
+});
+
+test("an explicit inbox link wins over the same-key fallback", async (t) => {
+  process.env.RELAY_INBOX_OTHER_HOST = "imap.other.test";
+  process.env.RELAY_INBOX_OTHER_PORT = "993";
+  process.env.RELAY_INBOX_OTHER_SECURE = "true";
+  process.env.RELAY_INBOX_OTHER_MAILBOX = "INBOX";
+  process.env.RELAY_INBOX_OTHER_USERNAME = "other-user";
+  process.env.RELAY_INBOX_OTHER_PASSWORD = "other-pass";
+  t.after(() => {
+    for (const name of ["HOST", "PORT", "SECURE", "MAILBOX", "USERNAME", "PASSWORD"]) {
+      delete process.env[`RELAY_INBOX_OTHER_${name}`];
+    }
+  });
+  useInboxEnvironment(t);
+  const { ctx, job, unregisterInbox } = harness([message(`Sign in [${linkCanary}]`)]);
+  t.after(unregisterInbox);
+  ctx.runtime.activeSignIn = { ...ctx.runtime.activeSignIn, inboxKey: "other" };
+  const calls = { opens: [] as OpenCall[] };
+  await runLinkStep(fakeDevice(calls), ctx, {
+    kind: "browser",
+    platform: "browser",
+    targetId: "browser-test",
+  });
+  assert.equal(calls.opens.length, 1);
+  assert.equal(calls.opens[0]!.input.url, linkCanary);
+  assert.equal(job.resolvedInputs["inbox.other.link"], linkCanary);
+  assert.equal(job.resolvedInputs["inbox.member.link"], undefined);
+});

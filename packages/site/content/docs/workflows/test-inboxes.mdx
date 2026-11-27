@@ -21,7 +21,7 @@ relay inbox save member --input '{
 }' --confirm
 ```
 
-The key (`member`) links the inbox to a [saved sign-in](/docs/workflows/sign-ins) of the same key, so a Test that signs in as `member` automatically reads codes from the `member` inbox. Saving is human-only, and the plaintext crosses the boundary once for encrypted local storage — there is no command that reads or exports it.
+The key (`member`) links the inbox to a [saved sign-in](/docs/workflows/sign-ins) of the same key, so a Test that signs in as `member` automatically reads codes from the `member` inbox. To use a different pairing — say several sign-ins that share one mailbox — pass `inboxKey` when saving the sign-in. Saving is human-only, and the plaintext crosses the boundary once for encrypted local storage — there is no command that reads or exports it.
 
 ```bash
 relay inbox list              # metadata only

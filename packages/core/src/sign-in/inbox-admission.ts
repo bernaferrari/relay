@@ -1,6 +1,6 @@
 import type { Recipe } from "../recipe/recipes.js";
 import { listSavedSignIns, normalizeSavedSignInKey } from "./saved-sign-ins.js";
-import { normalizeTestInboxKey } from "./test-inboxes.js";
+import { inboxKeyForSavedSignIn, normalizeTestInboxKey } from "./test-inboxes.js";
 import { resolveTestInbox } from "./test-inbox-resolution.js";
 import { savedSignInKeysForRecipeGraph } from "./sign-in-admission.js";
 
@@ -25,8 +25,7 @@ export async function testInboxKeysForRecipeGraph(input: {
   }
   for (const accountKey of accountKeys) {
     const records = await listSavedSignIns({ projectId: input.projectId, key: accountKey });
-    const inboxKey = records.at(-1)?.inboxKey;
-    if (inboxKey) keys.add(normalizeTestInboxKey(inboxKey));
+    keys.add(inboxKeyForSavedSignIn(accountKey, records.at(-1)?.inboxKey));
   }
   return [...keys].sort((left, right) => left.localeCompare(right));
 }

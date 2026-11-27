@@ -245,6 +245,32 @@ test("link extraction filters operational chrome before choosing the sign-in lin
   );
 });
 
+test("inbox admission falls back to the inbox sharing the sign-in key", async () => {
+  assert.deepEqual(
+    await testInboxKeysForRecipeGraph({
+      projectId: "project",
+      recipeGraph: {
+        root: {
+          id: "root",
+          title: "Root",
+          source: "custom",
+          steps: [
+            {
+              kind: "act",
+              intent: 'Sign in with the saved account "member"',
+              auth: { type: "sign-in", accountKey: "member" },
+            },
+            { kind: "inbox", action: "type-code" },
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    }),
+    ["member"],
+  );
+});
+
 test("inbox admission scanning includes explicit magic-link steps without new inbox management", async () => {
   assert.deepEqual(
     await testInboxKeysForRecipeGraph({

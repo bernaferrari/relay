@@ -34,6 +34,14 @@ export function normalizeTestInboxKey(key?: string): string {
   return normalizeSavedSignInKey(key);
 }
 
+/** The inbox a saved sign-in uses: the explicit link when one was saved,
+ * otherwise the inbox that shares the sign-in's key. Keys are person-chosen
+ * namespaces, so a same-named inbox is the deliberate zero-configuration
+ * connection; an explicit link always wins. */
+export function inboxKeyForSavedSignIn(accountKey: string, explicitInboxKey?: string): string {
+  return normalizeTestInboxKey(explicitInboxKey ?? accountKey);
+}
+
 export function parseTestInboxReference(reference: string): { id: string; revision: number } {
   const match = TEST_INBOX_REFERENCE.exec(reference);
   const revision = match ? Number(match[2]) : Number.NaN;

@@ -16,6 +16,7 @@ import {
   type ExtractedEmailLink,
 } from "../sign-in/email-secret-extraction.js";
 import { resolveTestInbox, TestInboxResolutionError } from "../sign-in/test-inbox-resolution.js";
+import { inboxKeyForSavedSignIn } from "../sign-in/test-inboxes.js";
 import { INBOX_CODE_REFERENCE, INBOX_LINK_REFERENCE } from "../sign-in/secret-references.js";
 import { MAX_WAIT_MS } from "./recipe-runner-support.js";
 import type { Device } from "../device/device.js";
@@ -184,19 +185,13 @@ export async function runInboxStep(
     throw new Error(`inbox: unsupported action ${String((step as { action?: unknown }).action)}`);
   }
   const active = ctx.runtime?.activeSignIn;
-  const inboxKey = step.inboxKey ?? active?.inboxKey;
   if (!active) {
     throw blocked(
       "missing-inbox",
       "the test inbox step requires an earlier successful saved sign-in in the same run",
     );
   }
-  if (!inboxKey) {
-    throw blocked(
-      "missing-inbox",
-      `saved sign-in "${active.accountKey}" is not connected to a test inbox`,
-    );
-  }
+  const inboxKey = step.inboxKey ?? inboxKeyForSavedSignIn(active.accountKey, active.inboxKey);
   if (step.accountKey && step.accountKey !== active.accountKey) {
     throw blocked(
       "missing-inbox",

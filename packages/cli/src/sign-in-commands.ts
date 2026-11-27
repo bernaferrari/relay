@@ -30,6 +30,11 @@ const secretInputHelp = [
     type: "string",
     description: "Optional non-secret reminder shown in metadata",
   },
+  {
+    name: "inboxKey",
+    type: "string",
+    description: "Test inbox override; defaults to the inbox sharing this sign-in's key",
+  },
 ] as const;
 
 /** Human saved-sign-in management. Save/rotate requests carry plaintext once;
