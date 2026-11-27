@@ -13,6 +13,7 @@ import {
   projectConfigHelp,
   renderEverydayHelp,
 } from "./everyday-help.js";
+import { importCommandDescriptors } from "./import-commands.js";
 
 /** The advanced surface: `relay <noun> <verb>`, one spelling per operation. */
 const nouns = [
@@ -27,6 +28,7 @@ const nouns = [
   ["build", "App builds: save, preflight, install, launch"],
   ["file", "Project-scoped test files: import and list reusable fixtures"],
   ["system", "Activity log, projects, and the local control database"],
+  ["import", "Convert Maestro and Playwright tests into Relay test files"],
 ] as const;
 
 /** Commands parsed outside the operation registry, listed with their noun. */
@@ -105,6 +107,10 @@ function friendlyPaths(): FriendlyPath[] {
       paths.map((descriptor) => ({ descriptor, label: operationLabel(operationId) })),
     ),
     ...cliResourceDescriptors.map(({ path: descriptor, label }) => ({ descriptor, label })),
+    ...importCommandDescriptors.map((descriptor) => ({
+      descriptor,
+      label: descriptor.summary ?? "Import tests",
+    })),
   ];
 }
 
@@ -123,6 +129,8 @@ read-only offline analysis; it never controls a Device or creates a live Proof.
 proof report reads persisted runs from disk and needs no server.`,
   system: `system db reads the local control-plane SQLite file (leases, maps, durable events)
 directly, without the HTTP server.`,
+  import: `Import writes .relay/tests by default; --out chooses another directory and --dry-run
+prints the YAML without writing. Existing files are never overwritten.`,
 };
 
 /** One line per verb: plain verbs first, then each sub-noun (`map screen …`)
@@ -159,6 +167,8 @@ Everyday:
   relay init [--url <url>]                         Write .relay config and a starter smoke test
   relay new "<what should work>" --url <website>   Write and save a Test from a sentence
   relay apply <test.yaml | folder>                 Save test files (name, url, steps)
+  relay import maestro <flow.yaml>                 Convert Maestro tests into Relay files
+  relay import playwright <spec.ts>                Best-effort Playwright conversion
   relay show "<test>"                              Print a Test as its file
   relay run <test> [--app <name>] [--device ios]   Run one Test and show each step's result
   relay ci [<app>] --output result.json            Run every ready Test (for CI)
@@ -196,7 +206,7 @@ Machine output (--json): {"type":"result","ok":true,"operationId":"...","result"
   failures: {"type":"error","ok":false,"error":{"message":"...","exitCode":2}}
 
 Advanced: 'relay help advanced' lists relay <noun> <verb> for test, run, plan,
-device, recording, map, proof, build, and system. 'relay <noun> --help' shows one.
+device, recording, map, proof, build, system, and import. 'relay <noun> --help' shows one.
 `;
 }
 

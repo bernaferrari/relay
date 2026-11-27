@@ -48,6 +48,7 @@ import { persistScrollSurvey, scrollSurveyPersistDigest } from "./survey-persist
 import { runDbCommand } from "./db-commands.js";
 import { runGuideCommand } from "./guide-command.js";
 import { runReportCommand } from "./report-commands.js";
+import { runImportCommand } from "./import-commands.js";
 import { ensureLocalRelayServer, type LocalServerResult } from "./local-server.js";
 import {
   doctorExitCode,
@@ -445,6 +446,13 @@ export async function runCli(
     }
     if (first === "proof" && second === "report") {
       return await runReportCommand(argv, streams, dependencies.env ?? process.env);
+    }
+    if (first === "import") {
+      const imported = await runImportCommand(argv, {
+        streams,
+        env: dependencies.env ?? process.env,
+      });
+      if (imported !== undefined) return imported;
     }
     const everyday = await runEverydayCommand(argv, {
       streams,
