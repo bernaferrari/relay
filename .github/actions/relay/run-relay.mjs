@@ -86,7 +86,7 @@ export async function materializeTests(input, options = {}) {
     }
   } catch (error) {
     throw new Error(
-      `Could not expand tests glob ${value}: ${error instanceof Error ? error.message : error}`,
+      `Could not expand tests glob ${value}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
