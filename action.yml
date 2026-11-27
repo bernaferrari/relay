@@ -1,0 +1,96 @@
+name: Relay
+description: Run Relay YAML tests, upload evidence, and keep one pull-request verdict comment current
+author: bernaferrari
+
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  tests:
+    description: Relay YAML test file, folder, or glob to run
+    required: false
+    default: .relay/tests/*.yaml
+  node-version:
+    description: Node.js version used to run the Relay CLI
+    required: false
+    default: "24"
+  relay-version:
+    description: "@relay/cli version or npm dist-tag to run (for example: 0.1.0)"
+    required: false
+    default: latest
+  device:
+    description: Optional device passed to relay ci --device (browser, ios, android, or a device name)
+    required: false
+    default: ""
+  comment:
+    description: Create or update the sticky pull-request comment
+    required: false
+    default: "true"
+  comment-key:
+    description: Optional sticky-comment key; use a unique value for matrix or multi-app runs
+    required: false
+    default: ""
+  artifact-name:
+    description: Name of the uploaded results artifact; make it unique when using a matrix
+    required: false
+    default: relay-results
+
+outputs:
+  verdict:
+    description: Overall Relay verdict (passed, failed, blocked, cancelled, review-required, or error)
+    value: ${{ steps.relay.outputs.verdict }}
+  results-file:
+    description: Path to the machine-readable relay-ci JSON report
+    value: ${{ steps.relay.outputs.results-file }}
+  exit-code:
+    description: Original relay ci process exit code
+    value: ${{ steps.relay.outputs.exit-code }}
+  artifact-url:
+    description: URL of the uploaded Relay evidence artifact, when upload succeeds
+    value: ${{ steps.artifacts.outputs.artifact-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Run Relay
+      id: relay
+      shell: bash
+      env:
+        RELAY_TESTS_INPUT: ${{ inputs.tests }}
+        RELAY_VERSION: ${{ inputs.relay-version }}
+        RELAY_DEVICE: ${{ inputs.device }}
+      run: node "${{ github.action_path }}/.github/actions/relay/run-relay.mjs"
+
+    - name: Upload Relay artifacts
+      id: artifacts
+      if: ${{ always() }}
+      continue-on-error: true
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: .relay-ci
+        if-no-files-found: ignore
+
+    - name: Comment on the pull request
+      if: ${{ always() && inputs.comment == 'true' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        RELAY_RESULTS_FILE: .relay-ci/results.json
+        RELAY_ERROR_FILE: .relay-ci/action-error.txt
+        RELAY_EVIDENCE_MANIFEST: .relay-ci/evidence-manifest.json
+        RELAY_ARTIFACT_URL: ${{ steps.artifacts.outputs.artifact-url }}
+        RELAY_EXIT_CODE: ${{ steps.relay.outputs.exit-code }}
+        RELAY_COMMENT_KEY: ${{ inputs.comment-key }}
+      run: node "${{ github.action_path }}/.github/actions/relay/post-comment.mjs"
+
+    - name: Restore the Relay exit code
+      if: ${{ always() && steps.relay.outputs.exit-code != '' }}
+      shell: bash
+      run: exit "${{ steps.relay.outputs.exit-code }}"
