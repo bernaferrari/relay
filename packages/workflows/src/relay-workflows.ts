@@ -57,6 +57,7 @@ import {
   readCompile,
   resolveRunTestLane,
   selectBrowserTargetProfile,
+  skipsBrowserEvidenceProfileSelection,
   type ValidCompile,
   validRevision,
   BrowserTargetProfileSelectionError,
@@ -226,6 +227,15 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
         },
       });
     }
+    let appMapDocument: OperationOutput<"app-map.get">["appMap"] | undefined;
+    const readAppMapDocument = async () => {
+      if (!appMapDocument) {
+        appMapDocument = (
+          await this.operations.invoke("app-map.get", { appMapId: intent.appMapId })
+        ).appMap;
+      }
+      return appMapDocument;
+    };
     let revision: number;
     if (intent.revision && intent.revision !== "current") {
       revision = intent.revision.exact;
@@ -243,8 +253,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       }
     } else {
       try {
-        const current = await this.operations.invoke("app-map.get", { appMapId: intent.appMapId });
-        revision = current.appMap.revision;
+        revision = (await readAppMapDocument()).revision;
         if (!validRevision(revision)) throw new TypeError("App Map response has no valid revision");
       } catch (error) {
         return initialProblem({
@@ -307,12 +316,33 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     if (!targetProfileId && intent.account?.kind === "signed-out") {
       targetProfileId = undefined;
     } else if (!targetProfileId && target.kind === "browser") {
+      // A plain-English Test carries no recorded screen evidence, so no saved
+      // evidence profile can ever match it. Server admission derives the
+      // managed browser environment for the exact target instead, but only
+      // when the Run arrives without an explicit profile, account, or engine.
+      let runsEntirelyFromText = false;
+      if (!intent.account && !intent.engine) {
+        try {
+          runsEntirelyFromText = skipsBrowserEvidenceProfileSelection(
+            intent,
+            (await readAppMapDocument()).tests[intent.testId],
+          );
+        } catch (error) {
+          return initialProblem({
+            intent,
+            compiled: checkedCompile,
+            problem: unavailableProblem("read the current App Map", error),
+          });
+        }
+      }
       try {
-        targetProfileId = await selectBrowserTargetProfile(
-          this.operations,
-          checkedCompile,
-          target.targetId,
-        );
+        if (!runsEntirelyFromText) {
+          targetProfileId = await selectBrowserTargetProfile(
+            this.operations,
+            checkedCompile,
+            target.targetId,
+          );
+        }
       } catch (error) {
         return initialProblem({
           intent,

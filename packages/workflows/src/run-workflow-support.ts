@@ -5,7 +5,9 @@ import {
   selectNativeTargetProfile,
   type NativeDeviceFacts,
 } from "@relay/protocol/native/native-target-profile";
+import { scenarioTestRunsEntirelyFromText } from "@relay/protocol";
 import type {
+  AppMapScenarioTest,
   AuthoringTarget,
   DurableWorkflowOperationOutput,
   OfflineTestPreflightFinding,
@@ -91,6 +93,23 @@ export function readCompile(
   return blockers.length === preflight.summary.blockers
     ? { plan: output.plan, preflight, blockers }
     : undefined;
+}
+
+/** A Test that runs entirely from its plain-English words has no recorded
+ * screens, so saved-evidence profile selection can only fail closed. Server
+ * admission derives the managed browser environment for it instead, but only
+ * when the Run carries no explicit profile, account, or engine intent. */
+export function skipsBrowserEvidenceProfileSelection(
+  intent: Pick<RunTestIntent, "targetProfileId" | "account" | "engine">,
+  test: Pick<AppMapScenarioTest, "steps"> | undefined,
+): boolean {
+  return (
+    !intent.targetProfileId &&
+    !intent.account &&
+    !intent.engine &&
+    test !== undefined &&
+    scenarioTestRunsEntirelyFromText(test)
+  );
 }
 
 export async function selectBrowserTargetProfile(

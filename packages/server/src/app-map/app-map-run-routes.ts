@@ -254,12 +254,23 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     ) {
       observedDevices = await runtime.listDevices().catch(() => undefined);
     }
+    // One target snapshot for the whole admission: the managed browser
+    // environment frozen into compile must be the same identity the
+    // observed-profile validation compares against after preflight.
+    const observedTargets = await listTargets();
     const prepared = await prepareAppMapCompanionTestRun({
       map,
       test,
       target: body.target,
       ...(targetProfileId ? { targetProfileId } : {}),
       projectId: input.scope.projectId,
+      ...(body.target.kind === "browser"
+        ? {
+            browserTarget: observedTargets.find(
+              (target) => target.id === body.target.targetId && target.kind === "browser",
+            ),
+          }
+        : {}),
       observedDevice: observedDevices?.find(
         (device) =>
           device.serial === body.target.targetId && device.platform === body.target.platform,
@@ -437,7 +448,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           ? { ...device, viewport: prepared.observedDevice.viewport }
           : device,
       ),
-      targets: await listTargets(),
+      targets: observedTargets,
     }).find(
       (profile) =>
         profile.targetId === targetId &&

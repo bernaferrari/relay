@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMapCompiledTest, OfflineTestPreflightReport } from "@relay/protocol";
+import type {
+  AppMapCompiledTest,
+  BrowserCaseProfile,
+  OfflineTestPreflightReport,
+} from "@relay/protocol";
 import {
   assessAppMapTestExecutionSource,
   requireScopedAppMapTestExecutionSource,
@@ -290,6 +294,134 @@ test("rejects a queued Test whose target profile loses the selected viewport ide
   assert.deepEqual(assessAppMapTestExecutionSource(mismatched), {
     status: "review-required",
     reason: "The queued target profile no longer matches the selected frozen evidence profile.",
+  });
+});
+
+function browserFixture() {
+  const { plan, root, recipeGraph, source } = fixture();
+  const browserCaseProfile: BrowserCaseProfile = {
+    schemaVersion: 1,
+    engine: "chromium",
+    viewport: { width: 1_280, height: 800 },
+    deviceScaleFactor: 1,
+    mobile: false,
+    touch: false,
+    locale: "en-US",
+    timezoneId: "UTC",
+    colorScheme: "light",
+    reducedMotion: "no-preference",
+    permissions: [],
+    offline: false,
+    environmentRevision: "managed",
+  };
+  const selected = {
+    id: "browser:shop",
+    targetId: "shop",
+    platform: "browser" as const,
+    viewport: { ...browserCaseProfile.viewport },
+    browserCaseProfile,
+    capabilities: [],
+  };
+  const scopedPlan = {
+    ...structuredClone(plan),
+    runtimeTargetProfile: structuredClone(selected),
+  };
+  const preflight: OfflineTestPreflightReport = {
+    schemaVersion: 1,
+    mode: "offline-test-preflight",
+    appMapId: scopedPlan.appMapId,
+    appMapRevision: scopedPlan.appMapRevision,
+    testId: scopedPlan.test.id,
+    planDigest: digestAppMapTestExecutionValue(scopedPlan),
+    executionRisk: {
+      schemaVersion: 1,
+      level: "safe",
+      reasons: [],
+      externalEffects: [],
+      confirmation: "none",
+      expectedAppBoundaries: [],
+      maximumActions: 0,
+      maximumDurationMs: 0,
+      cleanupRequired: false,
+    },
+    summary: {
+      recipes: 1,
+      checkedSelectors: 0,
+      resolvedSelectors: 0,
+      unknownCursorTransitions: 0,
+      reviewRequiredReturns: 0,
+      blockers: 0,
+      warnings: 0,
+    },
+    selectors: [],
+    cursorTimeline: [],
+    returns: [],
+    findings: [],
+  };
+  const intent = createAppMapTestExecutionIntent({ plan: scopedPlan, recipeGraph, preflight });
+  const browserSource = {
+    ...source,
+    artifacts: [{ kind: "app-map-test-execution-intent", data: intent }],
+    target: { targetId: "shop", platform: "browser" as const },
+    targetProfile: {
+      id: selected.id,
+      targetId: selected.targetId,
+      source: "browser" as const,
+      platform: "browser" as const,
+      name: "Shop browser",
+      viewport: { ...browserCaseProfile.viewport },
+      browserCaseProfile: structuredClone(browserCaseProfile),
+      capabilities: [],
+      observedAt: 1,
+    },
+    browserCaseProfile: structuredClone(browserCaseProfile),
+  };
+  return { browserCaseProfile, browserSource, intent, root, selected };
+}
+
+test("a browser Test intent without a frozen environment stays review-required", () => {
+  const { plan, recipeGraph, source } = fixture();
+  const unscoped = createAppMapTestExecutionIntent({
+    plan: structuredClone(plan),
+    recipeGraph,
+    preflight: {
+      ...fixture().intent.preflight,
+      planDigest: digestAppMapTestExecutionValue(plan),
+    },
+  });
+  assert.deepEqual(
+    assessAppMapTestExecutionSource({
+      ...source,
+      artifacts: [{ kind: "app-map-test-execution-intent", data: unscoped }],
+      target: { targetId: "shop", platform: "browser" as const },
+    }),
+    {
+      status: "review-required",
+      reason:
+        "The frozen browser environment is missing; recapture the profile and compile the Test again.",
+    },
+  );
+});
+
+test("a browser Test intent carrying the managed environment is valid for the matching queue identity", () => {
+  const { browserSource, intent } = browserFixture();
+  assert.deepEqual(assessAppMapTestExecutionSource(browserSource), { status: "valid", intent });
+});
+
+test("a browser Test intent catches drift of the queued browser environment", () => {
+  const { browserSource } = browserFixture();
+  const drifted = structuredClone(browserSource);
+  drifted.browserCaseProfile!.engine = "firefox";
+  assert.deepEqual(assessAppMapTestExecutionSource(drifted), {
+    status: "review-required",
+    reason:
+      "The queued browser case profile no longer matches the selected frozen evidence profile.",
+  });
+  const { browserCaseProfile: _omitted, ...missing } = structuredClone(browserSource);
+  assert.deepEqual(assessAppMapTestExecutionSource(missing), {
+    status: "review-required",
+    reason:
+      "The queued browser case profile no longer matches the selected frozen evidence profile.",
   });
 });
 

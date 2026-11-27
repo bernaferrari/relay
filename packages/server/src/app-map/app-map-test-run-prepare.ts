@@ -2,11 +2,13 @@ import {
   activeReviewedDocumentOriginsForAppMap,
   AppMapTargetProfileError,
   AppMapTestCompileError,
+  appMapRuntimeTargetProfileFromSaved,
   assertRecordedCompanionForRun,
   companionExecutionTarget,
   compileAppMapTest,
   frozenRawAccessibilityTargetProfiles,
   loadFrozenRawAccessibilityEvidence,
+  managedBrowserTargetProfile,
   preflightCompiledAppMapTestOffline,
   readAppMap,
   resolveAppMapTestForTargetProfile,
@@ -14,12 +16,14 @@ import {
   type CompiledAppMapTestForProfile,
   type NativeDeviceFacts,
 } from "@relay/core";
-import type {
-  AppMap,
-  AppMapCompiledRuntimeTargetProfile,
-  AppMapScenarioTest,
-  AuthoringTarget,
-  OfflineTestPreflightReport,
+import {
+  scenarioTestRunsEntirelyFromText,
+  type AppMap,
+  type AppMapCompiledRuntimeTargetProfile,
+  type AppMapScenarioTest,
+  type AuthoringTarget,
+  type OfflineTestPreflightReport,
+  type TargetDefinition,
 } from "@relay/protocol";
 import { frozenEvidenceTargetProfileForTarget } from "./app-map-run-target-admission.js";
 import { frozenTestRunTargetProfile } from "./app-map-test-target-profile.js";
@@ -102,6 +106,10 @@ export async function prepareAppMapCompanionTestRun(input: {
   target: AuthoringTarget;
   targetProfileId?: string;
   projectId: string;
+  /** Managed browser definition observed once for this admission. A Test that
+   * runs entirely from its words has no recorded screen evidence to infer an
+   * environment from, but it still needs one: the managed browser itself. */
+  browserTarget?: TargetDefinition;
   observedDevice?: NativeDeviceFacts;
   nativeProfileObservation?: {
     observeViewport: Parameters<typeof freshNativeRunProfileFacts>[0]["observeViewport"];
@@ -189,19 +197,42 @@ export async function prepareAppMapCompanionTestRun(input: {
             },
           })
         : input.observedDevice;
+    // A plain-English Test has no recorded screens, so no saved evidence can
+    // prove its execution surface. It still needs a frozen browser environment:
+    // derive the complete managed-browser profile instead of inferring one
+    // from evidence that will never exist. It stays run-scoped — never written
+    // to the App Map or its screen variants — so it is not a compile-time
+    // route selection input either; the compiled bytes are identical to the
+    // lenient compile and the profile is stamped onto the frozen plan.
+    const derivedManagedBrowserProfile =
+      !input.targetProfileId &&
+      executionTarget.kind === "browser" &&
+      input.browserTarget?.kind === "browser" &&
+      input.browserTarget.id === executionTarget.targetId &&
+      scenarioTestRunsEntirelyFromText(resolved.test)
+        ? appMapRuntimeTargetProfileFromSaved(
+            managedBrowserTargetProfile(input.browserTarget, Date.now()),
+          )
+        : undefined;
     const inferredRuntimeTargetProfile = explicitlySelectedRuntimeTargetProfile
       ? undefined
-      : frozenEvidenceTargetProfileForTarget({
+      : (derivedManagedBrowserProfile ??
+        frozenEvidenceTargetProfileForTarget({
           target: executionTarget,
           profiles,
           observedDevice,
-        });
+        }));
     const runtimeTargetProfile =
       explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
     const compiled = compileAppMapTest(resolved.map, resolved.test, {
       ...compileOptions,
-      ...(runtimeTargetProfile ? { runtimeTargetProfile } : {}),
+      ...(runtimeTargetProfile && runtimeTargetProfile !== derivedManagedBrowserProfile
+        ? { runtimeTargetProfile }
+        : {}),
     });
+    if (derivedManagedBrowserProfile) {
+      compiled.plan.runtimeTargetProfile = structuredClone(derivedManagedBrowserProfile);
+    }
     return {
       compiled: resolved.nativeCompanion
         ? { ...compiled, nativeCompanion: resolved.nativeCompanion }

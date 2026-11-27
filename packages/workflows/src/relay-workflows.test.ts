@@ -165,6 +165,51 @@ function browserCompileStep(profiles: ReturnType<typeof browserProfile>[]): Scri
   };
 }
 
+function testDocumentStep(binding: "recorded" | "text" | "mixed"): ScriptedRelayStep {
+  const textInstruction = {
+    id: "step-1",
+    intent: "Open data controls",
+    kind: "instruction" as const,
+    binding: { status: "unresolved" as const, reason: "No recording", fromText: true as const },
+  };
+  const recordedInstruction = {
+    id: "step-2",
+    intent: "Save the controls",
+    kind: "instruction" as const,
+    binding: {
+      status: "resolved" as const,
+      kind: "connections" as const,
+      connectionIds: ["connection-1"],
+    },
+  };
+  return {
+    id: "app-map.get",
+    output: {
+      appMap: appMapFixture("settings", 7, {
+        tests: {
+          "data-controls": {
+            organizationId: "local",
+            projectId: "default",
+            appMapId: "settings",
+            id: "data-controls",
+            name: "data-controls",
+            kind: "scenario",
+            intentSchemaVersion: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            steps:
+              binding === "text"
+                ? [textInstruction]
+                : binding === "mixed"
+                  ? [textInstruction, recordedInstruction]
+                  : [recordedInstruction],
+          },
+        },
+      }),
+    },
+  };
+}
+
 function deviceCompileStep(selectedProfileId?: string): ScriptedRelayStep {
   const profiles = ["device:pixel-9-old", "device:pixel-9-current"].map((id) => ({
     id,
@@ -354,6 +399,7 @@ test("Member v7 cannot enqueue a Test against a saved Member v4 profile", async 
 test("automatically binds the unique browser profile matching the registered environment", async () => {
   const scripted = createScriptedRelayClient([
     browserCompileStep([browserProfile()]),
+    testDocumentStep("recorded"),
     { id: "target.list", output: { targets: [registeredBrowserTarget] } },
     browserCompileStep([browserProfile()]),
     runStep(7),
@@ -372,7 +418,13 @@ test("automatically binds the unique browser profile matching the registered env
   );
   assert.deepEqual(
     scripted.invocations.map(({ id }) => id),
-    ["app-map.test.compile", "target.list", "app-map.test.compile", "app-map.test.run"],
+    [
+      "app-map.test.compile",
+      "app-map.get",
+      "target.list",
+      "app-map.test.compile",
+      "app-map.test.run",
+    ],
   );
 });
 
@@ -407,6 +459,7 @@ test("runs as the account a Test was recorded with when that sign-in still exist
   });
   const ready = createScriptedRelayClient([
     browserCompileStep([recorded]),
+    testDocumentStep("recorded"),
     { id: "target.list", output: { targets: [registeredBrowserTarget] } },
     fixtures("ready"),
     browserCompileStep([recorded]),
@@ -421,6 +474,7 @@ test("runs as the account a Test was recorded with when that sign-in still exist
   // An expired sign-in is not silently reused: the run explains what changed.
   const expired = createScriptedRelayClient([
     browserCompileStep([recorded]),
+    testDocumentStep("recorded"),
     { id: "target.list", output: { targets: [registeredBrowserTarget] } },
     fixtures("expired"),
   ]);
@@ -438,6 +492,7 @@ for (const [label, profiles] of [
   test(`browser target profile selection fails closed when ${label}`, async () => {
     const scripted = createScriptedRelayClient([
       browserCompileStep([...profiles]),
+      testDocumentStep("recorded"),
       { id: "target.list", output: { targets: [registeredBrowserTarget] } },
     ]);
     const workflows = createRelayWorkflows(scripted.client);
@@ -464,6 +519,83 @@ for (const [label, profiles] of [
     );
   });
 }
+
+test("a plain-English Test skips browser evidence selection and lets admission freeze the environment", async () => {
+  const derivedProfile = {
+    id: `browser:${browserTarget.targetId}`,
+    targetId: browserTarget.targetId,
+    platform: "browser" as const,
+    viewport: browserCaseProfile.viewport,
+    browserCaseProfile,
+  };
+  const run = runStep(7);
+  run.output = {
+    ...(run.output as Record<string, unknown>),
+    plan: compiledTestFixture("settings", 7, "data-controls", "open-settings", {
+      runtimeTargetProfile: derivedProfile,
+    }),
+  };
+  const scripted = createScriptedRelayClient([
+    browserCompileStep([]),
+    testDocumentStep("text"),
+    run,
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+
+  const snapshot = await workflows.start(intent({ target: browserTarget, revision: { exact: 7 } }));
+
+  assert.equal(snapshot.phase, "queued", JSON.stringify(snapshot.problems));
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    ["app-map.test.compile", "app-map.get", "app-map.test.run"],
+  );
+  const runInvocation = scripted.invocations.find(({ id }) => id === "app-map.test.run");
+  assert.ok(runInvocation);
+  assert.equal((runInvocation.input as { targetProfileId?: string }).targetProfileId, undefined);
+});
+
+test("a mixed Test keeps the browser evidence selection error", async () => {
+  const scripted = createScriptedRelayClient([
+    browserCompileStep([]),
+    testDocumentStep("mixed"),
+    { id: "target.list", output: { targets: [registeredBrowserTarget] } },
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+
+  const snapshot = await workflows.start(intent({ target: browserTarget, revision: { exact: 7 } }));
+
+  assert.equal(snapshot.phase, "blocked");
+  assert.equal(snapshot.problems[0]?.code, "compile-blocked");
+  assert.equal(snapshot.problems[0]?.sourceCode, "browser-target-profile-selection-required");
+  assert.match(snapshot.problems[0]?.detail ?? "", /no saved screens/u);
+  assert.equal(
+    scripted.invocations.some(({ id }) => id === "app-map.test.run"),
+    false,
+  );
+});
+
+test("an explicit engine keeps evidence selection even for a plain-English Test", async () => {
+  const scripted = createScriptedRelayClient([
+    browserCompileStep([]),
+    { id: "target.list", output: { targets: [registeredBrowserTarget] } },
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+
+  const snapshot = await workflows.start(
+    intent({ target: browserTarget, revision: { exact: 7 }, engine: "chromium" }),
+  );
+
+  assert.equal(snapshot.phase, "blocked");
+  assert.equal(snapshot.problems[0]?.sourceCode, "browser-target-profile-selection-required");
+  assert.equal(
+    scripted.invocations.some(({ id }) => id === "app-map.get"),
+    false,
+  );
+  assert.equal(
+    scripted.invocations.some(({ id }) => id === "app-map.test.run"),
+    false,
+  );
+});
 
 test("current revision is read once, compiled offline, and frozen into the exact run", async () => {
   const scripted = createScriptedRelayClient([
