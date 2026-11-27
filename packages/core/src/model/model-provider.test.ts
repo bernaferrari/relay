@@ -192,8 +192,11 @@ test("the real anthropic SDK is constructed lazily and sends anthropic requests"
     env: { RELAY_MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: key },
     savedKey: null,
     fetch: async (input, init) => {
-      url = String(input);
-      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<
+        string,
+        unknown
+      >;
       return new Response(
         JSON.stringify({
           id: "msg_test",

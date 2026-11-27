@@ -95,10 +95,14 @@ export function assertSignInActDecision(
     const passwordish = /pass(word)?|credential|pin/u.test(text);
     const usernameish = /user|email|e-mail|login|log in|account/u.test(text);
     if (passwordish && typeAction.text !== SIGN_IN_PASSWORD_REFERENCE) {
-      throw new Error("Saved sign-in model chose the wrong secret reference for the password field");
+      throw new Error(
+        "Saved sign-in model chose the wrong secret reference for the password field",
+      );
     }
     if (!passwordish && usernameish && typeAction.text !== SIGN_IN_USERNAME_REFERENCE) {
-      throw new Error("Saved sign-in model chose the wrong secret reference for the username field");
+      throw new Error(
+        "Saved sign-in model chose the wrong secret reference for the username field",
+      );
     }
   }
 }

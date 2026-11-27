@@ -768,7 +768,6 @@ async function runRequiredRecipeStep(
   }
 }
 
-
 export async function runRecipeStep(
   device: Device,
   step: RecipeStep,

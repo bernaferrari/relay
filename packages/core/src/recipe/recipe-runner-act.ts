@@ -12,6 +12,7 @@ import { createModelClient } from "../model/model-provider.js";
 import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { isCancel } from "./recipe-runner-support.js";
+import { unknownErrorText } from "../unknown-text.js";
 import { describeRecipeStep } from "./recipe-presentation.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
 import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
@@ -402,8 +403,7 @@ async function runActStepLoop(
         record({
           action: "batch-failed",
           summary,
-          reason:
-            batchFailure instanceof Error ? secretText(batchFailure.message) : String(batchFailure),
+          reason: secretText(unknownErrorText(batchFailure)),
           executedSteps: ranSteps,
           totalSteps: steps.length,
         });
