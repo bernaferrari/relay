@@ -371,7 +371,7 @@ async function main() {
       true,
     );
     const qaTools = qaResponses.find((response) => response.id === 2)?.result?.tools;
-    assert.equal(qaTools.length, 13);
+    assert.equal(qaTools.length, 14);
     assert.ok(qaTools.some((tool) => tool.name === "relay_run_test"));
     assert.ok(qaTools.some((tool) => tool.name === "relay_list_devices"));
     assert.ok(qaTools.some((tool) => tool.name === "relay_get_guide"));

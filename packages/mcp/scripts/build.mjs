@@ -34,10 +34,29 @@ const workspaceAliasPlugin = {
 // Relay's private workspace packages are deliberately bundled into one
 // executable. Runtime integrations remain real npm dependencies so optional
 // platform providers can keep their own install/loader behavior.
+//
+// The direct model provider SDKs stay external even though nothing imports
+// them statically: core lazy-loads one through a dynamic import() only when a
+// model-driven goal session runs in this process and resolution picks that
+// provider. Bundling them would force every host to download every provider
+// for a path most never hit; leaving them as runtime specifiers lets the
+// sibling @relay/runtime install (which declares them as real dependencies)
+// satisfy the import, and resolution failure degrades to a provider-unavailable
+// decision instead of a startup crash because the imports are never eager.
+// The OpenRouter stack predates multi-provider resolution and was always part
+// of this bundle's self-contained baseline, so it stays bundled.
 const external = [
   "@relay/runtime/*",
   "@modelcontextprotocol/server",
   "@modelcontextprotocol/server/*",
+  "@ai-sdk/anthropic",
+  "@ai-sdk/anthropic/*",
+  "@ai-sdk/openai",
+  "@ai-sdk/openai/*",
+  "@ai-sdk/google",
+  "@ai-sdk/google/*",
+  "@ai-sdk/openai-compatible",
+  "@ai-sdk/openai-compatible/*",
   "playwright-core",
   "pngjs",
   "yaml",
@@ -61,6 +80,26 @@ function assertNoAgentDeviceInputs(metafile) {
   if (offenders.length > 0) {
     throw new Error(
       `MCP bundle must not include agent-device device-driver code; remove these inputs: ${offenders.join(", ")}`,
+    );
+  }
+}
+
+// Direct provider SDKs are lazy runtime specifiers in this bundle (see the
+// external list above), never embedded chunks. Segment-exact matching keeps
+// @ai-sdk/openai from shadowing @ai-sdk/openai-compatible. The shared ai
+// core, @ai-sdk/provider* support libraries and the OpenRouter provider are
+// not listed here: they belong to the self-contained baseline this package
+// has always shipped, so they remain bundled on purpose.
+const MODEL_PROVIDER_SDK_INPUT =
+  /(?:^|\/)node_modules\/@ai-sdk\/(?:anthropic|openai|openai-compatible|google)(?:\/|$)/u;
+
+function assertNoModelProviderSdkInputs(metafile) {
+  const offenders = Object.keys(metafile.inputs).filter((input) =>
+    MODEL_PROVIDER_SDK_INPUT.test(input.replaceAll("\\", "/")),
+  );
+  if (offenders.length > 0) {
+    throw new Error(
+      `MCP bundle must not embed direct model provider SDKs; they are lazy runtime specifiers resolved beside the install. Keep them external and remove these inputs: ${offenders.join(", ")}`,
     );
   }
 }
@@ -92,6 +131,7 @@ const nodeBuild = await build({
   metafile: true,
 });
 assertNoAgentDeviceInputs(nodeBuild.metafile);
+assertNoModelProviderSdkInputs(nodeBuild.metafile);
 for (const [source, target] of [
   ["server-public.d.ts", "server.d.ts"],
   ["config-public.d.ts", "config.d.ts"],

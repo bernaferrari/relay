@@ -28,7 +28,7 @@ Relay MCP has three profiles. Each one contains the one before it.
 
 | Profile        | Tools  | Use it to                                                              |
 | -------------- | ------ | ---------------------------------------------------------------------- |
-| `qa` (default) | 13     | Write a Test from a sentence, run it, read the verdict, check a change |
+| `qa` (default) | 14     | Write a Test from a sentence, run it, read the verdict, check a change |
 | `device`       | 36     | Everything in `qa`, plus drive a device or browser and record Tests    |
 | `full`         | Varies | Everything in `device`, plus Change Proof and evidence review.         |
 
