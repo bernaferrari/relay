@@ -696,5 +696,7 @@ export type {
   OfflineTestPreflightRawVariantScope,
   OfflineTestPreflightReport,
   OfflineTestPreflightReturn,
+  OfflineTestPreflightSavedPathCoverage,
+  OfflineTestPreflightSavedPathStep,
   OfflineTestPreflightSelector,
 } from "./test-offline-preflight.js";

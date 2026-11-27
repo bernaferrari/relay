@@ -158,6 +158,7 @@ test("plain-English steps surface how they were carried out without changing the
       test: { id: "checkout" },
       stepProvenance: [
         { recipeStepId: "relay-test-open-1", testStepId: "open" },
+        { recipeStepId: "relay-test-check-1", testStepId: "check" },
         { recipeStepId: "relay-test-pay-1", testStepId: "pay" },
       ],
     },
@@ -189,6 +190,16 @@ test("plain-English steps surface how they were carried out without changing the
           },
         },
         {
+          kind: "check-result",
+          capturedAt: 2,
+          data: {
+            intent: "The cart shows one item",
+            recipeStepId: "relay-test-check-1",
+            source: "cache",
+            steps: [],
+          },
+        },
+        {
           kind: "act-decision",
           capturedAt: 3,
           data: {
@@ -209,12 +220,12 @@ test("plain-English steps surface how they were carried out without changing the
   );
   assert.equal(verdict.status, "passed");
   assert.deepEqual(verdict.steps[0]!.replay, { source: "cache" });
-  assert.equal(verdict.steps[1]!.replay, undefined);
+  assert.deepEqual(verdict.steps[1]!.replay, { source: "cache" });
   assert.deepEqual(verdict.steps[2]!.replay, {
     source: "re-resolved",
     detail: "re-resolved after the saved path no longer matched",
   });
-  assert.equal(verdict.replayedSteps, 1);
+  assert.equal(verdict.replayedSteps, 2);
   assert.equal(verdict.reResolvedSteps, 1);
   // Healing is invisible in the outcome by design.
   assert.equal(verdict.summary, "Passed · 3 of 3 steps");

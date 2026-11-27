@@ -611,6 +611,28 @@ const offlinePreflightReportSchema = z
         })
         .strict(),
     ),
+    savedPathCoverage: z
+      .object({
+        totalSteps: z.number(),
+        coveredSteps: z.number(),
+        needsModelSteps: z.number(),
+        steps: z.array(
+          z
+            .object({
+              recipeId: id,
+              recipeStepId: id.optional(),
+              testStepId: id.optional(),
+              kind: z.enum(["action", "check"]),
+              intent: z.string(),
+              status: z.enum(["covered", "needs-model"]),
+              savedPathSteps: z.number().optional(),
+              detail: z.string(),
+            })
+            .strict(),
+        ),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

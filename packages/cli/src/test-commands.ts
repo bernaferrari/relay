@@ -112,7 +112,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
     "app-map.test.actions.forget",
     path("test forget", ["appMapId", "testId"], undefined, {
       summary:
-        "Forget saved actions so the next run re-resolves them; one step with stepId, or the whole Test",
+        "Forget saved paths so the next run re-resolves them; one step with stepId, or the whole Test",
       inputHelp: [
         {
           name: "expectedRevision",
@@ -165,7 +165,8 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
   mapped(
     "app-map.test.compile",
     path("test compile", ["appMapId", "testId"], undefined, {
-      summary: "Check an offline Test plan and report blockers; use --full for its full provenance",
+      summary:
+        "Check an offline Test plan; report blockers and which plain-English steps need the model; use --full for full provenance",
       inputHelp: [
         {
           name: "entryCheckpointScreenId",
@@ -185,7 +186,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         'relay test compile shop-ios settings-tour --input \'{"targetProfileId":"ipad-pt-BR"}\'',
         'relay test compile shop-web test-signed-in-home --input \'{"targetProfileId":"ios"}\'',
       ],
-      note: "Human output summarizes the target, plan counts, blockers, and next action; add --full for the complete result. The returned plan always names its startup policy. This preview is offline: it does not contact a target or persist a Test edit. --json and --ndjson retain the complete result.",
+      note: "Human output summarizes the target, plan counts, saved-path coverage, blockers, and next action; add --full for the complete result. The returned plan always names its startup policy. This preview is offline: it does not contact a target or persist a Test edit. --json and --ndjson retain the complete result.",
     }),
   ),
   mapped(

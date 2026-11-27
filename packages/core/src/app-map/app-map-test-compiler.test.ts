@@ -3392,6 +3392,63 @@ test("a plain-English action carries its v2 saved actions into a browser run", (
   assert.deepEqual(act && act.kind === "act" ? act.cached : undefined, [tap]);
 });
 
+test("a plain-English check carries only validation-shaped v2 saved steps", () => {
+  const work = scenario();
+  const expectation = {
+    kind: "expect",
+    target: { text: "Total due: $0" },
+    condition: "visible",
+  } as const;
+  const cache = {
+    schemaVersion: 2 as const,
+    steps: [expectation],
+    runId: "run-1",
+    savedAt: 1,
+    targetKind: "browser" as const,
+    resolution: [{ strategy: "text" as const, key: "Total due: $0" }],
+    verification: { runOutcome: "passed" as const },
+  };
+  work.steps = [
+    {
+      id: "check",
+      kind: "validation",
+      intent: "The total is zero",
+      binding: { status: "unresolved", reason: "Runs from text", fromText: true, cache },
+    },
+  ];
+  const map = fixture();
+  map.screens.home!.variantIds = ["web"];
+  map.screenVariants.web = {
+    ...scope,
+    id: "web",
+    screenId: "home",
+    targetProfile: {
+      id: "browser:golden",
+      targetId: "golden",
+      source: "browser",
+      platform: "browser",
+      name: "Golden",
+      capabilities: [],
+      observedAt: at,
+    },
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const compiled = compileAppMapTest(map, work, {
+    runtimeTargetProfile: {
+      id: "browser:golden",
+      targetId: "golden",
+      platform: "browser",
+      capabilities: [],
+    },
+  });
+  const visual = compiled.root.steps.find((step) => step.kind === "evaluate-visual");
+  assert.deepEqual(visual && visual.kind === "evaluate-visual" ? visual.cached : undefined, [
+    expectation,
+  ]);
+});
+
 test("legacy entries and cross-target entries compile as absent", () => {
   const map = fixture();
   const work = scenario();

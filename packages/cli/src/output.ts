@@ -284,6 +284,28 @@ export function formatTestCompileResult(value: unknown): string | undefined {
     `Target profile: ${profileId} (${platform})`,
     `Offline plan: ${recipeCount} recipes · ${resolved}/${checked} selectors resolved · ${blockers} blockers · ${warnings} warnings`,
   ];
+  const savedPaths = record(preflight.savedPathCoverage);
+  const savedTotal = typeof savedPaths?.totalSteps === "number" ? savedPaths.totalSteps : undefined;
+  const savedCovered =
+    typeof savedPaths?.coveredSteps === "number" ? savedPaths.coveredSteps : undefined;
+  if (savedTotal !== undefined && savedCovered !== undefined) {
+    const needsModel = savedTotal - savedCovered;
+    lines.push(
+      `Saved paths: ${savedCovered}/${savedTotal} plain-English steps covered · ${needsModel} need${needsModel === 1 ? "s" : ""} the model live`,
+    );
+    const savedSteps = Array.isArray(savedPaths?.steps) ? savedPaths.steps : [];
+    const uncovered = savedSteps
+      .map((item) => record(item))
+      .filter((item) => item?.status === "needs-model" && typeof item.intent === "string")
+      .slice(0, 3);
+    for (const item of uncovered) {
+      if (typeof item?.intent === "string") lines.push(`- “${item.intent}” needs the model live`);
+    }
+    if (needsModel > uncovered.length)
+      lines.push(
+        `  …and ${needsModel - uncovered.length} more step${needsModel - uncovered.length === 1 ? "" : "s"} need the model live`,
+      );
+  }
 
   const findings = Array.isArray(preflight.findings) ? preflight.findings : [];
   for (const item of findings.slice(0, 5)) {

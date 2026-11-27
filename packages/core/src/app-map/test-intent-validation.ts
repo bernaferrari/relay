@@ -17,7 +17,7 @@ import {
 import { BROWSER_ENGINES } from "@relay/protocol";
 import { validateRecipeSteps } from "../recipe/recipe-validation.js";
 import { appMapFail } from "./errors.js";
-import { isCacheableActStepKind } from "./act-cache-steps.js";
+import { isCacheablePlainEnglishStepKind } from "./act-cache-steps.js";
 import { assertActions, assertTarget } from "./action-validation.js";
 import {
   identifier,
@@ -107,16 +107,17 @@ function assertBinding(step: AppMapScenarioTestStep, label: string): void {
         `${label}.binding.cache`,
       );
       if (!Array.isArray(cache.steps) || !cache.steps.length || cache.steps.length > 40)
-        appMapFail("invalid-map", `${label}.binding.cache.steps must list at most 40 actions`);
+        appMapFail("invalid-map", `${label}.binding.cache.steps must list at most 40 steps`);
       // Saved paths round-trip through user-editable YAML, so the kind
       // allowlist is re-proven here: nothing a person crafts may smuggle a
-      // script, module, repeat, branch, nested act, evaluate, or expect into
-      // execution through a cache entry.
+      // script, module, repeat, branch, nested model step, or mismatched
+      // validation primitive into execution through a saved path.
+      const savedPathKind = step.kind === "validation" ? "check" : "action";
       for (const [index, raw] of cache.steps.entries()) {
         const item = `${label}.binding.cache.steps[${index}]`;
         const cached = objectValue(raw, item);
         validateCanonicalStep(cached as RecipeStep, item);
-        if (!isCacheableActStepKind(cached as RecipeStep))
+        if (!isCacheablePlainEnglishStepKind(cached as RecipeStep, savedPathKind))
           appMapFail("invalid-map", `${item}.kind is not cacheable`);
       }
       requiredText(cache.runId, `${label}.binding.cache.runId`);

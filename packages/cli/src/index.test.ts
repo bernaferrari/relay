@@ -2294,6 +2294,30 @@ const compileFixture = {
       warnings: 0,
     },
     findings: [],
+    savedPathCoverage: {
+      totalSteps: 2,
+      coveredSteps: 1,
+      needsModelSteps: 1,
+      steps: [
+        {
+          recipeId: "root-recipe",
+          recipeStepId: "one",
+          kind: "action",
+          intent: "Open settings",
+          status: "covered",
+          savedPathSteps: 1,
+          detail: "Replays 1 saved step without the model.",
+        },
+        {
+          recipeId: "root-recipe",
+          recipeStepId: "two",
+          kind: "check",
+          intent: "The total is zero",
+          status: "needs-model",
+          detail: "No saved path is available for this target, so this step needs the model live.",
+        },
+      ],
+    },
   },
 };
 
@@ -2316,6 +2340,11 @@ test("test compile human output is concise and --full retains the complete resul
     concise.stdout,
     /relay test run grok-android settings-tour --input '\{"expectedRevision":386,"target":\{"kind":"device","platform":"android","targetId":"phone-1"\},"targetProfileId":"android-profile"\}'/,
   );
+  assert.match(
+    concise.stdout,
+    /Saved paths: 1\/2 plain-English steps covered · 1 needs the model live/,
+  );
+  assert.match(concise.stdout, /“The total is zero” needs the model live/);
   assert.match(concise.stdout, /offline; it did not contact the target/);
   assert.doesNotMatch(concise.stdout, /large evidence payload/);
 

@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { runRecipeStep } from "./recipe-runner.js";
 import { registerEvaluationProvider } from "../evaluation/evaluation.js";
 import { registerVisualEvaluationProvider } from "../evaluation/evaluation-visual.js";
+import { registerCheckDecider } from "./recipe-runner-check.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import type { TestJob } from "../session/session.js";
 import { runWithTargetContext } from "../target/target-context.js";
@@ -447,4 +448,243 @@ describe("daily QA recipe steps", () => {
       /Files-app/,
     );
   });
+});
+
+describe("plain-English check saved paths", () => {
+  function semanticDevice(label = "Total due: $0"): Device {
+    const base = stubBrowserDevice();
+    return {
+      ...base,
+      interactions: {
+        find: async ({ query }: { query: string }) => {
+          if (query === "@total" || label.includes(query)) return {};
+          throw new Error("No match");
+        },
+      },
+      capture: {
+        ...base.capture,
+        snapshot: async () => ({
+          nodes: [{ type: "text", content: label, visibleToUser: true }],
+        }),
+      },
+    } as unknown as Device;
+  }
+
+  async function runCheck(
+    step: Extract<Parameters<typeof runRecipeStep>[1], { kind: "evaluate-visual" }>,
+    owner = job(),
+  ) {
+    await runWithTargetContext({ kind: "browser", platform: "browser", targetId: "web" }, () =>
+      runRecipeStep(semanticDevice(), step, { log: () => {}, job: owner }),
+    );
+    return owner;
+  }
+
+  it("replays a saved semantic check without either model", async () => {
+    const owner = await runCheck({
+      kind: "evaluate-visual",
+      id: "relay-test-check-1",
+      criteria: ["The total is zero"],
+      cached: [
+        {
+          kind: "expect",
+          target: { text: "Total due: $0", role: "text" },
+          condition: "visible",
+          timeoutMs: 1,
+        },
+      ],
+    });
+    const result = owner.artifacts.find((item) => item.kind === "check-result")?.data as {
+      source?: string;
+      recipeStepId?: string;
+    };
+    assert.deepEqual([result.source, result.recipeStepId], ["cache", "relay-test-check-1"]);
+    assert.equal(
+      owner.artifacts.some((item) => item.kind === "visual-evaluation"),
+      false,
+    );
+  });
+
+  it("resolves semantic evidence, confirms it visually, and records reusable steps", async () => {
+    const unregisterCheck = registerCheckDecider(async ({ candidates }) => ({
+      action: "expect",
+      candidateIds: [candidates[0]!.id],
+      reason: "the total text directly proves it",
+    }));
+    const unregisterVisual = registerVisualEvaluationProvider({
+      id: "visual-fixture",
+      evaluate: async () => ({
+        status: "pass",
+        confidence: 1,
+        score: 1,
+        summary: "total is zero",
+        criteria: [],
+        provider: "visual-fixture",
+        model: "fixture",
+        evaluatedAt: Date.now(),
+      }),
+    });
+    try {
+      const owner = await runCheck({
+        kind: "evaluate-visual",
+        id: "relay-test-check-1",
+        criteria: ["The total is zero"],
+        provider: "visual-fixture",
+      });
+      const result = owner.artifacts.find((item) => item.kind === "check-result")?.data as {
+        source?: string;
+        steps?: unknown[];
+        confirmedByJudge?: boolean;
+      };
+      assert.equal(result.source, "model");
+      assert.equal(result.confirmedByJudge, true);
+      assert.deepEqual(result.steps, [
+        { kind: "expect", target: { text: "Total due: $0", role: "text" }, condition: "visible" },
+      ]);
+      assert.equal(
+        owner.artifacts.some((item) => item.kind === "visual-evaluation"),
+        true,
+      );
+    } finally {
+      unregisterCheck();
+      unregisterVisual();
+    }
+  });
+
+  it("records a miss, re-resolves live, and keeps infrastructure errors fatal", async () => {
+    const unregisterCheck = registerCheckDecider(async ({ candidates }) => ({
+      action: "expect",
+      candidateIds: [candidates[0]!.id],
+      reason: "replacement evidence",
+    }));
+    const unregisterVisual = registerVisualEvaluationProvider({
+      id: "visual-fixture",
+      evaluate: async () => ({
+        status: "pass",
+        confidence: 1,
+        score: 1,
+        summary: "total is zero",
+        criteria: [],
+        provider: "visual-fixture",
+        model: "fixture",
+        evaluatedAt: Date.now(),
+      }),
+    });
+    try {
+      const owner = await runCheck({
+        kind: "evaluate-visual",
+        id: "relay-test-check-1",
+        criteria: ["The total is zero"],
+        provider: "visual-fixture",
+        cached: [
+          {
+            kind: "expect",
+            target: { text: "Gone", role: "text" },
+            condition: "visible",
+            timeoutMs: 1,
+          },
+        ],
+      });
+      assert.equal(
+        owner.artifacts.some(
+          (item) =>
+            item.kind === "check-decision" &&
+            (item.data as { action?: string }).action === "cache-miss",
+        ),
+        true,
+      );
+      const result = owner.artifacts.find((item) => item.kind === "check-result")?.data as {
+        source?: string;
+      };
+      assert.equal(result.source, "model");
+    } finally {
+      unregisterCheck();
+      unregisterVisual();
+    }
+  });
+
+  it("keeps snapshot and transport failures fatal instead of re-resolving a check", async () => {
+    const device = semanticDevice();
+    (device.interactions as { find: () => Promise<never> }).find = async () => {
+      throw new Error("connection lost");
+    };
+    const owner = job();
+    await assert.rejects(
+      () =>
+        runWithTargetContext({ kind: "browser", platform: "browser", targetId: "web" }, () =>
+          runRecipeStep(
+            device,
+            {
+              kind: "evaluate-visual",
+              id: "relay-test-check-1",
+              criteria: ["The total is zero"],
+              cached: [
+                {
+                  kind: "expect",
+                  target: { text: "Total due: $0", role: "text" },
+                  condition: "visible",
+                  timeoutMs: 1,
+                },
+              ],
+            },
+            { log: () => {}, job: owner },
+          ),
+        ),
+      /connection lost/,
+    );
+    assert.equal(
+      owner.artifacts.some((item) => item.kind === "check-decision"),
+      false,
+    );
+    assert.equal(
+      owner.artifacts.some((item) => item.kind === "check-result"),
+      false,
+    );
+  });
+});
+
+it("crafted action-shaped validation paths never execute and fall back to the judge", async () => {
+  const unregisterVisual = registerVisualEvaluationProvider({
+    id: "visual-fixture",
+    evaluate: async () => ({
+      status: "pass",
+      confidence: 1,
+      score: 1,
+      summary: "looks right",
+      criteria: [],
+      provider: "visual-fixture",
+      model: "fixture",
+      evaluatedAt: Date.now(),
+    }),
+  });
+  const owner = job();
+  try {
+    await runWithTargetContext({ kind: "browser", platform: "browser", targetId: "web" }, () =>
+      runRecipeStep(
+        stubBrowserDevice(),
+        {
+          kind: "evaluate-visual",
+          id: "relay-test-check-1",
+          criteria: ["The screen looks right"],
+          provider: "visual-fixture",
+          cached: [{ kind: "tap", target: { label: "Must never run" } }],
+        },
+        { log: () => {}, job: owner },
+      ),
+    );
+    assert.equal(
+      owner.artifacts.some((item) => item.kind === "visual-evaluation"),
+      true,
+    );
+    assert.equal(
+      owner.artifacts.some(
+        (item) =>
+          item.kind === "check-decision" &&
+          (item.data as { action?: string }).action === "cache-miss",
+      ),
+      false,
+    );
+  } finally {
+    unregisterVisual();
+  }
 });

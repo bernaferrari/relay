@@ -810,3 +810,52 @@ test("dest-end after-offline wait-for does not use origin unique-variant raw", (
     false,
   );
 });
+
+test("offline preflight reports exactly which plain-English steps need the model", () => {
+  const compiled = plan([
+    {
+      kind: "act",
+      id: "act-1",
+      intent: "Open the cart",
+      cached: [{ kind: "tap", target: { label: "Cart" } }],
+    },
+    { kind: "evaluate-visual", id: "check-1", criteria: ["The cart is empty"] },
+    {
+      kind: "evaluate-visual",
+      id: "check-2",
+      criteria: ["The total is zero"],
+      cached: [{ kind: "tap", target: { label: "Not a check" } }],
+    },
+  ]);
+  compiled.stepProvenance = [
+    {
+      recipeId: "root",
+      stepIndex: 0,
+      recipeStepId: "act-1",
+      testId: "relay-40",
+      testStepId: "open",
+      bindingKind: "recipe-step",
+      referencedEntityIds: [],
+    },
+  ];
+  const coverage = preflightCompiledAppMapTestOffline(compiled).savedPathCoverage;
+  assert.deepEqual(
+    coverage && {
+      totalSteps: coverage.totalSteps,
+      coveredSteps: coverage.coveredSteps,
+      needsModelSteps: coverage.needsModelSteps,
+      steps: coverage.steps.map((step) => [step.recipeStepId, step.status, step.testStepId]),
+    },
+    {
+      totalSteps: 3,
+      coveredSteps: 1,
+      needsModelSteps: 2,
+      steps: [
+        ["act-1", "covered", "open"],
+        ["check-1", "needs-model", undefined],
+        ["check-2", "needs-model", undefined],
+      ],
+    },
+  );
+  assert.match(coverage?.steps[2]?.detail ?? "", /incomplete or unsafe/);
+});

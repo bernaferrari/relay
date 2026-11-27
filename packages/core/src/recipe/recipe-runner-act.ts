@@ -15,6 +15,7 @@ import { isCancel } from "./recipe-runner-support.js";
 import { describeRecipeStep } from "./recipe-presentation.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
 import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
+import { savedPathStepsAreExecutable } from "../app-map/act-cache-steps.js";
 
 export const DEFAULT_ACT_MAX_ACTIONS = 5;
 const MAX_CANDIDATES = 80;
@@ -344,7 +345,7 @@ export async function runActStep(
   };
 
   // Replay what worked last time; ask the model only if the screen changed.
-  if (step.cached?.length) {
+  if (step.cached?.length && savedPathStepsAreExecutable(step.cached, "action")) {
     try {
       for (const concrete of step.cached) await runAndKeep(structuredClone(concrete));
       record({ action: "cached", steps: step.cached });
@@ -358,7 +359,7 @@ export async function runActStep(
       rethrowInputOutcomeUnknown(error);
       const message = error instanceof Error ? error.message : String(error);
       record({ action: "cache-miss", reason: message, replayed: executed.length });
-      ctx.log(`act: saved actions no longer fit (${message}); asking the model`);
+      ctx.log(`act: saved path no longer fits (${message}); asking the model`);
       history.push(...executed.map((concrete) => describeRecipeStep(concrete)));
     }
   }

@@ -535,6 +535,7 @@ const recipeStepSchemaUnion = z.union([
       secondProvider: z.string().optional(),
       secondModel: z.string().optional(),
       region: rectSchema.optional(),
+      cached: z.array(z.lazy(() => recipeStepSchema)).optional(),
     })
     .strict(),
   z

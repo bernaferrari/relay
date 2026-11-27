@@ -89,6 +89,23 @@ function fixture(): {
     cursorTimeline: [],
     returns: [],
     findings: [],
+    savedPathCoverage: {
+      totalSteps: 1,
+      coveredSteps: 1,
+      needsModelSteps: 0,
+      steps: [
+        {
+          recipeId: "settings:smoke:root",
+          recipeStepId: "check-1",
+          testStepId: "check",
+          kind: "check",
+          intent: "The total is zero",
+          status: "covered",
+          savedPathSteps: 1,
+          detail: "Replays 1 saved step before the model.",
+        },
+      ],
+    },
   };
   return { plan, recipeGraph, preflight };
 }

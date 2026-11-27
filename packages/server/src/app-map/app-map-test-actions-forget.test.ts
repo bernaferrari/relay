@@ -92,7 +92,7 @@ test("forgetting saved actions clears one step or a whole Test, idempotently and
     assert.equal(one.appMap.revision, saved.appMap.revision + 1);
     const event = one.appMap.activity["forget-open"];
     assert.equal(event?.eventType, "test.actions-dropped");
-    assert.equal(event?.summary, "Forgot saved actions for 1 plain-English step in Checkout");
+    assert.equal(event?.summary, "Forgot saved paths for 1 plain-English step in Checkout");
 
     // The retry of the same event is a no-op rather than a second mutation.
     const retried = await client.invoke("app-map.test.actions.forget", {
@@ -139,7 +139,7 @@ test("forgetting saved actions clears one step or a whole Test, idempotently and
     assert.equal(cacheOf(all.appMap, "pay"), undefined);
     assert.equal(
       all.appMap.activity["forget-all"]?.summary,
-      "Forgot saved actions for 1 plain-English step in Checkout",
+      "Forgot saved paths for 1 plain-English step in Checkout",
     );
 
     // Nothing left to forget is an honest error, not an empty mutation.
@@ -152,7 +152,7 @@ test("forgetting saved actions clears one step or a whole Test, idempotently and
       }),
       (error: unknown) => {
         assert.ok(error instanceof ApiError);
-        assert.match(error.message, /no saved actions to forget/);
+        assert.match(error.message, /no saved path to forget/);
         return true;
       },
     );

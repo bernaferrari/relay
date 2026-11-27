@@ -13,6 +13,7 @@ import type {
 import { compileExecutionRisk } from "../execution/execution-risk-compiler.js";
 import { offlineTestPlanDigest } from "./offline-test-preflight-digest.js";
 import { selectorAssessment } from "./offline-test-preflight-selector-assessment.js";
+import { savedPathCoverageForCompiledPlan } from "./offline-test-preflight-saved-paths.js";
 
 import {
   rawSourceMetadata,
@@ -344,6 +345,7 @@ export function preflightCompiledAppMapTestOffline(
   const excludedDynamicSelectors = selectors.filter(
     (selector) => selector.status === "excluded-dynamic-content",
   ).length;
+  const savedPathCoverage = savedPathCoverageForCompiledPlan(plan);
   return {
     schemaVersion: 1,
     mode: "offline-test-preflight",
@@ -367,5 +369,6 @@ export function preflightCompiledAppMapTestOffline(
     cursorTimeline,
     returns,
     findings: compactFindings,
+    ...(savedPathCoverage ? { savedPathCoverage } : {}),
   };
 }

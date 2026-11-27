@@ -358,7 +358,7 @@ export const appMapOperationDefinitions = [
   ),
   command(
     "app-map.test.actions.forget",
-    "Forget saved actions for one plain-English step or a whole Test",
+    "Forget saved paths for one plain-English step or a whole Test",
     "POST",
     "/app-maps/:appMapId/tests/:testId/actions/forget",
     {

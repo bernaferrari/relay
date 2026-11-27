@@ -140,7 +140,7 @@ export function buildRunVerdict(
   for (const artifact of run.artifacts) {
     const data = artifact.data as { action?: unknown; recipeStepId?: unknown } | undefined;
     if (
-      artifact.kind === "act-decision" &&
+      (artifact.kind === "act-decision" || artifact.kind === "check-decision") &&
       data?.action === "cache-miss" &&
       typeof data.recipeStepId === "string"
     )
@@ -148,7 +148,11 @@ export function buildRunVerdict(
   }
   for (const artifact of run.artifacts) {
     const data = artifact.data as { recipeStepId?: unknown; source?: unknown } | undefined;
-    if (artifact.kind !== "act-result" || typeof data?.recipeStepId !== "string") continue;
+    if (
+      (artifact.kind !== "act-result" && artifact.kind !== "check-result") ||
+      typeof data?.recipeStepId !== "string"
+    )
+      continue;
     const testStepId = testStepByRecipeStep.get(data.recipeStepId);
     if (!testStepId || replayByStep.has(testStepId)) continue;
     if (data.source === "cache") {

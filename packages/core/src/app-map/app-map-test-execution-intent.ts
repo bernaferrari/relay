@@ -733,6 +733,7 @@ function parseAppMapTestExecutionIntentValue(
       "cursorTimeline",
       "returns",
       "findings",
+      "savedPathCoverage",
     ])
   ) {
     return undefined;

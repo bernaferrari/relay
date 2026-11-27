@@ -1,8 +1,8 @@
 /**
- * After a run, remember the actions that carried out each plain-English
- * Action so the next run can replay them without asking a model. Only steps
- * that still run from the same words are updated; anything a person changed
- * since the run started is left alone.
+ * After a run, remember the concrete path that carried out each plain-English
+ * action or check so the next run can replay it without asking a model. Only
+ * steps that still run from the same words are updated; anything a person
+ * changed since the run started is left alone.
  *
  * The acceptance gate lives in projectPersistedAppMapRun: a resolution is
  * only ever cached from a passed run. A failed run instead drops the saved
@@ -20,7 +20,12 @@ import { mutateAppMap } from "./mutation.js";
 import { appMapFail } from "./errors.js";
 import type { AppMap, AppMapMutationContext } from "./model.js";
 import type { PersistedRun } from "../run/run-store.js";
-import { sanitizedActCacheSteps, type ActCacheStepResolution } from "./act-cache-steps.js";
+import {
+  sanitizedActCacheSteps,
+  sanitizedCheckCacheSteps,
+  type ActCacheStepResolution,
+  type PlainEnglishSavedPathKind,
+} from "./act-cache-steps.js";
 
 type ActResult = {
   recipeStepId: string;
@@ -28,20 +33,33 @@ type ActResult = {
   source: string;
   steps: RecipeStep[];
   resolutions?: (ActCacheStepResolution | null)[];
+  cacheKind: PlainEnglishSavedPathKind;
 };
 
 function actResults(run: PersistedRun): ActResult[] {
   return run.artifacts.flatMap((artifact) => {
-    const data = artifact.data as Partial<ActResult> | undefined;
-    return artifact.kind === "act-result" &&
-      data?.source === "model" &&
-      typeof data.recipeStepId === "string" &&
-      typeof data.intent === "string" &&
-      Array.isArray(data.steps) &&
-      data.steps.length > 0 &&
-      data.steps.length <= 40
-      ? [data as ActResult]
-      : [];
+    const cacheKind =
+      artifact.kind === "act-result"
+        ? ("action" as const)
+        : artifact.kind === "check-result"
+          ? ("check" as const)
+          : undefined;
+    const data = artifact.data as (Partial<ActResult> & { confirmedByJudge?: unknown }) | undefined;
+    if (
+      !cacheKind ||
+      data?.source !== "model" ||
+      typeof data.recipeStepId !== "string" ||
+      typeof data.intent !== "string" ||
+      !Array.isArray(data.steps) ||
+      data.steps.length === 0 ||
+      data.steps.length > 40
+    ) {
+      return [];
+    }
+    // A check becomes reusable only after its semantic evidence and the
+    // independent visual judgment both passed in the same run.
+    if (cacheKind === "check" && data.confirmedByJudge !== true) return [];
+    return [{ ...(data as Omit<ActResult, "cacheKind">), cacheKind }];
   });
 }
 
@@ -53,7 +71,7 @@ function actCacheHits(run: PersistedRun): Map<string, { count: number; at: numbe
   for (const artifact of run.artifacts) {
     const data = artifact.data as { source?: unknown; recipeStepId?: unknown } | undefined;
     if (
-      artifact.kind !== "act-result" ||
+      (artifact.kind !== "act-result" && artifact.kind !== "check-result") ||
       data?.source !== "cache" ||
       typeof data.recipeStepId !== "string"
     ) {
@@ -78,7 +96,7 @@ function actCacheMisses(run: PersistedRun): Map<string, string> {
       | { action?: unknown; recipeStepId?: unknown; reason?: unknown }
       | undefined;
     if (
-      artifact.kind === "act-decision" &&
+      (artifact.kind === "act-decision" || artifact.kind === "check-decision") &&
       data?.action === "cache-miss" &&
       typeof data.recipeStepId === "string"
     ) {
@@ -113,6 +131,7 @@ export type ActCacheUpdate = {
   intent: string;
   steps: RecipeStep[];
   resolution: PlainEnglishStepCacheV2["resolution"];
+  cacheKind?: PlainEnglishSavedPathKind;
   /** The saved path missed before this resolution; carries its miss reason. */
   missedReason?: string;
 };
@@ -132,7 +151,7 @@ export function withoutCache(
     list.map((step) => {
       if (
         drops.has(step.id) &&
-        step.kind === "instruction" &&
+        (step.kind === "instruction" || step.kind === "validation") &&
         step.binding.status === "unresolved" &&
         step.binding.cache !== undefined
       ) {
@@ -168,13 +187,13 @@ function visitSteps(
 
 function hasSavedPath(step: AppMapScenarioTestStep): boolean {
   return (
-    step.kind === "instruction" &&
+    (step.kind === "instruction" || step.kind === "validation") &&
     step.binding.status === "unresolved" &&
     step.binding.cache !== undefined
   );
 }
 
-/** Forget saved actions a person no longer trusts, for one step or every
+/** Forget saved paths a person no longer trusts, for one step or every
  * step of a test. The saved path is derived runtime data, not part of what
  * the test means, so validation and the step words stay exactly as they are;
  * the next run re-resolves from the model. */
@@ -207,12 +226,12 @@ export function forgetAppMapTestActions(
     appMapFail(
       "invalid-map",
       stepId
-        ? `Step ${stepId} has no saved actions to forget`
-        : `Test ${testId} has no saved actions to forget`,
+        ? `Step ${stepId} has no saved path to forget`
+        : `Test ${testId} has no saved path to forget`,
     );
   }
   const summary =
-    `Forgot saved actions for ${next.changed} plain-English step${next.changed === 1 ? "" : "s"}` +
+    `Forgot saved paths for ${next.changed} plain-English step${next.changed === 1 ? "" : "s"}` +
     ` in ${test.name}`;
   return mutateAppMap(
     map,
@@ -243,7 +262,8 @@ export function withCache(
       const update = updates.get(step.id);
       if (
         update &&
-        step.kind === "instruction" &&
+        ((step.kind === "instruction" && (update.cacheKind ?? "action") === "action") ||
+          (step.kind === "validation" && (update.cacheKind ?? "action") === "check")) &&
         step.binding.status === "unresolved" &&
         step.binding.fromText &&
         step.intent.trim() === update.intent.trim()
@@ -296,7 +316,7 @@ export function withCacheHits(
       const hit = hits.get(step.id);
       if (
         hit &&
-        step.kind === "instruction" &&
+        (step.kind === "instruction" || step.kind === "validation") &&
         step.binding.status === "unresolved" &&
         step.binding.cache !== undefined &&
         (step.binding.cache as { schemaVersion?: unknown }).schemaVersion === 2
@@ -323,18 +343,20 @@ export function withCacheHits(
 }
 
 function runCacheTarget(run: PersistedRun): ActCacheTargetContext | undefined {
-  // Phase 1 caches browser resolutions only: web semantic resolution is
-  // strict, while native targets can still degrade a stale key to a silent
-  // coordinate tap that never misses and therefore never re-resolves.
-  if (run.platform !== "browser") return undefined;
   const viewport = run.targetProfile?.viewport;
-  return {
-    targetKind: "browser",
-    ...(viewport ? { viewport: { width: viewport.width, height: viewport.height } } : {}),
-  };
+  const withViewport = viewport
+    ? { viewport: { width: viewport.width, height: viewport.height } }
+    : {};
+  if (run.platform === "browser") return { targetKind: "browser", ...withViewport };
+  // Passive checks may be saved on native targets when the platform matches
+  // exactly. Mutating action paths remain browser-only at the update loop.
+  if (run.platform === "android" || run.platform === "ios") {
+    return { targetKind: "device", platform: run.platform, ...withViewport };
+  }
+  return undefined;
 }
 
-/** Save replayable actions from a passed run. Idempotent per run. */
+/** Save replayable plain-English paths from a passed run. Idempotent per run. */
 export async function saveActCachesFromRun(run: PersistedRun): Promise<number> {
   if (run.outcome !== "passed") return 0;
   const target = runCacheTarget(run);
@@ -345,15 +367,20 @@ export async function saveActCachesFromRun(run: PersistedRun): Promise<number> {
   const misses = actCacheMisses(run);
   const updates = new Map<string, ActCacheUpdate>();
   for (const result of results) {
+    if (result.cacheKind === "action" && run.platform !== "browser") continue;
     const testStepId = plan.provenance.get(result.recipeStepId);
     if (!testStepId) continue;
-    const clean = sanitizedActCacheSteps(result.steps, result.resolutions ?? undefined);
+    const clean =
+      result.cacheKind === "action"
+        ? sanitizedActCacheSteps(result.steps, result.resolutions ?? undefined)
+        : sanitizedCheckCacheSteps(result.steps);
     if (!clean) continue;
     const missedReason = misses.get(result.recipeStepId);
     updates.set(testStepId, {
       intent: result.intent,
       steps: clean.steps,
       resolution: clean.resolution,
+      cacheKind: result.cacheKind,
       ...(missedReason ? { missedReason } : {}),
     });
   }
@@ -391,7 +418,7 @@ export async function saveActCachesFromRun(run: PersistedRun): Promise<number> {
         eventType: "test.actions-saved",
         subject: { kind: "test", id: plan.testId },
         touched: [`test:${plan.testId}:actions`],
-        summary: `Saved actions for ${next.changed} plain-English step${next.changed === 1 ? "" : "s"}`,
+        summary: `Saved paths for ${next.changed} plain-English step${next.changed === 1 ? "" : "s"}`,
       },
       (draft) => {
         draft.tests[plan.testId] = { ...draft.tests[plan.testId]!, steps: next.steps };
@@ -482,7 +509,7 @@ export async function dropStaleActCachesFromRun(run: PersistedRun): Promise<numb
         eventType: "test.actions-dropped",
         subject: { kind: "test", id: plan.testId },
         touched: [`test:${plan.testId}:actions`],
-        summary: `Dropped stale actions for ${next.changed} plain-English step${next.changed === 1 ? "" : "s"}`,
+        summary: `Dropped stale saved paths for ${next.changed} plain-English step${next.changed === 1 ? "" : "s"}`,
       },
       (draft) => {
         draft.tests[plan.testId] = { ...draft.tests[plan.testId]!, steps: next.steps };

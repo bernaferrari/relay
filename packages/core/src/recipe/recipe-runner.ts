@@ -405,7 +405,9 @@ async function runRequiredRecipeStep(
       break;
     }
     case "evaluate-visual":
-      await runEvaluateVisualStep(device, step, ctx);
+      await runEvaluateVisualStep(device, step, ctx, (concrete) =>
+        runRecipeStep(device, concrete, ctx),
+      );
       break;
     case "act":
       await runActStep(device, step, ctx, (concrete) => runRecipeStep(device, concrete, ctx));

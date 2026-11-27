@@ -548,6 +548,10 @@ export type RecipeStep = RecipeStepMetadata &
         secondProvider?: string;
         secondModel?: string;
         region?: { x: number; y: number; width: number; height: number };
+        /** Deterministic semantic checks a previous run resolved for this
+         * plain-English validation. They replay first; the visual judge is
+         * asked only when they no longer fit the screen or none exists. */
+        cached?: RecipeStep[];
       }
     | {
         /** Exclude this viewport rectangle from this checkpoint's

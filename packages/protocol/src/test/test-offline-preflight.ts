@@ -223,6 +223,27 @@ export type OfflineTestPreflightReturn = {
   status: "review-required";
 };
 
+/** Whether one plain-English action or check in the frozen plan can start
+ * from a saved path instead of asking a model first. This is coverage
+ * accounting only; it never claims the live screen already matches. */
+export type OfflineTestPreflightSavedPathStep = {
+  recipeId: string;
+  recipeStepId?: string;
+  testStepId?: string;
+  kind: "action" | "check";
+  intent: string;
+  status: "covered" | "needs-model";
+  savedPathSteps?: number;
+  detail: string;
+};
+
+export type OfflineTestPreflightSavedPathCoverage = {
+  totalSteps: number;
+  coveredSteps: number;
+  needsModelSteps: number;
+  steps: OfflineTestPreflightSavedPathStep[];
+};
+
 export type OfflineTestPreflightReport = {
   schemaVersion: 1;
   mode: "offline-test-preflight";
@@ -254,4 +275,7 @@ export type OfflineTestPreflightReport = {
    * pending in this frozen plan. */
   returns: OfflineTestPreflightReturn[];
   findings: OfflineTestPreflightFinding[];
+  /** Present when the frozen plan contains plain-English steps. It names
+   * exactly which ones still need the model live. */
+  savedPathCoverage?: OfflineTestPreflightSavedPathCoverage;
 };

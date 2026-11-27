@@ -373,18 +373,16 @@ export function compileAppMapScenarioTest(
             recipeSteps.push({ kind: "app", action: "open", app: test.originApplication });
           }
         }
-        const savedSteps =
-          step.kind === "instruction"
-            ? cacheableSavedSteps(step.binding.cache, options.runtimeTargetProfile)
-            : undefined;
+        const savedSteps = cacheableSavedSteps(
+          step.binding.cache,
+          options.runtimeTargetProfile,
+          step.kind === "validation" ? "check" : "action",
+        );
+        const cached = savedSteps ? { cached: structuredClone(savedSteps) } : {};
         recipeSteps.push(
           step.kind === "instruction"
-            ? {
-                kind: "act",
-                intent: step.intent,
-                ...(savedSteps ? { cached: structuredClone(savedSteps) } : {}),
-              }
-            : { kind: "evaluate-visual", criteria: [step.intent] },
+            ? { kind: "act", intent: step.intent, ...cached }
+            : { kind: "evaluate-visual", criteria: [step.intent], ...cached },
         );
         if (step.capture) {
           recipeSteps.push({

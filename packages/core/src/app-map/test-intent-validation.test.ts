@@ -124,7 +124,7 @@ test("malformed cache steps and shapes are rejected", () => {
   );
   assert.throws(
     () => assertScenarioTest(scenario([textStep({ ...legacyCache, steps: [] })]), "test"),
-    /at most 40 actions/,
+    /at most 40 steps/,
   );
   assert.throws(
     () =>
@@ -149,5 +149,61 @@ test("malformed cache steps and shapes are rejected", () => {
   assert.throws(
     () => assertScenarioTest(scenario([textStep({ ...v2Cache(), junk: true })]), "test"),
     /unknown field/,
+  );
+});
+
+function validationStep(cache?: unknown): AppMapScenarioTest["steps"][number] {
+  return {
+    id: "check",
+    kind: "validation",
+    intent: "The total is zero",
+    binding: {
+      status: "unresolved",
+      reason: "Runs from its words",
+      fromText: true,
+      ...(cache ? { cache } : {}),
+    },
+  } as AppMapScenarioTest["steps"][number];
+}
+
+test("validation saved paths accept only deterministic expect evidence", () => {
+  assertScenarioTest(
+    scenario([
+      validationStep(
+        v2Cache([{ kind: "expect", target: { text: "Total $0" }, condition: "visible" }]),
+      ),
+    ]),
+    "test",
+  );
+  for (const bad of [
+    { kind: "expect", target: { text: "Total $0" }, condition: "gone" },
+    { kind: "tap", target: { label: "Total" } },
+    { kind: "act", intent: "nested" },
+    { kind: "evaluate-visual", criteria: ["x"] },
+    { kind: "repeat", count: 2, recipeId: "x" },
+  ]) {
+    assert.throws(
+      () => assertScenarioTest(scenario([validationStep(v2Cache([bad]))]), "test"),
+      /not cacheable/,
+      `${bad.kind} must be rejected in validation paths`,
+    );
+  }
+  assert.throws(
+    () =>
+      assertScenarioTest(
+        scenario([
+          validationStep(
+            v2Cache(
+              Array.from({ length: 41 }, () => ({
+                kind: "expect",
+                target: { text: "Total $0" },
+                condition: "visible",
+              })),
+            ),
+          ),
+        ]),
+        "test",
+      ),
+    /at most 40 steps/,
   );
 });

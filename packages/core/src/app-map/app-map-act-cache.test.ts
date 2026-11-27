@@ -14,7 +14,7 @@ import {
   withoutCache,
   type ActCacheUpdate,
 } from "./app-map-act-cache.js";
-import { sanitizedActCacheSteps } from "./act-cache-steps.js";
+import { cacheableSavedSteps, sanitizedActCacheSteps } from "./act-cache-steps.js";
 import { createAppMap, mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.js";
 import { resetControlDatabaseCache } from "../collaboration/collaboration-db.js";
 import type { PersistedRun } from "../run/run-store.js";
@@ -385,24 +385,28 @@ test(
   },
 );
 
-test("device runs never save a path in either direction", { concurrency: false }, async () => {
-  await withMap([textStep("s1", "Open Settings")], async () => {
-    const saved = await saveActCachesFromRun(
-      actRun({
-        outcome: "passed",
-        platform: "android",
-        artifacts: [
-          planArtifact(),
-          modelResult(
-            [{ kind: "tap", target: { label: "Settings" } }],
-            [{ strategy: "label", key: "Settings" }],
-          ),
-        ],
-      }) as never,
-    );
-    assert.equal(saved, 0);
-  });
-});
+test(
+  "native action runs never save a path in either direction",
+  { concurrency: false },
+  async () => {
+    await withMap([textStep("s1", "Open Settings")], async () => {
+      const saved = await saveActCachesFromRun(
+        actRun({
+          outcome: "passed",
+          platform: "android",
+          artifacts: [
+            planArtifact(),
+            modelResult(
+              [{ kind: "tap", target: { label: "Settings" } }],
+              [{ strategy: "label", key: "Settings" }],
+            ),
+          ],
+        }) as never,
+      );
+      assert.equal(saved, 0);
+    });
+  },
+);
 
 test(
   "a failed run drops the saved path of steps that missed, and only those",
@@ -836,7 +840,7 @@ test(
       assert.equal(one.revision, map!.revision + 1);
       const event = one.activity["forget-1"];
       assert.equal(event?.eventType, "test.actions-dropped");
-      assert.equal(event?.summary, "Forgot saved actions for 1 plain-English step in Checkout");
+      assert.equal(event?.summary, "Forgot saved paths for 1 plain-English step in Checkout");
       // The saved path is derived runtime data: the step words, validation,
       // and test timestamps are not part of what was forgotten.
       assert.equal(one.tests.checkout!.updatedAt, test.updatedAt);
@@ -848,7 +852,7 @@ test(
       }
       assert.equal(
         all.activity["forget-2"]?.summary,
-        "Forgot saved actions for 2 plain-English steps in Checkout",
+        "Forgot saved paths for 2 plain-English steps in Checkout",
       );
     });
   },
@@ -890,12 +894,318 @@ test(
       };
       assert.throws(
         () => forgetAppMapTestActions(map!, "checkout", context, "s1"),
-        /Step s1 has no saved actions to forget/,
+        /Step s1 has no saved path to forget/,
       );
       assert.throws(
         () => forgetAppMapTestActions(map!, "checkout", context),
-        /Test checkout has no saved actions to forget/,
+        /Test checkout has no saved path to forget/,
       );
+    });
+  },
+);
+
+test("sensitive text and oversized paths never compile into executable saved paths", () => {
+  const proof = (steps: readonly unknown[]) => ({
+    runId: "run-proof",
+    savedAt: 1,
+    resolution: steps.map(() => ({ strategy: "text", key: "proof" })),
+    verification: { runOutcome: "passed" },
+  });
+  const cacheWith = (steps: readonly unknown[]) => ({
+    schemaVersion: 2 as const,
+    targetKind: "browser" as const,
+    steps,
+    ...proof(steps),
+  });
+  const runtime = { platform: "browser" };
+  assert.equal(
+    cacheableSavedSteps(
+      cacheWith([{ kind: "type", text: "[private]", target: { identifier: "password" } }]),
+      runtime,
+    ),
+    undefined,
+  );
+  assert.equal(
+    cacheableSavedSteps(
+      cacheWith([{ kind: "expect", target: { text: "[private]" }, condition: "visible" }]),
+      runtime,
+      "check",
+    ),
+    undefined,
+  );
+  assert.equal(
+    cacheableSavedSteps(
+      cacheWith([
+        {
+          kind: "expect",
+          target: {
+            text: "Total $0",
+            relation: { kind: "following-row", anchor: { label: "Summary" } },
+          },
+          condition: "visible",
+        },
+      ]),
+      runtime,
+      "check",
+    ),
+    undefined,
+  );
+  assert.equal(
+    cacheableSavedSteps(
+      cacheWith(
+        Array.from({ length: 41 }, () => ({
+          kind: "expect",
+          target: { text: "Total $0" },
+          condition: "visible",
+        })),
+      ),
+      runtime,
+      "check",
+    ),
+    undefined,
+  );
+  const validSteps = [
+    { kind: "expect", target: { text: "Total $0" }, condition: "visible" },
+  ] as const;
+  assert.equal(
+    cacheableSavedSteps({ ...cacheWith(validSteps), resolution: [] }, runtime, "check"),
+    undefined,
+  );
+  assert.equal(
+    cacheableSavedSteps(
+      { ...cacheWith(validSteps), verification: { runOutcome: "product-failure" } },
+      runtime,
+      "check",
+    ),
+    undefined,
+  );
+});
+
+test("native checks compile only for their exact platform while actions stay browser-only", () => {
+  const expectation = {
+    kind: "expect",
+    target: { text: "Total $0" },
+    condition: "visible",
+  } as const;
+  const cache = {
+    schemaVersion: 2 as const,
+    steps: [expectation],
+    targetKind: "device" as const,
+    platform: "android" as const,
+    runId: "run-proof",
+    savedAt: 1,
+    resolution: [{ strategy: "text" as const, key: "Total $0" }],
+    verification: { runOutcome: "passed" as const },
+  };
+  assert.deepEqual(cacheableSavedSteps(cache, { platform: "android" }, "check"), [expectation]);
+  assert.equal(cacheableSavedSteps(cache, { platform: "ios" }, "check"), undefined);
+  assert.equal(cacheableSavedSteps(cache, { platform: "android" }, "action"), undefined);
+});
+
+test(
+  "a passed browser run saves judge-confirmed semantic evidence for a check",
+  { concurrency: false },
+  async () => {
+    const validation = {
+      id: "s1",
+      kind: "validation",
+      intent: "The total is zero",
+      binding: { status: "unresolved", reason: "r", fromText: true },
+    } as AppMapScenarioTestStep;
+    await withMap([validation], async () => {
+      const saved = await saveActCachesFromRun(
+        actRun({
+          outcome: "passed",
+          artifacts: [
+            planArtifact(),
+            {
+              kind: "check-result",
+              capturedAt: 21,
+              data: {
+                intent: "The total is zero",
+                recipeStepId: "relay-test-s1-1",
+                source: "model",
+                confirmedByJudge: true,
+                steps: [
+                  {
+                    kind: "expect",
+                    target: { text: "Total $0", point: { x: 4, y: 5 } },
+                    condition: "visible",
+                  },
+                ],
+              },
+            },
+          ],
+        }) as never,
+      );
+      assert.equal(saved, 1);
+      const map = await readAppMap("project", "map");
+      const step = map?.tests.checkout?.steps[0] as {
+        binding: { cache?: Record<string, unknown> };
+      };
+      assert.deepEqual(step.binding.cache?.steps, [
+        { kind: "expect", target: { text: "Total $0" }, condition: "visible" },
+      ]);
+      assert.deepEqual(step.binding.cache?.resolution, [{ strategy: "text", key: "Total $0" }]);
+    });
+  },
+);
+
+test(
+  "unconfirmed or action-shaped check evidence is never saved",
+  { concurrency: false },
+  async () => {
+    const validation = {
+      id: "s1",
+      kind: "validation",
+      intent: "The total is zero",
+      binding: { status: "unresolved", reason: "r", fromText: true },
+    } as AppMapScenarioTestStep;
+    await withMap([validation], async () => {
+      for (const data of [
+        {
+          intent: "The total is zero",
+          recipeStepId: "relay-test-s1-1",
+          source: "model",
+          confirmedByJudge: false,
+          steps: [{ kind: "expect", target: { text: "Total $0" }, condition: "visible" }],
+        },
+        {
+          intent: "The total is zero",
+          recipeStepId: "relay-test-s1-1",
+          source: "model",
+          confirmedByJudge: true,
+          steps: [{ kind: "tap", target: { label: "Total" } }],
+        },
+      ]) {
+        const saved = await saveActCachesFromRun(
+          actRun({
+            outcome: "passed",
+            artifacts: [planArtifact(), { kind: "check-result", capturedAt: 21, data }],
+          }) as never,
+        );
+        assert.equal(saved, 0);
+      }
+    });
+  },
+);
+
+test(
+  "a passed native run saves judge-confirmed check evidence without saving native actions",
+  { concurrency: false },
+  async () => {
+    const validation = {
+      id: "s1",
+      kind: "validation",
+      intent: "The total is zero",
+      binding: { status: "unresolved", reason: "r", fromText: true },
+    } as AppMapScenarioTestStep;
+    await withMap([validation], async () => {
+      const saved = await saveActCachesFromRun(
+        actRun({
+          outcome: "passed",
+          platform: "android",
+          artifacts: [
+            planArtifact(),
+            {
+              kind: "check-result",
+              capturedAt: 21,
+              data: {
+                intent: "The total is zero",
+                recipeStepId: "relay-test-s1-1",
+                source: "model",
+                confirmedByJudge: true,
+                steps: [{ kind: "expect", target: { text: "Total $0" }, condition: "visible" }],
+              },
+            },
+          ],
+        }) as never,
+      );
+      assert.equal(saved, 1);
+      const map = await readAppMap("project", "map");
+      const cache = (
+        map!.tests.checkout!.steps[0] as { binding: { cache?: Record<string, unknown> } }
+      ).binding.cache;
+      assert.equal(cache?.targetKind, "device");
+      assert.equal(cache?.platform, "android");
+    });
+  },
+);
+
+function validationTextStep(cache?: unknown): AppMapScenarioTestStep {
+  return {
+    id: "s1",
+    kind: "validation",
+    intent: "The total is zero",
+    binding: {
+      status: "unresolved",
+      reason: "r",
+      fromText: true,
+      ...(cache ? { cache } : {}),
+    },
+  } as AppMapScenarioTestStep;
+}
+
+const validationCache = {
+  schemaVersion: 2,
+  steps: [{ kind: "expect", target: { text: "Total $0" }, condition: "visible" }],
+  runId: "run-old",
+  savedAt: 1,
+  targetKind: "browser",
+  resolution: [{ strategy: "text", key: "Total $0" }],
+  verification: { runOutcome: "passed" },
+};
+
+test(
+  "check hits count without revision semantics and failed check misses drop the saved path",
+  { concurrency: false },
+  async () => {
+    await withMap([validationTextStep(validationCache)], async () => {
+      const before = await readAppMap("project", "map");
+      const hit = {
+        kind: "check-result",
+        capturedAt: 44,
+        data: {
+          intent: "The total is zero",
+          recipeStepId: "relay-test-s1-1",
+          source: "cache",
+          steps: validationCache.steps,
+        },
+      };
+      assert.equal(
+        await recordActCacheHitsFromRun(
+          actRun({ outcome: "passed", artifacts: [planArtifact(), hit] }) as never,
+        ),
+        1,
+      );
+      let map = await readAppMap("project", "map");
+      let cache = (
+        map!.tests.checkout!.steps[0] as { binding: { cache?: Record<string, unknown> } }
+      ).binding.cache;
+      assert.equal(cache?.hits, 1);
+      assert.equal(cache?.lastHitAt, 44);
+      assert.equal(map?.revision, before?.revision);
+
+      const miss = {
+        kind: "check-decision",
+        capturedAt: 45,
+        data: {
+          intent: "The total is zero",
+          recipeStepId: "relay-test-s1-1",
+          action: "cache-miss",
+          reason: "expect: total was gone",
+        },
+      };
+      assert.equal(
+        await dropStaleActCachesFromRun(
+          actRun({ outcome: "product-failure", artifacts: [planArtifact(), miss] }) as never,
+        ),
+        1,
+      );
+      map = await readAppMap("project", "map");
+      cache = (map!.tests.checkout!.steps[0] as { binding: { cache?: Record<string, unknown> } })
+        .binding.cache;
+      assert.equal(cache, undefined);
     });
   },
 );

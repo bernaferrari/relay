@@ -27,6 +27,9 @@ import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { applyBrowserOffline, uploadBrowserFile } from "../browser/browser-live-controls.js";
 import { describeTarget } from "./recipes.js";
+import { resolveSemanticCheckSteps } from "./recipe-runner-check.js";
+import { isCancel } from "./recipe-runner-support.js";
+import { savedPathStepsAreExecutable } from "../app-map/act-cache-steps.js";
 
 function logEvaluation(
   log: (line: string) => void,
@@ -189,40 +192,117 @@ export async function runEvaluateVisualStep(
   device: Device,
   step: Extract<RecipeStep, { kind: "evaluate-visual" }>,
   ctx: RecipeStepContext,
+  runConcrete: (concrete: RecipeStep) => Promise<void>,
 ): Promise<void> {
-  const shot = await captureScreenshot({ device, ephemeral: true, includeScreenMatch: false });
-  try {
-    const png = Buffer.from(shot.base64, "base64");
-    const sha256 = createHash("sha256").update(png).digest("hex");
-    let path = shot.path;
-    if (ctx.job?.runDir) {
-      const dest = join(ctx.job.runDir, `judged-visual-${sha256.slice(0, 12)}.png`);
-      await copyFile(shot.path, dest);
-      path = dest;
-    }
-    (ctx.job?.artifacts ?? ctx.artifacts)?.push({
-      kind: "judged-image",
+  const intent = step.criteria.join(" and ");
+  const sink = () => ctx.job?.artifacts ?? ctx.artifacts;
+  const joinData = {
+    intent,
+    ...(step.id ? { recipeStepId: step.id } : {}),
+  };
+  const recordDecision = (data: Record<string, unknown>) =>
+    sink()?.push({ kind: "check-decision", capturedAt: now(), data: { ...joinData, ...data } });
+  const finish = (source: "cache" | "model", steps: RecipeStep[], confirmedByJudge: boolean) => {
+    sink()?.push({
+      kind: "check-result",
       capturedAt: now(),
-      data: { mimeType: "image/png", sha256, bytes: png.byteLength, path },
+      data: {
+        ...joinData,
+        source,
+        steps: structuredClone(steps),
+        confirmedByJudge,
+      },
     });
-    await runJudgeConsensus(
-      (provider, model) =>
-        evaluateVisual({
-          criteria: step.criteria,
-          threshold: step.threshold,
-          provider,
-          model,
-          image: { mimeType: "image/png", data: shot.base64 },
-          region: step.region,
-        }),
-      step,
-      ctx,
-      "visual-evaluation",
-      "visual assertion",
-    );
-  } finally {
-    await cleanupScreenshot(shot.path);
+  };
+  const judge = async () => {
+    const shot = await captureScreenshot({ device, ephemeral: true, includeScreenMatch: false });
+    try {
+      const png = Buffer.from(shot.base64, "base64");
+      const sha256 = createHash("sha256").update(png).digest("hex");
+      let path = shot.path;
+      if (ctx.job?.runDir) {
+        const dest = join(ctx.job.runDir, `judged-visual-${sha256.slice(0, 12)}.png`);
+        await copyFile(shot.path, dest);
+        path = dest;
+      }
+      sink()?.push({
+        kind: "judged-image",
+        capturedAt: now(),
+        data: { mimeType: "image/png", sha256, bytes: png.byteLength, path },
+      });
+      await runJudgeConsensus(
+        (provider, model) =>
+          evaluateVisual({
+            criteria: step.criteria,
+            threshold: step.threshold,
+            provider,
+            model,
+            image: { mimeType: "image/png", data: shot.base64 },
+            region: step.region,
+          }),
+        step,
+        ctx,
+        "visual-evaluation",
+        "visual assertion",
+      );
+    } finally {
+      await cleanupScreenshot(shot.path);
+    }
+  };
+
+  if (step.cached?.length && savedPathStepsAreExecutable(step.cached, "check")) {
+    try {
+      for (const concrete of step.cached) await runConcrete(structuredClone(concrete));
+      finish("cache", step.cached, false);
+      ctx.log(`check: replayed ${step.cached.length} saved step(s) for “${intent}”`);
+      return;
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      // `expect` only rewrites its condition budget exhaustion into this
+      // assertion shape. Snapshot, transport, and device failures propagate.
+      if (!(error instanceof Error) || !error.message.startsWith("expect: ")) throw error;
+      recordDecision({ action: "cache-miss", reason: error.message });
+    }
   }
+
+  let resolved: Awaited<ReturnType<typeof resolveSemanticCheckSteps>>;
+  try {
+    resolved = await resolveSemanticCheckSteps(device, step.criteria, step.model);
+  } catch (error) {
+    if (isCancel(error)) throw error;
+    // Semantic resolution is an optimization toward determinism. A missing or
+    // failing resolution model never removes the visual judge that previously
+    // owned this step.
+    resolved = undefined;
+  }
+  if (resolved) {
+    let evidenceHeld = true;
+    try {
+      for (const concrete of resolved.steps) await runConcrete(structuredClone(concrete));
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      if (!(error instanceof Error) || !error.message.startsWith("expect: ")) throw error;
+      evidenceHeld = false;
+    }
+    if (evidenceHeld) {
+      recordDecision({
+        action: "semantic-resolution",
+        reason: resolved.reason,
+        summary: resolved.summary,
+      });
+      // The first semantic resolution is still independently confirmed by the
+      // visual judge. Only a passed confirmation may become a saved path. A
+      // judge failure must never be mistaken for missing semantic evidence.
+      await judge();
+      finish("model", resolved.steps, true);
+      return;
+    }
+    // Freshly chosen evidence did not hold even before judging. Do not save
+    // it; the visual judge still owns the underlying product check.
+  }
+
+  await judge();
+  finish("model", [], true);
 }
 
 export async function runOfflineStep(
