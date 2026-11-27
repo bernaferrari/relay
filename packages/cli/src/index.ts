@@ -1,7 +1,8 @@
 #!/usr/bin/env tsx
 import { isInteractiveReview, runReviewCommand, type ReviewClient } from "./review-command.js";
 import { createBrowserCaptureWorkflow, type BrowserCapturePlan } from "@relay/workflow-runners";
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { targetExecutionReadiness, renderPlanFindingsMarkdown } from "@relay/core";
 import {
   summarizeAuthoringOperationResult,
@@ -511,7 +512,9 @@ export async function runCli(
       let exitCode: ExitCode = ExitCode.success;
       if (parsed.command === "invoke") validateOperationId(operationId);
       if (
-        ((parsed.command === "outcome" && parsed.intent.kind !== "replay-lab") ||
+        ((parsed.command === "outcome" &&
+          parsed.intent.kind !== "replay-lab" &&
+          parsed.intent.kind !== "doctor") ||
           (parsed.command === "prove" && parsed.confirm)) &&
         parsed.config.ensureLocalServer
       ) {
@@ -737,7 +740,16 @@ export async function runCli(
   }
 }
 
-const isEntryPoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+function invokedAsEntrypoint(moduleUrl: string, executable: string | undefined): boolean {
+  if (!executable) return false;
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(executable);
+  } catch {
+    return moduleUrl === pathToFileURL(executable).href;
+  }
+}
+
+const isEntryPoint = invokedAsEntrypoint(import.meta.url, process.argv[1]);
 if (isEntryPoint) {
   enterCallerCwd();
   process.exitCode = await runCli(process.argv.slice(2));

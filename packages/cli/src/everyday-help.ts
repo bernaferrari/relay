@@ -15,11 +15,23 @@ export const everydayExitCodes = `Exit codes:
   10 the Test passed but screenshots are awaiting review
   11 not found: no App, Test, Run, or device with that name`;
 
-export const projectConfigHelp = `Project defaults (relay.json in the directory you run relay from):
+export const projectConfigHelp = `Project defaults (relay.json, or .relay/config.json written by relay init):
   {"app": "Shop", "device": "ios", "url": "https://shop.example.com"}
   app and device apply to run, ci, tests, and record; url applies to new.`;
 
 const usage: Record<string, string> = {
+  init: `relay init [--url <url>] [--force]
+
+Detects a local web project, prefers a running localhost development server,
+and writes .relay/config.json plus .relay/tests/smoke.yaml. It does not need a
+running Relay server. Existing files are kept unless --force is passed. Mobile
+projects are detected and their manual recording path is printed; mobile
+bootstrapping is not automatic in v1.
+
+Examples:
+  relay init
+  relay init --url http://127.0.0.1:3000
+  relay ci .relay/tests --confirm`,
   new: `relay new "<what should work>" [--url <website>] [--app <name>] [--name <test name>]
 relay new --file <test.yaml>
 
@@ -31,7 +43,7 @@ Examples:
   relay new "Add a shirt to the cart and check the total" --url https://shop.example.com
   relay new "Sign in and open settings" --app Shop`,
   ci: `relay ci [<app> | <folder of test files>] [--test <name>]... [--device ios|android|browser|<name>]
-         [--output result.json] [--junit junit.xml] [--json]
+         [--confirm] [--output result.json] [--junit junit.xml] [--json]
 
 Runs every ready Test of the app one after another (or only the --test ones),
 waits for each, and prints one table. Tests that are not ready yet are listed
@@ -39,6 +51,8 @@ as skipped and do not fail the build.
 
 --output writes {totals, verdicts, skipped}; each verdict has status, summary,
 and every step's expected and saw. --junit writes JUnit XML for CI dashboards.
+--confirm accepts once-per-run guarded risk, such as opening the website under
+test; destructive and human-only steps still do not run.
 In GitHub Actions the same table, with each failure's expected and saw, is
 added to the job summary automatically.
 Paths are relative to the directory you run relay from.
@@ -50,7 +64,7 @@ Given a folder (or one .yaml file), Relay saves those test files first and
 runs exactly those Tests.
 
 Examples:
-  relay ci relay/tests --output result.json --junit junit.xml
+  relay ci relay/tests --confirm --output result.json --junit junit.xml
   relay ci shop --output result.json --junit junit.xml
   relay ci shop --test "Checkout works" --device android`,
   apply: `relay apply <test.yaml | folder>

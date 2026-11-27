@@ -1,5 +1,8 @@
 import { execFile } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { callerCwd } from "./caller-cwd.js";
 import { unknownText, unknownErrorText } from "./unknown-text.js";
 
 export type LocalServerResult = { status: "already-running" | "started"; pid?: number };
@@ -19,7 +22,37 @@ export type LocalServerDependencies = {
 
 const workspaceRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const ensureScript = fileURLToPath(new URL("../../../scripts/ensure-server.mjs", import.meta.url));
+const packagedStartup = fileURLToPath(new URL("./runtime/startup.js", import.meta.url));
 const bootstrapTimeoutMs = 30_000;
+
+type PackagedRuntimeStartup = {
+  ensureRelayRuntime(input: {
+    workspaceRoot: string;
+    stateDirectory?: string;
+    port?: number;
+  }): Promise<{ disposition: "attached" | "started"; pid?: number }>;
+};
+
+async function ensurePackagedRuntime(url: URL): Promise<LocalServerResult> {
+  const startup = (await import(pathToFileURL(packagedStartup).href)) as PackagedRuntimeStartup;
+  const root = resolve(callerCwd(process.env));
+  try {
+    const runtime = await startup.ensureRelayRuntime({
+      workspaceRoot: root,
+      stateDirectory: resolve(root, ".relay", "state"),
+      port: Number(url.port || "80"),
+    });
+    return {
+      status: runtime.disposition === "attached" ? "already-running" : "started",
+      ...(Number.isSafeInteger(runtime.pid) ? { pid: Number(runtime.pid) } : {}),
+    };
+  } catch (error) {
+    throw new Error(
+      `Relay could not start its packaged local server: ${boundedDiagnostic(error)}. Mutable state is under ${resolve(root, ".relay", "state")}; no unknown listener was stopped.`,
+      { cause: error },
+    );
+  }
+}
 
 function loopback(url: URL): boolean {
   return (
@@ -99,6 +132,9 @@ export async function ensureLocalRelayServer(
     throw new TypeError(
       "Automatic Relay startup is allowed only for the implicit loopback server.",
     );
+  }
+  if (dependencies === defaults && existsSync(packagedStartup)) {
+    return ensurePackagedRuntime(url);
   }
   let ensureOutput: { stdout: string; stderr: string };
   try {

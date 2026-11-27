@@ -20,6 +20,7 @@ import {
   type ProjectConfig,
 } from "./everyday-names.js";
 import { renderEverydayHelp } from "./everyday-help.js";
+import { formatInitResult, runInitCommand } from "./init-command.js";
 import { invokeOperation, type ClientFactory } from "./invoke.js";
 import type { LocalServerResult } from "./local-server.js";
 import { cliPackageVersion } from "./outcome-runner.js";
@@ -38,14 +39,24 @@ export type EverydayDependencies = {
   registerSignalHandlers: boolean;
 };
 
-type Verb = "version" | "apps" | "tests" | "runs" | "devices" | "new" | "ci" | "apply" | "show";
+type Verb =
+  | "version"
+  | "init"
+  | "apps"
+  | "tests"
+  | "runs"
+  | "devices"
+  | "new"
+  | "ci"
+  | "apply"
+  | "show";
 
 /** Positionals after the verb word, e.g. `new <goal>` → [<goal>]. */
 function everydayVerb(tokens: ParsedTokens): { verb: Verb; args: string[] } | undefined {
   const [first] = tokens.positionals;
   if (!first) return tokens.switches.has("--version") ? { verb: "version", args: [] } : undefined;
   if (first === "version") return { verb: "version", args: tokens.positionals.slice(1) };
-  if (["apps", "tests", "runs", "devices", "new", "ci", "apply", "show"].includes(first)) {
+  if (["init", "apps", "tests", "runs", "devices", "new", "ci", "apply", "show"].includes(first)) {
     return { verb: first as Verb, args: tokens.positionals.slice(1) };
   }
   return undefined;
@@ -61,6 +72,7 @@ const connectionFlags = [
 ] as const;
 const verbFlags: Record<Verb, readonly string[]> = {
   version: [],
+  init: ["--url"],
   apps: [],
   tests: ["--app"],
   runs: ["--app"],
@@ -83,6 +95,8 @@ function assertFlags(verb: Verb, tokens: ParsedTokens): void {
     "--version",
     "--wait",
     ...(verb === "devices" ? ["--all"] : []),
+    ...(verb === "init" ? ["--force"] : []),
+    ...(verb === "ci" ? ["--confirm"] : []),
   ]);
   for (const flag of tokens.switches) {
     if (!switches.has(flag)) throw new UsageError(`${flag} is not an option of relay ${verb}`);
@@ -218,6 +232,18 @@ export async function runEverydayCommand(
       else deps.streams.stdout.write(`relay ${version}\n`);
       return ExitCode.success;
     }
+    if (verb === "init") {
+      if (args.length) throw new UsageError("Expected: relay init [--url <url>] [--force]");
+      const explicitUrl = tokens.values.get("--url");
+      const result = await runInitCommand({
+        cwd: callerCwd(deps.env),
+        ...(explicitUrl ? { url: explicitUrl } : {}),
+        force: tokens.switches.has("--force"),
+        env: deps.env,
+      });
+      output.result(operationId, result, true, formatInitResult(result));
+      return ExitCode.success;
+    }
     if (config.ensureLocalServer) await deps.ensureServer(config.connection.url);
     const client = deps.createClient(config);
     const invoke: EverydayInvoke = (id, input) =>
@@ -337,6 +363,7 @@ export async function runEverydayCommand(
         ...(device ? { device } : {}),
         ...(outputPath ? { output: outputPath } : {}),
         ...(junit ? { junit } : {}),
+        ...(tokens.switches.has("--confirm") ? { confirmRisk: true as const } : {}),
       },
       client,
       invoke,

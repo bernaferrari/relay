@@ -1,6 +1,13 @@
 {
   "name": "@relay/mcp",
   "version": "0.1.0",
+  "description": "Model Context Protocol server for Relay local-first product verification",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bernaferrari/relay.git",
+    "directory": "packages/mcp"
+  },
   "bin": {
     "relay-mcp": "./dist/relay-mcp.js",
     "relay-mcp-bridge": "./dist/relay-mcp-bridge.js",
@@ -8,6 +15,7 @@
   },
   "files": [
     "README.md",
+    "LICENSE",
     "dist"
   ],
   "type": "module",

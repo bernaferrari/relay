@@ -39,6 +39,7 @@ export type CiOptions = {
   device?: string;
   output?: string;
   junit?: string;
+  confirmRisk?: true;
 };
 
 export type CiReport = {
@@ -130,6 +131,7 @@ export async function runCiCommand(input: {
     appMapId: string;
     testId: string;
     targetId?: string;
+    confirmRisk?: true;
   }) => Promise<WorkflowSnapshot>;
 }): Promise<{ report: CiReport; exitCode: ExitCode; text: string }> {
   const { options, invoke, output, signal } = input;
@@ -137,10 +139,15 @@ export async function runCiCommand(input: {
   const app = await chooseApp(invoke, options.app, config);
   const { tests, skipped } = selectCiTests(app, options.tests);
   const deviceName = options.device ?? config.device;
-  const targetId = deviceName ? await resolveDevice(invoke, deviceName) : undefined;
+  const browserStartUrl = config.url ?? tests.find((test) => test.startUrl)?.startUrl;
+  const targetId = deviceName
+    ? await resolveDevice(invoke, deviceName, {
+        ...(browserStartUrl ? { browserStartUrl } : {}),
+      })
+    : undefined;
   const runTest =
     input.runTest ??
-    (async (request: { appMapId: string; testId: string; targetId?: string }) => {
+    (async (request: { appMapId: string; testId: string; targetId?: string; confirmRisk?: true }) => {
       const jobs = createRelayOutcomeJobs(
         {
           invoke: (id, payload) => invoke(id, payload as Record<string, unknown>),
@@ -170,6 +177,7 @@ export async function runCiCommand(input: {
         appMapId: app.id,
         testId: test.id,
         ...(targetId ? { targetId } : {}),
+        ...(options.confirmRisk ? { confirmRisk: true } : {}),
       });
       const verdict = await readVerdict(input.client, settled, signal);
       verdicts.push(

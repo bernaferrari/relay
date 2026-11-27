@@ -21,19 +21,26 @@ export type ProjectConfig = { app?: string; device?: string; url?: string };
 const projectConfigFields = new Set(["app", "device", "url"]);
 
 export function readProjectConfig(env: Record<string, string | undefined>): ProjectConfig {
-  const path = join(callerCwd(env), "relay.json");
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw new UsageError(`Could not read ${path}: ${(error as Error).message}`);
-  }
+  const root = callerCwd(env);
+  const candidates = [join(root, "relay.json"), join(root, ".relay", "config.json")];
+  const path = candidates.find((candidate) => {
+    try {
+      readFileSync(candidate, "utf8");
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw new UsageError(`Could not read ${candidate}: ${(error as Error).message}`);
+    }
+  });
+  if (!path) return {};
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new UsageError(`${path} is not valid JSON`);
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error instanceof SyntaxError ? new UsageError(`${path} is not valid JSON`) : error;
+    }
+    return {};
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new UsageError(`${path} must be a JSON object like {"app": "Shop", "device": "ios"}`);
@@ -224,7 +231,11 @@ function deviceId(device: DeviceRow): string | undefined {
  * kind; a device name or id picks that device. Unknown values pass through
  * unchanged so the server can explain what it accepts.
  */
-export async function resolveDevice(invoke: EverydayInvoke, wanted: string): Promise<string> {
+export async function resolveDevice(
+  invoke: EverydayInvoke,
+  wanted: string,
+  options: { browserStartUrl?: string } = {},
+): Promise<string> {
   const response = (await invoke("target.devices.list", {})) as { devices?: unknown };
   const devices = (Array.isArray(response?.devices) ? response.devices : []).filter(
     (device): device is DeviceRow => Boolean(device) && typeof device === "object",
@@ -241,6 +252,36 @@ export async function resolveDevice(invoke: EverydayInvoke, wanted: string): Pro
     );
     if (matching.length === 1) return deviceId(matching[0]!)!;
     if (!matching.length) {
+      if (lower === "browser" && options.browserStartUrl) {
+        let startUrl: URL;
+        try {
+          startUrl = new URL(options.browserStartUrl);
+        } catch {
+          throw new UsageError(
+            `The browser start URL is not valid: ${options.browserStartUrl}`,
+          );
+        }
+        if (
+          (startUrl.protocol === "http:" || startUrl.protocol === "https:") &&
+          !startUrl.username &&
+          !startUrl.password
+        ) {
+          const created = (await invoke("target.create", {
+            name: `Relay browser (${startUrl.host})`,
+            startUrl: startUrl.toString(),
+            headless: true,
+            profileRetention: "ephemeral",
+          })) as { target?: { id?: unknown; kind?: unknown } };
+          if (created.target?.kind === "browser" && typeof created.target.id === "string") {
+            return created.target.id;
+          }
+          throw new CliError(
+            "Relay created a browser target but returned an unexpected shape.",
+            ExitCode.server,
+            created,
+          );
+        }
+      }
       throw notFound(`No ${platform} device is connected. Run 'relay devices' to see what is.`);
     }
     const listed = matching

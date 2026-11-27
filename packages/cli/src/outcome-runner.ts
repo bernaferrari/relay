@@ -93,24 +93,33 @@ export async function resolveOutcomeNames(
     targetId?: string;
     laneId?: string;
   };
+  let testStartUrl: string | undefined;
   if (next.kind === "run-test" || next.kind === "repeat-test") {
     if (next.appMapId ?? config.app) {
       const app = await chooseApp(invokeOperation, next.appMapId, config);
+      const test = pickTest(app, next.testId!);
       next.appMapId = app.id;
-      next.testId = pickTest(app, next.testId!).id;
+      next.testId = test.id;
+      testStartUrl = test.startUrl;
     } else {
       const apps = await listApps(invokeOperation);
       if (apps.length) {
         const found = findTestInApps(apps, next.testId!);
         next.appMapId = found.app.id;
         next.testId = found.test.id;
+        testStartUrl = found.test.startUrl;
       }
     }
   } else if (next.kind === "record-test" && (next.appMapId ?? config.app)) {
     next.appMapId = (await chooseApp(invokeOperation, next.appMapId, config)).id;
   }
   const device = next.targetId ?? (next.laneId ? undefined : config.device);
-  if (device) next.targetId = await resolveDevice(invokeOperation, device);
+  const browserStartUrl = testStartUrl ?? config.url;
+  if (device) {
+    next.targetId = await resolveDevice(invokeOperation, device, {
+      ...(browserStartUrl ? { browserStartUrl } : {}),
+    });
+  }
   return next;
 }
 

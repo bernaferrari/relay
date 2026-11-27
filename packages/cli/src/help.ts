@@ -156,6 +156,7 @@ function renderRootHelp(): string {
   return `Relay — check that what your app must do still works, on websites, Android, and iOS
 
 Everyday:
+  relay init [--url <url>]                         Write .relay config and a starter smoke test
   relay new "<what should work>" --url <website>   Write and save a Test from a sentence
   relay apply <test.yaml | folder>                 Save test files (name, url, steps)
   relay show "<test>"                              Print a Test as its file
