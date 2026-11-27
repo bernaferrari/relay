@@ -46,6 +46,13 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Generate the Android video helper module
+        # @yume-chan/fetch-scrcpy-server publishes only a downloader script;
+        # its importable module is generated into node_modules. Typecheck has
+        # an ambient shim, but the desktop server bundle and Android video
+        # runtime need the real generated files.
+        run: pnpm --filter @relay/server android-video:prepare
+
       - name: Install pinned e2e web browser
         run: pnpm --filter @relay/e2e exec e2e-web install chromium
 
