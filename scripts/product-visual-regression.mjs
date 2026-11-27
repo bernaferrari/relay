@@ -15,6 +15,7 @@ import process from "node:process";
 import { prepareReportVideoFixture } from "./product-visual-video-fixture.mjs";
 import { assertTestFixtureActions } from "./product-visual-test-fixtures.mjs";
 import { comparePng, decodedVideoFrameRegion } from "./product-visual-comparison.mjs";
+import { visualFixtures, visualViewports } from "./product-visual-fixture-inventory.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 // Chrome's text rasterization differs between macOS and Linux even with the
@@ -43,48 +44,8 @@ const zoomAcceptanceFixtures = new Set([
   "settings-about",
 ]);
 
-const fixtures = [
-  { id: "home-empty", heading: "Tests" },
-  { id: "home-populated", heading: "Tests" },
-  { id: "apps-list", heading: "Apps" },
-  { id: "apps-error", heading: "Apps" },
-  { id: "prerecord-ready", heading: "New test" },
-  { id: "prerecord-connecting", heading: "New test" },
-  { id: "prerecord-failure", heading: "New test" },
-  {
-    id: "recording-review",
-    heading: "Review test",
-    recordingReview: true,
-  },
-  { id: "recording-active", heading: "Record test" },
-  { id: "test-detail", heading: "Complete checkout and confirm the order" },
-  { id: "runs-large", heading: "Runs" },
-  { id: "report-replay", heading: "Complete checkout" },
-  { id: "report-failed", heading: "Complete checkout" },
-  { id: "report-video", heading: "Complete checkout", video: true },
-  { id: "report-evidence", heading: "Complete checkout", evidenceMedia: true },
-  { id: "batch-completed", heading: "Checkout across saved accounts", batch: true },
-  { id: "suite-detail", heading: "Release smoke" },
-  { id: "environments-list", heading: "Devices" },
-  { id: "environment-detail", heading: "Checkout staging" },
-  { id: "devices", heading: "Devices" },
-  { id: "tests-library", heading: "Tests" },
-  { id: "map-overview", heading: "Checkout map" },
-  { id: "device-detail", heading: "Pixel 9 Pro XL" },
-  { id: "settings-general", heading: "General" },
-  { id: "settings-evidence", heading: "Privacy" },
-  { id: "settings-integrations", heading: "Integrations" },
-  { id: "settings-appearance", heading: "Appearance" },
-  { id: "settings-advanced", heading: "Advanced" },
-  { id: "settings-about", heading: "Help & about" },
-  { id: "not-found", heading: "This page is not available" },
-  { id: "route-error", heading: "This page couldn’t load" },
-];
-const viewports = [
-  { id: "compact", width: 800, height: 560 },
-  { id: "desktop", width: 1243, height: 838 },
-  { id: "dark", width: 1243, height: 838, colorScheme: "dark" },
-];
+const fixtures = visualFixtures;
+const viewports = visualViewports;
 
 function parseArgs(argv) {
   const options = { update: false, headed: false, filter: undefined };
