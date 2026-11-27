@@ -16,7 +16,7 @@ import { observedIosApplication } from "../recorded/recorded-entrance-proof.js";
 import { resolveIosLaunchBundleId } from "../ios/ios-app-launch.js";
 import { screenExpectation } from "../app-map/app-map-compiler.js";
 import { attachMappedInboundPrelude } from "../app-map/app-map-test-inbound-prelude.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 
 export type AuthoringRuntime = {
   captureFullPage?(

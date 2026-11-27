@@ -1,4 +1,4 @@
-import { cooperativeCheckpoint } from "../control.js";
+import { cooperativeCheckpoint } from "../execution/control.js";
 import {
   snapshot,
   rememberedTargetApplication,

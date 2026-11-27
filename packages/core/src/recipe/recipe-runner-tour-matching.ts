@@ -1,6 +1,6 @@
 import type { SnapshotNode } from "../device/device.js";
-import { tourFallbackOverlap } from "../tour.js";
-import type { TourStop } from "../tour.js";
+import { tourFallbackOverlap } from "../discovery/tour.js";
+import type { TourStop } from "../discovery/tour.js";
 
 export function leadingNavigationPoint(
   frame: { x: number; y: number; width: number; height: number } | undefined,

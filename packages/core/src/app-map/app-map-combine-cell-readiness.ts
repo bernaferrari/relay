@@ -26,8 +26,8 @@ import { resolveCombineCellCompanion } from "./app-map-native-companion-combine.
 import { assertRecordedCompanionForRun } from "./app-map-native-companion-run.js";
 import { inheritSavedRuntimeProfileId } from "../browser/browser-case-profile-target.js";
 import { compileOptionsForVisualSurface } from "../combine/combine-visual-surface.js";
-import { loadFrozenRawAccessibilityEvidence } from "../frozen/frozen-raw-accessibility.js";
-import { compileAppMapTest } from "../map-work.js";
+import { loadFrozenRawAccessibilityEvidence } from "../offline/frozen-raw-accessibility.js";
+import { compileAppMapTest } from "./map-work.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";
 import { targetDescription } from "../offline/offline-test-preflight-selector-utils.js";
 

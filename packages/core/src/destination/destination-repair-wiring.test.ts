@@ -89,7 +89,7 @@ async function startFakeAgentDeviceDaemon(input: {
       } catch {
         parsed = {};
       }
-      const command = String(parsed.params?.command ?? "");
+      const command = typeof parsed.params?.command === "string" ? parsed.params.command : "";
       input.commands.push(command);
       if (
         parsed.jsonrpc !== "2.0" ||
@@ -399,30 +399,31 @@ it(
       };
       assert.notEqual(recipe.steps[0]?.fingerprint, observeScreenIdentity(nodes).fingerprint);
 
-      const queued = await import("../operation-context.js").then(({ runWithOperationContext }) =>
-        runWithOperationContext(
-          {
-            schemaVersion: 1,
-            actorId: "agent:runner",
-            actorKind: "agent",
-            organizationId: "org",
-            projectId: "project",
-            operationId: "job.start",
-            requestId: randomUUID(),
-            idempotencyKey: randomUUID(),
-            issuedAt: Date.now(),
-          },
-          () =>
-            enqueueJob({
-              recipe: recipe.id,
-              serial: "SMOKE-1",
-              platform: "ios",
+      const queued = await import("../execution/operation-context.js").then(
+        ({ runWithOperationContext }) =>
+          runWithOperationContext(
+            {
+              schemaVersion: 1,
+              actorId: "agent:runner",
+              actorKind: "agent",
+              organizationId: "org",
               projectId: "project",
-              ownerId: "agent:runner",
-              recipeSnapshot: recipe,
-              recipeGraph: {},
-            }),
-        ),
+              operationId: "job.start",
+              requestId: randomUUID(),
+              idempotencyKey: randomUUID(),
+              issuedAt: Date.now(),
+            },
+            () =>
+              enqueueJob({
+                recipe: recipe.id,
+                serial: "SMOKE-1",
+                platform: "ios",
+                projectId: "project",
+                ownerId: "agent:runner",
+                recipeSnapshot: recipe,
+                recipeGraph: {},
+              }),
+          ),
       );
       queuedId = queued.id;
       const job = await withDeadline(

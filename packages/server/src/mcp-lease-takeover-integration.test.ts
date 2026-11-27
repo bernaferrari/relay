@@ -120,8 +120,8 @@ test("MCP leaves lease takeover to the canonical workspace operation", async () 
     const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];
     const invoker: OperationInvoker = {
       async invoke(operationId, input, options) {
-        calls.push({ operationId, input });
-        return agent.invoke(operationId, input as never, options);
+        calls.push({ operationId: operationId as OperationId, input });
+        return agent.invoke(operationId as never, input as never, options);
       },
     };
     mcp = await connectMcp(invoker);

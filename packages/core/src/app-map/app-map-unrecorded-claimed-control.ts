@@ -3,7 +3,7 @@ import {
   recipeRecordedLabels,
   type AppMapScenarioTest,
 } from "@relay/protocol";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 
 function recipeGraphLabels(graph: Readonly<Record<string, Recipe>>): string[] {
   return Object.values(graph).flatMap((recipe) => recipeRecordedLabels(recipe.steps));

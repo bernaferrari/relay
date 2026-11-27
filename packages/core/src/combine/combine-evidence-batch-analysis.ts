@@ -11,7 +11,7 @@ import { analyzeCombineEvidence } from "./combine-evidence-analysis.js";
 import type { CombineEvidenceScreen, CombineEvidenceSession } from "./combine-evidence-session.js";
 import { combineEvidenceControls } from "./combine-evidence-screen-analysis.js";
 import type { SnapshotNode } from "../device/device.js";
-import type { FrameObservation } from "../frame-observation.js";
+import type { FrameObservation } from "../device/frame-observation.js";
 
 export type CombineEvidenceCapture = {
   locale: string;

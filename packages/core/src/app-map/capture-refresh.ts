@@ -73,7 +73,10 @@ export function settleCaptureRefreshProposals(map: AppMap, context: AppMapMutati
     const change = proposal.changes[0]!;
     if (change.kind !== "screen.update") return;
     const variants = change.input.upsertVariants ?? [];
-    const key = `${change.screenId}:${variants.map((variant) => variant.id).sort()}`;
+    const key = `${change.screenId}:${variants
+      .map((variant) => variant.id)
+      .sort((a, b) => a.localeCompare(b))
+      .join(",")}`;
     const step = nextContext(next, context, String(index));
     const newer =
       Boolean(next.screens[change.screenId]) &&

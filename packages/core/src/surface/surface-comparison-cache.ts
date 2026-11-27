@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import type { RecipeStep } from "../recipes.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { RecipeStep } from "../recipe/recipes.js";
+import type { PersistedRun } from "../run/run-store.js";
 import type { TestJob } from "../session/session-contract.js";
 
 type CaptureSurfaceStep = Extract<RecipeStep, { kind: "capture-surface" }>;

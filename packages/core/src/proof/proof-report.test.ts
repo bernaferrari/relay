@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ProofReport } from "@relay/protocol";
 import { buildProofReport, proofVerdict, renderProofReportMarkdown } from "./proof-report.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import type { TraceStep } from "../trace/trace.js";
 
 function run(overrides: Partial<PersistedRun>): PersistedRun {

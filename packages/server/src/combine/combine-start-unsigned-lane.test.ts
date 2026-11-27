@@ -217,10 +217,12 @@ test("distinct unsigned Lanes admit the same Plan; the same Lane still 409s", as
     releaseFirstControl();
     const results = await Promise.all([first, second]);
     const campaigns = results.map((result) => result.campaign as CombineCampaign);
-    assert.deepEqual(campaigns.map((campaign) => campaign.execution?.unsignedLaneId).sort(), [
-      "shop-daily",
-      "shop-daily-b",
-    ]);
+    assert.deepEqual(
+      campaigns
+        .map((campaign) => campaign.execution?.unsignedLaneId)
+        .sort((a, b) => String(a ?? "").localeCompare(String(b ?? ""))),
+      ["shop-daily", "shop-daily-b"],
+    );
     assert.equal(new Set(campaigns.map((campaign) => campaign.id)).size, 2);
     await assert.rejects(
       startDaily(client, "shop-daily"),

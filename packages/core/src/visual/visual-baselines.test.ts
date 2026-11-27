@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
 import { CAPTURE_REVIEW_DEST_PHASE, CAPTURE_REVIEW_LEFTOVER_PHASE } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import {
   approveVisualBaseline,
   compareVisualBaseline,
@@ -19,7 +19,8 @@ import {
 } from "./visual-baselines.js";
 
 function png(variant: string): Buffer {
-  const shade = [...variant].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 256;
+  const shade =
+    variant.split("").reduce((sum, character) => sum + character.charCodeAt(0), 0) % 256;
   const image = new PNG({ width: 4, height: 4 });
   for (let offset = 0; offset < image.data.length; offset += 4) {
     image.data[offset] = shade;

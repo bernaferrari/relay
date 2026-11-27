@@ -2,7 +2,7 @@ import { parseAppMapTestExecutionIntentArtifact } from "../app-map/app-map-test-
 import type { AndroidPacketCaptureProvenance, EvidenceConsentGrant } from "@relay/protocol";
 import { join } from "node:path";
 import { hasSensitiveEvidenceConsent } from "../evidence/evidence-policy.js";
-import { ensureRunDir } from "../runs/runs.js";
+import { ensureRunDir } from "./run-store.js";
 import type { TestJob } from "../session/session.js";
 import type { AndroidEmulatorNetworkCaptureResult } from "../android/android-emulator-network-capture.js";
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createAgentDeviceClient } from "agent-device";
-import { runWithJobControl } from "../control.js";
+import { runWithJobControl } from "../execution/control.js";
 import { bindNativeDeviceMutations } from "./device-mutation-adapter.js";
 import {
   IosMutationOutcomeUnknownError,

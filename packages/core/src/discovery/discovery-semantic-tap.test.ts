@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { profileHeaderAffordances, semanticTargetAtPoint } from "./discovery-semantic-tap.js";
-import { registerGrokDiscoveryTestProfile } from "./discovery-test-profile.js";
+import { registerGrokDiscoveryTestProfile } from "../fixtures/discovery-test-profile.js";
 
 registerGrokDiscoveryTestProfile();
 

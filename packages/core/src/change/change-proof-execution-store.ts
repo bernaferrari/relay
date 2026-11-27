@@ -24,7 +24,7 @@ import {
   ChangeProofExecutionError,
   type ChangeProofExecutionRecord,
 } from "./change-proof-execution-types.js";
-import { publish } from "../events.js";
+import { publish } from "../collaboration/events.js";
 import type { ChangeProofRunCase } from "./change-proof-live-run.js";
 
 export function nonEmpty(value: unknown, field: string): string {

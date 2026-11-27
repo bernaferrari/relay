@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GROK_WEB_APP_TEST_POLICY } from "../app/app-identity-test-policies.js";
+import { GROK_WEB_APP_TEST_POLICY } from "../fixtures/app-identity-test-policies.js";
 import type { SnapshotNode } from "../device/device.js";
 import { conversationHistoryLabels, isConversationHistoryNode } from "./screen-identity-history.js";
 import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";

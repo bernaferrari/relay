@@ -66,7 +66,7 @@ function parseGoalSessionResponse<T extends GoalSessionRecord | GoalSessionResul
   return value as T;
 }
 
-function parseGoalExplorationResponse<T extends GoalExplorationRecord | GoalExplorationResult>(
+function parseGoalExplorationResponse<T extends GoalExplorationRecord>(
   value: unknown,
   label: string,
 ): T {

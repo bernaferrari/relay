@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, Connection } from "@relay/protocol";
 import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 
 const at = 1;
 const scope = { organizationId: "org", projectId: "project", appMapId: "settings-map" };

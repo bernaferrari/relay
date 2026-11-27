@@ -8,7 +8,7 @@ import {
   estimateCampaignDuration,
   estimateCampaignDurationForCohort,
 } from "./campaign-duration-estimate.js";
-import { preflightLocalCampaignCapacity } from "../local-campaign-capacity-preflight.js";
+import { preflightLocalCampaignCapacity } from "./local-campaign-capacity-preflight.js";
 import type { ListedDevice } from "../workspace/workspace-devices.js";
 
 const NOW = 1_000_000;

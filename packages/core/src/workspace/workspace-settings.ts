@@ -8,7 +8,7 @@ export function workspaceSettingFile(relativePath: string): string {
   return join(root, ".relay", relativePath);
 }
 
-export async function readWorkspaceSetting(relativePath: string): Promise<unknown | null> {
+export async function readWorkspaceSetting(relativePath: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(workspaceSettingFile(relativePath), "utf8")) as unknown;
   } catch (error) {

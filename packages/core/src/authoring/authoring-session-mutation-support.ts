@@ -3,8 +3,8 @@ import type {
   AuthoringSessionState,
   AuthoringTakeRevision,
 } from "@relay/protocol";
-import { now } from "../events.js";
-import { currentOperationContext, type OperationContext } from "../operation-context.js";
+import { now } from "../collaboration/events.js";
+import { currentOperationContext, type OperationContext } from "../execution/operation-context.js";
 import { currentRevision } from "./authoring-session-screen-proof.js";
 import { AuthoringStateError } from "./authoring-session-state.js";
 

@@ -8,7 +8,7 @@ import type {
 import { frozenRawAccessibilityTargetProfiles } from "./app-map-test-raw-accessibility.js";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import { resolveNativeRouteCompanions } from "./app-map-extension-policy.js";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "./map-work.js";
 
 export type AppMapTargetProfileErrorCode =
   | "TARGET_PROFILE_NOT_SAVED"

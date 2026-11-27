@@ -1,10 +1,10 @@
 import { snapshot, type Device, type SnapshotNode } from "../device/device.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import { isTerminalIosMutationError } from "../ios/ios-mutation-policy.js";
-import { isTerminalInputError } from "../input-not-dispatched.js";
+import { isTerminalInputError } from "../device/input-not-dispatched.js";
 import type { FreshDeviceObservation, RecipeStepContext } from "./recipe-runner-context.js";
-import type { RecipeStep } from "../recipes.js";
-import { isTransientError } from "../retry.js";
+import type { RecipeStep } from "./recipes.js";
+import { isTransientError } from "../execution/retry.js";
 import type { ScreenshotPayload } from "../workspace/workspace-capture.js";
 
 const CAUSE_CODES = {

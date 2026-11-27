@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "./map-work.js";
 
 const at = 1;
 const scope = { organizationId: "org", projectId: "project", appMapId: "grok-web" };

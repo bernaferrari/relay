@@ -1,5 +1,5 @@
 import { currentRunMediaFile } from "./recipe-media-files.js";
-import { resolveManagedFixtureFile } from "../managed-fixtures.js";
+import { resolveManagedFixtureFile } from "../workspace/managed-fixtures.js";
 import { readFile, copyFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -16,17 +16,17 @@ import {
   getExecutingJobId,
   raceCancel,
   throwIfCancelled,
-} from "../control.js";
+} from "../execution/control.js";
 import { runTargetMutation } from "../target/target-control.js";
 import { pressKey, sleep, type Device } from "../device/device.js";
 import { openAppAndVerifyForeground } from "./recipe-runner-app.js";
 import { captureScreenshot, cleanupScreenshot } from "../workspace/workspace-capture.js";
 import { evaluateVisual } from "../evaluation/evaluation-visual.js";
 import { formatEvaluationCost } from "../evaluation/evaluation.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { applyBrowserOffline, uploadBrowserFile } from "../browser/browser-live-controls.js";
-import { describeTarget } from "../recipes.js";
+import { describeTarget } from "./recipes.js";
 
 function logEvaluation(
   log: (line: string) => void,

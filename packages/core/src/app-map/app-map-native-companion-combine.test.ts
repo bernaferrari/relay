@@ -11,7 +11,7 @@ import { preflightAppMapCombine } from "./app-map-combine-preflight.js";
 import { localExecutionTargetRef } from "./app-map-combine-cell-target-binding.js";
 import { stagePreparedAppMapCombineCells } from "./app-map-combine-cell-run.js";
 import { runSummaryLineage } from "../run/run-matrix-case.js";
-import { runWithOperationContext } from "../operation-context.js";
+import { runWithOperationContext } from "../execution/operation-context.js";
 
 const at = 1;
 

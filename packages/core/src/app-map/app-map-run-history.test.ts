@@ -12,7 +12,7 @@ import {
   planScreenSteps,
   projectPersistedAppMapRun,
 } from "./app-map-run-history.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 function testEntity(updatedAt = 10): AppMapScenarioTest {
   return {

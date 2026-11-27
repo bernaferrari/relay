@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PNG } from "pngjs";
 import type { SnapshotNode } from "../device/device.js";
-import { GROK_WEB_APP_TEST_POLICY } from "../app/app-identity-test-policies.js";
+import { GROK_WEB_APP_TEST_POLICY } from "../fixtures/app-identity-test-policies.js";
 import {
   compareScreenIdentity,
   observeScreenIdentity,

@@ -3,7 +3,7 @@ import type {
   EvidenceCollectionPolicy,
   SensitiveEvidenceChannel,
 } from "@relay/protocol";
-import { getRedactionPolicy, visualEvidenceAllowed } from "../redaction.js";
+import { getRedactionPolicy, visualEvidenceAllowed } from "./redaction.js";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "../workspace/workspace-settings.js";
 
 const EVIDENCE_POLICY_FILE = "evidence.json";

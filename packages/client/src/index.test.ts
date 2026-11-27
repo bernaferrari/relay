@@ -3,6 +3,13 @@ import test from "node:test";
 import { operationDefinition, type HealthSummary, type OperationOutput } from "@relay/protocol";
 import { ApiError, parseRegisteredOperationOutput, RelayClient } from "./index.js";
 
+function requestUrl(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input instanceof Request) return input.url;
+  throw new TypeError("Expected a fetch input");
+}
+
 const health = {
   ok: true,
   product: "relay",
@@ -140,7 +147,7 @@ test("invoke derives path, query, and method from the operation registry", async
     {
       fetch: async (input, init) => {
         requests.push(new Request(input, init));
-        if (String(input).includes("/jobs/abc")) {
+        if (requestUrl(input).includes("/jobs/abc")) {
           return new Response(
             JSON.stringify({
               job: {
@@ -154,7 +161,7 @@ test("invoke derives path, query, and method from the operation registry", async
             { status: 200 },
           );
         }
-        if (String(input).includes("/app-maps/checkout/tests/smoke/compile")) {
+        if (requestUrl(input).includes("/app-maps/checkout/tests/smoke/compile")) {
           const compiled = {
             plan: {
               schemaVersion: 1,
@@ -696,7 +703,7 @@ test("app launch has a dedicated acknowledgement budget while ordinary requests 
   const fetcher: typeof fetch = async (input) =>
     new Response(
       JSON.stringify(
-        String(input).endsWith("/device/app/launch")
+        requestUrl(input).endsWith("/device/app/launch")
           ? {
               launched: {
                 serial: "emulator-5554",
@@ -999,8 +1006,8 @@ test("goal façade covers inspection, reproduction, exploration, and promotion r
     },
     {
       fetch: async (input) => {
-        paths.push(new URL(String(input)).pathname);
-        const path = new URL(String(input)).pathname;
+        paths.push(new URL(requestUrl(input)).pathname);
+        const path = new URL(requestUrl(input)).pathname;
         if (path.startsWith("/explore")) {
           return new Response(
             JSON.stringify({

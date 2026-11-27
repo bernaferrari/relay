@@ -1,5 +1,5 @@
 import type { AuthoringSession } from "@relay/protocol";
-import { publish } from "../events.js";
+import { publish } from "../collaboration/events.js";
 import { transition } from "./authoring-session-state.js";
 
 export function publishAuthoringSessionEvent(session: AuthoringSession): void {

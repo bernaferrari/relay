@@ -1,6 +1,6 @@
 import type { ScreenIdentityObservation } from "@relay/protocol";
 import type { SnapshotNode } from "../device/device.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "../session/session.js";
 import {
   compareScreenIdentity,

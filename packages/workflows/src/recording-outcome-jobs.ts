@@ -1,5 +1,5 @@
 import type { AuthorTestSnapshot, DebugBugOutcome, DebugBugOutcomeIntent } from "./types.js";
-import { targetExecutionReadiness } from "@relay/core/target-execution-readiness";
+import { targetExecutionReadiness } from "@relay/protocol/target/target-execution-readiness";
 import { CanonicalAuthoringWorkflow } from "./authoring-workflow.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
 import { recordingPathContext } from "./recording-path-context.js";

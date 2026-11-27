@@ -1,4 +1,4 @@
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "./run-store.js";
 
 export function summarizeRecipeStability(runs: readonly PersistedRun[]) {
   const passed = runs.filter(

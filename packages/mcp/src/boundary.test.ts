@@ -28,4 +28,8 @@ test("MCP manifest does not depend on Relay core or server", async () => {
 
   assert.equal(dependencies["@relay/core"], undefined);
   assert.equal(dependencies["@relay/server"], undefined);
+  assert.deepEqual(
+    Object.keys(manifest.dependencies ?? {}).filter((name) => name.startsWith("@relay/")),
+    [],
+  );
 });

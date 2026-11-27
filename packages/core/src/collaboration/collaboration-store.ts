@@ -18,7 +18,7 @@ import type {
   TestData,
 } from "@relay/protocol";
 import { loadStoredAppMap } from "../app-map/stored-map-repair.js";
-import { notifyControlWrite, runControlWrite, type DeviceEvent } from "../events.js";
+import { notifyControlWrite, runControlWrite, type DeviceEvent } from "./events.js";
 import { findWorkspaceRoot } from "../workspace/workspace-root.js";
 import { join } from "node:path";
 import {

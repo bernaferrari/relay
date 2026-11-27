@@ -1,1 +1,0 @@
-const e=[`app`,`device`,`system`];function t(t){return e.some(e=>e===t)}function n(e){return e===`device`||e===`system`}export{t as n,n as r,e as t};

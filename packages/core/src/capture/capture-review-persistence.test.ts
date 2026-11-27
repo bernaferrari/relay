@@ -11,7 +11,7 @@ import {
   captureReviewQueueForRun,
   reviewPersistedCapture,
 } from "./capture-review.js";
-import { persistRun, readCompletedPersistedRun } from "../runs/runs.js";
+import { persistRun, readCompletedPersistedRun } from "../run/run-store.js";
 import type { TestJob } from "../session/session.js";
 
 function screenshot(): Buffer {

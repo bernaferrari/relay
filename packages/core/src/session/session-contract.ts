@@ -12,8 +12,8 @@ import type {
   SourceRevision,
 } from "@relay/protocol";
 import type { DevicePlatform } from "../device/device.js";
-import type { OperationContext } from "../operation-context.js";
-import type { HumanCheckpointReason, Recipe, StepTarget } from "../recipes.js";
+import type { OperationContext } from "../execution/operation-context.js";
+import type { HumanCheckpointReason, Recipe, StepTarget } from "../recipe/recipes.js";
 import type { TargetContext } from "../target/target-context.js";
 import type { Glyph, TraceFrameRef, TraceStep, StepKind, StepTone } from "../trace/trace.js";
 

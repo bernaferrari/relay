@@ -11,7 +11,7 @@ import {
   JobControlOwnershipError,
   requestCancel,
   runWithJobControl,
-} from "../control.js";
+} from "../execution/control.js";
 import { rememberTargetApplication } from "../device/device.js";
 import { setIosAppOpenRuntimeForTests } from "./ios-app-open.js";
 import {

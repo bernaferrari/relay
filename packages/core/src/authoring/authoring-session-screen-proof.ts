@@ -12,7 +12,7 @@ import {
 } from "@relay/protocol";
 import { readAppMap } from "../collaboration/collaboration.js";
 import type { SnapshotNode } from "../device/device.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
 import { AuthoringStateError } from "./authoring-session-state.js";
 import {

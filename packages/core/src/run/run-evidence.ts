@@ -7,11 +7,11 @@ import type {
   EvidenceManifest,
 } from "@relay/protocol";
 import { base, recordDeviceVideo, type Device } from "../device/device.js";
-import { now } from "../events.js";
-import { getRedactionPolicy, redactValue, visualEvidenceAllowed } from "../redaction.js";
+import { now } from "../collaboration/events.js";
+import { getRedactionPolicy, redactValue, visualEvidenceAllowed } from "../evidence/redaction.js";
 import { hasSensitiveEvidenceConsent } from "../evidence/evidence-policy.js";
 import { runVideoAllowed } from "./run-video-policy.js";
-import { ensureRunDir, type RunArtifact } from "../runs/runs.js";
+import { ensureRunDir, type RunArtifact } from "./run-store.js";
 import type { TestJob } from "../session/session.js";
 import { stopBrowserProofEvidence } from "./run-evidence-browser.js";
 import { materializeCaptureArtifact } from "./run-evidence-artifacts.js";

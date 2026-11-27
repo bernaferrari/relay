@@ -118,7 +118,11 @@ export async function verifyIosMutationTerminalityRegistry(
     }
     if (recovery.error !== undefined) {
       const message =
-        recovery.error instanceof Error ? recovery.error.message : String(recovery.error);
+        recovery.error instanceof Error
+          ? recovery.error.message
+          : typeof recovery.error === "string"
+            ? recovery.error
+            : (JSON.stringify(recovery.error) ?? "Unknown error");
       throw new Error(
         `${surface.id}: ordinary recovery unexpectedly retained an error: ${message}`,
       );

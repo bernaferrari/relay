@@ -11,6 +11,12 @@ const object = (value: unknown): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : {};
 const text = (value: unknown) => (typeof value === "string" ? value : "");
+const integer = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : undefined;
+const integerText = (value: unknown): string => {
+  const number = integer(value);
+  return number === undefined ? "" : String(number);
+};
 const items = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.map(object) : [];
 let selection: PanelSelection = {};
@@ -88,7 +94,9 @@ function renderCatalog(state: Record<string, unknown>) {
     row.className = "test";
     row.textContent = text(item.name);
     const detail = document.createElement("p");
-    detail.textContent = `${item.stepCount} ${item.stepCount === 1 ? "step" : "steps"}`;
+    const stepCount = integer(item.stepCount);
+    detail.textContent =
+      stepCount === undefined ? "" : `${stepCount} ${stepCount === 1 ? "step" : "steps"}`;
     row.append(detail);
     tests.append(row);
   }
@@ -135,17 +143,19 @@ function renderRun(
     selected.id ? `Run ${text(selected.id)}` : "",
     text(presentation.outcome),
     sourceTest.testId
-      ? `Test ${text(sourceTest.testId)} · App Map revision ${sourceTest.appMapRevision}${sourceTest.testRevision !== undefined ? ` · Test revision ${sourceTest.testRevision}` : ""}`
+      ? `Test ${text(sourceTest.testId)} · App Map revision ${integerText(sourceTest.appMapRevision)}${sourceTest.testRevision !== undefined ? ` · Test revision ${integerText(sourceTest.testRevision)}` : ""}`
       : "",
-    checks.totalCount
-      ? `Explicit checks: ${checks.passed} passed · ${checks.failed} failed · ${checks.needsReview} need review${checks.truncated ? ` · showing ${items(checks.items).length} of ${checks.totalCount}` : ""}`
+    integer(checks.totalCount)
+      ? `Explicit checks: ${integerText(checks.passed)} passed · ${integerText(checks.failed)} failed · ${integerText(checks.needsReview)} need review${checks.truncated ? ` · showing ${items(checks.items).length} of ${integerText(checks.totalCount)}` : ""}`
       : "No explicit check results retained",
     text(selected.coverageLine),
     review.status ? `Run review: ${text(review.status)} · ${text(review.reason)}` : "",
     revision.sha
       ? `Revision ${text(revision.sha)}${revision.buildId ? ` · Build ${text(revision.buildId)}` : ""}`
       : "Revision not recorded",
-    selected.attempts ? `${selected.attempts} attempt${selected.attempts === 1 ? "" : "s"}` : "",
+    integer(selected.attempts)
+      ? `${integerText(selected.attempts)} attempt${integer(selected.attempts) === 1 ? "" : "s"}`
+      : "",
     selected.retryOf ? `Retry of Run ${text(selected.retryOf)}` : "",
     text(selected.repair),
     ...items(selected.history).map(
@@ -153,7 +163,7 @@ function renderRun(
         `${text(item.title)} · ${text(item.status)}${item.heal ? ` · ${text(item.heal)}` : ""}`,
     ),
     Number(selected.historyCount) > items(selected.history).length
-      ? `Showing ${items(selected.history).length} of ${selected.historyCount} failure and repair entries`
+      ? `Showing ${items(selected.history).length} of ${integerText(selected.historyCount)} failure and repair entries`
       : "",
   ];
   for (const line of lines.filter(Boolean)) {
@@ -176,7 +186,7 @@ function renderRun(
       .join(" · ");
     const observed = object(entry.observed);
     const captureContext = [
-      entry.attempt !== undefined ? `Attempt ${entry.attempt}` : "",
+      entry.attempt !== undefined ? `Attempt ${integerText(entry.attempt)}` : "",
       entry.phase ? text(entry.phase) : "",
       text(observed.laneId),
       text(observed.profileId),

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { resetControlDatabaseCache } from "../collaboration/collaboration-db.js";
-import { subscribe, type DeviceEvent } from "../events.js";
+import { subscribe, type DeviceEvent } from "../collaboration/events.js";
 import {
   createDurableWorkflow,
   findDurableWorkflowByResource,

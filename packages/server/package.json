@@ -19,6 +19,7 @@
     "@relay/core": "workspace:*",
     "@relay/e2e": "workspace:*",
     "@relay/protocol": "workspace:*",
+    "@relay/workflow-runners": "workspace:*",
     "@relay/workflows": "workspace:*",
     "@yume-chan/adb": "2.6.4",
     "@yume-chan/adb-scrcpy": "2.3.2",

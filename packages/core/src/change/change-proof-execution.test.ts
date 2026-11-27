@@ -27,7 +27,7 @@ import { withControlStore } from "../collaboration/collaboration-store.js";
 import { listChangeProofPublicationOutbox } from "./change-proof-publication-outbox.js";
 import { canonicalSha256 } from "../canonical-json.js";
 import { normalizeRecord } from "./change-proof-execution-store.js";
-import { subscribe } from "../events.js";
+import { subscribe } from "../collaboration/events.js";
 
 const scope = { organizationId: "acme", projectId: "relay" } as const;
 const baseSha = "1".repeat(40);

@@ -1,4 +1,4 @@
-import { InputNotDispatchedError, isTerminalInputError } from "../input-not-dispatched.js";
+import { InputNotDispatchedError, isTerminalInputError } from "../device/input-not-dispatched.js";
 import type { Device } from "../device/device.js";
 import { createHash } from "node:crypto";
 import { resolveStepPoint, type StepPoint } from "@relay/protocol";
@@ -25,10 +25,10 @@ import {
 import { identifierPresentViaLiveIosRunnerListener } from "../ios/ios-runner-listener-command.js";
 import { iosSemanticTargetPresent } from "../ios/ios-target-presence.js";
 import { resolveNamedControlOutcome } from "../device/device-target-resolution.js";
-import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "../control.js";
+import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "../execution/control.js";
 import { TargetControlReservedError } from "../target/target-control.js";
-import { now } from "../events.js";
-import { describeTarget, type RecipeStep, type StepTarget } from "../recipes.js";
+import { now } from "../collaboration/events.js";
+import { describeTarget, type RecipeStep, type StepTarget } from "./recipes.js";
 import {
   expectedScreenFingerprints,
   handoffShellIdentityMatch,

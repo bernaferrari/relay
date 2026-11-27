@@ -1,8 +1,8 @@
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import type { Device } from "../device/device.js";
-import { cooperativeCheckpoint, JobCancelledError } from "../control.js";
-import { readRecipe, describeRecipeStep, glyphsForStep } from "../recipes.js";
-import { applyCoverageOutcomeToTrace } from "../coverage-step-outcome.js";
+import { cooperativeCheckpoint, JobCancelledError } from "../execution/control.js";
+import { readRecipe, describeRecipeStep, glyphsForStep } from "../recipe/recipes.js";
+import { applyCoverageOutcomeToTrace } from "../recipe/coverage-step-outcome.js";
 import { resolveRecipeStep, runRecipeStep } from "../recipe/recipe-runner.js";
 import type { RecipeRuntimeState, RecipeStepContext } from "../recipe/recipe-runner-context.js";
 import { finalizeDeferredChecksForJob } from "./session-campaign-finalization.js";
@@ -51,7 +51,7 @@ export async function runRecipeSteps(
   const runtime: RecipeRuntimeState = destEndRecipeIds?.length ? { destEndRecipeIds } : {};
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
   const execute = async (
-    step: import("../recipes.js").RecipeStep,
+    step: import("../recipe/recipes.js").RecipeStep,
     stepIndex: number,
     owner: typeof recipe,
     context: RecipeStepContext,

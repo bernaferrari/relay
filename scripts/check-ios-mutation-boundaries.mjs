@@ -20,6 +20,7 @@ export const rawDeviceMutationBoundaryPaths = new Set([
   "packages/core/src/device/device-dispatch.ts",
   "packages/core/src/device/device-text-entry.ts",
   "packages/core/src/device/device-clipboard.ts",
+  "packages/core/src/device/device-system-actions.ts",
   // Canonical SDK-client construction (0.21.x method rebinding + facade).
   // It builds the transport device.ts dispatches through; no workflow code
   // may import it.
@@ -43,7 +44,7 @@ export const privateDeviceCapabilityPaths = new Set([
 ]);
 
 const rawSdkBoundaryPaths = new Set([
-  "packages/core/src/control.ts",
+  "packages/core/src/execution/control.ts",
   "packages/core/src/device/device-capabilities.ts",
   "packages/core/src/device/device-client-bindings.ts",
   "packages/core/src/device/device-mutation-adapter.ts",
@@ -66,6 +67,7 @@ const internalDeviceModuleOwners = new Map([
       "packages/core/src/ios/ios-runner-listener-command.ts",
       "packages/core/src/device/device-android-text.ts",
       "packages/core/src/device/device-clipboard.ts",
+      "packages/core/src/device/device-system-actions.ts",
     ]),
   ],
   [

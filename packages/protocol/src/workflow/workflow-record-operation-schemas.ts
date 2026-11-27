@@ -5,6 +5,9 @@ import {
   authoringRecordingEdit,
   destination,
 } from "../operation/operation-schema-primitives.js";
+import { authoringSessionSchema } from "../authoring/authoring-session-schema.js";
+import { combineCampaignSchema } from "../combine/combine-output-schemas.js";
+import { executionJobSchema } from "../execution/execution-target-schemas.js";
 
 const identifier = z.string().trim().min(1).max(256);
 const workflowJson: z.ZodType<WorkflowJsonValue> = z.lazy(() =>
@@ -72,9 +75,9 @@ const workflow = z.object({ record, audit: z.array(auditEvent) }).strict();
 const output = z
   .object({
     workflow,
-    job: z.record(z.string(), z.unknown()).optional(),
-    session: z.record(z.string(), z.unknown()).optional(),
-    campaign: z.record(z.string(), z.unknown()).optional(),
+    job: executionJobSchema.optional(),
+    session: authoringSessionSchema.optional(),
+    campaign: combineCampaignSchema.optional(),
   })
   .strict();
 

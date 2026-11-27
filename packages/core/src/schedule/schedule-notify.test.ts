@@ -5,6 +5,15 @@ import { join } from "node:path";
 import test from "node:test";
 import { recordScheduleNotification } from "./schedule-notify.js";
 
+function requestBodyText(init: unknown): string {
+  const body =
+    init && typeof init === "object" && "body" in init
+      ? (init as { body?: unknown }).body
+      : undefined;
+  if (typeof body !== "string") throw new TypeError("fetch body must be a JSON string");
+  return body;
+}
+
 test("Plan schedule notices persist locally and POST the webhook", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-schedule-notify-"));
   const cwd = process.cwd();
@@ -15,7 +24,7 @@ test("Plan schedule notices persist locally and POST the webhook", async () => {
   process.env.RELAY_NOTIFY_WEBHOOK = "https://example.test/notify";
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (_url: unknown, init?: { body?: unknown }) => {
-    posted.push(JSON.parse(String(init?.body ?? "{}")));
+    posted.push(JSON.parse(init?.body === undefined ? "{}" : requestBodyText(init)));
     return new Response("ok", { status: 200 });
   }) as typeof fetch;
   try {
@@ -45,7 +54,7 @@ test("Plan schedule notices persist locally and POST the webhook", async () => {
 
 test("a webhook that never responds times out and reports delivery failure", async () => {
   const { createServer } = await import("node:http");
-  const { subscribe } = await import("../events.js");
+  const { subscribe } = await import("../collaboration/events.js");
   const server = createServer(() => {});
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();

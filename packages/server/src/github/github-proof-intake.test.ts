@@ -89,6 +89,16 @@ function runtime(overrides: Partial<GitHubProofIntakeRuntime> = {}) {
   return { value, calls, deliveries };
 }
 
+function requestUrlText(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input && typeof input === "object" && "url" in input) {
+    const url = (input as { url?: unknown }).url;
+    if (typeof url === "string") return url;
+  }
+  throw new TypeError("fetch input must be a string, URL, or Request");
+}
+
 test("rejects a missing, malformed, or mismatched signature before parsing payload", () => {
   const value = body("opened");
   for (const signature of [undefined, "sha256=bad", `sha256=${"0".repeat(64)}`]) {
@@ -140,7 +150,7 @@ test("GitHub API verification binds the configured base repository and exact hea
     },
     fetchImpl: async (request, init) => {
       requests.push({
-        url: String(request),
+        url: requestUrlText(request),
         authorization: new Headers(init?.headers).get("authorization"),
       });
       return Response.json({

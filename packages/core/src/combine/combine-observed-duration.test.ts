@@ -8,7 +8,7 @@ import {
   quoteObservedCombinePackDuration,
   quoteObservedPackDuration,
 } from "./combine-observed-duration.js";
-import { readPersistedRuns } from "../runs/runs.js";
+import { readPersistedRuns } from "../run/run-store.js";
 
 test("one completed pack is an observed sample, not a p95", () => {
   const quote = quoteObservedPackDuration({

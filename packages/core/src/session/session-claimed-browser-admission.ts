@@ -3,7 +3,10 @@ import {
   assertClaimedBrowserJobStartAllowed,
   assertClaimedBrowserJobStartAllowedSync,
 } from "../browser/browser-auth-health.js";
-import { currentOperationContext, runWithOperationContext } from "../operation-context.js";
+import {
+  currentOperationContext,
+  runWithOperationContext,
+} from "../execution/operation-context.js";
 import type { SessionBatchInput } from "./session-batch-admission.js";
 import type { TestJob } from "./session-contract.js";
 

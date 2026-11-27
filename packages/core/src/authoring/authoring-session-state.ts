@@ -1,6 +1,6 @@
 /** Explicit, persisted state transitions for an Authoring Session. */
 import type { AuthoringSession, AuthoringSessionState } from "@relay/protocol";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 
 export class AuthoringStateError extends Error {
   readonly status = 409;

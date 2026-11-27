@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { unknownText, unknownErrorText } from "./unknown-text.js";
 
 export type LocalServerResult = { status: "already-running" | "started"; pid?: number };
 
@@ -75,14 +76,14 @@ const defaults: LocalServerDependencies = {
 };
 
 function boundedDiagnostic(error: unknown): string {
-  if (!error || typeof error !== "object") return String(error);
+  if (!error || typeof error !== "object") return unknownText(error);
   const candidate = error as { message?: unknown; stderr?: unknown };
   const detail =
     typeof candidate.stderr === "string" && candidate.stderr.trim()
       ? candidate.stderr.trim()
       : typeof candidate.message === "string"
         ? candidate.message
-        : String(error);
+        : unknownErrorText(error);
   return detail.replace(/[\r\n\t]+/gu, " ").slice(0, 1_000);
 }
 

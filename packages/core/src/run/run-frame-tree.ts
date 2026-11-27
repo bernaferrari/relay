@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { SnapshotNode } from "../device/device.js";
-import { ensureRunDir } from "../runs/runs.js";
+import { ensureRunDir } from "./run-store.js";
 import type { TestJob } from "../session/session-contract.js";
 
 const FRAME_TREE_KIND = "relay.frame-tree";

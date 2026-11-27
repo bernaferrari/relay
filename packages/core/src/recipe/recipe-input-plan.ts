@@ -1,7 +1,7 @@
 import type { TestData } from "@relay/protocol";
-import { CasePlanError, prepareCasePlan, type PreparedCasePlan } from "../case-plan.js";
+import { CasePlanError, prepareCasePlan, type PreparedCasePlan } from "../input/case-plan.js";
 import { resolveRecipeInputReferences } from "./recipe-input-references.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "./recipes.js";
 
 /** Resolve only dependencies of the frozen graph. A single Test always gets
  * one case; a list's first value is the default, while runtime values override it. */

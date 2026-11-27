@@ -3,16 +3,19 @@ import { mkdtemp, mkdir, readFile, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { base, snapshot, type Device, type SnapshotNode } from "../device/device.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import { inferIosSnapshotGeometry, normalizeScreenshotToBounds } from "../ios/ios-geometry.js";
 import { unknownErrorMessage } from "../ios/ios-runner-listener-command.js";
 import { captureIosPngViaGoIos, pixelEvidenceFingerprint } from "../ios/ios-app-launch.js";
 import { readIosDisplayOrientation } from "../ios/ios-device-adapter.js";
-import { OPTIONAL_TREE_BUDGET_MS, withOptionalTreeBudget } from "../optional-tree-budget.js";
-import { visualEvidenceAllowed } from "../redaction.js";
+import {
+  OPTIONAL_TREE_BUDGET_MS,
+  withOptionalTreeBudget,
+} from "../app-map/optional-tree-budget.js";
+import { visualEvidenceAllowed } from "../evidence/redaction.js";
 import type { RecipeRuntimeState } from "../recipe/recipe-runner-context.js";
 import { currentVerifiedScreen } from "../recipe/recipe-runner-context.js";
-import { ensureRunDir, writeFramePng } from "../runs/runs.js";
+import { ensureRunDir, writeFramePng } from "../run/run-store.js";
 import { targetRuntimeReadiness } from "../target/target-runtime-readiness.js";
 import type { TestJob } from "./session-contract.js";
 import type { TraceStep } from "../trace/trace.js";

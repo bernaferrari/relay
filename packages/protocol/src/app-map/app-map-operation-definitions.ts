@@ -1,7 +1,7 @@
 import type { AppMapOperationMap } from "./app-map-operation-map.js";
 import { createSchemaOperationBuilders } from "../operation/operation-builders.js";
 
-const { command, query } = createSchemaOperationBuilders<keyof AppMapOperationMap & string>();
+const { command, query } = createSchemaOperationBuilders<keyof AppMapOperationMap>();
 
 export const appMapOperationDefinitions = [
   query("app-map.list", "List App Maps", "/app-maps", {

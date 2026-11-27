@@ -18,6 +18,18 @@ const check: ChangeProofProviderCheck = {
   detailsUrl: "https://relay.example.com/proofs/proof-184",
 };
 
+function requestUrl(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input instanceof Request) return input.url;
+  throw new TypeError("Expected a fetch input");
+}
+
+function bodyText(body: unknown): string {
+  if (typeof body !== "string") throw new TypeError("Expected a string request body");
+  return body;
+}
+
 test("posts one exact-head GitHub check with action_required uncertainty", async () => {
   let calledUrl = "";
   let request: RequestInit | undefined;
@@ -25,7 +37,7 @@ test("posts one exact-head GitHub check with action_required uncertainty", async
     check,
     config: { owner: "acme", repository: "settings", token: "github-app-install-token" },
     fetchImpl: async (url, init) => {
-      calledUrl = String(url);
+      calledUrl = requestUrl(url);
       request = init;
       return new Response(
         JSON.stringify({
@@ -45,7 +57,7 @@ test("posts one exact-head GitHub check with action_required uncertainty", async
     (request.headers as Record<string, string>).Authorization,
     "Bearer github-app-install-token",
   );
-  assert.deepEqual(JSON.parse(String(request.body)), {
+  assert.deepEqual(JSON.parse(bodyText(request.body)), {
     name: "Relay Proof",
     head_sha: headSha,
     status: "completed",
@@ -72,7 +84,7 @@ test("publishes queued and in-progress updates without a premature conclusion", 
   const fetchImpl = async (_url: URL | RequestInfo, init?: RequestInit) => {
     requests.push({
       method: String(init?.method),
-      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      body: JSON.parse(bodyText(init?.body)) as Record<string, unknown>,
     });
     return new Response(
       JSON.stringify({ id: 42, head_sha: headSha, external_id: check.externalId }),
@@ -130,7 +142,7 @@ test("maps proved and rejected conclusions without changing the frozen head", as
       check: { ...check, conclusion },
       config: { owner: "acme", repository: "settings", token: "token" },
       fetchImpl: async (_url, init) => {
-        conclusions.push(JSON.parse(String(init?.body)).conclusion);
+        conclusions.push(JSON.parse(bodyText(init?.body)).conclusion);
         return new Response(
           JSON.stringify({ id: conclusions.length, head_sha: headSha, external_id: "proof-184" }),
           { status: 201 },
@@ -155,7 +167,7 @@ test("updates a previously published check run instead of creating a duplicate",
     },
     config: { owner: "acme", repository: "settings", token: "github-app-install-token" },
     fetchImpl: async (url, init) => {
-      calledUrl = String(url);
+      calledUrl = requestUrl(url);
       request = init;
       return new Response(
         JSON.stringify({
@@ -170,7 +182,7 @@ test("updates a previously published check run instead of creating a duplicate",
   });
   assert.equal(calledUrl, "https://api.github.com/repos/acme/settings/check-runs/42");
   assert.equal(request?.method, "PATCH");
-  const body = JSON.parse(String(request?.body));
+  const body = JSON.parse(bodyText(request?.body));
   assert.equal(body.conclusion, "success");
   assert.equal(body.head_sha, undefined);
   assert.equal(published.checkRunId, 42);
@@ -236,7 +248,7 @@ test("reconciles an unacknowledged exact Proof check before creating", async () 
           { status: 200 },
         );
       }
-      const body = JSON.parse(String(init?.body));
+      const body = JSON.parse(bodyText(init?.body));
       assert.equal(body.head_sha, undefined);
       return new Response(
         JSON.stringify({ id: 42, head_sha: headSha, external_id: check.externalId }),

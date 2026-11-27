@@ -338,6 +338,9 @@ importers:
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@relay/workflow-runners':
+        specifier: workspace:*
+        version: link:../workflow-runners
       '@relay/workflows':
         specifier: workspace:*
         version: link:../workflows
@@ -502,15 +505,15 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
     devDependencies:
+      '@relay/workflow-runners':
+        specifier: workspace:*
+        version: link:../workflow-runners
       '@relay/client':
         specifier: workspace:*
         version: link:../client
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@relay/runtime':
-        specifier: workspace:*
-        version: link:../runtime
       '@relay/workflows':
         specifier: workspace:*
         version: link:../workflows
@@ -625,6 +628,9 @@ importers:
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@relay/workflow-runners':
+        specifier: workspace:*
+        version: link:../workflow-runners
       '@relay/workflows':
         specifier: workspace:*
         version: link:../workflows
@@ -789,7 +795,7 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
-  packages/workflows:
+  packages/workflow-runners:
     dependencies:
       '@relay/core':
         specifier: workspace:*
@@ -797,10 +803,32 @@ importers:
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@relay/workflows':
+        specifier: workspace:*
+        version: link:../workflows
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
+  packages/workflows:
+    dependencies:
+      '@relay/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
     devDependencies:
+      '@relay/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4

@@ -1,1 +1,0 @@
-import{n as e}from"./snapshot-desktop-projection.js";async function t(t,n){let r=t.surface,{runMacOsSnapshotAction:i}=await import(`./helper.js`).then(e=>e.n),a=await i(r,{bundleId:r===`menubar`||r===`app`?t.appBundleId:void 0,signal:n});return e({...a,producer:`macos-helper`},t)}export{t};

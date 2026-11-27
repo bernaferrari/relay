@@ -1,5 +1,6 @@
 import type { RelayOutcomeJobs } from "@relay/workflows";
 import type { OperationInvoker } from "./server.js";
+import { unknownText } from "./unknown-text.js";
 
 /** Waiting turns a started Run into the one answer an agent needs: did it
  * pass, and if not, which step failed and what Relay saw instead. */
@@ -113,7 +114,7 @@ export async function waitForRunVerdict(
   const workflow = snapshot.workflow;
   if (!runId) {
     const problems = Array.isArray(snapshot.problems) ? snapshot.problems.map(object) : [];
-    const needsConsent = problems.some((problem) => String(problem.code ?? "").includes("confirm"));
+    const needsConsent = problems.some((problem) => unknownText(problem.code).includes("confirm"));
     return {
       status: activePhases.has(String(snapshot.phase)) ? "running" : "blocked",
       phase: snapshot.phase,

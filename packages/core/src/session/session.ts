@@ -1,5 +1,7 @@
 /** Test-run sessions with action traces, heal retries, and disk persistence. */
-import { now, publish } from "../events.js";
+import { now, publish } from "../collaboration/events.js";
+import { unknownErrorText } from "../unknown-text.js";
+
 import { resetDeviceClient, type Device } from "../device/device.js";
 import { closeBrowserTarget } from "../browser/browser-target.js";
 import { runWithTargetContext } from "../target/target-context.js";
@@ -10,7 +12,7 @@ import {
   writeFramePng,
   ensureRunDir,
   type PersistedRun,
-} from "../runs/runs.js";
+} from "../run/run-store.js";
 import {
   compensatingCleanupIsArmed,
   JobCancelledError,
@@ -25,10 +27,10 @@ import {
   cooperativeCheckpoint,
   throwIfCancelled,
   hardStopDeviceSession,
-} from "../control.js";
-import { freezeRecipeExecution } from "../recipes.js";
+} from "../execution/control.js";
+import { freezeRecipeExecution } from "../recipe/recipes.js";
 
-import { redactPrivateValue } from "../private-inputs.js";
+import { redactPrivateValue } from "../input/private-inputs.js";
 
 import {
   initializeRunEvidence,
@@ -38,8 +40,11 @@ import {
   type RunEvidenceHandle,
 } from "../run/run-evidence.js";
 import { TargetWorkerScheduler, type TargetWorkerStatus } from "../target/target-worker.js";
-import { requireOperationContext, runWithOperationContext } from "../operation-context.js";
-import { redactText, visualEvidenceAllowed } from "../redaction.js";
+import {
+  requireOperationContext,
+  runWithOperationContext,
+} from "../execution/operation-context.js";
+import { redactText, visualEvidenceAllowed } from "../evidence/redaction.js";
 import { projectPersistedAppMapRun } from "../app-map/app-map-run-history.js";
 import { applyCaptureReferences } from "../capture/capture-references.js";
 import { captureReviewQueueForRun } from "../capture/capture-review-queue.js";
@@ -316,9 +321,7 @@ const commitTerminalRun = async (job: TestJob, log: (line: string) => void) => {
           const compared = await applyCaptureReferences(runsRoot(), run);
           job.captureSummary = captureReviewQueueForRun(compared).summary;
         } catch (error) {
-          log(
-            `warn: reference comparison skipped: ${error instanceof Error ? error.message : error}`,
-          );
+          log(`warn: reference comparison skipped: ${unknownErrorText(error)}`);
         }
       },
       now,

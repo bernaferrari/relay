@@ -1,7 +1,7 @@
 /**
  * Pure recipe validation and step parsing — no filesystem I/O.
  */
-import { isActionId } from "../actions.js";
+import { isActionId } from "../execution/actions.js";
 import {
   MAX_WAIT_MS,
   PARAMETER_NAME,
@@ -21,6 +21,7 @@ import {
   parseTapRuntimeOptions,
   parseTourRuntimeOptions,
   stepErr,
+  printableUnknown,
   targetHasStrategy,
 } from "./recipe-validation-support.js";
 export { validateRecipeParameters } from "./recipe-validation-support.js";
@@ -674,12 +675,13 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       }
       case "flow": {
         if (!isString(raw.flow)) throw stepErr(index, "flow requires flow: string (an ActionId)");
-        if (!isActionId(raw.flow)) {
-          throw stepErr(index, `flow references unknown action id: ${raw.flow}`);
+        const flow: string = raw.flow;
+        if (!isActionId(flow)) {
+          throw stepErr(index, `flow references unknown action id: ${printableUnknown(flow)}`);
         }
         const step: Extract<RecipeStep, { kind: "flow" }> = {
           kind: "flow",
-          flow: raw.flow,
+          flow,
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -767,7 +769,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         if (target && !target.identifier && !target.label && !target.text)
           throw stepErr(
             index,
-            `clipboard ${raw.action} target requires identifier, label, or text`,
+            `clipboard ${printableUnknown(raw.action)} target requires identifier, label, or text`,
           );
         if (raw.expect !== undefined && !isString(raw.expect))
           throw stepErr(index, "clipboard.expect must be a string");

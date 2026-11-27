@@ -8,13 +8,13 @@ import type {
 import { createAppMapCombineCellExecutionIntent } from "./app-map-combine-cell-intent.js";
 import type { PreparedAppMapCombineCell } from "./app-map-combine-cell-prepare.js";
 import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
-import { CasePlanError } from "../case-plan.js";
+import { CasePlanError } from "../input/case-plan.js";
 import {
   frozenRecipeInputsMatch,
   parseFrozenRecipeInputReceipt,
   type PreparedFrozenRecipeInputs,
-} from "../frozen/frozen-recipe-inputs.js";
-import { PRIVATE_INPUT } from "../private-inputs.js";
+} from "../recipe/frozen-recipe-inputs.js";
+import { PRIVATE_INPUT } from "../input/private-inputs.js";
 import {
   resolveRecipeInputReferences,
   type SelectedRecipeInputRow,

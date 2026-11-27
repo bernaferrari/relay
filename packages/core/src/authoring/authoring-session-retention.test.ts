@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AuthoringSession } from "@relay/protocol";
 import { pruneAbandonedAuthoringSessions } from "./authoring-session-retention.js";
-import { KeyedSerialQueue } from "../coordination-store.js";
+import { KeyedSerialQueue } from "../durable/coordination-store.js";
 
 test("a prune candidate that changed, became active, or failed validation is retained", async () => {
   const previous = process.env.RELAY_ABANDONED_AUTHORING_LIMIT;

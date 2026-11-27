@@ -59,6 +59,15 @@ function responseBody() {
   };
 }
 
+function requestBodyText(init: unknown): string {
+  const body =
+    init && typeof init === "object" && "body" in init
+      ? (init as { body?: unknown }).body
+      : undefined;
+  if (typeof body !== "string") throw new TypeError("fetch body must be a JSON string");
+  return body;
+}
+
 test("OpenRouter decision provider stays offline when no key is configured", async () => {
   let fetchCalls = 0;
   const provider = createOpenRouterDecisionProvider({
@@ -82,7 +91,7 @@ test("OpenRouter decision provider returns validated typed answers and redacts e
   const provider = createOpenRouterDecisionProvider({
     apiKey: "test-key",
     fetch: async (_input, init) => {
-      sent = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      sent = JSON.parse(requestBodyText(init)) as Record<string, unknown>;
       return new Response(JSON.stringify(responseBody()), { status: 200 });
     },
     requestId: () => "decision-1",

@@ -1,7 +1,7 @@
 import type { Device, SnapshotNode } from "../device/device.js";
 import { scrollDown, scrollUp, sleep, snapshot } from "../device/device.js";
-import type { RecipeStep } from "../recipes.js";
-import { extractTourStops, type TourStop } from "../tour.js";
+import type { RecipeStep } from "./recipes.js";
+import { extractTourStops, type TourStop } from "../discovery/tour.js";
 import {
   mergeTourViewportRows,
   tourViewportKey,

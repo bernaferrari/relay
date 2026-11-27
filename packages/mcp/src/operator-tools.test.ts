@@ -12,7 +12,7 @@ import type { OperationInvoker } from "./server.js";
 type Call = { operationId: string; input: unknown };
 
 function recordingInvoker(
-  handler: (operationId: string, input: Record<string, unknown>) => unknown | Promise<unknown>,
+  handler: (operationId: string, input: Record<string, unknown>) => unknown,
 ): { invoker: OperationInvoker; calls: Call[] } {
   const calls: Call[] = [];
   return {

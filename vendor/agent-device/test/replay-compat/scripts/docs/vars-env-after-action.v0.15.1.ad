@@ -1,5 +1,0 @@
-context platform=android
-
-open settings --relaunch
-env APP_ID=settings
-click "label=${APP_ID}"

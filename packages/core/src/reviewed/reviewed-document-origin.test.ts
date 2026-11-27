@@ -14,7 +14,7 @@ import {
 import { PNG } from "pngjs";
 import { readAuthoringEvidence } from "../authoring/authoring-evidence.js";
 import { scrollSurfaceDocumentOriginPlan } from "../app-map/app-map-scroll-surface-baseline.js";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "../app-map/map-work.js";
 import {
   duplicateAppMap,
   importAppMap,
@@ -25,7 +25,7 @@ import { controlDatabasePath, openControlDatabase } from "../collaboration/colla
 import {
   attachAppMapScrollSurface,
   persistLogicalScrollSurface,
-} from "../logical-scroll-surface.js";
+} from "../app-map/logical-scroll-surface.js";
 import {
   activeReviewedDocumentOriginsForAppMap,
   inspectReviewedDocumentOrigin,
@@ -36,7 +36,7 @@ import {
   revokeReviewedDocumentOrigin,
 } from "./reviewed-document-origin.js";
 import { validateRecipeSteps } from "../recipe/recipe-validation.js";
-import type { ScrollSurveyResult } from "../scrollable/scrollable-survey.js";
+import type { ScrollSurveyResult } from "../scroll/scrollable-survey.js";
 
 const profile: TargetProfile = {
   id: "android-profile",

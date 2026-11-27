@@ -1,5 +1,5 @@
 import { currentRunMediaFile } from "../recipe/recipe-media-files.js";
-import { resolveManagedFixtureFile } from "../managed-fixtures.js";
+import { resolveManagedFixtureFile } from "../workspace/managed-fixtures.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -7,7 +7,7 @@ import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "../recipe/recipes.js";
 import type { RecipeStepContext } from "../recipe/recipe-runner-context.js";
 import { findWorkspaceRoot } from "../workspace/workspace-root.js";
 

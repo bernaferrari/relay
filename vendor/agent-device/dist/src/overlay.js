@@ -1,1 +1,0 @@
-import"./react-native-overlay2.js";export{};

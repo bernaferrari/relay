@@ -77,6 +77,16 @@ const input = {
   inputId: definition.id,
   name: "Chat prompts",
 };
+function requestUrlText(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input && typeof input === "object" && "url" in input) {
+    const url = (input as { url?: unknown }).url;
+    if (typeof url === "string") return url;
+  }
+  throw new TypeError("fetch input must be a string, URL, or Request");
+}
+
 describe("Plan input Data sets", () => {
   it("keeps equal prompts as distinct execution rows", async () => {
     const values = ["Same prompt", "Same prompt"];
@@ -441,7 +451,7 @@ describe("Plan input Data sets", () => {
       },
       {
         fetch: async (url, init) => {
-          const path = new URL(String(url)).pathname;
+          const path = new URL(requestUrlText(url)).pathname;
           const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
           requests.push({
             path,

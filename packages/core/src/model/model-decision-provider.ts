@@ -16,7 +16,7 @@ import {
   OPENROUTER_CHAT_COMPLETIONS,
   type OpenRouterClient,
 } from "../openrouter/openrouter-ai-sdk.js";
-import { redactSensitiveEvidenceValue } from "../redaction.js";
+import { redactSensitiveEvidenceValue } from "../evidence/redaction.js";
 
 export const DEFAULT_OPENROUTER_DECISION_MODEL = "~typesafe/jev-latest" as const;
 const MAX_QUESTIONS = 16;

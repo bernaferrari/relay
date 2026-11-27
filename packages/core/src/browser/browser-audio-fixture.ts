@@ -1,6 +1,6 @@
 import { inspectMedia } from "../media/media-check.js";
 import { open } from "node:fs/promises";
-import { resolveManagedFixtureFile } from "../managed-fixtures.js";
+import { resolveManagedFixtureFile } from "../workspace/managed-fixtures.js";
 
 /** Chromium consumes a WAV fixture through its media input device. No host microphone is opened. */
 export async function audioFixtureLaunchArguments(

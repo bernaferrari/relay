@@ -6,7 +6,7 @@ import {
   changeProofRequiredRunCases,
   executeLiveChangeProof,
 } from "./change-proof-live-run.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { canonicalSha256 } from "../canonical-json.js";
 import { compileExecutionRisk } from "../execution/execution-risk-compiler.js";
 

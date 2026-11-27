@@ -23,7 +23,7 @@ import {
   JobCancelledError,
   raceCancel,
   throwIfCancelled,
-} from "../control.js";
+} from "../execution/control.js";
 import { runTargetMutation } from "../target/target-control.js";
 import { selectedPlatform, targetIdentity } from "../target/target-context.js";
 import { resolveAndroidSdkTool } from "./android-sdk-tools.js";

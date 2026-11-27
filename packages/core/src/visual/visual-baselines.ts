@@ -18,7 +18,7 @@ import {
   type VisualReviewResultCode,
   type VisualRunSnapshot,
 } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { withIdentityIgnoreRegions } from "./visual-identity-ignore-regions.js";
 
 export { VISUAL_COMPARISON_CODES, VISUAL_REVIEW_ACTIONS } from "@relay/protocol";

@@ -43,14 +43,14 @@ import {
   digestAppMapTestExecutionValue,
 } from "./app-map-test-execution-intent.js";
 import { compileExecutionRisk } from "../execution/execution-risk-compiler.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import {
   bindPreparedCombineCellInputs,
   combineCellInputSeed,
   requirePreparedCombineCellInputs,
   restorePreparedCombineCellInputs,
 } from "./app-map-combine-cell-inputs.js";
-import { freezeRecipeInputs } from "../frozen/frozen-recipe-inputs.js";
+import { freezeRecipeInputs } from "../recipe/frozen-recipe-inputs.js";
 
 test("cell IDs stay identifier-safe for punctuation and large tuples", () => {
   const values = Object.fromEntries(

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { compareTracePacks } from "./trace-pack-comparison.js";
 import { exportTracePack } from "./trace-pack.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 type FixtureOptions = {
   id: string;

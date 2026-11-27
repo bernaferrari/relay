@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AppMap } from "@relay/protocol";
-import type { PersistedRun } from "./runs/runs.js";
-import { exportWalkthroughPack, verifyWalkthroughPack } from "./walkthrough-pack.js";
+import type { PersistedRun } from "./run/run-store.js";
+import { exportWalkthroughPack, verifyWalkthroughPack } from "./run/walkthrough-pack.js";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4AWMAgv8AAQQBAP8H9UQAAAAASUVORK5CYII=",

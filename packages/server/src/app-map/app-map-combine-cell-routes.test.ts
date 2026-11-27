@@ -536,7 +536,10 @@ test("Combine admission binds cells across local Android and iOS before one job 
       }),
     });
     const jobs = (result.jobs as Array<{ id?: string; serial?: string }>) ?? [];
-    assert.deepEqual(jobs.map((job) => job.serial).sort(), ["ipad-b", "pixel-a"]);
+    assert.deepEqual(
+      jobs.map((job) => job.serial).sort((a, b) => (a ?? "").localeCompare(b ?? "")),
+      ["ipad-b", "pixel-a"],
+    );
     const admission = result.admission as {
       preflight: {
         deadline: { achievableWithCurrentCapacity: boolean };
@@ -572,10 +575,12 @@ test("Combine admission binds cells across local Android and iOS before one job 
     assert.equal(calls.workers, 1);
     const campaign = result.campaign as CombineCampaign;
     assert.equal(campaign.target, undefined);
-    assert.deepEqual(campaign.cases.map((item) => item.target?.targetId).sort(), [
-      "ipad-b",
-      "pixel-a",
-    ]);
+    assert.deepEqual(
+      campaign.cases
+        .map((item) => item.target?.targetId)
+        .sort((a, b) => String(a ?? "").localeCompare(String(b ?? ""))),
+      ["ipad-b", "pixel-a"],
+    );
     assert.equal(
       campaign.execution?.localAdmission?.preflight.deadline.achievableWithCurrentCapacity,
       true,
@@ -2002,10 +2007,15 @@ test("profileTargets expand one authored cell into distinct execution cases", as
     assert.equal(cases.length, 2);
     assert.equal(new Set(cases.map((item) => item.executionCaseId)).size, 2);
     assert.equal(new Set(cases.map((item) => item.cellId)).size, 1);
-    assert.deepEqual(cases.map((item) => [item.target?.targetId, item.targetProfileId]).sort(), [
-      ["ipad-b", "pixel-it"],
-      ["pixel-1", "pixel-en"],
-    ]);
+    assert.deepEqual(
+      cases
+        .map((item) => [item.target?.targetId, item.targetProfileId])
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      [
+        ["ipad-b", "pixel-it"],
+        ["pixel-1", "pixel-en"],
+      ],
+    );
     assert.equal(campaign.execution?.selectedExecutionCaseIds?.length, 2);
   } finally {
     await server.close();
@@ -2070,7 +2080,9 @@ test("testId plus profileTargets crosses selected data with each account in one 
     assert.equal(campaign.combineId, "ad-hoc");
     assert.equal(campaign.cases.length, 4);
     assert.deepEqual(
-      campaign.cases.map((item) => [item.values.language, item.targetProfileId]).sort(),
+      campaign.cases
+        .map((item) => [item.values.language, item.targetProfileId])
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
       [
         ["en", "pixel-en"],
         ["en", "pixel-it"],

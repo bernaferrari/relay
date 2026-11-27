@@ -9,7 +9,7 @@ import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { runRecipeSteps } from "../session/session-recipe-execution.js";
 import type { TestJob } from "../session/session-contract.js";
 import { runWithTargetContext } from "../target/target-context.js";
-import { JobCancelledError } from "../control.js";
+import { JobCancelledError } from "../execution/control.js";
 import {
   observeRecipeResponse,
   requireCurrentActionResponseBoundary,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { registerGrokIdentityTestPolicies } from "../app/app-identity-test-policies.js";
+import { registerGrokIdentityTestPolicies } from "../fixtures/app-identity-test-policies.js";
 import test from "node:test";
 import type { AppMap, AppMapEntity, Connection, Routine, Screen } from "@relay/protocol";
 import {

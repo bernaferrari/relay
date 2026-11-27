@@ -14,7 +14,7 @@ import {
 import { destIdentitySourceFrames } from "@relay/protocol";
 import { replayPersistedRunOffline } from "../offline/offline-run-replay.js";
 import { readFrameFile } from "../run/run-artifact-files.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import {
   checkBrowserProofEvidenceReferences,
   inspectBrowserProofEvidence,

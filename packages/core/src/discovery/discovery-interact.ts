@@ -1,5 +1,5 @@
 import type { SnapshotNode } from "../device/device.js";
-import { describeTargetUi } from "../explore.js";
+import { describeTargetUi } from "./explore.js";
 import { profileForBundleId } from "./discovery-app-profiles.js";
 import { landDiscoveryOnAppMap } from "./discovery-land.js";
 import { profileHeaderAffordances, semanticTargetAtPoint } from "./discovery-semantic-tap.js";

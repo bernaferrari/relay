@@ -8,7 +8,7 @@ import {
   operationDefinition,
 } from "@relay/protocol";
 import type { RelayOutcomeJobs } from "@relay/workflows";
-import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
+import { createRelayOutcomeJobs } from "@relay/workflow-runners/outcomes";
 import * as z from "zod/v4";
 import type { OperationInvoker } from "./server.js";
 import { proofOutcomeTools } from "./proof-outcome-tools.js";

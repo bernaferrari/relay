@@ -10,7 +10,7 @@ import type {
   Revisioned,
   TestData,
 } from "@relay/protocol";
-import { now } from "../events.js";
+import { now } from "./events.js";
 import { loadStoredAppMap, type StoredAppMapDisposition } from "../app-map/stored-map-repair.js";
 
 export type DegradedAppMapRecord = {

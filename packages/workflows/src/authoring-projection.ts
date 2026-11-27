@@ -5,7 +5,8 @@ import {
   type AuthoringSession,
 } from "@relay/protocol";
 import { reviewedReplayFailure } from "./reviewed-replay-feedback.js";
-import { recordedTapDisplayTitle } from "@relay/core/recorded-control-label";
+import { unknownText } from "./unknown-text.js";
+import { recordedTapDisplayTitle } from "@relay/protocol/recorded/recorded-control-label";
 import type {
   AuthorTestSnapshot,
   AuthoringReviewActionKind,
@@ -63,14 +64,14 @@ function semanticIntent(
     // review label from the entered value or from a guessed field type.
     return "Type text";
   }
-  if (step.kind === "sleep") return `Wait ${String(step.ms ?? "")} ms`.trim();
+  if (step.kind === "sleep") return `Wait ${unknownText(step.ms)} ms`.trim();
   if (step.kind === "screenshot") return "Checkpoint";
   if (step.kind === "launch") return "Open app";
   if (step.kind === "swipe") return "Swipe";
   if (step.kind === "key") {
     if (step.key === "home") return "Go to home screen";
     if (step.key === "recents") return "Open recent apps";
-    return `Press ${String(step.key ?? "key")}`;
+    return `Press ${unknownText(step.key) || "key"}`;
   }
   return "Recorded action";
 }

@@ -1,6 +1,0 @@
-appId: com.example.app
----
-- repeat:
-    times: 3
-    commands:
-      - tapOn: "Button"

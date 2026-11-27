@@ -210,7 +210,9 @@ export function describeSnapshotChrome(nodes: unknown[]): { app?: string; header
       label?: unknown;
       rect?: { y?: unknown };
     };
-    const type = String(item.type ?? item.role ?? "").toLocaleLowerCase();
+    const rawType =
+      typeof item.type === "string" ? item.type : typeof item.role === "string" ? item.role : "";
+    const type = rawType.toLocaleLowerCase();
     const label = typeof item.label === "string" ? item.label.trim() : "";
     const identifier = typeof item.identifier === "string" ? item.identifier.trim() : "";
     const y = Number(item.rect?.y);

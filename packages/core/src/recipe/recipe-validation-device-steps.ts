@@ -8,6 +8,7 @@ import {
   isNumber,
   isString,
   parseTarget,
+  printableUnknown,
   stepErr,
 } from "./recipe-validation-primitives.js";
 
@@ -61,7 +62,10 @@ export function parseDeviceRecipeStep(
         raw.action !== "switcher" &&
         (!isString(raw.app) || !raw.app.trim())
       ) {
-        throw stepErr(index, `${raw.action} requires app package or bundle identifier`);
+        throw stepErr(
+          index,
+          `${printableUnknown(raw.action)} requires app package or bundle identifier`,
+        );
       }
       if (raw.action === "set-locale" && (!isString(raw.locale) || !raw.locale.trim())) {
         throw stepErr(index, "set-locale requires a BCP-47 locale");
@@ -212,7 +216,10 @@ export function parseDeviceRecipeStep(
         throw stepErr(index, 'network requires action: "dump" | "log"');
       if (
         raw.include !== undefined &&
-        !["summary", "headers", "body", "all"].includes(String(raw.include))
+        !(
+          typeof raw.include === "string" &&
+          ["summary", "headers", "body", "all"].includes(raw.include)
+        )
       )
         throw stepErr(index, "network.include is invalid");
       if (raw.limit !== undefined && (!isNumber(raw.limit) || raw.limit < 1 || raw.limit > 1000))

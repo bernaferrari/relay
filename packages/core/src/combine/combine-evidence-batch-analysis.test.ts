@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CombineEvidenceControl } from "./combine-evidence-session.js";
-import type { FrameObservation } from "../frame-observation.js";
+import type { FrameObservation } from "../device/frame-observation.js";
 import {
   analyzeCombineEvidenceBatchData,
   type CombineEvidenceCapture,

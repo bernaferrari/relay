@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { PNG } from "pngjs";
-import type { OperationContext } from "../operation-context.js";
+import type { OperationContext } from "../execution/operation-context.js";
 import {
   captureHumanInterventionReproof,
   type HumanInterventionPixelBracket,
   type HumanInterventionReproofCapture,
-} from "../human-intervention-reproof.js";
+} from "../run/human-intervention-reproof.js";
 import {
   HumanInterventionReproofUnavailableError,
   humanInterventionNeedsReproof,
@@ -15,7 +15,7 @@ import {
   recordHumanInterventionAuthorization,
   recordHumanInterventionReproof,
 } from "./job-intervention.js";
-import { loadRedactionPolicy } from "../redaction.js";
+import { loadRedactionPolicy } from "../evidence/redaction.js";
 import { observeVisualScreenFingerprint } from "../screen/screen-identity.js";
 import type { TestJob } from "../session/session-contract.js";
 import type { ScreenshotPayload, SnapshotPayload } from "../workspace/workspace-capture.js";

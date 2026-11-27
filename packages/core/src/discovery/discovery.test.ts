@@ -26,7 +26,7 @@ import {
   resetDiscoveryExploreJobsForTests,
   startDiscoveryExplore,
 } from "./discovery-explore-job.js";
-import { registerGrokDiscoveryTestProfile } from "./discovery-test-profile.js";
+import { registerGrokDiscoveryTestProfile } from "../fixtures/discovery-test-profile.js";
 
 function settingsListNodes(rows: string[]): SnapshotNode[] {
   return rows.map((label, index) => ({

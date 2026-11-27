@@ -2,8 +2,8 @@ import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 type RelayExtensionModule = {
-  registerRelayExtension?: () => unknown | Promise<unknown>;
-  default?: () => unknown | Promise<unknown>;
+  registerRelayExtension?: () => unknown;
+  default?: () => unknown;
 };
 
 /** Extension modules are explicit host configuration, never ambient core behavior. */

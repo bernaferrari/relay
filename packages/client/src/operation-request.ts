@@ -6,6 +6,14 @@ import {
   type OperationInput,
 } from "@relay/protocol";
 
+function queryScalar(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return JSON.stringify(value) ?? "";
+}
+
 export function operationRequest<Id extends OperationId>(
   id: Id,
   input: OperationInput<Id>,
@@ -27,9 +35,9 @@ export function operationRequest<Id extends OperationId>(
     for (const [key, value] of Object.entries(values)) {
       if (value === undefined || value === null) continue;
       if (Array.isArray(value)) {
-        for (const item of value) query.append(key, String(item));
+        for (const item of value) query.append(key, queryScalar(item));
       } else {
-        query.set(key, String(value));
+        query.set(key, queryScalar(value));
       }
     }
     const suffix = query.size ? `?${query.toString()}` : "";

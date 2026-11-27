@@ -1,0 +1,16 @@
+{
+  "name": "android-snapshot-helper",
+  "version": "0.21.45-dev",
+  "releaseTag": "v0.21.45-dev",
+  "assetName": "agent-device-android-snapshot-helper-0.21.45-dev.apk",
+  "apkUrl": null,
+  "sha256": "6b5f60aa4eb94e58eb1407b9a0324377588b1b159f08788ca0c69da4b67c9c1e",
+  "checksumName": "agent-device-android-snapshot-helper-0.21.45-dev.apk.sha256",
+  "packageName": "com.callstack.agentdevice.snapshothelper",
+  "versionCode": 21045,
+  "instrumentationRunner": "com.callstack.agentdevice.snapshothelper/.SnapshotInstrumentation",
+  "minSdk": 23,
+  "targetSdk": 36,
+  "outputFormat": "uiautomator-xml",
+  "statusProtocol": "android-snapshot-helper-v1"
+}

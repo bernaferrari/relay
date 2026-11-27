@@ -1,5 +1,9 @@
-import type { createAgentDeviceClient } from "agent-device";
-import { getExecutingJobId, raceCancel } from "../control.js";
+import type {
+  createAgentDeviceClient,
+  ModeFreePermissionUpdateOptions,
+  SettingsUpdateOptions,
+} from "agent-device";
+import { getExecutingJobId, raceCancel } from "../execution/control.js";
 import { runTargetMutation } from "../target/target-control.js";
 import { dispatchSupervisedIosMutation } from "../ios/ios-mutation-policy.js";
 import { resolveAndroidSdkTool } from "../android/android-sdk-tools.js";
@@ -65,7 +69,16 @@ export function bindNativeDeviceMutations(
       orientation: (options) => mutate(() => native.command.orientation(options)),
       prepare: (options) => mutate(() => native.command.prepare(options)),
     },
-    settings: { update: (options) => mutate(() => native.settings.update(options)) },
+    settings: {
+      update: ((options: SettingsUpdateOptions | ModeFreePermissionUpdateOptions) =>
+        mutate(() =>
+          (
+            native.settings.update as (
+              input: SettingsUpdateOptions | ModeFreePermissionUpdateOptions,
+            ) => ReturnType<typeof native.settings.update>
+          )(options),
+        )) as typeof native.settings.update,
+    },
     recording: {
       ...native.recording,
       record: (options) => mutate(() => native.recording.record(options)),

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AppError } from "agent-device";
-import { JobCancelledError } from "../control.js";
+import { JobCancelledError } from "../execution/control.js";
 import { IosMutationOutcomeUnknownError } from "../ios/ios-mutation-policy.js";
 import { runCampaignCheck } from "./recipe-runner-campaign-checks.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";

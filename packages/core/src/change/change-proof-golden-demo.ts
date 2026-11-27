@@ -22,7 +22,7 @@ import { compileVerificationPlan, verificationCellId } from "./change-impact.js"
 import { canonicalSha256 } from "../canonical-json.js";
 import { compileExecutionRisk } from "../execution/execution-risk-compiler.js";
 import { exportTracePack } from "../trace/trace-pack.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 /**
  * A deterministic, device-free demonstration of the Change Proof loop.

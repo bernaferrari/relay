@@ -7,7 +7,7 @@ import type {
   TracePackObject,
 } from "@relay/protocol";
 import { readAuthoringEvidence } from "../authoring/authoring-evidence.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 export type TracePackExportLimits = {
   maxArtifacts?: number;

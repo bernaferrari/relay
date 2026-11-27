@@ -25,14 +25,14 @@ import { validateAppMap } from "./app-map.js";
 import { scrollSurfaceDocumentOriginPlan } from "./app-map-scroll-surface-baseline.js";
 
 import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
-import { leftoverWarmConfirmationSteps } from "../leftover/leftover-origin-recovery.js";
+import { leftoverWarmConfirmationSteps } from "../app-map/leftover-origin-recovery.js";
 import {
   assessIntraTestStartingState,
   assessTransitionDeclaredSource,
   throwIfUnsafeStartingState,
   UnsafeStartingStateError,
-} from "../starting-state-routines.js";
-import type { Recipe } from "../recipes.js";
+} from "./starting-state-routines.js";
+import type { Recipe } from "../recipe/recipes.js";
 import { testWithSelectedRouteVariant } from "./app-map-test-route-variants.js";
 import { resolveScenarioTestCompileRoute } from "./app-map-test-compile-route.js";
 import { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";

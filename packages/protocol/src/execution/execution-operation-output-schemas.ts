@@ -14,6 +14,7 @@ import {
   preparedCasePlanSchema,
 } from "../combine/combine-output-schemas.js";
 import { sourceRevisionSchema } from "../app-map/app-map-test-run-schemas.js";
+import { persistedRunOutputSchema } from "../run/persisted-run-output-schema.js";
 
 const runSummarySchema = jobSummarySchema
   .extend({
@@ -279,7 +280,7 @@ const offlineReplaySelectorAttemptOutputSchema = z
   .object({
     status: z.enum(["resolved", "failed"]),
     strategy: z.string().optional(),
-    target: z.record(z.string(), z.unknown()).optional(),
+    target: offlineReplaySelectorTargetOutputSchema.optional(),
     error: z.string().optional(),
     artifact: z.string().min(1),
     capturedAt: z.number(),
@@ -390,9 +391,7 @@ const offlineReplayReportOutputSchema = z
   .strict();
 
 export const executionOperationOutputSchemas = {
-  "run.review": z
-    .object({ run: z.record(z.string(), z.unknown()), review: runReviewOutputSchema })
-    .strict(),
+  "run.review": z.object({ run: persistedRunOutputSchema, review: runReviewOutputSchema }).strict(),
   "run.replay.offline": z.object({ report: offlineReplayReportOutputSchema }).strict(),
 
   "run.visual.compare": z.object({ comparison: visualComparisonOutputSchema }).strict(),

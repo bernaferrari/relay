@@ -5,7 +5,10 @@ import {
   runTargetMutation,
   TargetControlReservedError,
 } from "./target-control.js";
-import { runWithOperationContext, setOperationIntervention } from "../operation-context.js";
+import {
+  runWithOperationContext,
+  setOperationIntervention,
+} from "../execution/operation-context.js";
 
 test("target mutations serialize per target but not across targets", async () => {
   const order: string[] = [];

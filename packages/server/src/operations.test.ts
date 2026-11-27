@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { connect } from "node:net";
 import test from "node:test";
 import { operationDefinitions, type ProjectRole } from "@relay/protocol";
 import {
@@ -180,6 +181,20 @@ test("operation authorization applies before optional command envelopes", () => 
   );
 });
 
+function rawHttpResponse(port: number, target: string, host: string): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    const socket = connect(port, "127.0.0.1");
+    let response = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => (response += chunk));
+    socket.once("error", reject);
+    socket.once("close", () => resolvePromise(response));
+    socket.once("connect", () => {
+      socket.write(`${target} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`);
+    });
+  });
+}
+
 test("GET /meta exposes the registry manifest, not a handwritten endpoint list", async () => {
   // Isolated state dir: parallel test files each boot a real server against
   // the shared workspace .relay, and the state-dir lease is single-owner.
@@ -237,6 +252,12 @@ test("GET /meta exposes the registry manifest, not a handwritten endpoint list",
       organizationId: "local",
       projectId: "default",
     });
+
+    const spacedHost = await rawHttpResponse(server.port, "GET /health", "example com");
+    assert.match(spacedHost, /^HTTP\/1\.1 400 /u);
+    assert.match(spacedHost, /Malformed Host header/u);
+    const userInfoHost = await rawHttpResponse(server.port, "GET /health", "agent@127.0.0.1");
+    assert.match(userInfoHost, /^HTTP\/1\.1 400 /u);
   } finally {
     await server.close();
     await rm(previousStateDir ?? "", { recursive: true, force: true }).catch(() => {});

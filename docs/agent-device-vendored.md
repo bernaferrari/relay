@@ -1,7 +1,7 @@
 # Vendored `agent-device`
 
 Relay uses a local fork of `agent-device` at `vendor/agent-device`, updated from upstream `main`
-at commit `35c21b618ace55f2313124190d5674ea174e6d8b` (package version `0.21.29-dev`, October 15, 2026).
+at commit `3e0814c574f55e92b5d067bcdfbb0720c12b9e26` (package version `0.21.45-dev`).
 This pins a development snapshot; it is not an upstream release.
 The package is linked directly from `@relay/core`, so device behavior is editable and reviewable in
 this repository rather than hidden inside pnpm's patch store.

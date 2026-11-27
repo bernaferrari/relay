@@ -6,14 +6,14 @@ import test from "node:test";
 import type { CombineEvidenceControl } from "@relay/protocol";
 import { CAPTURE_REVIEW_DEST_PHASE } from "@relay/protocol";
 import { PNG } from "pngjs";
-import { FRAME_OBSERVATION_KIND, type FrameObservation } from "../frame-observation.js";
+import { FRAME_OBSERVATION_KIND, type FrameObservation } from "../device/frame-observation.js";
 import {
   analyzeCombineEvidenceBatch,
   analyzeCombineEvidenceJobs,
   exportCombineEvidencePack,
 } from "./combine-evidence-pack.js";
-import { composeScrollSurveyFrames } from "../scrollable/scrollable-survey.js";
-import type { ScrollSurveyFrame } from "../scrollable/scrollable-survey-types.js";
+import { composeScrollSurveyFrames } from "../scroll/scrollable-survey.js";
+import type { ScrollSurveyFrame } from "../scroll/scrollable-survey-types.js";
 import type { TestJob } from "../session/session-contract.js";
 
 function row(stableKey: string, label: string): CombineEvidenceControl {

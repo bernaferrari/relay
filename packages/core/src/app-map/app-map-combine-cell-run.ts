@@ -9,8 +9,11 @@ import {
 import { appMapCombineCellExecutionIntentArtifactKind } from "./app-map-combine-cell-intent.js";
 import type { PreparedAppMapCombineCell } from "./app-map-combine-cell-prepare.js";
 import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
-import { PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND, type PlayerMapSnapshot } from "../player-manifest.js";
-import { currentOperationContext, type OperationContext } from "../operation-context.js";
+import {
+  PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND,
+  type PlayerMapSnapshot,
+} from "../run/player-manifest.js";
+import { currentOperationContext, type OperationContext } from "../execution/operation-context.js";
 import { prepareJobBatch, type EnqueueJobInput, type TestJob } from "../session/session.js";
 import { requirePreparedCombineCellInputs } from "./app-map-combine-cell-inputs.js";
 

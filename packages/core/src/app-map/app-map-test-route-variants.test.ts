@@ -7,7 +7,7 @@ import {
   type Screen,
   type TargetProfile,
 } from "@relay/protocol";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "./map-work.js";
 import { appMapRuntimeTargetProfileFromSaved } from "./app-map-runtime-target-profile.js";
 import {
   AppMapTestRouteSelectionError,

@@ -6,7 +6,7 @@ import {
 import type { Device, SnapshotNode } from "./device-capabilities.js";
 import { controlledMutation, nativeDevice, base } from "./device-dispatch.js";
 import { execAndroidAdb } from "../android/android-adb-host.js";
-import { JobCancelledError, raceCancel } from "../control.js";
+import { JobCancelledError, raceCancel } from "../execution/control.js";
 import {
   currentTargetContext,
   selectedPlatform,
@@ -17,7 +17,7 @@ import {
   verifyAndroidTextEntry,
   type AndroidTextEntryReceipt,
 } from "../android/android-text-entry-verification.js";
-import { InputNotDispatchedError } from "../input-not-dispatched.js";
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 import { typeAndroidTextViaImeHelper } from "../android/android-ime-helper-text.js";
 
 export type AndroidTextPasteAdapter = {

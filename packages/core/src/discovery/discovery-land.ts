@@ -2,7 +2,7 @@ import { commitAppMapChanges } from "../app-map/app-map.js";
 import { discoveryLandChanges } from "../app-map/observation-proposal.js";
 import { mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.js";
 import { readDiscoverySession } from "./discovery.js";
-import { currentOperationContext } from "../operation-context.js";
+import { currentOperationContext } from "../execution/operation-context.js";
 
 /** File observed screens/edges onto the App Map. Called from a human or agent tap. */
 export async function landDiscoveryOnAppMap(

@@ -1,0 +1,220 @@
+import { parseBrowserCaseProfile } from "../browser/browser-case-profile.js";
+import type { TargetProfile } from "../target/target-contract.js";
+import type { AppMapCompiledRuntimeTargetProfile } from "../test/test-intent.js";
+
+type SavedTargetProfile = Pick<
+  TargetProfile,
+  "id" | "targetId" | "platform" | "androidAvdName" | "viewport" | "browserCaseProfile"
+> &
+  Partial<Pick<TargetProfile, "model" | "osVersion">> & {
+    capabilities?: readonly TargetProfile["capabilities"][number][];
+  };
+
+const targetCapabilities = new Set<TargetProfile["capabilities"][number]>([
+  "snapshot",
+  "screenshot",
+  "stream",
+  "recording",
+  "tap",
+  "type",
+  "scroll",
+  "clipboard",
+  "network",
+  "logs",
+  "permissions",
+  "location",
+  "rotation",
+  "lock-screen",
+  "app-switcher",
+  "install",
+  "launch",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function validViewport(value: unknown): value is { width: number; height: number } {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every((key) => key === "width" || key === "height") &&
+    typeof value.width === "number" &&
+    Number.isFinite(value.width) &&
+    value.width > 0 &&
+    typeof value.height === "number" &&
+    Number.isFinite(value.height) &&
+    value.height > 0
+  );
+}
+
+function sameViewport(
+  left: { width: number; height: number } | undefined,
+  right: { width: number; height: number } | undefined,
+): boolean {
+  return (
+    (left === undefined && right === undefined) ||
+    (left !== undefined &&
+      right !== undefined &&
+      left.width === right.width &&
+      left.height === right.height)
+  );
+}
+
+/** Project one saved profile into the complete immutable identity used by a
+ * compiled App Map execution. Conflicting duplicated viewport facts fail
+ * rather than being silently reconciled. */
+export function appMapRuntimeTargetProfileFromSaved(
+  profile: SavedTargetProfile,
+): AppMapCompiledRuntimeTargetProfile {
+  const browserCaseProfile = profile.browserCaseProfile
+    ? parseBrowserCaseProfile(profile.browserCaseProfile)
+    : undefined;
+  if (browserCaseProfile && profile.platform !== "browser") {
+    throw new Error("A browser case profile can only belong to a browser runtime profile");
+  }
+  if (profile.androidAvdName && profile.platform !== "android") {
+    throw new Error("An Android AVD name can only belong to an Android runtime profile");
+  }
+  if (
+    browserCaseProfile &&
+    profile.viewport &&
+    !sameViewport(profile.viewport, browserCaseProfile.viewport)
+  ) {
+    throw new Error("Saved target viewport conflicts with its frozen browser case profile");
+  }
+  const viewport = browserCaseProfile?.viewport ?? profile.viewport;
+  return {
+    id: profile.id,
+    targetId: profile.targetId,
+    platform: profile.platform,
+    ...(profile.platform !== "browser" && profile.model ? { model: profile.model } : {}),
+    ...(profile.androidAvdName ? { androidAvdName: profile.androidAvdName } : {}),
+    ...(profile.platform !== "browser" && profile.osVersion
+      ? { osVersion: profile.osVersion }
+      : {}),
+    ...(viewport ? { viewport: structuredClone(viewport) } : {}),
+    ...(browserCaseProfile ? { browserCaseProfile } : {}),
+    ...(profile.platform !== "browser" && profile.capabilities
+      ? { capabilities: [...new Set(profile.capabilities)].sort() }
+      : {}),
+  };
+}
+
+/** Parse the strict persisted representation while accepting historical
+ * mobile profiles and historical browser profiles only long enough for their
+ * callers to produce an explicit review-required result. */
+export function parseAppMapRuntimeTargetProfile(
+  value: unknown,
+): AppMapCompiledRuntimeTargetProfile | undefined {
+  if (
+    !isRecord(value) ||
+    !Object.keys(value).every((key) =>
+      [
+        "id",
+        "targetId",
+        "platform",
+        "model",
+        "androidAvdName",
+        "osVersion",
+        "viewport",
+        "browserCaseProfile",
+        "capabilities",
+      ].includes(key),
+    ) ||
+    typeof value.id !== "string" ||
+    !value.id.trim() ||
+    typeof value.targetId !== "string" ||
+    !value.targetId.trim() ||
+    (value.platform !== "android" && value.platform !== "ios" && value.platform !== "browser") ||
+    (value.androidAvdName !== undefined &&
+      (typeof value.androidAvdName !== "string" || !value.androidAvdName.trim())) ||
+    (value.model !== undefined && (typeof value.model !== "string" || !value.model.trim())) ||
+    (value.osVersion !== undefined &&
+      (typeof value.osVersion !== "string" || !value.osVersion.trim())) ||
+    (value.capabilities !== undefined &&
+      (!Array.isArray(value.capabilities) ||
+        value.capabilities.some(
+          (capability) =>
+            typeof capability !== "string" ||
+            !targetCapabilities.has(capability as TargetProfile["capabilities"][number]),
+        ))) ||
+    (value.viewport !== undefined && !validViewport(value.viewport))
+  ) {
+    return undefined;
+  }
+  let browserCaseProfile;
+  try {
+    browserCaseProfile =
+      value.browserCaseProfile === undefined
+        ? undefined
+        : parseBrowserCaseProfile(value.browserCaseProfile);
+  } catch {
+    return undefined;
+  }
+  if (browserCaseProfile && value.platform !== "browser") return undefined;
+  if (value.androidAvdName !== undefined && value.platform !== "android") return undefined;
+  if (
+    browserCaseProfile &&
+    value.viewport !== undefined &&
+    !sameViewport(value.viewport, browserCaseProfile.viewport)
+  ) {
+    return undefined;
+  }
+  return appMapRuntimeTargetProfileFromSaved({
+    id: value.id,
+    targetId: value.targetId,
+    platform: value.platform,
+    ...(value.model === undefined ? {} : { model: value.model }),
+    ...(value.androidAvdName === undefined ? {} : { androidAvdName: value.androidAvdName }),
+    ...(value.osVersion === undefined ? {} : { osVersion: value.osVersion }),
+    ...(value.viewport === undefined ? {} : { viewport: value.viewport }),
+    ...(browserCaseProfile ? { browserCaseProfile } : {}),
+    ...(value.capabilities === undefined
+      ? {}
+      : { capabilities: value.capabilities as TargetProfile["capabilities"] }),
+  });
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonical(entry)]),
+  );
+}
+
+export function appMapRuntimeTargetProfileKey(profile: AppMapCompiledRuntimeTargetProfile): string {
+  return JSON.stringify(canonical(appMapRuntimeTargetProfileFromSaved(profile)));
+}
+
+export function sameAppMapRuntimeTargetProfile(
+  left: AppMapCompiledRuntimeTargetProfile,
+  right: AppMapCompiledRuntimeTargetProfile,
+): boolean {
+  return appMapRuntimeTargetProfileKey(left) === appMapRuntimeTargetProfileKey(right);
+}
+
+export function appMapRuntimeTargetProfileWithoutAccount(
+  profile: AppMapCompiledRuntimeTargetProfile,
+): AppMapCompiledRuntimeTargetProfile {
+  if (!profile.browserCaseProfile?.authenticationFixtureId) return profile;
+  const { authenticationFixtureId: _account, ...environment } = profile.browserCaseProfile;
+  return appMapRuntimeTargetProfileFromSaved({
+    ...profile,
+    browserCaseProfile: environment,
+  });
+}
+
+/** Plan account columns overlay a fixture onto a saved browser profile.
+ * Viewport/engine/locale still have to match; the account does not. */
+export function sameAppMapRuntimeTargetProfileIgnoringAccount(
+  left: AppMapCompiledRuntimeTargetProfile,
+  right: AppMapCompiledRuntimeTargetProfile,
+): boolean {
+  return sameAppMapRuntimeTargetProfile(
+    appMapRuntimeTargetProfileWithoutAccount(left),
+    appMapRuntimeTargetProfileWithoutAccount(right),
+  );
+}

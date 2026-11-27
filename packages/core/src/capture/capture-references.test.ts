@@ -13,7 +13,7 @@ import {
   findCaptureReference,
   updateCaptureReferenceIgnoreRegions,
 } from "./capture-references.js";
-import { persistRun, readCompletedPersistedRun } from "../runs/runs.js";
+import { persistRun, readCompletedPersistedRun } from "../run/run-store.js";
 import type { TestJob } from "../session/session.js";
 
 const human = { id: "human:qa", kind: "human" as const };

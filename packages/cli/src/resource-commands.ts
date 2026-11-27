@@ -1,5 +1,6 @@
 import { commandPath as path, type CommandPathDescriptor } from "./command-descriptors.js";
 import { UsageError } from "./errors.js";
+import { unknownText } from "./unknown-text.js";
 
 /**
  * Read-only CLI resources are deliberately separate from operation descriptors:
@@ -83,7 +84,10 @@ export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
         ) {
           throw new UsageError("run evidence limit must be an integer between 1 and 2000");
         }
-        query.set("limit", String(input.limit));
+        query.set(
+          "limit",
+          typeof input.limit === "number" ? String(input.limit) : unknownText(input.limit),
+        );
       }
       if (input.includeBodies !== undefined) {
         if (typeof input.includeBodies !== "boolean") {
@@ -120,7 +124,10 @@ export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
         if (!Number.isInteger(input.limit) || Number(input.limit) < 1) {
           throw new UsageError("activity list limit must be a positive integer");
         }
-        query.set("limit", String(input.limit));
+        query.set(
+          "limit",
+          typeof input.limit === "number" ? String(input.limit) : unknownText(input.limit),
+        );
       }
       if (input.cursor !== undefined) {
         if (typeof input.cursor !== "string" || !input.cursor) {

@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { publish } from "../events.js";
-import { currentOperationContext } from "../operation-context.js";
+import { publish } from "../collaboration/events.js";
+import { currentOperationContext } from "../execution/operation-context.js";
 import type {
   DiscoveryAgentContext,
   DiscoveryDecisionProvenance,
@@ -21,7 +21,7 @@ import {
   isExploreChromeNode,
   isExploreStateChangingNode,
   isUnsafeExploreControlText,
-} from "../explore.js";
+} from "./explore.js";
 import { findWorkspaceRoot } from "../workspace/workspace-root.js";
 import { observeLocaleStableIdentity, observeScreenIdentity } from "../screen/screen-identity.js";
 import { profileHeaderAffordances } from "./discovery-semantic-tap.js";

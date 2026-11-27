@@ -22,7 +22,7 @@ import {
   stepErr,
   targetHasStrategy,
 } from "./recipe-validation-primitives.js";
-export { parsePoint } from "./recipe-validation-primitives.js";
+export { parsePoint, printableUnknown } from "./recipe-validation-primitives.js";
 
 const PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
@@ -307,7 +307,10 @@ function parseTapRuntimeOptions(
       return parsed;
     });
   }
-  if (raw.gesture !== undefined && !["single", "multi", "hold"].includes(String(raw.gesture))) {
+  if (
+    raw.gesture !== undefined &&
+    !(typeof raw.gesture === "string" && ["single", "multi", "hold"].includes(raw.gesture))
+  ) {
     throw stepErr(index, 'tap.gesture must be "single", "multi", or "hold"');
   }
   if (

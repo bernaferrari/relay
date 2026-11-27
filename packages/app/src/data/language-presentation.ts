@@ -7,7 +7,10 @@ export function languagePresentation(code: string, fallback: string) {
     const region = locale.region;
     const flag =
       region && /^[A-Z]{2}$/.test(region)
-        ? [...region].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join("")
+        ? region
+            .split("")
+            .map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0)))
+            .join("")
         : undefined;
     return { label, flag };
   } catch {

@@ -4,7 +4,7 @@ import type {
   CaptureReviewPlannedSlot,
   CaptureReviewRuntimeCursor,
 } from "@relay/protocol";
-import type { Recipe, RecipeStep } from "../recipes.js";
+import type { Recipe, RecipeStep } from "./recipes.js";
 import type { SnapshotNode } from "../device/device.js";
 import type { ScreenshotPayload } from "../workspace/workspace-capture.js";
 import type { TestJob } from "../session/session.js";

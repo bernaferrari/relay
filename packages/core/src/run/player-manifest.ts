@@ -1,0 +1,693 @@
+/** Framework-neutral captured-app player projection (delivery plan §6).
+ *
+ * Dependency direction is one-way: existing immutable evidence (persisted
+ * runs) plus the reviewed App Map project into a player manifest. Reports,
+ * comparison, and coverage compose ON the manifest; the player never needs
+ * them. Nothing here touches a device adapter — the player is read-only
+ * navigation over recorded evidence.
+ *
+ * Identity rules (plan §6.2–§6.5):
+ * - A logical state is a map screen bound by the reviewed test path, not a
+ *   screenshot similarity class. Captions are display text, never identity.
+ * - A capture binds to (state, variant) through the exact chain
+ *   capture-review artifact → checkpoint step → connection → destination
+ *   screen, and its slot configuration is the variant key.
+ * - A variant is the exact capture configuration. Missing stays missing:
+ *   state×variant pairs without an exact capture are emitted as `missing`
+ *   and can never be substituted by another variant's image.
+ * - A connection is `recorded` only when an included run has an exact verified
+ *   transition proof for it. A destination capture alone does not prove the
+ *   action occurred. Authored links still enable navigation without claiming
+ *   execution.
+ * - Findings are review decisions bound to exact captures (frame path plus
+ *   image digest), scoped per run. */
+
+import {
+  captureReviewIdMatchesFrame,
+  playerVariantIdForConfiguration,
+  type AppMap,
+} from "@relay/protocol";
+import type { PersistedRun } from "./run-store.js";
+
+export const PLAYER_MANIFEST_SCHEMA_VERSION = 1;
+export const PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND = "app-map-player-snapshot";
+
+/** Only display and topology fields. Test inputs and locator payloads stay out
+ * of the Run artifact, which has a different sharing lifecycle than the Map. */
+export type PlayerMapSnapshot = {
+  id: string;
+  revision: number;
+  screens: Record<string, { title: string }>;
+  connections: Record<string, MapConnection>;
+  tests: Record<string, { steps: MapTestStep[] }>;
+};
+
+export function snapshotPlayerMap(map: AppMap): PlayerMapSnapshot {
+  return {
+    id: map.id,
+    revision: map.revision,
+    screens: Object.fromEntries(
+      Object.entries(map.screens).map(([id, screen]) => [id, { title: screen.title }]),
+    ),
+    connections: Object.fromEntries(
+      Object.entries(map.connections).map(([id, connection]) => [
+        id,
+        {
+          id: connection.id,
+          fromScreenId: connection.fromScreenId,
+          ...(connection.destination.kind === "screen"
+            ? {
+                destination: {
+                  kind: "screen",
+                  screenId: connection.destination.screenId,
+                },
+              }
+            : {}),
+          ...(connection.label ? { label: connection.label } : {}),
+          ...((connection as { provenance?: { source?: string } }).provenance?.source
+            ? {
+                provenance: {
+                  source: (connection as unknown as { provenance: { source: string } }).provenance
+                    .source,
+                },
+              }
+            : {}),
+          actions: (connection.actions ?? []).map((action) => ({
+            kind: action.kind,
+            ...(action.label ? { label: action.label } : {}),
+          })),
+          ...(connection.sourceAnchor?.point || connection.sourceAnchor?.rect
+            ? {
+                sourceAnchor: {
+                  ...(connection.sourceAnchor.point
+                    ? { point: { ...connection.sourceAnchor.point } }
+                    : {}),
+                  ...(connection.sourceAnchor.rect
+                    ? { rect: { ...connection.sourceAnchor.rect } }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+      ]),
+    ),
+    tests: Object.fromEntries(
+      Object.entries(map.tests).map(([id, test]) => [
+        id,
+        {
+          steps: (test.steps ?? []).map((step) => {
+            const binding = step.binding as { connectionIds?: unknown } | undefined;
+            return {
+              id: step.id,
+              capture: step.capture === true,
+              ...(Array.isArray(binding?.connectionIds)
+                ? {
+                    binding: {
+                      connectionIds: binding.connectionIds.filter(
+                        (connectionId): connectionId is string => typeof connectionId === "string",
+                      ),
+                    },
+                  }
+                : {}),
+            };
+          }),
+        },
+      ]),
+    ),
+  };
+}
+
+export function playerMapSnapshotArtifact(map: AppMap, capturedAt: number) {
+  return {
+    kind: PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND,
+    capturedAt,
+    data: snapshotPlayerMap(map),
+  };
+}
+
+export function playerMapSnapshotFromRun(run: PersistedRun): PlayerMapSnapshot | undefined {
+  const data = run.artifacts?.find(
+    (artifact) => artifact.kind === PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND,
+  )?.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const value = data as Record<string, unknown>;
+  if (typeof value.id !== "string" || !value.id.trim()) return undefined;
+  if (typeof value.revision !== "number" || !Number.isSafeInteger(value.revision)) return undefined;
+  for (const key of ["screens", "connections", "tests"] as const) {
+    if (!value[key] || typeof value[key] !== "object" || Array.isArray(value[key]))
+      return undefined;
+  }
+  return value as PlayerMapSnapshot;
+}
+
+export type PlayerVariantKey = string;
+
+export type PlayerState = {
+  /** Map screen id — the stable logical-state identity. */
+  id: string;
+  title: string;
+};
+
+export type PlayerVariant = {
+  /** Stable key from the exact capture-review configuration. */
+  id: PlayerVariantKey;
+  /** Human-readable configuration summary (display text, not identity). */
+  label: string;
+};
+
+export type PlayerCapture = {
+  /** `${runId}:${framePath}:${imageSha256}` — exact artifact identity. */
+  id: string;
+  stateId: string;
+  variantId: PlayerVariantKey;
+  runId: string;
+  framePath: string;
+  imageSha256: string;
+  slotId: string;
+  /** Display text only (plan §6.2: captions are not identity). */
+  caption: string;
+  capturedAt: number;
+  /** Screenshot pixel size when known; hotspot transforms need it. */
+  viewport?: { width: number; height: number };
+};
+
+export type PlayerHotspot = {
+  connectionId: string;
+  /** Normalized (0–1) point/rect in the SOURCE capture's viewport. The UI
+   * transforms against the displayed image; §6.4 forbids reusing source
+   * pixels on a differently-scaled variant. */
+  point?: { x: number; y: number };
+  rect?: { x: number; y: number; width: number; height: number };
+  /** Accessible recorded-action list used when no reviewed geometry exists
+   * (plan §6.4: missing geometry falls back to actions, never invented hit
+   * regions). */
+  actions: readonly { kind: string; label?: string }[];
+};
+
+export type PlayerConnection = {
+  id: string;
+  fromStateId: string;
+  toStateId: string;
+  /** `recorded` has a verified proof; `authored` is unproved; `suggested` is discovery. */
+  kind: "recorded" | "authored" | "suggested";
+  label: string;
+  /** Present only for recorded connections; captureId requires matching image evidence. */
+  provenance?: { runId: string; captureId?: string };
+  hotspot?: PlayerHotspot;
+};
+
+export type PlayerFinding = {
+  /** `${runId}:${captureId}` — one exact capture. */
+  id: string;
+  runId: string;
+  captureId: string;
+  action: string;
+  note?: string;
+  decidedAt: number;
+  decidedBy?: string;
+  reviewVersion?: number;
+};
+
+export type PlayerMissing = {
+  stateId: string;
+  variantId: PlayerVariantKey;
+  /** Honest reason, e.g. which run lacked the destination capture. */
+  reason: string;
+};
+
+export type PlayerManifest = {
+  schemaVersion: typeof PLAYER_MANIFEST_SCHEMA_VERSION;
+  pinned: {
+    appMapId: string;
+    appMapRevision: number;
+    runIds: readonly string[];
+    generatedAt: number;
+  };
+  entryStateId?: string;
+  states: readonly PlayerState[];
+  variants: readonly PlayerVariant[];
+  captures: readonly PlayerCapture[];
+  connections: readonly PlayerConnection[];
+  findings: readonly PlayerFinding[];
+  missing: readonly PlayerMissing[];
+};
+
+type CaptureReviewArtifactData = {
+  framePath?: unknown;
+  imageSha256?: unknown;
+  slotId?: unknown;
+  caption?: unknown;
+  stepId?: unknown;
+  requirementId?: unknown;
+  checkpointId?: unknown;
+  capturedAt?: unknown;
+  configuration?: unknown;
+  observed?: { laneId?: unknown; profileId?: unknown } | null;
+};
+
+/** The variant identity combines the declared configuration with the
+ * OBSERVED lane/profile. A compiled plan may carry a stale route label
+ * (two different lanes once both declared browser=example-com); observation
+ * is the truth that keeps two configurations from collapsing into one
+ * substitutable variant (plan §6.5). */
+function variantKeyOf(data: {
+  configuration?: unknown;
+  observed?: { laneId?: unknown; profileId?: unknown } | null;
+}): { id: PlayerVariantKey; label: string } {
+  const declared = configurationKey(data.configuration);
+  const observedLane =
+    typeof data.observed?.laneId === "string" && data.observed.laneId
+      ? data.observed.laneId
+      : undefined;
+  const observedProfile =
+    typeof data.observed?.profileId === "string" && data.observed.profileId
+      ? data.observed.profileId
+      : undefined;
+  if (!observedLane && !observedProfile) {
+    return { id: declared, label: configurationLabel(data.configuration) };
+  }
+  const observedParts = [observedLane, observedProfile].filter(Boolean).join(" · ");
+  return { id: `${declared} @ ${observedParts}`, label: `${declared} @ ${observedParts}` };
+}
+
+function configurationKey(configuration: unknown): PlayerVariantKey {
+  if (!configuration || typeof configuration !== "object" || Array.isArray(configuration)) {
+    return "unconfigured";
+  }
+  return (
+    playerVariantIdForConfiguration(configuration as Record<string, unknown>) ?? "unconfigured"
+  );
+}
+
+function configurationLabel(configuration: unknown): string {
+  const key = configurationKey(configuration);
+  return key === "unconfigured" ? "Default configuration" : key;
+}
+
+function readCaptureReviewData(artifact: { kind: string; data?: unknown; capturedAt?: unknown }):
+  | {
+      data: CaptureReviewArtifactData & { framePath: string; imageSha256: string };
+      capturedAt: number;
+    }
+  | undefined {
+  if (artifact.kind !== "capture-review") return undefined;
+  const raw = artifact.data;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const data = raw as CaptureReviewArtifactData;
+  if (typeof data.framePath !== "string" || typeof data.imageSha256 !== "string") return undefined;
+  const capturedAt =
+    typeof data.capturedAt === "number"
+      ? data.capturedAt
+      : typeof artifact.capturedAt === "number"
+        ? artifact.capturedAt
+        : 0;
+  // Guarded above: framePath and imageSha256 passed the typeof-string checks.
+  const narrowed = data as CaptureReviewArtifactData & { framePath: string; imageSha256: string };
+  return { data: narrowed, capturedAt };
+}
+
+type MapTestStep = {
+  id?: unknown;
+  capture?: unknown;
+  binding?: { connectionIds?: unknown } | null;
+};
+
+type MapConnection = {
+  id: string;
+  fromScreenId: string;
+  destination?: { kind?: string; screenId?: unknown };
+  label?: string;
+  state?: string;
+  provenance?: { source?: string };
+  actions?: readonly { kind?: string; label?: string; target?: unknown }[];
+  sourceAnchor?: {
+    point?: { x?: unknown; y?: unknown };
+    rect?: { x?: unknown; y?: unknown; width?: unknown; height?: unknown };
+  };
+};
+
+function mapConnectionsOf(map: PlayerMapSnapshot): MapConnection[] {
+  return Object.values(map.connections ?? {}) as unknown as MapConnection[];
+}
+
+function mapTestsOf(map: PlayerMapSnapshot): Record<string, { steps?: MapTestStep[] }> {
+  return (map.tests ?? {}) as unknown as Record<string, { steps?: MapTestStep[] }>;
+}
+
+function screenTitleOf(map: PlayerMapSnapshot, screenId: string): string {
+  const screen = (map.screens ?? {})[screenId] as { title?: string } | undefined;
+  return screen?.title ?? screenId;
+}
+
+/** Destination screen of a test step: step → binding connection → screen.
+ * This is the identity chain; intent labels are never used for matching. */
+function stepDestinationScreen(
+  connections: MapConnection[],
+  step: MapTestStep,
+): string | undefined {
+  const ids = step.binding?.connectionIds;
+  if (!Array.isArray(ids)) return undefined;
+  for (const id of ids) {
+    if (typeof id !== "string") continue;
+    const connection = connections.find((candidate) => candidate.id === id);
+    const destination = connection?.destination;
+    if (destination?.kind === "screen" && typeof destination.screenId === "string") {
+      return destination.screenId;
+    }
+  }
+  return undefined;
+}
+
+type CompiledRecipe = {
+  steps?: readonly {
+    id?: unknown;
+    kind?: unknown;
+    check?: {
+      transitionDependencies?: readonly {
+        destination?: { kind?: unknown; screenId?: unknown };
+      }[];
+    };
+  }[];
+};
+
+/** checkpoint step id → destination screen, from the run's compiled plan.
+ * Module steps establish the destination screen; subsequent screenshot steps
+ * of the same module inherit it structurally (no id parsing, no captions). */
+function compiledPlanDestinationScreens(run: PersistedRun): Map<string, string> {
+  const screens = new Map<string, string>();
+  for (const artifact of run.artifacts ?? []) {
+    if (artifact.kind !== "app-map-test-plan") continue;
+    const data = artifact.data;
+    if (data === null || typeof data !== "object" || Array.isArray(data)) continue;
+    const recipes = (data as { recipes?: unknown }).recipes;
+    if (recipes === null || typeof recipes !== "object" || Array.isArray(recipes)) continue;
+    for (const recipe of Object.values(recipes as Record<string, CompiledRecipe>)) {
+      let current: string | undefined;
+      for (const step of recipe.steps ?? []) {
+        if (typeof step.id !== "string") continue;
+        if (step.kind === "module") {
+          const dependencies = step.check?.transitionDependencies ?? [];
+          current = undefined;
+          for (const dependency of dependencies) {
+            const destination = dependency.destination;
+            if (destination?.kind === "screen" && typeof destination.screenId === "string") {
+              current = destination.screenId;
+              break;
+            }
+          }
+        } else if (current !== undefined) {
+          screens.set(step.id, current);
+        }
+      }
+    }
+  }
+  return screens;
+}
+
+/** Fallback for map-authored fixtures: map test step → connection → screen. */
+function mapTestStepScreen(
+  tests: Record<string, { steps?: MapTestStep[] }>,
+  connections: MapConnection[],
+  checkpointId: string,
+): string | undefined {
+  for (const test of Object.values(tests)) {
+    const step = (test.steps ?? []).find((candidate) => candidate.id === checkpointId);
+    if (step) return stepDestinationScreen(connections, step);
+  }
+  return undefined;
+}
+
+function connectionHotspot(connection: MapConnection): PlayerHotspot | undefined {
+  const actions = (connection.actions ?? []).map((action) => ({
+    kind: typeof action.kind === "string" ? action.kind : "action",
+    ...(typeof action.label === "string" ? { label: action.label } : {}),
+  }));
+  const anchor = connection.sourceAnchor;
+  const point =
+    anchor?.point !== undefined &&
+    typeof anchor.point.x === "number" &&
+    typeof anchor.point.y === "number"
+      ? { x: anchor.point.x, y: anchor.point.y }
+      : undefined;
+  const rawRect = anchor?.rect;
+  const rect =
+    rawRect !== undefined &&
+    typeof rawRect.x === "number" &&
+    typeof rawRect.y === "number" &&
+    typeof rawRect.width === "number" &&
+    typeof rawRect.height === "number"
+      ? { x: rawRect.x, y: rawRect.y, width: rawRect.width, height: rawRect.height }
+      : undefined;
+  if (!point && !rect) {
+    // §6.4: no invented hit regions — the recorded-action list is the
+    // accessible fallback when reviewed geometry is absent.
+    return actions.length > 0 ? { connectionId: connection.id, actions } : undefined;
+  }
+  return {
+    connectionId: connection.id,
+    ...(point ? { point } : {}),
+    ...(rect ? { rect } : {}),
+    actions,
+  };
+}
+
+export function buildPlayerManifest(input: {
+  map: AppMap | PlayerMapSnapshot;
+  runs: readonly PersistedRun[];
+  now?: number;
+}): PlayerManifest {
+  const map = "schemaVersion" in input.map ? snapshotPlayerMap(input.map) : input.map;
+  const { runs } = input;
+  const now = input.now ?? 0;
+  const connections = mapConnectionsOf(map);
+  const tests = mapTestsOf(map);
+
+  // 1) Collect exact captures from run evidence, keeping the identity chain.
+  const captures: PlayerCapture[] = [];
+  const observedConnection = new Map<string, Map<string, PlayerCapture>>();
+  const verifiedConnectionRuns = new Map<string, Set<string>>();
+  const captureByStateVariant = new Map<string, PlayerCapture>();
+  const variantKeys = new Map<PlayerVariantKey, PlayerVariant>();
+  const statesById = new Map<string, PlayerState>();
+  const testIdsSeen = new Set<string>();
+
+  for (const run of runs) {
+    for (const artifact of run.artifacts ?? []) {
+      if (artifact.kind !== "campaign-transition-proof") continue;
+      const proof = artifact.data;
+      if (proof === null || typeof proof !== "object" || Array.isArray(proof)) continue;
+      const data = proof as {
+        connectionId?: unknown;
+        status?: unknown;
+        originScreenId?: unknown;
+        destination?: { kind?: unknown; screenId?: unknown };
+      };
+      if (data.status !== "verified" || typeof data.connectionId !== "string") continue;
+      const connection = connections.find((candidate) => candidate.id === data.connectionId);
+      if (
+        !connection ||
+        data.originScreenId !== connection.fromScreenId ||
+        data.destination?.kind !== "screen" ||
+        data.destination.screenId !== connection.destination?.screenId
+      )
+        continue;
+      const provenRuns = verifiedConnectionRuns.get(connection.id) ?? new Set<string>();
+      provenRuns.add(run.id);
+      verifiedConnectionRuns.set(connection.id, provenRuns);
+    }
+    // Preferred identity chain: the run's compiled plan carries each
+    // checkpoint step's destination screen (module step → transition
+    // dependency → screen), independent of map test step naming.
+    const planScreens = compiledPlanDestinationScreens(run);
+    for (const artifact of run.artifacts ?? []) {
+      const review = readCaptureReviewData(artifact);
+      if (!review) continue;
+      const { data } = review;
+      const testId = typeof data.requirementId === "string" ? data.requirementId : undefined;
+      const checkpointId =
+        typeof data.checkpointId === "string"
+          ? data.checkpointId
+          : typeof data.stepId === "string"
+            ? data.stepId
+            : undefined;
+      if (!testId || !checkpointId) continue;
+      testIdsSeen.add(testId);
+      const screenId =
+        planScreens.get(checkpointId) ?? mapTestStepScreen(tests, connections, checkpointId);
+      if (!screenId) continue;
+      if (!statesById.has(screenId)) {
+        statesById.set(screenId, { id: screenId, title: screenTitleOf(map, screenId) });
+      }
+      const variant = variantKeyOf(data);
+      const variantKey = variant.id;
+      if (!variantKeys.has(variantKey)) {
+        variantKeys.set(variantKey, variant);
+      }
+      const capture: PlayerCapture = {
+        id: `${run.id}:${data.framePath}:${data.imageSha256}`,
+        stateId: screenId,
+        variantId: variantKey,
+        runId: run.id,
+        framePath: data.framePath,
+        imageSha256: data.imageSha256,
+        slotId: typeof data.slotId === "string" ? data.slotId : "",
+        caption: typeof data.caption === "string" ? data.caption : "",
+        capturedAt: review.capturedAt,
+      };
+      captures.push(capture);
+      const boundIds = tests[testId]?.steps?.find((step) => step.id === checkpointId)?.binding
+        ?.connectionIds;
+      if (Array.isArray(boundIds)) {
+        for (const connectionId of boundIds) {
+          if (typeof connectionId !== "string") continue;
+          const byVariant =
+            observedConnection.get(connectionId) ?? new Map<string, PlayerCapture>();
+          observedConnection.set(connectionId, byVariant);
+          const previous = byVariant.get(capture.variantId);
+          if (!previous || previous.capturedAt <= capture.capturedAt) {
+            byVariant.set(capture.variantId, capture);
+          }
+        }
+      }
+      const slotKey = `${screenId}\u{0}${variantKey}`;
+      // Keep the newest capture per (state, variant); earlier attempts stay
+      // in `captures` but the resolver never falls back across variants.
+      const existing = captureByStateVariant.get(slotKey);
+      if (!existing || existing.capturedAt <= capture.capturedAt) {
+        captureByStateVariant.set(slotKey, capture);
+      }
+    }
+  }
+
+  // 2) Connections between player states. A capture is linked only after a
+  // verified proof for the same connection and Run establishes the action.
+  const playerConnections: PlayerConnection[] = [];
+  for (const connection of connections) {
+    const destination = connection.destination;
+    if (destination?.kind !== "screen" || typeof destination.screenId !== "string") continue;
+    const fromScreenId = connection.fromScreenId;
+    const toScreenId = destination.screenId;
+    if (!statesById.has(fromScreenId) && !statesById.has(toScreenId)) continue;
+    if (!statesById.has(fromScreenId)) {
+      statesById.set(fromScreenId, { id: fromScreenId, title: screenTitleOf(map, fromScreenId) });
+    }
+    if (!statesById.has(toScreenId)) {
+      statesById.set(toScreenId, { id: toScreenId, title: screenTitleOf(map, toScreenId) });
+    }
+    const provenRuns = verifiedConnectionRuns.get(connection.id) ?? new Set<string>();
+    const observed = [...(observedConnection.get(connection.id)?.values() ?? [])].filter(
+      (capture) => provenRuns.has(capture.runId),
+    );
+    const source = connection.provenance?.source;
+    const kind = source === "discovery" ? "suggested" : provenRuns.size ? "recorded" : "authored";
+    const provenEvidence: { runId?: string; capture?: PlayerCapture }[] =
+      kind === "recorded"
+        ? [...provenRuns].flatMap((runId): { runId: string; capture?: PlayerCapture }[] => {
+            const capturesForRun = observed.filter((capture) => capture.runId === runId);
+            return capturesForRun.length
+              ? capturesForRun.map((capture) => ({ runId, capture }))
+              : [{ runId }];
+          })
+        : [{}];
+    for (const evidence of provenEvidence) {
+      playerConnections.push({
+        id: connection.id,
+        fromStateId: fromScreenId,
+        toStateId: toScreenId,
+        kind,
+        label: typeof connection.label === "string" ? connection.label : "Open",
+        ...(evidence.runId
+          ? {
+              provenance: {
+                runId: evidence.runId,
+                ...(evidence.capture ? { captureId: evidence.capture.id } : {}),
+              },
+            }
+          : {}),
+        ...(connectionHotspot(connection) ? { hotspot: connectionHotspot(connection)! } : {}),
+      });
+    }
+  }
+
+  // 3) Missing state×variant pairs: every state referenced by the included
+  // tests' capture steps must exist per variant; absent = missing, never
+  // substituted (plan §6.5).
+  const missing: PlayerMissing[] = [];
+  const referencedStates = new Set<string>();
+  for (const testId of testIdsSeen) {
+    for (const step of tests[testId]?.steps ?? []) {
+      if (step.capture !== true) continue;
+      const screenId = stepDestinationScreen(connections, step);
+      if (screenId) referencedStates.add(screenId);
+    }
+  }
+  for (const stateId of referencedStates) {
+    for (const variant of variantKeys.values()) {
+      const slotKey = `${stateId}\u{0}${variant.id}`;
+      if (!captureByStateVariant.has(slotKey)) {
+        missing.push({
+          stateId,
+          variantId: variant.id,
+          reason: `No capture for this state in configuration ${variant.label}; missing stays missing.`,
+        });
+      }
+    }
+  }
+
+  // 4) Findings: review decisions bound to exact captures of these runs.
+  const findings: PlayerFinding[] = [];
+  for (const run of runs) {
+    for (const decision of run.captureReviews ?? []) {
+      const captureId = decision.captureId;
+      const capture = captures.find((candidate) => {
+        if (candidate.runId !== run.id) return false;
+        return captureReviewIdMatchesFrame(captureId, candidate.framePath, candidate.imageSha256);
+      });
+      if (!capture) continue;
+      findings.push({
+        id: `${run.id}:${captureId}`,
+        runId: run.id,
+        captureId,
+        action: decision.action,
+        ...(decision.note !== undefined ? { note: decision.note } : {}),
+        decidedAt: decision.decidedAt,
+        ...(decision.decidedBy !== undefined ? { decidedBy: decision.decidedBy.id } : {}),
+        ...(decision.reviewVersion !== undefined ? { reviewVersion: decision.reviewVersion } : {}),
+      });
+    }
+  }
+
+  const stateList = [...statesById.values()];
+  return {
+    schemaVersion: PLAYER_MANIFEST_SCHEMA_VERSION,
+    pinned: {
+      appMapId: map.id,
+      appMapRevision: map.revision,
+      runIds: runs.map((run) => run.id),
+      generatedAt: now,
+    },
+    ...(stateList.length > 0 ? { entryStateId: stateList[0]!.id } : {}),
+    states: stateList,
+    variants: [...variantKeys.values()],
+    captures,
+    connections: playerConnections,
+    findings,
+    missing,
+  };
+}
+
+/** Resolve the exact capture for a state under a variant. Substitution is
+ * structurally impossible: the key includes the variant, and a miss returns
+ * `undefined` so callers render an explicit missing state (plan §6.5). */
+export function resolvePlayerCapture(
+  manifest: PlayerManifest,
+  stateId: string,
+  variantId: PlayerVariantKey,
+): PlayerCapture | undefined {
+  let newest: PlayerCapture | undefined;
+  for (const capture of manifest.captures) {
+    if (capture.stateId !== stateId || capture.variantId !== variantId) continue;
+    if (!newest || capture.capturedAt > newest.capturedAt) newest = capture;
+  }
+  return newest;
+}

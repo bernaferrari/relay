@@ -10,7 +10,7 @@ import {
 } from "@relay/protocol";
 import { AppMapTestCompileError } from "../app-map/app-map-test-compile-error.js";
 import { preflightAppMapCombine } from "../app-map/app-map-combine-preflight.js";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "../app-map/map-work.js";
 
 const at = 1;
 const scope = { organizationId: "org", projectId: "project", appMapId: "checkout" };

@@ -1,1 +1,0 @@
-let e={isActive:()=>!1};function t(t){e=t}function n(t){return e.isActive(t)}export{n,t};

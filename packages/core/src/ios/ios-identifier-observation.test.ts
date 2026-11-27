@@ -13,7 +13,7 @@ import {
   type LiveIosRunnerCommand,
 } from "./ios-runner-listener-command.js";
 import type { SnapshotNode } from "../device/device-capabilities.js";
-import { namedControlObservationOptions } from "../named/named-control-observation.js";
+import { namedControlObservationOptions } from "../device/named-control-observation.js";
 
 const setLiveIosRunnerCommandPostForTests: typeof setNativePost = (post) =>
   setNativePost(post ? catalogAwarePost(post) : undefined);

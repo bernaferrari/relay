@@ -304,7 +304,7 @@ async function startFakeAgentDeviceDaemon(input: {
       } catch {
         parsed = {};
       }
-      const command = String(parsed.params?.command ?? "");
+      const command = typeof parsed.params?.command === "string" ? parsed.params.command : "";
       let data: Record<string, unknown> = {};
       if (command === "screenshot") {
         void writePngAtPath(parsed as Record<string, unknown>);

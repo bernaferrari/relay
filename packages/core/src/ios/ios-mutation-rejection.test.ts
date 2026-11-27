@@ -7,12 +7,12 @@ import {
   iosSelectorWasNotDispatched,
   lastIosMutationAttemptDiagnostic,
 } from "./ios-mutation-policy.js";
-import { classifyRunOutcome } from "../outcomes.js";
+import { classifyRunOutcome } from "../run/outcomes.js";
 import { runRecipeStep } from "../recipe/recipe-runner.js";
 import { runCampaignCheck } from "../recipe/recipe-runner-campaign-checks.js";
 import { runMappedPrelude } from "../recipe/recipe-runner-tour.js";
 import { classifySessionError } from "../session/session-job-support.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "../recipe/recipes.js";
 import type { TestJob } from "../session/session-contract.js";
 import { runWithTargetContext } from "../target/target-context.js";
 import { deviceTestDouble } from "../testing.js";

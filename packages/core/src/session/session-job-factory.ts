@@ -7,15 +7,15 @@ import {
   type ExecutionTargetRef,
   type TargetProfile,
 } from "@relay/protocol";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import { getEvidenceCollectionPolicy } from "../evidence/evidence-policy.js";
-import { currentOperationContext } from "../operation-context.js";
-import { PRIVATE_INPUT } from "../private-inputs.js";
-import { REDACTED } from "../redaction.js";
-import type { PersistedRun } from "../runs/runs.js";
+import { currentOperationContext } from "../execution/operation-context.js";
+import { PRIVATE_INPUT } from "../input/private-inputs.js";
+import { REDACTED } from "../evidence/redaction.js";
+import type { PersistedRun } from "../run/run-store.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import type { TraceFrameRef, TraceStep } from "../trace/trace.js";
-import { installRegisteredBuild, preflightRegisteredBuild } from "../builds.js";
+import { installRegisteredBuild, preflightRegisteredBuild } from "../change/builds.js";
 import type { Build } from "@relay/protocol";
 import {
   invokedBrowserLaneId,

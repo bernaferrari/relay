@@ -1,1 +1,0 @@
-import{r as e}from"./remote-config-core.js";import"./remote-config2.js";export{e as resolveRemoteConfigProfile};

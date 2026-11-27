@@ -1,11 +1,11 @@
 import type { Device } from "../device/device.js";
 import { replaceText, scrollDown, scrollUp, sleep, snapshot, typeText } from "../device/device.js";
-import { cooperativeCheckpoint } from "../control.js";
-import { now } from "../events.js";
+import { cooperativeCheckpoint } from "../execution/control.js";
+import { now } from "../collaboration/events.js";
 import {
   captureScrollableSurveyForTarget,
   type ScrollSurveyTargetInput,
-} from "../scrollable/scrollable-survey.js";
+} from "../scroll/scrollable-survey.js";
 import {
   captureSurfaceBaselineDisposition,
   loadFrozenDocumentOriginForCaptureSurface,
@@ -14,9 +14,9 @@ import {
   assertCaptureSurfaceSurveyUsable,
   persistCaptureSurfaceSurveyFrames,
 } from "../capture/capture-surface-survey-frames.js";
-import { persistLogicalScrollSurface } from "../logical-scroll-surface.js";
-import { indexedReusableSurfaceComparisons } from "../runs/runs.js";
-import type { ScrollSurveyResult } from "../scrollable/scrollable-survey-types.js";
+import { persistLogicalScrollSurface } from "../app-map/logical-scroll-surface.js";
+import { indexedReusableSurfaceComparisons } from "../run/run-store.js";
+import type { ScrollSurveyResult } from "../scroll/scrollable-survey-types.js";
 import {
   findReusableSurfaceComparison,
   surfaceComparisonNeedsRecapture,
@@ -40,7 +40,7 @@ import {
   tapRecordedTarget,
 } from "./recipe-runner-support.js";
 import { screenIdentityMatches } from "./recipe-target-match.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "../session/session-contract.js";
 import type { TargetProfile } from "@relay/protocol";
 import {
@@ -51,7 +51,7 @@ import {
 } from "./recipe-runner-context.js";
 import { recordInitiatingResponseBoundary } from "./recipe-response-completion.js";
 import { observeRecipeResponse } from "./recipe-response-observation.js";
-import { NativeTextEntryVerificationError } from "../input-not-dispatched.js";
+import { NativeTextEntryVerificationError } from "../device/input-not-dispatched.js";
 import {
   advanceSemanticRevealNavigation,
   estimateSemanticRevealMovement,

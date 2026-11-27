@@ -18,9 +18,7 @@ export type CaptureReferenceOperationMap = {
   };
 };
 
-const { command, query } = createSchemaOperationBuilders<
-  keyof CaptureReferenceOperationMap & string
->();
+const { command, query } = createSchemaOperationBuilders<keyof CaptureReferenceOperationMap>();
 
 export const captureReferenceOperationDefinitions = [
   query("review.inbox.list", "List screenshots waiting for review", "/review/inbox", {

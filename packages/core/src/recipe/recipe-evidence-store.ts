@@ -12,7 +12,7 @@ import {
   projectArtifactRef,
   redactedArtifactRef,
 } from "../artifact/artifact-ref.js";
-import { visualEvidenceAllowed } from "../redaction.js";
+import { visualEvidenceAllowed } from "../evidence/redaction.js";
 import { findWorkspaceRoot } from "../workspace/workspace-root.js";
 
 /** Directory for custom recipes — mirrors runsRoot()'s convention. */

@@ -21,7 +21,7 @@ import {
   runWithTargetSupervisorStore,
   TargetSupervisorStore,
 } from "../target/target-supervisor-store.js";
-import { deleteTarget, saveBrowserTarget } from "../targets.js";
+import { deleteTarget, saveBrowserTarget } from "../target/targets.js";
 import type { TestJob } from "../session/session.js";
 
 const CHROME =

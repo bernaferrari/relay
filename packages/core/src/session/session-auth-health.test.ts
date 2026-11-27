@@ -18,7 +18,7 @@ import {
   saveBrowserAuthenticationFixture,
   waitForJobCompletion,
 } from "../index.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 
 const sleepRecipe: Recipe = {
   id: "sleep-once",

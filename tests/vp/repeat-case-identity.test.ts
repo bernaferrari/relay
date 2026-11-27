@@ -12,7 +12,7 @@ import {
 } from "../../packages/core/src/app-map/app-map-combine-cell-run.js";
 import { prepareAppMapCombineCells } from "../../packages/core/src/app-map/app-map-combine-cell-prepare.js";
 import { summarizeJob } from "../../packages/core/src/session/session-summary.js";
-import { runWithOperationContext } from "../../packages/core/src/operation-context.js";
+import { runWithOperationContext } from "../../packages/core/src/execution/operation-context.js";
 import {
   findPreviousApprovedRepeatCapture,
   type RepeatCaptureJob,

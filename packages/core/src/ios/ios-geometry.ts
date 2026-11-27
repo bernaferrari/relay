@@ -21,7 +21,7 @@ export type IosSnapshotGeometry = {
  */
 export function inferIosSnapshotGeometry(
   nodes: SnapshotNode[],
-  displayOrientation?: IosDisplayOrientation | string | null,
+  displayOrientation?: IosDisplayOrientation | (string & {}) | null,
 ): IosSnapshotGeometry | undefined {
   const application = nodes.find(
     (node) =>
@@ -164,7 +164,7 @@ export function parseIosDisplayOrientation(raw: string | undefined | null): IosD
 export function normalizeScreenshotToBounds(
   bytes: Buffer,
   bounds?: { width: number; height: number },
-  displayOrientation?: IosDisplayOrientation | string | null,
+  displayOrientation?: IosDisplayOrientation | (string & {}) | null,
 ): Buffer {
   const orientation = parseIosDisplayOrientation(
     displayOrientation == null ? undefined : String(displayOrientation),

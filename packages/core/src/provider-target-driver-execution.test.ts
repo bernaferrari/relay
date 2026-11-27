@@ -8,10 +8,10 @@ import {
   resetDurableWorkerAssignmentStoreForTests,
 } from "./durable/durable-worker-assignments.js";
 import { setCloudDeviceProvider, setLocalDeviceProvider } from "./device/device-factory.js";
-import { createDeterministicProviderTestDriver } from "./deterministic-provider-test-driver.js";
-import { runWithOperationContext } from "./operation-context.js";
-import type { Recipe } from "./recipes.js";
-import { readPersistedRun } from "./runs/runs.js";
+import { createDeterministicProviderTestDriver } from "./target/deterministic-provider-test-driver.js";
+import { runWithOperationContext } from "./execution/operation-context.js";
+import type { Recipe } from "./recipe/recipes.js";
+import { readPersistedRun } from "./run/run-store.js";
 import { prepareJobBatch, runJobSync, waitForJobCompletion } from "./session/session.js";
 import {
   TargetDriverRegistry,

@@ -1,7 +1,7 @@
-import type { RecipeStep } from "../recipes.js";
-import { writeFramePng } from "../runs/runs.js";
+import type { RecipeStep } from "../recipe/recipes.js";
+import { writeFramePng } from "../run/run-store.js";
 import { writeFrameTree } from "../run/run-frame-tree.js";
-import type { ScrollSurveyResult } from "../scrollable/scrollable-survey-types.js";
+import type { ScrollSurveyResult } from "../scroll/scrollable-survey-types.js";
 import type { TestJob } from "../session/session-contract.js";
 
 const UNUSABLE_SURVEY_REASONS = new Set([

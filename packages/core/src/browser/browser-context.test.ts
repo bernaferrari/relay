@@ -11,7 +11,7 @@ import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtu
 import { closeBrowserHostPool } from "./browser-host-pool.js";
 import { browserProofSessionForTarget, closeBrowserTarget } from "./browser-target.js";
 import { acquirePreparedSessionDevice } from "../session/session-provider-execution.js";
-import { deleteTarget, saveBrowserTarget } from "../targets.js";
+import { deleteTarget, saveBrowserTarget } from "../target/targets.js";
 import type { TestJob } from "../session/session.js";
 import { loadEvidenceCollectionPolicy } from "../evidence/evidence-policy.js";
 

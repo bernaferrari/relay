@@ -26,9 +26,7 @@ export type CampaignRepairOperationMap = {
   };
 };
 
-const { command, query } = createSchemaOperationBuilders<
-  keyof CampaignRepairOperationMap & string
->();
+const { command, query } = createSchemaOperationBuilders<keyof CampaignRepairOperationMap>();
 
 export const runRepairOperationDefinitions = [
   query("run.repair.list", "List failed check repair targets", "/runs/repairs", {

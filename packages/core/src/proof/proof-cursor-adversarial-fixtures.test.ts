@@ -7,8 +7,8 @@ import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-pref
 import { replayPersistedRunOffline } from "../offline/offline-run-replay.js";
 import { runCampaignCheck } from "../recipe/recipe-runner-campaign-checks.js";
 import type { RecipeStepContext } from "../recipe/recipe-runner-context.js";
-import type { Recipe, RecipeStep } from "../recipes.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { Recipe, RecipeStep } from "../recipe/recipes.js";
+import type { PersistedRun } from "../run/run-store.js";
 import type { TestJob } from "../session/session.js";
 import { runWithTargetContext } from "../target/target-context.js";
 

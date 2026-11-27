@@ -29,7 +29,7 @@ import { resolveBrowserDeviceOpenIdentity } from "./browser-execution-identity.j
 
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
-import { InputNotDispatchedError } from "../input-not-dispatched.js";
+import { InputNotDispatchedError } from "../device/input-not-dispatched.js";
 import {
   MAX_BROWSER_DEVICE_SEMANTIC_CANDIDATES,
   semanticCandidates,

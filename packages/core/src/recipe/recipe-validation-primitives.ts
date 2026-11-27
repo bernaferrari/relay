@@ -20,6 +20,14 @@ export function isNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
+export function printableUnknown(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return JSON.stringify(value) ?? "unknown";
+}
+
 export function stepErr(index: number, why: string): Error {
   return new Error(`step ${index}: ${why}`);
 }

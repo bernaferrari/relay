@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { audioFixtureLaunchArguments } from "./browser-audio-fixture.js";
-import { importManagedFixture } from "../managed-fixtures.js";
+import { importManagedFixture } from "../workspace/managed-fixtures.js";
 
 test("microphone fixtures resolve only in their project and require WAV content", async () => {
   const previous = process.env.RELAY_STATE_DIR;

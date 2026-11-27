@@ -1,20 +1,5 @@
 export { createRelayWorkflows } from "./relay-workflows.js";
 export {
-  createGoalSessionRunner,
-  type GoalSessionRunner,
-  type GoalSessionStore,
-} from "./goal-runner.js";
-export {
-  createGoalExplorationRunner,
-  type GoalExplorationRunner,
-  type GoalExplorationStore,
-} from "./goal-exploration-runner.js";
-export {
-  createGoalPromotionRunner,
-  type GoalPromotionInput,
-  type GoalPromotionRunner,
-} from "./goal-promotion-runner.js";
-export {
   createChangeVerificationWorkflow,
   createProofWorkflow,
   type ApproveVerificationPlanInput,
@@ -158,7 +143,3 @@ export {
   type AuthoringInputReceiptRef,
   type AuthoringInputReceiptOutcome,
 } from "./authoring-input-receipt.js";
-export {
-  createBrowserCaptureWorkflow,
-  type BrowserCapturePlan,
-} from "./browser-capture-workflow.js";

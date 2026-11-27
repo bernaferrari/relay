@@ -25,14 +25,18 @@ import {
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
-import { browserProfileDir, readTarget } from "../targets.js";
+import { browserProfileDir, readTarget } from "../target/targets.js";
 import {
   automaticVideoAllowed,
   getEvidenceCollectionPolicy,
   hasSensitiveEvidenceConsent,
 } from "../evidence/evidence-policy.js";
 import { saveBrowserVideoArtifact } from "./browser-video-artifact.js";
-import { redactSensitiveEvidenceValue, redactValue, visualEvidenceAllowed } from "../redaction.js";
+import {
+  redactSensitiveEvidenceValue,
+  redactValue,
+  visualEvidenceAllowed,
+} from "../evidence/redaction.js";
 import {
   attachBrowserEvidence,
   captureBrowserViewportScreenshot,

@@ -12,7 +12,7 @@ import type { IdentityIgnoreObservation, RecipeStepContext } from "./recipe-runn
 import { recipeScreenIdentityOptions } from "./recipe-runner-context.js";
 import type { SnapshotNode } from "../device/device.js";
 import { observeScreenIdentity } from "../screen/screen-identity.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 
 export function expectScreenIdentityScope(
   ctx: RecipeStepContext,

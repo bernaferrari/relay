@@ -11,6 +11,7 @@ import {
   withFailingStep,
   type RunWaitContext,
 } from "./run-verdict-wait.js";
+import { unknownText } from "./unknown-text.js";
 
 /**
  * The qa loop every profile registers: describe a Test, run it, read one
@@ -360,7 +361,7 @@ function testCandidates(appMap: Record<string, unknown>): TestCandidate[] {
       );
     });
     const name = typeof test.name === "string" ? test.name : id;
-    const text = [id, name, ...steps.map((step) => String(step.intent ?? ""))]
+    const text = [id, name, ...steps.map((step) => unknownText(step.intent))]
       .join(" ")
       .toLowerCase();
     return { id, name, text, steps: steps.length, ready: steps.length > 0 && !blocked };
@@ -381,7 +382,7 @@ async function resolveAppId(app: string | undefined, context: RunWaitContext): P
   const wanted = app.toLowerCase();
   const match =
     apps.find((item) => item.id === app) ??
-    apps.find((item) => String(item.name ?? "").toLowerCase() === wanted);
+    apps.find((item) => unknownText(item.name).toLowerCase() === wanted);
   if (!match || typeof match.id !== "string") throw new TypeError(`No App named "${app}".`);
   return match.id;
 }

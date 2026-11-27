@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { runPanelManifestSchema } from "@relay/protocol";
 import { buildRunPanelManifest } from "./run-panel-manifest.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "./run-store.js";
 
 const hash = "a".repeat(64);
 const run = (input: Partial<PersistedRun> = {}): PersistedRun =>

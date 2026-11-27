@@ -1,7 +1,7 @@
 import type { AppMap, Connection, RecipeStep } from "@relay/protocol";
 import { compileAppMapConnection } from "./app-map-compiler.js";
-import { leftoverConversationHomePrelude } from "../leftover/leftover-origin-recovery.js";
-import type { Recipe } from "../recipes.js";
+import { leftoverConversationHomePrelude } from "../app-map/leftover-origin-recovery.js";
+import type { Recipe } from "../recipe/recipes.js";
 
 type MappedPreludeGesture = Extract<RecipeStep, { kind: "tap" | "key" | "swipe" | "scroll" }>;
 

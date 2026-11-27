@@ -1,6 +1,6 @@
 import type { AppMapCompiledTest, ScreenIdentityObservation } from "@relay/protocol";
-import { loadFrozenRawAccessibilityEvidence } from "../frozen/frozen-raw-accessibility.js";
-import type { RecipeStep } from "../recipes.js";
+import { loadFrozenRawAccessibilityEvidence } from "../offline/frozen-raw-accessibility.js";
+import type { RecipeStep } from "./recipes.js";
 import {
   observeScreenIdentity,
   type ObserveScreenIdentityOptions,

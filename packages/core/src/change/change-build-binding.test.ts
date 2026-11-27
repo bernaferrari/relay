@@ -11,7 +11,7 @@ import {
   bindRegisteredWebDeploymentToProof,
   bindVerifiedWebDeploymentToProof,
 } from "./change-build-binding.js";
-import { issueWebBuildProviderReceipt } from "../web-build-verification.js";
+import { issueWebBuildProviderReceipt } from "./web-build-verification.js";
 
 const baseSha = "1".repeat(40);
 const headSha = "2".repeat(40);

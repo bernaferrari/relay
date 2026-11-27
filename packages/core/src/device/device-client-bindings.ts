@@ -1,5 +1,5 @@
 import { createAgentDeviceClient } from "agent-device";
-import { captureNativeCrashEvidence } from "../crash-evidence.js";
+import { captureNativeCrashEvidence } from "../evidence/crash-evidence.js";
 import type { Device } from "./device-capabilities.js";
 import type { DeviceTransport } from "./device-dispatch.js";
 import type { TargetContext } from "../target/target-context.js";

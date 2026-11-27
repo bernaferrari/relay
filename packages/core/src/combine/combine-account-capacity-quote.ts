@@ -4,7 +4,7 @@ import type {
   CombineProfileTargetInput,
 } from "@relay/protocol";
 import { browserAccountSchedulingKey } from "../browser/browser-account-lane.js";
-import { preflightLocalCampaignCapacity } from "../local-campaign-capacity-preflight.js";
+import { preflightLocalCampaignCapacity } from "../campaign/local-campaign-capacity-preflight.js";
 
 function browserAccountLaneId(target: CombineProfileTargetInput): string | undefined {
   const targetId = target.target.browserTargetId?.trim() || target.target.serial?.trim();

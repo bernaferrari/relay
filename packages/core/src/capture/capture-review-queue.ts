@@ -3,7 +3,7 @@ import {
   type CaptureReviewPlannedSlot,
   type CaptureReviewQueue,
 } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { executionIntentPlannedSlots } from "../run/run-test-step-evidence.js";
 
 export type CaptureReviewRun = Pick<

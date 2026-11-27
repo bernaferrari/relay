@@ -1,5 +1,5 @@
 import type { AuthoringEvidence } from "@relay/protocol";
-import type { OperationContext } from "../operation-context.js";
+import type { OperationContext } from "../execution/operation-context.js";
 import type { TestJob } from "../session/session-contract.js";
 
 export class HumanInterventionReproofUnavailableError extends Error {

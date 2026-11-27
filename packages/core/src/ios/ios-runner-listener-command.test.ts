@@ -21,7 +21,7 @@ import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
 import {
   GROK_IOS_SNAPSHOT_CATALOG_TEST_PROFILE,
   registerGrokIosSnapshotCatalogTestProfile,
-} from "../grok/grok-ios-snapshot-catalog.test-profile.js";
+} from "../fixtures/ios-snapshot-catalog.test-profile.js";
 
 registerGrokIosSnapshotCatalogTestProfile();
 const TEST_CATALOG_IDENTIFIERS: readonly string[] = [

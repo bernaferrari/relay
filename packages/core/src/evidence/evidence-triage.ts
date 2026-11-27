@@ -11,7 +11,7 @@ import {
   createOpenRouterDecisionProvider,
   type ModelDecisionProvider,
 } from "../model/model-decision-provider.js";
-import { redactSensitiveEvidenceValue } from "../redaction.js";
+import { redactSensitiveEvidenceValue } from "./redaction.js";
 import { findWorkspaceRoot } from "../workspace/workspace-root.js";
 
 const MAX_FINDINGS = 40;

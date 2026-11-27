@@ -18,7 +18,7 @@ import {
   parseCanonicalAppMapTestRecipeGraph,
   type AppMapTestExecutionIntent,
 } from "./app-map-test-execution-intent.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import {
   parseAppMapRuntimeTargetProfile,
   sameAppMapRuntimeTargetProfile,

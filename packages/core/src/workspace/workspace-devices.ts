@@ -9,13 +9,13 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { compileBrowserEnvironment, type TargetRuntimeReadiness } from "@relay/protocol";
 import { bootTarget, createDevice, type Device, type DevicePlatform } from "../device/device.js";
-import { getExecutingJobId } from "../control.js";
+import { getExecutingJobId } from "../execution/control.js";
 import { runTargetMutation } from "../target/target-control.js";
-import { now, publish } from "../events.js";
+import { now, publish } from "../collaboration/events.js";
 import { getBrowserDevice } from "../browser/browser-target.js";
 import { browserCaseProfileForTarget } from "../browser/browser-case-profile-target.js";
 import { resolveGoIosBinary } from "../ios/ios-app-launch.js";
-import { readTarget } from "../targets.js";
+import { readTarget } from "../target/targets.js";
 import {
   listAdbDevices,
   probeAdbDevices,

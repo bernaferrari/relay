@@ -29,7 +29,7 @@ import {
   defaultOptionMatrixStrategy,
   prepareOptionCasePlan,
   type OptionRunSet,
-} from "../option/option-run.js";
+} from "../combine/option-run.js";
 import {
   assessAppMapCombineCellTargetBindings,
   localExecutionTargetRef,
@@ -39,9 +39,9 @@ import {
   resolveCombineCellSelector,
   synthesizeCombineCellRuntimeProfiles,
 } from "./app-map-combine-from-test.js";
-import type { Recipe } from "../recipes.js";
-import type { PreparedCasePlan } from "../case-plan.js";
-import type { PreparedFrozenRecipeInputs } from "../frozen/frozen-recipe-inputs.js";
+import type { Recipe } from "../recipe/recipes.js";
+import type { PreparedCasePlan } from "../input/case-plan.js";
+import type { PreparedFrozenRecipeInputs } from "../recipe/frozen-recipe-inputs.js";
 import type { selectedCombineDataRows } from "./app-map-combine-cell-inputs.js";
 import {
   AppMapCombineCellContractError,

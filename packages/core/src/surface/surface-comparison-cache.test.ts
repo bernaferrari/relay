@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "../recipe/recipes.js";
 import type { TestJob } from "../session/session-contract.js";
 import {
   findReusableSurfaceComparison,

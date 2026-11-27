@@ -8,7 +8,7 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import { compileBrowserEnvironment } from "@relay/protocol";
-import { runWithOperationContext } from "../operation-context.js";
+import { runWithOperationContext } from "../execution/operation-context.js";
 import {
   AppMapCombineCellContractError,
   prepareAppMapCombineCells,
@@ -16,7 +16,7 @@ import {
   unresolvedTargetProfileMessage,
 } from "./app-map-combine-cell-prepare.js";
 import { stagePreparedAppMapCombineCells } from "./app-map-combine-cell-run.js";
-import { snapshotPlayerMap } from "../player-manifest.js";
+import { snapshotPlayerMap } from "../run/player-manifest.js";
 
 function scope(id: string) {
   return { organizationId: "org", projectId: "project", appMapId: "settings", id };

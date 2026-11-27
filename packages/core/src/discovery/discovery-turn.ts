@@ -8,7 +8,7 @@ import type {
   ObservedScreen,
   ObservedTransition,
 } from "@relay/protocol";
-import { describeTargetUi } from "../explore.js";
+import { describeTargetUi } from "./explore.js";
 import { landDiscoveryOnAppMap } from "./discovery-land.js";
 import {
   controlToInteractInput,

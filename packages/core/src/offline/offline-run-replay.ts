@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { StepTarget } from "@relay/protocol";
 import { preflightSemanticActivation } from "../device/device-target-resolution.js";
 import type { SnapshotNode } from "../device/device.js";
-import type { PersistedRun, RunArtifact } from "../runs/runs.js";
+import type { PersistedRun, RunArtifact } from "../run/run-store.js";
 
 type UnknownRecord = Record<string, unknown>;
 

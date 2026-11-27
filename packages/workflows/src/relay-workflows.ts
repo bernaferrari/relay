@@ -1,7 +1,7 @@
 import {
   accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
-} from "@relay/core/browser-execution-identity";
+} from "@relay/protocol/browser/browser-execution-identity";
 import type { AuthoringTarget, OperationInput, OperationOutput } from "@relay/protocol";
 import {
   createRelayOperationPort,

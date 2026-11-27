@@ -606,6 +606,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           "Pass the selected runId, captureId, and imageSha256 list from the Plan captures panel.",
       });
     }
+    const captureReviewAction = body.action as CaptureReviewAction;
     const actor = resolveCommandActor(req.headers, scope);
     const filter = parsePlanCaptureReviewFilter(body);
     try {
@@ -613,7 +614,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         runsRoot(),
         combineCaptureReviewMatch.batchId!,
         {
-          action: body.action as CaptureReviewAction,
+          action: captureReviewAction,
           actor: { id: actor.actorId, kind: actor.actorKind },
           items: body.items as Array<{
             runId: string;
@@ -628,7 +629,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         scope.projectId,
       );
       recordAudit(scope, {
-        action: `job.combine.capture.review.apply.${body.action}`,
+        action: `job.combine.capture.review.apply.${captureReviewAction}`,
         resource: combineCaptureReviewMatch.batchId!,
         result: "allow",
       });

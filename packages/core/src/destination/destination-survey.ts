@@ -14,16 +14,13 @@ import { persistDestinationSurveyFrames } from "../capture/capture-surface-surve
 import type { SnapshotNode } from "../device/device.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
 import { markNavigationUnknown, type RecipeStepContext } from "../recipe/recipe-runner-context.js";
-import { visualEvidenceAllowed } from "../redaction.js";
+import { visualEvidenceAllowed } from "../evidence/redaction.js";
 import { observeScreenIdentity } from "../screen/screen-identity.js";
 import {
   captureScrollableSurveyForTarget,
   type ScrollSurveyTargetInput,
-} from "../scrollable/scrollable-survey.js";
-import type {
-  ScrollSurveyCapture,
-  ScrollSurveyResult,
-} from "../scrollable/scrollable-survey-types.js";
+} from "../scroll/scrollable-survey.js";
+import type { ScrollSurveyCapture, ScrollSurveyResult } from "../scroll/scrollable-survey-types.js";
 import type { ScreenshotPayload } from "../workspace/workspace-capture.js";
 
 export type DestinationSurveyStep = Pick<

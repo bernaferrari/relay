@@ -1,7 +1,0 @@
-appId: com.example.app
----
-- tapOn:
-    text: Button
-    index: ${INDEX}
-    repeat: ${REPEAT}
-    delay: ${DELAY}

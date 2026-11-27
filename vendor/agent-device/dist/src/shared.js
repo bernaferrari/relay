@@ -1,2 +1,0 @@
-async function e(e,n,r){if(e.json){let{printJson:e}=await import(`./json.js`);e({success:!0,data:n});return}let i=r?.();i&&t(i)}function t(e){process.stdout.write(e.endsWith(`
-`)?e:`${e}\n`)}export{e as t};

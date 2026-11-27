@@ -1,0 +1,450 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import test from "node:test";
+import {
+  installRegisteredBuild,
+  launchRegisteredBuild,
+  prepareRegisteredBuildForProof,
+  preflightRegisteredBuild,
+  resolveRegisteredBuildArtifact,
+} from "./builds.js";
+import { artifactDigestForProof } from "../artifact/artifact-digest.js";
+
+function requestUrlText(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input && typeof input === "object" && "url" in input) {
+    const url = (input as { url?: unknown }).url;
+    if (typeof url === "string") return url;
+  }
+  throw new TypeError("fetch input must be a string, URL, or Request");
+}
+
+test("preflights, installs, and launches a registered Android artifact", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-build-"));
+  const artifact = join(root, "app.apk");
+  await writeFile(artifact, "apk");
+  const calls: Array<[string, string[]]> = [];
+  const run = async (command: string, args: string[]) => {
+    calls.push([command, args]);
+    if (command === "apkanalyzer") return { stdout: "com.example.app\n" };
+    return { stdout: "" };
+  };
+  const build = {
+    id: "android",
+    projectId: "project",
+    name: "Android",
+    platform: "android" as const,
+    sourceUrl: artifact,
+    status: "ready" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const target = { kind: "device" as const, platform: "android" as const, serial: "pixel" };
+  try {
+    const preflight = await preflightRegisteredBuild(build, { target, run, at: 10 });
+    assert.equal(preflight.ok, true);
+    assert.equal(preflight.applicationId, "com.example.app");
+    assert.deepEqual(preflight.capabilities, { install: true, launch: true });
+
+    await installRegisteredBuild({ build, target, run });
+    await launchRegisteredBuild({ build, target, run });
+    assert.ok(calls.some(([command, args]) => command === "adb" && args.includes("install")));
+    assert.ok(calls.some(([command, args]) => command === "adb" && args.includes("monkey")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Android build identity resolves aapt from the configured SDK without PATH", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-sdk-build-tools-"));
+  const artifact = join(root, "app.apk");
+  const aapt = join(root, "build-tools", "36.1.0", "aapt");
+  const previousSdkRoot = process.env.ANDROID_SDK_ROOT;
+  const previousAndroidHome = process.env.ANDROID_HOME;
+  const previousPath = process.env.PATH;
+  try {
+    await mkdir(join(root, "build-tools", "36.1.0"), { recursive: true });
+    await writeFile(artifact, "apk");
+    await writeFile(aapt, "#!/bin/sh\nprintf \"package: name='com.example.sdkresolved'\\n\"\n");
+    await chmod(aapt, 0o755);
+    process.env.ANDROID_SDK_ROOT = root;
+    delete process.env.ANDROID_HOME;
+    process.env.PATH = "/usr/bin:/bin";
+
+    const preflight = await preflightRegisteredBuild(
+      {
+        id: "android-sdk-resolved",
+        projectId: "project",
+        name: "Android SDK resolved",
+        platform: "android",
+        sourceUrl: artifact,
+        status: "ready",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      { at: 10 },
+    );
+    assert.equal(preflight.applicationId, "com.example.sdkresolved");
+    assert.deepEqual(preflight.capabilities, { install: true, launch: true });
+  } finally {
+    if (previousSdkRoot === undefined) delete process.env.ANDROID_SDK_ROOT;
+    else process.env.ANDROID_SDK_ROOT = previousSdkRoot;
+    if (previousAndroidHome === undefined) delete process.env.ANDROID_HOME;
+    else process.env.ANDROID_HOME = previousAndroidHome;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prepares an Android Proof only when the installed APK bytes are exact", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-apk-"));
+  const artifact = join(root, "app.apk");
+  await writeFile(artifact, "exact-apk-bytes");
+  const sourceSha256 = createHash("sha256").update("exact-apk-bytes").digest("hex");
+  const artifactDigest = await artifactDigestForProof(artifact);
+  const build = {
+    id: "android-proof",
+    projectId: "project",
+    name: "Android Proof",
+    platform: "android" as const,
+    sourceUrl: artifact,
+    sourceSha: "2".repeat(40),
+    sourceSha256,
+    configuration: "android.release",
+    environmentRevision: "device-image-1",
+    applicationId: "com.example.app",
+    status: "ready" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const target = { kind: "device" as const, platform: "android" as const, serial: "pixel" };
+  const run = async (command: string, args: string[]) => {
+    if (command === "apkanalyzer") return { stdout: "com.example.app\n" };
+    if (command === "adb" && args.includes("pm")) return { stdout: "package:/data/app/base.apk\n" };
+    if (command === "adb" && args.includes("sha256sum")) {
+      return { stdout: `${sourceSha256}  /data/app/base.apk\n` };
+    }
+    return { stdout: "" };
+  };
+  try {
+    const receipt = await prepareRegisteredBuildForProof({
+      build,
+      target,
+      sourceSha: build.sourceSha,
+      artifactDigest,
+      run,
+      at: 20,
+    });
+    assert.deepEqual(receipt, {
+      schemaVersion: 1,
+      buildId: build.id,
+      target: { kind: "device", id: "pixel", platform: "android" },
+      artifactDigest,
+      applicationId: "com.example.app",
+      install: "verified",
+      launch: "not-requested",
+      observation: {
+        status: "verified",
+        observedAt: 20,
+        applicationId: "com.example.app",
+        artifactDigest,
+        sourceSha256: `sha256:${sourceSha256}`,
+      },
+    });
+    await assert.rejects(
+      prepareRegisteredBuildForProof({
+        build,
+        target,
+        sourceSha: build.sourceSha,
+        artifactDigest,
+        run: async (command, args) => {
+          if (command === "apkanalyzer") return { stdout: "com.example.app\n" };
+          if (command === "adb" && args.includes("pm"))
+            return { stdout: "package:/data/app/base.apk\n" };
+          if (command === "adb" && args.includes("sha256sum")) {
+            return { stdout: `${"0".repeat(64)}  /data/app/base.apk\n` };
+          }
+          return { stdout: "" };
+        },
+      }),
+      /stale or unverified/,
+    );
+    await assert.rejects(
+      prepareRegisteredBuildForProof({
+        build,
+        target,
+        sourceSha: build.sourceSha,
+        artifactDigest,
+        run: async (command, args) => {
+          if (command === "apkanalyzer") return { stdout: "com.example.app\n" };
+          if (command === "adb" && args.includes("pm")) {
+            return {
+              stdout:
+                "package:/data/app/com.example.app/base.apk\npackage:/data/app/com.example.app/split_config.en.apk\n",
+            };
+          }
+          if (command === "adb" && args.includes("sha256sum")) {
+            return { stdout: `${sourceSha256}  /data/app/com.example.app/base.apk\n` };
+          }
+          return { stdout: "" };
+        },
+      }),
+      /split or non-base Android installation requires complete split-artifact verification/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects a launch application override unrelated to the registered APK", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-build-override-"));
+  const artifact = join(root, "app.apk");
+  await writeFile(artifact, "apk");
+  try {
+    await assert.rejects(
+      launchRegisteredBuild({
+        build: {
+          id: "android",
+          projectId: "project",
+          name: "Android",
+          platform: "android",
+          sourceUrl: artifact,
+          applicationId: "com.example.app",
+          status: "ready",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        target: { kind: "device", platform: "android", serial: "pixel" },
+        applicationId: "com.example.other",
+        run: async (command) =>
+          command === "apkanalyzer" ? { stdout: "com.example.app\n" } : { stdout: "" },
+      }),
+      /override does not match/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("keeps physical iOS Proof execution explicitly insufficient", async () => {
+  await assert.rejects(
+    prepareRegisteredBuildForProof({
+      build: {
+        id: "ios-proof",
+        projectId: "project",
+        name: "iOS Proof",
+        platform: "ios",
+        sourceUrl: "/tmp/Relay.app",
+        sourceSha: "2".repeat(40),
+        sourceSha256: "0".repeat(64),
+        applicationId: "com.example.app",
+        status: "ready",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      target: { kind: "device", platform: "ios", serial: "physical" },
+      targetKind: "Physical device",
+      sourceSha: "2".repeat(40),
+      artifactDigest: `sha256:${"0".repeat(64)}`,
+    }),
+    /PROOF_INSUFFICIENT_EVIDENCE.*physical iOS/,
+  );
+});
+
+test("supports iOS simulator app bundles and rejects platform mismatches", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-build-ios-"));
+  const artifact = join(root, "Relay.app");
+  await mkdir(artifact);
+  await writeFile(join(artifact, "Info.plist"), "plist");
+  const build = {
+    id: "ios",
+    projectId: "project",
+    name: "iOS",
+    platform: "ios" as const,
+    sourceUrl: artifact,
+    status: "ready" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  try {
+    const mismatch = await preflightRegisteredBuild(build, {
+      target: { kind: "device", platform: "android", serial: "pixel" },
+      run: async () => ({ stdout: "com.example.ios" }),
+    });
+    assert.equal(mismatch.ok, false);
+    assert.equal(mismatch.capabilities.install, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+function listeningBaseUrl(server: Server): string {
+  const address = server.address();
+  assert.ok(address && typeof address === "object", "server bound a TCP port");
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function startArtifactServer(body: Buffer): Promise<{ server: Server; url: string }> {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/octet-stream" });
+    response.end(body);
+  });
+  await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  return { server, url: `${listeningBaseUrl(server)}/app.apk` };
+}
+
+test("rejects non-https remote sources before any download", async () => {
+  const build = (sourceUrl: string) => ({
+    id: "android",
+    projectId: "project",
+    name: "Android",
+    platform: "android" as const,
+    sourceUrl,
+    status: "ready" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const plainHttp = await preflightRegisteredBuild(build("http://example.com/app.apk"));
+  assert.equal(plainHttp.ok, false);
+  assert.deepEqual(plainHttp.capabilities, { install: false, launch: false });
+  assert.match(plainHttp.checks[0]?.message ?? "", /absolute https/);
+
+  await assert.rejects(resolveRegisteredBuildArtifact("file:///tmp/app.apk"), /absolute http\(s\)/);
+});
+
+test("rejects remote build redirects that cross the registered trust boundary", async () => {
+  let calls = 0;
+  await assert.rejects(
+    resolveRegisteredBuildArtifact("https://artifacts.example/app.apk", {
+      resolveHost: async () => ["8.8.8.8"],
+      fetchImpl: (async () => {
+        calls += 1;
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://127.0.0.1/internal.apk" },
+        });
+      }) as typeof fetch,
+    }),
+    /registered protocol and origin/,
+  );
+  assert.equal(calls, 1, "the unsafe redirect destination is never fetched");
+});
+
+test("rejects https build hosts that resolve to private network addresses", async () => {
+  let fetched = false;
+  await assert.rejects(
+    resolveRegisteredBuildArtifact("https://artifacts.example/app.apk", {
+      resolveHost: async () => ["127.0.0.1"],
+      fetchImpl: (async () => {
+        fetched = true;
+        return new Response("apk");
+      }) as typeof fetch,
+    }),
+    /resolve only to public addresses/,
+  );
+  assert.equal(fetched, false);
+});
+
+test("follows bounded same-origin remote build redirects", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-build-redirect-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  const visited: string[] = [];
+  try {
+    const cached = await resolveRegisteredBuildArtifact("https://artifacts.example/app.apk", {
+      resolveHost: async () => ["8.8.8.8"],
+      fetchImpl: (async (input: string | URL | Request) => {
+        const requested = requestUrlText(input);
+        visited.push(requested);
+        return new URL(requested).pathname === "/app.apk"
+          ? new Response(null, { status: 302, headers: { location: "/v2/app.apk" } })
+          : new Response("verified-apk", { status: 200 });
+      }) as typeof fetch,
+    });
+    assert.deepEqual(visited, [
+      "https://artifacts.example/app.apk",
+      "https://artifacts.example/v2/app.apk",
+    ]);
+    assert.equal(await readFile(cached, "utf8"), "verified-apk");
+  } finally {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("downloads a remote source into the state builds cache and preflights it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-build-remote-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  const artifactBytes = Buffer.from("apk-bytes-from-remote");
+  const { server, url } = await startArtifactServer(artifactBytes);
+  try {
+    const cachedPath = await resolveRegisteredBuildArtifact(url);
+    assert.match(cachedPath, /builds[\\/].+\.apk$/u);
+    assert.equal(await readFile(cachedPath, "utf8"), artifactBytes.toString("utf8"));
+    const cachedStat = await stat(cachedPath);
+    assert.equal(cachedStat.isFile(), true);
+
+    // A second registration of the same URL reuses the cached bytes.
+    const again = await resolveRegisteredBuildArtifact(url);
+    assert.equal(again, cachedPath);
+
+    const build = {
+      id: "android",
+      projectId: "project",
+      name: "Android",
+      platform: "android" as const,
+      sourceUrl: url,
+      status: "ready" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const preflight = await preflightRegisteredBuild(build, {
+      target: { kind: "device", platform: "android", serial: "pixel" },
+      run: async () => ({ stdout: "com.example.app\n" }),
+    });
+    assert.equal(preflight.ok, true);
+    assert.equal(preflight.artifact?.path, cachedPath);
+  } finally {
+    server.close();
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("fails closed when the downloaded bytes do not match the expected sha256", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-build-sha-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  const artifactBytes = Buffer.from("apk-bytes-from-remote");
+  const { server, url } = await startArtifactServer(artifactBytes);
+  const wrongSha = createHash("sha256").update("different bytes").digest("hex");
+  try {
+    await assert.rejects(
+      resolveRegisteredBuildArtifact(url, { sourceSha256: wrongSha }),
+      (error: unknown) => error instanceof Error && /sha256 mismatch/.test(error.message),
+    );
+    // Fail-closed: no verified artifact is ever left in the cache.
+    const cacheDirectory = join(process.env.RELAY_STATE_DIR!, "builds");
+    const entries = await readdir(cacheDirectory);
+    assert.deepEqual(
+      entries.filter((entry) => !entry.endsWith(".partial")),
+      [],
+    );
+  } finally {
+    server.close();
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+  }
+});

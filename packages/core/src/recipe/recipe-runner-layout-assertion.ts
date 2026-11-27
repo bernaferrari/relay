@@ -1,8 +1,8 @@
 import type { Device } from "../device/device.js";
 import { sleep, snapshot } from "../device/device.js";
-import { cooperativeCheckpoint } from "../control.js";
-import { now } from "../events.js";
-import type { RecipeStep } from "../recipes.js";
+import { cooperativeCheckpoint } from "../execution/control.js";
+import { now } from "../collaboration/events.js";
+import type { RecipeStep } from "./recipes.js";
 import {
   assertNonOverlappingLayout,
   LayoutAssertionError,

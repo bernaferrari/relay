@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTest, Screen } from "@relay/protocol";
-import type { Recipe } from "../recipes.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { Recipe } from "../recipe/recipes.js";
+import type { PersistedRun } from "../run/run-store.js";
 import {
   buildCampaignRepairTarget,
   campaignCheckRepairInput,

@@ -584,7 +584,7 @@ export function validateAppMap(value: unknown): AppMap {
     combines: document.combines ?? {},
   } as unknown as AppMap;
   if (input.schemaVersion !== APP_MAP_SCHEMA_VERSION) {
-    appMapFail("invalid-map", `App Map schemaVersion must be ${APP_MAP_SCHEMA_VERSION}`);
+    appMapFail("invalid-map", `App Map schemaVersion must be ${Number(APP_MAP_SCHEMA_VERSION)}`);
   }
   identifier(input.id, "App Map.id");
   identifier(input.organizationId, "App Map.organizationId");

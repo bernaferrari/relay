@@ -11,7 +11,7 @@ import {
 } from "@relay/protocol";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
-import { compileAppMapCombine, compileAppMapTest } from "../map-work.js";
+import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
 import {
   assessAppMapCombineCellBindings,
   enumerateAppMapCombineCells,
@@ -37,12 +37,12 @@ import {
   expectedRecipeScreenshotCount,
   prepareOptionCasePlan,
   type OptionRunSet,
-} from "../option/option-run.js";
+} from "../combine/option-run.js";
 import {
   assessMutatingRoutineSharing,
   assessSequentialStartingState,
   UnsafeStartingStateError,
-} from "../starting-state-routines.js";
+} from "./starting-state-routines.js";
 import {
   declaredDwellMsFromRecipeGraph,
   estimateRecipeDuration,

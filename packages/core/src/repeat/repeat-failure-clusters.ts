@@ -14,7 +14,7 @@ import type {
   RepeatFailureKind,
   RepeatFailureSignature,
 } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 type RecordValue = Record<string, unknown>;
 

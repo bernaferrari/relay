@@ -1,4 +1,4 @@
-import { cooperativeCheckpoint, getExecutingJobId } from "../control.js";
+import { cooperativeCheckpoint, getExecutingJobId } from "../execution/control.js";
 import {
   assertAdoptedIosMutationIntention,
   dispatchSupervisedIosMutation,

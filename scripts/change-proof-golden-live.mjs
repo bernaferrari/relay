@@ -385,9 +385,9 @@ function androidEvidence(exact) {
   const repaired = androidEvidencePhase(exact, "repaired");
   const phases = [old, repaired];
   const blockers = [];
-  for (const [index, [phase, evidence]] of [
-    ["old", old],
-    ["repaired", repaired],
+  for (const [index, { phase, evidence }] of [
+    { phase: "old", evidence: old },
+    { phase: "repaired", evidence: repaired },
   ].entries()) {
     if (evidence.status === "not-run") {
       if (phases.every(({ status }) => status === "not-run") && index > 0) continue;

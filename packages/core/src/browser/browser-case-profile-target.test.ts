@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { compileBrowserEnvironment } from "@relay/protocol";
-import { BROWSER_TARGET_CAPABILITIES } from "../targets.js";
+import { BROWSER_TARGET_CAPABILITIES } from "../target/targets.js";
 import {
   browserCaseProfileForTarget,
   canonicalUnsignedBrowserRuntimeProfileId,

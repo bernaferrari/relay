@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { GROK_ANDROID_APP_TEST_POLICY } from "../app/app-identity-test-policies.js";
+import { GROK_ANDROID_APP_TEST_POLICY } from "../fixtures/app-identity-test-policies.js";
 import type { Device, SnapshotNode } from "../device/device.js";
 import { runExpectScreenStep } from "./recipe-runner-screen.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 import { observeScreenIdentity } from "../screen/screen-identity.js";
 import { nativeWorkspaceIdentityNodes } from "../screen/screen-identity-native-workspace.js";
 

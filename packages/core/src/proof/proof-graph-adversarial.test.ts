@@ -4,7 +4,7 @@ import type { Device } from "../device/device.js";
 import { runCampaignCheck } from "../recipe/recipe-runner-campaign-checks.js";
 import { RecipeNavigationPrerequisiteError } from "../recipe/recipe-runner-campaign-support.js";
 import type { RecipeStepContext } from "../recipe/recipe-runner-context.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "../recipe/recipes.js";
 import type { TestJob } from "../session/session.js";
 import { runWithTargetContext } from "../target/target-context.js";
 

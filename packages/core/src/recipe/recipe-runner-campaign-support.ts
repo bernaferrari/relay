@@ -10,15 +10,15 @@ import {
   getExecutingJobId,
   requestPause,
   requestResume,
-} from "../control.js";
-import { now, publish } from "../events.js";
-import type { RecipeStep } from "../recipes.js";
+} from "../execution/control.js";
+import { now, publish } from "../collaboration/events.js";
+import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { RecipeScreenInspectionError } from "./recipe-screen-inspection.js";
 import {
   sourceProofAfterLeftoverWarm,
   waitForIsIndependentlySourceProven,
-} from "../leftover/leftover-origin-recovery.js";
+} from "../app-map/leftover-origin-recovery.js";
 import { observeScreenIdentity } from "../screen/screen-identity.js";
 import { captureScreenshot } from "../workspace/workspace.js";
 

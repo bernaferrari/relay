@@ -10,6 +10,7 @@ import {
   bundledAndroidSnapshotHelper,
   ensureAndroidSnapshotHelperInstalled,
 } from "./android-snapshot-helper.js";
+import { unknownText } from "../unknown-text.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -370,7 +371,7 @@ export function androidUiAutomatorDumpLooksEmpty(notice: string): boolean {
 type DumpAttempt = { nodes: SnapshotNode[]; blocked: boolean; empty: boolean };
 
 function dumpNotice(error: unknown): string {
-  if (!error || typeof error !== "object") return String(error ?? "");
+  if (!error || typeof error !== "object") return unknownText(error);
   const body = error as {
     stdout?: unknown;
     stderr?: unknown;
@@ -380,7 +381,7 @@ function dumpNotice(error: unknown): string {
   return [
     typeof body.stdout === "string" ? body.stdout : "",
     typeof body.stderr === "string" ? body.stderr : "",
-    body.code != null ? `exit ${body.code}` : "",
+    body.code != null ? `exit ${unknownText(body.code)}` : "",
     typeof body.message === "string" ? body.message : "",
   ].join("\n");
 }

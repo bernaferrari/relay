@@ -24,7 +24,7 @@ export {
   isAndroidSnapshotOwnershipUnreleased,
   iosInspectionErrorMessage,
 } from "./workspace-inspection-errors.js";
-import { now, publish } from "../events.js";
+import { now, publish } from "../collaboration/events.js";
 import { attachJobFrame, getActiveJob } from "../session/session.js";
 import {
   observeScreenIdentityForHost,
@@ -54,7 +54,7 @@ export {
   SnapshotSemanticsQuarantinedError,
   SnapshotLogicalBoundsUnavailableError,
 } from "../snapshot/snapshot-metadata.js";
-import { annotateTapPreview, tapPreviewLogicalBounds } from "../tap-preview.js";
+import { annotateTapPreview, tapPreviewLogicalBounds } from "../device/tap-preview.js";
 import {
   inferIosSnapshotGeometry,
   normalizeIosSnapshotNodes,

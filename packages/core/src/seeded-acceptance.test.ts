@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GROK_WEB_APP_TEST_POLICY } from "./app/app-identity-test-policies.js";
+import { GROK_WEB_APP_TEST_POLICY } from "./fixtures/app-identity-test-policies.js";
 import { evaluateApprovalPolicy } from "./approval-policy.js";
 import type { ApprovalPolicyInput } from "@relay/protocol";
 import {
   classifyBrowserAuthenticationHealth,
   signedInFromPage,
 } from "./browser/browser-auth-health.js";
-import { contentAssertionPassed } from "./content-assertion-match.js";
+import { contentAssertionPassed } from "./evaluation/content-assertion-match.js";
 import { extractNewestCompletedAssistantTurn } from "./recipe/recipe-extract.js";
 import { observeScreenIdentity } from "./screen/screen-identity.js";
 import { isTargetUnavailableError } from "./target/target-unavailable.js";

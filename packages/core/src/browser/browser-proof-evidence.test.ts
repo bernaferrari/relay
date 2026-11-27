@@ -10,7 +10,7 @@ import {
   type TargetCapability,
 } from "@relay/protocol";
 import { inspectBrowserProofEvidence } from "./browser-proof-evidence.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { analyzeTracePack, exportTracePack, verifyTracePack } from "../trace/trace-pack.js";
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const;

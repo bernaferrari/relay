@@ -4,14 +4,14 @@ import {
   disarmCompensatingCleanup,
   getExecutingJobId,
   runWithCancellationShield,
-} from "../control.js";
-import { now } from "../events.js";
+} from "../execution/control.js";
+import { now } from "../collaboration/events.js";
 import {
   IosMutationRejectedError,
   isTerminalIosMutationError,
 } from "../ios/ios-mutation-policy.js";
-import { isTerminalInputError } from "../input-not-dispatched.js";
-import type { RecipeStep } from "../recipes.js";
+import { isTerminalInputError } from "../device/input-not-dispatched.js";
+import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import {
   currentVerifiedScreen,
@@ -31,7 +31,16 @@ import { isTargetUnavailableError } from "../target/target-unavailable.js";
 import {
   coverageOutcomesFromArtifacts,
   describeCoverageStepReasons,
-} from "../coverage-step-outcome.js";
+} from "./coverage-step-outcome.js";
+
+function unknownErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (typeof error === "number" || typeof error === "boolean" || typeof error === "bigint") {
+    return String(error);
+  }
+  return JSON.stringify(error) ?? "Unknown error";
+}
 
 function coverageResultFields(ctx: RecipeStepContext, coverageArtifactStart: number) {
   const coverageOutcomes = coverageOutcomesFromArtifacts(
@@ -147,8 +156,7 @@ export async function runCampaignCheck(
         phase,
         ...(phase === "cleanup" && primaryError
           ? {
-              primaryError:
-                primaryError instanceof Error ? primaryError.message : String(primaryError),
+              primaryError: unknownErrorMessage(primaryError),
             }
           : {}),
         startedAt,
@@ -553,7 +561,7 @@ export async function runCampaignCheck(
       markNavigationUnknown(
         ctx,
         cleanupError
-          ? `Cancelled primary; cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
+          ? `Cancelled primary; cleanup failed: ${unknownErrorMessage(cleanupError)}`
           : `Cancelled primary; cleanup ${step.check.cleanup ? "did not prove its terminal" : "was not configured"}.`,
       );
     }
@@ -564,7 +572,7 @@ export async function runCampaignCheck(
           step.check,
           ctx,
           startedAt,
-          `Cancelled primary; cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+          `Cancelled primary; cleanup failed: ${unknownErrorMessage(cleanupError)}`,
           "cleanup",
         ),
       );
@@ -575,11 +583,10 @@ export async function runCampaignCheck(
       data: {
         ...step.check,
         status: "cancelled",
-        primaryError: primaryError instanceof Error ? primaryError.message : String(primaryError),
+        primaryError: unknownErrorMessage(primaryError),
         ...(cleanupError
           ? {
-              cleanupError:
-                cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+              cleanupError: unknownErrorMessage(cleanupError),
             }
           : {}),
         cleanupStatus: cleanupOutcome ?? "not-configured",
@@ -670,16 +677,8 @@ export async function runCampaignCheck(
     return;
   }
 
-  const primaryMessage = primaryError
-    ? primaryError instanceof Error
-      ? primaryError.message
-      : String(primaryError)
-    : undefined;
-  const cleanupMessage = cleanupError
-    ? cleanupError instanceof Error
-      ? cleanupError.message
-      : String(cleanupError)
-    : undefined;
+  const primaryMessage = primaryError ? unknownErrorMessage(primaryError) : undefined;
+  const cleanupMessage = cleanupError ? unknownErrorMessage(cleanupError) : undefined;
   const message =
     primaryMessage && cleanupMessage
       ? `Primary failed: ${primaryMessage}; cleanup failed: ${cleanupMessage}`

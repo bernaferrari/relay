@@ -3,7 +3,7 @@ import test from "node:test";
 import type { AppMap, Connection, TargetResultReference } from "@relay/protocol";
 import { connectionRouteCost, selectEquivalentDirectConnection } from "./app-map-route-cost.js";
 import { connectionObservationsFromPersistedRun } from "./app-map-run-history.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 function connection(id: string): Connection {
   return {

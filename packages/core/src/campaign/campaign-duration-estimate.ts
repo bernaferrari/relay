@@ -215,9 +215,7 @@ function evidenceCompletionDuration(
   return metric.value;
 }
 
-function observedTargetId(
-  run: CampaignDurationRunRecord,
-): string | Extract<CampaignDurationExclusionReason, "missing-target" | "incompatible-target"> {
+function observedTargetId(run: CampaignDurationRunRecord): string {
   const target = run.executionTarget;
   if (target) {
     if (target.kind === "local-browser") {

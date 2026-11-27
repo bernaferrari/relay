@@ -65,7 +65,8 @@ export function parseBrowserSessionImport(raw: string): BrowserImportedStorage {
   const cookies = rows.map((cookie: Record<string, unknown>) => {
     if (!cookie || typeof cookie !== "object")
       throw new Error("This file contains an invalid cookie.");
-    const sameSite = String(cookie.sameSite ?? "Lax").toLowerCase();
+    const sameSiteValue = typeof cookie.sameSite === "string" ? cookie.sameSite : "Lax";
+    const sameSite = sameSiteValue.toLowerCase();
     return {
       name: cookie.name,
       value: cookie.value,

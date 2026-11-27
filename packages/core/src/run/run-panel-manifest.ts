@@ -1,8 +1,8 @@
 import { basename } from "node:path";
 import { parseOptionalSourceRevision, type RunPanelManifest } from "@relay/protocol";
 import { captureReviewQueueForPlan } from "../capture/capture-review-plan.js";
-import { redactText } from "../redaction.js";
-import type { PersistedRun } from "../runs/runs.js";
+import { redactText } from "../evidence/redaction.js";
+import type { PersistedRun } from "./run-store.js";
 import { parseAppMapTestExecutionIntentArtifact } from "../app-map/app-map-test-execution-intent.js";
 import { parseAppMapCombineCellExecutionIntentArtifact } from "../app-map/app-map-combine-cell-intent.js";
 

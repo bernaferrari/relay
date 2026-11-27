@@ -7,7 +7,7 @@ import {
 } from "./authoring-session-storage.js";
 import { abandonedAuthoringSessions } from "./authoring-session-review-lifecycle.js";
 import type { AuthoringSession } from "@relay/protocol";
-import type { KeyedSerialQueue } from "../coordination-store.js";
+import type { KeyedSerialQueue } from "../durable/coordination-store.js";
 
 type RetentionRuntime = {
   listFiles(): Promise<string[]>;

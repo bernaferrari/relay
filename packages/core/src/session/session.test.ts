@@ -10,7 +10,7 @@ import {
   resetDurableWorkerAssignmentStoreForTests,
 } from "../durable/durable-worker-assignments.js";
 import { setLocalDeviceProvider } from "../device/device-factory.js";
-import { runWithOperationContext } from "../operation-context.js";
+import { runWithOperationContext } from "../execution/operation-context.js";
 import type { Device } from "../device/device.js";
 import type {
   RecipeRuntimeState,

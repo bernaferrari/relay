@@ -51,7 +51,7 @@ export function storedDisposition(value: string | null | undefined): StoredAppMa
   }
 }
 
-export function parseAppMapDocument(source: string): unknown | undefined {
+export function parseAppMapDocument(source: string): unknown {
   try {
     return JSON.parse(source) as unknown;
   } catch {

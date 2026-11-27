@@ -1,7 +1,7 @@
 import { parseAppMapCombineCellExecutionIntentArtifact } from "./app-map-combine-cell-intent.js";
 import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
-import { frozenRecipeInputsMatch } from "../frozen/frozen-recipe-inputs.js";
-import { PRIVATE_INPUT } from "../private-inputs.js";
+import { frozenRecipeInputsMatch } from "../recipe/frozen-recipe-inputs.js";
+import { PRIVATE_INPUT } from "../input/private-inputs.js";
 
 /** Outputs may reuse an input name. Replay starts with the admitted inputs,
  * while private values must still be available locally and match their seal. */

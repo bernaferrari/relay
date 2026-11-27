@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PNG } from "pngjs";
 import { deriveScrollSurfaceConfidence } from "./scroll-surface-confidence.js";
-import type { ScrollSurveyFrame } from "../scrollable/scrollable-survey-types.js";
+import type { ScrollSurveyFrame } from "../scroll/scrollable-survey-types.js";
 
 function pixels(documentOffset: number): string {
   const image = new PNG({ width: 64, height: 160 });

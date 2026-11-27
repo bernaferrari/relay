@@ -1,7 +1,7 @@
 import type { Device, SnapshotNode } from "../device/device.js";
 import { sleep } from "../device/device.js";
-import { now } from "../events.js";
-import type { RecipeStep } from "../recipes.js";
+import { now } from "../collaboration/events.js";
+import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { MAX_WAIT_MS } from "./recipe-validation-primitives.js";
 import { describeTarget } from "./recipe-presentation.js";
@@ -13,7 +13,10 @@ import {
   turnsAfterBoundary,
   type ResponseBoundary,
 } from "./recipe-response-boundary.js";
-import { captureStillScreenFingerprint, stillScreenUnchanged } from "../still-screen-wait.js";
+import {
+  captureStillScreenFingerprint,
+  stillScreenUnchanged,
+} from "../device/still-screen-wait.js";
 import {
   observeRecipeResponse,
   requireCurrentActionResponseBoundary,

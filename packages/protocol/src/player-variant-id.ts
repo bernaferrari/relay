@@ -22,5 +22,10 @@ export function playerVariantIdForConfiguration(
 }
 
 function formatVariantValue(value: unknown): string {
-  return typeof value === "object" ? JSON.stringify(value) : String(value);
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (typeof value === "object" && value !== null) return JSON.stringify(value) ?? "";
+  return "";
 }

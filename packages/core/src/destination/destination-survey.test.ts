@@ -7,10 +7,10 @@ import type { Device } from "../device/device.js";
 import { runExpectScreenStep } from "../recipe/recipe-runner-screen.js";
 import { parseFrameTreeNodes } from "../run/run-frame-tree.js";
 import { observeScreenIdentity } from "../screen/screen-identity.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import type { TestJob } from "../session/session-contract.js";
-import type { ScrollSurveyTargetInput } from "../scrollable/scrollable-survey.js";
-import type { ScrollSurveyResult } from "../scrollable/scrollable-survey-types.js";
+import type { ScrollSurveyTargetInput } from "../scroll/scrollable-survey.js";
+import type { ScrollSurveyResult } from "../scroll/scrollable-survey-types.js";
 import { runWithTargetContext } from "../target/target-context.js";
 import type { ScreenshotPayload } from "../workspace/workspace-capture.js";
 

@@ -16,7 +16,7 @@ import { parseAppMapTestExecutionIntentArtifact } from "../app-map/app-map-test-
 import { parseAppMapCombineCellExecutionIntentArtifact } from "../app-map/app-map-combine-cell-intent.js";
 import { captureReviewQueueForRun } from "../capture/capture-review-queue.js";
 import { executionIntentPlannedSlots } from "./run-test-step-evidence.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "./run-store.js";
 
 /** A bounded snapshot in the existing share record. It retains the campaign's
  * frozen requested obligations even when a selected case has no Run yet. */

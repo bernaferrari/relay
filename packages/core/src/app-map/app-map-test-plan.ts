@@ -14,12 +14,12 @@ import {
   quoteCompiledTestDuration,
   resolvedExecutionQueue,
 } from "../execution/execution-queue-compile.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import { compiledTestFamilyProvenance } from "./app-map-test-family-provenance.js";
 import {
   compileCaptureReviewConfiguration,
   compiledRouteVariantConfigurations,
-} from "../route-variant-configuration-compile.js";
+} from "../input/route-variant-configuration-compile.js";
 import {
   frozenRawAccessibilitySources,
   frozenRawAccessibilityTargetProfiles,

@@ -20,8 +20,8 @@ import {
 } from "../device/device.js";
 import { createDeviceForTarget } from "../device/device-factory.js";
 import { getBrowserDevice } from "../browser/browser-target.js";
-import { hardStopDeviceSession } from "../control.js";
-import { now } from "../events.js";
+import { hardStopDeviceSession } from "../execution/control.js";
+import { now } from "../collaboration/events.js";
 import { runVideoAllowed } from "../run/run-video-policy.js";
 import type { TestJob } from "./session-contract.js";
 import { resolveSessionDeviceMeta } from "./session-job-support.js";
@@ -33,7 +33,7 @@ import {
   type ProviderTargetExecutionPlan,
   type TargetDriverRegistry,
 } from "../target/target-driver-registry.js";
-import { preflightTarget, readTarget } from "../targets.js";
+import { preflightTarget, readTarget } from "../target/targets.js";
 import { isPhysicalRunnerRoute, resolveAppleControlRoute } from "../apple/apple-control-route.js";
 import { ensureSavedTestIosRunner } from "./session-ios-runner-readiness.js";
 import { awaitColdSavedIosAppForeground } from "../ios/ios-app-launch-readiness.js";

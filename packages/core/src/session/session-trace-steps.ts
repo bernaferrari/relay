@@ -7,7 +7,7 @@
  * fall back to glyphs, new traces do not.
  */
 import { randomUUID } from "node:crypto";
-import { now, publish } from "../events.js";
+import { now, publish } from "../collaboration/events.js";
 import type { TestJob } from "./session-contract.js";
 import {
   glyphsFromLogLine,

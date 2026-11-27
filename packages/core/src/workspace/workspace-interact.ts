@@ -31,9 +31,9 @@ import {
   type NamedControlTarget,
 } from "../device/device-target-resolution.js";
 import { currentTargetContext, runWithTargetContext } from "../target/target-context.js";
-import { GroundingError } from "../grounding.js";
+import { GroundingError } from "../discovery/grounding.js";
 import { verifyIosScreenChanged } from "../ios/ios-app-launch.js";
-import { annotateTapPreview, tapPreviewLogicalBounds } from "../tap-preview.js";
+import { annotateTapPreview, tapPreviewLogicalBounds } from "../device/tap-preview.js";
 import { iosLogicalBoundsForSerial } from "./workspace-capture.js";
 import { resolveRuntimeTarget, type RuntimeTargetOverlay } from "./workspace-devices.js";
 import {
@@ -59,10 +59,10 @@ import {
   IosXCTestSessionUnavailableError,
   diagnoseIosRunnerError,
 } from "../ios/ios-device-adapter.js";
-import { normalizeInteractInput } from "../interact-input.js";
+import { normalizeInteractInput } from "../device/interact-input.js";
 import { typeIntoField } from "../device/device-text-entry.js";
-import { NamedControlMissError } from "../named/named-control-miss.js";
-import type { TextEntryTarget } from "../text-entry-focus.js";
+import { NamedControlMissError } from "../device/named-control-miss.js";
+import type { TextEntryTarget } from "../device/text-entry-focus.js";
 
 export type InteractPoint = { x: number; y: number };
 

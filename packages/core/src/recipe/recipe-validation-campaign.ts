@@ -314,7 +314,10 @@ export function parseEvidenceSurface(
   field: string,
 ): (typeof EVIDENCE_SURFACES)[number] | undefined {
   if (value === undefined) return undefined;
-  if (!EVIDENCE_SURFACES.includes(String(value) as (typeof EVIDENCE_SURFACES)[number])) {
+  if (
+    typeof value !== "string" ||
+    !EVIDENCE_SURFACES.includes(value as (typeof EVIDENCE_SURFACES)[number])
+  ) {
     throw stepErr(index, `${field} is unsupported`);
   }
   return value as (typeof EVIDENCE_SURFACES)[number];

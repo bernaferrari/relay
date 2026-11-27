@@ -1,1 +1,0 @@
-import{i as e,s as t}from"./simctl.js";async function n(n,r,i,a){let o=await n.run({tool:`simctl`,args:t(r,[`list`,`devices`,`-j`]),allowFailure:!0,timeoutMs:a},i);return o.exitCode===0?e(o.stdout,r.id):null}export{n as t};

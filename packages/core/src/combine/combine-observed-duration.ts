@@ -1,6 +1,6 @@
 import type { AppMapCombineObservedDuration } from "@relay/protocol";
 import { listStoredCombineCampaigns, type StoredCombineCampaign } from "./combine-campaign.js";
-import { readPersistedRuns, type PersistedRun } from "../runs/runs.js";
+import { readPersistedRuns, type PersistedRun } from "../run/run-store.js";
 
 const PACK_P95_MIN_SAMPLES = 3;
 

@@ -14,13 +14,18 @@ import {
   type Device,
   type SnapshotNode,
 } from "../device/device.js";
-import { clearControl, JobCancelledError, requestCancel, runWithJobControl } from "../control.js";
+import {
+  clearControl,
+  JobCancelledError,
+  requestCancel,
+  runWithJobControl,
+} from "../execution/control.js";
 import { captureFullSurfaceEvidence } from "../discovery/discovery-surface.js";
-import { dismissTowardParent } from "../explore.js";
+import { dismissTowardParent } from "../discovery/explore.js";
 import { openPhysicalIosApp } from "./ios-app-open.js";
 import { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
 import { runRecipeStep } from "../recipe/recipe-runner.js";
-import { captureScrollableSurvey } from "../scrollable/scrollable-survey.js";
+import { captureScrollableSurvey } from "../scroll/scrollable-survey.js";
 import { runWithTargetContext } from "../target/target-context.js";
 
 const ios = (serial: string) => ({ kind: "device" as const, platform: "ios" as const, serial });

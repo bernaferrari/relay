@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { persistPersistedRun, readCompletedPersistedRun, type PersistedRun } from "../runs/runs.js";
+import { persistPersistedRun, readCompletedPersistedRun, type PersistedRun } from "./run-store.js";
 import { createHash } from "node:crypto";
 import { rebuildRunCatalog } from "./run-catalog.js";
 import { exportRelayRunBundle, verifyRelayRunBundle } from "./run-bundle.js";

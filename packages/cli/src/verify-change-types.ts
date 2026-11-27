@@ -20,7 +20,7 @@ export type VerifyChangeGitRunner = (
 ) => Promise<VerifyChangeGitResult>;
 
 /** Adapter seam for tests and callers that already have reviewed config data. */
-export type VerifyChangeConfigReader = (path: string) => Promise<unknown> | unknown;
+export type VerifyChangeConfigReader = (path: string) => unknown;
 
 export type VerifyChangeActorKind = "human" | "agent" | "system";
 

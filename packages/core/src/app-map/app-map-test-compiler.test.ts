@@ -7,7 +7,7 @@ import type {
   Screen,
   TargetProfile,
 } from "@relay/protocol";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "./map-work.js";
 import { compileAppMapConnection } from "./app-map-compiler.js";
 import {
   AppMapTestCompileError,
@@ -16,7 +16,7 @@ import {
 } from "./app-map-test-compiler.js";
 import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";
-import { stayAppLocaleDestinationCheck } from "../stay-app-locale-destination.js";
+import { stayAppLocaleDestinationCheck } from "./stay-app-locale-destination.js";
 import { validateRecipeSteps } from "../recipe/recipe-validation.js";
 import { registerRecordedControlDisplayAliasResolver } from "../recorded/recorded-control-label.js";
 
@@ -695,7 +695,7 @@ test("proposes monotonic document order only inside a proven Settings segment", 
         },
       ],
     },
-  } as unknown as Record<string, import("../recipes.js").Recipe>;
+  } as unknown as Record<string, import("../recipe/recipes.js").Recipe>;
   assert.deepEqual(proposeAppMapTestExecutionSchedule(current, "root", graph), {
     schemaVersion: 2,
     mode: "review-required",

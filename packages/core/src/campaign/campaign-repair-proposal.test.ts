@@ -13,7 +13,7 @@ import {
   approveAppMapProposal,
   revertAppMapRepairProposal,
 } from "../app-map/proposal-operations.js";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "../app-map/map-work.js";
 
 const scope = { organizationId: "org", projectId: "project", appMapId: "map" };
 

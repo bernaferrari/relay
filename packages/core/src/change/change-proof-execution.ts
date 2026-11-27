@@ -15,7 +15,7 @@ import {
   changeProofRequiredRunCases,
   frozenCellExecutionRisk,
 } from "./change-proof-live-run.js";
-import { readPersistedRun, type PersistedRun } from "../runs/runs.js";
+import { readPersistedRun, type PersistedRun } from "../run/run-store.js";
 import { readControlStore, withControlStore } from "../collaboration/collaboration-store.js";
 import { canonicalSha256 } from "../canonical-json.js";
 import {
@@ -52,7 +52,7 @@ import {
   runOne,
   type ChangeProofExecutionRunOptions,
 } from "./change-proof-execution-runner.js";
-import { publish } from "../events.js";
+import { publish } from "../collaboration/events.js";
 import { changeProofHumanEvidenceScopeDigest } from "./change-proof-human-evidence.js";
 
 export {

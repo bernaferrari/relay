@@ -8,7 +8,7 @@ import type {
   ArtifactRefProjection,
   ArtifactRetention,
 } from "@relay/protocol";
-import { visualEvidenceAllowed } from "../redaction.js";
+import { visualEvidenceAllowed } from "../evidence/redaction.js";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 

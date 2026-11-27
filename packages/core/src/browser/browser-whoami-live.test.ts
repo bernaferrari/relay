@@ -14,7 +14,9 @@ import {
   openBrowserTarget,
   sessionFor,
 } from "./browser-target.js";
-import { deleteTarget, saveBrowserTarget } from "../targets.js";
+import { unknownErrorText } from "../unknown-text.js";
+
+import { deleteTarget, saveBrowserTarget } from "../target/targets.js";
 
 const CHROME =
   process.env.RELAY_TEST_CHROME_PATH ??
@@ -86,7 +88,7 @@ test(
     } catch (error) {
       if (process.env.GOLDEN_ACCEPTANCE_MODE === "required" || process.env.RELAY_TEST_CHROME_PATH)
         throw error;
-      t.skip(`Google Chrome is not installed: ${error instanceof Error ? error.message : error}`);
+      t.skip(`Google Chrome is not installed: ${unknownErrorText(error)}`);
       return;
     }
 

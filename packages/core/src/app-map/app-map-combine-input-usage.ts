@@ -1,6 +1,6 @@
 import type { AppMapCombinePreflightIssue, AppMapVariable, TestData } from "@relay/protocol";
-import { CasePlanError } from "../case-plan.js";
-import { requirePublicInputDataSet } from "../input-data-set.js";
+import { CasePlanError } from "../input/case-plan.js";
+import { requirePublicInputDataSet } from "../input/input-data-set.js";
 
 /** Only complete compilation can prove absence of an external input. A mixed
  * Plan may intentionally leave this dimension unused by some of its children. */

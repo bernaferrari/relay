@@ -13,7 +13,7 @@ import { decideChangeVerification } from "./change-proof-decision.js";
 import { verifyChangePlanDigest, verifyChangePolicyDigest } from "./change-proof-integrity.js";
 import { humanOnlyInterventionForCell } from "./change-proof-confirmation.js";
 import { withControlStore, type ControlStore } from "../collaboration/collaboration-store.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import {
   ChangeProofExecutionError,
   type ChangeProofCellDispatch,

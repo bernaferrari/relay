@@ -1,6 +1,6 @@
 import { mkdir, open, realpath, unlink } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 import type { Device } from "../device/device.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { browserSessionForDevice } from "../browser/browser-live-handles.js";
@@ -9,7 +9,7 @@ import { browserAccountSchedulingKey } from "../browser/browser-account-lane.js"
 import { runBrowserMutationAdmission } from "../browser/browser-mutation-admission.js";
 import { getEvidenceCollectionPolicy } from "../evidence/evidence-policy.js";
 import { assertAudioOutputConsent, recordHtmlMediaAudio } from "../browser/browser-audio-output.js";
-import { measureAudioOutput } from "../audio-output-level.js";
+import { measureAudioOutput } from "../device/audio-output-level.js";
 import { inspectMedia } from "../media/media-check.js";
 
 /** This check proves sound in a selected HTML media stream, not speech correctness or speaker hardware. */

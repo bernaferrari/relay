@@ -10,11 +10,11 @@ import {
   createAppMapTestExecutionIntent,
   digestAppMapTestExecutionValue,
 } from "./app-map-test-execution-intent.js";
-import { runWithOperationContext } from "../operation-context.js";
-import type { Recipe } from "../recipes.js";
+import { runWithOperationContext } from "../execution/operation-context.js";
+import type { Recipe } from "../recipe/recipes.js";
 import { replayInputFromPersistedRun } from "../session/session-job-factory.js";
 import { enqueueJob } from "../session/session.js";
-import { freezeRecipeInputs } from "../frozen/frozen-recipe-inputs.js";
+import { freezeRecipeInputs } from "../recipe/frozen-recipe-inputs.js";
 
 function fixture(originApplication?: string) {
   const root: Recipe = {

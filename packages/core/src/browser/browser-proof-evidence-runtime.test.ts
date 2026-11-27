@@ -14,12 +14,12 @@ import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { captureBrowserProofEvidence } from "./browser-proof-evidence-runtime.js";
 import type { BrowserProofRuntime } from "./browser-proof-runtime.js";
 import { closeBrowserTarget, getBrowserDevice } from "./browser-target.js";
-import { loadRedactionPolicy } from "../redaction.js";
+import { loadRedactionPolicy } from "../evidence/redaction.js";
 import { initializeRunEvidence, stopRunEvidence } from "../run/run-evidence.js";
 import { exportTracePack, verifyTracePack } from "../trace/trace-pack.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import type { TestJob } from "../session/session.js";
-import { deleteTarget, saveBrowserTarget } from "../targets.js";
+import { deleteTarget, saveBrowserTarget } from "../target/targets.js";
 
 const CHROME =
   process.env.RELAY_TEST_CHROME_PATH ??
@@ -168,7 +168,7 @@ test("browser proof popup topology masks credentials even when broad redaction i
   const runtime: BrowserProofRuntime = {
     profile: environment,
     version: "test-browser",
-    screenshot: async (path) => void (await writeFile(path, "image")),
+    screenshot: async (path) => await writeFile(path, "image"),
     ariaSnapshot: async () => "button Save",
     pages: async () => ({
       pages: [

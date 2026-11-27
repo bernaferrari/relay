@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { clearControl, requestCancel, runWithJobControl } from "../control.js";
+import { clearControl, requestCancel, runWithJobControl } from "../execution/control.js";
 import { setLocalDeviceProvider } from "../device/device-factory.js";
 import { pressResolvedControl } from "../device/device-resolved-control.js";
 import { resolveNamedControl } from "../device/device-target-resolution.js";

@@ -285,7 +285,7 @@ test("MCP and the app client see scoped server authoring state", async () => {
     );
     const invoker: OperationInvoker = {
       invoke(operationId, input, options) {
-        return agent.invoke(operationId, input as never, options);
+        return agent.invoke(operationId as never, input as never, options);
       },
     };
 

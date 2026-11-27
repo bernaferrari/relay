@@ -1,1 +1,0 @@
-const e=1e4,t=2e3,n=`ALERT_NOT_FOUND`,r=`alert-not-found`,i=[`get`,`accept`,`dismiss`,`wait`];export{e as a,n as i,t as n,r,i as t};

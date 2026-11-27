@@ -1,5 +1,6 @@
 /** Plain-text tables and verdicts for people at a terminal. JSON stays raw. */
 import { readinessFromDiscovery } from "./test-discovery.js";
+import { unknownText } from "./unknown-text.js";
 
 export type VerdictStep = {
   id: string;
@@ -24,7 +25,8 @@ export type Verdict = {
 };
 
 function cell(value: unknown, max = 60): string {
-  const text = value === undefined || value === null ? "" : String(value).replace(/\s+/gu, " ");
+  const text =
+    value === undefined || value === null ? "" : unknownText(value).replace(/\s+/gu, " ");
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
@@ -335,10 +337,7 @@ export function formatListResult(result: unknown, now = Date.now()): string | un
 }
 
 function md(value: unknown): string {
-  return String(value ?? "")
-    .replace(/\|/gu, "\\|")
-    .replace(/\s+/gu, " ")
-    .trim();
+  return unknownText(value).replace(/\|/gu, "\\|").replace(/\s+/gu, " ").trim();
 }
 
 /** The same verdicts as a GitHub job summary: one table, then each failure's expected vs. saw. */

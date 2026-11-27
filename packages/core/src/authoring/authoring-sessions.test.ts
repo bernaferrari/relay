@@ -19,7 +19,7 @@ import {
   type CapturedAuthoringObservation,
   type AuthoringRuntime,
 } from "./authoring-sessions.js";
-import { runWithOperationContext, type OperationContext } from "../operation-context.js";
+import { runWithOperationContext, type OperationContext } from "../execution/operation-context.js";
 import { commitAppMapChanges } from "../app-map/app-map.js";
 import { createAppMap, mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.js";
 import { readAuthoringEvidence } from "./authoring-evidence.js";

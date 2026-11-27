@@ -16,7 +16,7 @@ import type {
   ScreenIdentityObservation,
 } from "@relay/protocol";
 import type { SnapshotNode } from "../device/device.js";
-import { runsRoot, type PersistedRun } from "../runs/runs.js";
+import { runsRoot, type PersistedRun } from "../run/run-store.js";
 import { readFrameTreeNodes } from "../run/run-frame-tree.js";
 import { observeScreenIdentityForHost, resolveScreenIdentity } from "../screen/screen-identity.js";
 

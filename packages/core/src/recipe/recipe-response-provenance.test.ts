@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { contentAssertionPassed } from "../content-assertion-match.js";
+import { contentAssertionPassed } from "../evaluation/content-assertion-match.js";
 import { registerEvaluationProvider } from "../evaluation/evaluation.js";
 import { runRecipeStep as runRecipeStepWithoutContext } from "./recipe-runner.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import type { TestJob } from "../session/session.js";
 import type { Device } from "../device/device.js";
 import { runWithTargetContext } from "../target/target-context.js";
-import { JobCancelledError } from "../control.js";
+import { JobCancelledError } from "../execution/control.js";
 
 const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
   runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-com" }, () =>

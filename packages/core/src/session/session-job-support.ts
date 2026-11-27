@@ -1,6 +1,6 @@
-import { classifyJobError } from "../report.js";
+import { classifyJobError } from "../run/report.js";
 import { createDevice, type DevicePlatform } from "../device/device.js";
-import { JobControlOwnershipError } from "../control.js";
+import { JobControlOwnershipError } from "../execution/control.js";
 import { isDeviceLeaseSessionActive } from "../collaboration/collaboration.js";
 import type { JobErrorCode, TestJob } from "./session-contract.js";
 

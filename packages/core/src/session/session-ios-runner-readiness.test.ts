@@ -12,7 +12,7 @@ import {
   requestCancel,
   runWithJobControl,
   setControlValidator,
-} from "../control.js";
+} from "../execution/control.js";
 import { rememberTargetApplication, type Device, type SnapshotNode } from "../device/device.js";
 import { setLocalDeviceProvider } from "../device/device-factory.js";
 import { setIosAppOpenRuntimeForTests } from "../ios/ios-app-open.js";

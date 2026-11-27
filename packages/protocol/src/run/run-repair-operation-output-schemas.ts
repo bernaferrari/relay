@@ -1,5 +1,7 @@
 import * as z from "zod/v4";
 import { appMapDocumentSchema } from "../app-map/app-map-document-schema.js";
+import { executionJobSchema } from "../execution/execution-target-schemas.js";
+import { stepTargetSchema } from "../recipe/recipe-step-schema.js";
 
 const campaignRepairActionOutputSchema = z
   .object({
@@ -68,8 +70,8 @@ const campaignRepairTargetOutputSchema = z
         navigationRepair: z
           .object({
             connectionId: z.string().min(1),
-            beforeSelector: z.record(z.string(), z.unknown()),
-            currentSelector: z.record(z.string(), z.unknown()),
+            beforeSelector: stepTargetSchema,
+            currentSelector: stepTargetSchema,
             attempts: z.array(z.unknown()),
           })
           .strict()
@@ -130,7 +132,7 @@ export const runRepairOperationOutputSchemas = {
   "run.repair.retry": z
     .object({
       repair: campaignRepairTargetOutputSchema,
-      job: z.record(z.string(), z.unknown()),
+      job: executionJobSchema,
     })
     .strict(),
   "run.repair.propose": z

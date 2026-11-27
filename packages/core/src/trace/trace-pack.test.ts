@@ -11,7 +11,7 @@ import {
 } from "@relay/protocol";
 import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
 import { analyzeTracePack, exportTracePack, verifyTracePack } from "./trace-pack.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { writeAuthoringSession } from "../authoring/authoring-session-storage.js";
 
 function canonicalValue(value: unknown): unknown {

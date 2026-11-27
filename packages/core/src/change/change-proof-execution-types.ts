@@ -19,7 +19,7 @@ import type {
   ChangeVerificationScope,
 } from "./change-verification-store.js";
 import type { ChangeProofRunCase } from "./change-proof-live-run.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 export const CHANGE_PROOF_EXECUTION_SCHEMA_VERSION = 1 as const;
 export const DEFAULT_CHANGE_PROOF_EXECUTION_DURATION_MS = 1_800_000;

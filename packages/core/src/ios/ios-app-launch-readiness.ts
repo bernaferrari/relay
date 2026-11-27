@@ -4,7 +4,7 @@ import {
   JobCancelledError,
   JobControlOwnershipError,
   raceCancel,
-} from "../control.js";
+} from "../execution/control.js";
 import { rememberedTargetApplication } from "../device/device.js";
 import { resolveIosLaunchBundleId } from "./ios-app-launch.js";
 import { postAdoptedIosRunnerCommand } from "./ios-runner-listener-command.js";

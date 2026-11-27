@@ -13,7 +13,7 @@ import {
   closeBrowserTarget,
   sessionFor,
 } from "../browser/browser-target.js";
-import { saveBrowserTarget } from "../targets.js";
+import { saveBrowserTarget } from "../target/targets.js";
 
 test(
   "replay resets changed cookies and URL, while preserving the authoring page and saved account",

@@ -1,1 +1,0 @@
-import{w as e}from"./tv-remote.js";function t(){return{discover:async()=>[e]}}export{t as createWebInventory};

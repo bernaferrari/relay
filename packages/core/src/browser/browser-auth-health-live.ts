@@ -1,7 +1,7 @@
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { createBrowserContextFactory } from "./browser-context.js";
 import { dismissBrowserConsentIfPresent } from "./browser-consent-overlay.js";
-import { readTarget } from "../targets.js";
+import { readTarget } from "../target/targets.js";
 import type { BrowserAuthPageSnapshot } from "./browser-auth-health.js";
 
 export async function inspectManagedBrowserAuthPage(input: {

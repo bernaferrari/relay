@@ -4,7 +4,7 @@ import { identityPolicyForTarget } from "./app-identity-policy.js";
 import {
   GROK_WEB_APP_TEST_POLICY,
   registerGrokIdentityTestPolicies,
-} from "./app-identity-test-policies.js";
+} from "../fixtures/app-identity-test-policies.js";
 import { signedInFromPage } from "../browser/browser-auth-health.js";
 import type { SnapshotNode } from "../device/device.js";
 import { conversationHistoryLabels } from "../screen/screen-identity-history.js";

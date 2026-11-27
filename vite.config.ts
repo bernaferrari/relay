@@ -60,6 +60,18 @@ export default defineConfig({
       "no-unused-vars": "error",
       "no-unsafe-optional-chaining": "error",
       "typescript/await-thenable": "error",
+      "typescript/no-base-to-string": "error",
+      "typescript/restrict-template-expressions": "error",
+      "typescript/no-misused-spread": "error",
+      "typescript/no-floating-promises": "error",
+      "typescript/require-array-sort-compare": "error",
+      "typescript/no-redundant-type-constituents": "error",
+      "typescript/no-duplicate-type-constituents": "error",
+      // Relay passes plain object methods and interface functions by reference
+      // throughout its dependency-injection seams; they do not depend on a
+      // class receiver. The rule produced hundreds of false positives there,
+      // while genuine receiver-dependent APIs are covered by typechecking.
+      "typescript/unbound-method": "off",
       "shadcn/no-inline-styles": ["error", { allow: ["transform"] }],
       "shadcn/require-static-classes": "error",
       "shadcn/no-unknown-classes": "error",
@@ -128,7 +140,7 @@ export default defineConfig({
     overrides: [
       {
         files: ["**/*.test.{ts,tsx,mjs}"],
-        rules: { "typescript/no-floating-promises": "off", "typescript/unbound-method": "off" },
+        rules: { "typescript/no-floating-promises": "off" },
       },
       {
         files: ["packages/ui-react/src/components/**"],

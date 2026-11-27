@@ -16,7 +16,7 @@ import type { RunReview } from "../run/run-review.js";
 
 import type { OperationRecord, ProjectRole } from "./operation-contract.js";
 import type { OperationSchemaId, OperationSchemaInput } from "./operation-input-schemas.js";
-import type { OperationOutputSchemaId, OperationSchemaOutput } from "./operation-output-schemas.js";
+import type { OperationSchemaOutput } from "./operation-output-schemas.js";
 
 export type { AndroidAvdBootResult, AndroidAvdInventory } from "../target/target-contract.js";
 
@@ -425,7 +425,7 @@ export type HealthSummary = {
   };
 };
 
-export type OperationId = OperationSchemaId & OperationOutputSchemaId;
+export type OperationId = OperationSchemaId;
 export type OperationInput<Id extends OperationId> = OperationSchemaInput<Id>;
 export type OperationOutput<Id extends OperationId> = OperationSchemaOutput<Id>;
 export type RelayOperationMap = {

@@ -33,7 +33,7 @@ import {
   readCompletedPersistedRun,
   withRunWriteLock,
   type PersistedRun,
-} from "../runs/runs.js";
+} from "../run/run-store.js";
 
 export type PlanCaptureReviewApplyResult = {
   queue: PlanCaptureReviewQueue;

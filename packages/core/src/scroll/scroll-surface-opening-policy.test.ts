@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureScrollableSurvey } from "../scrollable/scrollable-survey.js";
+import { captureScrollableSurvey } from "../scroll/scrollable-survey.js";
 import {
   registerScrollSurfaceOpeningPolicy,
   scrollSurfaceOpeningPolicy,

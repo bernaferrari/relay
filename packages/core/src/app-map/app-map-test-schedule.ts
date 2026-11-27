@@ -17,7 +17,7 @@ import type {
   RecipeStep,
   StepTarget,
 } from "@relay/protocol";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import { selectEquivalentDirectConnection } from "./app-map-route-cost.js";
 
 type Schedule = NonNullable<AppMapCompiledTest["executionSchedule"]>;

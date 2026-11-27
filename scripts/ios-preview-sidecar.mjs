@@ -106,7 +106,7 @@ async function sourceFiles(directory, prefix = "") {
       files.push(entryRelative);
     }
   }
-  return files.sort();
+  return files.sort((a, b) => a.localeCompare(b));
 }
 
 function packageModule(goMod) {

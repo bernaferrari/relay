@@ -1,5 +1,5 @@
 import { controlledMutation } from "../device/device-dispatch.js";
-import { InputNotDispatchedError } from "../input-not-dispatched.js";
+import { InputNotDispatchedError } from "../device/input-not-dispatched.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,7 +14,12 @@ import {
   runWithTargetSupervisorStore,
   TargetSupervisorStore,
 } from "../target/target-supervisor-store.js";
-import { clearControl, JobCancelledError, requestCancel, runWithJobControl } from "../control.js";
+import {
+  clearControl,
+  JobCancelledError,
+  requestCancel,
+  runWithJobControl,
+} from "../execution/control.js";
 
 test("browser mutation supervision persists completed and not-dispatched outcomes", async () => {
   const store = new TargetSupervisorStore(":memory:");

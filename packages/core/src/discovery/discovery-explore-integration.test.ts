@@ -26,7 +26,7 @@ import {
   type ExploreRuntime,
 } from "./discovery-explore-job.js";
 import type { DiscoveryHere } from "./discovery-turn.js";
-import { GroundingError } from "../grounding.js";
+import { GroundingError } from "./grounding.js";
 
 type FakeScreen = {
   id: string;
@@ -446,7 +446,7 @@ test("explore bounds a same-screen feed instead of looping forever", async () =>
       here,
       foreground: async () => "com.example.app",
       ground: async ({ target }) => ({
-        interaction: { kind: "label", label: String(target) },
+        interaction: { kind: "label", label: typeof target === "string" ? target : "" },
         method: "a11y",
         confidence: 1,
       }),

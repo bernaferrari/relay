@@ -12,7 +12,11 @@ import {
   currentOperationContext,
   type TestJob,
 } from "@relay/core";
-import { parseAuthoringSession, type AuthoringSession } from "@relay/protocol";
+import {
+  parseAuthoringSession,
+  type AuthoringRawEvent,
+  type AuthoringSession,
+} from "@relay/protocol";
 import { authoringInputReceiptOutcome } from "@relay/workflows";
 import { startServer } from "../index.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
@@ -126,7 +130,7 @@ async function withServer(
   const runtime: WorkflowRouteRuntime = {
     now: () => clock++,
     getJob: (id) => jobs.get(id),
-    listJobs: (limit = 100) => [...jobs.values()].slice(-limit),
+    listJobs: (limit?: number) => [...jobs.values()].slice(-(limit ?? 100)),
     cancelJob: (id) => {
       cancelCalls.push(id);
       const current = jobs.get(id);
@@ -170,6 +174,26 @@ async function withServer(
         expectedAppMapRevision: value.expectedAppMapRevision,
         createdAt: clock,
         updatedAt: clock,
+        take: {
+          id: `take-${authoring.size + 1}`,
+          state: "recording",
+          createdAt: clock,
+          updatedAt: clock,
+          currentRevision: 1,
+          revisions: [
+            {
+              id: `take-${authoring.size + 1}:revision:1`,
+              takeId: `take-${authoring.size + 1}`,
+              revision: 1,
+              createdAt: clock,
+              createdBy: actorId,
+              reason: "recording",
+              actions: [],
+              evidence: [],
+            },
+          ],
+          replayAttempts: [],
+        },
       } as AuthoringSession;
       authoring.set(session.id, session);
       return structuredClone(session);
@@ -944,6 +968,7 @@ test("a conclusively failed Authoring interaction keeps the durable workflow usa
       authoringSessions.set(id, {
         ...session,
         take: {
+          ...session.take!,
           rawCaptureVersion: 2,
           rawEvents: [
             {
@@ -973,7 +998,7 @@ test("a conclusively failed Authoring interaction keeps the durable workflow usa
               links: { evidenceIds: [] },
             },
           ],
-        } as unknown as NonNullable<AuthoringSession["take"]>,
+        },
       });
       throw new InputNotDispatchedError("Target inspection failed before tap");
     };
@@ -1235,21 +1260,25 @@ test("explicit observation recovers an interrupted recording for review without 
       (await actor.invoke("workflow.get", { workflowId })).workflow.record.status,
       "needs-attention",
     );
-    const rawEvents = [
+    const rawEvents: AuthoringRawEvent[] = [
       {
         id: "recovery-observation",
         sequence: 1,
         kind: "observation",
         recordedAt: 2_200,
         source: { kind: "authoring-runtime", target: original.target },
-        observation: { id: "current-screen", evidenceIds: [] },
+        observation: {
+          observationId: "current-screen",
+          capturedAt: 2_200,
+          evidenceIds: [],
+        },
       },
     ];
     authoringSessions.set(sessionId, {
       ...original,
       state: "reviewing",
       recoveredAt: 2_100,
-      take: { rawCaptureVersion: 2, rawEvents } as unknown as NonNullable<AuthoringSession["take"]>,
+      take: { ...original.take!, rawCaptureVersion: 2, rawEvents },
     });
     const recovered = await actor.invoke("workflow.get", { workflowId });
     assert.equal(recovered.workflow.record.status, "active");
@@ -1293,10 +1322,11 @@ test("only a new observation reopens interrupted replay, without proving replay 
         at: 2_000,
       });
       const unknown = await actor.invoke("workflow.get", { workflowId });
-      const observed = (recordedAt: number) => ({
+      const observed = (recordedAt: number): AuthoringSession => ({
         ...original,
         state: "reviewing" as const,
         take: {
+          ...original.take!,
           rawCaptureVersion: 2,
           rawEvents: [
             {
@@ -1305,10 +1335,14 @@ test("only a new observation reopens interrupted replay, without proving replay 
               kind: "observation",
               recordedAt,
               source: { kind: "authoring-runtime", target: original.target },
-              observation: { id: "screen", evidenceIds: [] },
+              observation: {
+                observationId: "screen",
+                capturedAt: recordedAt,
+                evidenceIds: [],
+              },
             },
           ],
-        } as unknown as NonNullable<AuthoringSession["take"]>,
+        },
       });
       authoringSessions.set(sessionId, observed(unknown.workflow.record.updatedAt));
       assert.equal(

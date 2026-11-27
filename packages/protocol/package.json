@@ -5,7 +5,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./browser-lane-session": "./src/browser/browser-lane-session.ts"
+    "./browser-lane-session": "./src/browser/browser-lane-session.ts",
+    "./target/target-execution-readiness": "./src/target/target-execution-readiness.ts",
+    "./recorded/recorded-control-label": "./src/recorded/recorded-control-label.ts",
+    "./browser/browser-execution-identity": "./src/browser/browser-execution-identity.ts",
+    "./app-map/app-map-runtime-target-profile": "./src/app-map/app-map-runtime-target-profile.ts",
+    "./browser/browser-case-profile-target": "./src/browser/browser-case-profile-target.ts",
+    "./browser/browser-target-capabilities": "./src/browser/browser-target-capabilities.ts",
+    "./native/native-target-profile": "./src/native/native-target-profile.ts",
+    "./app-map/app-map-unrecorded-runtime-profile": "./src/app-map/app-map-unrecorded-runtime-profile.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

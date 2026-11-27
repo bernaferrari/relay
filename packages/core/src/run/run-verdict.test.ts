@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRunVerdict, plainReason } from "./run-verdict.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "./run-store.js";
 
 function run(overrides: Partial<PersistedRun>): PersistedRun {
   return {

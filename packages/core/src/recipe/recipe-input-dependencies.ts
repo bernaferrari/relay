@@ -1,6 +1,6 @@
 import type { RecipeStep } from "@relay/protocol";
-import { referencedRecipeInputNames } from "../private-inputs.js";
-import type { Recipe } from "../recipes.js";
+import { referencedRecipeInputNames } from "../input/private-inputs.js";
+import type { Recipe } from "./recipes.js";
 
 function childIds(step: RecipeStep): string[] {
   return step.kind === "module" || step.kind === "repeat"

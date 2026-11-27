@@ -1,13 +1,13 @@
-import { JobCancelledError } from "../control.js";
-import { now } from "../events.js";
+import { JobCancelledError } from "../execution/control.js";
+import { now } from "../collaboration/events.js";
 import type { AppMap } from "@relay/protocol";
 import { currentVerifiedScreen, type RecipeRuntimeState } from "../recipe/recipe-runner-context.js";
 import type { TestJob } from "./session-contract.js";
 import { isTargetUnavailableError } from "../target/target-unavailable.js";
 import { parseAppMapTestExecutionIntentArtifact } from "../app-map/app-map-test-execution-intent.js";
 import { readAppMap } from "../collaboration/collaboration.js";
-import { proposeRepair } from "../repair-proposal.js";
-import { createDefaultGrounder } from "../grounding.js";
+import { proposeRepair } from "../app-map/repair-proposal.js";
+import { createDefaultGrounder } from "../discovery/grounding.js";
 
 type DestinationRepairHintArtifact = {
   schemaVersion: 1;

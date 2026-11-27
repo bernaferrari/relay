@@ -11,19 +11,50 @@
   },
   "include": [],
   "references": [
-    { "path": "packages/app" },
-    { "path": "packages/cli" },
-    { "path": "packages/client" },
-    { "path": "packages/core" },
-    { "path": "packages/desktop" },
-    { "path": "packages/e2e" },
-    { "path": "packages/mcp" },
-    { "path": "packages/product" },
-    { "path": "packages/protocol" },
-    { "path": "packages/server" },
-    { "path": "packages/site" },
-    { "path": "packages/tui" },
-    { "path": "packages/ui-react" },
-    { "path": "packages/workflows" }
+    {
+      "path": "packages/app"
+    },
+    {
+      "path": "packages/cli"
+    },
+    {
+      "path": "packages/client"
+    },
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/desktop"
+    },
+    {
+      "path": "packages/e2e"
+    },
+    {
+      "path": "packages/mcp"
+    },
+    {
+      "path": "packages/product"
+    },
+    {
+      "path": "packages/protocol"
+    },
+    {
+      "path": "packages/server"
+    },
+    {
+      "path": "packages/site"
+    },
+    {
+      "path": "packages/tui"
+    },
+    {
+      "path": "packages/ui-react"
+    },
+    {
+      "path": "packages/workflow-runners"
+    },
+    {
+      "path": "packages/workflows"
+    }
   ]
 }

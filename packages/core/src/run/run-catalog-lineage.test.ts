@@ -19,7 +19,7 @@ import {
   listRunSummariesPageAtRoot,
   RunListCursorError,
 } from "./run-summary-pagination.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "./run-store.js";
 
 const matrix = {
   kind: "combine-cell",

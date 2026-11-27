@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
-import { FRAME_OBSERVATION_KIND, type FrameObservation } from "../frame-observation.js";
-import type { PersistedRun } from "../runs/runs.js";
+import { FRAME_OBSERVATION_KIND, type FrameObservation } from "../device/frame-observation.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { exportTracePack } from "./trace-pack.js";
 import { recomputeTracePackVisualLocalization } from "./trace-pack-visual-localization.js";
 

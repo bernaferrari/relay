@@ -3,4 +3,4 @@ export {
   registerRecordedControlDisplayAliasResolver,
   testInstructionDisplayTitle,
   testInstructionDisplayTitles,
-} from "@relay/core/recorded-control-label";
+} from "@relay/protocol/recorded/recorded-control-label";

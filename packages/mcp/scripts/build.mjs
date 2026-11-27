@@ -1,4 +1,4 @@
-import { copyFile, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -58,18 +58,19 @@ await build({
     prompts: "src/prompts.ts",
     "doctor-lib": "src/doctor.ts",
     server: "src/server.ts",
+    tools: "src/tools.ts",
   },
   outdir: dist,
   bundle: true,
   platform: "node",
   format: "esm",
   target: "node24",
-  sourcemap: true,
+  sourcemap: false,
+  splitting: true,
   external,
   plugins: [workspaceAliasPlugin],
   logLevel: "info",
   legalComments: "eof",
-  banner: { js: "#!/usr/bin/env node" },
 });
 for (const [source, target] of [
   ["server-public.d.ts", "server.d.ts"],
@@ -77,14 +78,21 @@ for (const [source, target] of [
   ["prompts-public.d.ts", "prompts.d.ts"],
   ["doctor-public.d.ts", "doctor.d.ts"],
   ["tools-public.d.ts", "tools.d.ts"],
+  ["operation-id.d.ts", "operation-id.d.ts"],
 ]) {
   await copyFile(join(packageRoot, "src", source), join(dist, target));
 }
+const executables = new Set(["relay-mcp.js", "relay-proof-doctor.js", "relay-mcp-bridge.js"]);
 for (const file of await readdir(dist)) {
   if (!file.endsWith(".js")) continue;
   const path = join(dist, file);
   const source = await readFile(path, "utf8");
-  await writeFile(path, source.replace(/^(?:#![^\n]*\n)+/u, "#!/usr/bin/env node\n"));
+  const withoutShebang = source.replace(/^(?:#![^\n]*\n)+/u, "");
+  await writeFile(
+    path,
+    executables.has(file) ? `#!/usr/bin/env node\n${withoutShebang}` : withoutShebang,
+  );
+  if (executables.has(file)) await chmod(path, 0o755);
 }
 
 const panel = await build({

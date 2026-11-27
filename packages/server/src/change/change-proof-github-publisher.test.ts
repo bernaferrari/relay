@@ -61,6 +61,18 @@ async function createTerminalProof() {
   });
 }
 
+function requestUrl(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input instanceof Request) return input.url;
+  throw new TypeError("Expected a fetch input");
+}
+
+function bodyText(body: unknown): string {
+  if (typeof body !== "string") throw new TypeError("Expected a string request body");
+  return body;
+}
+
 test("publishes once, updates the acknowledged check, and reuses an identical receipt", async () => {
   await withStateRoot(async () => {
     await createTerminalProof();
@@ -68,7 +80,7 @@ test("publishes once, updates the acknowledged check, and reuses an identical re
     const urls: string[] = [];
     const fetchImpl = async (url: URL | RequestInfo, init?: RequestInit) => {
       methods.push(String(init?.method));
-      urls.push(String(url));
+      urls.push(requestUrl(url));
       if (init?.method === "GET") {
         return new Response(JSON.stringify({ total_count: 0, check_runs: [] }), { status: 200 });
       }
@@ -150,7 +162,7 @@ test("restart publication updates queued progress to terminal on one exact check
       if (init?.method === "GET") {
         return new Response(JSON.stringify({ total_count: 0, check_runs: [] }), { status: 200 });
       }
-      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      bodies.push(JSON.parse(bodyText(init?.body)) as Record<string, unknown>);
       return new Response(JSON.stringify({ id: 42, head_sha: headSha, external_id: created.id }), {
         status: init?.method === "POST" ? 201 : 200,
       });
@@ -247,7 +259,7 @@ test("restart publication acknowledges the exact queued historical Proof version
         if (init?.method === "GET") {
           return new Response(JSON.stringify({ total_count: 0, check_runs: [] }), { status: 200 });
         }
-        const body = JSON.parse(String(init?.body)) as { head_sha?: string };
+        const body = JSON.parse(bodyText(init?.body)) as { head_sha?: string };
         publishedHead = body.head_sha;
         return new Response(
           JSON.stringify({ id: 84, head_sha: headSha, external_id: terminal.id }),
@@ -293,7 +305,7 @@ test("publication uses the frozen outbox check when mutable details configuratio
         if (init?.method === "GET") {
           return new Response(JSON.stringify({ total_count: 0, check_runs: [] }), { status: 200 });
         }
-        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        requestBody = JSON.parse(bodyText(init?.body)) as Record<string, unknown>;
         return new Response(JSON.stringify({ id: 45, head_sha: headSha, external_id: proof.id }), {
           status: 201,
         });

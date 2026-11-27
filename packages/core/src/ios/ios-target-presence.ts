@@ -7,7 +7,7 @@ import {
 } from "./ios-runner-listener-command.js";
 import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
 import type { SnapshotNode } from "../device/device.js";
-import type { StepTarget } from "../recipes.js";
+import type { StepTarget } from "../recipe/recipes.js";
 import type { TargetContext } from "../target/target-context.js";
 
 function normalized(value: string): string {

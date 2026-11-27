@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { publish } from "../events.js";
-import { redactText } from "../redaction.js";
+import { publish } from "../collaboration/events.js";
+import { redactText } from "../evidence/redaction.js";
 import { join } from "node:path";
 import { findWorkspaceRoot } from "../workspace/workspace-root.js";
 

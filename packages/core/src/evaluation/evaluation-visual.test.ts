@@ -4,6 +4,15 @@ import { evaluateVisual } from "./evaluation-visual.js";
 
 const image = { mimeType: "image/png" as const, data: "AA==" };
 
+function requestBodyText(init: unknown): string {
+  const body =
+    init && typeof init === "object" && "body" in init
+      ? (init as { body?: unknown }).body
+      : undefined;
+  if (typeof body !== "string") throw new TypeError("fetch body must be a JSON string");
+  return body;
+}
+
 test("visual judge fails closed without OPENROUTER_API_KEY", async () => {
   const previous = process.env.OPENROUTER_API_KEY;
   const previousProvider = process.env.RELAY_EVALUATION_PROVIDER;
@@ -40,7 +49,7 @@ test("visual judge uses the Vercel AI SDK OpenRouter boundary", async () => {
   let requestBody: unknown;
   process.env.OPENROUTER_API_KEY = "test-key";
   globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-    requestBody = JSON.parse(String(init?.body));
+    requestBody = JSON.parse(requestBodyText(init));
     return new Response(
       JSON.stringify({
         id: "chatcmpl-visual-test",

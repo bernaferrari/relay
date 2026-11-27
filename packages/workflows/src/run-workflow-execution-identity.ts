@@ -1,7 +1,7 @@
 import {
   parseAppMapRuntimeTargetProfile,
   sameAppMapRuntimeTargetProfile,
-} from "@relay/core/app-map-runtime-target-profile";
+} from "@relay/protocol/app-map/app-map-runtime-target-profile";
 import type { OperationOutput } from "@relay/protocol";
 import { readCompile, type ValidCompile } from "./run-workflow-support.js";
 import type { FrozenRunTestIdentity } from "./types.js";

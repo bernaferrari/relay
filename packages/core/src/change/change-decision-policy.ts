@@ -84,8 +84,8 @@ function exactStringSet(left: readonly string[], right: readonly string[]): bool
   ) {
     return false;
   }
-  const sortedLeft = [...left].sort();
-  const sortedRight = [...right].sort();
+  const sortedLeft = [...left].sort((a, b) => a.localeCompare(b));
+  const sortedRight = [...right].sort((a, b) => a.localeCompare(b));
   return (
     sortedLeft.length === sortedRight.length &&
     sortedLeft.every((value, index) => value === sortedRight[index])

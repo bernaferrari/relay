@@ -1,7 +1,7 @@
 /** Everyday outcome verbs (run, record, connect, …) on top of the workflow façade. */
 import { createRequire } from "node:module";
 import type { WorkflowSnapshot } from "@relay/workflows";
-import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
+import { createRelayOutcomeJobs } from "@relay/workflow-runners/outcomes";
 import type { parseCli } from "./config.js";
 import { writeEvidenceReviewDir } from "./cli-out.js";
 import { ExitCode } from "./errors.js";

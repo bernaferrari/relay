@@ -21,7 +21,7 @@ import {
 import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
 import { readAppMap } from "../collaboration/collaboration.js";
 import { readControlStore, withControlStore } from "../collaboration/collaboration-store.js";
-import { publish } from "../events.js";
+import { publish } from "../collaboration/events.js";
 import {
   issueReviewedDocumentOriginProjectionAuthorization,
   reviewedDocumentOriginProjectionAuthorizationIsValid,

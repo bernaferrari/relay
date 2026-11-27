@@ -20,4 +20,4 @@ await new Promise((resolvePromise, reject) => {
   });
 });
 
-console.log("Built the vendored agent-device source without a compiled override layer.");
+console.log("Built the patched agent-device submodule without a compiled override layer.");

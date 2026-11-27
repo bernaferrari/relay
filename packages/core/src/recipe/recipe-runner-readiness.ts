@@ -1,7 +1,7 @@
 import type { Device } from "../device/device.js";
 import { selectedPlatform, sleep, snapshot } from "../device/device.js";
 import { captureScreenshot } from "../workspace/workspace-capture.js";
-import { cooperativeCheckpoint } from "../control.js";
+import { cooperativeCheckpoint } from "../execution/control.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import {
   awaitSemanticReadiness,

@@ -1,0 +1,3 @@
+[submodule "vendor/agent-device"]
+	path = vendor/agent-device
+	url = https://github.com/callstack/agent-device.git

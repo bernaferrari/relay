@@ -8,6 +8,15 @@ import {
   registerEvaluationProvider,
 } from "./evaluation/evaluation.js";
 
+function requestBodyText(init: unknown): string {
+  const body =
+    init && typeof init === "object" && "body" in init
+      ? (init as { body?: unknown }).body
+      : undefined;
+  if (typeof body !== "string") throw new TypeError("fetch body must be a JSON string");
+  return body;
+}
+
 describe("semantic evaluation providers", () => {
   it("does not allow a claimed pass to override missing criteria", () => {
     const result = normalizeEvaluationResult(
@@ -154,7 +163,7 @@ describe("semantic evaluation providers", () => {
       apiKey: "test-key",
       model: "test/model",
       fetch: async (_input, init) => {
-        requestBody = JSON.parse(String(init?.body));
+        requestBody = JSON.parse(requestBodyText(init));
         return new Response(
           JSON.stringify({
             id: "chatcmpl-semantic-test",

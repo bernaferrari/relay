@@ -4,7 +4,7 @@ import {
   exactAndroidTextInsertion,
   verifyAndroidTextEntry,
 } from "./android-text-entry-verification.js";
-import { NativeTextEntryVerificationError } from "../input-not-dispatched.js";
+import { NativeTextEntryVerificationError } from "../device/input-not-dispatched.js";
 import { runCampaignCheck } from "../recipe/recipe-runner-campaign-checks.js";
 import { runRecipeStep } from "../recipe/recipe-runner.js";
 import type { RecipeStepContext } from "../recipe/recipe-runner-context.js";

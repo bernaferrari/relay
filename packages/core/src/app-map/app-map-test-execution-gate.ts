@@ -12,7 +12,7 @@ import {
   parseCanonicalAppMapTestRecipeGraph,
   type AppMapTestExecutionIntent,
 } from "./app-map-test-execution-intent.js";
-import { loadFrozenRawAccessibilityEvidence } from "../frozen/frozen-raw-accessibility.js";
+import { loadFrozenRawAccessibilityEvidence } from "../offline/frozen-raw-accessibility.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";
 import type {
   AppMapCompiledTest,
@@ -24,10 +24,10 @@ import {
   appMapRuntimeTargetProfileFromSaved,
   sameAppMapRuntimeTargetProfileIgnoringAccount,
 } from "./app-map-runtime-target-profile.js";
-import type { Recipe } from "../recipes.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { Recipe } from "../recipe/recipes.js";
+import type { PersistedRun } from "../run/run-store.js";
 import type { TestJob } from "../session/session-contract.js";
-import { frozenRecipeInputsMatch } from "../frozen/frozen-recipe-inputs.js";
+import { frozenRecipeInputsMatch } from "../recipe/frozen-recipe-inputs.js";
 
 type Artifact = { kind: string; data: unknown };
 

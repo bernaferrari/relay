@@ -3,7 +3,7 @@
  * path: sidecar launch can work while XCTest is unavailable, but its outcome
  * is a one-dispatch mutation rather than a retryable request.
  */
-import { getExecutingJobId } from "../control.js";
+import { getExecutingJobId } from "../execution/control.js";
 import { launchIosAppOutsideXctest, resolveIosLaunchBundleId } from "./ios-app-launch.js";
 import { dispatchSupervisedIosMutation, runIosMutationOnce } from "./ios-mutation-policy.js";
 import { runTargetMutation } from "../target/target-control.js";

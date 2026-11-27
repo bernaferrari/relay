@@ -10,7 +10,7 @@ import {
   startRunEvidence as startRunEvidenceWithoutContext,
   stopRunEvidence as stopRunEvidenceWithoutContext,
 } from "./run-evidence.js";
-import { persistRun } from "../runs/runs.js";
+import { persistRun } from "./run-store.js";
 import type { TestJob } from "../session/session.js";
 import { runWithTargetContext } from "../target/target-context.js";
 

@@ -1,7 +1,7 @@
 import type { TestData } from "@relay/protocol";
-import { CasePlanError } from "../case-plan.js";
+import { CasePlanError } from "../input/case-plan.js";
 import { resolveRecipeInputReferences } from "./recipe-input-references.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "./recipes.js";
 
 /** Reject already-known input failures before a target observation. Generated
  * values are resolved only once, by the exact compiled graph's input freeze. */

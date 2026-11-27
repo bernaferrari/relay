@@ -30,7 +30,7 @@ export {
   updateAppMapConnection,
 } from "./connection-operations.js";
 export { previewRoutineImpact } from "./routine-operations.js";
-export { computeDiffImpact, matchedDiffEntities, type DiffImpactInput } from "../diff-impact.js";
+export { computeDiffImpact, matchedDiffEntities, type DiffImpactInput } from "./diff-impact.js";
 export {
   connectionRouteCost,
   selectEquivalentDirectConnection,
@@ -95,7 +95,7 @@ export {
   registerTestStepDrafter,
   type DraftedTest,
   type DraftedTestStep,
-} from "../test-step-drafting.js";
+} from "../recipe/test-step-drafting.js";
 export {
   connectionIdsFromProposal,
   connectionProofOutcomeUnknownDiagnostic,

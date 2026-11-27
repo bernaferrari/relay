@@ -31,6 +31,11 @@
       "types": "./dist/doctor.d.ts",
       "import": "./dist/doctor-lib.js",
       "default": "./dist/doctor-lib.js"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "import": "./dist/tools.js",
+      "default": "./dist/tools.js"
     }
   },
   "publishConfig": {
@@ -57,20 +62,12 @@
   "devDependencies": {
     "@relay/client": "workspace:*",
     "@relay/protocol": "workspace:*",
-    "@relay/runtime": "workspace:*",
+    "@relay/workflow-runners": "workspace:*",
     "@relay/workflows": "workspace:*",
     "@types/node": "^26.6.4",
     "esbuild": "0.28.2",
     "tsx": "^4.23.15",
     "typescript": "catalog:"
-  },
-  "peerDependencies": {
-    "@relay/runtime": "0.1.0"
-  },
-  "peerDependenciesMeta": {
-    "@relay/runtime": {
-      "optional": true
-    }
   },
   "engines": {
     "node": ">=24"

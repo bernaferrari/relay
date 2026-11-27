@@ -3,7 +3,7 @@ import type { TargetRuntimeReadiness } from "@relay/protocol";
 import type { SnapshotPayload } from "../workspace/workspace-capture.js";
 import type { TargetContext } from "../target/target-context.js";
 import { rememberedTargetApplication } from "../device/device-target-applications.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import {
   IosNativeViewportUnavailableError,
   observeIosNativeViewport,

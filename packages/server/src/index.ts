@@ -146,7 +146,17 @@ async function handleRequest(
   } = context;
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
-  const url = new URL(req.url ?? "/", `http://${host}`);
+  let url: URL;
+  try {
+    url = new URL(req.url ?? "/", `http://${host}`);
+  } catch {
+    json(res, 400, { error: "Malformed Host header or request URL" });
+    return;
+  }
+  if (url.username || url.password || !url.hostname) {
+    json(res, 400, { error: "Malformed Host header" });
+    return;
+  }
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
 
   const requestOrigin = req.headers.origin;

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { KeyedSerialQueue } from "../coordination-store.js";
-import { currentOperationContext } from "../operation-context.js";
+import { KeyedSerialQueue } from "../durable/coordination-store.js";
+import { currentOperationContext } from "../execution/operation-context.js";
 
 export class TargetControlReservedError extends Error {
   readonly code = "TARGET_CONTROL_RESERVED" as const;

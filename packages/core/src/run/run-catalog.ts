@@ -31,6 +31,16 @@ export type CatalogSummaryPage = {
 
 const SURFACE_COMPARISON_KEY = /^surface-comparison-v1-[a-f0-9]{64}$/;
 
+function requiredText(value: unknown, field: string): string {
+  if (typeof value !== "string") throw new TypeError(`Catalog ${field} must be a string`);
+  return value;
+}
+
+function optionalText(value: unknown, field: string): string | null {
+  if (value === null || value === undefined) return null;
+  return requiredText(value, field);
+}
+
 function database(root: string): DatabaseSync {
   const db = new DatabaseSync(join(root, ".catalog.sqlite"));
   db.exec(`
@@ -114,12 +124,12 @@ async function reprojectPassingRunSummaries(root: string): Promise<void> {
     for (const row of rows) {
       let run: CaptureReviewRun;
       try {
-        run = JSON.parse((await readCommittedRunManifest(String(row.dir))).raw);
+        run = JSON.parse((await readCommittedRunManifest(requiredText(row.dir, "dir"))).raw);
       } catch {
         continue;
       }
       const summary = JSON.stringify(captureReviewQueueForRun(run).summary);
-      if (summary !== row.capture_summary_json) update.run(summary, String(row.id));
+      if (summary !== row.capture_summary_json) update.run(summary, requiredText(row.id, "id"));
     }
     db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES(?, '1')").run(
       PASSING_RUN_POLICY_KEY,
@@ -169,30 +179,42 @@ async function summaryDatabase(root: string): Promise<DatabaseSync> {
 
 function rowToRecord(row: Record<string, unknown>): CatalogRecord {
   return {
-    ...(row.matrix_case_json ? { matrixCase: JSON.parse(String(row.matrix_case_json)) } : {}),
-    ...(row.source_test_json ? { sourceTest: JSON.parse(String(row.source_test_json)) } : {}),
-    ...(row.capture_summary_json
-      ? { captureSummary: JSON.parse(String(row.capture_summary_json)) }
+    ...(row.matrix_case_json
+      ? { matrixCase: JSON.parse(requiredText(row.matrix_case_json, "matrix_case_json")) }
       : {}),
-    id: String(row.id),
-    dir: String(row.dir),
-    action: String(row.action),
-    ...(row.title ? { title: String(row.title) } : {}),
-    status: String(row.status),
+    ...(row.source_test_json
+      ? { sourceTest: JSON.parse(requiredText(row.source_test_json, "source_test_json")) }
+      : {}),
+    ...(row.capture_summary_json
+      ? {
+          captureSummary: JSON.parse(
+            requiredText(row.capture_summary_json, "capture_summary_json"),
+          ),
+        }
+      : {}),
+    id: requiredText(row.id, "id"),
+    dir: requiredText(row.dir, "dir"),
+    action: requiredText(row.action, "action"),
+    ...(row.title ? { title: requiredText(row.title, "title") } : {}),
+    status: requiredText(row.status, "status"),
     queuedAt: Number(row.queued_at),
     ...(row.started_at == null ? {} : { startedAt: Number(row.started_at) }),
     ...(row.finished_at == null ? {} : { finishedAt: Number(row.finished_at) }),
     ...(row.duration_ms == null ? {} : { durationMs: Number(row.duration_ms) }),
-    ...(row.platform ? { platform: String(row.platform) } : {}),
-    ...(row.serial ? { serial: String(row.serial) } : {}),
-    ...(row.outcome ? { outcome: String(row.outcome) } : {}),
-    ...(row.review_json ? { review: JSON.parse(String(row.review_json)) as RunReview } : {}),
+    ...(row.platform ? { platform: requiredText(row.platform, "platform") } : {}),
+    ...(row.serial ? { serial: requiredText(row.serial, "serial") } : {}),
+    ...(row.outcome ? { outcome: requiredText(row.outcome, "outcome") } : {}),
+    ...(row.review_json
+      ? { review: JSON.parse(requiredText(row.review_json, "review_json")) as RunReview }
+      : {}),
     ...(row.source_revision_json
       ? {
-          sourceRevision: parseOptionalSourceRevision(JSON.parse(String(row.source_revision_json))),
+          sourceRevision: parseOptionalSourceRevision(
+            JSON.parse(requiredText(row.source_revision_json, "source_revision_json")),
+          ),
         }
       : {}),
-    ...(row.batch_id ? { batchId: String(row.batch_id) } : {}),
+    ...(row.batch_id ? { batchId: requiredText(row.batch_id, "batch_id") } : {}),
     frameCount: Number(row.frame_count),
     writtenAt: Number(row.written_at),
     artifactCount: Number(row.artifact_count),
@@ -339,13 +361,13 @@ export async function indexRun(
       String(run.id),
       String(run.dir),
       String(run.action),
-      run.title == null ? null : String(run.title),
+      optionalText(run.title, "title"),
       String(run.status),
-      run.outcome == null ? null : String(run.outcome),
+      optionalText(run.outcome, "outcome"),
       run.review == null ? null : JSON.stringify(run.review),
-      run.platform == null ? null : String(run.platform),
-      run.serial == null ? null : String(run.serial),
-      run.batchId == null ? null : String(run.batchId),
+      optionalText(run.platform, "platform"),
+      optionalText(run.serial, "serial"),
+      optionalText(run.batchId, "batch_id"),
       Number(run.queuedAt),
       run.startedAt == null ? null : Number(run.startedAt),
       run.finishedAt == null ? null : Number(run.finishedAt),
@@ -524,7 +546,9 @@ export async function catalogLatestRunPerTest(
       const { dir: _dir, ...summary } = rowToRecord(row);
       const source = (summary as { sourceTest?: { appMapId?: string; testId?: string } })
         .sourceTest;
-      const action = /^app-map:([^:]+):test:([^:]+)(?::|$)/u.exec(String(row.action ?? ""));
+      const action = /^app-map:([^:]+):test:([^:]+)(?::|$)/u.exec(
+        requiredText(row.action ?? "", "action"),
+      );
       const app = source?.appMapId ?? action?.[1];
       const test = source?.testId ?? action?.[2];
       if (!app || !test || (appMapId && app !== appMapId)) continue;

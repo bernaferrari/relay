@@ -11,7 +11,7 @@ import {
   projectScheduleOccurrence,
   saveScheduleOccurrence,
 } from "./schedule-occurrences.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 const occurrence: ScheduleOccurrence = {
   id: "schedule:one:1000",

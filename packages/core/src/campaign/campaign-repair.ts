@@ -9,13 +9,13 @@ import {
   type CampaignRepairTargetSummary,
   type AppMapCompiledTest,
 } from "@relay/protocol";
-import { PRIVATE_INPUT } from "../private-inputs.js";
-import { REDACTED } from "../redaction.js";
-import type { PersistedRun } from "../runs/runs.js";
+import { PRIVATE_INPUT } from "../input/private-inputs.js";
+import { REDACTED } from "../evidence/redaction.js";
+import type { PersistedRun } from "../run/run-store.js";
 import type { EnqueueJobInput } from "../session/session-contract.js";
-import type { Recipe, RecipeStep } from "../recipes.js";
+import type { Recipe, RecipeStep } from "../recipe/recipes.js";
 import { compileAppMapConnection } from "../app-map/app-map-compiler.js";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "../app-map/map-work.js";
 import { parseCanonicalAppMapTestPlan } from "../app-map/app-map-test-execution-intent.js";
 
 type RecordValue = Record<string, unknown>;

@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument, stringify } from "yaml";
 import { validateRecipeParameters, validateRecipeSteps } from "./recipe-validation.js";
 import { assertStoredValueIsNotASecret } from "./recipe-validation-support.js";
-import type { Recipe, RecipeParameter, RecipeStep } from "../recipes.js";
-import { CURRENT_RECORDING_FORMAT_VERSION } from "../recording-format.js";
+import type { Recipe, RecipeParameter, RecipeStep } from "./recipes.js";
+import { CURRENT_RECORDING_FORMAT_VERSION } from "../authoring/recording-format.js";
 
 const SCHEMA_VERSION = 1;
 const MAX_RECIPE_YAML_BYTES = 1_000_000;

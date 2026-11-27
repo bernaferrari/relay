@@ -11,6 +11,13 @@ const env = {
   RELAY_ACTOR_ID: "agent:codex",
 };
 
+function requestUrl(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input instanceof Request) return input.url;
+  throw new TypeError("Expected a fetch input");
+}
+
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -20,7 +27,7 @@ function response(body: unknown, status = 200): Response {
 
 function fakeFetch(missing: readonly string[] = []): typeof fetch {
   return async (input) => {
-    const url = String(input);
+    const url = requestUrl(input);
     if (url.endsWith("/health")) {
       return response({
         ok: true,
@@ -159,7 +166,7 @@ test("QA doctor checks workflow dependencies and gives a concrete recovery step"
 test("QA doctor checks required roles rather than only read-only raw descriptors", async () => {
   const fixture = fakeFetch();
   const report = await runRelayMcpDoctor(["--profile", "qa"], env, async (input, init) => {
-    if (String(input).endsWith("/health"))
+    if (requestUrl(input).endsWith("/health"))
       return response({
         ok: true,
         access: {

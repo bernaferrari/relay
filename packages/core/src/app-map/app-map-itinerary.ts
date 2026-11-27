@@ -5,7 +5,7 @@ import type {
   Connection,
   RecipeStep,
 } from "@relay/protocol";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import {
   compileAppMapConnection,
   compiledAppMapStepId,

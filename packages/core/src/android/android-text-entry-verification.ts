@@ -1,6 +1,6 @@
 import type { SnapshotNode } from "../device/device.js";
-import { JobCancelledError, raceCancel } from "../control.js";
-import { NativeTextEntryVerificationError } from "../input-not-dispatched.js";
+import { JobCancelledError, raceCancel } from "../execution/control.js";
+import { NativeTextEntryVerificationError } from "../device/input-not-dispatched.js";
 
 export type AndroidTextEntryReceipt = {
   platform: "android";

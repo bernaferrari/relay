@@ -16,7 +16,7 @@ const RECEIPT_PROOF = {
 function exactKeys(value, expected) {
   if (!isRecord(value)) return false;
   const actual = Object.keys(value).sort();
-  const wanted = [...expected].sort();
+  const wanted = [...expected].sort((a, b) => a.localeCompare(b));
   return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
 }
 

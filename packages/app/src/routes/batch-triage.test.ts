@@ -97,16 +97,11 @@ describe("Batch triage presentation", () => {
     const matrix = buildBatchMatrix(environments);
     expect(matrix.columns).toHaveLength(8);
     expect(matrix.rows).toHaveLength(1);
-    expect(matrix.columns.map(({ platform }) => platform).sort()).toEqual([
-      "android",
-      "browser",
-      "browser",
-      "browser",
-      "browser",
-      "browser",
-      "browser",
-      "ios",
-    ]);
+    expect(
+      matrix.columns
+        .map(({ platform }) => platform)
+        .sort((a, b) => (a ?? "").localeCompare(b ?? "")),
+    ).toEqual(["android", "browser", "browser", "browser", "browser", "browser", "browser", "ios"]);
   });
 
   it("labels Result columns with Sign-in names instead of fixture ids", () => {

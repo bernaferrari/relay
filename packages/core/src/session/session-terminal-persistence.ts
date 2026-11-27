@@ -1,5 +1,5 @@
 /** Make an immutable run manifest the boundary for a user-visible pass. */
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import type { TestJob } from "./session-contract.js";
 
 export type TerminalSessionPersistenceResult = {

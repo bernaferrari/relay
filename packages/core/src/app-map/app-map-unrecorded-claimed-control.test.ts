@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTest, Screen } from "@relay/protocol";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "./map-work.js";
 import { AppMapTestCompileError } from "./app-map-test-compiler.js";
 import { compiledTestClaimedAbsentControl } from "./app-map-unrecorded-claimed-control.js";
 

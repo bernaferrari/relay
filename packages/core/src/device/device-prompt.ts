@@ -2,8 +2,8 @@ import { isAssistantSlot, turnObservation } from "../recipe/recipe-response-boun
 import { isGenerationBusyControl } from "../generation/generation-controls.js";
 import type { SnapshotNode } from "./device.js";
 import type { NamedControlResolution } from "./device-target-resolution.js";
-import { now } from "../events.js";
-import type { TextEntryTarget } from "../text-entry-focus.js";
+import { now } from "../collaboration/events.js";
+import type { TextEntryTarget } from "./text-entry-focus.js";
 import type { RuntimeTargetOverlay } from "../workspace/workspace-devices.js";
 import { captureSnapshot } from "../workspace/workspace-capture.js";
 import {

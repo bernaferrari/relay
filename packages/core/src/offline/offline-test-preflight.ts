@@ -1,4 +1,4 @@
-import { recordedEntranceStepKey } from "../frozen/frozen-recorded-entrance.js";
+import { recordedEntranceStepKey } from "../offline/frozen-recorded-entrance.js";
 import type {
   AppMapCompiledTest,
   NormalizedSemanticNode,

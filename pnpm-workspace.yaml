@@ -35,9 +35,3 @@ peerDependencyRules:
     - vite
   allowedVersions:
     vite: "*"
-
-# @relay/mcp peers the private workspace package @relay/runtime. pnpm update
-# --latest would otherwise ask the registry for it and fail with a 404.
-updateConfig:
-  ignoreDependencies:
-    - "@relay/runtime"

@@ -7,9 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { compileBrowserEnvironment } from "@relay/protocol";
-import { importManagedFixture } from "../managed-fixtures.js";
+import { importManagedFixture } from "../workspace/managed-fixtures.js";
 import { resolveBrowserExecutable } from "./browser-executable.js";
-import { saveBrowserTarget } from "../targets.js";
+import { saveBrowserTarget } from "../target/targets.js";
 import { openBrowserDeviceSession, closeBrowserDeviceSession } from "./browser-device-session.js";
 import { openBrowserTarget, closeBrowserTarget } from "./browser-target.js";
 

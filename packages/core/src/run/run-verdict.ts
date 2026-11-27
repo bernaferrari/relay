@@ -7,8 +7,8 @@
 import { join } from "node:path";
 import type { AppMapScenarioTestStep } from "@relay/protocol";
 import { failingStepFrame, plainRunReason as plainReason } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
-import { e2eRunVerdict } from "../e2e-run-verdict.js";
+import type { PersistedRun } from "./run-store.js";
+import { e2eRunVerdict } from "./e2e-run-verdict.js";
 
 export type RunVerdictStatus = "passed" | "failed" | "blocked" | "cancelled" | "running";
 

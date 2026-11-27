@@ -20,7 +20,7 @@ import { createAppMapTestExecutionIntent } from "../app-map/app-map-test-executi
 import { captureReviewQueueForCampaign } from "../capture/capture-review-plan.js";
 import type { Device } from "../device/device.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";
-import type { Recipe, RecipeStep } from "../recipes.js";
+import type { Recipe, RecipeStep } from "../recipe/recipes.js";
 import type { TestJob } from "./session-contract.js";
 import { runRecipeSteps } from "./session.js";
 import { runWithTargetContext } from "../target/target-context.js";

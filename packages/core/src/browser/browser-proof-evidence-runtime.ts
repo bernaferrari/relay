@@ -17,7 +17,7 @@ import {
   redactSensitiveEvidenceValue,
   redactValueForPolicy,
   visualEvidenceAllowed,
-} from "../redaction.js";
+} from "../evidence/redaction.js";
 
 export type CaptureInput = Readonly<{
   targetId: string;

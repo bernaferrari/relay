@@ -114,7 +114,7 @@ function fixture(map = appMap(), failWrite = false) {
     },
     {
       fetch: async (url, init) => {
-        const path = new URL(String(url)).pathname;
+        const path = new URL(requestUrlText(url)).pathname;
         const method = init?.method ?? "GET";
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
         requests.push({ method, path, body });
@@ -164,6 +164,16 @@ const input = {
     },
   ],
 };
+
+function requestUrlText(input: unknown): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (input && typeof input === "object" && "url" in input) {
+    const url = (input as { url?: unknown }).url;
+    if (typeof url === "string") return url;
+  }
+  throw new TypeError("fetch input must be a string, URL, or Request");
+}
 
 it("saves the Data set and only the chosen recorded text leaf through one real canonical commit", async () => {
   const { service, requests, map } = fixture();

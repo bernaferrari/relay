@@ -25,9 +25,9 @@ import {
   observationMatchesExpectedDestination,
 } from "./authoring-session-screen-proof.js";
 export { AuthoringStateError, assertAuthoringTransition } from "./authoring-session-state.js";
-import { currentOperationContext } from "../operation-context.js";
-import { now, publish } from "../events.js";
-import { KeyedSerialQueue } from "../coordination-store.js";
+import { currentOperationContext } from "../execution/operation-context.js";
+import { now, publish } from "../collaboration/events.js";
+import { KeyedSerialQueue } from "../durable/coordination-store.js";
 import {
   listAuthoringSessionFiles,
   readAuthoringSession,

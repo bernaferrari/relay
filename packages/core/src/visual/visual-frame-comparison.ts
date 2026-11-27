@@ -9,7 +9,7 @@ import type {
   VisualRegion,
   VisualRunSnapshot,
 } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 export function safeFrameName(path: string, index: number): string {
   const file = basename(path);

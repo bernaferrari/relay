@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
 
 const at = 1_787_175_782_645;

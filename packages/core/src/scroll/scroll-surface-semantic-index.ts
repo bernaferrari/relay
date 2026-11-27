@@ -4,7 +4,7 @@ import type {
   StepTarget,
 } from "@relay/protocol";
 import type { SnapshotNode } from "../device/device.js";
-import type { ScrollSurveyFrame } from "../scrollable/scrollable-survey.js";
+import type { ScrollSurveyFrame } from "../scroll/scrollable-survey.js";
 
 function normalized(value?: string): string | undefined {
   const result = value?.trim().replace(/\s+/gu, " ").toLocaleLowerCase();

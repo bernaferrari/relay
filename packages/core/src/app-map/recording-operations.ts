@@ -565,8 +565,8 @@ function observedDestinationTitle(input: AppMapRecordingInput): string | undefin
   return undefined;
 }
 
-function flowTerminal(map: AppMap, flow: Flow): string | "end" {
-  let terminal: string | "end" = flow.startScreenId;
+function flowTerminal(map: AppMap, flow: Flow): string {
+  let terminal: string = flow.startScreenId;
   for (const connectionId of flow.connectionIds) {
     const destination = map.connections[connectionId]!.destination;
     terminal = destination.kind === "end" ? "end" : destination.screenId;

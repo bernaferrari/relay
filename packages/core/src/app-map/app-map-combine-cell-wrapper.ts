@@ -7,12 +7,12 @@ import {
   navStepsToRecipe,
   optionSetNeedsRecordedPicker,
   type OptionRunSet,
-} from "../option/option-run.js";
-import type { Recipe } from "../recipes.js";
+} from "../combine/option-run.js";
+import type { Recipe } from "../recipe/recipes.js";
 import {
   appLocaleExpectedLabels,
   stayAppLocaleDestinationCheck,
-} from "../stay-app-locale-destination.js";
+} from "./stay-app-locale-destination.js";
 
 export { stayAppLocaleDestinationCheck };
 

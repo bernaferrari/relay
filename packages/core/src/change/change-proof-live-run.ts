@@ -13,11 +13,11 @@ import {
   sameAppMapRuntimeTargetProfile,
 } from "../app-map/app-map-runtime-target-profile.js";
 import { parseCanonicalAppMapTestPlan } from "../app-map/app-map-test-execution-intent.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { analyzeTracePack, exportTracePack } from "../trace/trace-pack.js";
 import { canonicalSha256 } from "../canonical-json.js";
 import { compileExecutionRisk } from "../execution/execution-risk-compiler.js";
-import { classifyRunOutcome } from "../outcomes.js";
+import { classifyRunOutcome } from "../run/outcomes.js";
 
 export type ChangeProofRunCase = Readonly<{
   cellId: string;

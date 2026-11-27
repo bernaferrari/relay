@@ -16,7 +16,7 @@ import {
   bindPreparedCombineCellInputs,
   combineCellRuntimeInputValues,
 } from "./app-map-combine-cell-inputs.js";
-import { freezeRecipeInputs } from "../frozen/frozen-recipe-inputs.js";
+import { freezeRecipeInputs } from "../recipe/frozen-recipe-inputs.js";
 import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
 
 import { observeScreenIdentity } from "../screen/screen-identity.js";

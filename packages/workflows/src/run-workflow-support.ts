@@ -1,10 +1,10 @@
-import { browserCaseProfileForTarget } from "@relay/core/browser-case-profile-target";
-import { sameAppMapRuntimeTargetProfile } from "@relay/core/app-map-runtime-target-profile";
+import { browserCaseProfileForTarget } from "@relay/protocol/browser/browser-case-profile-target";
+import { sameAppMapRuntimeTargetProfile } from "@relay/protocol/app-map/app-map-runtime-target-profile";
 import {
   NativeTargetProfileSelectionError,
   selectNativeTargetProfile,
   type NativeDeviceFacts,
-} from "@relay/core/native-target-profile";
+} from "@relay/protocol/native/native-target-profile";
 import type {
   AuthoringTarget,
   DurableWorkflowOperationOutput,

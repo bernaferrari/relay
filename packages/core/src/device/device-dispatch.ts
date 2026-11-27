@@ -7,14 +7,14 @@ import {
   runIosMutationOnce,
   type IosMutationOperation,
 } from "../ios/ios-mutation-policy.js";
-import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "../control.js";
-import { withRetry, type RetryOptions } from "../retry.js";
+import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "../execution/control.js";
+import { withRetry, type RetryOptions } from "../execution/retry.js";
 import { currentTargetContext, selectedPlatform } from "../target/target-context.js";
 import {
   InputNotDispatchedError,
   InputOutcomeUnknownError,
   isTerminalInputError,
-} from "../input-not-dispatched.js";
+} from "./input-not-dispatched.js";
 import { iosSelectorWasNotDispatched } from "../ios/ios-mutation-policy.js";
 import { isTargetUnavailableError } from "../target/target-unavailable.js";
 

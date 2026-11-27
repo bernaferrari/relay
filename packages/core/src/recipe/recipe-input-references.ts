@@ -1,8 +1,8 @@
 import type { TestData } from "@relay/protocol";
-import { CasePlanError } from "../case-plan.js";
-import { requirePublicInputDataSet } from "../input-data-set.js";
+import { CasePlanError } from "../input/case-plan.js";
+import { requirePublicInputDataSet } from "../input/input-data-set.js";
 import { externalRecipeInputDependencies } from "./recipe-input-dependencies.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "./recipes.js";
 
 export type SelectedRecipeInputRow = {
   id: string;

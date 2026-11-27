@@ -15,7 +15,7 @@ import {
   withControlStore,
   type ControlStore,
 } from "../collaboration/collaboration-store.js";
-import { publish } from "../events.js";
+import { publish } from "../collaboration/events.js";
 
 const MAX_ID_LENGTH = 256;
 const MAX_TRANSITION_LENGTH = 128;
@@ -75,6 +75,10 @@ export type DurableWorkflowTransitionResult =
 
 function validId(value: string): boolean {
   return value.trim() === value && value.length > 0 && value.length <= MAX_ID_LENGTH;
+}
+
+function validUnknownId(value: unknown): string | undefined {
+  return typeof value === "string" && validId(value) ? value : undefined;
 }
 
 function validTime(value: number): boolean {
@@ -258,16 +262,20 @@ export function parseLegacyWorkflowAdoption(ref: string): LegacyWorkflowAdoption
     if (record.schemaVersion !== 1 || !isWorkflowJson(record.frozen)) return undefined;
     let kind: DurableWorkflowKind;
     let resource: DurableWorkflowResourceRef;
-    if (record.kind === "run-test" && validId(String(record.jobId ?? ""))) {
+    const jobId = validUnknownId(record.jobId);
+    const sessionId = validUnknownId(record.sessionId);
+    const repeatId = validUnknownId(record.repeatId);
+    const pilotJobId = validUnknownId(record.pilotJobId);
+    if (record.kind === "run-test" && jobId) {
       kind = "run-test";
-      resource = { kind: "job", id: String(record.jobId) };
-    } else if (record.kind === "author-test" && validId(String(record.sessionId ?? ""))) {
+      resource = { kind: "job", id: jobId };
+    } else if (record.kind === "author-test" && sessionId) {
       kind = "author-test";
-      resource = { kind: "authoring-session", id: String(record.sessionId) };
+      resource = { kind: "authoring-session", id: sessionId };
     } else if (
       record.kind === "repeat-test" &&
-      validId(String(record.repeatId ?? "")) &&
-      validId(String(record.pilotJobId ?? "")) &&
+      repeatId &&
+      pilotJobId &&
       Array.isArray(record.selectedCaseIds) &&
       record.selectedCaseIds.length > 0 &&
       record.selectedCaseIds.length <= 10_000 &&
@@ -277,7 +285,7 @@ export function parseLegacyWorkflowAdoption(ref: string): LegacyWorkflowAdoption
       new Set(record.selectedCaseIds).size === record.selectedCaseIds.length
     ) {
       kind = "repeat-test";
-      resource = { kind: "campaign", id: String(record.repeatId) };
+      resource = { kind: "campaign", id: repeatId };
     } else {
       return undefined;
     }

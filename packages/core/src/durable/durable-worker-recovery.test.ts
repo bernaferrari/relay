@@ -106,14 +106,18 @@ test("startup recovery checks every active/fenced row before quarantining and ho
       "wrong-manifest-id",
     ]);
     assert.deepEqual(
-      result.manifestFinalized.map((item) => [item.id, item.status, item.terminal?.reason]).sort(),
+      result.manifestFinalized
+        .map((item) => [item.id, item.status, item.terminal?.reason])
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
       [
         ["fenced-manifest", "ok", "committed-run-manifest"],
         ["manifest-after-crash", "ok", "committed-run-manifest"],
       ],
     );
     assert.deepEqual(
-      result.recoveryRequired.map((item) => [item.id, item.terminal?.reason]).sort(),
+      result.recoveryRequired
+        .map((item) => [item.id, item.terminal?.reason])
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
       [
         ["interrupted", "server-restart-during-execution"],
         ["queued-before-dispatch", "server-restart-before-dispatch"],

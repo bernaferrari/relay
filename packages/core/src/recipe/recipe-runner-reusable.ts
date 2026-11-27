@@ -1,9 +1,9 @@
 /** Resolve a reusable flow and scope its input overlay to that nested run. */
 import type { Device } from "../device/device.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { resolveRecipeStep } from "./recipe-runner-support.js";
-import { readRecipe, type RecipeStep } from "../recipes.js";
+import { readRecipe, type RecipeStep } from "./recipes.js";
 
 export type RunRecipeStep = (
   device: Device,

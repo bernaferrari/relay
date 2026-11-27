@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTest, RecipeStep, Screen } from "@relay/protocol";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "../app-map/map-work.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { runRecipeStep } from "./recipe-runner.js";
 import { observeScreenIdentity } from "../screen/screen-identity.js";

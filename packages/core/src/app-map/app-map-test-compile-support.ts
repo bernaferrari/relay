@@ -12,7 +12,7 @@ import {
   AppMapTestCompileError,
   type AppMapTestCompileErrorCode,
 } from "./app-map-test-compile-error.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 
 export const MAX_COMPILED_STEPS = 4_096;
 /** Bounded automatic survey using the `target.scroll-survey.capture` default. */

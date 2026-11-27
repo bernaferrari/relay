@@ -154,8 +154,16 @@ export function matchPath(pathname: string, pattern: string): Record<string, str
   for (let index = 0; index < expected.length; index++) {
     const segment = expected[index]!;
     const value = actual[index]!;
-    if (segment.startsWith(":")) params[segment.slice(1)] = decodeURIComponent(value);
-    else if (segment !== value) return null;
+    if (segment.startsWith(":")) {
+      try {
+        params[segment.slice(1)] = decodeURIComponent(value);
+      } catch (error) {
+        if (error instanceof URIError) {
+          throw new HttpError(400, `Malformed URL escape in route parameter ${segment.slice(1)}`);
+        }
+        throw error;
+      }
+    } else if (segment !== value) return null;
   }
   return params;
 }

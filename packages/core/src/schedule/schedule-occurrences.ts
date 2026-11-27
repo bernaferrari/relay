@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { scheduleOccurrenceSchema, type ScheduleOccurrence } from "@relay/protocol";
 import { collaborationStateRoot } from "../collaboration/collaboration-store.js";
 import { syncRunPath } from "../run/run-manifest.js";
-import { readPersistedRun, type PersistedRun } from "../runs/runs.js";
+import { readPersistedRun, type PersistedRun } from "../run/run-store.js";
 import { getJob } from "../session/session.js";
-import type { LocalSchedule } from "../schedules.js";
+import type { LocalSchedule } from "./schedules.js";
 
 const processId = randomUUID();
 const owners = new Map<string, string>();

@@ -9,8 +9,8 @@ import type {
   RunShareSummary,
 } from "@relay/protocol";
 import { destIdentitySourceFrames, failedStepFromTrace } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
-import { redactSensitiveEvidenceValue, redactText } from "../redaction.js";
+import type { PersistedRun } from "./run-store.js";
+import { redactSensitiveEvidenceValue, redactText } from "../evidence/redaction.js";
 import { readCombineCampaign } from "../combine/combine-campaign.js";
 import {
   buildRunShareGallery,

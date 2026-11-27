@@ -4,7 +4,7 @@ const url = "https://example.com/";
 const laneAPartition = "persist:lane:proof-auth-a";
 const laneBPartition = "persist:lane:proof-auth-b";
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
   const laneA = session.fromPartition(laneAPartition);
   const laneB = session.fromPartition(laneBPartition);
   await laneA.cookies.set({ url, name: "relay-lane", value: "lane-a" });

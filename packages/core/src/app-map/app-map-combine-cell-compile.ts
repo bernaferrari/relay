@@ -18,8 +18,8 @@ import type { LocalExecutionTarget } from "./app-map-combine-cell-target-binding
 import { resolveCombineCellCompanion } from "./app-map-native-companion-combine.js";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import { compileOptionsForVisualSurface } from "../combine/combine-visual-surface.js";
-import { compileAppMapTest } from "../map-work.js";
-import { loadFrozenRawAccessibilityEvidence } from "../frozen/frozen-raw-accessibility.js";
+import { compileAppMapTest } from "./map-work.js";
+import { loadFrozenRawAccessibilityEvidence } from "../offline/frozen-raw-accessibility.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";
 import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
 import { createAppMapCombineCellExecutionIntent } from "./app-map-combine-cell-intent.js";
@@ -29,7 +29,7 @@ import {
   wrapperInputsForStatic,
 } from "./app-map-combine-cell-wrapper.js";
 import { selectedCombineDataRows } from "./app-map-combine-cell-inputs.js";
-import type { OptionRunSet } from "../option/option-run.js";
+import type { OptionRunSet } from "../combine/option-run.js";
 
 export type ResolvedAppMapCombineCell = {
   executionMap: AppMap;

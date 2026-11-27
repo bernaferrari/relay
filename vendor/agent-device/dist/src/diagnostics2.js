@@ -1,1 +1,0 @@
-import{r as e}from"./rolldown-runtime.js";import{r as t}from"./diagnostics.js";var n=e({emitDiagnostic:()=>t});export{n as t};

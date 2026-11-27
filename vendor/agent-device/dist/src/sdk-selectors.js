@@ -1,1 +1,0 @@
-import{Tn as e}from"./sdk-batch.js";function t(t,n,r){return e(typeof t==`string`?t:t.raw,n,r)}export{t};

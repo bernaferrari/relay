@@ -7,7 +7,7 @@ import {
   fullSurfaceBindingForScreen,
   impliedForceRecaptureSurfaceScreenIds,
 } from "./combine-visual-surface.js";
-import { compileAppMapCombine, compileAppMapTest } from "../map-work.js";
+import { compileAppMapCombine, compileAppMapTest } from "../app-map/map-work.js";
 
 const at = 1;
 const scope = { organizationId: "org", projectId: "project", appMapId: "catalog" };

@@ -11,11 +11,8 @@ import {
   isSystemSemantic,
   semanticNodeKey,
   verticalScrollSeam,
-} from "../scrollable/scrollable-survey-seams.js";
-import type {
-  ScrollSurveyFrame,
-  ScrollSurveyResult,
-} from "../scrollable/scrollable-survey-types.js";
+} from "../scroll/scrollable-survey-seams.js";
+import type { ScrollSurveyFrame, ScrollSurveyResult } from "../scroll/scrollable-survey-types.js";
 
 type ConfidenceInput = Pick<
   ScrollSurveyResult,

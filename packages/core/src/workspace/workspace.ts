@@ -76,7 +76,7 @@ export {
   type ScrollSurveyOptions,
   type ScrollSurveyResult,
   type ScrollSurveyStopReason,
-} from "../scrollable/scrollable-survey.js";
+} from "../scroll/scrollable-survey.js";
 export {
   type InteractPoint,
   type InteractInput,

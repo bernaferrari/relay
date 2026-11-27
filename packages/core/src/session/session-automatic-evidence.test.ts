@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Device, SnapshotNode } from "../device/device-capabilities.js";
-import { OPTIONAL_TREE_BUDGET_MS } from "../optional-tree-budget.js";
+import { OPTIONAL_TREE_BUDGET_MS } from "../app-map/optional-tree-budget.js";
 import type { RecipeRuntimeState } from "../recipe/recipe-runner-context.js";
 import { invalidateVerifiedScreen } from "../recipe/recipe-runner-context.js";
 import { runExpectScreenStep } from "../recipe/recipe-runner-screen.js";

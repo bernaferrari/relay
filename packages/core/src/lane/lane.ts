@@ -11,7 +11,7 @@ import { laneSaveInputSchema, laneSchema } from "@relay/protocol";
 import { managedBrowserTargetProfileId } from "../browser/browser-case-profile-target.js";
 import { readAppMap } from "../collaboration/collaboration.js";
 import { collaborationStateRoot } from "../collaboration/collaboration-store.js";
-import { readTarget } from "../targets.js";
+import { readTarget } from "../target/targets.js";
 
 export const LANE_FIXTURE_PERSIST_ERROR =
   "A Lane with an auth fixture must not persist onto the saved browser environment authenticationFixtureId";

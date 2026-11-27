@@ -1,7 +1,7 @@
 import { chmod, mkdir, open, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { redactSensitiveEvidenceValue, redactValue } from "../redaction.js";
-import { ensureRunDir } from "../runs/runs.js";
+import { redactSensitiveEvidenceValue, redactValue } from "../evidence/redaction.js";
+import { ensureRunDir } from "./run-store.js";
 import type { TestJob } from "../session/session.js";
 
 const MAX_PERSISTED_LOG_BYTES = 512 * 1024;

@@ -67,7 +67,8 @@ function portListeners() {
       "status" in error &&
       error.status === 1 &&
       "stderr" in error &&
-      String(error.stderr ?? "").trim() === ""
+      typeof error.stderr === "string" &&
+      error.stderr.trim() === ""
     ) {
       return { known: true, pids: [] };
     }

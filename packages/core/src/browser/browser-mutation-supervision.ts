@@ -1,8 +1,8 @@
-import { JobCancelledError, throwIfCancelled } from "../control.js";
-import { InputNotDispatchedError } from "../input-not-dispatched.js";
+import { JobCancelledError, throwIfCancelled } from "../execution/control.js";
+import { InputNotDispatchedError } from "../device/input-not-dispatched.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
-import { currentOperationContext } from "../operation-context.js";
+import { currentOperationContext } from "../execution/operation-context.js";
 import {
   currentTargetSupervisorStore,
   type SupervisedTarget,

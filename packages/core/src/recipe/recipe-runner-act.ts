@@ -9,11 +9,11 @@ import type { RecipeStep, StepTarget } from "@relay/protocol";
 import { snapshot, type Device, type SnapshotNode } from "../device/device.js";
 import { captureScreenshot, cleanupScreenshot } from "../workspace/workspace-capture.js";
 import { createOpenRouterClient } from "../openrouter/openrouter-ai-sdk.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { isCancel } from "./recipe-runner-support.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
-import { rethrowInputOutcomeUnknown } from "../input-not-dispatched.js";
+import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
 
 export const DEFAULT_ACT_MAX_ACTIONS = 5;
 const MAX_CANDIDATES = 80;

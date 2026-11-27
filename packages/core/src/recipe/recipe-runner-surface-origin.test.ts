@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
 import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
-import { issueDocumentOriginAttestationAuthorization } from "../document-origin-attestation-authority.js";
-import type { RecipeStep } from "../recipes.js";
+import { issueDocumentOriginAttestationAuthorization } from "../capture/document-origin-attestation-authority.js";
+import type { RecipeStep } from "./recipes.js";
 import {
   captureSurfaceBaselineDisposition,
   frozenCaptureSurfaceTargetProfile,

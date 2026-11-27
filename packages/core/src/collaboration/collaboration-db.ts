@@ -12,7 +12,7 @@ import type {
   Revisioned,
   TestData,
 } from "@relay/protocol";
-import { now } from "../events.js";
+import { now } from "./events.js";
 import { withCollaborationLock } from "./collaboration-lock.js";
 import {
   collaborationJsonPath,

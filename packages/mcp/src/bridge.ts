@@ -14,7 +14,7 @@ export type RelayMcpBridgeConfig = {
   host: string;
   port: number;
   path: string;
-  authEnv: string | "none";
+  authEnv: string;
   allowUnauthenticated: boolean;
   requestTimeoutMs: number;
   maxBodyBytes: number;

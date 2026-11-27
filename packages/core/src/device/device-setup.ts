@@ -19,7 +19,7 @@ import {
   inspectLabMacLaunchd,
   LAB_MAC_LAUNCHD_LABEL,
   type LabMacServerStatus,
-} from "../lab-mac-server.js";
+} from "../workspace/lab-mac-server.js";
 import {
   inspectOpenRouterJudgeSetup,
   type OpenRouterJudgeSetup,

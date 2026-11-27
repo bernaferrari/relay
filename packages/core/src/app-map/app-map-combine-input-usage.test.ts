@@ -7,7 +7,7 @@ import type { AppMap, AppMapScenarioTest, RecipeStep, TestData } from "@relay/pr
 import { preflightAppMapCombine } from "./app-map-combine-preflight.js";
 import { externalRecipeInputNames } from "../recipe/recipe-input-dependencies.js";
 import { unusedInputDataSetWarnings } from "./app-map-combine-input-usage.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import {
   readProjectVariables,
   resetControlDatabaseCache,

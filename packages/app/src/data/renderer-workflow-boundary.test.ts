@@ -127,10 +127,27 @@ it("keeps the complete app workspace runtime graph free of Node and device host 
   expect(hostImports, details.join("\n")).toHaveLength(0);
 });
 
-it("detects host dependencies reached through a runtime Workflows barrel import", async () => {
+it("keeps the runtime Workflows barrel browser-safe", async () => {
   const graph = await rendererGraph({
     stdin: {
-      contents: 'export { createGoalSessionRunner } from "@relay/workflows";',
+      contents: 'export { createRelayWorkflows } from "@relay/workflows";',
+      sourcefile: "renderer-workflows-fixture.ts",
+      resolveDir: root,
+      loader: "ts",
+    },
+  });
+  expect(hostDependencyChains(graph)).toHaveLength(0);
+  expect(
+    JSON.parse(readFileSync(resolve(root, "packages/workflows/package.json"), "utf8")).dependencies[
+      "@relay/core"
+    ],
+  ).toBeUndefined();
+});
+
+it("keeps Node-backed workflow runners outside the browser-safe Workflows package", async () => {
+  const graph = await rendererGraph({
+    stdin: {
+      contents: 'export { createGoalSessionRunner } from "@relay/workflow-runners";',
       sourcefile: "renderer-host-fixture.ts",
       resolveDir: root,
       loader: "ts",
@@ -138,6 +155,7 @@ it("detects host dependencies reached through a runtime Workflows barrel import"
   });
   const chains = hostDependencyChains(graph);
   expect(chains.some((chain) => chain[chain.length - 1] === "node:fs/promises")).toBe(true);
-  expect(chains.some((chain) => chain[chain.length - 1] === "playwright-core")).toBe(true);
-  expect(chains.some((chain) => chain.includes("packages/workflows/src/index.ts"))).toBe(true);
+  expect(chains.some((chain) => chain.includes("packages/workflow-runners/src/index.ts"))).toBe(
+    true,
+  );
 });

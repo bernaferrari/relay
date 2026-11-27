@@ -7,9 +7,9 @@ import {
   type TracePackVisualLocalization,
 } from "@relay/protocol";
 import { analyzeCombineEvidenceBatchData } from "../combine/combine-evidence-batch-analysis.js";
-import { frameObservations, type FrameObservation } from "../frame-observation.js";
+import { frameObservations, type FrameObservation } from "../device/frame-observation.js";
 import { pngDimensions } from "../ios/ios-geometry.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 import { verifyTracePack } from "./trace-pack.js";
 
 type Fact = TracePackVisualLocalization["historicalBaseline"]["fact"];

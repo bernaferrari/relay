@@ -10,7 +10,7 @@ import {
   type LiveIosRunnerCommandResult,
 } from "./ios-runner-listener-command.js";
 import type { SnapshotNode } from "../device/device-capabilities.js";
-import { registerGrokIosSnapshotCatalogTestProfile } from "../grok/grok-ios-snapshot-catalog.test-profile.js";
+import { registerGrokIosSnapshotCatalogTestProfile } from "../fixtures/ios-snapshot-catalog.test-profile.js";
 
 registerGrokIosSnapshotCatalogTestProfile();
 

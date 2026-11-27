@@ -15,7 +15,7 @@ import {
   RunReviewError,
   runsRoot,
   writeFramePng,
-} from "./runs/runs.js";
+} from "./run/run-store.js";
 import {
   prepareSameConfigurationReplay,
   replayInputFromPersistedRun,

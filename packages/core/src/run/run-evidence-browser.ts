@@ -1,6 +1,6 @@
 import { captureBrowserProofEvidence } from "../browser/browser-proof-evidence-runtime.js";
-import { now } from "../events.js";
-import { ensureRunDir } from "../runs/runs.js";
+import { now } from "../collaboration/events.js";
+import { ensureRunDir } from "./run-store.js";
 import type { TestJob } from "../session/session.js";
 
 /** Finalize the browser-owned evidence bundle without coupling the generic

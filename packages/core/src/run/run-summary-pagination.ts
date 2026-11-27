@@ -2,7 +2,7 @@ import { captureReviewQueueForRun } from "../capture/capture-review-queue.js";
 import { runSummaryLineage } from "./run-matrix-case.js";
 import type { RunSummary } from "@relay/protocol";
 import { catalogSummaryPage, rebuildRunCatalog } from "./run-catalog.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "./run-store.js";
 
 const RUN_LIST_CURSOR_VERSION = 1;
 const RUN_LIST_CURSOR_MAX_LENGTH = 512;

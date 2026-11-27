@@ -8,8 +8,8 @@
 import { createHash } from "node:crypto";
 import type { ProofReport, ProofReportFlow, ProofVerdict } from "@relay/protocol";
 import { failedStepFromTrace } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
-import { redactText } from "../redaction.js";
+import type { PersistedRun } from "../run/run-store.js";
+import { redactText } from "../evidence/redaction.js";
 import { captureReviewQueueForRun } from "../capture/capture-review-queue.js";
 
 export type ProofReportInput = {

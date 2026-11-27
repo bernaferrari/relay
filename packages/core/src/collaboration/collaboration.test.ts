@@ -42,7 +42,7 @@ import {
   openControlDatabase,
   pruneControlEvents,
 } from "./collaboration-db.js";
-import { publish, subscribe } from "../events.js";
+import { publish, subscribe } from "./events.js";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
 
 async function withStateRoot<T>(

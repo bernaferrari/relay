@@ -1,6 +1,7 @@
 import { runDownloadStep } from "../media/media-download.js";
 import { runMediaCheckStep } from "../media/media-check.js";
 import { runAudioRecordStep } from "./recipe-audio-output.js";
+import { unknownText } from "../unknown-text.js";
 /** Recipe execution glue; cancellation always escapes strategy fallbacks. */
 import type { Device } from "../device/device.js";
 import {
@@ -24,7 +25,7 @@ import {
   describeCoverageStepReason,
   inspectSetupSkip,
   leftoverSkipForbidden,
-} from "../coverage-step-outcome.js";
+} from "./coverage-step-outcome.js";
 import {
   campaignExecutionStep,
   invalidateVerifiedScreen,
@@ -35,7 +36,7 @@ import {
   boundCoverageExpectScreen,
   rejectForbiddenCoverageEffect,
 } from "../campaign/campaign-recovery-effects.js";
-import { contentAssertionPassed } from "../content-assertion-match.js";
+import { contentAssertionPassed } from "../evaluation/content-assertion-match.js";
 import {
   conversationProvenanceFromArtifacts,
   extractCurrentActionAssistantTurn,
@@ -75,11 +76,11 @@ import {
 } from "../device/device.js";
 import { openAppAndVerifyForeground } from "./recipe-runner-app.js";
 import { appStepExpectedLabels } from "../semantic/semantic-readiness.js";
-import { cooperativeCheckpoint } from "../control.js";
-import { now } from "../events.js";
-import { runAction, isActionId } from "../actions.js";
+import { cooperativeCheckpoint } from "../execution/control.js";
+import { now } from "../collaboration/events.js";
+import { runAction, isActionId } from "../execution/actions.js";
 import { captureReviewEnterModule, captureReviewEnterRepeat } from "@relay/protocol";
-import { describeTarget, type RecipeStep } from "../recipes.js";
+import { describeTarget, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "../evaluation/evaluation.js";
 import { setAndroidMobileData } from "../android/android-mobile-data.js";
 import { assertRecipeStepPlatformSupport } from "./recipe-platform-support.js";
@@ -90,7 +91,7 @@ import {
   RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
   TargetVisibleWaitTimeoutError,
   waitForTargetVisible,
-} from "../still-screen-wait.js";
+} from "../device/still-screen-wait.js";
 import { isIosRunnerPresenceDrainError } from "../ios/ios-runtime-recovery.js";
 import {
   runAppBackgroundStep,
@@ -113,7 +114,7 @@ import {
   runTypeStep,
 } from "./recipe-runner-extended-steps.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
-import { rethrowInputOutcomeUnknown } from "../input-not-dispatched.js";
+import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
 import { runPauseStep } from "./recipe-runner-pause.js";
 import { runActStep } from "./recipe-runner-act.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
@@ -447,7 +448,7 @@ async function runRequiredRecipeStep(
     }
     case "flow": {
       if (!isActionId(step.flow)) {
-        throw new Error(`flow step references unknown action: ${step.flow}`);
+        throw new Error(`flow step references unknown action: ${unknownText(step.flow)}`);
       }
       const result = await runAction(device, step.flow, { onLog: log });
       if (!result.ok) throw new Error(result.error);
@@ -699,12 +700,26 @@ async function runRequiredRecipeStep(
       break;
     }
     case "permission": {
-      const result = await updateSetting(device, {
-        ...base(),
-        setting: "permission",
-        state: step.action,
-        permission: step.permission,
-      });
+      const result = await updateSetting(
+        device,
+        step.permission === "photos"
+          ? {
+              ...base(),
+              setting: "permission" as const,
+              state: step.action,
+              permission: "photos" as const,
+              // agent-device versions since the mode-aware permission form require
+              // an explicit photos mode; the modeless recipe step predates it and
+              // always meant full access.
+              mode: "full" as const,
+            }
+          : {
+              ...base(),
+              setting: "permission" as const,
+              state: step.action,
+              permission: step.permission,
+            },
+      );
       job?.artifacts.push({ kind: "permission", capturedAt: now(), data: result });
       break;
     }

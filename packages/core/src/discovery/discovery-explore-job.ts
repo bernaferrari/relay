@@ -27,10 +27,13 @@ import {
   type DiscoveryHere,
   type DiscoveryHereOption,
 } from "./discovery-turn.js";
-import { describeTargetUi } from "../explore.js";
-import { groundTarget } from "../grounding.js";
-import { evaluateExplorationActionPolicy } from "../exploration-policy.js";
-import { currentOperationContext, runWithOperationContext } from "../operation-context.js";
+import { describeTargetUi } from "./explore.js";
+import { groundTarget } from "./grounding.js";
+import { evaluateExplorationActionPolicy } from "./exploration-policy.js";
+import {
+  currentOperationContext,
+  runWithOperationContext,
+} from "../execution/operation-context.js";
 import type { InteractInput } from "../workspace/workspace.js";
 import {
   cleanupExploreFixture,

@@ -16,7 +16,7 @@ import {
   parseAndroidPacketCaptureProvenance,
   parseOptionalRunTestStepEvidence,
 } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "./run-store.js";
 
 type UnknownRecord = Record<string, unknown>;
 

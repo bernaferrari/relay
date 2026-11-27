@@ -7,7 +7,7 @@
 import type { AppMapScenarioTestStep, RecipeStep } from "@relay/protocol";
 import { mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.js";
 import { mutateAppMap } from "./mutation.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 type ActResult = { recipeStepId: string; intent: string; source: string; steps: RecipeStep[] };
 

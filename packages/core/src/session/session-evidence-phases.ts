@@ -1,4 +1,4 @@
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "../recipe/recipes.js";
 
 export function automaticEvidencePhases(
   step: RecipeStep,

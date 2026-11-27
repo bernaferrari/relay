@@ -30,7 +30,7 @@ import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
 import { mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.js";
 import { createOpenRouterClient } from "../openrouter/openrouter-ai-sdk.js";
 import { readFrameTreeNodes } from "../run/run-frame-tree.js";
-import { runsRoot, type PersistedRun } from "../runs/runs.js";
+import { runsRoot, type PersistedRun } from "../run/run-store.js";
 import { resolveScreenIdentity } from "../screen/screen-identity.js";
 
 /** Names a new screen from its screenshot. Returns undefined to keep the guess. */

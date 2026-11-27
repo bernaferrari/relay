@@ -12,7 +12,7 @@ import {
   getExecutingJobId,
   raceCancel,
   throwIfCancelled,
-} from "../control.js";
+} from "../execution/control.js";
 import { runTargetMutation } from "../target/target-control.js";
 import { targetIdentity } from "../target/target-context.js";
 

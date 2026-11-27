@@ -3,7 +3,7 @@ import {
   readAndroidClipboardWithAdb,
   writeAndroidClipboardWithAdb,
 } from "agent-device/android-adb";
-import { getExecutingJobId } from "../control.js";
+import { getExecutingJobId } from "../execution/control.js";
 import type { Device } from "./device-capabilities.js";
 import { base, controlled, controlledMutation, nativeDevice } from "./device-dispatch.js";
 import {

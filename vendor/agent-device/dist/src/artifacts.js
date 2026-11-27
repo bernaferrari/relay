@@ -1,1 +1,0 @@
-import{t as e}from"./platform-runtime-android-mechanics.js";async function t(...t){let{resolveAndroidArchivePackageName:n}=await e();return await n(...t)}export{t as resolveAndroidArchivePackageName};

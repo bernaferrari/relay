@@ -28,12 +28,12 @@ import {
   upsertAppMapCombineFromTest,
   variableCanApply,
 } from "./app-map-combine-from-test.js";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "./map-work.js";
 import {
   appLocaleShouldRelaunch,
   stayAppLocaleCanBeProved,
   stayAppLocaleDestinationCheck,
-} from "../stay-app-locale-destination.js";
+} from "./stay-app-locale-destination.js";
 
 function scope(id: string) {
   return { organizationId: "org", projectId: "project", appMapId: "settings", id };

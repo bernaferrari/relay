@@ -1,6 +1,6 @@
 import type { TraceFrameRef } from "../trace/trace.js";
 import type { ArtifactRefProjection } from "@relay/protocol";
-import { visualEvidenceAllowed } from "../redaction.js";
+import { visualEvidenceAllowed } from "../evidence/redaction.js";
 import {
   artifactMediaKindForMime,
   artifactRefFromBytes,

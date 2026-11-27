@@ -1,5 +1,0 @@
-appId: com.other.app
----
-- doubleTapOn:
-    text: Button
-    retryTapIfNoChange: false

@@ -1,5 +1,5 @@
 import type { createAgentDeviceClient } from "agent-device";
-import type { CrashEvidenceResult } from "../crash-evidence.js";
+import type { CrashEvidenceResult } from "../evidence/crash-evidence.js";
 
 type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
 

@@ -9,9 +9,9 @@ import {
 } from "./capture-surface-survey-frames.js";
 import { runCaptureSurfaceStep } from "../recipe/recipe-runner-extended-steps.js";
 import { parseFrameTreeNodes } from "../run/run-frame-tree.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "../recipe/recipes.js";
 import type { RecipeStepContext } from "../recipe/recipe-runner-context.js";
-import type { ScrollSurveyResult } from "../scrollable/scrollable-survey-types.js";
+import type { ScrollSurveyResult } from "../scroll/scrollable-survey-types.js";
 import type { TestJob } from "../session/session-contract.js";
 
 const step: Extract<RecipeStep, { kind: "capture-surface" }> = {

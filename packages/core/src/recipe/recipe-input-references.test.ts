@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestData } from "@relay/protocol";
-import { CasePlanError } from "../case-plan.js";
-import { freezeRecipeInputs } from "../frozen/frozen-recipe-inputs.js";
+import { CasePlanError } from "../input/case-plan.js";
+import { freezeRecipeInputs } from "../recipe/frozen-recipe-inputs.js";
 import { resolveRecipeInputReferences } from "./recipe-input-references.js";
 import { resolveRecipeStep } from "./recipe-runner-support.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "./recipes.js";
 
 const graph: Record<string, Recipe> = {
   prompt: {

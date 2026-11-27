@@ -7,9 +7,9 @@ import type {
   StateFixture,
 } from "@relay/protocol";
 import type { DiscoveryHere, DiscoveryHereOption } from "./discovery-turn.js";
-import { GroundingError } from "../grounding.js";
+import { GroundingError } from "./grounding.js";
 import type { InteractInput } from "../workspace/workspace.js";
-import type { groundTarget } from "../grounding.js";
+import type { groundTarget } from "./grounding.js";
 
 export const MAX_SAME_SCREEN_ACTIONS = 40;
 

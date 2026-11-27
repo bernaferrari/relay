@@ -12,7 +12,7 @@ import {
   type DurableWorkerAssignmentStore,
   type DurableWorkerAssignmentTerminalStatus,
 } from "./durable-worker-assignments.js";
-import { readPersistedRun } from "../runs/runs.js";
+import { readPersistedRun } from "../run/run-store.js";
 
 type ManifestTerminalStatus = Exclude<DurableWorkerAssignmentTerminalStatus, "recovery-required">;
 

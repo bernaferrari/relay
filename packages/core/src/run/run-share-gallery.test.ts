@@ -9,8 +9,8 @@ import type {
   CombineCampaign,
 } from "@relay/protocol";
 import { captureReviewSlotId } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
-import type { Recipe } from "../recipes.js";
+import type { PersistedRun } from "./run-store.js";
+import type { Recipe } from "../recipe/recipes.js";
 import { createAppMapTestExecutionIntent } from "../app-map/app-map-test-execution-intent.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";
 import { freezeRunShareCaptureScope } from "./run-share-gallery.js";

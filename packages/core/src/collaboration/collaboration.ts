@@ -13,19 +13,19 @@ import {
   type TestData,
 } from "@relay/protocol";
 import { randomUUID } from "node:crypto";
-import { now, publish } from "../events.js";
+import { now, publish } from "./events.js";
 import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "../app-map/app-map.js";
 import { rescopeAppMap } from "../app-map/app-map-yaml.js";
 import { validateDevicePool } from "../device/device-pool.js";
-import { currentOperationContext } from "../operation-context.js";
-import { assertWebBuildProviderReceipt } from "../web-build-verification.js";
-import { assertAppMapInputDataSetChanges } from "../input-data-set.js";
+import { currentOperationContext } from "../execution/operation-context.js";
+import { assertWebBuildProviderReceipt } from "../change/web-build-verification.js";
+import { assertAppMapInputDataSetChanges } from "../input/input-data-set.js";
 import {
   mergeProjectVariableUpdate,
   assertUnlinkedProjectInputs,
   validateProjectInputIds,
   validateProjectVariables,
-} from "../project-variable-update.js";
+} from "../input/project-variable-update.js";
 import {
   readControlStore,
   withControlStore,

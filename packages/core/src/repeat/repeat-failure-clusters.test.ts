@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CombineCampaign } from "@relay/protocol";
 import { buildRepeatFailureClusters, repeatFailureSignature } from "./repeat-failure-clusters.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 function run(input: {
   id: string;

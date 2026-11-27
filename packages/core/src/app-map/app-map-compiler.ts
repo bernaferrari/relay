@@ -16,7 +16,7 @@ import { validateAppMap } from "./app-map.js";
 import { observeScreenIdentityForHost } from "../screen/screen-identity.js";
 import type { SnapshotNode } from "../device/device.js";
 import { semanticTargetMatches } from "../scroll/scroll-surface-semantic-index.js";
-import { compiledJudgeFields } from "../judge-assertion-fields.js";
+import { compiledJudgeFields } from "../evaluation/judge-assertion-fields.js";
 import {
   compileRecipe as compileRecipeFromActions,
   connectionActionsStartWithWaitFor as connectionActionsStartWithWaitForFromActions,

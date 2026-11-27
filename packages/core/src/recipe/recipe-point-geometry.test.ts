@@ -15,7 +15,7 @@ import {
   noteConfirmedIosSnapshotInput,
   resetIosSnapshotFlights,
 } from "../ios/ios-snapshot-flight.js";
-import { InputNotDispatchedError } from "../input-not-dispatched.js";
+import { InputNotDispatchedError } from "../device/input-not-dispatched.js";
 import {
   setLiveIosRunnerCommandPostForTests,
   type LiveIosRunnerCommand,

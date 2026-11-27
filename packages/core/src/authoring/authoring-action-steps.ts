@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { AuthoringAction, AuthoringInteraction, RecipeStep } from "@relay/protocol";
 import { recordedPauseDuration } from "./authoring-recorded-pause.js";
 import { AuthoringStateError } from "./authoring-session-state.js";
-import { validateRecipeSteps } from "../recipes.js";
+import { validateRecipeSteps } from "../recipe/recipes.js";
 
 function stableStep(step: RecipeStep, actionId: string, index: number, group?: string): RecipeStep {
   return {

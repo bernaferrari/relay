@@ -1,5 +1,5 @@
-import { classifyRunOutcome } from "../outcomes.js";
-import { redactPrivateValue } from "../private-inputs.js";
+import { classifyRunOutcome } from "../run/outcomes.js";
+import { redactPrivateValue } from "../input/private-inputs.js";
 import type { TestJob } from "./session-contract.js";
 
 export function setOutcome(job: TestJob): void {

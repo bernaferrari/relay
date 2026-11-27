@@ -42,7 +42,7 @@ function defaultMinimumRole(
   return "author";
 }
 
-export type SchemaOperationId = OperationSchemaId & OperationOutputSchemaId;
+export type SchemaOperationId = OperationSchemaId;
 
 export type SchemaOperationMap<Id extends SchemaOperationId> = {
   [SelectedId in Id]: {

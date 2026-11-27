@@ -1,5 +1,5 @@
-import { publish } from "../events.js";
-import { runWithOperationContext, type OperationContext } from "../operation-context.js";
+import { publish } from "../collaboration/events.js";
+import { runWithOperationContext, type OperationContext } from "../execution/operation-context.js";
 import { finishDurableSessionJob, queueDurableSessionJob } from "./session-durable-worker.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import { executionTargetRefForJob } from "../target/target-driver.js";

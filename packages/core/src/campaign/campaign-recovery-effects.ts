@@ -1,5 +1,5 @@
-import type { Recipe, RecipeStep } from "../recipes.js";
-import { now } from "../events.js";
+import type { Recipe, RecipeStep } from "../recipe/recipes.js";
+import { now } from "../collaboration/events.js";
 import {
   campaignCoverageForbiddenEffect,
   destEndPrimitiveCoverageAllowed,

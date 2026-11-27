@@ -87,8 +87,17 @@ function annotateWithheldFrames(
   };
 }
 
+function printableShareValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (value === null || value === undefined) return "";
+  return JSON.stringify(value) ?? "";
+}
+
 function escapeHtml(value: unknown): string {
-  return String(value ?? "")
+  return printableShareValue(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")

@@ -7,7 +7,7 @@ import {
   isIosAccessibilityQueryInFlightError,
   waitForIosSnapshotFlightSettle,
 } from "../ios/ios-snapshot-flight.js";
-import { getExecutingJobId, hardStopDeviceSession } from "../control.js";
+import { getExecutingJobId, hardStopDeviceSession } from "../execution/control.js";
 import {
   IosDeviceAttentionError,
   IosRunnerSetupError,

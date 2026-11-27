@@ -4,7 +4,7 @@ import {
   parseBrowserProofEvidence,
   type BrowserProofEvidence,
 } from "@relay/protocol";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "../run/run-store.js";
 
 type BrowserRunIdentity = Pick<
   PersistedRun,

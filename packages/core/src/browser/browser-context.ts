@@ -8,7 +8,7 @@ import type {
 import { chromium, firefox, webkit } from "playwright-core";
 import type { BrowserCaseProfile, BrowserEngine, TargetDefinition } from "@relay/protocol";
 import { compileBrowserEnvironment } from "@relay/protocol";
-import { browserExecutable, browserProfileDir } from "../targets.js";
+import { browserExecutable, browserProfileDir } from "../target/targets.js";
 import { browserAuthenticationStorageState } from "./browser-authentication-fixtures.js";
 import { assertSupportedBrowserCaseProfile } from "./browser-profile-support.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";

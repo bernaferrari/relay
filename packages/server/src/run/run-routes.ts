@@ -752,10 +752,11 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
         recovery: `Choose one of: ${CAPTURE_REVIEW_ACTIONS.join(", ")}. Accept as reference explicitly governs later Runs.`,
       });
     }
+    const captureReviewAction = body.action as CaptureReviewAction;
     try {
       const reviewed = await reviewPersistedCapture(runsRoot(), run, {
         captureId: body.captureId.trim(),
-        action: body.action as CaptureReviewAction,
+        action: captureReviewAction,
         actor: reviewActor(context),
         ...(typeof body.imageSha256 === "string" ? { imageSha256: body.imageSha256 } : {}),
         ...(typeof body.note === "string" ? { note: body.note } : {}),
@@ -764,7 +765,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
           : {}),
       });
       recordAudit(scope, {
-        action: `run.capture.review.${body.action}`,
+        action: `run.capture.review.${captureReviewAction}`,
         resource: run.id,
         result: "allow",
       });

@@ -16,15 +16,15 @@ import {
 } from "../device/device.js";
 import { captureScreenshot } from "../workspace/workspace.js";
 import { attachScreenshotPayload } from "../workspace/workspace-capture.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import {
   awaitStableDestinationEvidence,
   recordDestinationEvidenceTiming,
 } from "../destination/destination-evidence.js";
-import { extractTourStops, onTourOrigin, tourFallbackOverlap } from "../tour.js";
+import { extractTourStops, onTourOrigin, tourFallbackOverlap } from "../discovery/tour.js";
 
-import type { TourStop } from "../tour.js";
-import type { RecipeStep } from "../recipes.js";
+import type { TourStop } from "../discovery/tour.js";
+import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "../session/session.js";
 import { identityPolicyForTarget } from "../app/app-identity-policy.js";
 import { profileBackAffordances } from "../discovery/discovery-app-profiles.js";

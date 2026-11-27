@@ -1,4 +1,0 @@
-appId: com.example.app
----
-- assertVisible:
-    id: "element_id"

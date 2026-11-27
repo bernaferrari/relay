@@ -16,8 +16,8 @@ import {
   readCompletedPersistedRun,
   withRunWriteLock,
   type PersistedRun,
-} from "../runs/runs.js";
-import { currentOperationContext } from "../operation-context.js";
+} from "../run/run-store.js";
+import { currentOperationContext } from "../execution/operation-context.js";
 import { readFrameFile } from "../run/run-artifact-files.js";
 import {
   findCaptureReference,

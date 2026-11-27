@@ -1,0 +1,24 @@
+{
+  "name": "@relay/workflow-runners",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./outcomes": "./src/outcome-jobs.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@relay/core": "workspace:*",
+    "@relay/protocol": "workspace:*",
+    "@relay/workflows": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "catalog:"
+  }
+}

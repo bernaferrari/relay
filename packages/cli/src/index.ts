@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import { isInteractiveReview, runReviewCommand, type ReviewClient } from "./review-command.js";
-import { createBrowserCaptureWorkflow, type BrowserCapturePlan } from "@relay/workflows";
+import { createBrowserCaptureWorkflow, type BrowserCapturePlan } from "@relay/workflow-runners";
 import { pathToFileURL } from "node:url";
 import { targetExecutionReadiness, renderPlanFindingsMarkdown } from "@relay/core";
 import {
@@ -12,6 +12,7 @@ import {
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
+import { unknownText } from "./unknown-text.js";
 import {
   assertRecoverHasTarget,
   recoverInputFromLane,
@@ -388,8 +389,11 @@ async function resolveCurrentTestRunInput(
     next.target = { kind: "device", platform: device.platform, targetId };
   }
   const target = next.target && typeof next.target === "object" ? next.target : undefined;
-  const targetId = target && "targetId" in target ? String(target.targetId) : "explicit target";
-  output.heartbeat(`Resolved Test run revision ${next.expectedRevision} on ${targetId}`);
+  const rawTargetId = target && "targetId" in target ? target.targetId : undefined;
+  const targetId = typeof rawTargetId === "string" ? rawTargetId : "explicit target";
+  output.heartbeat(
+    `Resolved Test run revision ${unknownText(next.expectedRevision)} on ${targetId}`,
+  );
   return next;
 }
 

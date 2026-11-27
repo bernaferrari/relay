@@ -6,11 +6,8 @@ import { execFile } from "node:child_process";
 import test from "node:test";
 import { RelayClient } from "@relay/client";
 import { resetControlDatabaseCache, type ModelDecisionProvider } from "@relay/core";
-import {
-  createGoalSessionRunner,
-  createRelayOperationPort,
-  type GoalSessionStore,
-} from "@relay/workflows";
+import { createRelayOperationPort } from "@relay/workflows";
+import { createGoalSessionRunner, type GoalSessionStore } from "@relay/workflow-runners";
 import type {
   CompactGoalObservation,
   GoalSessionRecord,

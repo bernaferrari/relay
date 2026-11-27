@@ -6,6 +6,15 @@ import {
   registerGenerationProvider,
 } from "./generation/generation.js";
 
+function requestBodyText(init: unknown): string {
+  const body =
+    init && typeof init === "object" && "body" in init
+      ? (init as { body?: unknown }).body
+      : undefined;
+  if (typeof body !== "string") throw new TypeError("fetch body must be a JSON string");
+  return body;
+}
+
 test("deterministic generation is reproducible", async () => {
   const input = {
     purpose: "variable" as const,
@@ -28,7 +37,7 @@ test("OpenRouter generation uses structured chat output", async () => {
   const originalFetch = globalThis.fetch;
   let requestBody: unknown;
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-    requestBody = JSON.parse(String(init?.body));
+    requestBody = JSON.parse(requestBodyText(init));
     return new Response(
       JSON.stringify({
         id: "chatcmpl-generation-test",

@@ -1,6 +1,6 @@
 import type { DestinationEvidenceSurface } from "@relay/protocol";
 import type { SnapshotNode } from "../device/device.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import {
   observeScreenIdentity,
   observeVisualScreenFingerprint,

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { chromium } from "playwright-core";
 import { recordHtmlMediaAudio } from "./browser-audio-output.js";
-import { measureAudioOutput } from "../audio-output-level.js";
+import { measureAudioOutput } from "../device/audio-output-level.js";
 
 function wav(silent: boolean): Buffer {
   const samples = 16000;

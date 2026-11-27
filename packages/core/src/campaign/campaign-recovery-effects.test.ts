@@ -4,7 +4,7 @@ import {
   frozenColdCoverageEffects,
   rejectForbiddenCoverageEffect,
 } from "./campaign-recovery-effects.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import type { RecipeStepContext } from "../recipe/recipe-runner-context.js";
 import type { TestJob } from "../session/session.js";
 

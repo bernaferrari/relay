@@ -11,8 +11,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { execAndroidAdb } from "./android-adb-host.js";
-import { raceCancel } from "../control.js";
-import { InputNotDispatchedError } from "../input-not-dispatched.js";
+import { raceCancel } from "../execution/control.js";
+import { InputNotDispatchedError } from "../device/input-not-dispatched.js";
 
 const IME_HELPER_PACKAGE = "com.callstack.agentdevice.imehelper";
 const IME_HELPER_SERVICE = `${IME_HELPER_PACKAGE}/.TestInputMethodService`;

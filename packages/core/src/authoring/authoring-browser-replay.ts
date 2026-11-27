@@ -1,7 +1,7 @@
 import { compileBrowserEnvironment, type AuthoringSession } from "@relay/protocol";
 import { browserCaseProfileForTarget } from "../browser/browser-case-profile-target.js";
 import { closeBrowserTarget, getBrowserDevice } from "../browser/browser-target.js";
-import { readTarget } from "../targets.js";
+import { readTarget } from "../target/targets.js";
 
 /** Each replay starts from immutable account state, not cookies changed while
  * recording. Keep the live authoring browser intact for review and recovery. */

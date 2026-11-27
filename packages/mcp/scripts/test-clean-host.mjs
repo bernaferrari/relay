@@ -84,8 +84,18 @@ async function startFixture(operationIds) {
           ok: true,
           version: "0.1.0",
           product: "relay",
+          mode: "test",
           at: Date.now(),
           uptimeMs: 1,
+          pid: process.pid,
+          startedAt: Date.now() - 1,
+          activeJob: null,
+          activeJobs: [],
+          targetWorkers: [],
+          jobs: 0,
+          deviceCount: 0,
+          sseClients: 0,
+          runsDir: "/tmp/relay-clean-host-runs",
           access: { organizationId: "local", projectId: "clean-host", role: "admin" },
         }),
       );
@@ -257,7 +267,10 @@ async function main() {
   const toolsSource = [
     await readFile(join(packageRoot, "src/tools.ts"), "utf8"),
     await readFile(
-      join(repositoryRoot, "packages/protocol/src/change-verification-operation-definitions.ts"),
+      join(
+        repositoryRoot,
+        "packages/protocol/src/change/change-verification-operation-definitions.ts",
+      ),
       "utf8",
     ),
   ].join("\n");
@@ -358,11 +371,12 @@ async function main() {
       true,
     );
     const qaTools = qaResponses.find((response) => response.id === 2)?.result?.tools;
-    assert.equal(qaTools.length, 12);
+    assert.equal(qaTools.length, 13);
     assert.ok(qaTools.some((tool) => tool.name === "relay_run_test"));
     assert.ok(qaTools.some((tool) => tool.name === "relay_list_devices"));
     assert.ok(qaTools.some((tool) => tool.name === "relay_get_guide"));
-    for (const absent of ["relay_panel", "relay_record_test", "relay_prove_change"]) {
+    assert.ok(qaTools.some((tool) => tool.name === "relay_panel"));
+    for (const absent of ["relay_record_test", "relay_prove_change"]) {
       assert.equal(
         qaTools.some((tool) => tool.name === absent),
         false,

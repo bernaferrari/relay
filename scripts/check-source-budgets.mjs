@@ -13,9 +13,7 @@ export const SCRIPT_SOURCE_LIMIT = 650;
  * size is a ratchet: growth fails, and shrinkage asks the author to lower the
  * recorded ceiling in the same change.
  */
-export const grandfatheredSourceLimits = Object.freeze({
-  "packages/core/src/device/device.ts": 1026,
-});
+export const grandfatheredSourceLimits = Object.freeze({});
 
 const componentSourceRoots = [
   "packages/app/src/components/",

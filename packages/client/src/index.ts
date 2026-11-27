@@ -104,7 +104,7 @@ export function parseRegisteredOperationOutput<T>(
   return schema.parse(current);
 }
 
-function stripUnrecognizedOperationKeys(value: unknown, error: unknown): unknown | undefined {
+function stripUnrecognizedOperationKeys(value: unknown, error: unknown): unknown {
   if (!isRecord(value) || !error || typeof error !== "object") return undefined;
   const issues = (error as { issues?: unknown }).issues;
   if (!Array.isArray(issues) || issues.length === 0) return undefined;

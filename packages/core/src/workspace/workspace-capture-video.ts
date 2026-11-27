@@ -8,7 +8,7 @@
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 import type { Device, DevicePlatform } from "../device/device.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import { currentTargetContext, runWithTargetContext } from "../target/target-context.js";
 import { diagnoseIosRunnerError, recordIosVideo } from "../ios/ios-device-adapter.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";

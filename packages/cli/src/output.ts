@@ -6,6 +6,7 @@ import { formatVerifyChangeResult } from "./verify-change-output.js";
 import { formatWalkthroughPackResult } from "./walkthrough-output.js";
 import { LiveRunView } from "./live-run-view.js";
 import { formatListResult, formatVerdict, type Verdict } from "./everyday-format.js";
+import { unknownText } from "./unknown-text.js";
 
 /** `relay run` attaches the Run's verdict; people read that instead of phases. */
 function formatVerdictResult(value: unknown): string | undefined {
@@ -335,7 +336,7 @@ function formatDoctorResult(value: unknown): string | undefined {
     doctor?: { ok?: unknown; checks?: Array<{ id?: unknown; ok?: unknown; message?: unknown }> };
     notAccepted?: unknown;
   };
-  const lines = ["Relay doctor", `Server: ${String(report.server ?? "unknown")}`];
+  const lines = ["Relay doctor", `Server: ${unknownText(report.server) || "unknown"}`];
   if (typeof report.cliVersion === "string") lines.push(`CLI ${report.cliVersion}`);
   if (typeof report.serverVersion === "string") lines.push(`Server ${report.serverVersion}`);
   if (report.versionMatch === false) lines.push("CLI and server versions differ.");
@@ -345,7 +346,7 @@ function formatDoctorResult(value: unknown): string | undefined {
     lines.push("", "Checks:");
     for (const check of checks) {
       const state = check.ok === true ? "ok" : "failed";
-      lines.push(`- ${String(check.id ?? "check")}: ${state} — ${String(check.message ?? "")}`);
+      lines.push(`- ${unknownText(check.id) || "check"}: ${state} — ${unknownText(check.message)}`);
     }
   } else if (typeof report.message === "string" && report.message) {
     lines.push(report.message);
@@ -386,9 +387,10 @@ function formatRunTestSnapshot(value: unknown): string | undefined {
     snapshot.phase === "failed" ||
     snapshot.phase === "cancelled" ||
     snapshot.phase === "needs-attention";
-  const blocked = stopped && typeof problem?.title === "string" && problem.title.length > 0;
+  const problemTitle = typeof problem?.title === "string" ? problem.title : "";
+  const blocked = stopped && problemTitle.length > 0;
   if (blocked && problem) {
-    lines.push(`Could not continue: ${problem.title}`);
+    lines.push(`Could not continue: ${problemTitle}`);
     if (typeof problem.detail === "string" && problem.detail) lines.push(problem.detail);
     if (typeof problem.recovery === "string" && problem.recovery) lines.push(problem.recovery);
   }

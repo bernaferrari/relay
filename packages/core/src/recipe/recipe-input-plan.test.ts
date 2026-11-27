@@ -3,7 +3,7 @@ import test from "node:test";
 import type { TestData } from "@relay/protocol";
 import { prepareFrozenRecipeInputs } from "./recipe-input-plan.js";
 import { resolveRecipeStep } from "./recipe-runner-support.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "./recipes.js";
 
 function graph(text: string): Record<string, Recipe> {
   return {

@@ -6,7 +6,7 @@ import test from "node:test";
 import {
   GROK_WEB_APP_TEST_POLICY,
   registerGrokIdentityTestPolicies,
-} from "../app/app-identity-test-policies.js";
+} from "../fixtures/app-identity-test-policies.js";
 import {
   AccountNeedsReloginError,
   assertClaimedBrowserJobStartAllowed,

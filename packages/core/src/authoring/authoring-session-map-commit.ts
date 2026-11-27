@@ -18,8 +18,8 @@ import { mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.j
 import { authoringEvidenceExists } from "./authoring-evidence.js";
 import { AuthoringStateError } from "./authoring-session-state.js";
 import { managedBrowserTargetProfile } from "../browser/browser-case-profile-target.js";
-import { now } from "../events.js";
-import { readTarget } from "../targets.js";
+import { now } from "../collaboration/events.js";
+import { readTarget } from "../target/targets.js";
 import { authoringOriginApplication } from "./authoring-session-runtime.js";
 import { listDevices } from "../workspace/workspace-devices.js";
 import { nativeCaptureTargetProfile } from "../native/native-target-profile.js";

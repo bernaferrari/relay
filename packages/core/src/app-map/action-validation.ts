@@ -1,5 +1,5 @@
 import type { StepPoint, StepTarget } from "@relay/protocol";
-import { validateRecipeSteps } from "../recipes.js";
+import { validateRecipeSteps } from "../recipe/recipes.js";
 import { appMapFail } from "./errors.js";
 import type { ActionSpec } from "./model.js";
 import {

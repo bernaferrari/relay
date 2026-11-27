@@ -7,7 +7,7 @@ import {
   type AppMapScenarioTest,
   type Screen,
 } from "@relay/protocol";
-import { compileAppMapTest } from "../map-work.js";
+import { compileAppMapTest } from "./map-work.js";
 import { applyCaptureReviewDecision, captureReviewQueueForRun } from "../capture/capture-review.js";
 import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";

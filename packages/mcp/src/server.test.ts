@@ -172,6 +172,12 @@ function callResult(response: RpcResponse): ToolCallResult {
   return response.result as ToolCallResult;
 }
 
+function resultText(result: ToolCallResult): string {
+  const text = result.content[0]?.text;
+  if (typeof text !== "string") throw new TypeError("tool result text must be a string");
+  return text;
+}
+
 test("full-profile SDK initialization advertises a bounded Change Proof catalog", async () => {
   const session = await connectMcp({ async invoke() {} });
   try {
@@ -1810,7 +1816,7 @@ test("compact job.get dest identity is dest wait-for 003, not leftover Close 004
     assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
     assert.deepEqual(compact.job?.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
     assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+    assert.ok(resultText(result).length <= relayMcpTextLimit);
   } finally {
     await session.close();
   }
@@ -1847,7 +1853,7 @@ test("compact visual compare dest identity is dest wait-for 003, not leftover Cl
     assert.equal(compact.truncated, true);
     assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
     assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+    assert.ok(resultText(result).length <= relayMcpTextLimit);
   } finally {
     await session.close();
   }
@@ -1879,7 +1885,7 @@ test("compact visual review leftover Close 004 cannot fill dest", async () => {
     assert.equal(compact.truncated, true);
     assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
     assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+    assert.ok(resultText(result).length <= relayMcpTextLimit);
   } finally {
     await session.close();
   }
@@ -1914,7 +1920,7 @@ test("compact visual-baseline update leftover Close 004 cannot fill dest", async
     assert.equal(compact.truncated, true);
     assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
     assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+    assert.ok(resultText(result).length <= relayMcpTextLimit);
   } finally {
     await session.close();
   }
@@ -1966,7 +1972,7 @@ test("compact capture-review leftover Close 004 cannot fill dest", async () => {
     assert.equal(compact.truncated, true);
     assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
     assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
-    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+    assert.ok(resultText(result).length <= relayMcpTextLimit);
   } finally {
     await session.close();
   }
@@ -2088,7 +2094,7 @@ test("interact preview without HTTP base64 stays a small digest", async () => {
       }),
     );
     assert.equal(result.isError, undefined);
-    const text = String(result.content[0]?.text ?? "");
+    const text = resultText(result);
     assert.doesNotMatch(text, /huge leftover tree|base64|\/tmp\/preview\.png/);
     assert.match(text, /--preview --file/);
     assert.ok(text.length < 2_000);
@@ -2134,7 +2140,7 @@ test("interact preview unwraps an invoke envelope into a native PNG", async () =
     );
     assert.equal(result.isError, undefined);
     assert.equal(result.content[1]?.type, "image");
-    const text = String(result.content[0]?.text ?? "");
+    const text = resultText(result);
     assert.doesNotMatch(text, new RegExp(base64));
     assert.match(text, /"preview":true/);
     assert.ok(text.length < 2_000);
@@ -2177,7 +2183,7 @@ test("interact preview returns a PNG image instead of inlined base64 JSON", asyn
     );
     assert.equal(result.isError, undefined);
     assert.equal(result.content[1]?.type, "image");
-    const text = String(result.content[0]?.text ?? "");
+    const text = resultText(result);
     assert.doesNotMatch(text, new RegExp(base64));
     assert.match(text, /"preview":true/);
     assert.match(text, /"inspectable":false/);

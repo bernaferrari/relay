@@ -17,9 +17,12 @@ import {
   snapshot,
   type SnapshotNode,
 } from "../device/device.js";
-import { now } from "../events.js";
-import { recordFrameObservation } from "../frame-observation.js";
-import { OPTIONAL_TREE_BUDGET_MS, withOptionalTreeBudget } from "../optional-tree-budget.js";
+import { now } from "../collaboration/events.js";
+import { recordFrameObservation } from "../device/frame-observation.js";
+import {
+  OPTIONAL_TREE_BUDGET_MS,
+  withOptionalTreeBudget,
+} from "../app-map/optional-tree-budget.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import {
   currentVerifiedScreen,
@@ -41,7 +44,7 @@ import {
   runMappedPrelude,
 } from "./recipe-runner-tour.js";
 
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 import { runIdentityIgnoreStep } from "./recipe-runner-qa-steps.js";
 import {
   compareScreenIdentity,
@@ -49,7 +52,7 @@ import {
   observeVisualScreenFingerprint,
 } from "../screen/screen-identity.js";
 import { writeFrameTree } from "../run/run-frame-tree.js";
-import { writeFramePng } from "../runs/runs.js";
+import { writeFramePng } from "../run/run-store.js";
 import { captureSettledRaster, type VisualCapturePolicy } from "../visual/visual-settling.js";
 import {
   attachScreenshotPayload,
@@ -80,8 +83,8 @@ import {
 import { retainScreenMismatch } from "./recipe-screen-mismatch.js";
 import { nativeWorkspaceIdentityNodes } from "../screen/screen-identity-native-workspace.js";
 import { nativePendingModelSelection } from "./recipe-native-model-entry.js";
-import { stillScreenTimeoutMessage, stillScreenUnchanged } from "../still-screen-wait.js";
-import type { DestinationRepairHint } from "../repair-proposal.js";
+import { stillScreenTimeoutMessage, stillScreenUnchanged } from "../device/still-screen-wait.js";
+import type { DestinationRepairHint } from "../app-map/repair-proposal.js";
 import {
   getRecipeAndroidLocalization,
   localizeExpectedObservation,

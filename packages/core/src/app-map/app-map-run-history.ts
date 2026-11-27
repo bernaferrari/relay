@@ -6,7 +6,7 @@ import type {
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { mutateStoredAppMap, readAppMap } from "../collaboration/collaboration.js";
-import { listPersistedRuns, type PersistedRun } from "../runs/runs.js";
+import { listPersistedRuns, type PersistedRun } from "../run/run-store.js";
 import { recordAppMapRun, recordAppMapTestValidation } from "./run-operations.js";
 import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
 import { readFrameTreeNodes } from "../run/run-frame-tree.js";

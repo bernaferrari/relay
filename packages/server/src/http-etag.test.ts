@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { jsonIfChanged } from "./http.js";
+import { HttpError, jsonIfChanged, matchPath } from "./http.js";
 
 test("an unchanged read is answered with 304 before the body is built", async () => {
   let built = 0;
@@ -35,4 +35,15 @@ test("an unchanged read is answered with 304 before the body is built", async ()
   } finally {
     server.close();
   }
+});
+
+test("matchPath rejects malformed URL escapes as a client error", () => {
+  assert.throws(
+    () => matchPath("/runs/%E0%A4%A", "/runs/:id"),
+    (error: unknown) =>
+      error instanceof HttpError &&
+      error.status === 400 &&
+      error.message.includes("Malformed URL escape"),
+  );
+  assert.deepEqual(matchPath("/runs/run%20one", "/runs/:id"), { id: "run one" });
 });

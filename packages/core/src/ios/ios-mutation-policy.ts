@@ -5,10 +5,10 @@
  * mutation safety are different concerns, and keeping them together makes it
  * too easy to reintroduce a generic retry around a tap.
  */
-import { InputOutcomeUnknownError } from "../input-not-dispatched.js";
+import { InputOutcomeUnknownError } from "../device/input-not-dispatched.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "../control.js";
+import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "../execution/control.js";
 import { noteConfirmedIosSnapshotInput } from "./ios-snapshot-flight.js";
 import { unknownErrorMessage } from "./ios-runner-listener-command.js";
 import { IosHidUnavailableError } from "../workspace/workspace-ios-raw.js";

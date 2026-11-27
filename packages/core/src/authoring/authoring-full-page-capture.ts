@@ -1,5 +1,5 @@
 import type { AuthoringSession } from "@relay/protocol";
-import { captureScrollableSurveyForTarget } from "../scrollable/scrollable-survey.js";
+import { captureScrollableSurveyForTarget } from "../scroll/scrollable-survey.js";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 
 /** Full-page evidence belongs to the recorded action, while its exit observation

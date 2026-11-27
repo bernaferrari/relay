@@ -2,7 +2,7 @@ import type { Page } from "playwright-core";
 import type { StepTarget } from "@relay/protocol";
 import { mkdir, open, realpath, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "../recipe/recipes.js";
 import type { Device } from "../device/device.js";
 import type { RecipeStepContext } from "../recipe/recipe-runner-context.js";
 import { browserSessionForDevice } from "../browser/browser-live-handles.js";

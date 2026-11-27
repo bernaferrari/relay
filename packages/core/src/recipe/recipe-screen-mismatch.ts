@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import type { SnapshotNode } from "../device/device.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 import {
   observeScreenIdentity,
   type ObserveScreenIdentityOptions,

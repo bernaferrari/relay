@@ -1,4 +1,7 @@
-import { InputNotDispatchedError, InputOutcomeUnknownError } from "../input-not-dispatched.js";
+import {
+  InputNotDispatchedError,
+  InputOutcomeUnknownError,
+} from "../device/input-not-dispatched.js";
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -33,7 +36,7 @@ import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { currentVerifiedScreen, type VerifiedScreenCheckpoint } from "./recipe-runner-context.js";
 import type { TestJob } from "../session/session.js";
 import { registerEvaluationProvider } from "../evaluation/evaluation.js";
-import { saveRecipe, type RecipeStep } from "../recipes.js";
+import { saveRecipe, type RecipeStep } from "./recipes.js";
 import {
   clearControl,
   cooperativeCheckpoint,
@@ -41,7 +44,7 @@ import {
   requestCancel,
   requestResume,
   runWithJobControl,
-} from "../control.js";
+} from "../execution/control.js";
 import { runWithTargetContext } from "../target/target-context.js";
 import { observeScreenIdentity } from "../screen/screen-identity.js";
 import { runExpectScreenStep } from "./recipe-runner-screen.js";

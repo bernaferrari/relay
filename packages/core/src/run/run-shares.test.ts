@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { RunShareRecord } from "./run-shares.js";
-import type { PersistedRun } from "../runs/runs.js";
+import type { PersistedRun } from "./run-store.js";
 import {
   buildRunShareReport,
   createRunShare,
@@ -16,7 +16,7 @@ import {
   resolveRunShareTokenState,
   revokeRunShare,
 } from "./run-shares.js";
-import { loadRedactionPolicy } from "../redaction.js";
+import { loadRedactionPolicy } from "../evidence/redaction.js";
 
 function traceStep(
   title: string,

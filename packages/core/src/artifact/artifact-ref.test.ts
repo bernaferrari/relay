@@ -17,7 +17,7 @@ import {
   projectRecipeEvidenceImageArtifact,
   saveRecipeEvidenceImage,
 } from "../recipe/recipe-evidence-store.js";
-import { projectRunFrameArtifact } from "../runs/runs.js";
+import { projectRunFrameArtifact } from "../run/run-store.js";
 
 test("existing authoring, recipe, and run frames project to one integrity identity", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-artifact-ref-"));

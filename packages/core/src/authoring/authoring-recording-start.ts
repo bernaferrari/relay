@@ -5,7 +5,7 @@ import { persistCapturedAuthoringObservation } from "./authoring-observation-cap
 import { assertExpectedSource } from "./authoring-session-screen-proof.js";
 import { seedAuthoringRawRecording } from "./authoring-raw-recording.js";
 import { transition } from "./authoring-session-state.js";
-import { now } from "../events.js";
+import { now } from "../collaboration/events.js";
 
 export type AuthoringRecordingStartResult = {
   session: AuthoringSession;

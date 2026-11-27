@@ -7,10 +7,10 @@ import {
   preflightRegisteredBuild,
   type BuildCommandRunner,
   type RegisteredBuildPreflight,
-} from "../builds.js";
+} from "./builds.js";
 import { artifactDigestForProof, artifactSourceSha256 } from "../artifact/artifact-digest.js";
 import type { TargetContext } from "../target/target-context.js";
-import { assertWebBuildProviderReceipt } from "../web-build-verification.js";
+import { assertWebBuildProviderReceipt } from "./web-build-verification.js";
 
 const EXACT_GIT_SHA = /^[a-f0-9]{40}$/u;
 const HEX_SHA256 = /^[a-f0-9]{64}$/u;

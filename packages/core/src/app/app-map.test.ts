@@ -12,7 +12,7 @@ import { compileBrowserEnvironment } from "@relay/protocol";
 import { createHash } from "node:crypto";
 import { compileAppMapScenarioTest } from "../app-map/app-map-test-compiler.js";
 import { frozenRawAccessibilitySources } from "../app-map/app-map-test-raw-accessibility.js";
-import { loadFrozenRawAccessibilityEvidence } from "../frozen/frozen-raw-accessibility.js";
+import { loadFrozenRawAccessibilityEvidence } from "../offline/frozen-raw-accessibility.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";
 import {
   AppMapDomainError,

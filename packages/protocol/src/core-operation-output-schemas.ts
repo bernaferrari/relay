@@ -13,7 +13,7 @@ import {
   targetSnapshotOutputSchema,
   iosSessionOperationLifecycleOutputSchema,
 } from "./target/target-output-schemas.js";
-import { sourceRevisionSchema } from "./app-map/app-map-test-run-schemas.js";
+import { authoringEvidenceSchema } from "./authoring/authoring-session-schema.js";
 
 export const executionJobOutputSchema = z
   .object({
@@ -33,8 +33,68 @@ const persistedRun = executionJobOutputSchema.extend({
   writtenAt: z.number().optional(),
   artifacts: z.array(z.unknown()).optional(),
   evidence: z.unknown().optional(),
-  sourceRevision: sourceRevisionSchema.optional(),
 });
+
+const iosVisualVerificationFailureSchema = z
+  .object({
+    stage: z.enum(["before-capture", "action", "after-capture", "fingerprint"]),
+    message: z.string(),
+    at: z.number(),
+  })
+  .strict();
+const iosVisualVerificationCaptureSchema = z
+  .object({
+    capturedAt: z.number(),
+    fingerprint: z.string().optional(),
+    evidence: authoringEvidenceSchema.optional(),
+  })
+  .strict();
+const iosVisualVerificationTimingSchema = z
+  .object({
+    startedAt: z.number(),
+    finishedAt: z.number(),
+    settleMs: z.number(),
+    beforeCapturedAt: z.number().optional(),
+    actionStartedAt: z.number().optional(),
+    actionFinishedAt: z.number().optional(),
+    afterCapturedAt: z.number().optional(),
+  })
+  .strict();
+const iosVisualVerificationSchema = z
+  .object({
+    serial: z.string(),
+    timing: iosVisualVerificationTimingSchema,
+    outcome: z.enum(["changed", "unchanged", "incomplete"]),
+    failure: iosVisualVerificationFailureSchema.optional(),
+    failures: z.array(iosVisualVerificationFailureSchema).optional(),
+    before: iosVisualVerificationCaptureSchema.optional(),
+    after: iosVisualVerificationCaptureSchema.optional(),
+    repair: z
+      .object({
+        schemaVersion: z.literal(1),
+        kind: z.literal("ios-visual-transition"),
+        serial: z.string(),
+        interaction: z
+          .object({
+            id: z.string(),
+            label: z.string(),
+            input: z.record(z.string(), z.unknown()),
+          })
+          .strict(),
+        timing: iosVisualVerificationTimingSchema,
+        outcome: z.enum(["changed", "unchanged", "incomplete"]),
+        failure: iosVisualVerificationFailureSchema.optional(),
+        failures: z.array(iosVisualVerificationFailureSchema).optional(),
+        before: iosVisualVerificationCaptureSchema.optional(),
+        after: iosVisualVerificationCaptureSchema.optional(),
+        manifest: authoringEvidenceSchema,
+      })
+      .strict()
+      .optional(),
+    repairError: z.string().optional(),
+    cleanupErrors: z.array(z.string()).optional(),
+  })
+  .strict();
 
 const deviceLeaseOutputSchema = z
   .object({
@@ -265,6 +325,22 @@ const launchedBuildOutputSchema = z
   .object({ launched: z.literal(true), applicationId: z.string().min(1) })
   .strict();
 
+const webBuildProviderReceiptOutputSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    issuer: z.literal("relay-web-deployment-provider"),
+    provider: z.string().min(1),
+    deploymentId: z.string().min(1),
+    sourceUrl: z.string().min(1),
+    sourceSha: z.string().min(1),
+    deploymentDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/u),
+    configuration: z.string().min(1),
+    environmentRevision: z.string().min(1),
+    issuedAt: z.number(),
+    signature: z.string().min(1),
+  })
+  .strict();
+
 const buildOutputSchema = z
   .object({
     id: z.string().min(1),
@@ -279,7 +355,7 @@ const buildOutputSchema = z
     applicationId: z.string().optional(),
     deploymentDigest: z.string().optional(),
     webDeploymentMode: z.enum(["provider-verified", "self-managed"]).optional(),
-    webProviderReceipt: z.unknown().optional(),
+    webProviderReceipt: webBuildProviderReceiptOutputSchema.optional(),
     status: z.enum(["uploaded", "ready", "failed", "archived"]),
     createdAt: z.number(),
     updatedAt: z.number(),
@@ -467,7 +543,7 @@ const stepRunOutputSchema = z
       .strict()
       .optional(),
     iosSessionLifecycle: iosSessionOperationLifecycleOutputSchema.optional(),
-    iosVisualVerification: z.record(z.string(), z.unknown()).optional(),
+    iosVisualVerification: iosVisualVerificationSchema.optional(),
     stepReview: z
       .object({
         captureCurrent: z
@@ -530,7 +606,17 @@ export const coreOperationOutputSchemas = {
       uptimeMs: z.number(),
       pid: z.number(),
       startedAt: z.number(),
-      activeJob: z.record(z.string(), z.unknown()).nullable(),
+      activeJob: z
+        .object({
+          id: z.string().min(1),
+          action: z.string().min(1),
+          status: z.string().min(1),
+          serial: z.string().nullable(),
+          deviceName: z.string().nullable(),
+          startedAt: z.number().nullable(),
+        })
+        .strict()
+        .nullable(),
       activeJobs: z.array(
         z
           .object({

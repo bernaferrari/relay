@@ -3,7 +3,7 @@
  * Native text entry owns replacement and the physical iOS listener path.
  * The device facade supplies observation and target mutation plumbing.
  */
-import { getExecutingJobId } from "../control.js";
+import { getExecutingJobId } from "../execution/control.js";
 import { clearAndroidTextWithAdb, moveAndroidCaretToEnd } from "./device-mutation-adapter.js";
 import {
   explicitPointResolution,
@@ -29,7 +29,7 @@ import {
   planTextEntryFocus,
   type TextEntryFocusPlan,
   type TextEntryTarget,
-} from "../text-entry-focus.js";
+} from "./text-entry-focus.js";
 import {
   currentTargetContext,
   selectedPlatform,

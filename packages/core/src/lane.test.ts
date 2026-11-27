@@ -8,7 +8,7 @@ import {
   readAppMap,
   resetControlDatabaseCache,
 } from "./collaboration/collaboration.js";
-import { readTarget, saveBrowserTarget } from "./targets.js";
+import { readTarget, saveBrowserTarget } from "./target/targets.js";
 import {
   LANE_FIXTURE_PERSIST_ERROR,
   LANE_UNSIGNED_PROFILE_ERROR,

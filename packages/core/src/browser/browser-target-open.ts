@@ -15,7 +15,7 @@ import {
 import { attachBrowserEvidence } from "./browser-target-evidence.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { activePage, browserSessions, sessionFor, type BrowserSession } from "./browser-target.js";
-import { readTarget } from "../targets.js";
+import { readTarget } from "../target/targets.js";
 import { automaticVideoAllowed, getEvidenceCollectionPolicy } from "../evidence/evidence-policy.js";
 
 /** Server-owned Playwright handle; UI never receives it. */

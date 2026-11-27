@@ -26,7 +26,7 @@ import {
 import { readAuthoringEvidence } from "./authoring-evidence.js";
 import { nativeCaptureTargetProfile } from "../native/native-target-profile.js";
 import { recordedActions } from "../app-map/recording-actions.js";
-import { loadFrozenRecordedEntrances } from "../frozen/frozen-recorded-entrance.js";
+import { loadFrozenRecordedEntrances } from "../offline/frozen-recorded-entrance.js";
 import { authoringOriginApplication } from "./authoring-session-runtime.js";
 import type { AppMapCompiledTest } from "@relay/protocol";
 

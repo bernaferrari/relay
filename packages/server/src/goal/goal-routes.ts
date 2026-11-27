@@ -18,13 +18,13 @@ import type {
   GoalSessionResult,
   GoalSessionStartInput,
 } from "@relay/protocol";
+import { createRelayOperationPort } from "@relay/workflows";
 import {
   createGoalExplorationRunner,
   createGoalPromotionRunner,
   createGoalSessionRunner,
-  createRelayOperationPort,
   type GoalPromotionRunner,
-} from "@relay/workflows";
+} from "@relay/workflow-runners";
 import { HttpError, json, matchPath, parseJsonBody } from "../http.js";
 import { resolveCommandActor, type RequestContext } from "../security.js";
 

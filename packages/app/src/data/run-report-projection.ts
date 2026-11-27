@@ -741,6 +741,8 @@ export function projectRunReport(
   const browserProfile = record(run.browserCaseProfile);
   const targetProfile = record(run.targetProfile);
   const viewport = record(browserProfile?.viewport);
+  const viewportWidth = finite(viewport?.width);
+  const viewportHeight = finite(viewport?.height);
   const resolvedInputs = record(run.resolvedInputs);
   const account = record(run.account);
   const authenticationHealth = record(run.authenticationHealth);
@@ -767,8 +769,8 @@ export function projectRunReport(
     ...(text(targetProfile?.id) ? { targetProfileId: text(targetProfile?.id) } : {}),
     ...(text(run.appVersion) ? { appVersion: text(run.appVersion) } : {}),
     ...(runtimeAccount ? { account: runtimeAccount } : {}),
-    ...(finite(viewport?.width) !== undefined && finite(viewport?.height) !== undefined
-      ? { viewport: `${viewport?.width}×${viewport?.height}` }
+    ...(viewportWidth !== undefined && viewportHeight !== undefined
+      ? { viewport: `${viewportWidth}×${viewportHeight}` }
       : {}),
     ...(text(browserProfile?.locale) ||
     text(resolvedInputs?.locale) ||

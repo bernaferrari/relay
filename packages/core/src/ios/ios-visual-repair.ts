@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import type { AuthoringEvidence } from "@relay/protocol";
 import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
-import { visualEvidenceAllowed } from "../redaction.js";
+import { visualEvidenceAllowed } from "../evidence/redaction.js";
 
 export type IosVisualVerificationInteraction = {
   /** Stable caller-provided id when one exists; Relay assigns one otherwise. */

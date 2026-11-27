@@ -4,8 +4,8 @@ import { join } from "node:path";
 import type { DiscoveryControl } from "@relay/protocol";
 import type { SnapshotNode } from "../device/device.js";
 import { recommendScrollSurfaceCapturePolicy } from "../scroll/scroll-surface-policy.js";
-import { captureScrollableSurveyForTarget } from "../scrollable/scrollable-survey.js";
-import { annotateVisitedRows } from "../tap-preview.js";
+import { captureScrollableSurveyForTarget } from "../scroll/scrollable-survey.js";
+import { annotateVisitedRows } from "../device/tap-preview.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
 
 export type DiscoveryVisitTarget = DiscoveryControl["target"];

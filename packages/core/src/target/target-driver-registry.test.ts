@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDeterministicProviderTestDriver } from "../deterministic-provider-test-driver.js";
+import { createDeterministicProviderTestDriver } from "./deterministic-provider-test-driver.js";
 import { createTargetDriver, TargetDriverCapabilityUnavailableError } from "./target-driver.js";
 import {
   assertProviderTargetExecutionAdmission,

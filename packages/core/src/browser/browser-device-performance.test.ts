@@ -15,7 +15,7 @@ import {
   runWithTargetSupervisorStore,
   TargetSupervisorStore,
 } from "../target/target-supervisor-store.js";
-import { deleteTarget, saveBrowserTarget } from "../targets.js";
+import { deleteTarget, saveBrowserTarget } from "../target/targets.js";
 
 const CHROME =
   process.env.RELAY_TEST_CHROME_PATH ??

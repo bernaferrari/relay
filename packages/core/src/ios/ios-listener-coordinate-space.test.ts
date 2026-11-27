@@ -12,7 +12,7 @@ import {
 } from "./ios-runner-listener-command.js";
 import { inferSnapshotBounds } from "../workspace/workspace-capture.js";
 import { catalogAwarePost } from "./ios-snapshot-catalog.fixtures.js";
-import { registerGrokIosSnapshotCatalogTestProfile } from "../grok/grok-ios-snapshot-catalog.test-profile.js";
+import { registerGrokIosSnapshotCatalogTestProfile } from "../fixtures/ios-snapshot-catalog.test-profile.js";
 
 const setLiveIosRunnerCommandPostForTests: typeof setNativePost = (post) =>
   setNativePost(post ? catalogAwarePost(post) : undefined);

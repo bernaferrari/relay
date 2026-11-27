@@ -9,7 +9,7 @@ import {
   parseAppMapTestExecutionIntentArtifact,
   parseAppMapTestExecutionIntent,
 } from "./app-map-test-execution-intent.js";
-import type { Recipe } from "../recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
 import { preflightCompiledAppMapTestOffline } from "../offline/offline-test-preflight.js";
 
 function fixture(): {

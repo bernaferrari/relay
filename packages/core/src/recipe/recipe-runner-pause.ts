@@ -1,8 +1,12 @@
 import type { Device } from "../device/device.js";
 import { boundedHumanCheckpointTimeoutMs } from "./recipe-runner-readiness.js";
-import { cooperativeCheckpointWithTimeout, requestPause, requestResume } from "../control.js";
-import { publish, now } from "../events.js";
-import { describeTarget, type RecipeStep } from "../recipes.js";
+import {
+  cooperativeCheckpointWithTimeout,
+  requestPause,
+  requestResume,
+} from "../execution/control.js";
+import { publish, now } from "../collaboration/events.js";
+import { describeTarget, type RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 
 /** Execute a human checkpoint and preserve its durable intervention evidence. */

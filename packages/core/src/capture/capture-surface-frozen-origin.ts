@@ -13,12 +13,12 @@ import {
   documentOriginAttestationAuthorizationIsValid,
   type DocumentOriginAttestationAuthorization,
   type DocumentOriginAttestationBinding,
-} from "../document-origin-attestation-authority.js";
-import { mintValidatedFrozenDocumentOrigin } from "../frozen/frozen-document-origin-capability.js";
+} from "./document-origin-attestation-authority.js";
+import { mintValidatedFrozenDocumentOrigin } from "../capture/frozen-document-origin-capability.js";
 import { reviewedDocumentOriginExecutionReferenceIsActive } from "../reviewed/reviewed-document-origin.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "../recipe/recipes.js";
 import { observeScreenIdentity } from "../screen/screen-identity.js";
-import type { ValidatedFrozenDocumentOrigin } from "../scrollable/scrollable-survey.js";
+import type { ValidatedFrozenDocumentOrigin } from "../scroll/scrollable-survey.js";
 
 type CaptureSurfaceStep = Extract<RecipeStep, { kind: "capture-surface" }>;
 

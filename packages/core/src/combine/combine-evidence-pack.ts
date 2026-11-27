@@ -27,7 +27,7 @@ import {
 } from "@relay/protocol";
 import type { SnapshotNode } from "../device/device.js";
 import { pngDimensions } from "../ios/ios-geometry.js";
-import { frameObservations } from "../frame-observation.js";
+import { frameObservations } from "../device/frame-observation.js";
 import { parseFrameTreeNodes, readFrameTreeNodes } from "../run/run-frame-tree.js";
 import {
   analyzeCombineEvidenceBatchData,
@@ -42,16 +42,16 @@ import {
   writeReviewChecklistFiles,
   type ReviewChecklistTodoItem,
 } from "./combine-evidence-review-checklist.js";
-import { listPersistedRuns, runsRoot } from "../runs/runs.js";
+import { listPersistedRuns, runsRoot } from "../run/run-store.js";
 import { slugEvidencePathSegment } from "../screen/screen-identity.js";
 import { listJobs, type TestJob } from "../session/session.js";
 import { captureReviewQueueForPlan } from "../capture/capture-review-plan.js";
 import {
   coverageOutcomesFromArtifacts,
   describeCoverageStepReasons,
-} from "../coverage-step-outcome.js";
-import { composeScrollSurveyFrames } from "../scrollable/scrollable-survey.js";
-import type { ScrollSurveyFrame } from "../scrollable/scrollable-survey-types.js";
+} from "../recipe/coverage-step-outcome.js";
+import { composeScrollSurveyFrames } from "../scroll/scrollable-survey.js";
+import type { ScrollSurveyFrame } from "../scroll/scrollable-survey-types.js";
 import { findWorkspaceRoot } from "../workspace/workspace-root.js";
 
 export type { CombineEvidencePackManifest };
@@ -305,7 +305,7 @@ function caseStateSignature(job: CombineEvidenceCase): string {
     const frozen = (artifact.data as { values?: unknown }).values;
     if (frozen && typeof frozen === "object") remember(frozen as Record<string, unknown>);
   }
-  return JSON.stringify([...values].sort());
+  return JSON.stringify([...values].sort(([left], [right]) => left.localeCompare(right)));
 }
 
 /**

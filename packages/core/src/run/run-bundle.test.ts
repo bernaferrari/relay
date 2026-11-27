@@ -11,7 +11,7 @@ import {
   persistRun,
   verifyRelayRunBundle,
   writeFramePng,
-} from "../runs/runs.js";
+} from "./run-store.js";
 
 function completedJob(runDir: string): TestJob {
   const at = Date.now();

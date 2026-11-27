@@ -7,7 +7,8 @@ import {
 
 export function capturedScreenTitle(observation?: AuthoringObservation): string | undefined {
   const candidates = (observation?.nodes ?? []).flatMap((node, index) => {
-    const role = String(node.role ?? node.type ?? "");
+    const role =
+      typeof node.role === "string" ? node.role : typeof node.type === "string" ? node.type : "";
     const identifier = typeof node.identifier === "string" ? node.identifier : "";
     const htmlHeading = /^h([1-6])$/iu.exec(role);
     const heading =
@@ -61,7 +62,12 @@ export function newDestinationTitle(input: {
     nodes: (input.after?.nodes ?? []).map((node) => {
       const label = node.label ?? node.text;
       return {
-        role: String(node.role ?? node.type ?? ""),
+        role:
+          typeof node.role === "string"
+            ? node.role
+            : typeof node.type === "string"
+              ? node.type
+              : "",
         ...(typeof label === "string" ? { label } : {}),
         ...(typeof node.identifier === "string" ? { identifier: node.identifier } : {}),
       };

@@ -4,7 +4,7 @@ import {
   getExecutingJobId,
   JobCancelledError,
   JobControlOwnershipError,
-} from "../control.js";
+} from "../execution/control.js";
 import type { Device } from "../device/device.js";
 import { probeLiveIosRunnerListener } from "../ios/ios-runner-listener.js";
 import type { TargetContext } from "../target/target-context.js";

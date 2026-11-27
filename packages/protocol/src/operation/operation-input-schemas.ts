@@ -621,9 +621,15 @@ export const operationInputSchemas = {
         .preprocess(
           (value) => {
             if (value === undefined) return undefined;
-            const items = (Array.isArray(value) ? value : String(value).split(","))
-              .map((item) => String(item).trim())
-              .filter(Boolean);
+            const rawItems = Array.isArray(value)
+              ? value
+              : typeof value === "string"
+                ? value.split(",")
+                : value;
+            if (!Array.isArray(rawItems)) return rawItems;
+            const items = rawItems
+              .map((item) => (typeof item === "string" ? item.trim() : item))
+              .filter((item) => item !== "");
             return items.length ? items : undefined;
           },
           z.array(identifier("Joined run identifier")).max(20).optional(),

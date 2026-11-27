@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./outcomes": "./src/outcome-jobs.ts",
     "./run-outcomes": "./src/run-outcome-jobs.ts",
     "./operation-port": "./src/operation-port.ts",
     "./proof": "./src/proof-workflow.ts",
@@ -15,7 +14,14 @@
     "./target-catalog": "./src/target-catalog.ts",
     "./types": "./src/types.ts",
     "./testing": "./src/testing.ts",
-    "./task-guides": "./src/task-guides.ts"
+    "./task-guides": "./src/task-guides.ts",
+    "./authoring-workflow": "./src/authoring-workflow.ts",
+    "./recording-outcome-jobs": "./src/recording-outcome-jobs.ts",
+    "./recording-path-context": "./src/recording-path-context.ts",
+    "./relay-workflows": "./src/relay-workflows.ts",
+    "./test-response-fixtures": "./src/test-response-fixtures.ts",
+    "./workflow-watch": "./src/workflow-watch.ts",
+    "./run-outcome-jobs": "./src/run-outcome-jobs.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -23,11 +29,11 @@
     "test:coverage": "node --import tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov src/*.test.ts"
   },
   "dependencies": {
-    "@relay/core": "workspace:*",
     "@relay/protocol": "workspace:*",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@relay/core": "workspace:*",
     "@types/node": "^26.6.4",
     "tsx": "^4.23.15",
     "typescript": "catalog:"

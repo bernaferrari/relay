@@ -1,5 +1,5 @@
 import type { AppMapCompiledTest } from "@relay/protocol";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 
 export type NativePendingModelSelectionResolver = (
   plan: AppMapCompiledTest,

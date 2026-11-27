@@ -1,7 +1,7 @@
 import {
   targetExecutionReadiness,
   type TargetExecutionReadiness,
-} from "@relay/core/target-execution-readiness";
+} from "@relay/protocol/target/target-execution-readiness";
 import type { AuthoringTarget, DeviceLease, DeviceSummary, OperationOutput } from "@relay/protocol";
 import type { RelayOperationPort } from "./operation-port.js";
 

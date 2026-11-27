@@ -8,6 +8,7 @@ import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
 import { callerCwd } from "./caller-cwd.js";
 import { closestMatch } from "./cli-suggest.js";
 import { CliError, ExitCode, UsageError } from "./errors.js";
+import { unknownText } from "./unknown-text.js";
 
 export type EverydayInvoke = (
   operationId: string,
@@ -244,7 +245,7 @@ export async function resolveDevice(invoke: EverydayInvoke, wanted: string): Pro
     }
     const listed = matching
       .slice(0, 10)
-      .map((device) => `  ${String(device.name ?? deviceId(device))}  (${deviceId(device)})`);
+      .map((device) => `  ${unknownText(device.name) || deviceId(device)}  (${deviceId(device)})`);
     throw new UsageError(
       [
         `${matching.length} ${platform} devices are connected. Choose one with --device <name or id>:`,

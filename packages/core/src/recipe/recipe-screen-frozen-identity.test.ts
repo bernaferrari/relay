@@ -7,10 +7,10 @@ import type { SnapshotNode } from "../device/device.js";
 import {
   GROK_ANDROID_APP_TEST_POLICY,
   registerGrokIdentityTestPolicies,
-} from "../app/app-identity-test-policies.js";
+} from "../fixtures/app-identity-test-policies.js";
 import { frozenScreenIdentityObservations } from "./recipe-screen-frozen-identity.js";
 import { observeScreenIdentity, observeScreenIdentityForHost } from "../screen/screen-identity.js";
-import type { RecipeStep } from "../recipes.js";
+import type { RecipeStep } from "./recipes.js";
 registerGrokIdentityTestPolicies();
 
 const fixture = JSON.parse(

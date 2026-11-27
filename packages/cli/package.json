@@ -21,6 +21,7 @@
     "@relay/core": "workspace:*",
     "@relay/product": "workspace:*",
     "@relay/protocol": "workspace:*",
+    "@relay/workflow-runners": "workspace:*",
     "@relay/workflows": "workspace:*"
   },
   "devDependencies": {

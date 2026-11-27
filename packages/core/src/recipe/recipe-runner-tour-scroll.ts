@@ -1,4 +1,4 @@
-import type { TourStop } from "../tour.js";
+import type { TourStop } from "../discovery/tour.js";
 
 export type TourRowAlignment = {
   stops: TourStop[];
