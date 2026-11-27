@@ -14,14 +14,23 @@ export function assertInboxCodeActDecision(
   decision: ActDecision,
   candidates: ActCandidate[],
 ): void {
-  if (decision.action !== "type") return;
-  if (decision.text !== INBOX_CODE_REFERENCE) {
-    throw new Error("Test inbox code may be typed only through its opaque secret reference");
-  }
-  if (decision.candidateId) {
-    const candidate = candidates.find((item) => item.id === decision.candidateId);
-    if (!candidate?.editable) {
-      throw new Error("Test inbox code may be typed only into an editable candidate");
+  const typing =
+    decision.action === "type"
+      ? [decision]
+      : decision.action === "batch"
+        ? decision.actions.filter(
+            (item): item is Extract<typeof item, { action: "type" }> => item.action === "type",
+          )
+        : [];
+  for (const typeAction of typing) {
+    if (typeAction.text !== INBOX_CODE_REFERENCE) {
+      throw new Error("Test inbox code may be typed only through its opaque secret reference");
+    }
+    if (typeAction.candidateId) {
+      const candidate = candidates.find((item) => item.id === typeAction.candidateId);
+      if (!candidate?.editable) {
+        throw new Error("Test inbox code may be typed only into an editable candidate");
+      }
     }
   }
 }

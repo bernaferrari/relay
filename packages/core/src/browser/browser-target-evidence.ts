@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import type { Page, Request, Response } from "playwright-core";
 import type { SnapshotNode } from "../device/device.js";
 import { installBrowserConsentOverlayHandler } from "./browser-consent-overlay.js";
+import {
+  isBrowserExecutionContextDestroyed,
+  snapshotBrowserPageNodes,
+} from "./browser-snapshot-nodes.js";
+
+export { isBrowserExecutionContextDestroyed } from "./browser-snapshot-nodes.js";
 
 /** A bounded network event retained for Browser Device evidence. */
 export type BrowserNetworkEntry = {
@@ -39,19 +45,8 @@ export type BrowserEvidenceSession = {
   networkDropped: number;
 };
 
-const INTERACTIVE =
-  'button, a[href], input, textarea, select, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
-const SEMANTIC_SNAPSHOT = `${INTERACTIVE}, [id], [data-testid], h1, h2, h3, p, label`;
 const MAX_EVIDENCE_ENTRIES = 1_000;
 const MAX_NETWORK_BODY_BYTES = 256 * 1024;
-
-/** Cross-origin taps destroy the page's JS world before the after-snapshot. */
-export function isBrowserExecutionContextDestroyed(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /execution context was destroyed|most likely because of a navigation|Target closed/iu.test(
-    message,
-  );
-}
 
 /** An immediate after-click frame can straddle document replacement and stall
  * Chromium's capture. Bound that read, then reacquire the current owned page
@@ -158,94 +153,12 @@ async function captureResponseBody(response: Response, entry: BrowserNetworkEntr
   }
 }
 
+/** Bounded semantic snapshot of the page. The cross-document collector in
+ * browser-snapshot-nodes owns frame traversal, viewport prioritization, and
+ * occlusion filtering; this export keeps the evidence module its single
+ * public entry point. */
 export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<SnapshotNode[]> {
-  const capture = () => collectBrowserSnapshotNodes(page, maxNodes);
-  try {
-    return await capture();
-  } catch (error) {
-    if (!isBrowserExecutionContextDestroyed(error)) throw error;
-    await page.waitForLoadState("domcontentloaded", { timeout: 15_000 }).catch(() => undefined);
-    return await capture();
-  }
-}
-
-async function collectBrowserSnapshotNodes(page: Page, maxNodes: number): Promise<SnapshotNode[]> {
-  return await page.locator(`${SEMANTIC_SNAPSHOT}, div, span, li, td, th, dt, dd`).evaluateAll(
-    (elements, options) => {
-      const identifierCounts = new Map<string, number>();
-      for (const element of elements) {
-        const identifier = element.getAttribute("data-testid") || element.id;
-        if (identifier)
-          identifierCounts.set(identifier, (identifierCounts.get(identifier) ?? 0) + 1);
-      }
-      const visible = elements.filter((element) => {
-        // Plain feature copy is evidence too. Keep only text-bearing wrappers,
-        // not every layout div, so extra structure cannot exhaust the budget.
-        if (
-          !element.matches(options.semantic) &&
-          !Array.from(element.childNodes).some(
-            (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
-          )
-        )
-          return false;
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
-      });
-      const bounded = visible.slice(0, options.limit);
-      return bounded.map((element, index) => {
-        const html = element as HTMLElement;
-        const input = element as HTMLInputElement;
-        const rect = element.getBoundingClientRect();
-        const role = element.matches(options.semantic)
-          ? element.getAttribute("role") || element.tagName.toLowerCase()
-          : "text";
-        const identifier = element.getAttribute("data-testid") || element.id || undefined;
-        const hittable = element.matches(options.interactive);
-        const renderedText = html.innerText?.trim() ?? "";
-        const formControl = /^(INPUT|TEXTAREA|SELECT)$/u.test(element.tagName);
-        const renderedContent = formControl ? String(input.value ?? "") : renderedText;
-        const label =
-          element.getAttribute("aria-label") ||
-          element.getAttribute("title") ||
-          (input.labels?.[0]?.textContent ?? "") ||
-          html.innerText?.trim() ||
-          input.placeholder ||
-          input.name ||
-          "";
-        let parentIndex: number | undefined;
-        let ancestor = element.parentElement;
-        while (ancestor) {
-          const found = bounded.indexOf(ancestor);
-          if (found !== -1) {
-            parentIndex = found;
-            break;
-          }
-          ancestor = ancestor.parentElement;
-        }
-        return {
-          index,
-          ...(parentIndex !== undefined ? { parentIndex } : {}),
-          role,
-          type: role,
-          label: label.slice(0, 500),
-          content: (input.type === "password" ? "••••••••" : renderedContent).slice(0, 500),
-          value:
-            input.type === "password"
-              ? "••••••••"
-              : String(formControl ? (input.value ?? "") : renderedText).slice(0, 500),
-          identifier: identifier && identifierCounts.get(identifier) === 1 ? identifier : undefined,
-          enabled: !(input.disabled || element.getAttribute("aria-disabled") === "true"),
-          selected: element.getAttribute("aria-selected") === "true",
-          focused: document.activeElement === element,
-          visibleToUser: true,
-          hittable,
-          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        };
-      });
-    },
-    { limit: maxNodes, interactive: INTERACTIVE, semantic: SEMANTIC_SNAPSHOT },
-  );
+  return snapshotBrowserPageNodes(page, maxNodes);
 }
 
 /** Fingerprint the same bounded JPEG surface that the Browser Device paints. */

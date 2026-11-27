@@ -1,6 +1,8 @@
 import * as z from "zod/v4";
 import type { RecipeStep } from "../recipes.js";
 import { savedSignInKeySchema } from "../sign-in/saved-sign-in.js";
+import { createActuationStepSchemas } from "./recipe-step-actuation-schema.js";
+import { createTourStepSchema } from "./recipe-step-tour-schema.js";
 import { createInboxStepSchema } from "./recipe-step-inbox-schema.js";
 import {
   reviewedDocumentOriginReferenceSchema,
@@ -340,7 +342,7 @@ const scrollStepSchema = z
   .object({
     ...recipeStepMetadataShape,
     kind: z.literal("scroll"),
-    direction: z.enum(["down", "up"]),
+    direction: z.enum(["down", "up", "left", "right"]),
     amount: z.number().optional(),
     until: z
       .object({
@@ -362,8 +364,19 @@ const mappedPreludeStepSchema = z.union([
   swipeStepSchema,
   scrollStepSchema,
 ]);
+const actuationStepSchemas = createActuationStepSchemas(recipeStepMetadataShape, stepTargetSchema);
+const tourStepSchema = createTourStepSchema({
+  metadataShape: recipeStepMetadataShape,
+  screenIdentityObservationSchema,
+  mappedPreludeStepSchema,
+  destinationEvidenceSurfaceSchema,
+});
+
 const recipeStepSchemaUnion = z.union([
   tapStepSchema,
+  actuationStepSchemas.hoverStepSchema,
+  actuationStepSchemas.selectStepSchema,
+  actuationStepSchemas.pressKeyStepSchema,
   z
     .object({
       ...recipeStepMetadataShape,
@@ -647,57 +660,7 @@ const recipeStepSchemaUnion = z.union([
         .optional(),
     })
     .strict(),
-  z
-    .object({
-      ...recipeStepMetadataShape,
-      kind: z.literal("tour"),
-      depth: z.number().optional(),
-      screenshot: z.boolean().optional(),
-      captureOrigin: z.boolean().optional(),
-      originVerifiedBySetup: z.boolean().optional(),
-      maxStops: z.number().optional(),
-      excludeLanguageRows: z.boolean().optional(),
-      originScreenId: z.string().optional(),
-      originTitle: z.string().optional(),
-      originFingerprint: z.string().optional(),
-      originAliases: z.array(z.string()).optional(),
-      originObservations: z.array(screenIdentityObservationSchema).optional(),
-      preludeSteps: z.array(mappedPreludeStepSchema).max(16).optional(),
-      preludeStartFingerprint: z.string().optional(),
-      preludeStartAliases: z.array(z.string()).optional(),
-      fallbackStops: z
-        .array(
-          z
-            .object({
-              label: z.string(),
-              identifier: z.string().optional(),
-              point: z.object({ x: z.number(), y: z.number() }).strict().optional(),
-              capture: z.boolean().optional(),
-              optional: z.boolean().optional(),
-              evidenceSurface: destinationEvidenceSurfaceSchema.optional(),
-            })
-            .strict(),
-        )
-        .optional(),
-      landmarkStops: z
-        .array(
-          z
-            .object({
-              label: z.string(),
-              identifier: z.string().optional(),
-              point: z.object({ x: z.number(), y: z.number() }).strict().optional(),
-            })
-            .strict(),
-        )
-        .optional(),
-      mappedStopsOnly: z.boolean().optional(),
-      scrollSearch: z
-        .object({ maxScrolls: z.number().optional(), amount: z.number().optional() })
-        .strict()
-        .optional(),
-      returnAfterLast: z.boolean().optional(),
-    })
-    .strict(),
+  tourStepSchema,
   z.object({ ...recipeStepMetadataShape, kind: z.literal("flow"), flow: z.string() }).strict(),
   z
     .object({

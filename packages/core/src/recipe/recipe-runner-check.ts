@@ -12,6 +12,22 @@ import { createModelClient } from "../model/model-provider.js";
 const MAX_CANDIDATES = 120;
 const MAX_EVIDENCE = 4;
 
+/**
+ * Language a text-only semantic reduction can never prove. A check phrased
+ * in spatial, visual, counting, or ordering terms must stay with the visual
+ * judge: reducing it to continued text visibility would cache a proof that
+ * never measured what the check is about. The lexical gate is deliberately
+ * conservative — a false positive costs one visual judgment, while a false
+ * negative caches a wrong proof forever.
+ */
+const VISUAL_CHECK_LANGUAGE =
+  /\b(?:overlaps?|cover(?:s|ed|ing)?|layout|align(?:s|ed|ment)?|position(?:s|ed)?|spacing|space between|colou?rs?|fonts?|icons?|images?|pictures?|photos?|logos?|badges?|borders?|shadows?|gradients?|sizes?|width|height|hidden behind|next to|above|below|left of|right of|between|beside|order(?:ing|ed)?|counts?|number of|exactly \d|visual(?:ly)?|appears? (?:aligned|centered|correct)|design|styles?|styled|themes?|dark mode|centered|truncat(?:ed|es|ion)|ellips|wrap(?:s|ped|ping)?|cut off|clipped|responsive|aspect ratio)\b/iu;
+
+/** True when any criterion names visual evidence a semantic reduction cannot prove. */
+export function checkCriteriaRequireVisualJudgment(criteria: readonly string[]): boolean {
+  return criteria.some((criterion) => VISUAL_CHECK_LANGUAGE.test(criterion));
+}
+
 export type CheckCandidate = {
   id: string;
   text?: string;
@@ -173,6 +189,9 @@ export async function resolveSemanticCheckSteps(
   criteria: string[],
   model?: string,
 ): Promise<ResolvedCheckSteps | undefined> {
+  // The reduction is an optimization; a layout or visual check cached as text
+  // visibility is a correctness bug. Visual stays visual.
+  if (checkCriteriaRequireVisualJudgment(criteria)) return undefined;
   const candidates = checkCandidates(await snapshot(device, { interactiveOnly: false }));
   if (!candidates.length) return undefined;
   const decide = registeredDecider ?? decideViaModel;

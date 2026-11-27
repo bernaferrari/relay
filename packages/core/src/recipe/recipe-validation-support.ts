@@ -159,8 +159,13 @@ function parseScrollStep(
   index: number,
   note?: string,
 ): Extract<RecipeStep, { kind: "scroll" }> {
-  if (raw.direction !== "down" && raw.direction !== "up") {
-    throw stepErr(index, 'scroll requires direction: "down" | "up"');
+  if (
+    raw.direction !== "down" &&
+    raw.direction !== "up" &&
+    raw.direction !== "left" &&
+    raw.direction !== "right"
+  ) {
+    throw stepErr(index, 'scroll requires direction: "down" | "up" | "left" | "right"');
   }
   if (raw.amount !== undefined && !isNumber(raw.amount)) {
     throw stepErr(index, "scroll.amount must be a number");

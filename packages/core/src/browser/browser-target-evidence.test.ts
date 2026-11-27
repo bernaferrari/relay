@@ -18,19 +18,32 @@ test("navigation-destroyed Playwright worlds are retried on the next document", 
   assert.equal(isBrowserExecutionContextDestroyed(new Error("No match for Sign up")), false);
 
   let attempts = 0;
+  const frameCollection = {
+    viewport: { width: 800, height: 600 },
+    identifiers: [],
+    nodes: [
+      {
+        role: "h1",
+        label: "Create your account",
+        x: 10,
+        y: 10,
+        rect: { width: 100, height: 20 },
+        enabled: true,
+        visibleToUser: true,
+      },
+    ],
+  };
   const page = {
     waitForLoadState: async () => undefined,
-    locator: () => ({
-      evaluateAll: async () => {
-        attempts += 1;
-        if (attempts === 1) {
-          throw new Error(
-            "locator.evaluateAll: Execution context was destroyed, most likely because of a navigation",
-          );
-        }
-        return [{ role: "h1", label: "Create your account" }];
-      },
-    }),
+    evaluate: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error(
+          "frame.evaluate: Execution context was destroyed, most likely because of a navigation",
+        );
+      }
+      return frameCollection;
+    },
   };
   const nodes = await snapshotBrowserPage(page as never);
   assert.equal(attempts, 2);

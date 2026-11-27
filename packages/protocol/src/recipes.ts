@@ -99,6 +99,33 @@ export type StepTarget = {
   point?: StepPoint;
 };
 
+/** Bounded keyboard keys a press-key step may actuate. Lowercase is the
+ * canonical wire form; runners map them onto platform key names. */
+export type PressKeyName =
+  | "escape"
+  | "tab"
+  | "enter"
+  | "backspace"
+  | "delete"
+  | "arrowup"
+  | "arrowdown"
+  | "arrowleft"
+  | "arrowright"
+  | "home"
+  | "end"
+  | "pageup"
+  | "pagedown"
+  | "a"
+  | "c"
+  | "k"
+  | "v"
+  | "x"
+  | "z";
+
+/** `controlOrMeta` resolves against the host the browser actually runs on, so
+ * an authored shortcut stays honest across macOS and Linux/Windows hosts. */
+export type PressKeyModifier = "control" | "meta" | "shift" | "alt" | "controlOrMeta";
+
 export type RecordedSelectorCandidate = {
   strategy: "identifier" | "ref" | "label" | "text" | "point";
   label: string;
@@ -355,7 +382,7 @@ export type RecipeStep = RecipeStepMetadata &
       }
     | {
         kind: "scroll";
-        direction: "down" | "up";
+        direction: "down" | "up" | "left" | "right";
         amount?: number;
         /** Scroll until this mapped screen identity is revealed. This makes
          * list navigation resilient to text reflow and viewport changes. */
@@ -385,6 +412,27 @@ export type RecipeStep = RecipeStepMetadata &
         durationMs?: number;
       }
     | { kind: "key"; key: "back" | "home" | "recents" }
+    | {
+        /** Hover the pointer over a semantic target without clicking. Browser
+         * targets only: reveals hover-only menus, tooltips, and affordances. */
+        kind: "hover";
+        target: StepTarget;
+      }
+    | {
+        /** Choose a visible option of a native HTML select. Browser targets
+         * only; custom listbox widgets are ordinary taps instead. */
+        kind: "select";
+        target: StepTarget;
+        option: string;
+      }
+    | {
+        /** One bounded keyboard key or shortcut chord. Browser targets only.
+         * Letter keys are shortcut chords and require a control-ish modifier;
+         * literal text entry belongs to `type` steps. */
+        kind: "press-key";
+        key: PressKeyName;
+        modifiers?: PressKeyModifier[];
+      }
     | { kind: "sleep"; ms: number }
     | {
         kind: "wait-for";

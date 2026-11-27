@@ -53,6 +53,12 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `swipe ${arrowForSwipe(step.from, step.to)} ${Math.round(step.from.x)},${Math.round(step.from.y)} → ${Math.round(step.to.x)},${Math.round(step.to.y)}`;
     case "key":
       return `Key: ${step.key}`;
+    case "hover":
+      return `Hover ${describeTarget(step.target)}`;
+    case "select":
+      return `Select ${JSON.stringify(step.option)} in ${describeTarget(step.target)}`;
+    case "press-key":
+      return `Press ${[...(step.modifiers ?? []), step.key].join("+")}`;
     case "sleep":
       return `Sleep ${step.ms}ms`;
     case "wait-for":

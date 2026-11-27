@@ -73,3 +73,14 @@ export function applyCoverageOutcomeToTrace(
     step.title = describeCoverageStepReason("transition-executed");
   }
 }
+
+/** A zero-timeout optional wait-for outside any condition is a coverage
+ * leftover probe, not a real wait: it exists to observe a screen fragment. */
+export function isLeftoverInspectPeek(step: RecipeStep): boolean {
+  return (
+    step.kind === "wait-for" &&
+    step.optional === true &&
+    step.timeoutMs === 0 &&
+    step.when === undefined
+  );
+}

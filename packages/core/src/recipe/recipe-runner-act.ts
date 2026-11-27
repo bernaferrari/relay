@@ -1,12 +1,12 @@
 /**
  * Plain-English `act` steps. The model never touches the target directly: it
- * picks one concrete tap/type/scroll/back from the live UI tree, and the runner
- * executes that as an ordinary recipe step so tracing, target resolution,
- * cancellation, and evidence stay identical to recorded steps.
+ * picks concrete actions from the live UI tree — or, as a bounded fallback, a
+ * screenshot coordinate — and the runner executes them as ordinary recipe
+ * steps so tracing, target resolution, cancellation, and evidence stay
+ * identical to recorded steps.
  */
-import { z } from "zod";
-import type { RecipeStep, StepTarget } from "@relay/protocol";
-import { snapshot, type Device, type SnapshotNode } from "../device/device.js";
+import type { RecipeStep } from "@relay/protocol";
+import { snapshot, type Device } from "../device/device.js";
 import { captureScreenshot, cleanupScreenshot } from "../workspace/workspace-capture.js";
 import { createModelClient } from "../model/model-provider.js";
 import { now } from "../collaboration/events.js";
@@ -16,6 +16,18 @@ import { describeRecipeStep } from "./recipe-presentation.js";
 import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js";
 import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
 import { savedPathStepsAreExecutable } from "../app-map/act-cache-steps.js";
+import { browserSessionForDevice } from "../browser/browser-live-handles.js";
+import {
+  actCandidates,
+  actDecisionSchema,
+  actPrompt,
+  concreteStepsForDecision,
+  normalizeActDecision,
+  type ActAtomicDecision,
+  type ActCandidate,
+  type ActDecision,
+  type ActObservationGeometry,
+} from "./recipe-runner-act-decision.js";
 import {
   assertSignInActDecision,
   prepareActiveSignIn,
@@ -32,32 +44,19 @@ import {
 } from "./recipe-runner-act-inbox.js";
 
 export const DEFAULT_ACT_MAX_ACTIONS = 5;
-const MAX_CANDIDATES = 80;
 
-export type ActCandidate = {
-  id: string;
-  label?: string;
-  role?: string;
-  identifier?: string;
-  editable?: boolean;
-  target: StepTarget;
-};
-
-export type ActDecision =
-  | { action: "done"; reason: string }
-  | { action: "impossible"; reason: string }
-  | { action: "tap"; candidateId: string; reason: string; finishesIntent?: boolean }
-  | {
-      action: "type";
-      text: string;
-      candidateId?: string;
-      submit?: boolean;
-      reason: string;
-      finishesIntent?: boolean;
-    }
-  | { action: "scroll"; direction: "down" | "up"; reason: string }
-  | { action: "back"; reason: string; finishesIntent?: boolean }
-  | { action: "wait"; reason: string };
+export {
+  actCandidates,
+  concreteStepsForDecision,
+  normalizeActDecision,
+  MAX_CANDIDATES,
+} from "./recipe-runner-act-decision.js";
+export type {
+  ActAtomicDecision,
+  ActCandidate,
+  ActDecision,
+  ActObservationGeometry,
+} from "./recipe-runner-act-decision.js";
 
 export type ActDecisionInput = {
   intent: string;
@@ -65,6 +64,7 @@ export type ActDecisionInput = {
   history: string[];
   screenshot?: { mimeType: string; data: string };
   model?: string;
+  geometry?: ActObservationGeometry;
   /** Non-secret authentication context. Secret values are never part of a prompt. */
   auth?: { type: "sign-in"; accountKey: string } | { type: "inbox-code"; inboxKey: string };
 };
@@ -79,85 +79,6 @@ export function registerActDecider(decider: ActDecider): () => void {
   return () => {
     if (registeredDecider === decider) registeredDecider = undefined;
   };
-}
-
-const EDITABLE_TYPES =
-  /textfield|textarea|edittext|searchfield|securetextfield|input|textbox|combobox/i;
-
-function nodeText(node: SnapshotNode): string {
-  return (node.label ?? node.value ?? "").trim();
-}
-
-export function actCandidates(nodes: SnapshotNode[]): ActCandidate[] {
-  const out: ActCandidate[] = [];
-  const seen = new Set<string>();
-  for (const node of nodes) {
-    if (node.visibleToUser === false || node.enabled === false) continue;
-    const label = nodeText(node) || node.content?.trim() || node.description?.trim() || "";
-    const identifier = node.identifier?.trim() || undefined;
-    const role = (node.role ?? node.type)?.trim() || undefined;
-    const editable =
-      node.editable === true || EDITABLE_TYPES.test(`${node.type ?? ""} ${node.role ?? ""}`);
-    if (!label && !identifier && !editable) continue;
-    const point = node.rect
-      ? {
-          x: Math.round(node.rect.x + node.rect.width / 2),
-          y: Math.round(node.rect.y + node.rect.height / 2),
-        }
-      : undefined;
-    const key = `${identifier ?? ""}|${label}|${point?.x ?? ""},${point?.y ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const target: StepTarget = identifier
-      ? { identifier, ...(label ? { label } : {}) }
-      : label
-        ? { label, ...(point ? { point } : {}) }
-        : point
-          ? { point }
-          : {};
-    out.push({
-      id: `c${out.length + 1}`,
-      ...(label ? { label: label.slice(0, 120) } : {}),
-      ...(role ? { role } : {}),
-      ...(identifier ? { identifier } : {}),
-      ...(editable ? { editable } : {}),
-      target,
-    });
-    if (out.length >= MAX_CANDIDATES) break;
-  }
-  return out;
-}
-
-const decisionSchema = z.object({
-  action: z.enum(["done", "impossible", "tap", "type", "scroll", "back", "wait"]),
-  candidateId: z.string().optional(),
-  text: z.string().optional(),
-  submit: z.boolean().optional(),
-  direction: z.enum(["down", "up"]).optional(),
-  finishesIntent: z.boolean().optional(),
-  reason: z.string(),
-});
-
-function actPrompt(input: ActDecisionInput): string {
-  return [
-    "You operate an app under test to accomplish ONE plain-English step.",
-    `Step: ${JSON.stringify(input.intent)}`,
-    input.history.length
-      ? `Actions already taken for this step: ${JSON.stringify(input.history)}`
-      : "No actions taken yet for this step.",
-    ...(input.auth?.type === "sign-in" ? signInPromptLines(input.auth.accountKey) : []),
-    ...(input.auth?.type === "inbox-code" ? inboxCodePromptLines(input.auth.inboxKey) : []),
-    "Visible controls (choose by id):",
-    JSON.stringify(input.candidates.map(({ target: _target, ...candidate }) => candidate)),
-    "Reply with exactly one next action:",
-    '- "done" if the screen shows the step is already accomplished.',
-    '- "impossible" if the step cannot be done from this screen (explain what you see instead).',
-    '- "tap" with candidateId.',
-    '- "type" with text (and candidateId of the field when known; submit=true to press Enter).',
-    '- "scroll" with direction, "back", or "wait" when the screen is still loading.',
-    "Set finishesIntent=true when this action alone completes the step.",
-    "Only act toward this step; never perform unrelated or destructive actions.",
-  ].join("\n");
 }
 
 async function decideViaModel(input: ActDecisionInput): Promise<ActDecision> {
@@ -175,14 +96,29 @@ async function decideViaModel(input: ActDecisionInput): Promise<ActDecision> {
   });
   const generated = await sdk.generateObject({
     model: provider.chat(model),
-    schema: decisionSchema,
+    schema: actDecisionSchema,
     schemaName: "relay_act_decision",
     maxRetries: 1,
     messages: [
       {
         role: "user",
         content: [
-          { type: "text", text: actPrompt(input) },
+          {
+            type: "text",
+            text: actPrompt({
+              intent: input.intent,
+              candidates: input.candidates,
+              history: input.history,
+              ...(input.geometry ? { geometry: input.geometry } : {}),
+              coordinateActuation: input.geometry !== undefined,
+              extraLines: [
+                ...(input.auth?.type === "sign-in" ? signInPromptLines(input.auth.accountKey) : []),
+                ...(input.auth?.type === "inbox-code"
+                  ? inboxCodePromptLines(input.auth.inboxKey)
+                  : []),
+              ],
+            }),
+          },
           ...(input.screenshot
             ? [
                 {
@@ -199,94 +135,48 @@ async function decideViaModel(input: ActDecisionInput): Promise<ActDecision> {
   return normalizeActDecision(generated.object);
 }
 
-export function normalizeActDecision(raw: unknown): ActDecision {
-  const parsed = decisionSchema.safeParse(raw);
-  if (!parsed.success)
-    return { action: "impossible", reason: "The model returned an invalid action." };
-  const value = parsed.data;
-  const reason = value.reason.trim() || value.action;
-  switch (value.action) {
-    case "tap":
-      return value.candidateId
-        ? {
-            action: "tap",
-            candidateId: value.candidateId,
-            reason,
-            finishesIntent: value.finishesIntent,
-          }
-        : { action: "impossible", reason: "The model chose tap without a control." };
-    case "type":
-      return value.text === undefined
-        ? { action: "impossible", reason: "The model chose type without text." }
-        : {
-            action: "type",
-            text: value.text,
-            ...(value.candidateId ? { candidateId: value.candidateId } : {}),
-            ...(value.submit ? { submit: true } : {}),
-            reason,
-            finishesIntent: value.finishesIntent,
-          };
-    case "scroll":
-      return { action: "scroll", direction: value.direction ?? "down", reason };
-    case "back":
-      return { action: "back", reason, finishesIntent: value.finishesIntent };
-    default:
-      return { action: value.action, reason };
-  }
-}
-
-/** Translate one decision into the concrete recipe steps the engine runs. */
-export function concreteStepsForDecision(
-  decision: ActDecision,
-  candidates: ActCandidate[],
-): { steps: RecipeStep[]; summary: string } {
-  const find = (id: string | undefined) => candidates.find((candidate) => candidate.id === id);
-  switch (decision.action) {
-    case "tap": {
-      const candidate = find(decision.candidateId);
-      if (!candidate)
-        throw new Error(`act: the model chose an unknown control (${decision.candidateId})`);
-      return {
-        steps: [{ kind: "tap", target: candidate.target }],
-        summary: `Tap ${candidate.label ?? candidate.identifier ?? "control"}`,
-      };
-    }
-    case "type": {
-      const candidate = find(decision.candidateId);
-      const steps: RecipeStep[] = [
-        {
-          kind: "type",
-          text: decision.text,
-          mode: "replace",
-          ...(candidate ? { target: candidate.target } : {}),
-        },
-      ];
-      if (decision.submit) steps.push({ kind: "device", action: "keyboard-enter" });
-      return {
-        steps,
-        summary: `Type ${JSON.stringify(decision.text)}${candidate?.label ? ` into ${candidate.label}` : ""}`,
-      };
-    }
-    case "scroll":
-      return {
-        steps: [{ kind: "scroll", direction: decision.direction }],
-        summary: `Scroll ${decision.direction}`,
-      };
-    case "back":
-      return { steps: [{ kind: "key", key: "back" }], summary: "Go back" };
-    case "wait":
-      return { steps: [{ kind: "sleep", ms: 1_000 }], summary: "Wait" };
-    default:
-      return { steps: [], summary: decision.action };
-  }
-}
-
 export type ActObservation = {
   candidates: ActCandidate[];
   screenshot?: { mimeType: string; data: string };
+  geometry?: ActObservationGeometry;
 };
 
 export type ActObservationOptions = { includeScreenshot?: boolean };
+
+/** PNG width/height live at fixed offsets in the IHDR chunk: bytes 16–24. */
+export function pngDimensions(buffer: Buffer): { width: number; height: number } | undefined {
+  if (buffer.length < 24 || buffer.readUInt32BE(12) !== 0x49484452) return undefined;
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+}
+
+/**
+ * The affine mapping between the screenshot the model sees and the logical
+ * coordinates actuation uses. Only browser targets can prove it today: the
+ * screenshot is exactly the viewport raster, so image pixels scale uniformly
+ * into the page's CSS pixel space. Anything else — a missing session, a
+ * non-uniform ratio — disables coordinate conversion rather than guessing.
+ */
+export function browserActObservationGeometry(
+  device: Device,
+  screenshot: { data: string } | undefined,
+): ActObservationGeometry | undefined {
+  if (!screenshot) return undefined;
+  const session = browserSessionForDevice(device);
+  if (!session) return undefined;
+  const viewport = session.page.viewportSize();
+  const dims = pngDimensions(Buffer.from(screenshot.data, "base64"));
+  if (!viewport || !dims || viewport.width <= 0 || viewport.height <= 0) return undefined;
+  const scaleX = dims.width / viewport.width;
+  const scaleY = dims.height / viewport.height;
+  if (scaleX <= 0 || Math.abs(scaleX - scaleY) / scaleX > 0.02) return undefined;
+  return {
+    scale: scaleX,
+    imageWidth: dims.width,
+    imageHeight: dims.height,
+    viewportWidth: viewport.width,
+    viewportHeight: viewport.height,
+  };
+}
 
 async function observe(
   device: Device,
@@ -303,7 +193,12 @@ async function observe(
       screenshot = undefined;
     }
   }
-  return { candidates: actCandidates(nodes), ...(screenshot ? { screenshot } : {}) };
+  const geometry = browserActObservationGeometry(device, screenshot);
+  return {
+    candidates: actCandidates(nodes, geometry),
+    ...(screenshot ? { screenshot } : {}),
+    ...(geometry ? { geometry } : {}),
+  };
 }
 
 export type ActStepResolutionEvidence = { strategy: string; key?: string };
@@ -326,6 +221,21 @@ export type ActScreenObserver = (
   device: Device,
   options?: ActObservationOptions,
 ) => Promise<ActObservation>;
+
+/** Decisions that need coordinates the current target cannot honor. */
+function decisionNeedsUnavailableGeometry(
+  decision: ActDecision,
+  geometry: ActObservationGeometry | undefined,
+): boolean {
+  if (geometry) return false;
+  const atomicPoint = (item: ActAtomicDecision) =>
+    (item.action === "tap" || item.action === "hover") &&
+    item.point !== undefined &&
+    !item.candidateId;
+  if (decision.action === "batch") return decision.actions.some(atomicPoint);
+  if (decision.action === "done" || decision.action === "impossible") return false;
+  return atomicPoint(decision);
+}
 
 async function runActStepLoop(
   device: Device,
@@ -420,11 +330,13 @@ async function runActStepLoop(
     // Conservative sign-in discipline: even a custom observation hook never
     // supplies pixels to the model while credentials are active.
     const screenshot = signIn || inboxCode ? undefined : observation.screenshot;
+    const geometry = signIn || inboxCode ? undefined : observation.geometry;
     const decision = await decide({
       intent: step.intent,
       candidates,
       history,
       ...(screenshot ? { screenshot } : {}),
+      ...(geometry ? { geometry } : {}),
       ...(step.model ? { model: step.model } : {}),
       ...(signIn
         ? { auth: { type: "sign-in" as const, accountKey: signIn.accountKey } }
@@ -445,13 +357,62 @@ async function runActStepLoop(
       record({ action: "impossible", reason, history });
       throw new Error(`Could not ${lowerFirst(step.intent)}: ${reason}`);
     }
+    if (decisionNeedsUnavailableGeometry(decision, geometry)) {
+      // Coordinate actuation without a proven screenshot-to-logical mapping
+      // would be a guess at physical geometry. That fails closed: the model
+      // is told why, and the refusal consumes one attempt like any action.
+      const feedback =
+        "Visual coordinate actuation is unavailable on this target; choose a semantic candidate instead";
+      record({ action: "coordinate-unavailable", reason: feedback });
+      ctx.log(`act: ${feedback}`);
+      history.push(feedback);
+      if (attempt === max) break;
+      continue;
+    }
     if (attempt === max) break;
-    const { steps, summary: decisionSummary } = concreteStepsForDecision(decision, candidates);
+    const {
+      steps,
+      summary: decisionSummary,
+      coordinateVisual,
+    } = concreteStepsForDecision(decision, candidates, geometry);
     const summary = secretText(decisionSummary);
-    record({ action: decision.action, summary, reason, steps });
+    record({
+      action: decision.action,
+      summary,
+      reason,
+      steps,
+      ...(coordinateVisual ? { coordinateVisual: true } : {}),
+      ...(decision.action === "batch" ? { batchSize: decision.actions.length } : {}),
+    });
     ctx.log(`act: ${summary} — ${reason}`);
-    for (const concrete of steps) await runAndKeep(concrete);
-    history.push(summary);
+    if (decision.action === "batch") {
+      // Per-item failure honesty: the batch aborts at the first failure and
+      // the evidence names exactly which items ran. Items after the failure
+      // did not happen, and nothing claims they did.
+      const executedBefore = executed.length;
+      let batchFailure: unknown;
+      try {
+        for (const concrete of steps) await runAndKeep(concrete);
+      } catch (error) {
+        batchFailure = error;
+      }
+      const ranSteps = executed.length - executedBefore;
+      history.push(summary);
+      if (batchFailure !== undefined) {
+        record({
+          action: "batch-failed",
+          summary,
+          reason:
+            batchFailure instanceof Error ? secretText(batchFailure.message) : String(batchFailure),
+          executedSteps: ranSteps,
+          totalSteps: steps.length,
+        });
+        throw batchFailure;
+      }
+    } else {
+      for (const concrete of steps) await runAndKeep(concrete);
+      history.push(summary);
+    }
     if ("finishesIntent" in decision && decision.finishesIntent) {
       finish("model");
       return;

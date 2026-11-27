@@ -24,6 +24,7 @@ import {
 import {
   describeCoverageStepReason,
   inspectSetupSkip,
+  isLeftoverInspectPeek,
   leftoverSkipForbidden,
 } from "./coverage-step-outcome.js";
 import {
@@ -119,6 +120,7 @@ import { rethrowIosMutationOutcomeUnknown } from "../ios/ios-mutation-policy.js"
 import { rethrowInputOutcomeUnknown } from "../device/input-not-dispatched.js";
 import { runPauseStep } from "./recipe-runner-pause.js";
 import { runActStep } from "./recipe-runner-act.js";
+import { runBrowserActuationStep } from "../browser/browser-actuation.js";
 import { runInboxStep } from "./recipe-runner-inbox.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
@@ -178,6 +180,11 @@ async function runRequiredRecipeStep(
     case "key":
       invalidateVerifiedScreen(ctx);
       await pressKey(device, step.key);
+      break;
+    case "hover":
+    case "select":
+    case "press-key":
+      await runBrowserActuationStep(device, step, () => invalidateVerifiedScreen(ctx));
       break;
     case "sleep":
       invalidateVerifiedScreen(ctx);
@@ -761,14 +768,6 @@ async function runRequiredRecipeStep(
   }
 }
 
-function isLeftoverInspectPeek(step: RecipeStep): boolean {
-  return (
-    step.kind === "wait-for" &&
-    step.optional === true &&
-    step.timeoutMs === 0 &&
-    step.when === undefined
-  );
-}
 
 export async function runRecipeStep(
   device: Device,

@@ -1,4 +1,4 @@
-import type { Locator, Page } from "playwright-core";
+import type { Frame, Locator, Page } from "playwright-core";
 import { LEGACY_POSITIONAL_BROWSER_REF_ERROR } from "./browser-locator-contract.js";
 
 const HEADING_SCOPE_ROLES = ["dialog", "alertdialog", "region"] as const;
@@ -58,7 +58,7 @@ function sameLocatorBox(
 /** Dialog/region (or heading-family ancestor) named `heading` → unique named control.
  * Copies that share one location stay one control. Separate locations never coalesce. */
 export async function headingScopedLabelLocator(
-  page: Page,
+  page: Page | Frame,
   heading: string,
   label: string,
   exact = true,
@@ -106,7 +106,7 @@ export async function headingScopedLabelLocator(
 }
 
 async function locatorOnce(
-  page: Page,
+  page: Page | Frame,
   input: { ref?: string; selector?: string; heading?: string },
 ) {
   if (input.ref) {
@@ -193,6 +193,54 @@ export async function fillBrowserLocator(
   await locator.fill(text);
 }
 
+function frameErrorIsAbsence(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /detached|was navigated|execution context|frame was detached|Target closed/i.test(error.message)
+  );
+}
+
+/** Resolve once per frame and aggregate cross-document matches. A label or
+ * identifier naming controls in two different frames is exactly as ambiguous
+ * as one naming two controls in one document; a frame that disappears
+ * mid-resolution honestly contributes nothing, because its controls are gone. */
+async function locatorAcrossFrames(
+  page: Page,
+  input: { ref?: string; selector?: string; heading?: string },
+): Promise<Locator> {
+  const found: Locator[] = [];
+  let absentReason: string | undefined;
+  let ambiguousReason: string | undefined;
+  // A minimal Page-shaped harness (tests, embedded runners) may not implement
+  // the frame tree; the honest scope then is the document it does have.
+  const frames =
+    typeof (page as { frames?: unknown }).frames === "function"
+      ? page.frames()
+      : [page as unknown as Frame];
+  for (const frame of frames) {
+    try {
+      found.push(await locatorOnce(frame, input));
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      if (error.message.includes("ambiguous")) {
+        ambiguousReason = error.message;
+        continue;
+      }
+      if (error.message.includes("did not match")) {
+        absentReason ??= error.message;
+        continue;
+      }
+      if (!frameErrorIsAbsence(error)) throw error;
+    }
+  }
+  if (ambiguousReason && found.length === 0) throw new Error(ambiguousReason);
+  if (found.length === 0) throw new Error(absentReason ?? "Browser locator did not match");
+  if (found.length > 1 || ambiguousReason) {
+    throw new Error("Browser locator was ambiguous across frames");
+  }
+  return found[0]!;
+}
+
 export async function locatorFor(
   page: Page,
   input: { ref?: string; selector?: string; heading?: string },
@@ -200,7 +248,7 @@ export async function locatorFor(
   const deadline = performance.now() + 5_000;
   for (;;) {
     try {
-      return await locatorOnce(page, input);
+      return await locatorAcrossFrames(page, input);
     } catch (error) {
       // Only absence is retryable, and only before dispatch. Ambiguous or stale
       // identity must never be repaired by clicking a different control.

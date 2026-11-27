@@ -1,4 +1,5 @@
 import type { Device } from "../device/device.js";
+import { scrollBrowserHorizontal } from "../browser/browser-actuation.js";
 import { replaceText, scrollDown, scrollUp, sleep, snapshot, typeText } from "../device/device.js";
 import { cooperativeCheckpoint } from "../execution/control.js";
 import { now } from "../collaboration/events.js";
@@ -172,8 +173,14 @@ export async function runSemanticScrollStep(
   step: Extract<RecipeStep, { kind: "scroll" }>,
   ctx: RecipeStepContext,
 ): Promise<void> {
-  const performScroll = () =>
-    step.direction === "down" ? scrollDown(device, step.amount) : scrollUp(device, step.amount);
+  const performScroll = () => {
+    if (step.direction === "left" || step.direction === "right") {
+      return scrollBrowserHorizontal(step.direction, step.amount, device);
+    }
+    return step.direction === "down"
+      ? scrollDown(device, step.amount)
+      : scrollUp(device, step.amount);
+  };
   if (!step.until) return performScroll();
   const maxAttempts = step.maxAttempts ?? 12;
   let previousFingerprint: string | undefined;

@@ -130,6 +130,11 @@ function variableNavFromRecipeSteps(steps: readonly RecipeStep[]): VariableNavSt
     } else if (step.kind === "key" && step.key === "back") {
       result.push({ kind: "back" });
     } else if (step.kind === "scroll") {
+      if (step.direction === "left" || step.direction === "right") {
+        // Horizontal browser scrolls have no representation in this output
+        // shape; they are omitted rather than silently re-axised.
+        continue;
+      }
       result.push({
         kind: "scroll",
         direction: step.direction,

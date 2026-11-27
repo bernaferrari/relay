@@ -73,24 +73,33 @@ export function assertSignInActDecision(
   decision: ActDecision,
   candidates: readonly ActCandidate[],
 ): void {
-  if (decision.action !== "type") return;
-  if (!isSignInSecretReference(decision.text) || !decision.candidateId) {
-    throw new Error(
-      "Saved sign-in model did not use the required secret reference in a named field",
-    );
-  }
-  const candidate = candidates.find((item) => item.id === decision.candidateId);
-  if (!candidate?.editable) {
-    throw new Error("Saved sign-in model did not choose an editable sign-in field");
-  }
-  const text = candidateText(candidate);
-  const passwordish = /pass(word)?|credential|pin/u.test(text);
-  const usernameish = /user|email|e-mail|login|log in|account/u.test(text);
-  if (passwordish && decision.text !== SIGN_IN_PASSWORD_REFERENCE) {
-    throw new Error("Saved sign-in model chose the wrong secret reference for the password field");
-  }
-  if (!passwordish && usernameish && decision.text !== SIGN_IN_USERNAME_REFERENCE) {
-    throw new Error("Saved sign-in model chose the wrong secret reference for the username field");
+  const typing =
+    decision.action === "type"
+      ? [decision]
+      : decision.action === "batch"
+        ? decision.actions.filter(
+            (item): item is Extract<typeof item, { action: "type" }> => item.action === "type",
+          )
+        : [];
+  for (const typeAction of typing) {
+    if (!isSignInSecretReference(typeAction.text) || !typeAction.candidateId) {
+      throw new Error(
+        "Saved sign-in model did not use the required secret reference in a named field",
+      );
+    }
+    const candidate = candidates.find((item) => item.id === typeAction.candidateId);
+    if (!candidate?.editable) {
+      throw new Error("Saved sign-in model did not choose an editable sign-in field");
+    }
+    const text = candidateText(candidate);
+    const passwordish = /pass(word)?|credential|pin/u.test(text);
+    const usernameish = /user|email|e-mail|login|log in|account/u.test(text);
+    if (passwordish && typeAction.text !== SIGN_IN_PASSWORD_REFERENCE) {
+      throw new Error("Saved sign-in model chose the wrong secret reference for the password field");
+    }
+    if (!passwordish && usernameish && typeAction.text !== SIGN_IN_USERNAME_REFERENCE) {
+      throw new Error("Saved sign-in model chose the wrong secret reference for the username field");
+    }
   }
 }
 

@@ -31,5 +31,21 @@ export function recipeStepPlatformBlocker(
     if (platform === "ios") return "lock-screen control is not supported by this iOS runner";
     if (platform === "browser") return "lock-screen control is not supported on browser";
   }
+  if (step.kind === "hover" && platform !== "browser") {
+    return "hover is a browser step; native platforms have no pointer hover";
+  }
+  if (step.kind === "select" && platform !== "browser") {
+    return "select is a browser step for native HTML select elements";
+  }
+  if (step.kind === "press-key" && platform !== "browser") {
+    return "press-key keyboard chords are only supported on browser targets";
+  }
+  if (
+    step.kind === "scroll" &&
+    (step.direction === "left" || step.direction === "right") &&
+    platform !== "browser"
+  ) {
+    return "horizontal scroll is only supported on browser targets";
+  }
   return undefined;
 }

@@ -281,6 +281,9 @@ function leafBounds(step: RecipeStep): Bounds {
     case "scroll":
     case "swipe":
     case "key":
+    case "hover":
+    case "select":
+    case "press-key":
     case "clipboard":
     case "app":
     case "device":
@@ -605,6 +608,9 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
     case "reveal":
     case "swipe":
     case "rotate":
+    case "hover":
+    case "select":
+    case "press-key":
     case "sleep":
     case "wait-for":
     case "wait-response":
