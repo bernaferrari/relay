@@ -2,15 +2,8 @@ import type { AuthoringInteraction, RepeatSpec } from "@relay/protocol";
 import type { RelayOutcomeJobs } from "@relay/workflows";
 import type { RelayOutcomeToolDescriptor } from "./outcome-tools.js";
 
-type Parser = { parse(value: unknown): unknown };
-
 export type OutcomeToolDispatchDependencies = {
   descriptors: readonly RelayOutcomeToolDescriptor[];
-  assertRawOutcomeInputBounds: (
-    name: RelayOutcomeToolDescriptor["name"],
-    value: Record<string, unknown>,
-  ) => void;
-  replayLabTracePacks: Parser;
 };
 
 export async function dispatchRelayOutcomeTool(
@@ -31,14 +24,7 @@ export async function dispatchRelayOutcomeTool(
   if (descriptor.requiresConfirmation && !input.confirmed && !readOnlyGoalInspection) {
     throw new TypeError(`${descriptor.name} requires confirm: true.`);
   }
-  dependencies.assertRawOutcomeInputBounds(input.name, input.argumentsValue);
-  let parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
-  if (input.name === "relay_replay_lab") {
-    parsed = {
-      ...parsed,
-      tracePacks: dependencies.replayLabTracePacks.parse(parsed.tracePacks),
-    };
-  }
+  const parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
   const { jobs } = input;
 
   function goalValues(raw: unknown): { values?: Record<string, string> } {
@@ -214,13 +200,6 @@ export async function dispatchRelayOutcomeTool(
       workflowId: parsed.workflowId as string,
       expectedVersion: parsed.expectedVersion as number,
       confirmRemaining: true,
-    });
-  }
-  if (input.name === "relay_replay_lab") {
-    return jobs.replayLab({
-      kind: "replay-lab",
-      analysis: parsed.analysis as "compare" | "visual-localization" | "all",
-      tracePacks: parsed.tracePacks as Parameters<RelayOutcomeJobs["replayLab"]>[0]["tracePacks"],
     });
   }
   if (input.name === "relay_prove_change") {

@@ -161,8 +161,8 @@ function smallestLiveExperiment(
   return { source: selected.source, ...selected.value };
 }
 
-/** Run the product-facing Replay Lab solely over explicit immutable inputs.
- * This is intentionally an outcome façade method with no operation-port use. */
+/** Run the internal replay-analysis engine solely over explicit immutable inputs.
+ * It has no operation-port use and no public CLI/MCP spelling. */
 export async function runReplayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport> {
   const analysis = replayLabAnalysisSchema.parse(intent.analysis);
   const tracePacks = intent.tracePacks;

@@ -32,7 +32,6 @@ import {
 import { compactOfflineReplayToolResult } from "./offline-replay-result.js";
 import { pngScreenshotRecord } from "./png-result.js";
 import {
-  compactReplayLabOutcome,
   invokeRelayOutcomeTool,
   relayFullOutcomeTools,
   relayOutcomeTools,
@@ -668,9 +667,6 @@ function registerRelayOutcomeTool(
           signal: context.mcpReq.signal,
         });
         if (descriptor.name === "relay_observe_target") return targetObservationResult(result);
-        if (descriptor.name === "relay_replay_lab") {
-          return normalResult(result, compactReplayLabOutcome(result));
-        }
         if (descriptor.name === "relay_export_evidence") {
           const runId = argumentsWithoutConfirmation.runId;
           if (typeof runId === "string") {

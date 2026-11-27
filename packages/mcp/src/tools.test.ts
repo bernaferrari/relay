@@ -489,6 +489,7 @@ test("each profile contains the one before it, with one name per tool", () => {
   assert.ok(qa.length <= 14, `qa: ${qa.length}`);
   assert.ok(device.length > qa.length && full.length > device.length);
   assert.ok(full.length <= 80);
+  assert.ok(!full.includes("relay_replay_lab"));
   assert.ok([...qa, ...device].every((name) => /^relay_[a-z]+(?:_[a-z]+)*$/u.test(name)));
 });
 

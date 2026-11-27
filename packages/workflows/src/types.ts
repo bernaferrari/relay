@@ -15,7 +15,6 @@ import type {
   OfflineTestPreflightReport,
   RepeatSpec,
   ReplayLabAnalysis,
-  ReplayLabReport,
   ResolvedRepeatSpec,
   SourceRevision,
   TargetObservation,
@@ -670,6 +669,8 @@ export type ExportEvidenceIntent = {
   /** When set, the CLI writes the trace pack and a passive review page here. */
   outputDir?: string;
 };
+/** Internal input contract for the offline replay-analysis engine. This is not
+ * an outcome façade method or a public CLI/MCP spelling. */
 export type ReplayLabOutcomeIntent = {
   kind: "replay-lab";
   analysis: ReplayLabAnalysis;
@@ -790,7 +791,6 @@ export interface RelayOutcomeJobs {
   inspectExploration(intent: GoalExplorationInspectIntent): Promise<GoalExplorationRecord>;
   proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult>;
   exportEvidence(intent: ExportEvidenceIntent): Promise<EvidenceExportResult>;
-  replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;
   verifyChange(intent: VerifyChangeOutcomeIntent): Promise<VerifyChangeResult>;
   inspectProof(intent: InspectProofOutcomeIntent): Promise<InspectProofOutcome>;
   proveChange(intent: ProveChangeOutcomeIntent): Promise<ProveChangeOutcome>;

@@ -221,7 +221,7 @@ test("only implicit-local outcome commands ensure the Relay daemon", async () =>
   }
 });
 
-test("Replay Lab rejects invalid explicit files without starting Relay or invoking its client", async () => {
+test("retired replay-lab exits with a migration pointer without starting Relay or invoking its client", async () => {
   const io = capture();
   let ensured = false;
   let invoked = false;
@@ -244,10 +244,13 @@ test("Replay Lab rejects invalid explicit files without starting Relay or invoki
       }),
     },
   );
-  assert.equal(code, ExitCode.validation);
+  assert.equal(code, ExitCode.usage);
   assert.equal(ensured, false);
   assert.equal(invoked, false);
-  assert.match(io.stdout(), /not a regular local file/u);
+  assert.match(
+    io.stdout(),
+    /'relay replay-lab' moved\. Use one of: 'relay proof analyze run <runId\.\.\.>'/u,
+  );
 });
 
 test("relay observe emits durable references without transient presentation bytes", async () => {

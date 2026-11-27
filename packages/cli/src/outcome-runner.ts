@@ -21,7 +21,6 @@ import type { OutcomeCliIntent } from "./outcome-command.js";
 import { assertOutcomeSucceeded, waitForOutcome } from "./outcome-wait.js";
 import type { CliOutput } from "./output.js";
 import { protocolOperationInput } from "./protocol-input.js";
-import { readReplayLabTracePacks } from "./replay-lab-files.js";
 
 function invoke(
   client: OperationInvoker,
@@ -244,13 +243,6 @@ export async function runOutcomeCommand(input: {
       });
     }
     return evidence;
-  }
-  if (intent.kind === "replay-lab") {
-    return jobs.replayLab({
-      kind: "replay-lab",
-      analysis: intent.analysis,
-      tracePacks: await readReplayLabTracePacks(intent.paths),
-    });
   }
   if (intent.kind === "proof-analyze") {
     return jobs.verifyChange({ ...intent, kind: "verify-change" });

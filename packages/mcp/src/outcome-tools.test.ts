@@ -19,37 +19,6 @@ const unusedInvoker: OperationInvoker = {
 
 type Invocation = { method: keyof RelayOutcomeJobs; argumentsValue: unknown[] };
 
-function tracePack(digit: string) {
-  const digest = `sha256:${digit.repeat(64)}`;
-  return {
-    schemaVersion: 1 as const,
-    kind: "relay-trace-pack" as const,
-    digest,
-    createdAt: 1,
-    source: {
-      runId: `run-${digit}`,
-      runSchemaVersion: 5,
-      status: "ok",
-      action: "test",
-      inputDigest: "a".repeat(64),
-      writtenAt: 1,
-    },
-    redaction: { status: "applied-at-persistence" as const, redactedChannels: [] },
-    completeness: { status: "complete" as const, channels: {}, missing: [], artifacts: [] },
-    objects: [
-      {
-        path: "run.json",
-        kind: "frozen-run" as const,
-        mediaType: "application/json",
-        encoding: "json" as const,
-        digest,
-        bytes: 2,
-        content: {},
-      },
-    ],
-  };
-}
-
 function recordingJobs(invocations: Invocation[]): RelayOutcomeJobs {
   return new Proxy(
     {},
@@ -259,19 +228,6 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       argumentsValue: { runId: "run-1" },
       method: "exportEvidence",
       expected: { kind: "export-evidence", runId: "run-1" },
-    },
-    {
-      name: "relay_replay_lab",
-      argumentsValue: {
-        analysis: "compare",
-        tracePacks: [tracePack("a"), tracePack("b")],
-      },
-      method: "replayLab",
-      expected: {
-        kind: "replay-lab",
-        analysis: "compare",
-        tracePacks: [tracePack("a"), tracePack("b")],
-      },
     },
     {
       name: "relay_inspect_proof",
@@ -655,55 +611,9 @@ test("default outcome tool copy keeps engine nouns behind advanced profiles", ()
   }
 });
 
-test("Replay Lab MCP accepts only bounded explicit payloads", async () => {
-  const descriptor = relayFullOutcomeTools.find(({ name }) => name === "relay_replay_lab")!;
-  assert.equal(descriptor.annotations.readOnlyHint, true);
-  assert.equal(
-    descriptor.inputSchema.safeParse({ analysis: "compare", tracePacks: [tracePack("a")] }).success,
-    false,
-  );
-  const oversized = structuredClone(tracePack("b"));
-  oversized.objects[0]!.bytes = 33 * 1024 * 1024;
-  assert.equal(
-    descriptor.inputSchema.safeParse({
-      analysis: "all",
-      tracePacks: [tracePack("a"), oversized],
-    }).success,
-    true,
-    "declared object bytes do not replace actual transport measurement",
-  );
-  const falselySmall = structuredClone(tracePack("c"));
-  falselySmall.objects[0]!.content = { payload: "x".repeat(32 * 1024 * 1024) };
-  falselySmall.objects[0]!.bytes = 1;
-  assert.equal(
-    descriptor.inputSchema.safeParse({
-      analysis: "compare",
-      tracePacks: [tracePack("a"), falselySmall],
-    }).success,
-    false,
-    "actual JSON payload size must win over the declared object byte count",
-  );
-  let deeplyNested: unknown = "leaf";
-  for (let index = 0; index < 10_000; index += 1) deeplyNested = { child: deeplyNested };
-  const deepPack = structuredClone(tracePack("d"));
-  (deepPack.objects[0] as { content: unknown }).content = deeplyNested;
-  assert.equal(
-    descriptor.inputSchema.safeParse({
-      analysis: "compare",
-      tracePacks: [tracePack("a"), deepPack],
-    }).success,
-    false,
-    "deep JSON must fail before offline analysis",
-  );
-  const invocations: Invocation[] = [];
-  await assert.rejects(
-    invokeRelayOutcomeToolWithJobs({
-      name: "relay_replay_lab",
-      argumentsValue: { analysis: "compare", tracePacks: [tracePack("a"), deepPack] },
-      confirmed: false,
-      jobs: recordingJobs(invocations),
-    }),
-    /depth/u,
-  );
-  assert.deepEqual(invocations, []);
+test("retired replay-lab has no MCP outcome tool", () => {
+  for (const tools of [relayOutcomeTools, relayFullOutcomeTools]) {
+    const names: readonly string[] = tools.map(({ name }) => name);
+    assert.equal(names.includes("relay_replay_lab"), false);
+  }
 });

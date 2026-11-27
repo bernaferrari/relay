@@ -153,7 +153,13 @@ test("every old spelling points at a current command and none still runs", () =>
     ...cliResourceDescriptors.map(({ path }) => path.command),
   ]);
   const everyday = new Set(["apps", "devices", "doctor", "runs"]);
-  const special = new Set(["test capture-plan", "proof report", "proof verify", "system db"]);
+  const special = new Set([
+    "test capture-plan",
+    "proof analyze",
+    "proof report",
+    "proof verify",
+    "system db",
+  ]);
   for (const [old, replacement] of renamedCommands) {
     assert.ok(
       ![...current].some((command) => `${command} `.startsWith(`${old} `)),
@@ -187,7 +193,7 @@ test("every old spelling points at a current command and none still runs", () =>
   assert.throws(() => renderHelp("session"), /moved to relay recording/u);
 });
 
-test("retired raw execution spellings fail with a pointer to the modern path", () => {
+test("retired raw execution and analysis spellings fail with a pointer to the modern path", () => {
   const cases = [
     [["run", "list"], /'relay run list' moved\. Use 'relay runs'\./u],
     [["run", "start"], /'relay run start' moved\. Use 'relay run <test>'\./u],
@@ -207,6 +213,10 @@ test("retired raw execution spellings fail with a pointer to the modern path", (
     [["run", "matrix"], /'relay run matrix' moved\. Use 'relay plan run'\./u],
     [["run", "soak"], /'relay run soak' moved\. Use 'relay plan run'\./u],
     [["plan", "matrix", "run"], /'relay plan matrix run' moved\. Use 'relay plan run'\./u],
+    [
+      ["replay-lab", "compare", "oldest.json", "newest.json"],
+      /'relay replay-lab' moved\. Use one of: 'relay proof analyze run <runId\.\.\.>'/u,
+    ],
   ] as const;
   for (const [argv, pattern] of cases) {
     // The spelling no longer resolves to an operation…

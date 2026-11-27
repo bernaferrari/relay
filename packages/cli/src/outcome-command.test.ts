@@ -180,14 +180,6 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
       expected: { kind: "export-evidence", runId: "run-1" },
     },
     {
-      input: tokens(["replay-lab", "all", "oldest.json", "newest.json"]),
-      expected: {
-        kind: "replay-lab",
-        analysis: "all",
-        paths: ["oldest.json", "newest.json"],
-      },
-    },
-    {
       input: tokens(["proof", "analyze", "run", "run-1", "run-2"]),
       expected: {
         kind: "proof-analyze",
@@ -211,6 +203,7 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
     ["export-evidence", "run-1"],
     ["inspect-workflow", "workflow-1"],
     ["verify-change", "run", "run-1"],
+    ["replay-lab", "all", "oldest.json", "newest.json"],
   ]) {
     assert.equal(parseOutcomeCliIntent(tokens(retired)), undefined, retired.join(" "));
   }

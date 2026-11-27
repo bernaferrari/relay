@@ -1,9 +1,5 @@
 import {
   repeatSpecSchema,
-  replayLabReportSchema,
-  measureTracePackJson,
-  TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
-  tracePackSchema,
   browserAuthenticationFixtureReferenceSchema,
   operationDefinition,
 } from "@relay/protocol";
@@ -40,86 +36,6 @@ const workflowDecision = {
   workflowId: identifier,
   expectedVersion: z.number().int().positive(),
 } as const;
-const replayLabMaxPayloadBytes = 128 * 1024 * 1024;
-const tracePackMaxObjects = 2_000;
-function tracePackObjectCount(value: unknown): number | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const objects = (value as { objects?: unknown }).objects;
-  return Array.isArray(objects) ? objects.length : undefined;
-}
-const boundedTracePackTransport = z.unknown().superRefine((pack, context) => {
-  const objectCount = tracePackObjectCount(pack);
-  if (objectCount !== undefined && objectCount > tracePackMaxObjects) {
-    context.addIssue({ code: "custom", message: "TracePack payload exceeds 2000 objects" });
-  }
-  try {
-    measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS);
-  } catch (error) {
-    context.addIssue({
-      code: "custom",
-      message: error instanceof Error ? error.message : "TracePack exceeds transport bounds",
-    });
-  }
-});
-const boundedOfflineTracePack = tracePackSchema.superRefine((pack, context) => {
-  if (pack.objects.length > tracePackMaxObjects) {
-    context.addIssue({ code: "custom", message: "TracePack payload exceeds 2000 objects" });
-  }
-  try {
-    measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS);
-  } catch (error) {
-    context.addIssue({
-      code: "custom",
-      message: error instanceof Error ? error.message : "TracePack exceeds transport bounds",
-    });
-  }
-});
-function boundedTracePackArray(item: z.ZodType) {
-  return z
-    .array(item)
-    .min(1)
-    .max(64)
-    .superRefine((packs, context) => {
-      try {
-        const bytes = packs.reduce<number>(
-          (total, pack) =>
-            total + measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS).serializedBytes,
-          0,
-        );
-        if (bytes > replayLabMaxPayloadBytes) {
-          context.addIssue({ code: "custom", message: "Replay Lab payload exceeds 128 MiB" });
-        }
-      } catch (error) {
-        context.addIssue({
-          code: "custom",
-          message: error instanceof Error ? error.message : "Replay Lab payload exceeds bounds",
-        });
-      }
-    });
-}
-const replayLabTracePacks = z
-  .array(boundedOfflineTracePack)
-  .min(2)
-  .max(64)
-  .superRefine((packs, context) => {
-    try {
-      const bytes = packs.reduce(
-        (total, pack) =>
-          total + measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS).serializedBytes,
-        0,
-      );
-      if (bytes > replayLabMaxPayloadBytes) {
-        context.addIssue({ code: "custom", message: "Replay Lab payload exceeds 128 MiB" });
-      }
-    } catch (error) {
-      context.addIssue({
-        code: "custom",
-        message: error instanceof Error ? error.message : "Replay Lab payload exceeds bounds",
-      });
-    }
-  });
-
-const replayLabTracePackTransport = boundedTracePackArray(boundedTracePackTransport).min(2);
 
 const goalSessionInputSchema = z
   .object({
@@ -235,21 +151,6 @@ const goalSessionInputSchema = z
     }
   });
 
-function assertRawTracePackPayloads(value: unknown, maxPacks: number): void {
-  if (!Array.isArray(value)) return;
-  if (value.length > maxPacks) throw new TypeError(`TracePack count exceeds ${maxPacks}`);
-  let total = 0;
-  for (const pack of value) {
-    total += measureTracePackJson(pack, TRACE_PACK_OFFLINE_TRANSPORT_LIMITS).serializedBytes;
-    if (total > replayLabMaxPayloadBytes) {
-      throw new TypeError("TracePack payload exceeds 128 MiB");
-    }
-  }
-}
-
-function assertRawOutcomeInputBounds(name: string, value: Record<string, unknown>): void {
-  if (name === "relay_replay_lab") assertRawTracePackPayloads(value.tracePacks, 64);
-}
 // Recording uses the same interaction and edit contracts as CLI, HTTP, and
 // Product. This includes executable expect/wait-for steps and insertion edits.
 const recordedInteraction = operationDefinition("authoring.session.interact").input.presentation
@@ -495,85 +396,8 @@ export const relayOutcomeTools = Object.freeze([
   },
 ] as const satisfies readonly RelayOutcomeToolDescriptor[]);
 
-/** Offline comparison and change-level Proof: full profile only. */
-export const relayFullOutcomeTools = Object.freeze([
-  {
-    name: "relay_replay_lab",
-    title: "Compare TracePacks offline",
-    description:
-      "Compare 2 to 64 saved run recordings offline and list likely causes of the difference. Reads only the data you pass.",
-    requiresConfirmation: false,
-    inputSchema: z
-      .object({
-        analysis: z.enum(["compare", "visual-localization", "all"]),
-        tracePacks: replayLabTracePackTransport,
-      })
-      .strict(),
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  ...proofOutcomeTools,
-] as const satisfies readonly RelayOutcomeToolDescriptor[]);
-
-function short(value: string): string {
-  return value.length <= 240 ? value : `${value.slice(0, 239)}…`;
-}
-
-/** MCP text stays useful when the complete comparison is larger than the
- * transport envelope. Full details remain available from the same CLI input. */
-export function compactReplayLabOutcome(value: unknown): unknown {
-  const parsed = replayLabReportSchema.safeParse(value);
-  if (!parsed.success) return undefined;
-  const report = parsed.data;
-  return {
-    truncated: true,
-    message: "Replay Lab details were compacted to its decision-relevant offline summary.",
-    replayLab: {
-      schemaVersion: report.schemaVersion,
-      analysis: report.analysis,
-      tracePackCount: report.tracePackCount,
-      futureTransitionVerdict: report.futureTransitionVerdict,
-      repairPolicy: report.repairPolicy,
-      hypotheses: report.hypotheses.slice(0, 8).map((hypothesis) => ({
-        rank: hypothesis.rank,
-        priority: hypothesis.priority,
-        kind: hypothesis.kind,
-        classification: hypothesis.classification,
-        statement: short(hypothesis.statement),
-        evidence: hypothesis.evidence.slice(0, 4),
-        requiresLiveVerification: true,
-      })),
-      remainingHypotheses: Math.max(0, report.hypotheses.length - 8),
-      smallestLiveExperiment: {
-        ...report.smallestLiveExperiment,
-        reason: short(report.smallestLiveExperiment.reason),
-      },
-      comparison: report.comparison
-        ? {
-            testIdentity: report.comparison.testIdentity.status,
-            nonProvedRequiredPaths: report.comparison.requiredPaths.filter(
-              (item) => item.reachability.status !== "unchanged-proved",
-            ).length,
-            matcherChanges: report.comparison.matcherDeltas.filter(
-              (item) => item.status === "changed",
-            ).length,
-            completenessGaps: report.comparison.completenessGaps.length,
-          }
-        : undefined,
-      visualLocalization: report.visualLocalization
-        ? {
-            visual: report.visualLocalization.sufficiency.visual,
-            localization: report.visualLocalization.sufficiency.localization,
-            findings: report.visualLocalization.localization.findings.length,
-          }
-        : undefined,
-    },
-  };
-}
+/** Change-level Proof: full profile only. */
+export const relayFullOutcomeTools = proofOutcomeTools;
 
 export async function invokeRelayOutcomeTool(input: {
   name: RelayOutcomeToolDescriptor["name"];
@@ -614,7 +438,5 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
 }): Promise<unknown> {
   return dispatchRelayOutcomeTool(input, {
     descriptors: [...relayOutcomeTools, ...relayFullOutcomeTools],
-    assertRawOutcomeInputBounds,
-    replayLabTracePacks,
   });
 }

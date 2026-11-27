@@ -77,6 +77,10 @@ export const renamedCommands: readonly (readonly [old: string, current: string])
   ["device-pool", "device pool"],
   ["lane", "device lane"],
   ["workspace apple-device update", "device apple update"],
+  [
+    "replay-lab",
+    "proof analyze run <runId...> | proof analyze test <appMapId> <testId...> | proof analyze revision <gitSha>",
+  ],
   ["policy", "proof"],
   ["change inspect", "proof change"],
   ["prove", "proof verify --base <ref> | proof run <proof-id> | proof prepare"],

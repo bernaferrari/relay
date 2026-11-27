@@ -215,6 +215,7 @@ test("full-profile SDK initialization advertises a bounded Change Proof catalog"
     }
     assert.ok(tools.length <= 80, `tool count ${tools.length}`);
     assert.ok(!tools.some(({ name }) => name === "relay_target_interact"));
+    assert.ok(!tools.some(({ name }) => name === "relay_replay_lab"));
 
     for (const descriptor of fullTools) {
       const tool = tools.find(({ name }) => name === descriptor.name);

@@ -520,9 +520,7 @@ export async function runCli(
       let exitCode: ExitCode = ExitCode.success;
       if (parsed.command === "invoke") validateOperationId(operationId);
       if (
-        ((parsed.command === "outcome" &&
-          parsed.intent.kind !== "replay-lab" &&
-          parsed.intent.kind !== "doctor") ||
+        ((parsed.command === "outcome" && parsed.intent.kind !== "doctor") ||
           (parsed.command === "prove" && parsed.confirm)) &&
         parsed.config.ensureLocalServer
       ) {

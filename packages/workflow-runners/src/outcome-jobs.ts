@@ -34,7 +34,6 @@ import type {
   RecordTestOutcomeIntent,
   RelayOutcomeJobs,
   RepeatTestOutcomeIntent,
-  ReplayLabOutcomeIntent,
   RunTestOutcomeIntent,
   VerifyChangeOutcomeIntent,
   GoalSessionResumeIntent,
@@ -47,7 +46,6 @@ import type {
   GoalExplorationStartIntent,
   GoalPromotionIntent,
 } from "@relay/workflows/types";
-import { runReplayLab } from "./replay-lab.js";
 import { recordingPathContext } from "@relay/workflows/recording-path-context";
 import { startDebugBugRecording } from "@relay/workflows/recording-outcome-jobs";
 import {
@@ -648,10 +646,6 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       throw new TypeError("Relay returned TracePack analysis for a different evidence digest.");
     }
     return result;
-  }
-
-  replayLab(intent: ReplayLabOutcomeIntent) {
-    return runReplayLab(intent);
   }
 
   async verifyChange(intent: VerifyChangeOutcomeIntent) {

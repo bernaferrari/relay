@@ -28,7 +28,6 @@ import type {
   RepeatPilotSpec,
 } from "@relay/protocol";
 import { UsageError } from "./errors.js";
-import type { ReplayLabFileIntent } from "./replay-lab-files.js";
 
 export type DoctorIntent = { kind: "doctor" };
 export type InspectCliIntent = { kind: "inspect"; runOrWorkflowId: string };
@@ -47,7 +46,6 @@ export type OutcomeCliIntent =
   | ExportEvidenceIntent
   | EditRecordingOutcomeIntent
   | DoctorIntent
-  | ReplayLabFileIntent
   | GoalSessionStartIntent
   | GoalSessionResumeIntent
   | GoalSessionReproduceIntent
@@ -565,16 +563,6 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       runId: args[0]!,
       ...(outputDir ? { outputDir } : {}),
     };
-  }
-  if (verb === "replay-lab" && args.length >= 3) {
-    const [analysis, ...paths] = args;
-    if (analysis !== "compare" && analysis !== "visual-localization" && analysis !== "all") {
-      throw new UsageError("replay-lab analysis must be compare, visual-localization, or all");
-    }
-    if (new Set(paths).size !== paths.length) {
-      throw new UsageError("replay-lab requires unique TracePack file paths in historical order");
-    }
-    return { kind: "replay-lab", analysis, paths };
   }
   // Offline analysis lives under the proof namespace (`relay proof analyze`).
   if (verb === "proof" && args[0] === "analyze") {
