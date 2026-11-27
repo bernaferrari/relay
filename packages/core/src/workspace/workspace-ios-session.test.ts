@@ -249,7 +249,9 @@ test("a slow accessibility query stays in-flight without claiming XCTest is unav
  * resolves its own Device through the SDK client, which always reaches a
  * daemon, so a hermetic reconnect test needs this transport seam. It speaks
  * just enough of the wire contract: GET /health advertises rpcProtocolVersion
- * 2 and POST /rpc answers `agent_device.command` snapshot/screenshot requests.
+ * 3 and POST /rpc answers `agent_device.command` devices/snapshot/screenshot/close
+ * requests. Protocol 3's batch script-delivery receipt is intentionally not
+ * implemented; the fake refuses unsupported commands instead.
  */
 async function startFakeAgentDeviceDaemon(input: {
   nodes: Array<Record<string, unknown>>;
@@ -280,10 +282,10 @@ async function startFakeAgentDeviceDaemon(input: {
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/health") {
       respondJson(response, {
-        status: "ok",
+        ok: true,
         service: "agent-device-daemon",
         version: "0.0.0-workspace-ios-session-test",
-        rpcProtocolVersion: 2,
+        rpcProtocolVersion: 3,
       });
       return;
     }
@@ -298,13 +300,33 @@ async function startFakeAgentDeviceDaemon(input: {
       raw += chunk;
     });
     request.on("end", () => {
-      let parsed: { id?: unknown; params?: { command?: unknown; positionals?: unknown[] } };
+      let parsed: {
+        jsonrpc?: unknown;
+        method?: unknown;
+        id?: unknown;
+        params?: { command?: unknown; positionals?: unknown[] };
+      };
       try {
         parsed = JSON.parse(raw) as typeof parsed;
       } catch {
         parsed = {};
       }
       const command = typeof parsed.params?.command === "string" ? parsed.params.command : "";
+      if (
+        parsed.jsonrpc !== "2.0" ||
+        parsed.method !== "agent_device.command" ||
+        !["devices", "snapshot", "screenshot", "close"].includes(command)
+      ) {
+        respondJson(response, {
+          jsonrpc: "2.0",
+          id: parsed.id,
+          result: {
+            ok: false,
+            error: { code: "INVALID_ARGS", message: "Unsupported test RPC" },
+          },
+        });
+        return;
+      }
       let data: Record<string, unknown> = {};
       if (command === "screenshot") {
         void writePngAtPath(parsed as Record<string, unknown>);
@@ -323,7 +345,7 @@ async function startFakeAgentDeviceDaemon(input: {
       } else if (command === "snapshot") {
         data = { nodes: structuredClone(input.nodes) };
       }
-      respondJson(response, { id: parsed.id, result: { ok: true, data } });
+      respondJson(response, { jsonrpc: "2.0", id: parsed.id, result: { ok: true, data } });
     });
   });
   await new Promise<void>((resolveListen) => {

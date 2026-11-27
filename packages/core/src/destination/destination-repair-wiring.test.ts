@@ -27,8 +27,9 @@ import type { ScreenshotPayload } from "../workspace/workspace-capture.js";
  * talks to the real SDK client for device discovery, so a hermetic run needs
  * this transport seam in addition to the local observation provider. It speaks
  * just enough of the wire contract: GET /health advertises rpcProtocolVersion
- * 2, POST /rpc answers JSON-RPC `agent_device.command` requests for
- * devices/snapshot/screenshot/close.
+ * 3, POST /rpc answers JSON-RPC `agent_device.command` requests for
+ * devices/snapshot/screenshot/close. Protocol 3's batch script-delivery receipt
+ * is intentionally not implemented; the fake refuses unsupported commands instead.
  */
 async function startFakeAgentDeviceDaemon(input: {
   nodes: Array<{ role: string; label: string; visibleToUser: boolean }>;
@@ -60,10 +61,10 @@ async function startFakeAgentDeviceDaemon(input: {
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/health") {
       respondJson(response, {
-        status: "ok",
+        ok: true,
         service: "agent-device-daemon",
         version: "0.0.0-destination-repair-wiring-test",
-        rpcProtocolVersion: 2,
+        rpcProtocolVersion: 3,
       });
       return;
     }
@@ -101,7 +102,7 @@ async function startFakeAgentDeviceDaemon(input: {
           id: parsed.id,
           result: {
             ok: false,
-            error: { code: "INVALID_ARGUMENTS", message: "Unsupported test RPC" },
+            error: { code: "INVALID_ARGS", message: "Unsupported test RPC" },
           },
         });
         return;

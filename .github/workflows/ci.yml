@@ -84,6 +84,12 @@ jobs:
       - name: Test iOS preview producer
         run: pnpm run ios-preview:test
 
+      - name: Install media codecs
+        # Media and audio-fixture tests shell out to ffmpeg/ffprobe, which is
+        # absent from the hosted ubuntu image. Install it explicitly rather
+        # than weaken the media decoding coverage with environment skips.
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Test packages
         run: pnpm run test:packages
 
