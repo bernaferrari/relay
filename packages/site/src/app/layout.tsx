@@ -32,13 +32,13 @@ const mono = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
   title: {
-    default: "Relay — Click through it once. Relay keeps checking.",
+    default: "Relay — Real eyes and hands for coding agents",
     template: "%s | Relay",
   },
   description: siteDescription,
   icons: { icon: "/favicon.png", apple: "/apple-touch-icon.png" },
   openGraph: {
-    title: "Relay — Click through it once. Relay keeps checking.",
+    title: "Relay — Real eyes and hands for coding agents",
     description: siteDescription,
     type: "website",
     images: [
@@ -46,13 +46,13 @@ export const metadata: Metadata = {
         url: "/og.png",
         width: 1200,
         height: 630,
-        alt: "Relay: Click through it once. Relay keeps checking.",
+        alt: "Relay: Real eyes and hands for coding agents.",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Relay — Click through it once. Relay keeps checking.",
+    title: "Relay — Real eyes and hands for coding agents",
     description: siteDescription,
     images: ["/og.png"],
   },

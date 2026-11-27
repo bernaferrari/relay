@@ -21,10 +21,10 @@ export function SiteHeader() {
           <RelayBrand />
         </Link>
         <nav aria-label="Main navigation" className="flex items-center gap-1">
-          <a href="#loop" className={`${navLink} hidden md:inline-flex`}>
+          <a href="/#loop" className={`${navLink} hidden md:inline-flex`}>
             How it works
           </a>
-          <a href="#agents" className={`${navLink} hidden md:inline-flex`}>
+          <a href="/#agents" className={`${navLink} hidden md:inline-flex`}>
             Agents
           </a>
           <Link href="/docs" className={`${navLink} inline-flex`}>

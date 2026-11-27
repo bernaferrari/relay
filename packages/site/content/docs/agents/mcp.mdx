@@ -5,7 +5,15 @@ description: Let an agent run, inspect, or record Tests in the same local worksp
 
 The MCP connector uses the same service operations as the app and CLI. Choose a small tool profile for the task, connect it to the intended Relay service, and verify readiness before sending device input.
 
-## Build and start from source
+The zero-friction Claude Code path is:
+
+```bash
+claude mcp add relay -- npx -y @relay/mcp
+```
+
+Cursor and Codex can launch the same `npx -y @relay/mcp` command through their MCP settings.
+
+## Build and start from source (advanced)
 
 From the installed Relay checkout:
 
@@ -23,7 +31,7 @@ This guide uses the default local development service at `http://127.0.0.1:8787`
 For an explicitly unauthenticated local development service:
 
 ```bash
-node packages/mcp/dist/relay-mcp.js doctor \
+npx -y @relay/mcp doctor \
   --server http://127.0.0.1:8787 \
   --credential-source none \
   --profile qa --json
@@ -41,9 +49,10 @@ For a host that accepts `mcpServers` JSON, this connects to that same local deve
 {
   "mcpServers": {
     "relay": {
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/absolute/path/to/relay/packages/mcp/dist/relay-mcp.js",
+        "-y",
+        "@relay/mcp",
         "--server",
         "http://127.0.0.1:8787",
         "--credential-source",
@@ -56,7 +65,7 @@ For a host that accepts `mcpServers` JSON, this connects to that same local deve
 }
 ```
 
-Replace the absolute path. Start the service, then reload the host's MCP connection. Configuration format and reload controls vary by host; use its MCP settings rather than pasting this JSON into an ordinary chat prompt.
+Start the service, then reload the host's MCP connection. Configuration format and reload controls vary by host; use its MCP settings rather than pasting this JSON into an ordinary chat prompt. For a source build, replace the `npx` command and package arguments with `node` and the absolute path to `packages/mcp/dist/relay-mcp.js`.
 
 `--workspace /absolute/path/to/project` is also available for the optional matching packaged runtime's local startup. It is not needed when explicitly attaching to the running source service. The configured service owns the Tests and evidence; changing a client path does not move them to another workspace.
 

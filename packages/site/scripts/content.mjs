@@ -20,7 +20,7 @@ export function markdownBody(body) {
   return body
     .replace(
       /<WorkflowDiagram\s*\/>/g,
-      "Record a real journey → Replay saved steps → Inspect this Run's evidence → Keep your review decision.",
+      "Write or record a Test → Run it → Inspect this Run's evidence → Keep your review decision.",
     )
     .replace(
       /<DocScreenshot\s+src="([^"\n]+)"\s+alt="([^"\n]+)"\s+caption="([^"\n]+)"\s*\/>/g,

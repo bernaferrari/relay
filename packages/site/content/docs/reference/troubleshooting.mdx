@@ -8,14 +8,14 @@ description: Identify the failing layer, recover once, and confirm the target be
 Read the failed or blocked step and its suggested recovery. Separate an app defect from missing prerequisites, a connection problem, or incomplete evidence.
 
 ```bash
-pnpm doctor
-pnpm relay guide
+npx -y @relay/cli doctor
+npx -y @relay/cli guide
 ```
 
 For a specific device:
 
 ```bash
-pnpm relay device health <target-id> --json
+npx -y @relay/cli device health <target-id> --json
 ```
 
 Replace `<target-id>` with the device ID from Relay. Health describes the target's readiness; it does not run your Test.
@@ -24,7 +24,7 @@ Replace `<target-id>` with the device ID from Relay. Health describes the target
 
 | What you see                                   | What to check                                                                                                     |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Device does not appear                         | Cable, USB authorization, platform tools, simulator state, and `pnpm doctor`.                                     |
+| Device does not appear                         | Cable, USB authorization, platform tools, simulator state, and the doctor result.                                 |
 | Preview works but controls do not              | Pixels and accessibility are separate. Keep the app open and unlocked, use **Reconnect** once, and inspect again. |
 | Recorded control does not match its step       | Return to the intended source screen and record that step again. Do not reuse mismatched control evidence.        |
 | Device is busy                                 | Let the owning recording or Run finish. Do not send competing input.                                              |

@@ -4,18 +4,18 @@ import { useState, type CSSProperties } from "react";
 import { CopyExampleCommand } from "./site-controls";
 
 const cli = [
-  { cmd: 'pnpm relay run "Checkout" --device browser', note: "rerun the saved Test" },
+  { cmd: 'npx -y @relay/cli run "Checkout" --device browser', note: "rerun the saved Test" },
   { cmd: "echo $?", note: "1 = a Test failed its expectation" },
-  { cmd: "pnpm relay inspect <run-id>", note: "expected vs saw, step by step" },
-  { cmd: 'pnpm relay run "Checkout" --device browser', note: "fix, then repeat" },
+  { cmd: "npx -y @relay/cli inspect <run-id>", note: "expected vs saw, step by step" },
+  { cmd: 'npx -y @relay/cli run "Checkout" --device browser', note: "fix, then repeat" },
 ];
 
 const mcp = `{
   "mcpServers": {
     "relay": {
-      "command": "node",
+      "command": "npx",
       "args": [
-        "/path/to/relay/packages/mcp/dist/relay-mcp.js",
+        "-y", "@relay/mcp",
         "--server", "http://127.0.0.1:8787",
         "--credential-source", "none",
         "--profile", "qa"

@@ -3,8 +3,8 @@ import Link from "next/link";
 import { ArrowRight, ArrowUpRight, Check, Plus } from "lucide-react";
 import { buttonVariants } from "@relay/ui-react/components/button";
 import { SiteHeader } from "@/components/site-header";
-import { RelayBrand } from "@/components/relay-brand";
 import { ProductShowcase } from "@/components/product-showcase";
+import { SiteFooter } from "@/components/site-footer";
 import { RunReel } from "@/components/run-reel";
 import { AgentConsole } from "@/components/agent-console";
 import { GitHubMark } from "@/components/github-mark";
@@ -21,20 +21,15 @@ const inkButton =
   "h-12 rounded-full bg-ink px-6 text-quiet text-ink-foreground hover:bg-ink/85 dark:bg-ink-foreground dark:text-ink dark:hover:bg-ink-foreground/90";
 const quietButton = "h-12 rounded-full bg-card px-5 text-quiet";
 
-const startCommands = [
-  "git clone https://github.com/bernaferrari/relay.git",
-  "cd relay && pnpm install",
-  "pnpm ensure:serve",
-  "pnpm dev:web",
-];
+const startCommands = ["npx -y @relay/cli", "claude mcp add relay -- npx -y @relay/mcp"];
 
 const faqs = [
   {
     question: "Do I need a model key?",
     answer: (
       <>
-        Not for recorded steps, which replay deterministically. Describing a test in plain English
-        and model-assisted actions do need one.{" "}
+        Not for recorded steps, which replay deterministically at $0 model cost. Describing a test
+        in plain English and model-assisted actions do need one.{" "}
         <Link href="/docs/getting-started/installation">The setup guide</Link> explains both paths.
       </>
     ),
@@ -74,10 +69,9 @@ const faqs = [
     question: "Is Relay free and open source?",
     answer: (
       <>
-        Yes. Relay is MIT licensed, and you can run it from source today. Model providers may charge
-        for model-assisted actions.{" "}
-        <Link href="/docs/getting-started/first-test">Record your first test</Link>, no key
-        required.
+        Yes. Relay is MIT licensed and runs locally. Model providers may charge for model-assisted
+        actions. <Link href="/docs/getting-started/first-test">Create your first test</Link>; a
+        recorded flow needs no key.
       </>
     ),
   },
@@ -117,26 +111,23 @@ function Hero() {
             <span className="rounded-full bg-ink px-2 py-0.5 font-mono text-tiny text-ink-foreground dark:bg-ink-foreground dark:text-ink">
               MIT
             </span>
-            Open source · runs on your machine
+            Open source · local-first · no metered devices
             <ArrowUpRight className="size-3" />
           </a>
           <h1 className="mt-7 font-display text-hero font-semibold lg:text-hero-wide">
-            <span className="block sm:whitespace-nowrap">Click through it once.</span>
+            <span className="block sm:whitespace-nowrap">Real eyes and hands</span>
             <span className="ribbon-text block pe-1 pb-1 sm:whitespace-nowrap">
-              Relay keeps checking.
+              for coding agents.
             </span>
           </h1>
           <p className={`${lede} mt-7 max-w-136 sm:text-lede-wide`}>
-            Record a test just by using your website or mobile app. Relay replays it on your own
-            browser, Android, or iOS device, and keeps a screenshot of every step. Works the same
-            whether you press record or your coding agent does.
+            Relay lets Claude Code, Cursor, and Codex see and operate your web app, Android device,
+            or iPhone. Keep Tests in Git as plain-English YAML; recorded interactions replay
+            deterministically at $0 model cost.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-3">
-            <Link
-              href="/docs/getting-started/first-test"
-              className={buttonVariants({ className: inkButton })}
-            >
-              Record your first test <ArrowRight className="size-4" />
+            <Link href="/docs/agents/mcp" className={buttonVariants({ className: inkButton })}>
+              Connect your agent <ArrowRight className="size-4" />
             </Link>
             <a
               href={repositoryUrl}
@@ -147,7 +138,7 @@ function Hero() {
           </div>
           <p className="mt-5 flex items-center gap-2 text-step text-muted-foreground">
             <Check className="size-3.5 text-pass" strokeWidth={3} />
-            Runs on your computer. No model key, no account.
+            Runs against localhost and USB devices. No Relay account, no metered device minutes.
           </p>
         </div>
         <HeroLoop />
@@ -177,13 +168,13 @@ function HeroLoop() {
         className="top-[17%] left-[-2%] sm:left-[2%]"
         tone="blue"
         label="You"
-        detail="record a flow"
+        detail="write or record"
       />
       <LoopTag
         className="right-[-2%] loop-tag-baseline sm:right-[0%]"
         tone="orange"
         label="Your agent"
-        detail="reruns it"
+        detail="runs the proof"
       />
     </div>
   );
@@ -222,8 +213,8 @@ function StorySection() {
           <h2 className={`${h2} mt-4 max-w-[16ch]`}>Catch a bug. Prove the repair.</h2>
         </div>
         <p className={`${lede} max-w-sm md:text-right`}>
-          Record a checkout once. When Pay now slides over the total, Relay catches it, and the same
-          saved test proves the fix.
+          Your agent changes checkout. When Pay now slides over the total, the saved Test fails;
+          after the repair, the same Test proves the fix.
         </p>
       </div>
       <RunReel />
@@ -234,18 +225,18 @@ function StorySection() {
 const loop = [
   {
     n: "01",
-    title: "Record",
-    line: "Use your app. Relay writes the steps.",
-    body: "Click through a website or a mobile app. Keep the steps that matter, then add checks for what has to stay true.",
-    href: "/docs/workflows/recording",
-    cta: "Recording guide",
+    title: "Write or record",
+    line: "A Test starts as plain-English YAML.",
+    body: "Write steps by hand, let your agent draft them, or record exact interactions in the app. Git can review the file.",
+    href: "/docs/agents/test-files",
+    cta: "Tests as YAML",
     visual: <RecordVisual />,
   },
   {
     n: "02",
-    title: "Replay",
-    line: "Same steps, on your devices.",
-    body: "Run the saved test on a local browser, an Android phone or emulator, or an iPhone or simulator.",
+    title: "Run",
+    line: "Recorded steps replay deterministically.",
+    body: "Run the saved Test on a local browser, an Android phone or emulator, or an iPhone or simulator. Exact replay uses no model.",
     href: "/docs/workflows/running",
     cta: "Running tests",
     visual: <ReplayVisual />,
@@ -253,8 +244,8 @@ const loop = [
   {
     n: "03",
     title: "Review",
-    line: "Every screen, kept as evidence.",
-    body: "Inspect what each run saw. Accept what looks right, flag what doesn't, and keep the decision with the run.",
+    line: "Every Run keeps evidence.",
+    body: "Inspect what the Run expected and saw, with screenshots attached. Accept what looks right, flag what doesn't, and keep the decision with the Run.",
     href: "/docs/workflows/review",
     cta: "Screenshot review",
     visual: <ReviewVisual />,
@@ -267,10 +258,10 @@ function LoopSection() {
       <div className={`${container} py-24 sm:py-32`}>
         <div className="max-w-2xl">
           <p className={`${eyebrow} text-ribbon-violet`}>How it works</p>
-          <h2 className={`${h2} mt-4`}>One loop, kept honest.</h2>
+          <h2 className={`${h2} mt-4`}>Write. Run. Review.</h2>
           <p className={`${lede} mt-5 max-w-xl`}>
-            Record what you do, replay it whenever something changes, and decide with screenshots in
-            front of you, not a hunch.
+            Point Relay at an App, keep each Test in Git, inspect every Run, and let the Map connect
+            the screens your evidence reaches.
           </p>
         </div>
 
@@ -408,11 +399,11 @@ function AgentsSection() {
       >
         <div>
           <p className={`${eyebrow} text-ribbon-orange`}>For coding agents</p>
-          <h2 className={`${h2} mt-4`}>Your agent gets the same buttons.</h2>
+          <h2 className={`${h2} mt-4`}>Close the loop without leaving the editor.</h2>
           <p className="mt-6 max-w-lg text-lede leading-relaxed text-ink-foreground/65">
-            The app, the CLI, and MCP all drive the same saved tests and the same runs. An agent can
-            rerun a flow, read what was expected and what it saw, repair the cause, and run it
-            again. Then you review the exact run it made.
+            Claude Code, Cursor, and Codex can drive the same Tests through MCP or the CLI. An agent
+            reruns a flow, reads what was expected and what it saw, repairs the cause, and runs it
+            again. Then you review the exact Run it made.
           </p>
           <ul className="mt-9 space-y-4 text-quiet">
             {[
@@ -459,15 +450,15 @@ function LocalSection() {
   const facts = [
     {
       k: "Your devices",
-      v: "Your browser, your Android phone or emulator, your iPhone or simulator. Nothing rented.",
+      v: "Your browser, your Android phone or emulator, your iPhone or simulator. No rented device minutes.",
     },
     {
       k: "Your workspace",
-      v: "Tests, runs, and screenshots stay on your machine. Model-assisted steps send only what they need.",
+      v: "Tests, Runs, and screenshots stay on your machine. Model-assisted steps send only what they need to the provider you choose.",
     },
     {
       k: "Your code",
-      v: "MIT licensed. Read it, change it, and run it from source today.",
+      v: "MIT licensed. Read it, change it, inspect exactly what your agent is driving.",
     },
   ];
   return (
@@ -495,25 +486,35 @@ function QuickstartSection() {
       >
         <div>
           <p className={`${eyebrow} text-ribbon-pink`}>Quickstart</p>
-          <h2 className={`${h2} mt-4`}>Your first test, in four commands.</h2>
+          <h2 className={`${h2} mt-4`}>Two commands. Then your agent can verify.</h2>
           <p className={`${lede} mt-6 max-w-md`}>
-            Start Relay, open it, and click through one flow in your own website. Relay saves each
-            step, so you can run it again any time.
+            Use the npx packages for the zero-friction path: run Relay locally, then register its
+            MCP server with Claude Code. Cursor and Codex can launch the same package through their
+            MCP settings.
           </p>
           <ul className="mt-8 flex flex-wrap gap-2">
-            {["Node.js 24+", "pnpm", "Git", "A local browser"].map((req) => (
-              <li
-                key={req}
-                className="rounded-full border bg-background px-3 py-1 font-mono text-data text-muted-foreground"
-              >
-                {req}
-              </li>
-            ))}
+            {["Node.js 24+", "A local browser", "USB devices optional", "No Relay account"].map(
+              (req) => (
+                <li
+                  key={req}
+                  className="rounded-full border bg-background px-3 py-1 font-mono text-data text-muted-foreground"
+                >
+                  {req}
+                </li>
+              ),
+            )}
           </ul>
           <Link href="/docs/getting-started/first-test" className={`${textLink} mt-6`}>
             Read the walkthrough{" "}
             <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
           </Link>
+          <p className="mt-4 max-w-md text-step leading-relaxed text-muted-foreground">
+            Building from source instead? Clone the repository, run{" "}
+            <code className="font-mono text-foreground">pnpm run agent-device:install</code> and{" "}
+            <code className="font-mono text-foreground">pnpm run agent-device:build</code>, then{" "}
+            <code className="font-mono text-foreground">vp install</code> and{" "}
+            <code className="font-mono text-foreground">pnpm dev:web</code>.
+          </p>
         </div>
         <div className="overflow-hidden rounded-2xl border bg-ink text-ink-foreground shadow-terminal">
           <div className="flex items-center justify-between border-b border-white/10 py-1.5 ps-4 pe-1">
@@ -522,7 +523,7 @@ function QuickstartSection() {
               <i className="size-2.5 rounded-full bg-white/15" />
               <i className="size-2.5 rounded-full bg-white/15" />
             </span>
-            <span className="font-mono text-eyebrow text-white/40">~/relay</span>
+            <span className="font-mono text-eyebrow text-white/40">zero-friction path</span>
             <span className="[&_button]:text-white/60 [&_button:hover]:bg-white/10 [&_button:hover]:text-white">
               <CopyExampleCommand text={startCommands.join("\n")} />
             </span>
@@ -536,13 +537,13 @@ function QuickstartSection() {
             ))}
             <div className="mt-3 border-t border-white/10 pt-3 text-xs leading-6">
               <p className="ps-4 -indent-4 text-white/50">
-                → Relay is open at http://localhost:3000
+                → No clone, no Relay account, no metered device minutes
               </p>
               <p className="ps-4 -indent-4 text-white/50">
-                → New test · enter your website · click through it once
+                → New Test · enter localhost or attach a device · write or record the flow
               </p>
               <p className="ps-4 -indent-4 text-pass">
-                ✓ Saved. Run it again any time, or let your agent do it.
+                ✓ Your agent can rerun it, inspect the verdict, and prove the fix.
               </p>
             </div>
           </div>
@@ -595,17 +596,15 @@ function ClosingSection() {
         <div className="relative grid items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
           <div className="relative max-w-xl">
             <h2 className={h2}>
-              Give one flow a <span className="ribbon-text">repeat button.</span>
+              Let your agent <span className="ribbon-text">prove the fix.</span>
             </h2>
             <p className={`${lede} mt-5 max-w-md`}>
-              Record the journey in your own app that you’re tired of clicking through by hand.
+              Connect Relay, choose one journey that matters, and make the next repair come back
+              with evidence.
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
-              <Link
-                href="/docs/getting-started/first-test"
-                className={buttonVariants({ className: inkButton })}
-              >
-                Record your first test <ArrowRight className="size-4" />
+              <Link href="/docs/agents/mcp" className={buttonVariants({ className: inkButton })}>
+                Connect your agent <ArrowRight className="size-4" />
               </Link>
               <Link
                 href="/docs"
@@ -626,65 +625,5 @@ function ClosingSection() {
         </div>
       </div>
     </section>
-  );
-}
-
-function SiteFooter() {
-  const columns = [
-    {
-      title: "Product",
-      links: [
-        ["How it works", "#loop"],
-        ["For agents", "#agents"],
-        ["Your first test", "/docs/getting-started/first-test"],
-      ],
-    },
-    {
-      title: "Guides",
-      links: [
-        ["Install", "/docs/getting-started/installation"],
-        ["Record a flow", "/docs/workflows/recording"],
-        ["Connect over MCP", "/docs/agents/mcp"],
-      ],
-    },
-    {
-      title: "Project",
-      links: [
-        ["GitHub", repositoryUrl],
-        ["Feedback", `${repositoryUrl}/issues`],
-        ["MIT license", `${repositoryUrl}/blob/main/LICENSE`],
-      ],
-    },
-  ];
-  return (
-    <footer className="border-t">
-      <div className={`${container} grid gap-10 py-14 sm:grid-cols-[1.4fr_repeat(3,1fr)]`}>
-        <div>
-          <Link href="/" aria-label="Relay home" className="inline-flex rounded-md">
-            <RelayBrand />
-          </Link>
-          <p className="mt-3 max-w-64 text-sm leading-relaxed text-muted-foreground">
-            Local QA, for people and agents.
-          </p>
-        </div>
-        {columns.map((col) => (
-          <nav key={col.title} aria-label={col.title} className="text-sm">
-            <p className={`${eyebrow} text-muted-foreground`}>{col.title}</p>
-            <ul className="mt-3">
-              {col.links.map(([label, href]) => (
-                <li key={label}>
-                  <a
-                    href={href}
-                    className="inline-flex min-h-9 items-center text-foreground/80 hover:text-foreground"
-                  >
-                    {label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        ))}
-      </div>
-    </footer>
   );
 }

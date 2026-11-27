@@ -79,3 +79,9 @@ to inspect details on smaller screens. Regenerate the social preview after updat
 node packages/site/scripts/prepare-brand-assets.mjs
 node packages/site/scripts/prepare-social-image.mjs
 ```
+
+The README banner variants referenced from the repository root are generated the same way:
+
+```bash
+node packages/site/scripts/prepare-readme-banner.mjs
+```

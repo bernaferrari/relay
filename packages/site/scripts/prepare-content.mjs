@@ -14,9 +14,9 @@ await writeFile(
   [
     "# Relay",
     "",
-    "> Relay is a local visual testing workspace for web, Android, and iOS. Record, replay, and review evidence in the UI, CLI, or MCP.",
+    "> Relay is local verification for coding agents on web, Android, and iOS. Tests can be kept as plain-English YAML in Git, recorded interactions replay deterministically, and evidence stays in the local workspace.",
     "",
-    "Relay currently runs from source. Upstream e2e integration is an opt-in prototype.",
+    "Upstream e2e integration is an opt-in prototype.",
     "",
     "## Documentation",
     "",

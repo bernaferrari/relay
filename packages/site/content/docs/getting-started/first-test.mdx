@@ -1,26 +1,21 @@
 ---
 title: Your first test
-description: Record one flow in your own website, run it again, and review what Relay saw. No model key needed.
+description: Write or record one flow in your own website, run it again, and review what Relay saw.
 ---
 
-Your first test is one short journey in your own website: something you check by hand today, like adding an item to a cart and reaching checkout. Record it once, and Relay can repeat it whenever you want.
+Your first Test is one short journey in your own website: something you check by hand today, like adding an item to a cart and reaching checkout. Write it as YAML or record it once, and Relay can repeat it whenever you want. Recording is the fastest way to make the replay exact without a model key.
 
-Relay currently runs from source. No published npm package or desktop installer is required.
+Relay runs locally. The npx path is the easiest start; the source checkout is the contributor path.
 
 ## 1. Get Relay running
 
-Install [Node.js 24 or newer](https://nodejs.org/en/download), [pnpm](https://pnpm.io/installation), and Chrome, Chromium, or Edge. Then:
+Install [Node.js 24 or newer](https://nodejs.org/en/download) and Chrome, Chromium, or Edge. Then:
 
 ```bash title="Terminal"
-git clone https://github.com/bernaferrari/relay.git
-cd relay
-pnpm install
-pnpm doctor -- --web
-pnpm ensure:serve
-pnpm dev:web
+npx -y @relay/cli
 ```
 
-Follow the doctor's instructions if a prerequisite is missing. For an unusual browser installation, set `RELAY_BROWSER_EXECUTABLE` to its absolute path before starting the service. Prefer a window of its own? Use `pnpm dev:desktop` instead of `pnpm dev:web`.
+Follow the CLI output to open the local workspace. For the contributor source build, use the [installation guide](/docs/getting-started/installation). For an unusual browser installation, set `RELAY_BROWSER_EXECUTABLE` to its absolute path before starting the service.
 
 ## 2. Record one flow
 
@@ -47,7 +42,7 @@ A passing check is not the same as someone approving how the screen looks. That 
 The same saved test runs from the command line and from coding agents:
 
 ```bash
-pnpm relay run "Checkout" --device browser
+npx -y @relay/cli run "Checkout" --device browser
 ```
 
 Next, [record more journeys](/docs/workflows/recording) or learn how [runs work](/docs/workflows/running). Aim for a single repeatable outcome before adding more coverage.

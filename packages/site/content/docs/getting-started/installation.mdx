@@ -3,22 +3,41 @@ title: Install and open Relay
 description: Set up the local workspace, choose desktop or web, and configure only what you need.
 ---
 
-## Install from source
+## Start with npx
 
-You need **Node.js 24+**, **pnpm**, and Git. Platform tools depend on what you want to test; a website does not require Android or iOS tooling.
+You need **Node.js 24+**. Platform tools depend on what you want to test; a website does not require Android or iOS tooling.
+
+```bash
+npx -y @relay/cli
+```
+
+No clone or Relay account is required. Once the local workspace is running, connect Claude Code by registering the MCP server:
+
+```bash
+claude mcp add relay -- npx -y @relay/mcp
+```
+
+Cursor and Codex can launch the same `npx -y @relay/mcp` command through their MCP settings.
+
+## Build from source
+
+Use the source checkout to contribute, inspect internals, or pin a revision. You need **Node.js 24+**, **pnpm**, the **Vite+ CLI** (`vp`), and Git.
 
 ```bash
 git clone https://github.com/bernaferrari/relay.git
 cd relay
-pnpm install
-pnpm doctor
+pnpm run agent-device:install
+pnpm run agent-device:build
+vp install
+pnpm doctor -- --web
+pnpm ensure:serve
 ```
 
 The doctor reports missing prerequisites. Address the ones for your intended target first.
 
 ## Open the workspace
 
-Choose one interface:
+For the npx path, follow the CLI output to the local workspace. From a source checkout, choose one interface:
 
 ```bash title="Desktop app"
 pnpm dev:desktop

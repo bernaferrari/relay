@@ -3,15 +3,15 @@ title: Use the CLI
 description: Create, run, and inspect the same Tests you see in Relay's visual workspace.
 ---
 
-The CLI uses the same App, Test, Run, and target model as the interface. From a source checkout, use `pnpm relay` rather than assuming a public global package is installed.
+The CLI uses the same App, Test, Run, and target model as the interface. The examples use the npx package path; from a source checkout, use `pnpm relay` instead.
 
 ## Find your way
 
 ```bash
-pnpm relay --help
-pnpm relay guide
-pnpm relay guide record
-pnpm relay guide waits --json
+npx -y @relay/cli --help
+npx -y @relay/cli guide
+npx -y @relay/cli guide record
+npx -y @relay/cli guide waits --json
 ```
 
 Guides are bundled with the code. Reading them needs no server, model, or credentials.
@@ -19,9 +19,9 @@ Guides are bundled with the code. Reading them needs no server, model, or creden
 ## Select your workspace objects
 
 ```bash
-pnpm relay apps
-pnpm relay devices
-pnpm relay tests "My app"
+npx -y @relay/cli apps
+npx -y @relay/cli devices
+npx -y @relay/cli tests "My app"
 ```
 
 Replace “My app” with an App from the first command. Keep its Test ID and the target ID for the run.
@@ -31,7 +31,7 @@ Replace “My app” with an App from the first command. Keep its Test ID and th
 With Relay running and a model key configured for plain-English authoring:
 
 ```bash
-pnpm relay new "Add a shirt to the cart and check the total" \
+npx -y @relay/cli new "Add a shirt to the cart and check the total" \
   --url https://shop.example.com
 ```
 
@@ -40,8 +40,8 @@ The URL is an example. Replace it with a website you can test. For deterministic
 ## List and run
 
 ```bash
-pnpm relay tests Shop
-pnpm relay run "Cart total" --app Shop --device browser --out ./evidence
+npx -y @relay/cli tests Shop
+npx -y @relay/cli run "Cart total" --app Shop --device browser --out ./evidence
 ```
 
 Use names from your workspace or their IDs. Targets also accept platform selections such as `ios`, `android`, and `browser`; use an exact device ID when several targets are available.
@@ -51,9 +51,9 @@ Add `--json` for machine output. A verdict includes each step's **expected** and
 ## Inspect and export the same Run
 
 ```bash
-pnpm relay runs "My app"
-pnpm relay inspect <run-id>
-pnpm relay export <run-id> --out ./evidence
+npx -y @relay/cli runs "My app"
+npx -y @relay/cli inspect <run-id>
+npx -y @relay/cli export <run-id> --out ./evidence
 ```
 
 Replace the Run ID with the one returned by execution. Read its verdict before deciding what to repair. For hand-edited files, see [YAML Tests](/docs/agents/test-files).
