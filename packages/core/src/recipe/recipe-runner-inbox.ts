@@ -10,17 +10,24 @@ import {
 } from "../sign-in/imap-test-inbox.js";
 import {
   extractEmailCode,
+  extractEmailLink,
   EmailSecretExtractionError,
+  type ExtractedEmailCode,
+  type ExtractedEmailLink,
 } from "../sign-in/email-secret-extraction.js";
 import { resolveTestInbox, TestInboxResolutionError } from "../sign-in/test-inbox-resolution.js";
-import { INBOX_CODE_REFERENCE } from "../sign-in/secret-references.js";
+import { INBOX_CODE_REFERENCE, INBOX_LINK_REFERENCE } from "../sign-in/secret-references.js";
 import { MAX_WAIT_MS } from "./recipe-runner-support.js";
 import type { Device } from "../device/device.js";
-import type { RecipeStepContext } from "./recipe-runner-context.js";
+import { openUrl } from "../device/device.js";
+import { InputOutcomeUnknownError } from "../device/input-not-dispatched.js";
+import { invalidateVerifiedScreen, type RecipeStepContext } from "./recipe-runner-context.js";
 import { runInboxCodeActStep, type ActScreenObserver } from "./recipe-runner-act.js";
 
 const DEFAULT_INBOX_TIMEOUT_MS = 60_000;
 const CLOCK_SKEW_MS = 30_000;
+
+type InboxAction = Extract<RecipeStep, { kind: "inbox" }>["action"];
 
 export class TestInboxStepError extends Error {
   constructor(
@@ -29,10 +36,14 @@ export class TestInboxStepError extends Error {
       | "missing-inbox"
       | "revoked-inbox"
       | "no-email"
+      | "timeout"
       | "ambiguous-code"
       | "no-code"
+      | "ambiguous-link"
+      | "no-link"
       | "imap"
-      | "act",
+      | "act"
+      | "open",
     message: string,
   ) {
     super(message);
@@ -62,14 +73,106 @@ function delay(ms: number): Promise<void> {
 }
 
 function blocked(
-  reason: "missing-inbox" | "revoked-inbox" | "no-email" | "ambiguous-code" | "no-code",
+  reason:
+    | "missing-inbox"
+    | "revoked-inbox"
+    | "no-email"
+    | "timeout"
+    | "ambiguous-code"
+    | "no-code"
+    | "ambiguous-link"
+    | "no-link",
   message: string,
 ): TestInboxStepError {
   return new TestInboxStepError("blocked", reason, `inbox blocked: ${message}`);
 }
 
-/** Fetch the newest email code on demand, then enter it through the ordinary
- * act loop. Polling is scoped to this step and leaves no daemon behind. */
+type InboxExtraction =
+  | { action: "type-code"; extracted: ExtractedEmailCode }
+  | { action: "open-link"; extracted: ExtractedEmailLink };
+
+function extractForAction(action: InboxAction, messages: TestInboxMessage[]): InboxExtraction {
+  return action === "type-code"
+    ? { action, extracted: extractEmailCode(messages) }
+    : { action, extracted: extractEmailLink(messages) };
+}
+
+function extractionFailure(action: InboxAction, error: unknown): "missing" | "terminal" | "other" {
+  if (!(error instanceof EmailSecretExtractionError)) return "other";
+  if (action === "type-code") {
+    if (error.code === "ambiguous-code") return "terminal";
+    return error.code === "no-code" ? "missing" : "other";
+  }
+  if (error.code === "ambiguous-link") return "terminal";
+  return error.code === "no-link" ? "missing" : "other";
+}
+
+function registerSensitiveInput(
+  job: NonNullable<RecipeStepContext["job"]>,
+  name: string,
+  value: string,
+): void {
+  job.resolvedInputs ??= {};
+  job.resolvedInputs[name] = value;
+  job.sensitiveInputNames = [...new Set([...(job.sensitiveInputNames ?? []), name])];
+}
+
+function scrubSecretText(value: string, secret: string, reference: string): string {
+  return value.split(secret).join(reference);
+}
+
+async function openExtractedLink(input: {
+  device: Device;
+  ctx: RecipeStepContext;
+  step: Extract<RecipeStep, { kind: "inbox" }>;
+  inboxKey: string;
+  mailbox: string;
+  extracted: ExtractedEmailLink;
+  timeoutMs: number;
+}): Promise<void> {
+  const { ctx, extracted, inboxKey } = input;
+  const job = ctx.job!;
+  const inputName = `inbox.${inboxKey}.link`;
+  registerSensitiveInput(job, inputName, extracted.url);
+  job.artifacts?.push({
+    kind: "inbox-link",
+    capturedAt: Date.now(),
+    data: {
+      ...(input.step.id ? { recipeStepId: input.step.id } : {}),
+      inboxKey,
+      mailbox: input.mailbox,
+      uid: extracted.message.uid,
+      internalDateMs: extracted.message.internalDateMs,
+      deadlineMs: input.timeoutMs,
+      urlReference: INBOX_LINK_REFERENCE,
+    },
+  });
+
+  try {
+    await openUrl(input.device, extracted.url);
+  } catch (error) {
+    if (error instanceof Error && error.name === "JobCancelledError") throw error;
+    if (error instanceof InputOutcomeUnknownError) {
+      throw new TestInboxStepError(
+        "harness",
+        "open",
+        "Input outcome unknown: the sign-in link may already have opened. Relay stopped rather than opening it again.",
+      );
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new TestInboxStepError(
+      "harness",
+      "open",
+      `The sign-in link could not be opened: ${scrubSecretText(message, extracted.url, INBOX_LINK_REFERENCE)}`,
+    );
+  }
+  invalidateVerifiedScreen(ctx);
+  ctx.log("Opened the sign-in link from the email");
+}
+
+/** Fetch the newest email secret on demand. Polling is scoped to this step and
+ * leaves no daemon behind. Code entry then uses the ordinary act loop; link
+ * opening is a direct navigation and never involves a model decision. */
 export async function runInboxStep(
   device: Device,
   step: Extract<RecipeStep, { kind: "inbox" }>,
@@ -77,8 +180,9 @@ export async function runInboxStep(
   runConcrete: (concrete: RecipeStep) => Promise<void>,
   observeScreen?: ActScreenObserver,
 ): Promise<void> {
-  if (step.action !== "type-code")
+  if (step.action !== "type-code" && step.action !== "open-link") {
     throw new Error(`inbox: unsupported action ${String((step as { action?: unknown }).action)}`);
+  }
   const active = ctx.runtime?.activeSignIn;
   const inboxKey = step.inboxKey ?? active?.inboxKey;
   if (!active) {
@@ -125,7 +229,9 @@ export async function runInboxStep(
     if (error instanceof Error && error.name === "JobCancelledError") throw error;
     throw new TestInboxStepError("harness", "imap", "inbox: could not connect to the test inbox");
   }
-  let extracted;
+  let extracted: InboxExtraction | undefined;
+  let sawMatchingMessage = false;
+  let sawMissingSecret: "no-code" | "no-link" | undefined;
   try {
     for (;;) {
       await cooperativeCheckpoint(job.id);
@@ -149,12 +255,20 @@ export async function runInboxStep(
       const matching = messages
         .filter((message) => message.internalDateMs >= sinceMs)
         .filter((message) => recipientMatches(message, resolved.recipient));
+      if (matching.length) sawMatchingMessage = true;
       try {
-        extracted = extractEmailCode(matching);
+        extracted = extractForAction(step.action, matching);
         break;
       } catch (error) {
-        if (error instanceof EmailSecretExtractionError && error.code === "ambiguous-code") {
-          throw blocked("ambiguous-code", error.message);
+        const failure = extractionFailure(step.action, error);
+        if (failure === "terminal") {
+          const reason = step.action === "type-code" ? "ambiguous-code" : "ambiguous-link";
+          throw blocked(reason, (error as Error).message);
+        }
+        if (failure === "missing") {
+          sawMissingSecret = step.action === "type-code" ? "no-code" : "no-link";
+        } else if (failure === "other") {
+          throw error;
         }
       }
       await raceCancel(delay(Math.min(INBOX_POLL_MS, Math.max(1, deadline - Date.now()))), job.id);
@@ -163,18 +277,38 @@ export async function runInboxStep(
     await client.close().catch(() => undefined);
   }
   if (!extracted) {
+    if (step.action === "open-link") {
+      if (sawMatchingMessage && sawMissingSecret === "no-link") {
+        throw blocked("no-link", "The newest matching email did not contain a usable sign-in link");
+      }
+      throw blocked(
+        "timeout",
+        `No sign-in email arrived within ${Math.ceil(timeoutMs / 1000)} seconds`,
+      );
+    }
     throw blocked("no-email", `no matching email arrived within ${Math.ceil(timeoutMs / 1000)}s`);
   }
 
+  if (extracted.action === "open-link") {
+    await openExtractedLink({
+      device,
+      ctx,
+      step,
+      inboxKey,
+      mailbox: resolved.mailbox,
+      extracted: extracted.extracted,
+      timeoutMs,
+    });
+    return;
+  }
+
   const inputName = `inbox.${inboxKey}.code`;
-  job.resolvedInputs ??= {};
-  job.resolvedInputs[inputName] = extracted.code;
-  job.sensitiveInputNames = [...new Set([...(job.sensitiveInputNames ?? []), inputName])];
+  registerSensitiveInput(job, inputName, extracted.extracted.code);
   ctx.runtime.activeInboxCode = Object.freeze({
     inboxKey,
-    code: extracted.code,
-    uid: extracted.message.uid,
-    internalDateMs: extracted.message.internalDateMs,
+    code: extracted.extracted.code,
+    uid: extracted.extracted.message.uid,
+    internalDateMs: extracted.extracted.message.internalDateMs,
   });
   job.artifacts?.push({
     kind: "inbox-code",
@@ -183,8 +317,8 @@ export async function runInboxStep(
       ...(step.id ? { recipeStepId: step.id } : {}),
       inboxKey,
       mailbox: resolved.mailbox,
-      uid: extracted.message.uid,
-      internalDateMs: extracted.message.internalDateMs,
+      uid: extracted.extracted.message.uid,
+      internalDateMs: extracted.extracted.message.internalDateMs,
       deadlineMs: timeoutMs,
     },
   });
@@ -209,7 +343,7 @@ export async function runInboxStep(
     throw new TestInboxStepError(
       "harness",
       "act",
-      `inbox: could not enter the email code: ${message.split(extracted.code).join(INBOX_CODE_REFERENCE)}`,
+      `inbox: could not enter the email code: ${scrubSecretText(message, extracted.extracted.code, INBOX_CODE_REFERENCE)}`,
     );
   }
 }

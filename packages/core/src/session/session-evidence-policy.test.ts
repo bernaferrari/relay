@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { automaticEvidencePhases } from "./session.js";
+import { automaticFailureEvidenceAllowed } from "./session-evidence-phases.js";
 
 test("automatic evidence preserves causal frames without duplicating passive steps", () => {
   assert.deepEqual(automaticEvidencePhases({ kind: "tap", target: { text: "Continue" } }), [
@@ -48,6 +49,8 @@ test("automatic evidence preserves causal frames without duplicating passive ste
     }),
     [],
   );
+  assert.deepEqual(automaticEvidencePhases({ kind: "inbox", action: "open-link" }), []);
+  assert.equal(automaticFailureEvidenceAllowed({ kind: "inbox", action: "open-link" }), false);
   assert.deepEqual(automaticEvidencePhases({ kind: "device", action: "keyboard-dismiss" }), []);
   assert.deepEqual(automaticEvidencePhases({ kind: "device", action: "keyboard-enter" }), [
     "after",

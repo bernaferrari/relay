@@ -17,14 +17,16 @@ export type TestInboxConnection = Readonly<{
 export type TestInboxCredentials = Readonly<{ username: string; password: string }>;
 
 /** Secret-bearing message projection used only inside the run process. The
- * subject is present here because OTPs often appear in it; it must never be
- * copied to artifacts, logs, errors, or model prompts. */
+ * subject is present here because OTPs often appear in it, and the HTML body
+ * is present because sign-in links often exist only as anchor hrefs. None of
+ * these fields may be copied to artifacts, logs, errors, or model prompts. */
 export type TestInboxMessage = Readonly<{
   uid: number;
   internalDateMs: number;
   recipients: string[];
   subject?: string;
   bodyText: string;
+  bodyHtml?: string;
 }>;
 
 /** Narrow test seam. Production adapts IMAP; tests fake message fetching and
@@ -152,6 +154,7 @@ export async function createImapTestInboxClient(
           ],
           ...(fetched.envelope?.subject ? { subject: fetched.envelope.subject } : {}),
           bodyText: bodyText(parsed),
+          ...(typeof parsed.html === "string" ? { bodyHtml: parsed.html } : {}),
         });
       }
       return messages.sort(

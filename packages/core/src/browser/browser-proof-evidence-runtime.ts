@@ -14,6 +14,7 @@ import { browserProofRuntimeForTarget, type BrowserProofRuntime } from "./browse
 import { hasSensitiveEvidenceConsent } from "../evidence/evidence-policy.js";
 import {
   getRedactionPolicy,
+  REDACTED,
   redactSensitiveEvidenceValue,
   redactValueForPolicy,
   visualEvidenceAllowed,
@@ -29,6 +30,10 @@ export type CaptureInput = Readonly<{
   runDir: string;
   /** Frozen with the Run before browser collection starts. */
   evidencePolicy: EvidenceCollectionPolicy;
+  /** Run-local plaintext secrets that must never reach durable browser evidence.
+   * They are supplied separately so exact token carriers can be masked even
+   * when broad workspace redaction is off. */
+  exactSecrets?: readonly string[];
   /** Test seam for exercising collection policy without a live browser. */
   runtime?: BrowserProofRuntime;
 }>;
@@ -51,6 +56,24 @@ function canonical(value: unknown): unknown {
 
 function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
+}
+
+function redactExactSecrets(value: unknown, secrets: readonly string[]): unknown {
+  if (typeof value === "string") {
+    let out = value;
+    for (const secret of secrets) if (secret.length >= 4) out = out.split(secret).join(REDACTED);
+    return out;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactExactSecrets(item, secrets));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        redactExactSecrets(item, secrets),
+      ]),
+    );
+  }
+  return value;
 }
 
 function messageOf(error: unknown): string {
@@ -130,6 +153,7 @@ export async function captureBrowserProofEvidence(
   input: CaptureInput,
 ): Promise<BrowserProofEvidence> {
   const runtime = input.runtime ?? (await browserProofRuntimeForTarget(input.targetId));
+  const exactSecrets = input.exactSecrets ?? [];
   if (!sameValue(runtime.profile, input.environment)) {
     throw new Error("Playwright proof environment differs from the frozen Run profile");
   }
@@ -147,7 +171,9 @@ export async function captureBrowserProofEvidence(
   // them as a separately consented sensitive channel. Missing consent is the
   // safe default for legacy policies and must never create a trace file.
   const traceAllowed =
-    visualAllowed && hasSensitiveEvidenceConsent(input.evidencePolicy, "browser-trace");
+    visualAllowed &&
+    exactSecrets.length === 0 &&
+    hasSensitiveEvidenceConsent(input.evidencePolicy, "browser-trace");
   const channels = {} as Record<BrowserProofEvidenceChannel, BrowserProofEvidenceChannelRecord>;
   const payloads: {
     consoleErrors?: BrowserProofEvidence["consoleErrors"];
@@ -215,7 +241,10 @@ export async function captureBrowserProofEvidence(
 
   const safeConsole = runtime.console.map(
     (entry) =>
-      redactValueForPolicy(redactSensitiveEvidenceValue(entry), redactionPolicy) as typeof entry,
+      redactValueForPolicy(
+        redactSensitiveEvidenceValue(redactExactSecrets(entry, exactSecrets)),
+        redactionPolicy,
+      ) as typeof entry,
   );
   const consoleRedactions = runtime.console.reduce(
     (count, entry, index) => count + (sameValue(entry, safeConsole[index]) ? 0 : 1),
@@ -256,7 +285,10 @@ export async function captureBrowserProofEvidence(
 
   const safePageErrors = runtime.pageErrors.map(
     (entry) =>
-      redactValueForPolicy(redactSensitiveEvidenceValue(entry), redactionPolicy) as typeof entry,
+      redactValueForPolicy(
+        redactSensitiveEvidenceValue(redactExactSecrets(entry, exactSecrets)),
+        redactionPolicy,
+      ) as typeof entry,
   );
   const pageErrorRedactions = runtime.pageErrors.reduce(
     (count, entry, index) => count + (sameValue(entry, safePageErrors[index]) ? 0 : 1),
@@ -305,7 +337,7 @@ export async function captureBrowserProofEvidence(
           responseBodyTruncated: undefined,
         };
     return redactValueForPolicy(
-      redactSensitiveEvidenceValue(withoutBody),
+      redactSensitiveEvidenceValue(redactExactSecrets(withoutBody, exactSecrets)),
       redactionPolicy,
     ) as typeof entry;
   });
@@ -391,7 +423,10 @@ export async function captureBrowserProofEvidence(
       // masking. A Proof may retain popup topology when broad redaction is
       // disabled, but URL queries, cookies, tokens, and authorization values
       // are never valid durable evidence.
-      pages = projection.pages.map((page) => redactSensitiveEvidenceValue(page) as typeof page);
+      pages = projection.pages.map(
+        (page) =>
+          redactSensitiveEvidenceValue(redactExactSecrets(page, exactSecrets)) as typeof page,
+      );
       pagesDropped = projection.dropped;
       await writeJson(absoluteArtifactPath(input.runDir, popupPath), {
         pages,

@@ -33,12 +33,15 @@ export function intentHasSignInAuth(intent: string): boolean {
   return signInAuthForIntent(intent) !== undefined;
 }
 
-export type InboxStepIntent = Readonly<{ action: "type-code" }>;
+export type InboxStepIntent = Readonly<{ action: "type-code" | "open-link" }>;
 
-/** Deliberately exact canonical code-entry phrase. Near misses remain ordinary
+/** Deliberately exact canonical inbox phrases. Near misses remain ordinary
  * act text and never acquire inbox authority by accident. */
 export function inboxStepForIntent(intent: string): InboxStepIntent | undefined {
-  return normalizeIntent(intent) === "enter the code from the email"
-    ? Object.freeze({ action: "type-code" })
-    : undefined;
+  const normalized = normalizeIntent(intent);
+  if (normalized === "enter the code from the email") return Object.freeze({ action: "type-code" });
+  if (normalized === "open the sign-in link from the email") {
+    return Object.freeze({ action: "open-link" });
+  }
+  return undefined;
 }

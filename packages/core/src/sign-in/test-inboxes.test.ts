@@ -4,8 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { inspectTestInboxEnvironmentOverlay } from "./environment-overlays.js";
-import { extractEmailCode, EmailSecretExtractionError } from "./email-secret-extraction.js";
+import {
+  extractEmailCode,
+  extractEmailLink,
+  EmailSecretExtractionError,
+} from "./email-secret-extraction.js";
 import { inboxStepForIntent } from "./auth-step-intents.js";
+import { testInboxKeysForRecipeGraph } from "./inbox-admission.js";
 import {
   latestNonRevokedTestInbox,
   listTestInboxes,
@@ -166,11 +171,112 @@ test("code extraction chooses the newest unambiguous OTP and fails closed on amb
   );
 });
 
-test("canonical inbox phrase is exact and near misses do not compile to inbox authority", () => {
+test("link extraction scores sign-in context, reads HTML hrefs, and fails closed on ambiguity", () => {
+  const base = {
+    uid: 1,
+    internalDateMs: 100,
+    recipients: ["member+test@example.test"],
+    bodyText: "",
+  };
+  const scored = extractEmailLink([
+    {
+      ...base,
+      bodyText:
+        "Learn more [https://links.example.test/details]\nSign in [https://links.example.test/auth?token=secret]",
+    },
+  ]);
+  assert.equal(scored.url, "https://links.example.test/auth?token=secret");
+
+  const htmlOnly = extractEmailLink([
+    {
+      ...base,
+      bodyHtml:
+        '<p>Welcome.</p><a href="https://auth.example.test/continue?token=abc&amp;source=email">Sign in</a>',
+    },
+  ]);
+  assert.equal(htmlOnly.url, "https://auth.example.test/continue?token=abc&source=email");
+
+  assert.equal(
+    extractEmailLink([
+      {
+        ...base,
+        bodyText:
+          "Sign in [https://auth.example.test/one] The same link: https://auth.example.test/one.",
+      },
+    ]).url,
+    "https://auth.example.test/one",
+  );
+
+  assert.throws(
+    () =>
+      extractEmailLink([
+        {
+          ...base,
+          bodyHtml:
+            '<a href="https://auth.example.test/one">Sign in</a><a href="https://auth.example.test/two">Sign in</a>',
+        },
+      ]),
+    (error: unknown) =>
+      error instanceof EmailSecretExtractionError && error.code === "ambiguous-link",
+  );
+});
+
+test("link extraction filters operational chrome before choosing the sign-in link", () => {
+  const message = {
+    uid: 1,
+    internalDateMs: 100,
+    recipients: ["member+test@example.test"],
+    bodyText:
+      "Unsubscribe [https://mail.example.test/unsubscribe]\nPrivacy policy [https://mail.example.test/privacy]\nhttps://mail.example.test/button.png\nSign in [https://mail.example.test/auth?token=secret]",
+    bodyHtml:
+      '<a href="https://mail.example.test/unsubscribe">Unsubscribe</a><a href="https://mail.example.test/privacy">Privacy policy</a><img src="https://mail.example.test/button.png" alt="Sign in"><a href="https://mail.example.test/auth?token=secret">Sign in</a>',
+  };
+  assert.equal(extractEmailLink([message]).url, "https://mail.example.test/auth?token=secret");
+  assert.throws(
+    () =>
+      extractEmailLink([
+        {
+          ...message,
+          bodyText: "Unsubscribe [https://mail.example.test/unsubscribe]",
+          bodyHtml: '<a href="https://mail.example.test/unsubscribe">Unsubscribe</a>',
+        },
+      ]),
+    (error: unknown) => error instanceof EmailSecretExtractionError && error.code === "no-link",
+  );
+});
+
+test("inbox admission scanning includes explicit magic-link steps without new inbox management", async () => {
+  assert.deepEqual(
+    await testInboxKeysForRecipeGraph({
+      projectId: "project",
+      recipeGraph: {
+        root: {
+          id: "root",
+          title: "Root",
+          source: "custom",
+          steps: [{ kind: "inbox", action: "open-link", inboxKey: "member" }],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    }),
+    ["member"],
+  );
+});
+
+test("canonical inbox phrases are exact and near misses do not compile to inbox authority", () => {
   assert.deepEqual(inboxStepForIntent("Enter the code from the email"), { action: "type-code" });
   assert.deepEqual(inboxStepForIntent(" enter   the code from the email! "), {
     action: "type-code",
   });
+  assert.deepEqual(inboxStepForIntent("Open the sign-in link from the email"), {
+    action: "open-link",
+  });
+  assert.deepEqual(inboxStepForIntent(" open   the sign-in link from the email. "), {
+    action: "open-link",
+  });
   assert.equal(inboxStepForIntent("Enter the code from email"), undefined);
   assert.equal(inboxStepForIntent("Enter the magic link from the email"), undefined);
+  assert.equal(inboxStepForIntent("Open the magic link from the email"), undefined);
+  assert.equal(inboxStepForIntent("Open the sign-in link in the email"), undefined);
 });

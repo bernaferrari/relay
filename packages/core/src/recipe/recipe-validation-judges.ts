@@ -97,7 +97,9 @@ export function parseJudgeRecipeStep(
   note?: string,
 ): RecipeStep | undefined {
   if (kind === "inbox") {
-    if (raw.action !== "type-code") throw stepErr(index, 'inbox.action must be "type-code"');
+    if (raw.action !== "type-code" && raw.action !== "open-link") {
+      throw stepErr(index, 'inbox.action must be "type-code" or "open-link"');
+    }
     const keyPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
     for (const field of ["accountKey", "inboxKey"] as const) {
       if (
@@ -118,7 +120,7 @@ export function parseJudgeRecipeStep(
     }
     return {
       kind: "inbox",
-      action: "type-code",
+      action: raw.action,
       ...(isString(raw.accountKey) ? { accountKey: raw.accountKey } : {}),
       ...(isString(raw.inboxKey) ? { inboxKey: raw.inboxKey } : {}),
       ...(typeof raw.timeoutMs === "number" ? { timeoutMs: raw.timeoutMs } : {}),

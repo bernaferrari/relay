@@ -562,6 +562,19 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
         stepId,
       });
       return;
+    case "inbox":
+      if (step.action === "open-link") {
+        accumulator.addBoundary("external-url");
+        accumulator.addRisk({
+          level: "guarded",
+          code: EXECUTION_RISK_CODES.externalApp,
+          explanation:
+            "The Test opens a sign-in URL and may cross an external application boundary.",
+          stepId,
+          externalEffects: ["external-app"],
+        });
+      }
+      return;
     case "tour":
       accumulator.addRisk({
         level: "guarded",

@@ -542,11 +542,12 @@ export type RecipeStep = RecipeStepMetadata &
         cached?: RecipeStep[];
       }
     | {
-        /** Fetch a fresh sign-in email code from the connected test inbox and
-         * enter it through the model-mediated act loop. The message and code
-         * never become recipe data; runtime evidence keeps safe metadata only. */
+        /** Fetch a fresh sign-in secret from the connected test inbox. Code
+         * entry uses the model-mediated act loop only to choose the destination
+         * field; link opening is local navigation with no model decision. The
+         * message, code, and URL never become recipe data. */
         kind: "inbox";
-        action: "type-code";
+        action: "type-code" | "open-link";
         accountKey?: string;
         inboxKey?: string;
         timeoutMs?: number;

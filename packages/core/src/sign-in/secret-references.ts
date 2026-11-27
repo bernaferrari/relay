@@ -1,6 +1,7 @@
 export const SIGN_IN_USERNAME_REFERENCE = "secret:signin.username";
 export const SIGN_IN_PASSWORD_REFERENCE = "secret:signin.password";
 export const INBOX_CODE_REFERENCE = "secret:inbox.code";
+export const INBOX_LINK_REFERENCE = "secret:inbox.link";
 
 const SECRET_REFERENCE = /^secret:[A-Za-z0-9_.:-]{1,120}$/u;
 

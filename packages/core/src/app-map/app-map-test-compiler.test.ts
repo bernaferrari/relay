@@ -3910,3 +3910,26 @@ test("canonical saved-account phrases compile to act steps with non-secret sign-
   });
   assert.equal(acts[1]!.auth, undefined);
 });
+
+test("canonical magic-link phrase compiles to an inbox open-link step and near misses stay ordinary acts", () => {
+  const work = scenario();
+  work.steps = [
+    {
+      id: "open-link",
+      kind: "instruction",
+      intent: "Open the sign-in link from the email",
+      binding: { status: "unresolved", reason: "Runs from text", fromText: true },
+    },
+    {
+      id: "near-miss",
+      kind: "instruction",
+      intent: "Open the magic link from the email",
+      binding: { status: "unresolved", reason: "Runs from text", fromText: true },
+    },
+  ];
+  const compiled = compileAppMapTest(fixture(), work);
+  assert.equal(compiled.root.steps[0]?.kind, "inbox");
+  assert.equal(compiled.root.steps[0]?.action, "open-link");
+  assert.equal(compiled.root.steps[1]?.kind, "act");
+  assert.equal(compiled.root.steps[1]?.intent, "Open the magic link from the email");
+});

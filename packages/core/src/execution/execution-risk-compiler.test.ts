@@ -257,6 +257,31 @@ describe("compileExecutionRisk", () => {
     );
   });
 
+  test("inbox magic links are guarded external navigation while code entry stays internal", () => {
+    const risk = compileExecutionRisk(
+      graph("root", {
+        root: {
+          id: "root",
+          steps: [
+            { id: "code", kind: "inbox", action: "type-code" },
+            { id: "magic", kind: "inbox", action: "open-link" },
+          ],
+        },
+      }),
+    );
+
+    assert.equal(risk.level, "guarded");
+    assert.deepEqual(risk.externalEffects, ["external-app"]);
+    assert.deepEqual(risk.expectedAppBoundaries, ["external-url"]);
+    assert.deepEqual(risk.reasons, [
+      {
+        stepId: "magic",
+        code: EXECUTION_RISK_CODES.externalApp,
+        explanation: "The Test opens a sign-in URL and may cross an external application boundary.",
+      },
+    ]);
+  });
+
   test("fails closed when a scenario cannot be frozen", () => {
     const risk = compileExecutionRisk({
       kind: "scenario-test",

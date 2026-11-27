@@ -8,7 +8,7 @@ export function createInboxStepSchema(metadataShape: Record<string, z.ZodTypeAny
     .object({
       ...metadataShape,
       kind: z.literal("inbox"),
-      action: z.literal("type-code"),
+      action: z.enum(["type-code", "open-link"]),
       accountKey: savedSignInKeySchema.optional(),
       inboxKey: savedSignInKeySchema.optional(),
       timeoutMs: z.number().optional(),

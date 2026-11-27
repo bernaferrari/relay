@@ -27,6 +27,9 @@ export async function stopBrowserProofEvidence(
       environment,
       runDir: await ensureRunDir(job),
       evidencePolicy: job.evidencePolicy,
+      exactSecrets: Object.entries(job.resolvedInputs ?? {})
+        .filter(([name]) => job.sensitiveInputNames?.includes(name))
+        .map(([, value]) => value),
     });
     job.artifacts.push({
       kind: "browser-proof-evidence",
