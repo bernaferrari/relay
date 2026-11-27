@@ -2257,6 +2257,7 @@ test("qa exposes the describe, run, verdict loop and accurate discovery", async 
       "relay_check_change",
       "relay_list_tests",
       "relay_list_devices",
+      "relay_list_sign_ins",
       "relay_get_guide",
       "relay_list_apps",
       "relay_list_runs",

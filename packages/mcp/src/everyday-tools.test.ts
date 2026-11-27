@@ -345,6 +345,7 @@ test("every profile registers the whole qa loop and its orientation tools", () =
     "relay_check_change",
     "relay_list_tests",
     "relay_list_devices",
+    "relay_list_sign_ins",
     "relay_get_guide",
     "relay_list_apps",
     "relay_list_runs",
