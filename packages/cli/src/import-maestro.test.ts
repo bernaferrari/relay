@@ -117,8 +117,12 @@ test("Maestro conditional repeat becomes one explicit plain-English instruction"
 `);
   const parsed = parseTestYaml(result.yaml);
   assert.equal(yamlSteps(parsed).length, 1);
-  assert.match(String(yamlSteps(parsed)[0]), /^Repeat these steps while Load more is visible:/u);
-  assert.match(String(yamlSteps(parsed)[0]), /Swipe down; Tap "Load more"/u);
+  const repeatedStep = yamlSteps(parsed)[0];
+  if (typeof repeatedStep !== "string") {
+    assert.fail("expected a plain instruction step");
+  }
+  assert.match(repeatedStep, /^Repeat these steps while Load more is visible:/u);
+  assert.match(repeatedStep, /Swipe down; Tap "Load more"/u);
   assert.ok(result.warnings.some((warning) => warning.includes("review the repetition")));
 });
 
