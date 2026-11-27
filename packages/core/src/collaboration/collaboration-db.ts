@@ -597,8 +597,9 @@ export function upsertHealthyAppMap(
     disposition?: Extract<StoredAppMapDisposition, "ready" | "migrated">;
   } = {},
 ): void {
-  upsertAppMapRow(db, key, JSON.stringify(appMap), "ok", undefined, appMap.updatedAt, {
-    sourceDocument: options.sourceDocument ?? JSON.stringify(appMap),
+  const document = JSON.stringify(appMap);
+  upsertAppMapRow(db, key, document, "ok", undefined, appMap.updatedAt, {
+    sourceDocument: options.sourceDocument ?? document,
     disposition: options.disposition ?? "ready",
   });
 }
@@ -618,7 +619,7 @@ function importState(db: DatabaseSync, state: CollaborationState): void {
   for (const [key, appMap] of Object.entries(state.appMaps)) {
     const source = state.appMapSources[key];
     upsertHealthyAppMap(db, key, appMap, {
-      sourceDocument: JSON.stringify(source?.original ?? appMap),
+      sourceDocument: source ? JSON.stringify(source.original) : undefined,
       disposition: source?.disposition ?? "ready",
     });
   }
