@@ -84,7 +84,10 @@ test("relay init is idempotent and --force rewrites only the generated files", a
       { probeUrl: async () => true },
     );
     assert.deepEqual(first.scaffold?.kept, []);
-    await writeFile(join(dir, ".relay/tests/smoke.yaml"), "name: Custom\nurl: http://x\nsteps: []\n");
+    await writeFile(
+      join(dir, ".relay/tests/smoke.yaml"),
+      "name: Custom\nurl: http://x\nsteps: []\n",
+    );
     const second = await runInitCommand(
       { cwd: dir, url: "http://127.0.0.1:3999/", env: {} },
       { probeUrl: async () => true },

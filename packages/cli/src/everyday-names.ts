@@ -257,9 +257,7 @@ export async function resolveDevice(
         try {
           startUrl = new URL(options.browserStartUrl);
         } catch {
-          throw new UsageError(
-            `The browser start URL is not valid: ${options.browserStartUrl}`,
-          );
+          throw new UsageError(`The browser start URL is not valid: ${options.browserStartUrl}`);
         }
         if (
           (startUrl.protocol === "http:" || startUrl.protocol === "https:") &&

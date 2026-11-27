@@ -96,15 +96,22 @@ async function directoryNames(path: string): Promise<string[]> {
 
 async function hasIosProject(cwd: string): Promise<string | undefined> {
   const rootNames = await directoryNames(cwd);
-  const rootProject = rootNames.find((name) => name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace"));
+  const rootProject = rootNames.find(
+    (name) => name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace"),
+  );
   if (rootProject) return rootProject;
   const iosNames = await directoryNames(join(cwd, "ios"));
-  const iosProject = iosNames.find((name) => name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace"));
+  const iosProject = iosNames.find(
+    (name) => name.endsWith(".xcodeproj") || name.endsWith(".xcworkspace"),
+  );
   return iosProject ? `ios/${iosProject}` : undefined;
 }
 
 async function hasAndroidProject(cwd: string): Promise<string | undefined> {
-  if ((await exists(join(cwd, "android", "build.gradle"))) || (await exists(join(cwd, "android", "settings.gradle")))) {
+  if (
+    (await exists(join(cwd, "android", "build.gradle"))) ||
+    (await exists(join(cwd, "android", "settings.gradle")))
+  ) {
     return "android";
   }
   if (
@@ -153,9 +160,15 @@ export async function detectProject(cwd: string): Promise<ProjectDetection> {
   } else if (dependencies.has("vite") || /\bvite\b/u.test(scripts)) {
     kind = "vite";
     evidence.push(dependencies.has("vite") ? "vite dependency" : "vite script");
-  } else if (manifest?.scripts?.dev || manifest?.scripts?.start || (await exists(join(cwd, "index.html")))) {
+  } else if (
+    manifest?.scripts?.dev ||
+    manifest?.scripts?.start ||
+    (await exists(join(cwd, "index.html")))
+  ) {
     kind = "web";
-    evidence.push(manifest?.scripts?.dev || manifest?.scripts?.start ? "web start script" : "index.html");
+    evidence.push(
+      manifest?.scripts?.dev || manifest?.scripts?.start ? "web start script" : "index.html",
+    );
   }
 
   return {
@@ -221,12 +234,22 @@ async function chooseUrl(
   cwd: string,
   explicit: string | undefined,
   probe: (url: string) => Promise<boolean>,
-): Promise<{ url: string; source: NonNullable<InitResult["scaffold"]>["urlSource"]; running: boolean } | undefined> {
-  if (explicit) return { url: normalizeExplicitUrl(explicit), source: "explicit", running: await probe(explicit) };
+): Promise<
+  | { url: string; source: NonNullable<InitResult["scaffold"]>["urlSource"]; running: boolean }
+  | undefined
+> {
+  if (explicit)
+    return {
+      url: normalizeExplicitUrl(explicit),
+      source: "explicit",
+      running: await probe(explicit),
+    };
   const candidates = [...detection.frameworkPorts, 3000, 5173, 4173, 8080, 8000]
     .filter((port, index, all) => all.indexOf(port) === index)
     .map(localUrl);
-  const running = await Promise.all(candidates.map(async (url) => ((await probe(url)) ? url : undefined)));
+  const running = await Promise.all(
+    candidates.map(async (url) => ((await probe(url)) ? url : undefined)),
+  );
   const runningUrl = running.find((url): url is string => Boolean(url));
   if (runningUrl) return { url: runningUrl, source: "running", running: true };
 
@@ -234,7 +257,11 @@ async function chooseUrl(
     const manifest = await readPackageJson(cwd);
     const configured = scriptPort(manifest);
     if (configured) return { url: localUrl(configured), source: "script", running: false };
-    return { url: localUrl(detection.frameworkPorts[0]!), source: "framework-default", running: false };
+    return {
+      url: localUrl(detection.frameworkPorts[0]!),
+      source: "framework-default",
+      running: false,
+    };
   }
   return undefined;
 }
@@ -276,8 +303,10 @@ function nextSteps(input: {
   needsModelKey: boolean;
 }): string[] {
   const steps: string[] = [];
-  if (!input.running) steps.push(`Start the app: ${input.devCommand ?? "start your development server"}`);
-  if (input.needsModelKey) steps.push("Set the model key: export OPENROUTER_API_KEY=<your OpenRouter key>");
+  if (!input.running)
+    steps.push(`Start the app: ${input.devCommand ?? "start your development server"}`);
+  if (input.needsModelKey)
+    steps.push("Set the model key: export OPENROUTER_API_KEY=<your OpenRouter key>");
   steps.push("Run the first check: relay ci .relay/tests --confirm");
   steps.push("Add Relay to Claude Code: claude mcp add relay -- npx -y @relay/mcp");
   return steps;
@@ -309,10 +338,7 @@ export async function runInitCommand(
       kind: detection.kind,
       detection,
       needsModelKey,
-      nextSteps: [
-        "Start your local web server.",
-        "Run relay init --url http://127.0.0.1:<port>",
-      ],
+      nextSteps: ["Start your local web server.", "Run relay init --url http://127.0.0.1:<port>"],
       message:
         detection.kind === "unknown"
           ? "No web project or running localhost server was detected. Pass --url to initialize anyway."

@@ -147,7 +147,12 @@ export async function runCiCommand(input: {
     : undefined;
   const runTest =
     input.runTest ??
-    (async (request: { appMapId: string; testId: string; targetId?: string; confirmRisk?: true }) => {
+    (async (request: {
+      appMapId: string;
+      testId: string;
+      targetId?: string;
+      confirmRisk?: true;
+    }) => {
       const jobs = createRelayOutcomeJobs(
         {
           invoke: (id, payload) => invoke(id, payload as Record<string, unknown>),

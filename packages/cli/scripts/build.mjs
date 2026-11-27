@@ -67,12 +67,7 @@ await chmod(executable, 0o755);
 
 const runtimeDist = resolve(dist, "runtime");
 await mkdir(runtimeDist, { recursive: true });
-for (const file of [
-  "server.js",
-  "startup.js",
-  "manifest.json",
-  "screenshot-analysis-worker.cjs",
-]) {
+for (const file of ["server.js", "startup.js", "manifest.json", "screenshot-analysis-worker.cjs"]) {
   await cp(resolve(runtimeRoot, "dist", file), resolve(runtimeDist, file));
 }
 await cp(resolve(runtimeRoot, "dist/agent-device"), resolve(runtimeDist, "agent-device"), {
