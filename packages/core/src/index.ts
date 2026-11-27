@@ -146,6 +146,7 @@ export * from "./run/player-manifest.js";
 export * from "./run/walkthrough-pack.js";
 export * from "./run/run-panel-manifest.js";
 export * from "./evidence/evidence-metrics.js";
+export * from "./evidence/native-resolution-metrics.js";
 export * from "./workspace/workspace-root.js";
 export * from "./workspace/workspace-change-context.js";
 export * from "./android/android-avd.js";

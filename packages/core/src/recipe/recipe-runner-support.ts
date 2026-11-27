@@ -25,6 +25,16 @@ import {
 import { identifierPresentViaLiveIosRunnerListener } from "../ios/ios-runner-listener-command.js";
 import { iosSemanticTargetPresent } from "../ios/ios-target-presence.js";
 import { resolveNamedControlOutcome } from "../device/device-target-resolution.js";
+import type { NamedControlResolutionFailure } from "../device/device-target-resolution.js";
+import {
+  activationTransportEvidenceSince,
+  activationTransportSequence,
+  type ActivationTransportEvidence,
+} from "../device/device-activation-transport.js";
+import {
+  accessibilityTreeQuality,
+  type AccessibilityTreeQuality,
+} from "../device/accessibility-tree-quality.js";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "../execution/control.js";
 import { TargetControlReservedError } from "../target/target-control.js";
 import { now } from "../collaboration/events.js";
@@ -252,6 +262,9 @@ async function tapTarget(
   method?: string;
   bounds?: { x: number; y: number; width: number; height: number };
   point?: { x: number; y: number };
+  activationTransport?: ActivationTransportEvidence;
+  selectorFailures?: NamedControlResolutionFailure[];
+  treeQuality?: AccessibilityTreeQuality;
   localizedTarget?: { label?: string; text?: string; locale: string };
 }> {
   const repeated =
@@ -363,11 +376,18 @@ async function tapTarget(
     }
   }
   if (named) {
+    let pressed = named;
     try {
       if (verifiedNodes && selectedPlatform() === "android") {
-        await pressPoint(device, named.point.x, named.point.y, repeated);
+        const sequence = activationTransportSequence();
+        await pressPoint(device, named.point.x, named.point.y, repeated, {
+          provenance: "snapshot-point",
+          resolutionMethod: named.method,
+        });
+        const activationTransport = activationTransportEvidenceSince(sequence);
+        pressed = activationTransport ? { ...named, activationTransport } : named;
       } else {
-        await pressResolvedControl(device, named, namedTarget, repeated, {
+        pressed = await pressResolvedControl(device, named, namedTarget, repeated, {
           refreshBeforePointFallbackForApp: controlBoundsOnlyForApp,
         });
       }
@@ -379,10 +399,13 @@ async function tapTarget(
       if (!androidNamedPressCompletedHandoff(error, namedTarget)) throw error;
     }
     return {
-      strategy: named.method,
-      method: named.method,
-      bounds: named.bounds,
-      point: named.point,
+      strategy: pressed.method,
+      method: pressed.method,
+      bounds: pressed.bounds,
+      point: pressed.point,
+      ...(pressed.activationTransport ? { activationTransport: pressed.activationTransport } : {}),
+      ...(pressed.selectorFailures ? { selectorFailures: pressed.selectorFailures } : {}),
+      treeQuality: accessibilityTreeQuality(nodes),
       ...(localizedTarget ? { localizedTarget } : {}),
     };
   }
@@ -557,6 +580,9 @@ async function tapRecordedTarget(
           strategy: hit.strategy,
           ...(hit.bounds ? { bounds: hit.bounds } : {}),
           ...(hit.point ? { point: hit.point } : {}),
+          ...(hit.activationTransport ? { activationTransport: hit.activationTransport } : {}),
+          ...(hit.selectorFailures ? { selectorFailures: hit.selectorFailures } : {}),
+          ...(hit.treeQuality ? { treeQuality: hit.treeQuality } : {}),
           ...(beforeFramePath ? { beforeFramePath } : {}),
           target: candidate,
           ...(hit.localizedTarget ? { localizedTarget: hit.localizedTarget } : {}),

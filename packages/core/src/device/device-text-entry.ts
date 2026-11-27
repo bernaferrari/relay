@@ -39,6 +39,11 @@ import { isPhysicalRunnerRoute, resolveAppleControlRoute } from "../apple/apple-
 import { probeLiveIosRunnerListener } from "../ios/ios-runner-listener.js";
 import { typeViaLiveIosRunnerListener } from "../ios/ios-runner-listener-command.js";
 import { rememberedTargetApplication } from "./device-target-applications.js";
+import {
+  noteCoordinateActuation,
+  noteDaemonSelectorActuation,
+  noteDirectActuation,
+} from "./device-activation-transport.js";
 import type { AndroidTextEntryReceipt } from "../android/android-text-entry-verification.js";
 
 export type TextEntryOutcome = {
@@ -69,7 +74,9 @@ async function enterAndroidText(
   if (target) {
     plan = planTextEntryFocus(await snapshot(device, { raw: true }), target);
     if (!plan.alreadyFocused) {
-      await pressPoint(device, plan.resolution.point.x, plan.resolution.point.y);
+      await pressPoint(device, plan.resolution.point.x, plan.resolution.point.y, undefined, {
+        provenance: "snapshot-point",
+      });
     }
   }
   const existing = knownFieldText(plan?.field);
@@ -157,6 +164,7 @@ export async function replaceText(
             text: value,
           }),
         );
+        noteDaemonSelectorActuation({ operation: "fill", snapshotPoint: fillPoint });
       } catch (error) {
         const point = await iosSnapshotFallbackPoint(device, target, error, fillPoint);
         await controlledMutation("fill", () =>
@@ -167,12 +175,18 @@ export async function replaceText(
             text: value,
           }),
         );
+        noteCoordinateActuation({
+          operation: "fill",
+          provenance: "snapshot-point",
+          channel: "daemon",
+        });
       }
     },
     type: async (value) => {
       await controlledMutation("type", () =>
         nativeDevice(device).interactions.type({ ...base(), text: value }),
       );
+      noteDirectActuation("type", "daemon");
     },
   });
   return fillPoint ? { resolution: explicitPointResolution(fillPoint) } : {};
@@ -222,5 +236,6 @@ export async function typeViaLiveIosListener(text: string): Promise<boolean> {
       ...(appBundleId ? { appBundleId } : {}),
     }),
   );
+  noteDirectActuation("type", "listener");
   return true;
 }

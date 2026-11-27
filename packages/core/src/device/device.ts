@@ -18,11 +18,9 @@ import {
   controlledMutation,
   iosNonHittablePressFields,
   nativeDevice,
-  type DeviceTransport,
 } from "./device-dispatch.js";
 import { type DeviceTextInputDependencies, typeDeviceText } from "./device-android-text.js";
 import { typeViaLiveIosListener } from "./device-text-entry.js";
-import { NamedControlMissError } from "../device/named-control-miss.js";
 import {
   boundedAndroidTextEntrySnapshot,
   type AndroidTextEntryReceipt,
@@ -37,21 +35,22 @@ export {
 export type { AndroidTextPasteAdapter } from "./device-android-text.js";
 export { base } from "./device-dispatch.js";
 import { currentTargetContext, selectedPlatform } from "../target/target-context.js";
-import { iosSelectorWasNotDispatched, runIosMutationOnce } from "../ios/ios-mutation-policy.js";
+import { iosSelectorWasNotDispatched } from "../ios/ios-mutation-policy.js";
 import {
-  identifierNodesViaLiveIosRunnerListener,
   isIosSessionMissingSnapshotError,
-  labelNodesViaLiveIosRunnerListener,
   snapshotFromLiveIosRunnerListenerIfReady,
   tapViaLiveIosRunnerListener,
 } from "../ios/ios-runner-listener-command.js";
 import { probeLiveIosRunnerListener } from "../ios/ios-runner-listener.js";
-import {
-  isPhysicalRunnerRoute,
-  isSimulatorSdkRoute,
-  resolveAppleControlRoute,
-} from "../apple/apple-control-route.js";
+import { isPhysicalRunnerRoute, resolveAppleControlRoute } from "../apple/apple-control-route.js";
 import { mutateCurrentTarget } from "./device-target-mutation.js";
+import {
+  noteActivationTransport,
+  noteCoordinateActuation,
+  noteDaemonSelectorActuation,
+  noteDirectActuation,
+  type ActivationResolutionPath,
+} from "./device-activation-transport.js";
 import { sleep } from "./device-system-actions.js";
 export { createDevice, resetDeviceClient, resetDeviceClients } from "./device-client-bindings.js";
 import {
@@ -60,10 +59,7 @@ import {
   type ClipboardTarget,
 } from "./device-clipboard.js";
 export { clipboardRead, clipboardWrite } from "./device-clipboard.js";
-import {
-  rememberedTargetApplication,
-  rememberTargetApplication,
-} from "./device-target-applications.js";
+import { rememberedTargetApplication } from "./device-target-applications.js";
 export {
   rememberedTargetApplication,
   rememberTargetApplication,
@@ -88,22 +84,17 @@ export {
 export { selectedPlatform } from "../target/target-context.js";
 export * from "../android/android-app-build.js";
 
-import { openPhysicalIosApp } from "../ios/ios-app-open.js";
-import { namedControlObservationOptions } from "../device/named-control-observation.js";
-import { pressResolvedControl } from "./device-resolved-control.js";
-export { pressResolvedControl } from "./device-resolved-control.js";
+export {
+  pressResolvedControl,
+  pressNamedControl,
+  androidNamedPressCompletedHandoff,
+} from "./device-resolved-control.js";
 import {
   center,
-  explicitPointResolution,
   INTERACTIVE_SNAPSHOT_ROLES,
-  resolveNamedControl,
   resolveSnapshotTargetPoint,
 } from "./device-target-resolution.js";
-import type {
-  NamedControlResolution,
-  NamedControlTarget,
-  SemanticSnapshotTarget,
-} from "./device-target-resolution.js";
+import type { SemanticSnapshotTarget } from "./device-target-resolution.js";
 export {
   center,
   preflightSemanticActivation,
@@ -171,108 +162,37 @@ export async function snapshot(
   return (result.nodes ?? []) as SnapshotNode[];
 }
 
-export type LaunchResult = {
-  launch: "completed" | "not-dispatched" | "outcome-unknown";
-  semanticSession: "attached" | "unavailable" | "not-requested";
-};
-
-export async function openApp(
-  device: Device,
-  app: string,
-  opts?: { relaunch?: boolean },
-): Promise<LaunchResult> {
-  const context = currentTargetContext();
-  const appleRoute = resolveAppleControlRoute(context);
-  if (isPhysicalRunnerRoute(appleRoute) && context.kind === "device") {
-    // Sidecar launch is the one activation. There is no supported
-    // non-activating SDK attach for physical devices, so do not disguise a
-    // second `apps.open` as session binding — that can foreground the app
-    // again and swallow attachment failure.
-    await openPhysicalIosApp({
-      context,
-      app,
-      relaunch: opts?.relaunch ?? true,
-      rememberApplication: rememberTargetApplication,
-    });
-    return { launch: "completed", semanticSession: "not-requested" };
-  }
-  const opened = await controlledMutation("app-open", () =>
-    nativeDevice(device).apps.open({
-      ...base(),
-      app,
-      relaunch: opts?.relaunch ?? true,
-    }),
-  );
-  await rememberTargetApplication(opened.appBundleId ?? opened.appId ?? app);
-  if (!isSimulatorSdkRoute(appleRoute)) await sleep(2000, device);
-  return { launch: "completed", semanticSession: "attached" };
-}
-
-/**
- * Rebind an Android SDK session to the package that already owns the visible
- * pixels. This is intentionally separate from `openApp`: evidence/AX repair
- * must not inject its normal post-launch delay or an unrelated relaunch.
- */
-export async function bindAndroidAppSession(
-  device: Device,
-  app: string,
-  serial?: string,
-): Promise<void> {
-  await controlledMutation("app-open", () =>
-    nativeDevice(device).apps.open({
-      platform: "android",
-      ...(serial ? { serial } : {}),
-      app,
-      relaunch: false,
-      noRecord: true,
-    } as never),
-  );
-}
-
-/**
- * Simulator/emulator boot is a target operation, never a workflow primitive.
- * Keep its raw SDK access inside the dispatcher so callers cannot acquire the
- * native transport merely to start a device.
- */
-export async function bootTarget(
-  device: Device,
-  options: Parameters<DeviceTransport["devices"]["boot"]>[0],
-): Promise<unknown> {
-  return await nativeDevice(device).devices.boot(options);
-}
-
-/** Runner setup is host-side preparation, not a user-input gesture. */
-export async function prepareDeviceRunner(
-  device: Device,
-  options: Parameters<DeviceTransport["command"]["prepare"]>[0],
-): Promise<unknown> {
-  return await nativeDevice(device).command.prepare(options);
-}
-
-export type DeviceRecordingOptions = Parameters<DeviceTransport["recording"]["record"]>[0];
-export type DeviceRecordingResult = {
-  [key: string]: unknown;
-  started?: boolean;
-  stopped?: boolean;
-  warning?: string;
-  path?: string;
-};
-
-/**
- * Record an evidence take through the same exact-once mutation policy as every
- * other physical iOS command. Android retains its explicit retry contract.
- */
-export async function recordDeviceVideo(
-  device: Device,
-  options: DeviceRecordingOptions,
-  /** Physical iOS adapters pass their verified UDID instead of relying on ambient context. */
-  iosSerial?: string,
-): Promise<DeviceRecordingResult> {
-  const record = () => nativeDevice(device).recording.record(options);
-  return await (iosSerial
-    ? runIosMutationOnce(iosSerial, "video", record)
-    : controlledMutation("video", record));
-}
+export {
+  bindAndroidAppSession,
+  bootTarget,
+  openApp,
+  prepareDeviceRunner,
+  recordDeviceVideo,
+} from "./device-app-lifecycle.js";
+export type {
+  DeviceRecordingOptions,
+  DeviceRecordingResult,
+  LaunchResult,
+} from "./device-app-lifecycle.js";
+export {
+  activationEvidenceHasPointContribution,
+  activationTransportEvidence,
+  activationTransportEvidenceSince,
+  activationTransportHasPointContribution,
+  activationTransportsSince,
+  activationTransportSequence,
+  noteActivationTransport,
+} from "./device-activation-transport.js";
+export type {
+  ActivationChannel,
+  ActivationOperation,
+  ActivationResolutionPath,
+  ActivationTransport,
+  ActivationTransportEvidence,
+  ActivationTransportRecord,
+} from "./device-activation-transport.js";
+export { accessibilityTreeQuality } from "./accessibility-tree-quality.js";
+export type { AccessibilityTreeQuality } from "./accessibility-tree-quality.js";
 
 export type RepeatedPress = {
   count?: number;
@@ -298,7 +218,7 @@ async function pressViaLiveIosListener(
   const appBundleId = await rememberedTargetApplication(context);
   // One usbmux tap on the LISTENER_READY runner. Do not also dispatch through
   // the unbound SDK session — that is a second press with unknown outcome.
-  await controlledMutation("press", () =>
+  const actuation = await controlledMutation("press", () =>
     tapViaLiveIosRunnerListener({
       serial: pressRoute.udid,
       selectorKey,
@@ -306,6 +226,17 @@ async function pressViaLiveIosListener(
       ...(appBundleId ? { appBundleId } : {}),
     }),
   );
+  // The runner never receives a point contribution here, but its selector
+  // activation is always permitted to coordinate-activate non-hittable
+  // elements — and the collision path provably tapped a re-ranked coordinate.
+  noteActivationTransport({
+    operation: "press",
+    transport: actuation.actuation === "point" ? "snapshot-point" : "native-selector",
+    channel: "listener",
+    resolutionMethod: selectorKey === "id" ? "identifier" : "label",
+    coordinateFallbackPermitted: true,
+    ...(actuation.collisionRecovery ? { collisionRecovery: true } : {}),
+  });
   return true;
 }
 
@@ -331,13 +262,21 @@ export async function pressLabel(
         ...repeated,
       } as never),
     );
+    noteDaemonSelectorActuation({
+      operation: "press",
+      resolutionMethod: "label",
+      snapshotPoint: point,
+    });
   } catch (error) {
     if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
     const fallback =
       selectedPlatform() === "ios"
         ? await iosSnapshotFallbackPoint(device, semantic, error, point)
         : (point ?? (await iosSnapshotFallbackPoint(device, semantic, error)));
-    await pressPoint(device, fallback.x, fallback.y, repeated);
+    await pressPoint(device, fallback.x, fallback.y, repeated, {
+      provenance: "snapshot-point",
+      resolutionMethod: "label",
+    });
   }
 }
 
@@ -357,13 +296,21 @@ export async function pressIdentifier(
         ...repeated,
       } as never),
     );
+    noteDaemonSelectorActuation({
+      operation: "press",
+      resolutionMethod: "identifier",
+      snapshotPoint: point,
+    });
   } catch (error) {
     if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
     const fallback =
       selectedPlatform() === "ios"
         ? await iosSnapshotFallbackPoint(device, { identifier }, error, point)
         : (point ?? (await iosSnapshotFallbackPoint(device, { identifier }, error)));
-    await pressPoint(device, fallback.x, fallback.y, repeated);
+    await pressPoint(device, fallback.x, fallback.y, repeated, {
+      provenance: "snapshot-point",
+      resolutionMethod: "identifier",
+    });
   }
 }
 
@@ -372,7 +319,14 @@ export async function pressPoint(
   x: number,
   y: number,
   repeated?: RepeatedPress,
+  provenance: {
+    /** Where the coordinate came from. Defaults to the caller, because a
+     * coordinate without a resolution context can only be caller-supplied. */
+    provenance?: "explicit-point" | "snapshot-point";
+    resolutionMethod?: ActivationResolutionPath;
+  } = {},
 ): Promise<void> {
+  const transport = provenance.provenance ?? "explicit-point";
   if (selectedPlatform() === "ios" && !repeated) {
     const context = currentTargetContext();
     const pressRoute = resolveAppleControlRoute(context);
@@ -387,6 +341,12 @@ export async function pressPoint(
             ...(appBundleId ? { appBundleId } : {}),
           }),
         );
+        noteCoordinateActuation({
+          operation: "press",
+          provenance: transport,
+          channel: "listener",
+          ...(provenance.resolutionMethod ? { resolutionMethod: provenance.resolutionMethod } : {}),
+        });
         return;
       }
     }
@@ -399,6 +359,12 @@ export async function pressPoint(
       ...repeated,
     } as never),
   );
+  noteCoordinateActuation({
+    operation: "press",
+    provenance: transport,
+    channel: "daemon",
+    ...(provenance.resolutionMethod ? { resolutionMethod: provenance.resolutionMethod } : {}),
+  });
 }
 
 export async function longPressTarget(
@@ -412,6 +378,15 @@ export async function longPressTarget(
   },
   durationMs = 700,
 ): Promise<void> {
+  // Long-press payloads never carry the non-hittable coordinate allowance:
+  // every semantic branch here is a bare native selector actuation.
+  const bareSelector = (resolutionMethod: ActivationResolutionPath) =>
+    noteActivationTransport({
+      operation: "long-press",
+      transport: "native-selector",
+      channel: "daemon",
+      resolutionMethod,
+    });
   if (target.identifier) {
     await controlledMutation("long-press", () =>
       nativeDevice(device).interactions.longPress({
@@ -420,6 +395,7 @@ export async function longPressTarget(
         durationMs,
       }),
     );
+    bareSelector("identifier");
   } else if (target.ref) {
     await controlledMutation("long-press", () =>
       nativeDevice(device).interactions.longPress({
@@ -428,6 +404,7 @@ export async function longPressTarget(
         durationMs,
       }),
     );
+    bareSelector("ref");
   } else if (target.label) {
     const label = target.label;
     await controlledMutation("long-press", () =>
@@ -437,6 +414,7 @@ export async function longPressTarget(
         durationMs,
       }),
     );
+    bareSelector("label");
   } else if (target.text) {
     const text = target.text;
     await controlledMutation("long-press", () =>
@@ -446,6 +424,7 @@ export async function longPressTarget(
         durationMs,
       }),
     );
+    bareSelector("text");
   } else if (target.point) {
     await controlledMutation("long-press", () =>
       nativeDevice(device).interactions.longPress({
@@ -455,6 +434,12 @@ export async function longPressTarget(
         durationMs,
       }),
     );
+    noteCoordinateActuation({
+      operation: "long-press",
+      provenance: "explicit-point",
+      channel: "daemon",
+      resolutionMethod: "point",
+    });
   } else {
     throw new Error("hold requires a target");
   }
@@ -523,6 +508,14 @@ export async function pressRef(
   await controlledMutation("press", () =>
     nativeDevice(device).interactions.press({ ...base(), ref: normalized, ...repeated }),
   );
+  // Ref presses attach no maestro fields, so no point contribution and no
+  // coordinate fallback permission ever reaches the runner here.
+  noteActivationTransport({
+    operation: "press",
+    transport: "native-selector",
+    channel: "daemon",
+    resolutionMethod: "ref",
+  });
 }
 
 export async function pressText(
@@ -539,9 +532,13 @@ export async function pressText(
         ...repeated,
       } as never),
     );
+    noteDaemonSelectorActuation({ operation: "press", resolutionMethod: "text" });
   } catch (error) {
     const point = await iosSnapshotFallbackPoint(device, { text }, error);
-    await pressPoint(device, point.x, point.y, repeated);
+    await pressPoint(device, point.x, point.y, repeated, {
+      provenance: "snapshot-point",
+      resolutionMethod: "text",
+    });
   }
 }
 
@@ -563,11 +560,16 @@ export async function findClick(
         ...iosNonHittablePressFields(),
       } as never),
     );
+    // The daemon resolves the query itself; Relay contributes no geometry.
+    noteDaemonSelectorActuation({ operation: "find", resolutionMethod: "text" });
   } catch (error) {
     const point = await iosSnapshotFallbackPoint(device, { text: query }, error).catch(
       async (err) => iosSnapshotFallbackPoint(device, { label: query }, err),
     );
-    await pressPoint(device, point.x, point.y);
+    await pressPoint(device, point.x, point.y, undefined, {
+      provenance: "snapshot-point",
+      resolutionMethod: "text",
+    });
   }
 }
 
@@ -634,6 +636,7 @@ export async function scrollDown(device: Device, amount = 0.5): Promise<void> {
       amount,
     }),
   );
+  noteDirectActuation("scroll", "daemon");
 }
 
 /** Scroll toward earlier content using the same SDK semantics as scrollDown. */
@@ -645,6 +648,7 @@ export async function scrollUp(device: Device, amount = 0.5): Promise<void> {
       amount,
     }),
   );
+  noteDirectActuation("scroll", "daemon");
 }
 
 export function nodesMatch(nodes: SnapshotNode[], substring: string): SnapshotNode | undefined {
@@ -658,103 +662,6 @@ export function nodesMatch(nodes: SnapshotNode[], substring: string): SnapshotNo
 /** agent-device reports every Android package transition after a coordinate
  * fallback as an escaped tap. Accept one only when the authored semantic
  * control declares the exact expected destination package. */
-export function androidNamedPressCompletedHandoff(
-  error: unknown,
-  target: NamedControlTarget,
-): boolean {
-  if (selectedPlatform() !== "android") return false;
-  if (!target.identifier?.trim() && !target.label?.trim() && !target.text?.trim()) return false;
-  const message = error instanceof Error ? error.message : String(error);
-  const handoff = /press coordinate tap left\s+(\S+)\s+and foregrounded\s+(\S+)/i.exec(message);
-  const destination = handoff?.[2]?.replace(/[.,;:]+$/, "");
-  if (!destination || destination === handoff?.[1]) return false;
-  return Boolean(target.expectedApp?.trim() && destination === target.expectedApp.trim());
-}
-
-/** Snapshot → resolveNamedControl → press. Used by recipe taps, mouse interact, and CLI. */
-export async function pressNamedControl(
-  device: Device,
-  target: NamedControlTarget,
-  repeated?: RepeatedPress,
-): Promise<NamedControlResolution> {
-  const pointOnly = explicitPointResolution(target.point);
-  const hasNamed = Boolean(
-    target.identifier?.trim() || target.label?.trim() || target.text?.trim(),
-  );
-  if (pointOnly && !hasNamed) {
-    await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);
-    return pointOnly;
-  }
-  let nodes: SnapshotNode[];
-  try {
-    nodes = await snapshot(device, namedControlObservationOptions(target, selectedPlatform()));
-  } catch (error) {
-    if (pointOnly) {
-      await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);
-      return pointOnly;
-    }
-    throw error;
-  }
-  if (!nodes.length && pointOnly) {
-    await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);
-    return pointOnly;
-  }
-  let resolved = resolveNamedControl(nodes, target);
-  // A fresh proof context (fixture lanes mint one per operation) can serve
-  // its accessibility tree a beat after the page is interactive. A first
-  // grounding miss on a browser is therefore retried briefly before it is
-  // declared final — the tap must not silently no-op on a page that merely
-  // was not semantic-ready yet.
-  const context = currentTargetContext();
-  const browserGroundingRetry = context.kind === "browser";
-  const groundingDeadline = performance.now() + 3_000;
-  while (!resolved && browserGroundingRetry && performance.now() < groundingDeadline) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 250));
-    nodes = await snapshot(device, {
-      ...(target.identifier?.trim() ? { includeIdentifiers: [target.identifier] } : {}),
-      ...(target.label?.trim() ? { includeLabels: [target.label] } : {}),
-    });
-    resolved = resolveNamedControl(nodes, target);
-  }
-  if (!resolved && target.identifier?.trim() && selectedPlatform() === "ios") {
-    try {
-      const iosContext = currentTargetContext();
-      if (iosContext.kind === "device" && iosContext.platform === "ios") {
-        const extra = await identifierNodesViaLiveIosRunnerListener({
-          serial: iosContext.serial,
-          identifier: target.identifier,
-          appBundleId: await rememberedTargetApplication(iosContext),
-        });
-        if (extra?.length) resolved = resolveNamedControl(extra, { identifier: target.identifier });
-      }
-    } catch {
-      // Keep the chrome-bounded miss. Do not invent a point.
-    }
-  }
-  if (!resolved && target.label?.trim() && selectedPlatform() === "ios") {
-    try {
-      const iosContext = currentTargetContext();
-      if (iosContext.kind === "device" && iosContext.platform === "ios") {
-        const extra = await labelNodesViaLiveIosRunnerListener({
-          serial: iosContext.serial,
-          label: target.label,
-          appBundleId: await rememberedTargetApplication(iosContext),
-        });
-        if (extra?.length) resolved = resolveNamedControl(extra, { label: target.label });
-      }
-    } catch {
-      // Keep the chrome-bounded miss. Do not invent a point.
-    }
-  }
-  if (!resolved) throw new NamedControlMissError(nodes, target);
-  try {
-    return await pressResolvedControl(device, resolved, target, repeated);
-  } catch (error) {
-    if (androidNamedPressCompletedHandoff(error, target)) return resolved;
-    throw error;
-  }
-}
-
 function canUseIosSnapshotCoordinateFallback(error: unknown): boolean {
   if (selectedPlatform() !== "ios") return false;
   return iosSelectorWasNotDispatched(error);
@@ -788,6 +695,11 @@ export async function pressMatchingText(device: Device, match: string): Promise<
         ...iosNonHittablePressFields(point),
       } as never),
     );
+    noteDaemonSelectorActuation({
+      operation: "press",
+      resolutionMethod: "text",
+      snapshotPoint: point,
+    });
     return;
   } catch (error) {
     if (error instanceof Error && error.name === "JobCancelledError") throw error;
@@ -818,7 +730,10 @@ export async function pressMatchingText(device: Device, match: string): Promise<
   }
 
   if (point) {
-    await pressPoint(device, point.x, point.y);
+    await pressPoint(device, point.x, point.y, undefined, {
+      provenance: "snapshot-point",
+      resolutionMethod: "text",
+    });
     return;
   }
 
@@ -861,7 +776,10 @@ export async function pressMatchingText(device: Device, match: string): Promise<
 
   const rect = best ?? textNode!.rect!;
   const p = center(rect);
-  await pressPoint(device, p.x, p.y);
+  await pressPoint(device, p.x, p.y, undefined, {
+    provenance: "snapshot-point",
+    resolutionMethod: "text",
+  });
 }
 
 export async function anyExists(device: Device, queries: string[]): Promise<string | undefined> {

@@ -42,6 +42,7 @@ import {
   type IosSessionOperationDiagnostic,
 } from "./workspace-ios-session.js";
 import { rawKey, rawSwipe, rawTap } from "./workspace-android-raw.js";
+import { noteCoordinateActuation } from "../device/device-activation-transport.js";
 import {
   dispatchSupervisedIosMutation,
   rethrowIosMutationOutcomeUnknown,
@@ -647,7 +648,14 @@ export async function interact(
                 y: input.y,
                 ...(bounds ? { width: bounds.width, height: bounds.height } : {}),
               });
-              if (hid.status === "completed") return hid;
+              if (hid.status === "completed") {
+                noteCoordinateActuation({
+                  operation: "press",
+                  provenance: "explicit-point",
+                  channel: "hid",
+                });
+                return hid;
+              }
               throw hid.error;
             }),
           );

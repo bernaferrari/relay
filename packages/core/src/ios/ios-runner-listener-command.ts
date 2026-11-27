@@ -575,6 +575,20 @@ export async function labelNodesViaLiveIosRunnerListener(input: {
   return nodes;
 }
 
+/**
+ * What physically actuated a listener tap. A selector tap can still end in a
+ * coordinate: the runner may coordinate-activate a non-hittable element, and
+ * the same-identifier collision path re-ranks a fresh tree and taps its
+ * resolved point outright. Callers use this to tell activation transport
+ * evidence the truth instead of claiming every selector tap was semantic.
+ */
+export type IosListenerTapActuation = {
+  actuation: "selector" | "point";
+  /** The selector matched multiple nodes; a fresh tree re-ranked them and the
+   * winning coordinate was tapped. Always a point actuation. */
+  collisionRecovery?: true;
+};
+
 export async function tapViaLiveIosRunnerListener(input: {
   serial: string;
   selectorKey?: "label" | "id";
@@ -584,7 +598,7 @@ export async function tapViaLiveIosRunnerListener(input: {
   point?: { x: number; y: number };
   appBundleId?: string;
   timeoutMs?: number;
-}): Promise<void> {
+}): Promise<IosListenerTapActuation> {
   const listener = await probeLiveIosRunnerListener(input.serial);
   if (!listener) {
     throw new Error("iOS snapshot needs an active XCTest session");
@@ -608,7 +622,7 @@ export async function tapViaLiveIosRunnerListener(input: {
   const timeoutMs = input.timeoutMs ?? 20_000;
   const post = injectedPost ?? postLiveIosRunnerCommand;
   const result = await postSupervisedAdoptedIosMutation(listener, post, command, timeoutMs);
-  if (result.ok === true) return;
+  if (result.ok === true) return { actuation: input.point ? "point" : "selector" };
   const failure = adoptedIosMutationFailure(
     result,
     liveIosRunnerFailureMessage(result, "Live XCTest listener tap failed"),
@@ -647,7 +661,7 @@ export async function tapViaLiveIosRunnerListener(input: {
         liveIosRunnerFailureMessage(ranked, "Live XCTest listener tap failed"),
       );
     }
-    return;
+    return { actuation: "point", collisionRecovery: true };
   }
   throw failure;
 }

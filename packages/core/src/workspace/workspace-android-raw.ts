@@ -6,6 +6,10 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { adbSwipeInputArgs } from "../adb/adb-input.js";
 import { resolveAndroidSdkToolSync } from "../android/android-sdk-tools.js";
+import {
+  noteCoordinateActuation,
+  noteDirectActuation,
+} from "../device/device-activation-transport.js";
 
 /** SurfaceFlinger IDs exceed JavaScript's safe integer range; keep them as strings. */
 export function primaryAndroidDisplay(displays: string): string | undefined {
@@ -45,6 +49,7 @@ export function rawTap(x: number, y: number, serial?: string): void {
   if (!serial) throw new Error("Explicit Android target serial is required");
   const args = ["-s", serial, "shell", "input", "tap", String(x), String(y)];
   execFileSync(resolveAndroidSdkToolSync("adb"), args, { timeout: 5000 });
+  noteCoordinateActuation({ operation: "press", provenance: "explicit-point", channel: "adb" });
 }
 
 export type AndroidRawKey = "enter" | "backspace" | "back" | "home" | "recents";
@@ -90,11 +95,13 @@ export function rawKey(key: AndroidRawKey | "hide-keyboard", serial?: string): {
     execFileSync(adb, ["-s", serial, "shell", "input", "keyevent", "KEYCODE_BACK"], {
       timeout: 5000,
     });
+    noteDirectActuation("key", "adb");
     return { sent: true };
   }
   execFileSync(adb, ["-s", serial, "shell", "input", "keyevent", androidKeyCode(key)], {
     timeout: 5000,
   });
+  noteDirectActuation("key", "adb");
   return { sent: true };
 }
 
@@ -109,4 +116,5 @@ export function rawSwipe(
   const inputArgs = adbSwipeInputArgs(from, to, durationMs);
   const args = ["-s", serial, "shell", ...inputArgs];
   execFileSync(resolveAndroidSdkToolSync("adb"), args, { timeout: 8000 });
+  noteCoordinateActuation({ operation: "swipe", provenance: "explicit-point", channel: "adb" });
 }

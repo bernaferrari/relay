@@ -57,7 +57,7 @@ async function fixture(
     serial: string;
     store: TargetSupervisorStore;
     installPost(post: LiveIosRunnerCommandPost): void;
-    mutate(kind: "tap" | "type"): Promise<void>;
+    mutate(kind: "tap" | "type"): Promise<unknown>;
     reopenedStartupIsBlocked(): Promise<void>;
   }) => Promise<void>,
   options: ConstructorParameters<typeof TargetSupervisorStore>[1] = {},
@@ -91,16 +91,18 @@ async function fixture(
             restorePost = setLiveIosRunnerCommandPostForTests(catalogAwarePost(post));
           },
           mutate: (kind) =>
-            runIosMutationOnce(serial, kind === "tap" ? "press" : "type", () =>
-              kind === "tap"
-                ? tapViaLiveIosRunnerListener({
-                    serial,
-                    selectorKey: "label",
-                    selectorValue: "Fast",
-                    appBundleId,
-                  })
-                : typeViaLiveIosRunnerListener({ serial, text: "public prompt", appBundleId }),
-            ),
+            runIosMutationOnce(serial, kind === "tap" ? "press" : "type", async () => {
+              if (kind === "tap") {
+                await tapViaLiveIosRunnerListener({
+                  serial,
+                  selectorKey: "label",
+                  selectorValue: "Fast",
+                  appBundleId,
+                });
+              } else {
+                await typeViaLiveIosRunnerListener({ serial, text: "public prompt", appBundleId });
+              }
+            }),
           async reopenedStartupIsBlocked() {
             store.close();
             const reopened = new TargetSupervisorStore(path);
@@ -258,11 +260,13 @@ for (const kind of ["tap", "type"] as const) {
           return { ok: true };
         });
         await assert.rejects(
-          runIosMutationOnce(serial, kind === "tap" ? "press" : "type", () =>
-            kind === "tap"
-              ? tapViaLiveIosRunnerListener({ serial, point: { x: 20, y: 30 } })
-              : typeViaLiveIosRunnerListener({ serial, text: "public prompt" }),
-          ),
+          runIosMutationOnce(serial, kind === "tap" ? "press" : "type", async () => {
+            if (kind === "tap") {
+              await tapViaLiveIosRunnerListener({ serial, point: { x: 20, y: 30 } });
+            } else {
+              await typeViaLiveIosRunnerListener({ serial, text: "public prompt" });
+            }
+          }),
           IosSupervisionRequiredError,
         );
         assert.equal(posts, 0);
@@ -279,10 +283,13 @@ for (const kind of ["tap", "type"] as const) {
         posts += 1;
         return { ok: true };
       });
-      const direct = () =>
-        kind === "tap"
-          ? tapViaLiveIosRunnerListener({ serial, point: { x: 20, y: 30 } })
-          : typeViaLiveIosRunnerListener({ serial, text: "public prompt" });
+      const direct = async () => {
+        if (kind === "tap") {
+          await tapViaLiveIosRunnerListener({ serial, point: { x: 20, y: 30 } });
+        } else {
+          await typeViaLiveIosRunnerListener({ serial, text: "public prompt" });
+        }
+      };
       await assert.rejects(direct(), IosSupervisionRequiredError);
       await assert.rejects(
         runIosMutationOnce(`${serial}-other`, kind === "tap" ? "press" : "type", direct),

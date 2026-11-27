@@ -423,8 +423,44 @@ export type RelayEndpointMap = {
   "GET /runs/:id/signals": {
     response: { metrics: EvidenceMetric[]; signals: RegressionSignal[]; reason?: string };
   };
+  "GET /runs/:id/native-resolution": {
+    response: { nativeResolution: NativeResolutionMetrics };
+  };
   "GET /reports/soak/:batchId": { response: { report: SoakReport } };
   "POST /runs/:id/pin": { request: { pinned: boolean }; response: { ok: true; pinned: boolean } };
+};
+
+/**
+ * Aggregated activation-transport evidence for one run's target resolutions.
+ * Descriptive measurements only — `selector-point-assisted` means geometry may
+ * have actuated behind a semantic press, never that it provably did.
+ */
+export type NativeResolutionMetrics = {
+  schemaVersion: 1;
+  resolutions: number;
+  byMethod: Record<string, number>;
+  byTransport: Partial<
+    Record<
+      | "native-selector"
+      | "selector-point-assisted"
+      | "snapshot-point"
+      | "explicit-point"
+      | "direct"
+      | "unobserved",
+      number
+    >
+  >;
+  pointContributed: number;
+  coordinateFallbackPermitted: number;
+  nearMisses: number;
+  ambiguousNearMisses: number;
+  collisionRecoveries: number;
+  treeQuality: {
+    observed: number;
+    meanNodeCount: number;
+    meanNamedNodeRatio?: number;
+    resolutionsWithoutAnyGeometry: number;
+  };
 };
 
 export function parseEvidenceManifest(value: unknown): EvidenceManifest {

@@ -13,6 +13,7 @@ import type {
 } from "./device-capabilities.js";
 import { createDevice } from "./device-client-bindings.js";
 import { mutateCurrentTarget } from "./device-target-mutation.js";
+import { noteCoordinateActuation, noteDirectActuation } from "./device-activation-transport.js";
 
 export async function closeApp(device: Device, app?: string): Promise<void> {
   await controlledMutation("app-close", () =>
@@ -129,6 +130,7 @@ export async function swipeGesture(
       durationMs,
     }),
   );
+  noteCoordinateActuation({ operation: "swipe", provenance: "explicit-point", channel: "daemon" });
 }
 
 export async function sleep(ms: number, device: Device = createDevice()): Promise<void> {
@@ -166,6 +168,7 @@ export async function pressKey(device: Device, key: "back" | "home" | "recents")
         ),
       ),
     );
+    noteDirectActuation("key", "adb");
     return;
   }
   if (key === "back") {
@@ -173,4 +176,5 @@ export async function pressKey(device: Device, key: "back" | "home" | "recents")
   } else {
     await controlledMutation("home", () => nativeDevice(device).command.home({ ...base() }));
   }
+  noteDirectActuation("key", "daemon");
 }

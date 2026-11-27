@@ -1,7 +1,8 @@
 import type { StepTargetRelation } from "@relay/protocol";
+import type { ActivationTransportEvidence } from "./device-activation-transport.js";
 import type { SnapshotNode } from "./device.js";
 import { isLegacyPositionalBrowserRef } from "../browser/browser-locator-contract.js";
-import { relationAnchorMatches, resolveFollowingRow } from "../semantic/semantic-row-activation.js";
+import { resolveFollowingRow } from "../semantic/semantic-row-activation.js";
 
 export function center(rect: { x: number; y: number; width: number; height: number }): {
   x: number;
@@ -613,6 +614,23 @@ export type NamedControlResolution = {
    * never carries a recorded point forward.
    */
   activation?: "snapshot-point";
+  /**
+   * Selector methods attempted before the winning one, in order, each with the
+   * reason it did not resolve. Any entry means the activation was a near miss:
+   * a slightly different tree would have pressed the wrong control or fallen
+   * through to coordinates. On a point resolution these are precisely the
+   * semantic failures that pushed activation onto bare geometry. Absent when
+   * the first selector won cleanly.
+   */
+  selectorFailures?: NamedControlResolutionFailure[];
+  /**
+   * Activation transport evidence diffed from the device actuation journal
+   * while this resolution was pressed. Only actuation paths fill this in —
+   * pure resolution never does — and even there it is present only when the
+   * press ran inside a target context, so absence is never evidence that no
+   * coordinate contributed.
+   */
+  activationTransport?: ActivationTransportEvidence;
 };
 
 export type NamedControlResolutionFailure = {
@@ -647,70 +665,6 @@ export function resolveFollowingRowControl(
     : { ...outcome, method: "relation" };
 }
 
-export type SemanticActivationPreflight =
-  | { status: "proven"; resolution: NamedControlResolution }
-  | { status: "blocked"; code: "absent" | "ambiguous" | "heading-only-noop"; detail: string };
-
-/** Pure offline selector check over a frozen raw accessibility tree. It uses
- * the same resolver as the device path, so a repair can be validated without
- * reconnecting hardware. */
-export function preflightSemanticActivation(
-  nodes: SnapshotNode[],
-  target: NamedControlTarget,
-): SemanticActivationPreflight {
-  if (target.relation) {
-    const related = resolveFollowingRowControl(nodes, target.relation);
-    return related.status === "resolved"
-      ? { status: "proven", resolution: related.resolution }
-      : {
-          status: "blocked",
-          code: related.status === "ambiguous" ? "ambiguous" : "absent",
-          detail: related.detail,
-        };
-  }
-  const outcome = resolveNamedControlOutcome(nodes, target);
-  if (outcome.status !== "resolved") {
-    return {
-      status: "blocked",
-      code: outcome.status === "ambiguous" ? "ambiguous" : "absent",
-      detail: outcome.detail,
-    };
-  }
-  const semantic = {
-    ...(target.identifier ? { identifier: target.identifier } : {}),
-    ...(target.label ? { label: target.label } : {}),
-    ...(target.role ? { role: target.role } : {}),
-    ...(target.text ? { text: target.text } : {}),
-  };
-  const matches = nodes.filter((node) =>
-    relationAnchorMatches(node, {
-      kind: "following-row",
-      anchor: semantic,
-    }),
-  );
-  const descriptiveOnly =
-    matches.length > 0 &&
-    matches.every((node) => {
-      const role = (node.role ?? node.type ?? "").toLocaleLowerCase();
-      return node.hittable !== true && /heading|header|statictext|textview/.test(role);
-    });
-  if (descriptiveOnly && outcome.resolution.activation !== "snapshot-point") {
-    const relation = resolveFollowingRowControl(nodes, {
-      kind: "following-row",
-      anchor: semantic,
-    });
-    if (relation.status === "resolved") {
-      return {
-        status: "blocked",
-        code: "heading-only-noop",
-        detail:
-          "selector resolves only to descriptive heading bounds; use a following-row semantic relation",
-      };
-    }
-  }
-  return { status: "proven", resolution: outcome.resolution };
-}
-
 export function explicitPointResolution(
   point: { x: number; y: number } | undefined,
 ): NamedControlResolution | undefined {
@@ -730,6 +684,13 @@ export function explicitPointResolution(
  * its unique live bounds instead of its saved point. Otherwise selectors stay
  * first, and a caller point remains only the fallback when no name resolves.
  */
+// Backward-compatible re-export; the implementation moved to
+// semantic-activation-preflight.ts for source budget headroom.
+export {
+  preflightSemanticActivation,
+  type SemanticActivationPreflight,
+} from "./semantic-activation-preflight.js";
+
 export function resolveNamedControlOutcome(
   nodes: SnapshotNode[],
   target: NamedControlTarget,
@@ -859,20 +820,27 @@ export function resolveNamedControlOutcome(
     };
   };
 
+  // A resolution that won only after earlier selectors failed almost activated
+  // the wrong target; carry those failures forward instead of discarding them.
+  const withSelectorFailures = (resolution: NamedControlResolution): NamedControlResolution =>
+    failures.length > 0 ? { ...resolution, selectorFailures: [...failures] } : resolution;
+
   const byIdentifier = resolve("identifier", target.identifier);
-  if (byIdentifier) return { status: "resolved", resolution: byIdentifier };
+  if (byIdentifier) return { status: "resolved", resolution: withSelectorFailures(byIdentifier) };
 
   const byLabel = resolve("label", target.label);
-  if (byLabel) return { status: "resolved", resolution: byLabel };
+  if (byLabel) return { status: "resolved", resolution: withSelectorFailures(byLabel) };
   const byText = resolve("text", target.text);
-  if (byText) return { status: "resolved", resolution: byText };
+  if (byText) return { status: "resolved", resolution: withSelectorFailures(byText) };
   if (target.relation) {
     const related = resolveFollowingRowControl(nodes, target.relation);
-    if (related.status === "resolved") return related;
+    if (related.status === "resolved") {
+      return { status: "resolved", resolution: withSelectorFailures(related.resolution) };
+    }
     failures.push(related);
   }
   const point = explicitPointResolution(target.point);
-  if (point) return { status: "resolved", resolution: point };
+  if (point) return { status: "resolved", resolution: withSelectorFailures(point) };
   return (
     failures.find((failure) => failure.status === "ambiguous") ??
     failures.find((failure) => failure.status === "offscreen") ??

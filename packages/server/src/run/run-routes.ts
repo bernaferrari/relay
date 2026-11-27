@@ -15,6 +15,7 @@ import {
   currentOperationContext,
   enqueueJob,
   extractEvidenceMetrics,
+  aggregateNativeResolutionMetrics,
   listJobs,
   listPersistedRuns,
   listPersistedRunSummariesPage,
@@ -559,6 +560,20 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
           : [],
       );
     json(response, 200, { metrics, signals: compareEvidenceMetrics(metrics, history) });
+    return true;
+  }
+
+  const nativeResolutionMatch = matchPath(pathname, "/runs/:id/native-resolution");
+  if (method === "GET" && nativeResolutionMatch) {
+    const run = await loadScopedRun(nativeResolutionMatch.id!, scope);
+    recordAudit(scope, {
+      action: "run.native-resolution.read",
+      resource: run.id,
+      result: "allow",
+    });
+    json(response, 200, {
+      nativeResolution: aggregateNativeResolutionMetrics(run.artifacts ?? []),
+    });
     return true;
   }
 
