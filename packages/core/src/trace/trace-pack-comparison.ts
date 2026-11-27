@@ -10,7 +10,7 @@ import {
   type OfflineRunReplayReport,
 } from "../offline/offline-run-replay.js";
 import type { PersistedRun } from "../run/run-store.js";
-import { analyzeTracePack, verifyTracePack } from "./trace-pack.js";
+import { analyzeTracePack, verifyTracePack } from "./trace-pack-offline.js";
 
 type UnknownRecord = Record<string, unknown>;
 type ComparisonFact = TracePackComparison["testIdentity"]["fact"];

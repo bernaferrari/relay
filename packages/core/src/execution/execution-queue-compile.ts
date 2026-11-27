@@ -16,7 +16,7 @@ import {
 } from "@relay/protocol";
 import type { Recipe } from "../recipe/recipes.js";
 import { AppMapTestCompileError } from "../app-map/app-map-test-compile-error.js";
-import { boundRecipeWaitMs } from "../device/still-screen-wait.js";
+import { boundRecipeWaitMs } from "../recipe/recipe-wait-policy.js";
 
 export function destEndChromeInspectForTest(map: AppMap, test: AppMapScenarioTest): boolean {
   const connections = test.steps.flatMap((step) => {

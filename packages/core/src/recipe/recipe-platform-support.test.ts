@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  compiledGraphPlatformBlocker,
-  recipeStepPlatformBlocker,
-} from "./recipe-platform-support.js";
+import { compiledGraphPlatformBlocker } from "./recipe-platform-compile.js";
+import { recipeStepPlatformBlocker } from "./recipe-platform-support.js";
 
 test("blocks mobile-data, offline, iOS upload, and browser background at the platform seam", () => {
   assert.match(

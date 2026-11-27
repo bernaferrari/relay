@@ -9,6 +9,9 @@ import type {
   WorkflowChangedPayload,
 } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "../execution/operation-context.js";
+import { now } from "../time.js";
+
+export { now } from "../time.js";
 
 /**
  * Process-local event bus (OpenCode-style pub/sub for hosts).
@@ -229,8 +232,4 @@ export function eventsAfter(afterSequence: number): {
     oldestAvailable,
     latestAvailable,
   };
-}
-
-export function now(): number {
-  return Date.now();
 }

@@ -9,7 +9,7 @@ import type {
   TargetObservation,
 } from "@relay/protocol";
 import { canonicalSha256 } from "../canonical-json.js";
-import { REDACTED, redactSensitiveEvidenceValue } from "../evidence/redaction.js";
+import { REDACTED, redactSensitiveEvidenceValue } from "../evidence/redaction-primitives.js";
 
 const MAX_ACTIONS = 20;
 const MAX_SIGNALS = 20;

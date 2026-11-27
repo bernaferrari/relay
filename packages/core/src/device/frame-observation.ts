@@ -16,7 +16,7 @@ import {
   titleFromNodes,
 } from "../combine/combine-evidence-screen-analysis.js";
 import type { SnapshotNode } from "./device.js";
-import { now } from "../collaboration/events.js";
+import { now } from "../time.js";
 import type { TestJob } from "../session/session-contract.js";
 
 export const FRAME_OBSERVATION_KIND = "frame-observation";

@@ -15,7 +15,7 @@ import {
   isRoutineStartingStateFact,
 } from "@relay/protocol";
 import { BROWSER_ENGINES } from "@relay/protocol";
-import { validateRecipeSteps } from "../recipe/recipes.js";
+import { validateRecipeSteps } from "../recipe/recipe-validation.js";
 import { appMapFail } from "./errors.js";
 import { assertActions, assertTarget } from "./action-validation.js";
 import {

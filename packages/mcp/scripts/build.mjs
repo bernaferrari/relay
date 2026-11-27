@@ -47,8 +47,26 @@ const external = [
   "chromium-bidi/*",
 ];
 
+function assertNoAgentDeviceInputs(metafile) {
+  const offenders = Object.keys(metafile.inputs).filter((input) => {
+    const path = input.replaceAll("\\", "/");
+    return (
+      path.startsWith("vendor/agent-device/") ||
+      path.includes("/vendor/agent-device/") ||
+      path.startsWith("node_modules/agent-device/") ||
+      path.includes("/node_modules/agent-device/") ||
+      path.includes("/node_modules/.pnpm/agent-device@")
+    );
+  });
+  if (offenders.length > 0) {
+    throw new Error(
+      `MCP bundle must not include agent-device device-driver code; remove these inputs: ${offenders.join(", ")}`,
+    );
+  }
+}
+
 await rm(dist, { recursive: true, force: true });
-await build({
+const nodeBuild = await build({
   absWorkingDir: packageRoot,
   entryPoints: {
     "relay-mcp": "src/index.ts",
@@ -71,7 +89,9 @@ await build({
   plugins: [workspaceAliasPlugin],
   logLevel: "info",
   legalComments: "eof",
+  metafile: true,
 });
+assertNoAgentDeviceInputs(nodeBuild.metafile);
 for (const [source, target] of [
   ["server-public.d.ts", "server.d.ts"],
   ["config-public.d.ts", "config.d.ts"],

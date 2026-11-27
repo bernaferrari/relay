@@ -10,7 +10,7 @@ import type {
   OperationOutput,
   TargetObservation,
 } from "@relay/protocol";
-import type { ModelDecisionProvider } from "@relay/core";
+import type { ModelDecisionProvider } from "@relay/core/model-decision-provider";
 import { GOAL_SESSION_SCHEMA_VERSION } from "@relay/protocol";
 import type { RelayOperationPort } from "@relay/workflows/operation-port";
 import { createGoalSessionRunner, type GoalSessionStore } from "./goal-runner.js";

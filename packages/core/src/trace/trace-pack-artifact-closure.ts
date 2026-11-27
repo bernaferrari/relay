@@ -7,21 +7,16 @@ import type {
   TracePackObject,
 } from "@relay/protocol";
 import { readAuthoringEvidence } from "../authoring/authoring-evidence.js";
+import {
+  assertTracePackArtifactBounds,
+  tracePackArtifactLimits,
+  type RequiredTracePackArtifactLimits,
+  type TracePackExportLimits,
+} from "./trace-pack-artifact-bounds.js";
 import type { PersistedRun } from "../run/run-store.js";
 
-export type TracePackExportLimits = {
-  maxArtifacts?: number;
-  maxArtifactBytes?: number;
-  maxTotalArtifactBytes?: number;
-};
+type RequiredLimits = RequiredTracePackArtifactLimits;
 
-const DEFAULT_LIMITS = {
-  maxArtifacts: 10_000,
-  maxArtifactBytes: 512 * 1024 * 1024,
-  maxTotalArtifactBytes: 1024 * 1024 * 1024,
-} as const;
-
-type RequiredLimits = Required<TracePackExportLimits>;
 type RequestedArtifact = {
   path: string;
   logicalPath?: string;
@@ -44,49 +39,6 @@ type ArtifactClosure = {
 
 function sha256(bytes: Uint8Array): `sha256:${string}` {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
-
-function limitsOf(input: TracePackExportLimits): RequiredLimits {
-  const result = { ...DEFAULT_LIMITS, ...input };
-  for (const [name, value] of Object.entries(result)) {
-    if (!Number.isSafeInteger(value) || value <= 0) {
-      throw new Error(`TracePack ${name} must be a positive safe integer`);
-    }
-  }
-  return result;
-}
-
-/** Reject declared or encoded artifact sizes before verification decodes any
- * base64 payload. The frozen run is bounded by the enclosing transport; these
- * limits specifically cover the binary closure. */
-export function assertTracePackArtifactBounds(
-  objects: readonly TracePackObject[],
-  requestedLimits: TracePackExportLimits = {},
-): void {
-  const limits = limitsOf(requestedLimits);
-  const artifacts = objects.filter((object) => object.kind !== "frozen-run");
-  if (artifacts.length > limits.maxArtifacts) {
-    throw new Error(`TracePack artifact object limit exceeded (${limits.maxArtifacts})`);
-  }
-  let total = 0;
-  for (const object of artifacts) {
-    if (object.bytes > limits.maxArtifactBytes) {
-      throw new Error(`TracePack artifact object exceeds byte limit: ${object.path}`);
-    }
-    if (
-      object.encoding === "base64" &&
-      typeof object.content === "string" &&
-      object.content.length > Math.ceil(limits.maxArtifactBytes / 3) * 4 + 4
-    ) {
-      throw new Error(`TracePack artifact encoding exceeds byte limit: ${object.path}`);
-    }
-    total += object.bytes;
-    if (total > limits.maxTotalArtifactBytes) {
-      throw new Error(
-        `TracePack aggregate artifact byte limit exceeded (${limits.maxTotalArtifactBytes})`,
-      );
-    }
-  }
 }
 
 function portablePath(run: PersistedRun, path: string): string | undefined {
@@ -663,7 +615,7 @@ export async function closeTracePackArtifacts(
   objects: TracePackObject[];
   references: TracePackArtifactReference[];
 }> {
-  const limits = limitsOf(requestedLimits);
+  const limits = tracePackArtifactLimits(requestedLimits);
   const closures = await closeArtifacts(run, requestedArtifacts(run, limits.maxArtifacts), limits);
   const result = {
     objects: closures.flatMap((closure) => (closure.object ? [closure.object] : [])),

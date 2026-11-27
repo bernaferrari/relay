@@ -13,10 +13,8 @@ import {
   turnsAfterBoundary,
   type ResponseBoundary,
 } from "./recipe-response-boundary.js";
-import {
-  captureStillScreenFingerprint,
-  stillScreenUnchanged,
-} from "../device/still-screen-wait.js";
+import { captureStillScreenFingerprint } from "../device/still-screen-wait.js";
+import { stillScreenUnchanged } from "./recipe-wait-policy.js";
 import {
   observeRecipeResponse,
   requireCurrentActionResponseBoundary,

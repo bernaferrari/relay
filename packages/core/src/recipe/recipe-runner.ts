@@ -85,13 +85,15 @@ import { evaluateSemantic } from "../evaluation/evaluation.js";
 import { setAndroidMobileData } from "../android/android-mobile-data.js";
 import { assertRecipeStepPlatformSupport } from "./recipe-platform-support.js";
 import {
-  boundRecipeWaitMs,
   captureStillScreenFingerprint,
+  waitForTargetVisible,
+} from "../device/still-screen-wait.js";
+import {
+  boundRecipeWaitMs,
   RECIPE_TRANSIENT_PRESENCE_DRAIN_MS,
   RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
   TargetVisibleWaitTimeoutError,
-  waitForTargetVisible,
-} from "../device/still-screen-wait.js";
+} from "./recipe-wait-policy.js";
 import { isIosRunnerPresenceDrainError } from "../ios/ios-runtime-recovery.js";
 import {
   runAppBackgroundStep,

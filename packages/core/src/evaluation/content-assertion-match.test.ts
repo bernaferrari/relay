@@ -11,7 +11,7 @@ import type {
 import { contentAssertionPassed, contentContains } from "./content-assertion-match.js";
 import { runRecipeStep } from "../recipe/recipe-runner.js";
 import { parseRecipeYaml } from "../recipe/recipe-yaml.js";
-import { validateRecipeSteps } from "../recipe/recipes.js";
+import { validateRecipeSteps } from "../recipe/recipe-validation.js";
 import { runWithTargetContext } from "../target/target-context.js";
 
 const SUPERGROK_LIMIT = "17 hours 42 minutes before limit is gone";

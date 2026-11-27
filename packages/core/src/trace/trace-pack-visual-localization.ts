@@ -10,7 +10,7 @@ import { analyzeCombineEvidenceBatchData } from "../combine/combine-evidence-bat
 import { frameObservations, type FrameObservation } from "../device/frame-observation.js";
 import { pngDimensions } from "../ios/ios-geometry.js";
 import type { PersistedRun } from "../run/run-store.js";
-import { verifyTracePack } from "./trace-pack.js";
+import { verifyTracePack } from "./trace-pack-offline.js";
 
 type Fact = TracePackVisualLocalization["historicalBaseline"]["fact"];
 type FrameDelta = TracePackVisualLocalization["historicalBaseline"]["frames"][number];

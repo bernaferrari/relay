@@ -22,7 +22,11 @@ import {
 } from "./change-decision-policy.js";
 import { compileExecutionRisk } from "../execution/execution-risk-compiler.js";
 import { replayPersistedRunOffline } from "../offline/offline-run-replay.js";
-import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "../trace/trace-pack.js";
+import {
+  analyzeTracePack,
+  frozenRunFromTracePack,
+  verifyTracePack,
+} from "../trace/trace-pack-offline.js";
 
 // Preserve the historical core export while making the full definition
 // server-owned and frozen in the integrity module.

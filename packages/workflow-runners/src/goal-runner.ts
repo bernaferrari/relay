@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { compactGoalObservation, isEditableGoalControl } from "@relay/core/goal-observation";
 import {
-  compactGoalObservation,
   createOpenRouterDecisionProvider,
   DEFAULT_OPENROUTER_DECISION_MODEL,
-  isEditableGoalControl,
   type ModelDecisionProvider,
-} from "@relay/core";
+} from "@relay/core/model-decision-provider";
 import type {
   CompactGoalObservation,
   GoalSessionAction,

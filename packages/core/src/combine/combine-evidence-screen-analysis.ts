@@ -10,7 +10,7 @@ import {
   isSettingsHubRow,
   profileBackAffordances,
 } from "../discovery/discovery-app-profiles.js";
-import { isExploreChromeLabel, isUnsafeExploreControlText } from "../discovery/explore.js";
+import { isExploreChromeLabel, isUnsafeExploreControlText } from "../discovery/explore-controls.js";
 import {
   isSystemInputNode,
   meaningfulNodeIndexes,

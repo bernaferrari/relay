@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { assertMediaFacts, inspectMedia } from "./media-check.js";
-import { validateRecipeSteps } from "../recipe/recipes.js";
+import { validateRecipeSteps } from "../recipe/recipe-validation.js";
 
 const execute = promisify(execFile);
 const facts = {

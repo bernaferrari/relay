@@ -16,7 +16,7 @@ import type {
   ScrollSurfaceDocumentOriginProof,
   ScrollSurfaceViewport,
 } from "@relay/protocol";
-import { reviewedDocumentOriginReferenceForSurface } from "../reviewed/reviewed-document-origin.js";
+import { reviewedDocumentOriginReferenceForSurface } from "../reviewed/reviewed-document-origin-reference.js";
 
 function frozenEvidenceIsComplete(
   evidence: ScrollSurfaceEvidence | undefined,

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { findWorkspaceRoot } from "@relay/core";
+import { findWorkspaceRoot } from "@relay/core/workspace-root";
 import {
   GOAL_EXPLORATION_MAX_WORKERS,
   GOAL_EXPLORATION_SCHEMA_VERSION,

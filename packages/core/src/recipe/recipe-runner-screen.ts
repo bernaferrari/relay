@@ -83,7 +83,7 @@ import {
 import { retainScreenMismatch } from "./recipe-screen-mismatch.js";
 import { nativeWorkspaceIdentityNodes } from "../screen/screen-identity-native-workspace.js";
 import { nativePendingModelSelection } from "./recipe-native-model-entry.js";
-import { stillScreenTimeoutMessage, stillScreenUnchanged } from "../device/still-screen-wait.js";
+import { stillScreenTimeoutMessage, stillScreenUnchanged } from "./recipe-wait-policy.js";
 import type { DestinationRepairHint } from "../app-map/repair-proposal.js";
 import {
   getRecipeAndroidLocalization,

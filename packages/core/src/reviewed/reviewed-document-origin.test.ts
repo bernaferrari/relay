@@ -31,10 +31,10 @@ import {
   inspectReviewedDocumentOrigin,
   reviewDocumentOrigin,
   reviewedDocumentOriginExecutionReferenceIsActive,
-  reviewedDocumentOriginReferenceForSurface,
   reviewedDocumentOriginRevocationEvidenceIsValid,
   revokeReviewedDocumentOrigin,
 } from "./reviewed-document-origin.js";
+import { reviewedDocumentOriginReferenceForSurface } from "./reviewed-document-origin-reference.js";
 import { validateRecipeSteps } from "../recipe/recipe-validation.js";
 import type { ScrollSurveyResult } from "../scroll/scrollable-survey.js";
 

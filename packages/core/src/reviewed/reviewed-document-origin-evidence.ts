@@ -5,7 +5,6 @@ import {
   REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
   REVIEWED_DOCUMENT_ORIGIN_REVIEW_ASSERTION,
   REVIEWED_DOCUMENT_ORIGIN_REVOKE_ASSERTION,
-  type AppMap,
   type ReviewedDocumentOriginApproval,
   type ReviewedDocumentOriginBinding,
   type ReviewedDocumentOriginProjection,
@@ -14,18 +13,15 @@ import {
 } from "@relay/protocol";
 import { PNG } from "pngjs";
 import { readAuthoringEvidence } from "../authoring/authoring-evidence.js";
-import { serializeAppMap } from "../app-map/serialization.js";
+export {
+  reviewedDocumentOriginAppMapDigest,
+  sameReviewedDocumentOriginEvidence,
+} from "./reviewed-document-origin-evidence-primitives.js";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 
 function nonEmptyText(value: unknown): value is string {
   return typeof value === "string" && /\S/u.test(value);
-}
-
-export function reviewedDocumentOriginAppMapDigest(map: AppMap): string {
-  return createHash("sha256")
-    .update(JSON.stringify(serializeAppMap(map)))
-    .digest("hex");
 }
 
 export function reviewedDocumentOriginEvidenceIsComplete(
@@ -41,19 +37,6 @@ export function reviewedDocumentOriginEvidenceIsComplete(
     evidence.uri === `relay-evidence://${evidence.sha256}` &&
     Number.isSafeInteger(evidence.bytes) &&
     evidence.bytes >= 0,
-  );
-}
-
-export function sameReviewedDocumentOriginEvidence(
-  left: ScrollSurfaceEvidence,
-  right: ScrollSurfaceEvidence,
-): boolean {
-  return (
-    left.id === right.id &&
-    left.uri === right.uri &&
-    left.sha256 === right.sha256 &&
-    left.mime === right.mime &&
-    left.bytes === right.bytes
   );
 }
 

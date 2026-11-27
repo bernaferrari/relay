@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { waitForTargetVisible } from "./still-screen-wait.js";
 import {
   RECIPE_WAIT_DEFAULT_MS,
   RECIPE_WAIT_SLICE_MS,
@@ -7,9 +8,8 @@ import {
   boundRecipeWaitMs,
   stillScreenTimeoutMessage,
   stillScreenUnchanged,
-  waitForTargetVisible,
   type WaitForReadinessTiming,
-} from "./still-screen-wait.js";
+} from "../recipe/recipe-wait-policy.js";
 import { isIosRunnerPresenceDrainError } from "../ios/ios-runtime-recovery.js";
 
 test("default wait-for budget is short and still-screen compare is exact", () => {

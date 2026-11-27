@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  dismissTowardParent,
   exploreControls,
   isExploreChromeLabel,
   isExploreChromeNode,
   isExploreStateChangingNode,
   isUnsafeExploreControlText,
+} from "./explore-controls.js";
+import {
+  dismissTowardParent,
   scrollContentFitsViewport,
   scrollCollectControls,
 } from "./explore.js";

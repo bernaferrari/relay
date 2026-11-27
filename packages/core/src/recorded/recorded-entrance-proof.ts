@@ -7,7 +7,7 @@ import type {
 import type { SnapshotNode } from "../device/device.js";
 import { canonicalSha256 } from "../canonical-json.js";
 import { nativeCaptureTargetProfile } from "../native/native-target-profile.js";
-import { resolveIosLaunchBundleId } from "../ios/ios-app-launch.js";
+import { resolveIosLaunchBundleId } from "../ios/ios-app-launch-aliases.js";
 
 export function recordedStepDigest(step: RecipeStep): string {
   const {

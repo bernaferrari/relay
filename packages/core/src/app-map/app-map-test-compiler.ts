@@ -21,7 +21,7 @@ import {
   warmCompiledFlowGraphFromSharedPrefix,
 } from "./app-map-itinerary.js";
 import { frozenColdCoverageEffects } from "../campaign/campaign-recovery-effects.js";
-import { validateAppMap } from "./app-map.js";
+import { validateAppMap } from "./validation.js";
 import { scrollSurfaceDocumentOriginPlan } from "./app-map-scroll-surface-baseline.js";
 
 import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
@@ -37,7 +37,7 @@ import { testWithSelectedRouteVariant } from "./app-map-test-route-variants.js";
 import { resolveScenarioTestCompileRoute } from "./app-map-test-compile-route.js";
 import { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 import { assertionRecipeStep } from "./app-map-test-assertion.js";
-import { compiledGraphPlatformBlocker } from "../recipe/recipe-platform-support.js";
+import { compiledGraphPlatformBlocker } from "../recipe/recipe-platform-compile.js";
 import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
 import { compiledTestClaimedAbsentControl } from "./app-map-unrecorded-claimed-control.js";
 import {

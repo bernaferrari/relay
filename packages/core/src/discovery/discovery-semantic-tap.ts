@@ -1,7 +1,7 @@
 import type { DiscoveryControl } from "@relay/protocol";
 import type { SnapshotNode } from "../device/device.js";
 import { DISCOVERY_APP_PROFILES, type DiscoveryAppProfile } from "./discovery-app-profiles.js";
-import { isExploreChromeNode } from "./explore.js";
+import { isExploreChromeNode } from "./explore-controls.js";
 
 function center(rect: { x: number; y: number; width: number; height: number }): {
   x: number;

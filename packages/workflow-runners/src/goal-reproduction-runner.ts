@@ -1,4 +1,4 @@
-import { compactGoalObservation } from "@relay/core";
+import { compactGoalObservation } from "@relay/core/goal-observation";
 import type {
   CompactGoalObservation,
   GoalFinding,

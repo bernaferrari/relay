@@ -12,7 +12,7 @@ import type {
 } from "@relay/protocol";
 import { destEndCoverageForRequirement, leftoverSkipAllowedForCoverage } from "@relay/protocol";
 import { createHash } from "node:crypto";
-import { validateAppMap } from "./app-map.js";
+import { validateAppMap } from "./validation.js";
 import { observeScreenIdentityForHost } from "../screen/screen-identity.js";
 import type { SnapshotNode } from "../device/device.js";
 import { semanticTargetMatches } from "../scroll/scroll-surface-semantic-index.js";

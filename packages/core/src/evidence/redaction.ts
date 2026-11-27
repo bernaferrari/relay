@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { REDACTED, type RedactionPolicy } from "@relay/protocol";
 import {
   readWorkspaceSetting,
@@ -6,12 +5,20 @@ import {
   writeWorkspaceSetting,
 } from "../workspace/workspace-settings.js";
 
-const SENSITIVE_KEY =
-  /(?:authorization|cookie|password|passwd|secret|token|api[-_]?key|clipboard)/i;
-const BEARER = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
-const COOKIE = /\b(cookie|set-cookie)\s*[:=]\s*[^\s,;]+/gi;
+import {
+  digestValue,
+  redactTextContent,
+  redactUrlContent,
+  redactValueForEnabledPolicy,
+  redactionKeyIsSensitive,
+} from "./redaction-primitives.js";
 
 export { REDACTED } from "@relay/protocol";
+export {
+  digestValue,
+  redactSensitiveEvidenceValue,
+  redactValueForPolicy,
+} from "./redaction-primitives.js";
 
 export class RedactionPolicyLockedError extends Error {
   constructor() {
@@ -105,10 +112,6 @@ export function visualEvidenceAllowed(policy: RedactionPolicy = getRedactionPoli
   return !policy.enabled;
 }
 
-export function digestValue(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
 export function redactUrl(value: string): string {
   if (!isRedactionEnabled()) return value;
   return redactUrlContent(value);
@@ -119,62 +122,8 @@ export function redactText(value: string): string {
   return redactTextContent(value);
 }
 
-function redactUrlContent(value: string): string {
-  return value.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/gi, "$1?[REDACTED]");
-}
-
-function redactTextContent(value: string): string {
-  return redactUrlContent(value).replace(BEARER, "$1 [REDACTED]").replace(COOKIE, "$1: [REDACTED]");
-}
-
-function redactValueForEnabledPolicy(value: unknown, key: string, enabled: boolean): unknown {
-  if (!enabled) return value;
-  if (SENSITIVE_KEY.test(key)) return REDACTED;
-  if (typeof value === "string") return redactTextContent(value);
-  if (Array.isArray(value)) return value.map((item) => redactValueForEnabledPolicy(item, "", true));
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const secretBearingCommand = record.kind === "type" || record.kind === "clipboard";
-    return Object.fromEntries(
-      Object.entries(record).map(([childKey, child]) => [
-        childKey,
-        secretBearingCommand && (childKey === "text" || childKey === "expect")
-          ? REDACTED
-          : redactValueForEnabledPolicy(child, childKey, true),
-      ]),
-    );
-  }
-  return value;
-}
-
-export function redactValueForPolicy(value: unknown, policy: RedactionPolicy): unknown {
-  return redactValueForEnabledPolicy(value, "", policy.enabled);
-}
-
 export function redactValue(value: unknown, key = ""): unknown {
   return redactValueForEnabledPolicy(value, key, isRedactionEnabled());
-}
-
-function redactSensitiveEvidenceText(value: string): string {
-  return redactTextContent(value);
-}
-
-/** Mandatory secret masking for durable evidence. This is deliberately
- * independent of the optional broad redaction mode: consent may authorize a
- * body, but it never authorizes credentials, cookies, tokens, or URL queries. */
-export function redactSensitiveEvidenceValue(value: unknown, key = ""): unknown {
-  if (SENSITIVE_KEY.test(key)) return REDACTED;
-  if (typeof value === "string") return redactSensitiveEvidenceText(value);
-  if (Array.isArray(value)) return value.map((item) => redactSensitiveEvidenceValue(item));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([childKey, child]) => [
-        childKey,
-        redactSensitiveEvidenceValue(child, childKey),
-      ]),
-    );
-  }
-  return value;
 }
 
 export function redactResolvedInputs(inputs: Record<string, string>): Record<string, string> {
@@ -182,7 +131,7 @@ export function redactResolvedInputs(inputs: Record<string, string>): Record<str
   return Object.fromEntries(
     Object.entries(inputs).map(([key, value]) => [
       key,
-      SENSITIVE_KEY.test(key) ? `${REDACTED}:${digestValue(value)}` : redactText(value),
+      redactionKeyIsSensitive(key) ? `${REDACTED}:${digestValue(value)}` : redactText(value),
     ]),
   );
 }

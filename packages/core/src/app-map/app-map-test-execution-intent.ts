@@ -7,7 +7,8 @@ import type {
 } from "@relay/protocol";
 import { createHash } from "node:crypto";
 import { compileExecutionRisk } from "../execution/execution-risk-compiler.js";
-import { validateRecipeParameters, validateRecipeSteps, type Recipe } from "../recipe/recipes.js";
+import type { Recipe } from "../recipe/recipes.js";
+import { validateRecipeParameters, validateRecipeSteps } from "../recipe/recipe-validation.js";
 import { CURRENT_RECORDING_FORMAT_VERSION } from "../authoring/recording-format.js";
 import { parseFrozenRecipeInputReceipt } from "../recipe/frozen-recipe-inputs.js";
 import {

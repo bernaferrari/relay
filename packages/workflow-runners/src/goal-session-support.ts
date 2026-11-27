@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { findWorkspaceRoot, isEditableGoalControl } from "@relay/core";
+import { isEditableGoalControl } from "@relay/core/goal-observation";
+import { findWorkspaceRoot } from "@relay/core/workspace-root";
 import type {
   CompactGoalObservation,
   GoalFinding,
