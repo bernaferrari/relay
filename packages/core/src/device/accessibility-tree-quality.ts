@@ -9,7 +9,7 @@
  * do not claim: that a named-node ratio below any particular number is
  * broken — no such threshold is known today.
  */
-import type { SnapshotNode } from "./device-capabilities.js";
+import type { SnapshotNode } from "./device.js";
 import { INTERACTIVE_SNAPSHOT_ROLES } from "./device-target-resolution.js";
 
 export type AccessibilityTreeQuality = {

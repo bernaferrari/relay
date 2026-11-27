@@ -5,7 +5,7 @@
  * activation family and depend only on the dispatcher primitives.
  */
 import { base, controlledMutation, nativeDevice, type DeviceTransport } from "./device-dispatch.js";
-import type { Device } from "./device-capabilities.js";
+import type { Device } from "./device.js";
 import { currentTargetContext } from "../target/target-context.js";
 import {
   isPhysicalRunnerRoute,

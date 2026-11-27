@@ -21,6 +21,10 @@ export const rawDeviceMutationBoundaryPaths = new Set([
   "packages/core/src/device/device-text-entry.ts",
   "packages/core/src/device/device-clipboard.ts",
   "packages/core/src/device/device-system-actions.ts",
+  // App/session lifecycle split out of device.ts: open/rebind/boot/evidence
+  // capture. It owns the same dispatcher/native transport calls it contained
+  // inside device.ts and stays below the public workflow boundary.
+  "packages/core/src/device/device-app-lifecycle.ts",
   // Canonical SDK-client construction (0.21.x method rebinding + facade).
   // It builds the transport device.ts dispatches through; no workflow code
   // may import it.
