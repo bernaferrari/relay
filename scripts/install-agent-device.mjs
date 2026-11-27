@@ -52,9 +52,7 @@ execFileSync("pnpm", ["install", "--frozen-lockfile", "--ignore-scripts"], {
 // mismatched instrumentation.
 const helperDist = join(vendorDir, "android", "snapshot-helper", "dist");
 const helperTarget = join(root, "packages", "core", "android-helpers");
-const version = JSON.parse(
-  readFileSync(join(vendorDir, "package.json"), "utf8"),
-).version;
+const version = JSON.parse(readFileSync(join(vendorDir, "package.json"), "utf8")).version;
 const artifactBase = `agent-device-android-snapshot-helper-${version}`;
 for (const stale of readdirSync(helperTarget).filter((name) =>
   /^agent-device-android-snapshot-helper-.*\.(apk|manifest\.json)$/u.test(name),
@@ -62,9 +60,6 @@ for (const stale of readdirSync(helperTarget).filter((name) =>
   rmSync(join(helperTarget, stale));
 }
 for (const suffix of [".apk", ".manifest.json"]) {
-  copyFileSync(
-    join(helperDist, artifactBase + suffix),
-    join(helperTarget, artifactBase + suffix),
-  );
+  copyFileSync(join(helperDist, artifactBase + suffix), join(helperTarget, artifactBase + suffix));
 }
 console.log(`synced ${artifactBase} into packages/core/android-helpers`);

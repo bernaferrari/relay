@@ -37,6 +37,12 @@ jobs:
           command -v pnpm
           pnpm -v
 
+      - name: Install and build the vendored device runtime
+        # vendor/agent-device is a pinned upstream submodule carrying Relay's
+        # runtime patch. The link: dependency in @relay/core needs its manifest
+        # before the workspace install, and typecheck/tests need its dist.
+        run: pnpm run agent-device:install && pnpm run agent-device:build
+
       - name: Install
         run: pnpm install --frozen-lockfile
 

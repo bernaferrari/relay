@@ -1,4 +1,9 @@
-import type { createAgentDeviceClient } from "agent-device";
+import type {
+  createAgentDeviceClient,
+  ModeFreePermissionUpdateOptions,
+  SettingsUpdateOptions,
+} from "agent-device";
+export type { ModeFreePermissionUpdateOptions, SettingsUpdateOptions };
 import type { CrashEvidenceResult } from "../evidence/crash-evidence.js";
 
 type NativeDevice = ReturnType<typeof createAgentDeviceClient>;

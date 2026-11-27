@@ -48,6 +48,8 @@ You need **Node.js 24+**, **pnpm**, the **Vite+ CLI** (`vp`), and Chrome, Chromi
 ```bash
 git clone https://github.com/bernaferrari/relay.git
 cd relay
+pnpm run agent-device:install   # initialize the pinned device-runtime submodule and apply Relay's patch
+pnpm run agent-device:build     # compile it (typecheck and tests consume its dist)
 vp install
 pnpm doctor -- --web
 pnpm ensure:serve

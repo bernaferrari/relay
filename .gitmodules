@@ -1,3 +1,6 @@
 [submodule "vendor/agent-device"]
 	path = vendor/agent-device
 	url = https://github.com/callstack/agent-device.git
+	# The documented install flow applies patches/agent-device on top of the
+	# pinned upstream commit, so the worktree is dirty by design.
+	ignore = dirty

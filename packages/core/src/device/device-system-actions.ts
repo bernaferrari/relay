@@ -1,13 +1,16 @@
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "../execution/control.js";
 import { execAndroidAdb } from "../android/android-adb-host.js";
-import type { ModeFreePermissionUpdateOptions, SettingsUpdateOptions } from "agent-device";
 import { base, controlled, controlledMutation, nativeDevice } from "./device-dispatch.js";
 import {
   currentTargetContext,
   selectedPlatform,
   targetIdentity,
 } from "../target/target-context.js";
-import type { Device } from "./device-capabilities.js";
+import type {
+  Device,
+  ModeFreePermissionUpdateOptions,
+  SettingsUpdateOptions,
+} from "./device-capabilities.js";
 import { createDevice } from "./device-client-bindings.js";
 import { mutateCurrentTarget } from "./device-target-mutation.js";
 
