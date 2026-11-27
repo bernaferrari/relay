@@ -8,6 +8,7 @@ import {
   changedFiles,
   coverageBase,
   evaluateChangedCoverage,
+  hasRuntimeLines,
   parseLcov,
 } from "./check-coverage.mjs";
 
@@ -74,4 +75,43 @@ test("test files and packages without a coverage script are outside the measured
   );
   assert.deepEqual(result.sourceFiles, []);
   assert.equal(result.passed, true);
+});
+
+test("runtime detection keeps every executable statement measurable", () => {
+  assert.equal(hasRuntimeLines("export type X = number;\n"), false);
+  assert.equal(hasRuntimeLines("// only a comment\n"), false);
+  assert.equal(hasRuntimeLines('export type { X } from "./x.js";\n'), false);
+  assert.equal(hasRuntimeLines('import type { X } from "./x.js";\nexport type Y = X;\n'), false);
+  assert.equal(hasRuntimeLines("export const x = 1;\n"), true);
+  assert.equal(hasRuntimeLines('export * from "./x.js";\n'), true);
+  assert.equal(hasRuntimeLines('import "./x.js";\n'), true);
+  assert.equal(hasRuntimeLines('import { x } from "./x.js";\nexport type Y = typeof x;\n'), true);
+  // Invalid or unparsable input keeps its coverage obligation.
+  assert.equal(hasRuntimeLines("export const = ;\n"), true);
+});
+
+test("a type-only changed file absent from LCOV is unmeasurable rather than missing", () => {
+  const typeOnly = "packages/protocol/src/test/offline-report.ts";
+  const result = evaluateChangedCoverage(
+    [typeOnly, "packages/core/src/example.ts"],
+    new Map([["packages/core/src/example.ts", { found: 10, hit: 8 }]]),
+    new Set(["core", "protocol"]),
+    70,
+    new Set([typeOnly]),
+  );
+  assert.deepEqual(result.missing, []);
+  assert.deepEqual(result.sourceFiles, ["packages/core/src/example.ts"]);
+  assert.equal(result.passed, true);
+});
+
+test("a runtime file absent from LCOV still fails when other files are type-only", () => {
+  const result = evaluateChangedCoverage(
+    ["packages/protocol/src/types-only.ts", "packages/core/src/untested.ts"],
+    new Map(),
+    new Set(["core", "protocol"]),
+    70,
+    new Set(["packages/protocol/src/types-only.ts"]),
+  );
+  assert.deepEqual(result.missing, ["packages/core/src/untested.ts"]);
+  assert.equal(result.passed, false);
 });

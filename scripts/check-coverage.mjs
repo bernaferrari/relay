@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
+import { stripTypeScriptTypes } from "node:module";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -57,13 +58,32 @@ export function parseLcov(content, packageDirectory, root = repositoryRoot) {
   return files;
 }
 
+/**
+ * A type-only module compiles to an empty runtime: it has no lines a test
+ * could ever hit, so it can never appear in an lcov report no matter how well
+ * its contract is exercised. Transforming the source the same way Node strips
+ * types is exact here — any executable statement, value import, or runtime
+ * re-export survives the transform. The conservative direction is safe: a
+ * transformation error means the file keeps its coverage obligation.
+ */
+export function hasRuntimeLines(source) {
+  try {
+    return stripTypeScriptTypes(source, { mode: "transform" }).trim().length > 0;
+  } catch {
+    return true;
+  }
+}
+
 export function evaluateChangedCoverage(
   changed,
   reports,
   measuredPackages,
   threshold = LINE_THRESHOLD,
+  runtimelessFiles = new Set(),
 ) {
-  const sourceFiles = changed.filter((path) => measuredPackages.has(productionSourcePackage(path)));
+  const sourceFiles = changed.filter(
+    (path) => measuredPackages.has(productionSourcePackage(path)) && !runtimelessFiles.has(path),
+  );
   const missing = sourceFiles.filter((path) => !reports.has(path));
   const measured = sourceFiles.filter((path) => reports.has(path));
   const found = measured.reduce((sum, path) => sum + reports.get(path).found, 0);
@@ -136,7 +156,33 @@ async function main() {
       `check-coverage: ${unmeasured.length} changed source files in packages without coverage scripts: ${names.join(", ")}`,
     );
   }
-  const result = evaluateChangedCoverage(changed, reports, new Set(packages));
+  const runtimelessFiles = new Set();
+  const measuredNameSet = new Set(packages);
+  const unreported = changed.filter(
+    (path) => measuredNameSet.has(productionSourcePackage(path)) && !reports.has(path),
+  );
+  for (const path of unreported) {
+    let source;
+    try {
+      source = await readFile(resolve(repositoryRoot, path), "utf8");
+    } catch {
+      continue;
+    }
+    if (!hasRuntimeLines(source)) runtimelessFiles.add(path);
+  }
+  if (runtimelessFiles.size) {
+    console.log(
+      `check-coverage: ${runtimelessFiles.size} changed file(s) compile to an empty runtime and carry no measurable lines: ${[...runtimelessFiles].join(", ")}`,
+    );
+  }
+
+  const result = evaluateChangedCoverage(
+    changed,
+    reports,
+    measuredNameSet,
+    LINE_THRESHOLD,
+    runtimelessFiles,
+  );
   if (result.sourceFiles.length === 0) {
     console.log("check-coverage: no changed source files in measured packages");
     return;

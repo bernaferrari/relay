@@ -26,7 +26,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test src/*.test.ts",
-    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov src/*.test.ts"
+    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-exclude=\"**/*.test.{ts,mjs}\" --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov src/*.test.ts"
   },
   "dependencies": {
     "@relay/protocol": "workspace:*",
