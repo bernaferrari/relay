@@ -72,7 +72,7 @@ test("short sensitive values remain execution-local, including generated case na
           name: "prompt",
           scope: "shared",
           source: "static",
-          values: ["abc"],
+          values: ["abz"],
           sensitive: true,
         },
       ],
@@ -80,8 +80,8 @@ test("short sensitive values remain execution-local, including generated case na
     seed: 1,
   });
   assert.ok(prepared);
-  assert.equal(prepared.variables.prompt, "abc");
-  assert.equal(JSON.stringify(prepared.receipt).includes("abc"), false);
+  assert.equal(prepared.variables.prompt, "abz");
+  assert.equal(JSON.stringify(prepared.receipt).includes("abz"), false);
   assert.deepEqual(prepared.receipt.values, { prompt: "[private]", "prompt-data": "[private]" });
   assert.deepEqual(parseFrozenRecipeInputReceipt(prepared.receipt), prepared.receipt);
   assert.equal(frozenRecipeInputsMatch(prepared.receipt, prepared.variables), true);

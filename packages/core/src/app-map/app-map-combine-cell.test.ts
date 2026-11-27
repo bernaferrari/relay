@@ -1389,7 +1389,7 @@ test("private pending Combine inputs stay redacted and require local values befo
       revision: 1,
       value: [{ id: "prompt-data", name: "prompt", scope: "private", source: "static" }],
     },
-    runtimeValues: { prompt: "abc" },
+    runtimeValues: { prompt: "abz" },
     seed: 1,
   });
   assert.ok(inputs);
@@ -1399,7 +1399,7 @@ test("private pending Combine inputs stay redacted and require local values befo
     phase: "coverage",
     status: "pending",
   });
-  assert.equal(JSON.stringify(receipt).includes("abc"), false);
+  assert.equal(JSON.stringify(receipt).includes("abz"), false);
   restorePreparedCombineCellInputs(cell, receipt.frozenInputs!);
   assert.throws(
     () => requirePreparedCombineCellInputs([cell]),
