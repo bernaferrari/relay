@@ -21,7 +21,7 @@ jobs:
     # output. Local repository verification is `.github/workflows/local-ci.yml`.
     name: repository verification
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
