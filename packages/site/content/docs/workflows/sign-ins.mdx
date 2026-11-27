@@ -1,0 +1,71 @@
+---
+title: Saved sign-ins
+description: Let a Test sign in with an encrypted account — the password never reaches the model or the evidence.
+---
+
+A saved sign-in is an encrypted username and password stored on the Relay host. When a Test signs in with one, Relay types the credentials into the product's sign-in form itself: the model chooses where they go, but never sees what they are.
+
+This is different from a [saved website account](/docs/workflows/accounts), which reuses an existing browser session. A saved sign-in performs the sign-in fresh on every run, so it keeps working after cookies expire — and it works on native apps too.
+
+Use a dedicated test account. Never paste real credentials into a Test description, a Data set, or a prompt.
+
+## Save a sign-in
+
+```bash
+relay sign-in save member --input '{
+  "appMapId": "shop",
+  "name": "Member account",
+  "username": "member@example.com",
+  "password": "…"
+}' --confirm
+```
+
+The key (`member`) is how Tests refer to the account. The key `default` is used when a Test does not name one.
+
+Saving is human-only: agents can list sign-in metadata, but they cannot save, rotate, or revoke one. The plaintext is used once for encrypted local storage. It is never returned by any command, never written to the App Map, and never appears in evidence — screenshots of the sign-in step are not even captured.
+
+## Use it in a Test
+
+Write the exact sentence as a step:
+
+```yaml
+steps:
+  - Sign in with the saved account "member"
+```
+
+Or, for the default account:
+
+```yaml
+steps:
+  - Sign in with the saved account
+```
+
+The phrasing is deliberately exact. Near misses like "log in with the member account" stay ordinary plain-English steps, so a Test can never acquire credential authority by accident.
+
+During the step, Relay resolves the username and password locally, lets the model pick the destination fields from the screen's structure alone, and types the secrets directly. Anything the model or the product echoes back that resembles a credential is rejected before it can be recorded or typed.
+
+## Manage accounts
+
+```bash
+relay sign-in list                      # metadata only — keys, names, status
+relay sign-in rotate member --input '{"username":"…","password":"…"}' --confirm
+relay sign-in revoke member --confirm   # fails closed: dependent Runs block before starting
+relay sign-in resolve-check member      # can this account resolve right now? never prints secrets
+```
+
+There is no command that reads or exports a saved secret. Rotation creates a fresh encrypted revision; revocation makes future Runs fail before they acquire a device, rather than signing in as the wrong identity or falling back to nothing.
+
+## CI and other machines
+
+Secrets stay on the host that saved them. On CI, supply the account through environment variables instead — for key `member`:
+
+```bash
+RELAY_SIGN_IN_MEMBER_USERNAME=member@example.com
+RELAY_SIGN_IN_MEMBER_PASSWORD=…
+```
+
+For the default key the suffix is `DEFAULT`. Both variables must be set: a partial pair fails the Run closed rather than silently falling back to local storage. When both are present they take precedence over the encrypted copy, so rotating a CI secret never requires touching the runner's disk.
+
+## What to check first
+
+Run one short Test that signs in and confirms the landing screen before building longer journeys on top. `relay sign-in resolve-check` tells you whether resolution would succeed — missing, revoked, or partially configured accounts are reported without exposing anything.
