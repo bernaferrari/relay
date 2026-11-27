@@ -56,6 +56,43 @@ test("editing the file keeps recorded steps whose words did not change", () => {
   assert.equal((steps[1]!.binding as { fromText?: boolean }).fromText, true);
 });
 
+test("editing unrelated steps preserves saved paths on steps whose words did not change", () => {
+  const cache = {
+    schemaVersion: 2,
+    steps: [{ kind: "tap", target: { label: "Cart" } }],
+    runId: "run-1",
+    savedAt: 1,
+    targetKind: "browser",
+    resolution: [{ strategy: "label", key: "Cart" }],
+    verification: { runOutcome: "passed" },
+  };
+  const saved = {
+    id: "s1",
+    kind: "instruction",
+    intent: "Open the API keys page",
+    binding: { status: "unresolved", reason: "x", fromText: true, cache },
+  } as never;
+  const other = {
+    id: "s2",
+    kind: "instruction",
+    intent: "Create a key",
+    binding: { status: "unresolved", reason: "x", fromText: true },
+  } as never;
+  const steps = stepsFromYaml(
+    "t",
+    [
+      { kind: "instruction", intent: "Open the API keys page" },
+      { kind: "instruction", intent: "Create a key with a new name" },
+    ],
+    [saved, other],
+  );
+  // The unchanged step is reused verbatim, saved path and all; the edited one
+  // runs from its new words without the old step's work.
+  assert.equal(steps[0], saved);
+  assert.deepEqual((steps[0] as { binding?: { cache?: unknown } }).binding?.cache, cache);
+  assert.equal((steps[1]!.binding as { cache?: unknown }).cache, undefined);
+});
+
 test("a saved Test round-trips through its file", () => {
   const yaml = testToYaml(
     {

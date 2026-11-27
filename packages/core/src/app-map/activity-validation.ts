@@ -48,6 +48,7 @@ export function assertActivity(
     "test.saved",
     "test.validated",
     "test.actions-saved",
+    "test.actions-dropped",
     "test.undone",
     "test.redone",
     "test.removed",

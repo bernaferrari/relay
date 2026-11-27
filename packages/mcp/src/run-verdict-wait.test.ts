@@ -52,3 +52,31 @@ test("a passed execution retains pending screenshot reviews", async () => {
   assert.deepEqual(result.review, { pending: 2 });
   assert.match(String(result.next), /Review the pending screenshots/);
 });
+
+test("replay provenance and counts survive bounding on passed steps", () => {
+  const verdict = agentVerdict({
+    status: "passed",
+    replayedSteps: 1,
+    reResolvedSteps: 1,
+    steps: [
+      { id: "a", title: "Open the cart", status: "passed", replay: { source: "cache" } },
+      {
+        id: "b",
+        title: "Pay",
+        status: "passed",
+        replay: {
+          source: "re-resolved",
+          detail: "re-resolved after the saved path no longer matched",
+        },
+      },
+    ],
+  });
+  assert.equal(verdict.replayedSteps, 1);
+  assert.equal(verdict.reResolvedSteps, 1);
+  const steps = verdict.steps as { replay?: { source: string } }[];
+  assert.deepEqual(steps[0]!.replay, { source: "cache" });
+  assert.deepEqual(steps[1]!.replay, {
+    source: "re-resolved",
+    detail: "re-resolved after the saved path no longer matched",
+  });
+});

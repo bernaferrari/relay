@@ -3342,9 +3342,131 @@ test("plain-English actions and checks compile to model-driven steps", () => {
   );
 });
 
-test("a plain-English action carries its saved actions into the run", () => {
+test("a plain-English action carries its v2 saved actions into a browser run", () => {
+  const map = fixture();
   const work = scenario();
   const tap = { kind: "tap", target: { label: "Cart" } } as const;
+  const cache = {
+    schemaVersion: 2 as const,
+    steps: [tap],
+    runId: "run-1",
+    savedAt: 1,
+    targetKind: "browser" as const,
+    resolution: [{ strategy: "label" as const, key: "Cart" }],
+    verification: { runOutcome: "passed" as const },
+  };
+  work.steps = [
+    {
+      id: "navigate",
+      kind: "instruction",
+      intent: "Open the cart",
+      binding: { status: "unresolved", reason: "Runs from text", fromText: true, cache },
+    },
+  ];
+  map.screens.home!.variantIds = ["web"];
+  map.screenVariants.web = {
+    ...scope,
+    id: "web",
+    screenId: "home",
+    targetProfile: {
+      id: "browser:golden",
+      targetId: "golden",
+      source: "browser",
+      platform: "browser",
+      name: "Golden",
+      capabilities: [],
+      observedAt: at,
+    },
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const runtime = {
+    id: "browser:golden",
+    targetId: "golden",
+    platform: "browser" as const,
+    capabilities: [],
+  };
+  const compiled = compileAppMapTest(map, work, { runtimeTargetProfile: runtime });
+  const act = compiled.root.steps.find((step) => step.kind === "act");
+  assert.deepEqual(act && act.kind === "act" ? act.cached : undefined, [tap]);
+});
+
+test("legacy entries and cross-target entries compile as absent", () => {
+  const map = fixture();
+  const work = scenario();
+  const tap = { kind: "tap", target: { label: "Cart" } } as const;
+  const base = {
+    schemaVersion: 2 as const,
+    steps: [tap],
+    runId: "run-1",
+    savedAt: 1,
+    resolution: [{ strategy: "label" as const, key: "Cart" }],
+    verification: { runOutcome: "passed" as const },
+  };
+  map.screens.home!.variantIds = ["web"];
+  map.screenVariants.web = {
+    ...scope,
+    id: "web",
+    screenId: "home",
+    targetProfile: {
+      id: "browser:golden",
+      targetId: "golden",
+      source: "browser",
+      platform: "browser",
+      name: "Golden",
+      capabilities: [],
+      observedAt: at,
+    },
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const cases: Array<[string, unknown, { platform: "browser" } | undefined]> = [
+    [
+      "legacy without schemaVersion",
+      { steps: [tap], runId: "run-1", savedAt: 1 },
+      { platform: "browser" },
+    ],
+    [
+      "device entry on a browser target",
+      { ...base, targetKind: "device", platform: "android" },
+      { platform: "browser" },
+    ],
+    ["browser entry without a known target", { ...base, targetKind: "browser" }, undefined],
+  ];
+  for (const [name, cache, target] of cases) {
+    work.steps = [
+      {
+        id: "navigate",
+        kind: "instruction",
+        intent: "Open the cart",
+        binding: {
+          status: "unresolved",
+          reason: "Runs from text",
+          fromText: true,
+          cache,
+        } as never,
+      },
+    ];
+    const options = target
+      ? {
+          runtimeTargetProfile: {
+            id: "browser:golden",
+            targetId: "golden",
+            platform: target.platform,
+            capabilities: [],
+          },
+        }
+      : {};
+    const compiled = compileAppMapTest(map, work, options);
+    const act = compiled.root.steps.find((step) => step.kind === "act");
+    assert.equal(act && act.kind === "act" ? act.cached : undefined, undefined, name);
+  }
+});
+
+test("an entry carrying an uncacheable kind is rejected at intake before compile", () => {
+  const work = scenario();
   work.steps = [
     {
       id: "navigate",
@@ -3354,13 +3476,22 @@ test("a plain-English action carries its saved actions into the run", () => {
         status: "unresolved",
         reason: "Runs from text",
         fromText: true,
-        cache: { steps: [tap], runId: "run-1", savedAt: 1 },
-      },
+        cache: {
+          schemaVersion: 2,
+          steps: [
+            { kind: "tap", target: { label: "Cart" } },
+            { kind: "device", action: "lock" },
+          ],
+          runId: "run-1",
+          savedAt: 1,
+          targetKind: "browser",
+          resolution: [{ strategy: "label", key: "Cart" }],
+          verification: { runOutcome: "passed" },
+        },
+      } as never,
     },
   ];
-  const compiled = compileAppMapTest(fixture(), work);
-  const act = compiled.root.steps.find((step) => step.kind === "act");
-  assert.deepEqual(act && act.kind === "act" ? act.cached : undefined, [tap]);
+  assert.throws(() => compileAppMapTest(fixture(), work), /not cacheable/);
 });
 
 test("unresolved intent fails closed with a stable step-specific diagnostic", () => {

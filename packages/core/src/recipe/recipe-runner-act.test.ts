@@ -219,3 +219,168 @@ test("when saved actions no longer fit, the model takes over and its actions are
     { kind: "tap", target: { label: "Settings", point: { x: 10, y: 5 } } },
   ]);
 });
+
+test("act-decision artifacts carry the recipe step join key", async () => {
+  const result = await run([
+    { action: "tap", candidateId: "c1", reason: "Settings is visible", finishesIntent: true },
+  ]);
+  assert.equal(result.error, undefined);
+  const decisions = result.artifacts.filter((item) => item.kind === "act-decision");
+  assert.ok(decisions.length > 0);
+  // Steps without an id carry no key; this run's step has none, so the field is absent.
+  assert.equal((decisions[0]!.data as { recipeStepId?: unknown }).recipeStepId, undefined);
+});
+
+test("every act artifact keys on the compiled recipe step when the step has one", async () => {
+  const unregister = registerActDecider(async () => ({
+    action: "tap",
+    candidateId: "c1",
+    reason: "opens it",
+    finishesIntent: true,
+  }));
+  const { ctx, artifacts } = context();
+  try {
+    await runActStep(
+      device,
+      { kind: "act", id: "relay-test-s1-1", intent: "Open Settings" },
+      ctx,
+      async () => {},
+      async () => screen,
+    );
+  } finally {
+    unregister();
+  }
+  for (const artifact of artifacts) {
+    assert.equal(
+      (artifact.data as { recipeStepId?: unknown }).recipeStepId,
+      "relay-test-s1-1",
+      `${artifact.kind} must carry recipeStepId`,
+    );
+  }
+});
+
+test("resolutions executed by concrete steps are captured in order alongside the result", async () => {
+  const unregister = registerActDecider(async () => ({
+    action: "tap",
+    candidateId: "c1",
+    reason: "opens it",
+    finishesIntent: true,
+  }));
+  const { ctx, artifacts } = context();
+  try {
+    await runActStep(
+      device,
+      { kind: "act", id: "act-1", intent: "Open Settings" },
+      ctx,
+      async (step) => {
+        if (step.kind === "tap") {
+          artifacts.push({
+            kind: "target-resolution",
+            capturedAt: 1,
+            data: { strategy: "label", target: { label: "Settings" } },
+          });
+        }
+      },
+      async () => screen,
+    );
+  } finally {
+    unregister();
+  }
+  const result = artifacts.find((item) => item.kind === "act-result")?.data as {
+    resolutions: unknown;
+  };
+  assert.deepEqual(result.resolutions, [{ strategy: "label", key: "Settings" }]);
+});
+
+test("a cache-miss re-resolution keeps the replayed prefix and its resolution evidence", async () => {
+  const unregister = registerActDecider(async () => ({
+    action: "tap",
+    candidateId: "c1",
+    reason: "Settings is visible",
+    finishesIntent: true,
+  }));
+  const { ctx, artifacts } = context();
+  try {
+    await runActStep(
+      device,
+      {
+        kind: "act",
+        id: "act-1",
+        intent: "Open Settings",
+        cached: [
+          { kind: "tap", target: { label: "Still here" } },
+          { kind: "tap", target: { label: "Gone" } },
+        ],
+      },
+      ctx,
+      async (step) => {
+        if (step.kind === "tap" && step.target.label === "Gone") throw new Error("Gone not found");
+        if (step.kind === "tap") {
+          artifacts.push({
+            kind: "target-resolution",
+            capturedAt: 1,
+            data: {
+              strategy: "label",
+              target: { label: step.target.label },
+            },
+          });
+        }
+      },
+      async () => screen,
+    );
+  } finally {
+    unregister();
+  }
+  const miss = artifacts.find(
+    (item) =>
+      item.kind === "act-decision" && (item.data as { action?: string }).action === "cache-miss",
+  );
+  assert.equal((miss?.data as { recipeStepId?: string }).recipeStepId, "act-1");
+  const result = artifacts.find((item) => item.kind === "act-result")?.data as {
+    source: string;
+    steps: RecipeStep[];
+    resolutions: ({ strategy: string; key?: string } | null)[];
+  };
+  assert.equal(result.source, "model");
+  assert.deepEqual(
+    result.steps.map((step) => (step.kind === "tap" ? step.target.label : step.kind)),
+    ["Still here", "Settings"],
+  );
+  assert.deepEqual(result.resolutions, [
+    { strategy: "label", key: "Still here" },
+    { strategy: "label", key: "Settings" },
+  ]);
+});
+
+test("a cancel during replay never falls through to the model", async () => {
+  let asked = 0;
+  const unregister = registerActDecider(async () => {
+    asked += 1;
+    return { action: "done", reason: "unused" };
+  });
+  const { ctx } = context();
+  const cancel = Object.assign(new Error("cancelled"), { name: "JobCancelledError" });
+  let error: unknown;
+  try {
+    await runActStep(
+      device,
+      {
+        kind: "act",
+        id: "act-1",
+        intent: "Open Settings",
+        cached: [{ kind: "tap", target: { label: "Gone" } }],
+      },
+      ctx,
+      async () => {
+        throw cancel;
+      },
+      async () => screen,
+    );
+  } catch (caught) {
+    error = caught;
+  } finally {
+    unregister();
+  }
+  assert.equal(error, cancel);
+  assert.equal(asked, 0);
+});

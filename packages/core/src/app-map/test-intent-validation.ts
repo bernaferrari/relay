@@ -17,6 +17,7 @@ import {
 import { BROWSER_ENGINES } from "@relay/protocol";
 import { validateRecipeSteps } from "../recipe/recipe-validation.js";
 import { appMapFail } from "./errors.js";
+import { isCacheableActStepKind } from "./act-cache-steps.js";
 import { assertActions, assertTarget } from "./action-validation.js";
 import {
   identifier,
@@ -87,8 +88,93 @@ function assertBinding(step: AppMapScenarioTestStep, label: string): void {
     );
     if (binding.cache !== undefined) {
       const cache = objectValue(binding.cache, `${label}.binding.cache`);
-      if (!Array.isArray(cache.steps) || cache.steps.length > 40)
+      allowedKeys(
+        cache,
+        [
+          "schemaVersion",
+          "steps",
+          "runId",
+          "savedAt",
+          "targetKind",
+          "platform",
+          "viewport",
+          "resolution",
+          "verification",
+          "healedFrom",
+          "hits",
+          "lastHitAt",
+        ],
+        `${label}.binding.cache`,
+      );
+      if (!Array.isArray(cache.steps) || !cache.steps.length || cache.steps.length > 40)
         appMapFail("invalid-map", `${label}.binding.cache.steps must list at most 40 actions`);
+      // Saved paths round-trip through user-editable YAML, so the kind
+      // allowlist is re-proven here: nothing a person crafts may smuggle a
+      // script, module, repeat, branch, nested act, evaluate, or expect into
+      // execution through a cache entry.
+      for (const [index, raw] of cache.steps.entries()) {
+        const item = `${label}.binding.cache.steps[${index}]`;
+        const cached = objectValue(raw, item);
+        validateCanonicalStep(cached as RecipeStep, item);
+        if (!isCacheableActStepKind(cached as RecipeStep))
+          appMapFail("invalid-map", `${item}.kind is not cacheable`);
+      }
+      requiredText(cache.runId, `${label}.binding.cache.runId`);
+      safeInteger(cache.savedAt, `${label}.binding.cache.savedAt`);
+      if (cache.schemaVersion !== undefined) {
+        if (cache.schemaVersion !== 2)
+          appMapFail("invalid-map", `${label}.binding.cache.schemaVersion is unsupported`);
+        if (!(["browser", "device"] as unknown[]).includes(cache.targetKind))
+          appMapFail("invalid-map", `${label}.binding.cache.targetKind is unsupported`);
+        if (
+          cache.platform !== undefined &&
+          !(["android", "ios"] as unknown[]).includes(cache.platform)
+        )
+          appMapFail("invalid-map", `${label}.binding.cache.platform is unsupported`);
+        if (cache.viewport !== undefined) {
+          const viewport = objectValue(cache.viewport, `${label}.binding.cache.viewport`);
+          allowedKeys(viewport, ["width", "height"], `${label}.binding.cache.viewport`);
+          safeInteger(viewport.width, `${label}.binding.cache.viewport.width`);
+          safeInteger(viewport.height, `${label}.binding.cache.viewport.height`);
+        }
+        if (!Array.isArray(cache.resolution))
+          appMapFail("invalid-map", `${label}.binding.cache.resolution must be an array`);
+        for (const [index, raw] of cache.resolution.entries()) {
+          const item = `${label}.binding.cache.resolution[${index}]`;
+          const entry = objectValue(raw, item);
+          allowedKeys(entry, ["strategy", "key"], item);
+          if (!(["identifier", "ref", "label", "text"] as unknown[]).includes(entry.strategy))
+            appMapFail("invalid-map", `${item}.strategy is unsupported`);
+          requiredText(entry.key, `${item}.key`);
+        }
+        const verification = objectValue(cache.verification, `${label}.binding.cache.verification`);
+        allowedKeys(
+          verification,
+          ["runOutcome", "checkStepIds"],
+          `${label}.binding.cache.verification`,
+        );
+        if (verification.runOutcome !== "passed")
+          appMapFail(
+            "invalid-map",
+            `${label}.binding.cache.verification.runOutcome must be passed`,
+          );
+        if (verification.checkStepIds !== undefined) {
+          stringArray(
+            verification.checkStepIds,
+            `${label}.binding.cache.verification.checkStepIds`,
+          );
+        }
+        if (cache.healedFrom !== undefined) {
+          const healed = objectValue(cache.healedFrom, `${label}.binding.cache.healedFrom`);
+          allowedKeys(healed, ["runId", "savedAt", "reason"], `${label}.binding.cache.healedFrom`);
+          requiredText(healed.runId, `${label}.binding.cache.healedFrom.runId`);
+          safeInteger(healed.savedAt, `${label}.binding.cache.healedFrom.savedAt`);
+          requiredText(healed.reason, `${label}.binding.cache.healedFrom.reason`);
+        }
+        if (cache.hits !== undefined) safeInteger(cache.hits, `${label}.binding.cache.hits`);
+        if (cache.lastHitAt !== undefined)
+          safeInteger(cache.lastHitAt, `${label}.binding.cache.lastHitAt`);
+      }
     }
     requiredText(binding.reason, `${label}.binding.reason`);
     if (binding.fromText !== undefined && binding.fromText !== true) {

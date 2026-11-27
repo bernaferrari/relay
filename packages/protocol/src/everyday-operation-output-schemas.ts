@@ -1,14 +1,49 @@
 import * as z from "zod/v4";
 import { recipeStepSchema } from "./recipe/recipe-step-schema.js";
 
-/** Actions that last carried out a plain-English step, replayed before the model. */
-export const plainEnglishStepCacheSchema = z
-  .object({
-    steps: z.array(recipeStepSchema).max(40),
-    runId: z.string(),
-    savedAt: z.number(),
-  })
-  .strict();
+/** Actions that last carried out a plain-English step, replayed before the
+ * model. v2 entries carry the proof needed to replay safely; legacy entries
+ * without it stay valid document data but compile as absent. */
+export const plainEnglishStepCacheSchema = z.union([
+  z
+    .object({
+      steps: z.array(recipeStepSchema).max(40),
+      runId: z.string(),
+      savedAt: z.number(),
+    })
+    .strict(),
+  z
+    .object({
+      schemaVersion: z.literal(2),
+      steps: z.array(recipeStepSchema).max(40),
+      runId: z.string(),
+      savedAt: z.number(),
+      targetKind: z.enum(["browser", "device"]),
+      platform: z.enum(["android", "ios"]).optional(),
+      viewport: z.object({ width: z.number(), height: z.number() }).strict().optional(),
+      resolution: z.array(
+        z
+          .object({
+            strategy: z.enum(["identifier", "ref", "label", "text"]),
+            key: z.string(),
+          })
+          .strict(),
+      ),
+      verification: z
+        .object({
+          runOutcome: z.literal("passed"),
+          checkStepIds: z.array(z.string()).optional(),
+        })
+        .strict(),
+      healedFrom: z
+        .object({ runId: z.string(), savedAt: z.number(), reason: z.string() })
+        .strict()
+        .optional(),
+      hits: z.number().optional(),
+      lastHitAt: z.number().optional(),
+    })
+    .strict(),
+]);
 
 /** Fields an unresolved Test step binding adds when it runs from its words. */
 export const plainEnglishBindingFields = {
@@ -51,6 +86,8 @@ export const everydayOperationOutputSchemas = {
           reason: z.string().optional(),
           durationMs: z.number().optional(),
           device: z.string().optional(),
+          replayedSteps: z.number().optional(),
+          reResolvedSteps: z.number().optional(),
           steps: z.array(
             z
               .object({
@@ -61,6 +98,13 @@ export const everydayOperationOutputSchemas = {
                 expected: z.string().optional(),
                 saw: z.string().optional(),
                 screenshot: z.string().optional(),
+                replay: z
+                  .object({
+                    source: z.enum(["cache", "model", "re-resolved"]),
+                    detail: z.string().optional(),
+                  })
+                  .strict()
+                  .optional(),
               })
               .strict(),
           ),

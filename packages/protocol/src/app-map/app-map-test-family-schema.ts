@@ -170,12 +170,46 @@ export const unresolvedBindingSchema = z
       .optional(),
     fromText: z.literal(true).optional(),
     cache: z
-      .object({
-        steps: z.array(recipeStepSchema),
-        runId: id,
-        savedAt: at,
-      })
-      .strict()
+      .union([
+        z
+          .object({
+            steps: z.array(recipeStepSchema),
+            runId: id,
+            savedAt: at,
+          })
+          .strict(),
+        z
+          .object({
+            schemaVersion: z.literal(2),
+            steps: z.array(recipeStepSchema),
+            runId: id,
+            savedAt: at,
+            targetKind: z.enum(["browser", "device"]),
+            platform: z.enum(["android", "ios"]).optional(),
+            viewport: z.object({ width: z.number(), height: z.number() }).strict().optional(),
+            resolution: z.array(
+              z
+                .object({
+                  strategy: z.enum(["identifier", "ref", "label", "text"]),
+                  key: z.string(),
+                })
+                .strict(),
+            ),
+            verification: z
+              .object({
+                runOutcome: z.literal("passed"),
+                checkStepIds: z.array(id).optional(),
+              })
+              .strict(),
+            healedFrom: z
+              .object({ runId: id, savedAt: at, reason: z.string() })
+              .strict()
+              .optional(),
+            hits: z.number().optional(),
+            lastHitAt: at.optional(),
+          })
+          .strict(),
+      ])
       .optional(),
   })
   .strict();

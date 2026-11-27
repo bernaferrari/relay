@@ -11,7 +11,7 @@ import { recordAppMapRun, recordAppMapTestValidation } from "./run-operations.js
 import { persistAuthoringEvidence } from "../authoring/authoring-evidence.js";
 import { readFrameTreeNodes } from "../run/run-frame-tree.js";
 import { growAppMapFromRun } from "./app-map-run-growth.js";
-import { saveActCachesFromRun } from "./app-map-act-cache.js";
+import { dropStaleActCachesFromRun, saveActCachesFromRun } from "./app-map-act-cache.js";
 import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
 
 /** Overlay fixtures must not reuse the unsigned saved profile id. */
@@ -411,8 +411,11 @@ export async function projectPersistedAppMapRun(run: PersistedRun): Promise<bool
   // Every run grows its map, pass or fail. Additions are drafts Tests never
   // replay, so a failure here must never block the run's own projection.
   await growAppMapFromRun(run).catch(() => 0);
-  // Plain-English steps that ran remember their actions for the next run.
-  await saveActCachesFromRun(run).catch(() => 0);
+  // Plain-English acceptance gate: only a passed run may save a resolution,
+  // and a failed run drops the saved paths it proved stale. A blocked run
+  // mutates nothing in either direction — it proves nothing about the product.
+  if (run.outcome === "passed") await saveActCachesFromRun(run).catch(() => 0);
+  else if (run.outcome === "product-failure") await dropStaleActCachesFromRun(run).catch(() => 0);
   const testProvenance = compiledTestProvenance(run);
   if (testProvenance && !compiledPlan(run)) {
     const projected = await recordSuccessfulTestValidation(run, testProvenance);

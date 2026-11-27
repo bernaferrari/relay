@@ -148,3 +148,110 @@ test("the step that stopped the run shows the screen at the moment it failed", (
     "Relay typed the text, but the field showed something different.",
   );
 });
+
+test("plain-English steps surface how they were carried out without changing the outcome", () => {
+  const plan = {
+    kind: "app-map-test-plan",
+    capturedAt: 1,
+    data: {
+      appMapId: "shop",
+      test: { id: "checkout" },
+      stepProvenance: [
+        { recipeStepId: "relay-test-open-1", testStepId: "open" },
+        { recipeStepId: "relay-test-pay-1", testStepId: "pay" },
+      ],
+    },
+  };
+  const verdict = buildRunVerdict(
+    run({
+      outcome: "passed",
+      status: "ok",
+      steps: [
+        { id: "t1", status: "ok", frames: [], log: "" },
+        { id: "t2", status: "ok", frames: [], log: "" },
+        { id: "t3", status: "ok", frames: [], log: "" },
+      ] as never,
+      testStepEvidence: [
+        evidence("open", "t1", 0),
+        evidence("check", "t2", 1),
+        evidence("pay", "t3", 2),
+      ],
+      artifacts: [
+        plan,
+        {
+          kind: "act-result",
+          capturedAt: 2,
+          data: {
+            intent: "Open the cart",
+            recipeStepId: "relay-test-open-1",
+            source: "cache",
+            steps: [],
+          },
+        },
+        {
+          kind: "act-decision",
+          capturedAt: 3,
+          data: {
+            intent: "Pay",
+            recipeStepId: "relay-test-pay-1",
+            action: "cache-miss",
+            reason: "x",
+          },
+        },
+        {
+          kind: "act-result",
+          capturedAt: 4,
+          data: { intent: "Pay", recipeStepId: "relay-test-pay-1", source: "model", steps: [] },
+        },
+      ],
+    }),
+    authored,
+  );
+  assert.equal(verdict.status, "passed");
+  assert.deepEqual(verdict.steps[0]!.replay, { source: "cache" });
+  assert.equal(verdict.steps[1]!.replay, undefined);
+  assert.deepEqual(verdict.steps[2]!.replay, {
+    source: "re-resolved",
+    detail: "re-resolved after the saved path no longer matched",
+  });
+  assert.equal(verdict.replayedSteps, 1);
+  assert.equal(verdict.reResolvedSteps, 1);
+  // Healing is invisible in the outcome by design.
+  assert.equal(verdict.summary, "Passed · 3 of 3 steps");
+});
+
+test("a first model resolution without a miss reads as model, never as re-resolved", () => {
+  const verdict = buildRunVerdict(
+    run({
+      outcome: "passed",
+      status: "ok",
+      steps: [{ id: "t1", status: "ok", frames: [], log: "" }] as never,
+      testStepEvidence: [evidence("open", "t1", 0)],
+      artifacts: [
+        {
+          kind: "app-map-test-plan",
+          capturedAt: 1,
+          data: {
+            appMapId: "shop",
+            test: { id: "checkout" },
+            stepProvenance: [{ recipeStepId: "relay-test-open-1", testStepId: "open" }],
+          },
+        },
+        {
+          kind: "act-result",
+          capturedAt: 2,
+          data: {
+            intent: "Open the cart",
+            recipeStepId: "relay-test-open-1",
+            source: "model",
+            steps: [],
+          },
+        },
+      ],
+    }),
+    authored,
+  );
+  assert.deepEqual(verdict.steps[0]!.replay, { source: "model" });
+  assert.equal(verdict.replayedSteps, undefined);
+  assert.equal(verdict.reResolvedSteps, undefined);
+});

@@ -51,6 +51,7 @@ import {
   type AppMapTestCompileOptions,
 } from "./app-map-test-compile-support.js";
 import { compileAppMapTestPlan } from "./app-map-test-plan.js";
+import { cacheableSavedSteps } from "./act-cache-steps.js";
 import { testInstructionDisplayTitle } from "../recorded/recorded-control-label.js";
 
 export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
@@ -372,14 +373,16 @@ export function compileAppMapScenarioTest(
             recipeSteps.push({ kind: "app", action: "open", app: test.originApplication });
           }
         }
+        const savedSteps =
+          step.kind === "instruction"
+            ? cacheableSavedSteps(step.binding.cache, options.runtimeTargetProfile)
+            : undefined;
         recipeSteps.push(
           step.kind === "instruction"
             ? {
                 kind: "act",
                 intent: step.intent,
-                ...(step.binding.cache?.steps.length
-                  ? { cached: structuredClone(step.binding.cache.steps) }
-                  : {}),
+                ...(savedSteps ? { cached: structuredClone(savedSteps) } : {}),
               }
             : { kind: "evaluate-visual", criteria: [step.intent] },
         );

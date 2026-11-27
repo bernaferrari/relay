@@ -74,6 +74,7 @@ export function agentVerdict(value: unknown): Record<string, unknown> {
               title: clip(step.title),
               ...(step.kind ? { kind: step.kind } : {}),
               status: step.status,
+              ...(step.replay ? { replay: step.replay } : {}),
             },
       ),
     ...(steps.length > stepLimit ? { moreSteps: steps.length - stepLimit } : {}),

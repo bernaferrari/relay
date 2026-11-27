@@ -12,6 +12,14 @@ import { e2eRunVerdict } from "./e2e-run-verdict.js";
 
 export type RunVerdictStatus = "passed" | "failed" | "blocked" | "cancelled" | "running";
 
+export type RunVerdictStepReplay = {
+  /** cache: replayed the saved path without a model. model: resolved by the
+   * model this run. re-resolved: the saved path no longer matched and the
+   * model resolved the step again. */
+  source: "cache" | "model" | "re-resolved";
+  detail?: string;
+};
+
 export type RunVerdictStep = {
   /** Authored step id; stable across runs. */
   id: string;
@@ -22,6 +30,8 @@ export type RunVerdictStep = {
   saw?: string;
   /** Absolute path of the most useful screenshot for this step. */
   screenshot?: string;
+  /** How a plain-English step was carried out, when the run recorded it. */
+  replay?: RunVerdictStepReplay;
 };
 
 export type RunVerdict = {
@@ -34,6 +44,11 @@ export type RunVerdict = {
   reason?: string;
   durationMs?: number;
   device?: string;
+  /** Plain-English steps replayed from their saved path / re-resolved by the
+   * model after the saved path no longer matched. Counts only; the pass/fail
+   * taxonomy never changes. */
+  replayedSteps?: number;
+  reResolvedSteps?: number;
   steps: RunVerdictStep[];
 };
 
@@ -108,6 +123,46 @@ export function buildRunVerdict(
     )
       checkErrors.set(data.id, data.error);
   }
+  // Plain-English replay provenance: which authored steps ran their saved
+  // path, which the model resolved, and which had to be re-resolved after the
+  // saved path no longer matched. Joined through the frozen plan because act
+  // artifacts key on compiled recipe steps, not authored Test steps.
+  const testStepByRecipeStep = new Map<string, string>();
+  const planArtifact = run.artifacts.find((artifact) => artifact.kind === "app-map-test-plan")
+    ?.data as
+    | { stepProvenance?: Array<{ recipeStepId?: unknown; testStepId?: unknown }> }
+    | undefined;
+  for (const item of planArtifact?.stepProvenance ?? [])
+    if (typeof item.recipeStepId === "string" && typeof item.testStepId === "string")
+      testStepByRecipeStep.set(item.recipeStepId, item.testStepId);
+  const replayByStep = new Map<string, RunVerdictStepReplay>();
+  const missedRecipeSteps = new Set<string>();
+  for (const artifact of run.artifacts) {
+    const data = artifact.data as { action?: unknown; recipeStepId?: unknown } | undefined;
+    if (
+      artifact.kind === "act-decision" &&
+      data?.action === "cache-miss" &&
+      typeof data.recipeStepId === "string"
+    )
+      missedRecipeSteps.add(data.recipeStepId);
+  }
+  for (const artifact of run.artifacts) {
+    const data = artifact.data as { recipeStepId?: unknown; source?: unknown } | undefined;
+    if (artifact.kind !== "act-result" || typeof data?.recipeStepId !== "string") continue;
+    const testStepId = testStepByRecipeStep.get(data.recipeStepId);
+    if (!testStepId || replayByStep.has(testStepId)) continue;
+    if (data.source === "cache") {
+      replayByStep.set(testStepId, { source: "cache" });
+    } else if (data.source === "model") {
+      replayByStep.set(
+        testStepId,
+        missedRecipeSteps.has(data.recipeStepId)
+          ? { source: "re-resolved", detail: "re-resolved after the saved path no longer matched" }
+          : { source: "model" },
+      );
+    }
+  }
+
   const traceById = new Map(run.steps.map((step) => [step.id, step]));
   const order: string[] = [];
   const byStep = new Map<
@@ -159,11 +214,13 @@ export function buildRunVerdict(
     const meta = intents.get(id);
     const title = meta?.title ?? id;
     const screenshot = entry?.frames.at(-1);
+    const replay = replayByStep.get(id);
     const base = {
       id,
       title,
       ...(meta?.kind ? { kind: meta.kind } : {}),
       ...(screenshot && run.dir ? { screenshot: join(run.dir, screenshot) } : {}),
+      ...(replay ? { replay } : {}),
     };
     if (!entry || reachedFailure) return { ...base, status: "not-run" as const };
     if (!entry.failed) return { ...base, status: "passed" as const };
@@ -204,6 +261,8 @@ export function buildRunVerdict(
         : status === "cancelled"
           ? "Cancelled"
           : `${status === "failed" ? "Failed" : "Blocked"}${failedStep ? ` at “${failedStep.title}”` : ""}${(failedStep?.saw ?? runReason) ? `: ${failedStep?.saw ?? runReason}` : ""}`;
+  const replayedSteps = steps.filter((step) => step.replay?.source === "cache").length;
+  const reResolvedSteps = steps.filter((step) => step.replay?.source === "re-resolved").length;
   return {
     runId: run.id,
     title,
@@ -214,6 +273,8 @@ export function buildRunVerdict(
       : {}),
     ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}),
     ...(run.deviceName || run.serial ? { device: run.deviceName ?? run.serial } : {}),
+    ...(replayedSteps ? { replayedSteps } : {}),
+    ...(reResolvedSteps ? { reResolvedSteps } : {}),
     steps,
   };
 }

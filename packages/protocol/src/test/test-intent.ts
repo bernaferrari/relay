@@ -47,6 +47,42 @@ export type AppMapTestBindingCandidate = {
   label: string;
 };
 
+/** How one cached action's target resolved on the run that saved it. Only
+ * semantic strategies are admitted; a coordinate resolution makes the step
+ * uncacheable because it can never miss when the UI moves. */
+export type PlainEnglishStepCacheResolution = {
+  strategy: "identifier" | "ref" | "label" | "text";
+  key: string;
+};
+
+/** Actions that last carried out a plain-English step, with the proof needed
+ * to replay them safely: where they run, how their targets resolved, and the
+ * outcome of the run that produced them. */
+export type PlainEnglishStepCacheV2 = {
+  schemaVersion: 2;
+  steps: RecipeStep[];
+  runId: string;
+  savedAt: number;
+  targetKind: "browser" | "device";
+  platform?: "android" | "ios";
+  viewport?: { width: number; height: number };
+  resolution: PlainEnglishStepCacheResolution[];
+  verification: { runOutcome: "passed"; checkStepIds?: string[] };
+  /** Lineage of the entry this one re-resolved after a saved path no longer
+   * matched the screen. */
+  healedFrom?: { runId: string; savedAt: number; reason: string };
+  hits?: number;
+  lastHitAt?: number;
+};
+
+/** Legacy entries predate the proof fields. They remain valid document data
+ * but compile as absent, so the next run re-caches through the model once. */
+export type PlainEnglishStepCacheLegacy = {
+  steps: RecipeStep[];
+  runId: string;
+  savedAt: number;
+};
+
 export type UnresolvedTestBinding = {
   status: "unresolved";
   reason: string;
@@ -54,7 +90,7 @@ export type UnresolvedTestBinding = {
   /** Run from its words (model taps an Action, a judge decides a Check). */
   fromText?: true;
   /** Actions that last carried out these words; replayed before the model. */
-  cache?: { steps: RecipeStep[]; runId: string; savedAt: number };
+  cache?: PlainEnglishStepCacheLegacy | PlainEnglishStepCacheV2;
 };
 
 export type ResolvedTestBinding<T extends object> = { status: "resolved" } & T;

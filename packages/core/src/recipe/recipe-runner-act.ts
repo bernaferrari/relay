@@ -283,6 +283,22 @@ async function observe(device: Device): Promise<ActObservation> {
   return { candidates: actCandidates(nodes), ...(screenshot ? { screenshot } : {}) };
 }
 
+export type ActStepResolutionEvidence = { strategy: string; key?: string };
+
+function resolutionEvidence(data: unknown): ActStepResolutionEvidence | undefined {
+  const value = data as { strategy?: unknown; target?: Record<string, unknown> } | undefined;
+  if (typeof value?.strategy !== "string" || !value.strategy) return undefined;
+  const keyed = value.target?.[value.strategy];
+  const fallback = ["identifier", "ref", "label", "text"]
+    .map((field) => value.target?.[field])
+    .find((item) => typeof item === "string" && item.trim());
+  const key = typeof keyed === "string" && keyed.trim() ? keyed : fallback;
+  return {
+    strategy: value.strategy,
+    ...(typeof key === "string" && key.trim() ? { key: key.trim() } : {}),
+  };
+}
+
 export async function runActStep(
   device: Device,
   step: Extract<RecipeStep, { kind: "act" }>,
@@ -294,15 +310,17 @@ export async function runActStep(
   const max = Math.max(1, Math.min(step.maxActions ?? DEFAULT_ACT_MAX_ACTIONS, 20));
   const history: string[] = [];
   const executed: RecipeStep[] = [];
+  const resolutions: (ActStepResolutionEvidence | null)[] = [];
+  const sink = () => ctx.job?.artifacts ?? ctx.artifacts;
   const record = (data: Record<string, unknown>) =>
-    (ctx.job?.artifacts ?? ctx.artifacts)?.push({
+    sink()?.push({
       kind: "act-decision",
       capturedAt: now(),
-      data: { intent: step.intent, ...data },
+      data: { intent: step.intent, ...(step.id ? { recipeStepId: step.id } : {}), ...data },
     });
   /** What carried out the step, so a later run can replay it without a model. */
   const finish = (source: "cache" | "model") => {
-    (ctx.job?.artifacts ?? ctx.artifacts)?.push({
+    sink()?.push({
       kind: "act-result",
       capturedAt: now(),
       data: {
@@ -310,12 +328,18 @@ export async function runActStep(
         ...(step.id ? { recipeStepId: step.id } : {}),
         source,
         steps: structuredClone(executed),
+        resolutions: structuredClone(resolutions),
       },
     });
   };
   const runAndKeep = async (concrete: RecipeStep) => {
+    const artifacts = sink();
+    const before = artifacts?.length ?? 0;
     await runConcrete(concrete);
     executed.push(concrete);
+    const emitted = artifacts?.slice(before) ?? [];
+    const hit = emitted.find((artifact) => artifact.kind === "target-resolution");
+    resolutions.push(hit ? (resolutionEvidence(hit.data) ?? null) : null);
   };
 
   // Replay what worked last time; ask the model only if the screen changed.
