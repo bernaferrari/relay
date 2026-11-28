@@ -3,7 +3,7 @@ import { runWithOperationContext, type OperationContext } from "../execution/ope
 import { finishDurableSessionJob, queueDurableSessionJob } from "./session-durable-worker.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import { executionTargetRefForJob } from "../target/target-driver.js";
-import { jobSchedulingTargetId } from "../browser/browser-account-lane.js";
+import { sessionJobSchedulingTargetId } from "./session-account-overlap.js";
 import type {
   TargetWorkerScheduledWork,
   TargetWorkerStagedBatch,
@@ -262,10 +262,13 @@ export function scheduledSessionJob(input: {
   return {
     id: job.id,
     workerId: job.workerId!,
-    targetId: jobSchedulingTargetId({
+    targetId: sessionJobSchedulingTargetId({
       executionTarget: executionTargetRefForJob(job),
-      browserCaseProfile: job.browserCaseProfile,
-      unsignedLaneId: job.unsignedLaneId,
+      ...(job.browserCaseProfile ? { browserCaseProfile: job.browserCaseProfile } : {}),
+      ...(job.unsignedLaneId ? { unsignedLaneId: job.unsignedLaneId } : {}),
+      ...(job.browserAccountOverlap ? { browserAccountOverlap: job.browserAccountOverlap } : {}),
+      ...(job.recipeGraph ? { recipeGraph: job.recipeGraph } : {}),
+      ...(job.projectId ? { projectId: job.projectId } : {}),
     }),
     capacity: job.workerCapacity!,
     ...(job.hostWorkerId && job.hostWorkerCapacity

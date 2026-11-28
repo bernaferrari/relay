@@ -233,3 +233,143 @@ test("a retry of a Lane-bound run keeps the user-invoked lane", () => {
   assert.equal(retry.unsignedLaneId, "nightly-a");
   assert.equal(retry.browserIsolation, undefined);
 });
+
+function signInGraph(...accountKeys: string[]) {
+  return {
+    root: {
+      id: "root",
+      title: "root",
+      source: "custom" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      steps: accountKeys.map((accountKey) => ({
+        kind: "act" as const,
+        intent: `Sign in with the saved account "${accountKey}"`,
+        auth: { type: "sign-in" as const, accountKey },
+      })),
+    },
+  };
+}
+
+function accountBrowserInput(
+  accountKey: string,
+  input: Partial<EnqueueJobInput> = {},
+): EnqueueJobInput {
+  const recipeGraph = signInGraph(accountKey);
+  return browserInput({
+    projectId: "project",
+    recipeGraph,
+    browserAccountOverlap: { accountKeys: [accountKey], sharing: "safe-shared-read" },
+    ...input,
+  });
+}
+
+test("runtime sign-in accounts receive stable account lanes plus fresh session lanes", () => {
+  const admin = makeJob(accountBrowserInput("admin"));
+  const member = makeJob(accountBrowserInput("member"));
+  assert.deepEqual(admin.browserAccountOverlap, {
+    accountKeys: ["admin"],
+    sharing: "safe-shared-read",
+  });
+  assert.match(admin.unsignedLaneId!, /^unsigned-run:/u);
+  assert.equal(admin.browserIsolation, undefined, "signed-in work is not an unsigned reader");
+
+  const adminTarget = scheduledSessionJob({ job: admin, run: async () => {} }).targetId;
+  const memberTarget = scheduledSessionJob({ job: member, run: async () => {} }).targetId;
+  assert.match(adminTarget, /^shop-web#signed-out:account:/u);
+  assert.notEqual(adminTarget, memberTarget);
+  assert.notEqual(
+    adminTarget,
+    schedulingTargetId(admin),
+    "account serialization is broader than the one-shot session key",
+  );
+});
+
+test("different sign-in accounts fan out while one account stays serialized in the scheduler", async () => {
+  const firstAdmin = makeJob(
+    accountBrowserInput("admin", { title: "first admin", hostWorkerCapacity: 2 }),
+  );
+  const member = makeJob(accountBrowserInput("member", { title: "member", hostWorkerCapacity: 2 }));
+  const secondAdmin = makeJob(
+    accountBrowserInput("admin", { title: "second admin", hostWorkerCapacity: 2 }),
+  );
+  const jobs = [firstAdmin, member, secondAdmin];
+  assert.equal(
+    scheduledSessionJob({ job: firstAdmin, run: async () => {} }).targetId,
+    scheduledSessionJob({ job: secondAdmin, run: async () => {} }).targetId,
+  );
+
+  const scheduler = new TargetWorkerScheduler();
+  const gates = jobs.map(() => deferred());
+  const started: string[] = [];
+  for (const [index, job] of jobs.entries()) {
+    scheduler.enqueue(
+      scheduledSessionJob({
+        job,
+        run: async () => {
+          started.push(job.title);
+          await gates[index]!.promise;
+        },
+      }),
+    );
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started.sort(), ["first admin", "member"]);
+  gates[0]!.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(started.includes("second admin"), true);
+  gates[1]!.resolve();
+  gates[2]!.resolve();
+});
+
+test("unknown or mismatched sign-in identity keeps the legacy exclusive lane", () => {
+  const graphOnly = makeJob(
+    browserInput({
+      projectId: "project",
+      browserIsolation: "independent",
+      recipeGraph: signInGraph("member"),
+    }),
+  );
+  assert.equal(graphOnly.unsignedLaneId, undefined);
+  assert.equal(graphOnly.browserIsolation, undefined);
+  assert.equal(schedulingTargetId(graphOnly), "shop-web#signed-out");
+
+  const mismatched = makeJob(
+    browserInput({
+      projectId: "project",
+      recipeGraph: signInGraph("member"),
+      browserAccountOverlap: { accountKeys: ["admin"], sharing: "safe-shared-read" },
+    }),
+  );
+  assert.equal(mismatched.browserAccountOverlap, undefined);
+  assert.equal(mismatched.unsignedLaneId, undefined);
+  assert.equal(schedulingTargetId(mismatched), "shop-web#signed-out");
+});
+
+test("batched and Lane-bound sign-in work never earns account overlap", () => {
+  for (const input of [
+    accountBrowserInput("member", { batchId: "batch-1" }),
+    accountBrowserInput("member", { laneId: "nightly-a" }),
+  ]) {
+    const job = makeJob(input);
+    assert.equal(job.browserAccountOverlap, undefined);
+    assert.equal(job.unsignedLaneId, input.laneId ? "nightly-a" : undefined);
+  }
+});
+
+test("a retry of an account-overlap run earns a fresh session lane and keeps its account", () => {
+  const parent = makeJob(accountBrowserInput("member"));
+  const retry = createSessionJob(browserInput({ retryOf: parent.id }), {
+    findJob: () => parent,
+    toTransport: (job) => job,
+  });
+  assert.deepEqual(retry.browserAccountOverlap, parent.browserAccountOverlap);
+  assert.match(retry.unsignedLaneId!, /^unsigned-run:/u);
+  assert.notEqual(retry.unsignedLaneId, parent.unsignedLaneId);
+  assert.equal(
+    scheduledSessionJob({ job: retry, run: async () => {} }).targetId,
+    scheduledSessionJob({ job: parent, run: async () => {} }).targetId,
+    "the retry still belongs to the same server-side account lane",
+  );
+});

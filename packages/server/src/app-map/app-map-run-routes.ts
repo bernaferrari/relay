@@ -40,6 +40,7 @@ import {
 } from "./app-map-run-target-admission.js";
 import { appMapProofExecutionAdmission } from "./app-map-proof-execution-admission.js";
 import { assertTestRunInputAvailability, prepareTestRunInputs } from "./app-map-test-run-inputs.js";
+import { browserTestRunOverlapAdmission } from "./app-map-test-run-overlap.js";
 import { queuedAppMapTestArtifacts } from "./app-map-test-run-artifacts.js";
 import { assertAppMapTestBrowserIdentity } from "./app-map-browser-identity-admission.js";
 import { handleAppMapFlowOrConnectionRun } from "./app-map-flow-run-routes.js";
@@ -335,7 +336,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     );
     const recipeSnapshot = recipeGraph[plan.rootRecipeId];
     if (!recipeSnapshot) throw new HttpError(500, "Compiled Test has no root recipe");
-    await assertRunSavedSignInsAvailable({
+    const signInAdmission = await assertRunSavedSignInsAvailable({
       projectId: input.scope.projectId,
       recipeGraph,
     });
@@ -589,20 +590,21 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     const authenticationHealth = fixtureReference
       ? await rememberedBrowserAuthenticationHealth(fixtureReference)
       : undefined;
-    // Effects-aware unsigned isolation. A browser proof run owns a fresh
-    // ephemeral context, so tests whose declared effects permit shared
-    // placement have no shared browser or account state left to serialize:
-    // they fan out across isolated per-run lanes under the browser host
-    // ceiling. Restrictive declarations (and every non-browser, Lane-bound,
-    // or fixture-signed run) keep the legacy shared unsigned lane.
+    // Effects-aware overlap. Unsigned independent tests fan out as readers.
+    // Runtime sign-in tests instead carry their project-scoped logical account
+    // keys: distinct local accounts may overlap, the same account serializes,
+    // and ambient/unknown identity fails closed. Restrictive declarations and
+    // Lane/fixture-bound work keep the legacy serialization.
     const unsignedTestSharing = effectiveSharingPolicy(collectTestEffects(map, test));
-    const browserIsolation =
-      executionTarget.kind === "browser" &&
-      !body.laneId?.trim() &&
-      !fixtureReference &&
-      unsignedTestSharing === "safe-shared-read"
-        ? ("independent" as const)
-        : undefined;
+    const overlapAdmission = browserTestRunOverlapAdmission({
+      targetKind: executionTarget.kind,
+      ...(body.laneId ? { laneId: body.laneId } : {}),
+      ...(fixtureReference ? { authenticationFixtureId: fixtureReference } : {}),
+      signIns: signInAdmission,
+      sharing: unsignedTestSharing,
+    });
+    const browserIsolation = overlapAdmission.browserIsolation;
+    const browserAccountOverlap = overlapAdmission.browserAccountOverlap;
     const job = runtime.enqueueJob({
       recipe: recipeSnapshot.id,
       title: recipeSnapshot.title,
@@ -618,6 +620,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       ...(laneId ? { laneId } : {}),
       ...(unsignedLaneId ? { unsignedLaneId } : {}),
       ...(browserIsolation ? { browserIsolation } : {}),
+      ...(browserAccountOverlap ? { browserAccountOverlap } : {}),
       ...(authenticationHealth ? { authenticationHealth } : {}),
       ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
       ...(proofEvidencePolicy ? { evidencePolicy: proofEvidencePolicy } : {}),

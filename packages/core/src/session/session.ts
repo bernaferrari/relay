@@ -115,6 +115,7 @@ export { automaticEvidencePhases } from "./session-evidence-phases.js";
 export { runRecipeSteps } from "./session-recipe-execution.js";
 import { runRecipeSteps } from "./session-recipe-execution.js";
 export type {
+  BrowserAccountOverlap,
   EnqueueJobInput,
   JobErrorCode,
   JobStatus,

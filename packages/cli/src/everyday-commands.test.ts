@@ -332,6 +332,36 @@ test("relay ci runs ready Tests, skips drafts, and writes JSON and JUnit", async
   }
 });
 
+test("relay ci starts independent proof runs concurrently through the pool", async () => {
+  const invoke = fakeInvoke();
+  let active = 0;
+  let maximumActive = 0;
+  const ci = await runCiCommand({
+    options: { app: "Shop", tests: ["test-checkout", "test-search"] },
+    client: clientFrom(invoke),
+    invoke,
+    actorId: "human:test",
+    env: {},
+    output: new CliOutput("json", true, capture().streams),
+    human: false,
+    signal: new AbortController().signal,
+    pollIntervalMs: 1,
+    runTest: async (request) => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return settled(request.testId);
+    },
+  });
+  assert.equal(
+    maximumActive,
+    2,
+    "CI fan-out must not serialize merely because tests share one target",
+  );
+  assert.equal(ci.report.verdicts.length, 2);
+});
+
 test("relay ci exit codes: blocked-only is 3, all passed is 0, nothing runnable is 3", async () => {
   assert.equal(
     ciExitCode(ciTotals([{ ...verdictFor("x"), status: "blocked" }], 0), false),

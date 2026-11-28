@@ -13,7 +13,12 @@ import { currentOperationContext } from "../execution/operation-context.js";
 import { PRIVATE_INPUT } from "../input/private-inputs.js";
 import { REDACTED } from "../evidence/redaction.js";
 import type { PersistedRun } from "../run/run-store.js";
-import type { EnqueueJobInput, TestJob } from "./session-contract.js";
+import type { BrowserAccountOverlap, EnqueueJobInput, TestJob } from "./session-contract.js";
+import {
+  sessionJobSchedulingTargetId,
+  signInKeysForScheduling,
+  validatedBrowserAccountOverlap,
+} from "./session-account-overlap.js";
 import type { TraceFrameRef, TraceStep } from "../trace/trace.js";
 import { installRegisteredBuild, preflightRegisteredBuild } from "../change/builds.js";
 import type { Build } from "@relay/protocol";
@@ -360,6 +365,9 @@ export function retryInputFromJob(job: TestJob): EnqueueJobInput {
     browserCaseProfile: job.browserCaseProfile,
     laneId: job.laneId,
     unsignedLaneId: job.unsignedLaneId,
+    ...(job.browserAccountOverlap
+      ? { browserAccountOverlap: structuredClone(job.browserAccountOverlap) }
+      : {}),
     authenticationHealth: job.authenticationHealth,
     sourceRevision: structuredClone(job.sourceRevision),
     hostWorkerId: job.hostWorkerId,
@@ -420,8 +428,10 @@ export function createSessionJob(
     ? freezeTargetProfile(suppliedTargetProfile)
     : undefined;
   // A per-run `unsigned-run:` identity is single-use: a retry is a new run
-  // and earns its own isolated lane rather than inheriting the parent's,
-  // keeping scheduler lane and proof-session key unique per execution.
+  // and earns its own isolated proof-session lane rather than inheriting the
+  // parent's. Runtime sign-ins additionally receive a stable account-set
+  // scheduler lane below; the two lanes answer different questions (session
+  // freshness versus account serialization).
   const rawUnsignedLaneId = input.unsignedLaneId ?? parent?.unsignedLaneId;
   const inheritedUnsignedLaneId = rawUnsignedLaneId?.startsWith("unsigned-run:")
     ? undefined
@@ -435,17 +445,35 @@ export function createSessionJob(
     laneId: input.laneId ?? parent?.laneId,
     unsignedLaneId: inheritedUnsignedLaneId ?? admittedUnsignedLaneId,
   });
-  const browserIsolation = input.browserIsolation ?? parent?.browserIsolation;
-  // An effects-aware admission may mark one unsigned browser proof run as
-  // independent. It then owns a per-run unsigned lane identity, which is at
-  // once its scheduler lane and its Playwright session key — the two must
-  // never disagree, because two concurrent runs sharing one session key
-  // would drive one page. Fixture accounts, invoked Lanes, and batched
-  // Combine/scheduler cells keep their existing serialization: account state
-  // and batch ordering are real shared state a fresh context does not erase.
+  const jobProjectId = input.projectId ?? parent?.projectId;
+  const identityRecipeGraph = input.recipeGraph ?? parent?.recipeGraph;
+  const graphSignInKeys = signInKeysForScheduling(identityRecipeGraph);
+  const validatedAccountOverlap = validatedBrowserAccountOverlap({
+    ...((input.browserAccountOverlap ?? parent?.browserAccountOverlap)
+      ? {
+          overlap: (input.browserAccountOverlap ?? parent?.browserAccountOverlap)!,
+        }
+      : {}),
+    ...(identityRecipeGraph ? { recipeGraph: identityRecipeGraph } : {}),
+    ...(jobProjectId ? { projectId: jobProjectId } : {}),
+  });
+  const requestedBrowserIsolation = input.browserIsolation ?? parent?.browserIsolation;
+  // A graph that mentions any saved sign-in is never an unsigned independent
+  // reader. It either earns validated account overlap or keeps the legacy
+  // exclusive serialization. Ambient/missing identity is therefore fail-closed
+  // even if an admission caller accidentally also passes `independent`.
+  const browserIsolation =
+    requestedBrowserIsolation === "independent" && graphSignInKeys.length === 0
+      ? ("independent" as const)
+      : undefined;
+  // Independent unsigned runs and validated runtime-sign-in account runs both
+  // need fresh Playwright session keys. Fixture accounts, invoked Lanes, and
+  // batched Combine/scheduler cells keep their existing serialization:
+  // account state and batch ordering are real shared state a fresh context
+  // does not erase.
   const isolatedUnsignedLaneId =
     targetKind === "browser" &&
-    browserIsolation === "independent" &&
+    (browserIsolation === "independent" || validatedAccountOverlap !== undefined) &&
     !browserCaseProfile?.authenticationFixtureId &&
     !laneId &&
     !admittedUnsignedLaneId &&
@@ -453,6 +481,9 @@ export function createSessionJob(
       ? `unsigned-run:${id}`
       : undefined;
   const unsignedLaneId = admittedUnsignedLaneId ?? isolatedUnsignedLaneId;
+  const browserAccountOverlap: BrowserAccountOverlap | undefined = isolatedUnsignedLaneId
+    ? validatedAccountOverlap
+    : undefined;
   const authenticationHealth = input.authenticationHealth ?? parent?.authenticationHealth;
   if (
     browserCaseProfile &&
@@ -473,10 +504,13 @@ export function createSessionJob(
     // Browser accounts use a fixture lane so N signed-in browsers on one
     // host do not serialize behind the target id. Unsigned Lanes are a second
     // signed-out identity so distinct unsigned Lanes can overlap.
-    targetId: jobSchedulingTargetId({
+    targetId: sessionJobSchedulingTargetId({
       executionTarget,
-      browserCaseProfile,
-      unsignedLaneId,
+      ...(browserCaseProfile ? { browserCaseProfile } : {}),
+      ...(unsignedLaneId ? { unsignedLaneId } : {}),
+      ...(browserAccountOverlap ? { browserAccountOverlap } : {}),
+      ...(identityRecipeGraph ? { recipeGraph: identityRecipeGraph } : {}),
+      ...(jobProjectId ? { projectId: jobProjectId } : {}),
     }),
     platform: targetContext.platform,
     provider: executionTarget.provider,
@@ -491,7 +525,7 @@ export function createSessionJob(
   });
   const baseJob = {
     id,
-    projectId: input.projectId ?? parent?.projectId,
+    projectId: jobProjectId,
     ownerId: input.ownerId ?? parent?.ownerId,
     operationContext: operationContext
       ? Object.freeze(structuredClone(operationContext))
@@ -512,9 +546,12 @@ export function createSessionJob(
     ...(laneId ? { laneId } : {}),
     ...(unsignedLaneId ? { unsignedLaneId } : {}),
     // Persisted only when the classification actually took effect: overlap
-    // admission reads this flag to place the run in the shared reader group
-    // instead of the exclusive unsigned writer lane.
-    ...(isolatedUnsignedLaneId ? { browserIsolation: "independent" as const } : {}),
+    // admission reads these facts to place the run in the shared reader group
+    // or its validated account lane instead of the exclusive writer lane.
+    ...(isolatedUnsignedLaneId && browserIsolation
+      ? { browserIsolation: "independent" as const }
+      : {}),
+    ...(browserAccountOverlap ? { browserAccountOverlap } : {}),
     ...(authenticationHealth
       ? { authenticationHealth: structuredClone(authenticationHealth) }
       : {}),

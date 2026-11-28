@@ -35,6 +35,8 @@ type AdmissionCalls = {
 
 type AdmissionControl = {
   failIntentConstruction: boolean;
+  rejectEnqueue: boolean;
+  enqueueInputs: unknown[];
 };
 
 function clientFor(port: number): RelayClient {
@@ -81,7 +83,11 @@ async function withAdmissionServer(
     createIntent: 0,
     enqueueJob: 0,
   };
-  const control: AdmissionControl = { failIntentConstruction: false };
+  const control: AdmissionControl = {
+    failIntentConstruction: false,
+    rejectEnqueue: false,
+    enqueueInputs: [],
+  };
   const server = await startServer({
     host: "127.0.0.1",
     port: 0,
@@ -107,6 +113,8 @@ async function withAdmissionServer(
       },
       enqueueJob(input) {
         calls.enqueueJob += 1;
+        control.enqueueInputs.push(structuredClone(input));
+        if (control.rejectEnqueue) throw new Error("injected enqueue capture stop");
         return enqueueJob(input);
       },
     },
@@ -370,6 +378,43 @@ test("missing linked test inbox rejects before discovery, control, queueing, or 
       assertTestInboxMetadataOnly(body);
       assertAdmissionStoppedBeforeTargetAndQueue(calls);
       await assertNoNewRunArtifacts(before);
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a local saved sign-in reaches enqueue as non-secret account overlap admission", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-sign-in-overlap-admission-"));
+  try {
+    await withAdmissionServer(root, async ({ client, control }) => {
+      const key = "admission-overlap-member";
+      const testId = "local-overlap-sign-in";
+      await saveSavedSignIn({
+        projectId: PROJECT_ID,
+        appMapId: APP_MAP_ID,
+        key,
+        name: "Member",
+        username: USER_CANARY,
+        password: PASSWORD_CANARY,
+        createdBy: "human:designer",
+      });
+      const revision = await savePlainTextTest(client, {
+        testId,
+        steps: [instructionStep("sign-in", `Sign in with the saved account "${key}"`)],
+      });
+      control.rejectEnqueue = true;
+      await assert.rejects(runTest(client, testId, revision), /injected enqueue capture stop/u);
+      assert.equal(control.enqueueInputs.length, 1);
+      const enqueueInput = control.enqueueInputs[0] as Record<string, unknown>;
+      assert.deepEqual(enqueueInput.browserAccountOverlap, {
+        accountKeys: [key],
+        sharing: "safe-shared-read",
+      });
+      assert.equal(enqueueInput.browserIsolation, undefined);
+      const serialized = JSON.stringify(enqueueInput);
+      assert.equal(serialized.includes(USER_CANARY), false);
+      assert.equal(serialized.includes(PASSWORD_CANARY), false);
     });
   } finally {
     await rm(root, { recursive: true, force: true });

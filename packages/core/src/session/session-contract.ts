@@ -28,6 +28,14 @@ export type JobErrorCode =
   | "CANCELLED"
   | "INTERNAL";
 
+/** Non-secret runtime sign-in overlap admission. `accountKeys` are logical
+ * project-scoped saved sign-in keys, never credentials. The frozen recipe
+ * graph must declare exactly the same key set before the scheduler trusts it. */
+export type BrowserAccountOverlap = {
+  accountKeys: readonly string[];
+  sharing: "safe-shared-read" | "isolated-account" | "isolated-lane";
+};
+
 export type TestJob = {
   id: string;
   projectId?: string;
@@ -68,6 +76,10 @@ export type TestJob = {
    * session so unrelated tests fan out; absence keeps the legacy shared
    * unsigned lane and its exclusive overlap admission. */
   browserIsolation?: "independent";
+  /** Validated runtime sign-in account overlap. Present only for unbatched
+   * browser runs whose frozen graph declares exactly these local saved
+   * sign-in keys and whose sharing declaration permits account-separated overlap. */
+  browserAccountOverlap?: BrowserAccountOverlap;
   /** Last remembered fixture health at enqueue. Capture-review fail-closes
    * when this is not ready instead of labeling pixels as the saved account. */
   authenticationHealth?: BrowserAuthenticationHealth;
@@ -173,6 +185,9 @@ export type EnqueueJobInput = {
    * an effects-aware admission path. Ignored for fixture, explicit-Lane, and
    * batched work, which keep their existing serialization. */
   browserIsolation?: "independent";
+  /** Effects-and-sign-in-aware account overlap admission. Core revalidates
+   * the key set against the frozen graph before using it. */
+  browserAccountOverlap?: BrowserAccountOverlap;
   /** Remembered fixture health frozen with the job for capture-review labels. */
   authenticationHealth?: BrowserAuthenticationHealth;
   /** Frozen at enqueue time into the run manifest; never rewritten. */
