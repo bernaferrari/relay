@@ -1,0 +1,1268 @@
+diff --git a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
+index 7d2cfa982..f587b1e65 100644
+--- a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
++++ b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
+@@ -38,6 +38,48 @@ extension RunnerTests {
+     }
+   }
+ 
++  private func elementActivationExecutor() -> ActuationOutcomeExecutor {
++#if os(tvOS)
++    // Focused tvOS activation rides the remote rather than a coordinate.
++    return .providerNative
++#else
++    return .xctestElementCoordinate
++#endif
++  }
++
++  private func selectorTapActuation(
++    expectedPoint: CGPoint?,
++    usedNonHittableFallback: Bool,
++    executor: ActuationOutcomeExecutor,
++    mechanismFallback: ActuationFallbackPayload?
++  ) -> ActuationOutcomePayload {
++    let coordinateReason: String?
++    if usedNonHittableFallback {
++      coordinateReason = RunnerActuationFallbackReason.nonHittableCoordinate
++    } else if expectedPoint != nil {
++      coordinateReason = RunnerActuationFallbackReason.expectedPointCoordinate
++    } else {
++      coordinateReason = nil
++    }
++    return ActuationOutcomePayload(
++      targeting: .element,
++      geometry: expectedPoint == nil ? .runnerElementFrame : .runnerExpectedPoint,
++      executor: executor,
++      coordinateFallback: coordinateReason.map { ActuationFallbackPayload(reason: $0) },
++      mechanismFallback: mechanismFallback
++    )
++  }
++
++  /// A synthesized-touch request that fell back is a substitution only when a different injector
++  /// finally fired. If the implementation still reached synthesized touch through a later internal
++  /// route, the final executor itself carries the fact and no mechanism fallback is reported.
++  private func mechanismFallbackIfSubstituted(
++    _ fallback: ActuationFallbackPayload?,
++    finalExecutor: ActuationOutcomeExecutor
++  ) -> ActuationFallbackPayload? {
++    finalExecutor == .xctestSynthesizedTouch ? nil : fallback
++  }
++
+   @MainActor
+   private func executePrepared(
+     command: Command,
+@@ -391,6 +433,7 @@ extension RunnerTests {
+             y: touchPoint.y
+           )
+           var fallback: GestureFallback?
++          var synthesizedMechanismFallback: ActuationFallbackPayload?
+           if command.synthesized == true {
+             switch try performSynthesizedTapGesture(app: activeApp, x: touchPoint.x, y: touchPoint.y) {
+             case .performed(let timing):
+@@ -407,22 +450,35 @@ extension RunnerTests {
+                 maestroNonHittableCoordinateFallbackUsed:
+                   command.allowNonHittableCoordinateFallback == true
+                   ? match.usedNonHittableFallback
+-                  : nil
++                  : nil,
++                actuation: selectorTapActuation(
++                  expectedPoint: expectedPoint,
++                  usedNonHittableFallback: match.usedNonHittableFallback,
++                  executor: .xctestSynthesizedTouch,
++                  mechanismFallback: nil
++                )
+               )
+             case .xctestFallback(let message, let hint):
+               fallback = .coordinateTap(message, hint: hint)
++              synthesizedMechanismFallback = ActuationFallbackPayload(
++                reason: RunnerActuationFallbackReason.synthesizedTouchUnavailable
++              )
+             case .refused(_, let refusal):
+               return refusedTapResponse(refusal)
+             }
+           }
++          var finalExecutor: ActuationOutcomeExecutor?
+           let (timing, outcome) = try performGesture(activeApp) {
+             if expectedPoint != nil || match.usedNonHittableFallback {
+               // Maestro compatibility: RN E2E backdoor controls can be 1x1 and
+               // reported non-hittable by XCTest. Snapshot-resolved targets also
+               // need coordinate delivery because XCUIElement.activate() does not
+               // invoke every React Native accessibility wrapper.
+-              return try tapAt(app: activeApp, x: touchPoint.x, y: touchPoint.y)
++              let execution = try tapAtReportingExecutor(app: activeApp, x: touchPoint.x, y: touchPoint.y)
++              finalExecutor = execution.executor
++              return execution.outcome
+             }
++            finalExecutor = elementActivationExecutor()
+             return try activateElement(app: activeApp, element: element, action: "tap by selector")
+           }
+           if let response = unsupportedResponse(for: outcome) {
+@@ -441,7 +497,16 @@ extension RunnerTests {
+             maestroNonHittableCoordinateFallbackUsed:
+               command.allowNonHittableCoordinateFallback == true
+               ? match.usedNonHittableFallback
+-              : nil
++              : nil,
++            actuation: selectorTapActuation(
++              expectedPoint: expectedPoint,
++              usedNonHittableFallback: match.usedNonHittableFallback,
++              executor: finalExecutor ?? .unknown,
++              mechanismFallback: mechanismFallbackIfSubstituted(
++                synthesizedMechanismFallback,
++                finalExecutor: finalExecutor ?? .unknown
++              )
++            )
+           )
+         }
+         clearRememberedTextEntryTap()
+@@ -471,19 +536,32 @@ extension RunnerTests {
+           )
+         }
+         var fallback: GestureFallback?
++        var synthesizedMechanismFallback: ActuationFallbackPayload?
+         if command.synthesized == true {
+           switch try performSynthesizedTapGesture(app: activeApp, x: x, y: y) {
+           case .performed(let timing):
+             rememberTextEntryTap(textInput)
+-            return gestureResponse(message: "tapped", timing: timing)
++            return gestureResponse(
++              message: "tapped",
++              timing: timing,
++              actuation: ActuationOutcomePayload(executor: .xctestSynthesizedTouch)
++            )
+           case .xctestFallback(let message, let hint):
+             fallback = .coordinateTap(message, hint: hint)
++            synthesizedMechanismFallback = ActuationFallbackPayload(
++              reason: RunnerActuationFallbackReason.synthesizedTouchUnavailable
++            )
+           case .refused(_, let refusal):
+             return refusedTapResponse(refusal)
+           }
+         }
+         let touchFrame = try resolvedTouchVisualizationFrame(app: activeApp, x: x, y: y)
+-        let (timing, outcome) = try performGesture(activeApp) { try tapAt(app: activeApp, x: x, y: y) }
++        var finalExecutor: ActuationOutcomeExecutor?
++        let (timing, outcome) = try performGesture(activeApp) {
++          let execution = try tapAtReportingExecutor(app: activeApp, x: x, y: y)
++          finalExecutor = execution.executor
++          return execution.outcome
++        }
+         if let response = unsupportedResponse(for: outcome) {
+           clearRememberedTextEntryTap()
+           return response
+@@ -493,7 +571,14 @@ extension RunnerTests {
+           message: "tapped",
+           timing: timing,
+           frame: .touch(touchFrame),
+-          fallback: fallback
++          fallback: fallback,
++          actuation: ActuationOutcomePayload(
++            executor: finalExecutor ?? .unknown,
++            mechanismFallback: mechanismFallbackIfSubstituted(
++              synthesizedMechanismFallback,
++              finalExecutor: finalExecutor ?? .unknown
++            )
++          )
+         )
+       }
+       clearRememberedTextEntryTap()
+@@ -527,6 +612,7 @@ extension RunnerTests {
+       }
+       let durationMs = command.durationMs ?? 800
+       let fallback: GestureFallback?
++      var synthesizedMechanismFallback: ActuationFallbackPayload?
+ #if os(iOS)
+       let policyKind = SynthesizedGesturePolicyKind.coordinateLongPress
+       let context = try synthesizedCoordinateContext(app: activeApp)
+@@ -535,9 +621,17 @@ extension RunnerTests {
+       }) {
+       case .performed(let timing):
+         let touchFrame = context.map { touchVisualizationFrame(point: SurfacePoint(CGPoint(x: x, y: y)), context: $0) }
+-        return gestureResponse(message: "long pressed", timing: timing, frame: .touch(touchFrame))
++        return gestureResponse(
++          message: "long pressed",
++          timing: timing,
++          frame: .touch(touchFrame),
++          actuation: ActuationOutcomePayload(executor: .xctestSynthesizedTouch)
++        )
+       case .xctestFallback(let message, let hint):
+         fallback = GestureFallback(strategy: "xctest-coordinate-long-press", message: message, hint: hint)
++        synthesizedMechanismFallback = ActuationFallbackPayload(
++          reason: RunnerActuationFallbackReason.synthesizedTouchUnavailable
++        )
+       case .refused(_, let refusal):
+         return refusalResponse(refusal)
+       }
+@@ -551,11 +645,20 @@ extension RunnerTests {
+       if let response = unsupportedResponse(for: outcome) {
+         return response
+       }
++#if os(tvOS)
++      let finalExecutor = ActuationOutcomeExecutor.providerNative
++#else
++      let finalExecutor = ActuationOutcomeExecutor.xctestCoordinate
++#endif
+       return gestureResponse(
+         message: "long pressed",
+         timing: timing,
+         frame: .touch(touchFrame),
+-        fallback: fallback
++        fallback: fallback,
++        actuation: ActuationOutcomePayload(
++          executor: finalExecutor,
++          mechanismFallback: synthesizedMechanismFallback
++        )
+       )
+     case .drag:
+       guard let x = command.x, let y = command.y, let x2 = command.x2, let y2 = command.y2 else {
+diff --git a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+GestureExecution.swift b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+GestureExecution.swift
+index 226032e1c..0d3cb4e27 100644
+--- a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+GestureExecution.swift
++++ b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+GestureExecution.swift
+@@ -100,7 +100,8 @@ extension RunnerTests {
+     timing: (gestureStartUptimeMs: Double, gestureEndUptimeMs: Double),
+     frame: GestureFrame = .none,
+     fallback: GestureFallback? = nil,
+-    maestroNonHittableCoordinateFallbackUsed: Bool? = nil
++    maestroNonHittableCoordinateFallbackUsed: Bool? = nil,
++    actuation: ActuationOutcomePayload? = nil
+   ) -> Response {
+     let data: DataPayload
+     switch frame {
+@@ -112,7 +113,8 @@ extension RunnerTests {
+         gestureFallback: fallback?.strategy,
+         gestureFallbackMessage: fallback?.message,
+         gestureFallbackHint: fallback?.hint,
+-        maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed
++        maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed,
++        actuation: actuation
+       )
+     case .touch(let f):
+       data = DataPayload(
+@@ -126,7 +128,8 @@ extension RunnerTests {
+         gestureFallback: fallback?.strategy,
+         gestureFallbackMessage: fallback?.message,
+         gestureFallbackHint: fallback?.hint,
+-        maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed
++        maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed,
++        actuation: actuation
+       )
+     case .drag(let f):
+       data = DataPayload(
+diff --git a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
+index aa1af6a8e..a69ae78e4 100644
+--- a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
++++ b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Interaction.swift
+@@ -99,6 +99,14 @@ extension RunnerTests {
+     var rawMatchCount: Int = 0
+   }
+ 
++  /// A tap outcome plus the injector that performed it. The runner interaction outcome intentionally
++  /// stays mechanism-neutral for its many gesture callers; tap responses need the executor fact for
++  /// actuation reporting, so the instrumented path carries it beside the outcome.
++  struct RunnerTapExecution {
++    let outcome: RunnerInteractionOutcome
++    let executor: ActuationOutcomeExecutor
++  }
++
+ #if os(iOS)
+   /// Whether a touch reached the device. `.notSent` refused before any touch-down; `.interrupted`
+   /// began a contact that did not complete.
+@@ -649,13 +657,30 @@ extension RunnerTests {
+     y: Double,
+     context: SynthesizedCoordinateContext? = nil
+   ) throws -> RunnerInteractionOutcome {
++    try tapAtReportingExecutor(app: app, x: x, y: y, context: context).outcome
++  }
++
++  /// `tapAt` with the injector fact its success payload owes. The iOS implementation chooses
++  /// between XCTest coordinates and synthesized touch inside the screen-point path, so the executor
++  /// cannot be inferred honestly at the command call site.
++  func tapAtReportingExecutor(
++    app: XCUIApplication,
++    x: Double,
++    y: Double,
++    context: SynthesizedCoordinateContext? = nil
++  ) throws -> RunnerTapExecution {
+     if let outcome = selectFocusedTvElement(app: app, point: CGPoint(x: x, y: y), action: "tap") {
+-      return outcome
++      return RunnerTapExecution(outcome: outcome, executor: .providerNative)
+     }
+ #if os(iOS)
+-    return try runOnMainActor({ try tapAtScreenPoint(app: app, x: x, y: y, context: context) }).get()
++    return try runOnMainActor({
++      try tapAtScreenPointReportingExecutor(app: app, x: x, y: y, context: context)
++    }).get()
+ #else
+-    return try performCoordinateTap(app: app, x: x, y: y)
++    return RunnerTapExecution(
++      outcome: try performCoordinateTap(app: app, x: x, y: y),
++      executor: .xctestCoordinate
++    )
+ #endif
+   }
+ 
+@@ -673,17 +698,33 @@ extension RunnerTests {
+     y: Double,
+     context: SynthesizedCoordinateContext?
+   ) throws -> RunnerInteractionOutcome {
++    try tapAtScreenPointReportingExecutor(app: app, x: x, y: y, context: context).outcome
++  }
++
++  @MainActor
++  private func tapAtScreenPointReportingExecutor(
++    app: XCUIApplication,
++    x: Double,
++    y: Double,
++    context: SynthesizedCoordinateContext?
++  ) throws -> RunnerTapExecution {
+     guard let context = try context ?? synthesizedCoordinateContext(app: app) else {
+       // No window and no sole screen: the tree is unreadable only when the app's own frame is too.
+       _ = try readableAppFrame(app: app)
+-      return try performCoordinateTap(app: app, x: x, y: y, treeProven: true)
++      return RunnerTapExecution(
++        outcome: try performCoordinateTap(app: app, x: x, y: y, treeProven: true),
++        executor: .xctestCoordinate
++      )
+     }
+     guard context.treeUnreadable else {
+-      return try performCoordinateTap(app: app, x: x, y: y, treeProven: true)
++      return RunnerTapExecution(
++        outcome: try performCoordinateTap(app: app, x: x, y: y, treeProven: true),
++        executor: .xctestCoordinate
++      )
+     }
+     switch try performSynthesizedTapGesture(app: app, x: x, y: y, context: context) {
+     case .performed:
+-      return .performed
++      return RunnerTapExecution(outcome: .performed, executor: .xctestSynthesizedTouch)
+     case .xctestFallback(let message, let hint):
+       throw RunnerCoordinateRefusal(message: message, hint: hint)
+     case .refused(_, let refusal):
+diff --git a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Models.swift b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Models.swift
+index 8952590e1..1a956100f 100644
+--- a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Models.swift
++++ b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Models.swift
+@@ -519,6 +519,86 @@ struct TargetActivationFactPayload: Codable {
+   let otherActiveApplicationPid: Int?
+ }
+ 
++/// The additive actuation outcome vocabulary shared with the daemon contract. Every axis is
++/// optional on the wire because the reporter owns different slices of it: a coordinate command can
++/// prove only its executor, while a runner-resolved selector command can also prove the geometry
++/// its resolution used. Absent means unknown, never a purer fact.
++enum ActuationOutcomeTargeting: String, Codable {
++  case element
++  case point
++  case direct
++}
++
++enum ActuationOutcomeGeometry: String, Codable {
++  case none
++  case runnerElementFrame = "runner-element-frame"
++  case runnerExpectedPoint = "runner-expected-point"
++  case daemonSnapshot = "daemon-snapshot"
++  case relaySnapshot = "relay-snapshot"
++  case callerPoint = "caller-point"
++  case providerElement = "provider-element"
++  case unknown
++}
++
++enum ActuationOutcomeExecutor: String, Codable {
++  case xctestElementCoordinate = "xctest-element-coordinate"
++  case xctestCoordinate = "xctest-coordinate"
++  case xctestSynthesizedTouch = "xctest-synthesized-touch"
++  case androidAdbInput = "android-adb-input"
++  case androidUiautomationHelper = "android-uiautomation-helper"
++  case androidProviderNative = "android-provider-native"
++  case providerNative = "provider-native"
++  case keyboard
++  case unknown
++}
++
++struct ActuationFallbackPayload: Codable, Equatable {
++  let reason: String
++  let detail: String?
++
++  init(reason: String, detail: String? = nil) {
++    self.reason = reason
++    self.detail = detail
++  }
++}
++
++struct ActuationOutcomePayload: Codable, Equatable {
++  let version: Int
++  let targeting: ActuationOutcomeTargeting?
++  let geometry: ActuationOutcomeGeometry?
++  let executor: ActuationOutcomeExecutor?
++  let executorDetail: String?
++  let coordinateFallback: ActuationFallbackPayload?
++  let mechanismFallback: ActuationFallbackPayload?
++
++  init(
++    version: Int = 1,
++    targeting: ActuationOutcomeTargeting? = nil,
++    geometry: ActuationOutcomeGeometry? = nil,
++    executor: ActuationOutcomeExecutor? = nil,
++    executorDetail: String? = nil,
++    coordinateFallback: ActuationFallbackPayload? = nil,
++    mechanismFallback: ActuationFallbackPayload? = nil
++  ) {
++    self.version = version
++    self.targeting = targeting
++    self.geometry = geometry
++    self.executor = executor
++    self.executorDetail = executorDetail
++    self.coordinateFallback = coordinateFallback
++    self.mechanismFallback = mechanismFallback
++  }
++}
++
++enum RunnerActuationFallbackReason {
++  /// A runner-resolved semantic target was actuated at a point because XCTest marked it non-hittable.
++  static let nonHittableCoordinate = "non-hittable-coordinate"
++  /// A runner-resolved semantic target was actuated at the externally supplied expected point.
++  static let expectedPointCoordinate = "expected-point-coordinate"
++  /// The synthesized-touch injector could not be used, so an XCTest coordinate injected the input.
++  static let synthesizedTouchUnavailable = "synthesized-touch-unavailable"
++}
++
+ struct DataPayload: Codable {
+   var auditIssues: [NativeAuditIssuePayload]?
+   var message: String?
+@@ -592,6 +672,11 @@ struct DataPayload: Codable {
+   var keyboardAvoided: Bool?
+   var keyboardMinY: Double?
+   var maestroNonHittableCoordinateFallbackUsed: Bool?
++  /// The actuation facts this command can prove. A coordinate interaction carries only the
++  /// platform-owned executor slice; a runner-resolved selector interaction also carries targeting
++  /// and the geometry its resolution used. Absent means the command is not instrumented or the fact
++  /// is unknown — never that a purer mechanism ran.
++  var actuation: ActuationOutcomePayload?
+   /// The one-pointer motion schedule a planned gesture ran.
+   var executionProfile: String?
+   var textEntryRoute: String?
+diff --git a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+TypeExecution.swift b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+TypeExecution.swift
+index d147b64a3..1a3a5dc95 100644
+--- a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+TypeExecution.swift
++++ b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+TypeExecution.swift
+@@ -186,6 +186,13 @@ extension RunnerTests {
+       referenceWidth: frame.isEmpty ? nil : Double(frame.width),
+       referenceHeight: frame.isEmpty ? nil : Double(frame.height),
+       maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed,
++      // The text-writing injector is what a fill's executor fact names; the focus tap before it is
++      // part of that write's preparation. Targeting and geometry belong to the caller that chose
++      // the insertion point, so this runner-owned fragment carries no purity claim for them.
++      actuation: ActuationOutcomePayload(
++        executor: .keyboard,
++        executorDetail: textResult.textEntryRoute
++      ),
+       textEntryRoute: textResult.textEntryRoute
+     )
+     if let unconfirmed = textResult.unconfirmed {
+diff --git a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/UnitTests/RunnerTests+CommandExecutionTests.swift b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/UnitTests/RunnerTests+CommandExecutionTests.swift
+index 27d36a8f7..a0cc45df5 100644
+--- a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/UnitTests/RunnerTests+CommandExecutionTests.swift
++++ b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/UnitTests/RunnerTests+CommandExecutionTests.swift
+@@ -76,6 +76,14 @@ extension RunnerTests {
+       response.data?.gestureFallbackHint,
+       "Falling back to XCTest coordinate tap may be slower and can still need a healthy accessibility tree."
+     )
++    XCTAssertEqual(response.data?.actuation?.targeting, .element)
++    XCTAssertEqual(response.data?.actuation?.geometry, .runnerElementFrame)
++    XCTAssertEqual(response.data?.actuation?.executor, .xctestCoordinate)
++    XCTAssertEqual(
++      response.data?.actuation?.mechanismFallback?.reason,
++      RunnerActuationFallbackReason.synthesizedTouchUnavailable
++    )
++    XCTAssertNil(response.data?.actuation?.coordinateFallback)
+   }
+ #endif
+ 
+@@ -250,6 +258,9 @@ extension RunnerTests {
+ 
+     XCTAssertEqual(response.data?.message, "tapped", String(describing: response.error))
+     XCTAssertFalse(didRecordXCTestFailure(since: failures))
++    XCTAssertEqual(response.data?.actuation?.targeting, .element)
++    XCTAssertEqual(response.data?.actuation?.geometry, .runnerElementFrame)
++    XCTAssertEqual(response.data?.actuation?.executor, .xctestSynthesizedTouch)
+     XCTAssertEqual(
+       app.staticTexts["agent-device-text-entry-focus"].label,
+       "focus",
+diff --git a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/UnitTests/RunnerTests+ModelsTests.swift b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/UnitTests/RunnerTests+ModelsTests.swift
+index 6078094eb..acdbaf3f9 100644
+--- a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/UnitTests/RunnerTests+ModelsTests.swift
++++ b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/UnitTests/RunnerTests+ModelsTests.swift
+@@ -30,6 +30,57 @@ extension RunnerTests {
+     )
+   }
+ 
++  func testActuationOutcomePayloadKeepsItsAdditiveWireShape() throws {
++    let payload = DataPayload(
++      message: "tapped",
++      actuation: ActuationOutcomePayload(
++        targeting: .element,
++        geometry: .runnerElementFrame,
++        executor: .xctestSynthesizedTouch,
++        executorDetail: "test-detail",
++        coordinateFallback: ActuationFallbackPayload(
++          reason: RunnerActuationFallbackReason.nonHittableCoordinate
++        ),
++        mechanismFallback: ActuationFallbackPayload(
++          reason: RunnerActuationFallbackReason.synthesizedTouchUnavailable,
++          detail: "synthesis refused"
++        )
++      )
++    )
++
++    let encoded = try JSONEncoder().encode(payload)
++    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
++    let actuation = try XCTUnwrap(object["actuation"] as? [String: Any])
++    XCTAssertEqual(actuation["version"] as? Int, 1)
++    XCTAssertEqual(actuation["targeting"] as? String, "element")
++    XCTAssertEqual(actuation["geometry"] as? String, "runner-element-frame")
++    XCTAssertEqual(actuation["executor"] as? String, "xctest-synthesized-touch")
++    XCTAssertEqual(actuation["executorDetail"] as? String, "test-detail")
++    XCTAssertEqual(
++      (actuation["coordinateFallback"] as? [String: Any])?["reason"] as? String,
++      "non-hittable-coordinate"
++    )
++    XCTAssertEqual(
++      (actuation["mechanismFallback"] as? [String: Any])?["detail"] as? String,
++      "synthesis refused"
++    )
++  }
++
++  func testActuationOutcomePayloadOmitsUnknownFacts() throws {
++    let payload = DataPayload(
++      message: "tapped",
++      actuation: ActuationOutcomePayload(executor: .xctestCoordinate)
++    )
++
++    let encoded = try JSONEncoder().encode(payload)
++    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
++    let actuation = try XCTUnwrap(object["actuation"] as? [String: Any])
++    XCTAssertEqual(actuation["executor"] as? String, "xctest-coordinate")
++    XCTAssertNil(actuation["targeting"])
++    XCTAssertNil(actuation["geometry"])
++    XCTAssertNil(actuation["coordinateFallback"])
++  }
++
+   func runnerCommandFixture(_ json: String) throws -> Command {
+     try JSONDecoder().decode(Command.self, from: Data(json.utf8))
+   }
+diff --git a/apple/runner/RUNNER_PROTOCOL.md b/apple/runner/RUNNER_PROTOCOL.md
+index 7075025d6..96315a266 100644
+--- a/apple/runner/RUNNER_PROTOCOL.md
++++ b/apple/runner/RUNNER_PROTOCOL.md
+@@ -337,6 +337,8 @@ prompt, which the runner leaves unanswered. Either can follow a dispatch, so the
+ 
+ `data` is command-specific. Common fields include snapshot nodes, text lookup results, gesture timing, visibility metadata, and screenshot or recording output details.
+ 
++Interaction successes may carry the additive `actuation` object. Its `version` is `1`; `targeting`, `geometry`, and `executor` name independent facts, with optional `executorDetail`, `coordinateFallback`, and `mechanismFallback` evidence. A runner-resolved selector tap reports the geometry its resolution used (`runner-element-frame` or `runner-expected-point`) and the injector that fired. A coordinate interaction reports only the runner-owned executor slice. A text write reports the keyboard executor and its entry route in `executorDetail`. Every field is independently optional on the wire: absence means unknown or not owned by that reporter, never a purer mechanism.
++
+ Capture-plan snapshots carry `snapshotViewport`, the acquisition's declared viewport evidence.
+ Its shape is `{kind: "reported" | "derived", rect: {x, y, width, height}}` or
+ `{kind: "missing", reason: "not-provided" | "invalid"}`.
+diff --git a/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.ts b/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.ts
+index 30c48399e..11221360b 100644
+--- a/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.ts
++++ b/packages/command-runtime/src/commands/interaction/runtime/actuation-outcome.ts
+@@ -1,5 +1,6 @@
+ import {
+   ACTUATION_COORDINATE_FALLBACK_DIRECT_DELEGATED,
++  ACTUATION_EXECUTORS,
+   ACTUATION_OUTCOME_VERSION,
+   type ActuationBackendFragment,
+   type ActuationExecutor,
+@@ -19,17 +20,7 @@ import type { ResolvedInteractionTarget } from '@agent-device/contracts/interact
+  * never reaches a response.
+  */
+ 
+-const ACTUATION_EXECUTORS: ReadonlySet<string> = new Set<ActuationExecutor>([
+-  'xctest-element-coordinate',
+-  'xctest-coordinate',
+-  'xctest-synthesized-touch',
+-  'android-adb-input',
+-  'android-uiautomation-helper',
+-  'android-provider-native',
+-  'provider-native',
+-  'keyboard',
+-  'unknown',
+-]);
++const ACTUATION_EXECUTOR_SET: ReadonlySet<string> = new Set<ActuationExecutor>(ACTUATION_EXECUTORS);
+ 
+ /** The fragment a backend reported on its action result, or undefined when absent or malformed. */
+ export function extractActuationBackendFragment(
+@@ -38,7 +29,7 @@ export function extractActuationBackendFragment(
+   const raw = backendResult?.actuation;
+   if (!raw || typeof raw !== 'object') return undefined;
+   const candidate = raw as Record<string, unknown>;
+-  if (typeof candidate.executor !== 'string' || !ACTUATION_EXECUTORS.has(candidate.executor)) {
++  if (typeof candidate.executor !== 'string' || !ACTUATION_EXECUTOR_SET.has(candidate.executor)) {
+     return undefined;
+   }
+   const mechanismFallback = readFallbackFact(candidate.mechanismFallback);
+diff --git a/packages/contracts/src/actuation-outcome.ts b/packages/contracts/src/actuation-outcome.ts
+index d0d192515..a7a252a9a 100644
+--- a/packages/contracts/src/actuation-outcome.ts
++++ b/packages/contracts/src/actuation-outcome.ts
+@@ -34,16 +34,19 @@ export type ActuationGeometry =
+   | 'provider-element'
+   | 'unknown';
+ 
+-export type ActuationExecutor =
+-  | 'xctest-element-coordinate'
+-  | 'xctest-coordinate'
+-  | 'xctest-synthesized-touch'
+-  | 'android-adb-input'
+-  | 'android-uiautomation-helper'
+-  | 'android-provider-native'
+-  | 'provider-native'
+-  | 'keyboard'
+-  | 'unknown';
++export const ACTUATION_EXECUTORS = [
++  'xctest-element-coordinate',
++  'xctest-coordinate',
++  'xctest-synthesized-touch',
++  'android-adb-input',
++  'android-uiautomation-helper',
++  'android-provider-native',
++  'provider-native',
++  'keyboard',
++  'unknown',
++] as const;
++
++export type ActuationExecutor = (typeof ACTUATION_EXECUTORS)[number];
+ 
+ /**
+  * A typed substitution fact. `reason` is the typed category; `detail` carries
+@@ -58,6 +61,16 @@ export type ActuationFallback = {
+ /** A direct platform dispatch attempt delegated to runtime resolution, so the semantic target was actuated through numeric input. */
+ export const ACTUATION_COORDINATE_FALLBACK_DIRECT_DELEGATED = 'direct-dispatch-delegated';
+ 
++/** A runner-resolved semantic target was actuated at a point because the platform reported the element non-hittable. */
++export const ACTUATION_COORDINATE_FALLBACK_NON_HITTABLE_COORDINATE = 'non-hittable-coordinate';
++
++/** A runner-resolved semantic target was actuated at the externally supplied expected point. */
++export const ACTUATION_COORDINATE_FALLBACK_EXPECTED_POINT = 'expected-point-coordinate';
++
++/** The synthesized-touch injector could not be used, so an XCTest coordinate injected the input. */
++export const ACTUATION_MECHANISM_FALLBACK_SYNTHESIZED_TOUCH_UNAVAILABLE =
++  'synthesized-touch-unavailable';
++
+ /** A live preferred injector did not confirm the input, so a lesser injector substituted for it. */
+ export const ACTUATION_MECHANISM_FALLBACK_HELPER_INPUT_NOT_CONFIRMED =
+   'automation-helper-input-not-confirmed';
+diff --git a/packages/contracts/src/interactor-types.ts b/packages/contracts/src/interactor-types.ts
+index 678422d73..9dc93cf5f 100644
+--- a/packages/contracts/src/interactor-types.ts
++++ b/packages/contracts/src/interactor-types.ts
+@@ -6,6 +6,7 @@ import type { BackMode } from './back-mode.ts';
+ import type { IosSystemSurfaceProvenance } from './ios-system-surface.ts';
+ import type { DeviceRotation } from './device-rotation.ts';
+ import type { FillUnconfirmedVerification } from './fill-evidence.ts';
++import type { ActuationBackendFragment } from './actuation-outcome.ts';
+ import type { ScrollDirection } from './scroll-gesture.ts';
+ import type { ScrollExecutionOptions } from './scroll-command.ts';
+ import type { TvRemoteButton } from './tv-remote.ts';
+@@ -136,6 +137,8 @@ export type TextEntryRoute = (typeof TEXT_ENTRY_ROUTES)[number];
+  */
+ export type TypeTextBackendResult = {
+   textEntryRoute?: TextEntryRoute;
++  /** The backend-owned actuation fragment for the text write; consumed and merged by interaction runtime. */
++  actuation?: ActuationBackendFragment;
+ };
+ 
+ /**
+@@ -177,9 +180,17 @@ export type CloudTextEntryReadiness = (typeof CLOUD_TEXT_ENTRY_READINESS)[number
+ export type FillBackendResult =
+   | {
+       textEntryReadiness?: CloudTextEntryReadiness;
++      /**
++       * The platform-owned actuation fragment (actuation-outcome.ts), forwarded
++       * opaquely for the command runtime's merge into the actuation outcome.
++       */
++      actuation?: ActuationBackendFragment;
+       verification?: never;
+     }
+-  | ({ textEntryReadiness?: CloudTextEntryReadiness } & FillUnconfirmedVerification);
++  | ({
++      textEntryReadiness?: CloudTextEntryReadiness;
++      actuation?: ActuationBackendFragment;
++    } & FillUnconfirmedVerification);
+ 
+ export type SnapshotOptions = BaseSnapshotOptions & {
+   appBundleId?: string;
+diff --git a/packages/daemon/src/execution/__tests__/type-text-runtime.test.ts b/packages/daemon/src/execution/__tests__/type-text-runtime.test.ts
+index cb8e4e57e..b4d795d5c 100644
+--- a/packages/daemon/src/execution/__tests__/type-text-runtime.test.ts
++++ b/packages/daemon/src/execution/__tests__/type-text-runtime.test.ts
+@@ -85,12 +85,18 @@ test('resolves one admitted binding and reproduces the retired leaf result exact
+     },
+   );
+ 
+-  // The retired leaf's exact composition: route evidence, text, delay, and the char-count
+-  // message — nothing else from the owner's result survives.
++  // Route evidence, text, delay, the additive direct-dispatch actuation outcome,
++  // and the char-count message — no other owner payload survives.
+   expect(result).toEqual({
+     textEntryRoute: 'synthesized-first-responder',
+     text: 'hello world',
+     delayMs: 25,
++    actuation: {
++      version: 1,
++      targeting: 'direct',
++      geometry: 'none',
++      executor: 'unknown',
++    },
+     message: 'Typed 11 chars',
+   });
+   expect(harness.typeText).toHaveBeenCalledWith(
+@@ -121,7 +127,43 @@ test('omits textEntryRoute when the owner types blind, exactly as the leaf did',
+   const result = await resolved.typeText({ text: 'hi', delayMs: 0 }, {});
+ 
+   expect('textEntryRoute' in result).toBe(false);
+-  expect(result).toEqual({ text: 'hi', delayMs: 0, message: 'Typed 2 chars' });
++  expect(result).toEqual({
++    text: 'hi',
++    delayMs: 0,
++    actuation: { version: 1, targeting: 'direct', geometry: 'none', executor: 'unknown' },
++    message: 'Typed 2 chars',
++  });
++});
++
++test('merges the backend executor fragment into the direct text-entry outcome', async () => {
++  const harness = runtimeHarness();
++  harness.typeText.mockResolvedValueOnce({
++    textEntryRoute: 'xctest-element',
++    actuation: {
++      executor: 'keyboard',
++      executorDetail: 'xctest-element',
++      mechanismFallback: { reason: 'synthesized-touch-unavailable' },
++    },
++  });
++
++  const resolved = await resolveBoundTypeTextRuntime({
++    platformServices: daemonPlatformServicesFixture(),
++    device: appleDevice,
++    inspectFacts: harness.inspectFacts,
++    bindDevice: harness.bindDevice,
++  });
++  expect(resolved.ok).toBe(true);
++  if (!resolved.ok) return;
++  const result = await resolved.typeText({ text: 'hi', delayMs: 0 }, {});
++
++  expect(result.actuation).toEqual({
++    version: 1,
++    targeting: 'direct',
++    geometry: 'none',
++    executor: 'keyboard',
++    executorDetail: 'xctest-element',
++    mechanismFallback: { reason: 'synthesized-touch-unavailable' },
++  });
+ });
+ 
+ test('parse rejects a leading snapshot ref, empty text, and an out-of-range delay', () => {
+diff --git a/packages/daemon/src/execution/interaction/internal/interaction-actuation-runner.ts b/packages/daemon/src/execution/interaction/internal/interaction-actuation-runner.ts
+new file mode 100644
+index 000000000..88821e89a
+--- /dev/null
++++ b/packages/daemon/src/execution/interaction/internal/interaction-actuation-runner.ts
+@@ -0,0 +1,128 @@
++import {
++  ACTUATION_COORDINATE_FALLBACK_EXPECTED_POINT,
++  ACTUATION_COORDINATE_FALLBACK_NON_HITTABLE_COORDINATE,
++  ACTUATION_OUTCOME_VERSION,
++  type ActuationExecutor,
++  type ActuationFallback,
++  type ActuationGeometry,
++  type ActuationOutcome,
++  type ActuationTargeting,
++} from '@agent-device/contracts/actuation-outcome';
++
++/**
++ * Defensive decoding and ownership merge for the additive actuation object an
++ * Apple runner may return. The runner wire is untrusted JSON: every field is
++ * validated independently, unknown future vocabulary is ignored rather than
++ * echoed, and a malformed slice never invalidates the facts the daemon itself
++ * owns. Absence remains unknown; it is never treated as a purer outcome.
++ */
++
++const TARGETINGS = ['element', 'point', 'direct'] as const;
++const GEOMETRIES = [
++  'none',
++  'runner-element-frame',
++  'runner-expected-point',
++  'daemon-snapshot',
++  'relay-snapshot',
++  'caller-point',
++  'provider-element',
++  'unknown',
++] as const;
++const EXECUTORS = [
++  'xctest-element-coordinate',
++  'xctest-coordinate',
++  'xctest-synthesized-touch',
++  'android-adb-input',
++  'android-uiautomation-helper',
++  'android-provider-native',
++  'provider-native',
++  'keyboard',
++  'unknown',
++] as const;
++
++type RunnerActuationReport = {
++  targeting?: ActuationTargeting;
++  geometry?: ActuationGeometry;
++  executor?: ActuationExecutor;
++  executorDetail?: string;
++  coordinateFallback?: ActuationFallback;
++  mechanismFallback?: ActuationFallback;
++};
++
++/** Decode the independently valid slices of an untrusted runner `actuation` object. */
++export function parseRunnerActuationReport(value: unknown): RunnerActuationReport | undefined {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
++  const report = value as Record<string, unknown>;
++  const targeting = readUnion(report.targeting, TARGETINGS);
++  const geometry = readUnion(report.geometry, GEOMETRIES);
++  const executor = readUnion(report.executor, EXECUTORS);
++  const executorDetail =
++    typeof report.executorDetail === 'string' ? report.executorDetail : undefined;
++  const coordinateFallback = readFallback(report.coordinateFallback);
++  const mechanismFallback = readFallback(report.mechanismFallback);
++  if (
++    targeting === undefined &&
++    geometry === undefined &&
++    executor === undefined &&
++    executorDetail === undefined &&
++    coordinateFallback === undefined &&
++    mechanismFallback === undefined
++  ) {
++    return undefined;
++  }
++  return { targeting, geometry, executor, executorDetail, coordinateFallback, mechanismFallback };
++}
++
++/**
++ * Build the complete outcome for the direct-selector runner route. The daemon
++ * owns the semantic-targeting fact because the route exists only for a selector
++ * command. The runner owns how it resolved and injected that target. The
++ * fallback facts the daemon can derive from the request are defaults only —
++ * runner evidence, when valid, wins because the outcome is runner-internal.
++ */
++export function mergeDirectIosRunnerActuation(params: {
++  report: unknown;
++  expectedPointSupplied: boolean;
++  usedNonHittableCoordinateFallback: boolean;
++}): ActuationOutcome {
++  const runner = parseRunnerActuationReport(params.report);
++  const expectedPointGeometryConsistent =
++    runner?.geometry === undefined ||
++    runner.geometry === 'runner-expected-point' ||
++    runner.geometry === 'unknown';
++  const inferredCoordinateFallback = params.usedNonHittableCoordinateFallback
++    ? { reason: ACTUATION_COORDINATE_FALLBACK_NON_HITTABLE_COORDINATE }
++    : params.expectedPointSupplied && expectedPointGeometryConsistent
++      ? { reason: ACTUATION_COORDINATE_FALLBACK_EXPECTED_POINT }
++      : undefined;
++  return stripUndefinedActuationFields({
++    version: ACTUATION_OUTCOME_VERSION,
++    targeting: 'element',
++    geometry: runner?.geometry ?? 'unknown',
++    executor: runner?.executor ?? 'unknown',
++    executorDetail: runner?.executorDetail,
++    coordinateFallback: runner?.coordinateFallback ?? inferredCoordinateFallback,
++    mechanismFallback: runner?.mechanismFallback,
++  });
++}
++
++function readUnion<T extends string>(value: unknown, values: readonly T[]): T | undefined {
++  return typeof value === 'string' && (values as readonly string[]).includes(value)
++    ? (value as T)
++    : undefined;
++}
++
++function readFallback(value: unknown): ActuationFallback | undefined {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
++  const fallback = value as Record<string, unknown>;
++  if (typeof fallback.reason !== 'string' || fallback.reason.length === 0) return undefined;
++  return typeof fallback.detail === 'string'
++    ? { reason: fallback.reason, detail: fallback.detail }
++    : { reason: fallback.reason };
++}
++
++function stripUndefinedActuationFields(outcome: ActuationOutcome): ActuationOutcome {
++  return Object.fromEntries(
++    Object.entries(outcome).filter(([, value]) => value !== undefined),
++  ) as ActuationOutcome;
++}
+diff --git a/packages/daemon/src/execution/interaction/internal/interaction-touch-actuation-outcome.test.ts b/packages/daemon/src/execution/interaction/internal/interaction-touch-actuation-outcome.test.ts
+index 9e277382e..d173ddb91 100644
+--- a/packages/daemon/src/execution/interaction/internal/interaction-touch-actuation-outcome.test.ts
++++ b/packages/daemon/src/execution/interaction/internal/interaction-touch-actuation-outcome.test.ts
+@@ -12,16 +12,21 @@ import {
+   mockTapPoint,
+   resetGetRuntimeFixture,
+ } from '../../__tests__/interaction-get-runtime-fixture.ts';
+-import { makeStaleRefSession, makeTwoButtonNodes } from './__tests__/interaction-touch-fixtures.ts';
++import {
++  contextFromFlags,
++  makeStaleRefSession,
++  makeTwoButtonNodes,
++} from './__tests__/interaction-touch-fixtures.ts';
+ import { handleInteractionCommands } from '../index.ts';
+ import { touchCreateCommandSurface } from '../../../__tests__/support/touch-command-surface-fake.ts';
+-import { contextFromFlags } from './__tests__/interaction-touch-fixtures.ts';
++import { mergeDirectIosRunnerActuation } from './interaction-actuation-runner.ts';
+ 
+ /**
+  * The actuation outcome report on interaction success responses: the daemon
+  * owns targeting/geometry for runtime-resolved interactions, a delegated
+  * direct dispatch discloses its coordinateFallback, and the direct runner
+- * payload path carries no report — the platform runner owns that outcome.
++ * payload path merges the runner's own outcome defensively. An old runner
++ * that omits the object reads unknown — never a purer mechanism.
+  */
+ 
+ beforeEach(() => {
+@@ -120,7 +125,7 @@ test('an undelegated selector click carries no fallback facts', async () => {
+   expect(actuation?.mechanismFallback).toBeUndefined();
+ });
+ 
+-test('the direct runner payload path carries no actuation report', async () => {
++test('an old direct runner reports unknown facts without a purity upgrade', async () => {
+   const sessionStore = makeSessionStore();
+   const sessionName = 'actuation-direct-success';
+   publishTreeSession(sessionStore, sessionName);
+@@ -134,7 +139,82 @@ test('the direct runner payload path carries no actuation report', async () => {
+   expect(mockTapPoint).not.toHaveBeenCalled();
+   expect(response?.ok).toBe(true);
+   if (!response?.ok) return;
+-  expect(response.data?.actuation).toBeUndefined();
++  expect(response.data?.actuation).toEqual({
++    version: 1,
++    targeting: 'element',
++    geometry: 'unknown',
++    executor: 'unknown',
++  });
++});
++
++test('a direct runner actuation report merges its targeting geometry executor and fallback facts', async () => {
++  const sessionStore = makeSessionStore();
++  const sessionName = 'actuation-direct-full-report';
++  publishTreeSession(sessionStore, sessionName);
++  mockTapElementSelector.mockResolvedValueOnce({
++    x: 60,
++    y: 40,
++    actuation: {
++      version: 1,
++      targeting: 'element',
++      geometry: 'runner-element-frame',
++      executor: 'xctest-synthesized-touch',
++      coordinateFallback: { reason: 'non-hittable-coordinate' },
++      mechanismFallback: {
++        reason: 'synthesized-touch-unavailable',
++        detail: 'event synthesis failed',
++      },
++    },
++  });
++
++  const response = await runInteraction(sessionStore, sessionName, 'click', ['label=Continue'], {
++    maestro: { allowNonHittableCoordinateFallback: true },
++  });
++
++  expect(response?.ok).toBe(true);
++  if (!response?.ok) return;
++  expect(response.data?.actuation).toEqual({
++    version: 1,
++    targeting: 'element',
++    geometry: 'runner-element-frame',
++    executor: 'xctest-synthesized-touch',
++    coordinateFallback: { reason: 'non-hittable-coordinate' },
++    mechanismFallback: {
++      reason: 'synthesized-touch-unavailable',
++      detail: 'event synthesis failed',
++    },
++  });
++});
++
++test('a malformed direct runner actuation slice is discarded field by field', async () => {
++  const sessionStore = makeSessionStore();
++  const sessionName = 'actuation-direct-malformed-report';
++  publishTreeSession(sessionStore, sessionName);
++  mockTapElementSelector.mockResolvedValueOnce({
++    x: 60,
++    y: 40,
++    actuation: {
++      targeting: 'not-a-targeting',
++      geometry: 'runner-expected-point',
++      executor: 'runner-magically-semantic',
++      coordinateFallback: { detail: 42 },
++      mechanismFallback: { reason: 'synthesized-touch-unavailable' },
++    },
++  });
++
++  const response = await runInteraction(sessionStore, sessionName, 'click', ['label=Continue'], {
++    maestro: { allowNonHittableCoordinateFallback: true },
++  });
++
++  expect(response?.ok).toBe(true);
++  if (!response?.ok) return;
++  expect(response.data?.actuation).toEqual({
++    version: 1,
++    targeting: 'element',
++    geometry: 'runner-expected-point',
++    executor: 'unknown',
++    mechanismFallback: { reason: 'synthesized-touch-unavailable' },
++  });
+ });
+ 
+ test('the backend actuation fragment merges into the response outcome', async () => {
+@@ -175,3 +255,54 @@ test('the backend actuation fragment merges into the response outcome', async ()
+     mechanismFallback: { reason: 'automation-helper-input-not-confirmed' },
+   });
+ });
++
++test('an expected point supplied to the direct runner defaults to its coordinate fallback fact', () => {
++  expect(
++    mergeDirectIosRunnerActuation({
++      report: undefined,
++      expectedPointSupplied: true,
++      usedNonHittableCoordinateFallback: false,
++    }).coordinateFallback,
++  ).toEqual({ reason: 'expected-point-coordinate' });
++});
++
++test('a runner coordinate fallback fact wins over the daemon inference', () => {
++  expect(
++    mergeDirectIosRunnerActuation({
++      report: {
++        coordinateFallback: { reason: 'non-hittable-coordinate', detail: 'runner-detail' },
++      },
++      expectedPointSupplied: true,
++      usedNonHittableCoordinateFallback: false,
++    }).coordinateFallback,
++  ).toEqual({ reason: 'non-hittable-coordinate', detail: 'runner-detail' });
++});
++
++test('a skewed runner report cannot retarget the daemon-owned selector fact', () => {
++  expect(
++    mergeDirectIosRunnerActuation({
++      report: {
++        targeting: 'point',
++        geometry: 'runner-element-frame',
++        executor: 'xctest-coordinate',
++      },
++      expectedPointSupplied: false,
++      usedNonHittableCoordinateFallback: false,
++    }),
++  ).toEqual({
++    version: 1,
++    targeting: 'element',
++    geometry: 'runner-element-frame',
++    executor: 'xctest-coordinate',
++  });
++});
++
++test('contradictory runner geometry suppresses the expected-point inference', () => {
++  expect(
++    mergeDirectIosRunnerActuation({
++      report: { geometry: 'runner-element-frame', executor: 'xctest-coordinate' },
++      expectedPointSupplied: true,
++      usedNonHittableCoordinateFallback: false,
++    }).coordinateFallback,
++  ).toBeUndefined();
++});
+diff --git a/packages/daemon/src/execution/interaction/internal/interaction-touch-direct-ios.ts b/packages/daemon/src/execution/interaction/internal/interaction-touch-direct-ios.ts
+index d4ee94c3d..6b5584bcc 100644
+--- a/packages/daemon/src/execution/interaction/internal/interaction-touch-direct-ios.ts
++++ b/packages/daemon/src/execution/interaction/internal/interaction-touch-direct-ios.ts
+@@ -22,6 +22,7 @@ import {
+   readInteractionResponseDataTransformCommand,
+   transformTouchResponseData,
+ } from './interaction-touch-response.ts';
++import { mergeDirectIosRunnerActuation } from './interaction-actuation-runner.ts';
+ 
+ /**
+  * How the Maestro-compatible direct iOS selector route dispatches or
+@@ -83,6 +84,11 @@ export async function dispatchDirectIosSelectorTap(
+       extra: {
+         ...extra,
+         ...maestroFallback.extra,
++        actuation: mergeDirectIosRunnerActuation({
++          report: data.actuation,
++          expectedPointSupplied: selector.expectedPoint !== undefined,
++          usedNonHittableCoordinateFallback: maestroFallback.used,
++        }),
+       },
+     });
+     return {
+diff --git a/packages/daemon/src/execution/type-text-runtime.ts b/packages/daemon/src/execution/type-text-runtime.ts
+index eb6cfbbe8..d14fbe063 100644
+--- a/packages/daemon/src/execution/type-text-runtime.ts
++++ b/packages/daemon/src/execution/type-text-runtime.ts
+@@ -1,3 +1,4 @@
++import { ACTUATION_OUTCOME_VERSION } from '@agent-device/contracts/actuation-outcome';
+ import { typeTextRuntimeUse } from '@agent-device/contracts/platform-runtime-operations';
+ import type {
+   TypeTextInput,
+@@ -94,10 +95,23 @@ export async function executeBoundTypeText(
+ ): Promise<Record<string, unknown>> {
+   const backendResult = await runtime.operations.typeText(typeTextInput(text, delayMs, context));
+   const textEntryRoute = backendResult?.textEntryRoute;
++  const actuationFragment = backendResult?.actuation;
+   return {
+     ...(textEntryRoute === undefined ? {} : { textEntryRoute }),
+     text,
+     delayMs,
++    actuation: {
++      version: ACTUATION_OUTCOME_VERSION,
++      targeting: 'direct',
++      geometry: 'none',
++      executor: actuationFragment?.executor ?? 'unknown',
++      ...(actuationFragment?.executorDetail
++        ? { executorDetail: actuationFragment.executorDetail }
++        : {}),
++      ...(actuationFragment?.mechanismFallback
++        ? { mechanismFallback: actuationFragment.mechanismFallback }
++        : {}),
++    },
+     ...successText(`Typed ${Array.from(text).length} chars`),
+   };
+ }
+diff --git a/packages/platform-apple/src/interactions.test.ts b/packages/platform-apple/src/interactions.test.ts
+index 248181d55..d7c9332e2 100644
+--- a/packages/platform-apple/src/interactions.test.ts
++++ b/packages/platform-apple/src/interactions.test.ts
+@@ -668,8 +668,7 @@ test('iosRunnerOverrides rejects macOS desktop scroll duration above the shared
+ 
+ // #1588 widened `Interactor.type` to a bag purely so a `textEntryRoute` string
+ // could escape the runner. This narrowing replaced it: the runner wire payload
+-// is untrusted JSON, and exactly one typed field crosses into
+-// TypeTextBackendResult.
++// is untrusted JSON, and only typed fields cross into TypeTextBackendResult.
+ test('iosRunnerOverrides narrows the runner type payload to the text-entry route', async () => {
+   mockRunAppleRunnerCommand.mockResolvedValueOnce({
+     textEntryRoute: 'synthesized-first-responder',
+@@ -691,6 +690,57 @@ test('iosRunnerOverrides narrows the runner type payload to the text-entry route
+   });
+ });
+ 
++test('iosRunnerOverrides carries only the backend-owned actuation fragment from a type payload', async () => {
++  mockRunAppleRunnerCommand.mockResolvedValueOnce({
++    textEntryRoute: 'xctest-element',
++    actuation: {
++      version: 1,
++      targeting: 'element',
++      geometry: 'runner-element-frame',
++      executor: 'keyboard',
++      executorDetail: 'xctest-element',
++      coordinateFallback: { reason: 'not-backend-owned' },
++      mechanismFallback: { reason: 'synthesized-touch-unavailable', detail: 'detail' },
++    },
++  });
++
++  const { overrides } = iosRunnerOverrides(
++    IOS_TEST_SIMULATOR,
++    {
++      appBundleId: 'com.example.App',
++    },
++    process.env,
++  );
++
++  assert.deepEqual(await overrides.type('hello'), {
++    textEntryRoute: 'xctest-element',
++    actuation: {
++      executor: 'keyboard',
++      executorDetail: 'xctest-element',
++      mechanismFallback: { reason: 'synthesized-touch-unavailable', detail: 'detail' },
++    },
++  });
++});
++
++test('iosRunnerOverrides drops a malformed runner actuation executor instead of echoing it', async () => {
++  mockRunAppleRunnerCommand.mockResolvedValueOnce({
++    actuation: {
++      executor: 'runner-magically-semantic',
++      mechanismFallback: { reason: 'synthesized-touch-unavailable' },
++    },
++  });
++
++  const { overrides } = iosRunnerOverrides(
++    IOS_TEST_SIMULATOR,
++    {
++      appBundleId: 'com.example.App',
++    },
++    process.env,
++  );
++
++  assert.deepEqual(await overrides.type('hello'), {});
++});
++
+ test('iosRunnerOverrides reports no route when the runner names one it does not model', async () => {
+   mockRunAppleRunnerCommand.mockResolvedValueOnce({ textEntryRoute: 'unmodelled-route' });
+ 
+diff --git a/packages/platform-apple/src/interactions.ts b/packages/platform-apple/src/interactions.ts
+index 093cff472..451b7fd31 100644
+--- a/packages/platform-apple/src/interactions.ts
++++ b/packages/platform-apple/src/interactions.ts
+@@ -1,4 +1,9 @@
+ import type { AppStateRuntimeResult } from '@agent-device/contracts/app-state-runtime';
++import {
++  ACTUATION_EXECUTORS,
++  type ActuationBackendFragment,
++  type ActuationExecutor,
++} from '@agent-device/contracts/actuation-outcome';
+ import { singlePointerPlanEndpoints } from '@agent-device/gestures/gesture-plan';
+ import type { GesturePlan } from '@agent-device/contracts/gesture-plan-types';
+ import {
+@@ -327,7 +332,46 @@ async function runSingleApplePress(
+  */
+ function readTypeTextBackendResult(result: Record<string, unknown>): TypeTextBackendResult {
+   const route = result.textEntryRoute;
+-  return isTextEntryRoute(route) ? { textEntryRoute: route } : {};
++  const actuation = readActuationBackendFragment(result.actuation);
++  return {
++    ...(isTextEntryRoute(route) ? { textEntryRoute: route } : {}),
++    ...(actuation ? { actuation } : {}),
++  };
++}
++
++/**
++ * Narrow the backend-owned slice of a runner actuation report. The runner also
++ * owns targeting/geometry on some direct-selector commands, but a type response
++ * reaches this boundary as backend evidence only; those axes belong to the
++ * runtime that chose the insertion target and are deliberately not echoed here.
++ */
++function readActuationBackendFragment(value: unknown): ActuationBackendFragment | undefined {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
++  const candidate = value as Record<string, unknown>;
++  if (
++    typeof candidate.executor !== 'string' ||
++    !(ACTUATION_EXECUTORS as readonly string[]).includes(candidate.executor)
++  ) {
++    return undefined;
++  }
++  const mechanismFallback = readActuationFallback(candidate.mechanismFallback);
++  return {
++    executor: candidate.executor as ActuationExecutor,
++    ...(typeof candidate.executorDetail === 'string'
++      ? { executorDetail: candidate.executorDetail }
++      : {}),
++    ...(mechanismFallback ? { mechanismFallback } : {}),
++  };
++}
++
++function readActuationFallback(value: unknown): { reason: string; detail?: string } | undefined {
++  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
++  const candidate = value as Record<string, unknown>;
++  if (typeof candidate.reason !== 'string' || candidate.reason.length === 0) return undefined;
++  return {
++    reason: candidate.reason,
++    ...(typeof candidate.detail === 'string' ? { detail: candidate.detail } : {}),
++  };
+ }
+ 
+ /** The runner's `appState` payload is untrusted JSON; only a declared state name passes. */

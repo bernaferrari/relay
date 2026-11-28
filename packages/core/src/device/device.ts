@@ -45,10 +45,10 @@ import { probeLiveIosRunnerListener } from "../ios/ios-runner-listener.js";
 import { isPhysicalRunnerRoute, resolveAppleControlRoute } from "../apple/apple-control-route.js";
 import { mutateCurrentTarget } from "./device-target-mutation.js";
 import {
-  noteActivationTransport,
   noteCoordinateActuation,
   noteDaemonSelectorActuation,
   noteDirectActuation,
+  noteListenerSelectorActuation,
   type ActivationResolutionPath,
 } from "./device-activation-transport.js";
 import { sleep } from "./device-system-actions.js";
@@ -226,17 +226,29 @@ async function pressViaLiveIosListener(
       ...(appBundleId ? { appBundleId } : {}),
     }),
   );
-  // The runner never receives a point contribution here, but its selector
-  // activation is always permitted to coordinate-activate non-hittable
-  // elements — and the collision path provably tapped a re-ranked coordinate.
-  noteActivationTransport({
-    operation: "press",
-    transport: actuation.actuation === "point" ? "snapshot-point" : "native-selector",
-    channel: "listener",
-    resolutionMethod: selectorKey === "id" ? "identifier" : "label",
-    coordinateFallbackPermitted: true,
-    ...(actuation.collisionRecovery ? { collisionRecovery: true } : {}),
-  });
+  // The runner's additive report decides how a direct selector actuation was
+  // transported. An old or skewed runner that omits it records `unobserved`;
+  // Relay must not launder that absence into a semantic-element claim. The
+  // collision path provably tapped a coordinate Relay derived from a fresh
+  // tree, so its snapshot-point provenance stays Relay-owned while the raw
+  // executor facts still come from the runner report.
+  const resolutionMethod = selectorKey === "id" ? "identifier" : "label";
+  if (actuation.actuation === "point") {
+    noteCoordinateActuation({
+      operation: "press",
+      provenance: "snapshot-point",
+      channel: "listener",
+      resolutionMethod,
+      ...(actuation.collisionRecovery ? { collisionRecovery: true } : {}),
+      ...(actuation.runnerActuation !== undefined ? { actuation: actuation.runnerActuation } : {}),
+    });
+  } else {
+    noteListenerSelectorActuation({
+      operation: "press",
+      resolutionMethod,
+      ...(actuation.runnerActuation !== undefined ? { actuation: actuation.runnerActuation } : {}),
+    });
+  }
   return true;
 }
 
@@ -334,7 +346,7 @@ export async function pressPoint(
       const live = await probeLiveIosRunnerListener(pressRoute.udid);
       if (live) {
         const appBundleId = await rememberedTargetApplication(context);
-        await controlledMutation("press", () =>
+        const listenerPress = await controlledMutation("press", () =>
           tapViaLiveIosRunnerListener({
             serial: pressRoute.udid,
             point: { x, y },
@@ -346,12 +358,15 @@ export async function pressPoint(
           provenance: transport,
           channel: "listener",
           ...(provenance.resolutionMethod ? { resolutionMethod: provenance.resolutionMethod } : {}),
+          ...(listenerPress.runnerActuation !== undefined
+            ? { actuation: listenerPress.runnerActuation }
+            : {}),
         });
         return;
       }
     }
   }
-  await controlledMutation("press", () =>
+  const daemonPressResponse = await controlledMutation("press", () =>
     nativeDevice(device).interactions.press({
       ...base(),
       x,
@@ -359,11 +374,13 @@ export async function pressPoint(
       ...repeated,
     } as never),
   );
+  const daemonActuation = (daemonPressResponse as { actuation?: unknown } | undefined)?.actuation;
   noteCoordinateActuation({
     operation: "press",
     provenance: transport,
     channel: "daemon",
     ...(provenance.resolutionMethod ? { resolutionMethod: provenance.resolutionMethod } : {}),
+    ...(daemonActuation !== undefined ? { actuation: daemonActuation } : {}),
   });
 }
 
@@ -378,55 +395,56 @@ export async function longPressTarget(
   },
   durationMs = 700,
 ): Promise<void> {
-  // Long-press payloads never carry the non-hittable coordinate allowance:
-  // every semantic branch here is a bare native selector actuation.
-  const bareSelector = (resolutionMethod: ActivationResolutionPath) =>
-    noteActivationTransport({
+  // Long-press payloads never carry the non-hittable coordinate allowance.
+  // Their selector mechanism is still knowable only from the daemon's report;
+  // success by itself is not semantic-actuation evidence.
+  const noteLongPressSelector = (resolutionMethod: ActivationResolutionPath, response: unknown) =>
+    noteDaemonSelectorActuation({
       operation: "long-press",
-      transport: "native-selector",
-      channel: "daemon",
       resolutionMethod,
+      coordinateFallbackPermitted: false,
+      actuation: (response as { actuation?: unknown } | undefined)?.actuation,
     });
   if (target.identifier) {
-    await controlledMutation("long-press", () =>
+    const response = await controlledMutation("long-press", () =>
       nativeDevice(device).interactions.longPress({
         ...base(),
         selector: `id="${target.identifier!.replaceAll('"', '\\"')}"`,
         durationMs,
       }),
     );
-    bareSelector("identifier");
+    noteLongPressSelector("identifier", response);
   } else if (target.ref) {
-    await controlledMutation("long-press", () =>
+    const response = await controlledMutation("long-press", () =>
       nativeDevice(device).interactions.longPress({
         ...base(),
         ref: target.ref!.startsWith("@") ? target.ref! : `@${target.ref!}`,
         durationMs,
       }),
     );
-    bareSelector("ref");
+    noteLongPressSelector("ref", response);
   } else if (target.label) {
     const label = target.label;
-    await controlledMutation("long-press", () =>
+    const response = await controlledMutation("long-press", () =>
       nativeDevice(device).interactions.longPress({
         ...base(),
         selector: `label="${label.replaceAll('"', '\\"')}"`,
         durationMs,
       }),
     );
-    bareSelector("label");
+    noteLongPressSelector("label", response);
   } else if (target.text) {
     const text = target.text;
-    await controlledMutation("long-press", () =>
+    const response = await controlledMutation("long-press", () =>
       nativeDevice(device).interactions.longPress({
         ...base(),
         selector: `label*="${text.replaceAll('"', '\\"')}"`,
         durationMs,
       }),
     );
-    bareSelector("text");
+    noteLongPressSelector("text", response);
   } else if (target.point) {
-    await controlledMutation("long-press", () =>
+    const response = await controlledMutation("long-press", () =>
       nativeDevice(device).interactions.longPress({
         ...base(),
         x: target.point!.x,
@@ -439,6 +457,7 @@ export async function longPressTarget(
       provenance: "explicit-point",
       channel: "daemon",
       resolutionMethod: "point",
+      actuation: (response as { actuation?: unknown } | undefined)?.actuation,
     });
   } else {
     throw new Error("hold requires a target");
@@ -505,16 +524,17 @@ export async function pressRef(
   repeated?: RepeatedPress,
 ): Promise<void> {
   const normalized = ref.startsWith("@") ? ref : `@${ref}`;
-  await controlledMutation("press", () =>
+  const pressResponse = await controlledMutation("press", () =>
     nativeDevice(device).interactions.press({ ...base(), ref: normalized, ...repeated }),
   );
-  // Ref presses attach no maestro fields, so no point contribution and no
-  // coordinate fallback permission ever reaches the runner here.
-  noteActivationTransport({
+  // Ref presses attach no non-hittable allowance. Their mechanism still comes
+  // only from the daemon's actuation report; an old peer therefore records
+  // unobserved rather than an unearned semantic classification.
+  noteDaemonSelectorActuation({
     operation: "press",
-    transport: "native-selector",
-    channel: "daemon",
     resolutionMethod: "ref",
+    coordinateFallbackPermitted: false,
+    actuation: (pressResponse as { actuation?: unknown } | undefined)?.actuation,
   });
 }
 

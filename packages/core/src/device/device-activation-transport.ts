@@ -105,8 +105,11 @@ export type ActivationTransportRecord = {
   actuationTargeting?: string;
   actuationGeometry?: string;
   actuationExecutor?: string;
+  actuationExecutorDetail?: string;
   actuationCoordinateFallbackReason?: string;
+  actuationCoordinateFallbackDetail?: string;
   actuationMechanismFallbackReason?: string;
+  actuationMechanismFallbackDetail?: string;
   at: number;
 };
 
@@ -212,8 +215,11 @@ export function noteActivationTransport(input: {
   actuationTargeting?: string;
   actuationGeometry?: string;
   actuationExecutor?: string;
+  actuationExecutorDetail?: string;
   actuationCoordinateFallbackReason?: string;
+  actuationCoordinateFallbackDetail?: string;
   actuationMechanismFallbackReason?: string;
+  actuationMechanismFallbackDetail?: string;
   at?: number;
 }): void {
   const { key, platform } = currentContextKey();
@@ -233,11 +239,20 @@ export function noteActivationTransport(input: {
     ...(input.actuationTargeting ? { actuationTargeting: input.actuationTargeting } : {}),
     ...(input.actuationGeometry ? { actuationGeometry: input.actuationGeometry } : {}),
     ...(input.actuationExecutor ? { actuationExecutor: input.actuationExecutor } : {}),
+    ...(input.actuationExecutorDetail
+      ? { actuationExecutorDetail: input.actuationExecutorDetail }
+      : {}),
     ...(input.actuationCoordinateFallbackReason
       ? { actuationCoordinateFallbackReason: input.actuationCoordinateFallbackReason }
       : {}),
+    ...(input.actuationCoordinateFallbackDetail
+      ? { actuationCoordinateFallbackDetail: input.actuationCoordinateFallbackDetail }
+      : {}),
     ...(input.actuationMechanismFallbackReason
       ? { actuationMechanismFallbackReason: input.actuationMechanismFallbackReason }
+      : {}),
+    ...(input.actuationMechanismFallbackDetail
+      ? { actuationMechanismFallbackDetail: input.actuationMechanismFallbackDetail }
       : {}),
     at: input.at ?? Date.now(),
   };
@@ -260,8 +275,11 @@ export type DaemonActuationReport = {
   targeting?: string;
   geometry?: string;
   executor?: string;
+  executorDetail?: string;
   coordinateFallbackReason?: string;
+  coordinateFallbackDetail?: string;
   mechanismFallbackReason?: string;
+  mechanismFallbackDetail?: string;
 };
 
 /** Parse the additive `actuation` object off a daemon interaction response.
@@ -270,20 +288,45 @@ export type DaemonActuationReport = {
 export function parseDaemonActuationReport(value: unknown): DaemonActuationReport | undefined {
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as Record<string, unknown>;
-  const readFallbackReason = (raw: unknown): string | undefined => {
+  const readFallback = (raw: unknown): { reason: string; detail?: string } | undefined => {
     if (!raw || typeof raw !== "object") return undefined;
-    const reason = (raw as Record<string, unknown>).reason;
-    return typeof reason === "string" && reason.length > 0 ? reason : undefined;
+    const fallback = raw as Record<string, unknown>;
+    const reason = fallback.reason;
+    if (typeof reason !== "string" || reason.length === 0) return undefined;
+    const detail = fallback.detail;
+    return {
+      reason,
+      ...(typeof detail === "string" && detail.length > 0 ? { detail } : {}),
+    };
   };
+  const readAxis = (raw: unknown): string | undefined =>
+    typeof raw === "string" && raw.length > 0 ? raw : undefined;
+  const targeting = readAxis(candidate.targeting);
+  const geometry = readAxis(candidate.geometry);
+  const executor = readAxis(candidate.executor);
+  const executorDetail = readAxis(candidate.executorDetail);
+  const coordinateFallback = readFallback(candidate.coordinateFallback);
+  const mechanismFallback = readFallback(candidate.mechanismFallback);
   const report: DaemonActuationReport = {
-    ...(typeof candidate.targeting === "string" ? { targeting: candidate.targeting } : {}),
-    ...(typeof candidate.geometry === "string" ? { geometry: candidate.geometry } : {}),
-    ...(typeof candidate.executor === "string" ? { executor: candidate.executor } : {}),
-    ...(readFallbackReason(candidate.coordinateFallback)
-      ? { coordinateFallbackReason: readFallbackReason(candidate.coordinateFallback) }
+    ...(targeting ? { targeting } : {}),
+    ...(geometry ? { geometry } : {}),
+    ...(executor ? { executor } : {}),
+    ...(executorDetail ? { executorDetail } : {}),
+    ...(coordinateFallback
+      ? {
+          coordinateFallbackReason: coordinateFallback.reason,
+          ...(coordinateFallback.detail
+            ? { coordinateFallbackDetail: coordinateFallback.detail }
+            : {}),
+        }
       : {}),
-    ...(readFallbackReason(candidate.mechanismFallback)
-      ? { mechanismFallbackReason: readFallbackReason(candidate.mechanismFallback) }
+    ...(mechanismFallback
+      ? {
+          mechanismFallbackReason: mechanismFallback.reason,
+          ...(mechanismFallback.detail
+            ? { mechanismFallbackDetail: mechanismFallback.detail }
+            : {}),
+        }
       : {}),
   };
   return Object.keys(report).length > 0 ? report : undefined;
@@ -323,6 +366,38 @@ function transportForDaemonActuation(report: DaemonActuationReport): ActivationT
   return "unobserved";
 }
 
+/** The raw actuation fields a journal record preserves; no classification happens here. */
+function actuationReportFields(report: DaemonActuationReport | undefined): Partial<{
+  actuationTargeting: string;
+  actuationGeometry: string;
+  actuationExecutor: string;
+  actuationExecutorDetail: string;
+  actuationCoordinateFallbackReason: string;
+  actuationCoordinateFallbackDetail: string;
+  actuationMechanismFallbackReason: string;
+  actuationMechanismFallbackDetail: string;
+}> {
+  if (!report) return {};
+  return {
+    ...(report.targeting ? { actuationTargeting: report.targeting } : {}),
+    ...(report.geometry ? { actuationGeometry: report.geometry } : {}),
+    ...(report.executor ? { actuationExecutor: report.executor } : {}),
+    ...(report.executorDetail ? { actuationExecutorDetail: report.executorDetail } : {}),
+    ...(report.coordinateFallbackReason
+      ? { actuationCoordinateFallbackReason: report.coordinateFallbackReason }
+      : {}),
+    ...(report.coordinateFallbackDetail
+      ? { actuationCoordinateFallbackDetail: report.coordinateFallbackDetail }
+      : {}),
+    ...(report.mechanismFallbackReason
+      ? { actuationMechanismFallbackReason: report.mechanismFallbackReason }
+      : {}),
+    ...(report.mechanismFallbackDetail
+      ? { actuationMechanismFallbackDetail: report.mechanismFallbackDetail }
+      : {}),
+  };
+}
+
 /**
  * Record a daemon-mediated selector actuation whose payload was built with
  * the non-hittable coordinate allowance (`iosNonHittablePressFields`). When
@@ -338,28 +413,52 @@ export function noteDaemonSelectorActuation(input: {
   resolutionMethod?: ActivationResolutionPath;
   /** The raw `actuation` value off the daemon success response, when one came back. */
   actuation?: unknown;
+  /** Whether the dispatch carried the non-hittable coordinate allowance. The
+   * legacy press/fill callers do, so the default preserves that existing fact. */
+  coordinateFallbackPermitted?: boolean;
+}): void {
+  noteReportedSelectorActuation({ ...input, channel: "daemon" });
+}
+
+/**
+ * Record a selector actuation dispatched through the adopted Apple runner
+ * listener. The same daemon report parser is intentional: the listener speaks
+ * the runner response shape directly, and an old runner that omits the object
+ * is skew evidence for `unobserved`, never proof that a semantic element
+ * mechanism ran.
+ */
+export function noteListenerSelectorActuation(input: {
+  operation: ActivationOperation;
+  resolutionMethod?: ActivationResolutionPath;
+  /** The raw `actuation` value off the runner success payload, when one came back. */
+  actuation?: unknown;
+  coordinateFallbackPermitted?: boolean;
+}): void {
+  noteReportedSelectorActuation({ ...input, channel: "listener" });
+}
+
+function noteReportedSelectorActuation(input: {
+  operation: ActivationOperation;
+  resolutionMethod?: ActivationResolutionPath;
+  actuation?: unknown;
+  coordinateFallbackPermitted?: boolean;
+  channel: "daemon" | "listener";
 }): void {
   const { platform } = currentContextKey();
   const report = parseDaemonActuationReport(input.actuation);
+  // Relay owns the fact that this dispatch was selector-targeted. A skewed peer
+  // must not retarget it as direct/numeric and thereby launder geometry away;
+  // contradiction reads as unobserved while the raw axes remain on the record.
+  const contradictsSelectorTargeting =
+    report?.targeting !== undefined && report.targeting !== "element";
   noteActivationTransport({
     operation: input.operation,
-    transport: report ? transportForDaemonActuation(report) : "unobserved",
-    channel: "daemon",
+    transport:
+      report && !contradictsSelectorTargeting ? transportForDaemonActuation(report) : "unobserved",
+    channel: input.channel,
     ...(input.resolutionMethod ? { resolutionMethod: input.resolutionMethod } : {}),
-    coordinateFallbackPermitted: platform === "ios",
-    ...(report
-      ? {
-          ...(report.targeting ? { actuationTargeting: report.targeting } : {}),
-          ...(report.geometry ? { actuationGeometry: report.geometry } : {}),
-          ...(report.executor ? { actuationExecutor: report.executor } : {}),
-          ...(report.coordinateFallbackReason
-            ? { actuationCoordinateFallbackReason: report.coordinateFallbackReason }
-            : {}),
-          ...(report.mechanismFallbackReason
-            ? { actuationMechanismFallbackReason: report.mechanismFallbackReason }
-            : {}),
-        }
-      : {}),
+    coordinateFallbackPermitted: input.coordinateFallbackPermitted ?? platform === "ios",
+    ...actuationReportFields(report),
   });
 }
 
@@ -371,13 +470,19 @@ export function noteCoordinateActuation(input: {
   channel: ActivationChannel;
   resolutionMethod?: ActivationResolutionPath;
   collisionRecovery?: boolean;
+  coordinateFallbackPermitted?: boolean;
+  /** The raw actuation outcome report the executor returned, when one came back. */
+  actuation?: unknown;
 }): void {
+  const report = parseDaemonActuationReport(input.actuation);
   noteActivationTransport({
     operation: input.operation,
     transport: input.provenance,
     channel: input.channel,
     ...(input.resolutionMethod ? { resolutionMethod: input.resolutionMethod } : {}),
     ...(input.collisionRecovery ? { collisionRecovery: true } : {}),
+    coordinateFallbackPermitted: input.coordinateFallbackPermitted ?? false,
+    ...actuationReportFields(report),
   });
 }
 
@@ -386,8 +491,15 @@ export function noteCoordinateActuation(input: {
 export function noteDirectActuation(
   operation: ActivationOperation,
   channel: ActivationChannel,
+  actuation?: unknown,
 ): void {
-  noteActivationTransport({ operation, transport: "direct", channel });
+  const report = parseDaemonActuationReport(actuation);
+  noteActivationTransport({
+    operation,
+    transport: "direct",
+    channel,
+    ...actuationReportFields(report),
+  });
 }
 
 /** Every actuation recorded on the ambient target after `sequence`. */

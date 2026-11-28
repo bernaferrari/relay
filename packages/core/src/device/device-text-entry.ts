@@ -164,13 +164,20 @@ export async function replaceText(
             text: value,
           }),
         );
-        noteDaemonSelectorActuation({
-          operation: "fill",
-          actuation: (fillResponse as { actuation?: unknown } | undefined)?.actuation,
-        });
+        const actuation = (fillResponse as { actuation?: unknown } | undefined)?.actuation;
+        if (target.point) {
+          noteCoordinateActuation({
+            operation: "fill",
+            provenance: "explicit-point",
+            channel: "daemon",
+            actuation,
+          });
+        } else {
+          noteDaemonSelectorActuation({ operation: "fill", actuation });
+        }
       } catch (error) {
         const point = await iosSnapshotFallbackPoint(device, target, error, fillPoint);
-        await controlledMutation("fill", () =>
+        const fallbackFillResponse = await controlledMutation("fill", () =>
           nativeDevice(device).interactions.fill({
             ...base(),
             x: point.x,
@@ -180,16 +187,21 @@ export async function replaceText(
         );
         noteCoordinateActuation({
           operation: "fill",
-          provenance: "snapshot-point",
+          provenance: target.point ? "explicit-point" : "snapshot-point",
           channel: "daemon",
+          actuation: (fallbackFillResponse as { actuation?: unknown } | undefined)?.actuation,
         });
       }
     },
     type: async (value) => {
-      await controlledMutation("type", () =>
+      const typeResponse = await controlledMutation("type", () =>
         nativeDevice(device).interactions.type({ ...base(), text: value }),
       );
-      noteDirectActuation("type", "daemon");
+      noteDirectActuation(
+        "type",
+        "daemon",
+        (typeResponse as { actuation?: unknown } | undefined)?.actuation,
+      );
     },
   });
   return fillPoint ? { resolution: explicitPointResolution(fillPoint) } : {};
@@ -232,13 +244,13 @@ export async function typeViaLiveIosListener(text: string): Promise<boolean> {
   const live = await probeLiveIosRunnerListener(typeRoute.udid);
   if (!live) return false;
   const appBundleId = await rememberedTargetApplication(context);
-  await controlledMutation("type", () =>
+  const typeResult = await controlledMutation("type", () =>
     typeViaLiveIosRunnerListener({
       serial: typeRoute.udid,
       text,
       ...(appBundleId ? { appBundleId } : {}),
     }),
   );
-  noteDirectActuation("type", "listener");
+  noteDirectActuation("type", "listener", typeResult.runnerActuation);
   return true;
 }

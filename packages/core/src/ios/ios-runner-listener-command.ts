@@ -52,6 +52,8 @@ export type LiveIosRunnerCommandResult = {
     selectorCatalog?: unknown;
     coordinateSpace?: string;
     targetActivation?: unknown;
+    /** Additive runner actuation outcome report; untrusted wire JSON parsed downstream. */
+    actuation?: unknown;
   };
   nodes?: SnapshotNode[];
 };
@@ -587,6 +589,10 @@ export type IosListenerTapActuation = {
   /** The selector matched multiple nodes; a fresh tree re-ranked them and the
    * winning coordinate was tapped. Always a point actuation. */
   collisionRecovery?: true;
+  /** The additive actuation outcome object the runner returned, unparsed. Old
+   * runners omit it; downstream parsing treats absence as unknown rather than
+   * evidence of a purer mechanism. */
+  runnerActuation?: unknown;
 };
 
 export async function tapViaLiveIosRunnerListener(input: {
@@ -622,7 +628,12 @@ export async function tapViaLiveIosRunnerListener(input: {
   const timeoutMs = input.timeoutMs ?? 20_000;
   const post = injectedPost ?? postLiveIosRunnerCommand;
   const result = await postSupervisedAdoptedIosMutation(listener, post, command, timeoutMs);
-  if (result.ok === true) return { actuation: input.point ? "point" : "selector" };
+  if (result.ok === true) {
+    return {
+      actuation: input.point ? "point" : "selector",
+      ...(result.data?.actuation !== undefined ? { runnerActuation: result.data.actuation } : {}),
+    };
+  }
   const failure = adoptedIosMutationFailure(
     result,
     liveIosRunnerFailureMessage(result, "Live XCTest listener tap failed"),
@@ -661,7 +672,11 @@ export async function tapViaLiveIosRunnerListener(input: {
         liveIosRunnerFailureMessage(ranked, "Live XCTest listener tap failed"),
       );
     }
-    return { actuation: "point", collisionRecovery: true };
+    return {
+      actuation: "point",
+      collisionRecovery: true,
+      ...(ranked.data?.actuation !== undefined ? { runnerActuation: ranked.data.actuation } : {}),
+    };
   }
   throw failure;
 }
@@ -681,7 +696,7 @@ export async function typeViaLiveIosRunnerListener(input: {
   selectorKey?: "label" | "id";
   selectorValue?: string;
   timeoutMs?: number;
-}): Promise<void> {
+}): Promise<{ runnerActuation?: unknown }> {
   const listener = await probeLiveIosRunnerListener(input.serial);
   if (!listener) {
     throw new Error("iOS snapshot needs an active XCTest session");
@@ -708,6 +723,7 @@ export async function typeViaLiveIosRunnerListener(input: {
       liveIosRunnerFailureMessage(result, "Live XCTest listener type failed"),
     );
   }
+  return result.data?.actuation === undefined ? {} : { runnerActuation: result.data.actuation };
 }
 
 export async function postLiveIosRunnerCommand(

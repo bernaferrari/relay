@@ -201,14 +201,31 @@ test("a live listener tap uses label/id on the testCommand port", async () => {
     assert.equal(command.selectorKey, "label");
     assert.equal(command.selectorValue, "Open sidebar");
     assert.equal(command.appBundleId, "ai.x.GrokApp");
-    return { ok: true, data: { message: "tapped" } };
+    return {
+      ok: true,
+      data: {
+        message: "tapped",
+        actuation: {
+          version: 1,
+          targeting: "element",
+          geometry: "runner-element-frame",
+          executor: "xctest-synthesized-touch",
+        },
+      },
+    };
   });
   try {
-    await tapViaLiveIosRunnerListener({
+    const result = await tapViaLiveIosRunnerListener({
       serial,
       selectorKey: "label",
       selectorValue: "Open sidebar",
       appBundleId: "ai.x.GrokApp",
+    });
+    assert.deepEqual(result.runnerActuation, {
+      version: 1,
+      targeting: "element",
+      geometry: "runner-element-frame",
+      executor: "xctest-synthesized-touch",
     });
   } finally {
     restore();
@@ -240,13 +257,24 @@ test("a live listener type uses the focused field on the testCommand port", asyn
     assert.equal(command.text, "hello");
     assert.equal(command.selectorKey, undefined);
     assert.equal(command.selectorValue, undefined);
-    return { ok: true, data: { message: "typed" } };
+    return {
+      ok: true,
+      data: {
+        message: "typed",
+        actuation: { version: 1, executor: "keyboard", executorDetail: "xctest-element" },
+      },
+    };
   });
   try {
-    await typeViaLiveIosRunnerListener({
+    const result = await typeViaLiveIosRunnerListener({
       serial,
       text: "hello",
       appBundleId: "ai.x.GrokApp",
+    });
+    assert.deepEqual(result.runnerActuation, {
+      version: 1,
+      executor: "keyboard",
+      executorDetail: "xctest-element",
     });
     assert.deepEqual(commands, ["type"]);
   } finally {

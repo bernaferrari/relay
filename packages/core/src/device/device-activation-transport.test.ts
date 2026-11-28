@@ -9,6 +9,7 @@ import {
   noteCoordinateActuation,
   noteDaemonSelectorActuation,
   noteDirectActuation,
+  noteListenerSelectorActuation,
   resetActivationTransportJournalsForTests,
 } from "./device-activation-transport.js";
 import { runWithTargetContext } from "../target/target-context.js";
@@ -258,7 +259,12 @@ test("a full actuation report records its raw axes alongside the derived transpo
         targeting: "element",
         geometry: "daemon-snapshot",
         executor: "android-adb-input",
-        mechanismFallback: { reason: "automation-helper-input-not-confirmed" },
+        executorDetail: "shell-input-tap",
+        coordinateFallback: { reason: "direct-dispatch-delegated", detail: "COMMAND_FAILED" },
+        mechanismFallback: {
+          reason: "automation-helper-input-not-confirmed",
+          detail: "helper-write-unconfirmed",
+        },
       },
     });
     const records = activationTransportsSince(0);
@@ -268,8 +274,11 @@ test("a full actuation report records its raw axes alongside the derived transpo
     assert.equal(record.actuationTargeting, "element");
     assert.equal(record.actuationGeometry, "daemon-snapshot");
     assert.equal(record.actuationExecutor, "android-adb-input");
+    assert.equal(record.actuationExecutorDetail, "shell-input-tap");
+    assert.equal(record.actuationCoordinateFallbackReason, "direct-dispatch-delegated");
+    assert.equal(record.actuationCoordinateFallbackDetail, "COMMAND_FAILED");
     assert.equal(record.actuationMechanismFallbackReason, "automation-helper-input-not-confirmed");
-    assert.equal(record.actuationCoordinateFallbackReason, undefined);
+    assert.equal(record.actuationMechanismFallbackDetail, "helper-write-unconfirmed");
   });
 });
 
@@ -337,11 +346,19 @@ test("an absent actuation report records unobserved, never the purer semantic cl
 test("skew safety: malformed actuation values parse as unreported", async () => {
   resetActivationTransportJournalsForTests();
   await inContext(androidContext, async () => {
-    for (const malformed of [null, 42, "actuation", [], { targeting: 7 }, { geometry: {} }]) {
+    for (const malformed of [
+      null,
+      42,
+      "actuation",
+      [],
+      { targeting: 7 },
+      { geometry: {} },
+      { executor: "" },
+    ]) {
       noteDaemonSelectorActuation({ operation: "press", actuation: malformed });
     }
     const records = activationTransportsSince(0);
-    assert.equal(records.length, 6);
+    assert.equal(records.length, 7);
     for (const record of records) {
       assert.equal(record.transport, "unobserved");
     }
@@ -383,15 +400,111 @@ test("unobserved dominates the purer classifications in one logical action", asy
   });
 });
 
-test("a direct-injection report classifies as direct", async () => {
+test("a direct-injection report preserves its raw axes on a direct actuation", async () => {
   resetActivationTransportJournalsForTests();
   await inContext(androidContext, async () => {
-    noteDaemonSelectorActuation({
-      operation: "press",
-      actuation: { version: 1, targeting: "direct", geometry: "none", executor: "keyboard" },
+    noteDirectActuation("type", "daemon", {
+      version: 1,
+      targeting: "direct",
+      geometry: "none",
+      executor: "keyboard",
     });
     const records = activationTransportsSince(0);
     assert.equal(records[0]!.transport, "direct");
     assert.equal(records[0]!.pointContribution, false);
+    assert.equal(records[0]!.actuationExecutor, "keyboard");
+  });
+});
+
+test("a skewed peer cannot retarget a selector press as geometry-free", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(iosContext, async () => {
+    noteListenerSelectorActuation({
+      operation: "press",
+      resolutionMethod: "identifier",
+      actuation: { version: 1, targeting: "direct", geometry: "none", executor: "keyboard" },
+    });
+    const record = activationTransportsSince(0)[0]!;
+    assert.equal(record.transport, "unobserved");
+    assert.equal(record.pointContribution, true);
+    assert.equal(record.actuationTargeting, "direct");
+  });
+});
+
+test("an adopted-listener runner-element-frame report classifies as semantic and records executor facts", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(iosContext, async () => {
+    noteListenerSelectorActuation({
+      operation: "press",
+      resolutionMethod: "identifier",
+      actuation: {
+        version: 1,
+        targeting: "element",
+        geometry: "runner-element-frame",
+        executor: "xctest-synthesized-touch",
+        coordinateFallback: { reason: "non-hittable-coordinate" },
+        mechanismFallback: { reason: "synthesized-touch-unavailable" },
+      },
+    });
+    const record = activationTransportsSince(0)[0]!;
+    assert.equal(record.channel, "listener");
+    assert.equal(record.transport, "native-selector");
+    assert.equal(record.actuationGeometry, "runner-element-frame");
+    assert.equal(record.actuationExecutor, "xctest-synthesized-touch");
+    assert.equal(record.actuationCoordinateFallbackReason, "non-hittable-coordinate");
+    assert.equal(record.actuationMechanismFallbackReason, "synthesized-touch-unavailable");
+  });
+});
+
+test("an adopted-listener report on frozen runner geometry classifies as snapshot-point", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(iosContext, async () => {
+    noteListenerSelectorActuation({
+      operation: "press",
+      actuation: {
+        version: 1,
+        targeting: "element",
+        geometry: "runner-expected-point",
+        executor: "xctest-coordinate",
+      },
+    });
+    const record = activationTransportsSince(0)[0]!;
+    assert.equal(record.transport, "snapshot-point");
+    assert.equal(record.pointContribution, true);
+  });
+});
+
+test("an old adopted runner without an actuation report records unobserved, never native-selector", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(iosContext, async () => {
+    noteListenerSelectorActuation({ operation: "press", resolutionMethod: "label" });
+    const record = activationTransportsSince(0)[0]!;
+    assert.equal(record.channel, "listener");
+    assert.equal(record.transport, "unobserved");
+    assert.equal(record.pointContribution, true);
+    assert.equal(record.coordinateFallbackPermitted, true);
+  });
+});
+
+test("a collision-recovery coordinate keeps Relay provenance while preserving runner executor facts", async () => {
+  resetActivationTransportJournalsForTests();
+  await inContext(iosContext, async () => {
+    noteCoordinateActuation({
+      operation: "press",
+      provenance: "snapshot-point",
+      channel: "listener",
+      resolutionMethod: "identifier",
+      collisionRecovery: true,
+      actuation: {
+        version: 1,
+        executor: "xctest-synthesized-touch",
+      },
+    });
+    const record = activationTransportsSince(0)[0]!;
+    assert.equal(record.transport, "snapshot-point");
+    assert.equal(record.collisionRecovery, true);
+    assert.equal(record.coordinateFallbackPermitted, false);
+    assert.equal(record.actuationExecutor, "xctest-synthesized-touch");
+    assert.equal(record.actuationGeometry, undefined);
   });
 });

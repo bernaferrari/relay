@@ -1,10 +1,14 @@
 # Actuation outcome reporting
 
 Vendored `agent-device` instrumentation that native replay-cache admission is gated on.
-Phase 1 is built: the contracts, daemon-runtime construction, Android executor reporting,
-and Relay ledger consumption ship in `patches/agent-device/0002-actuation-outcome-reporting.patch`
-and `packages/core/src/device/device-activation-transport.ts`. iOS executor facts remain
-`unknown` until Phase 2 instruments the Apple runner.
+Phases 1 and 2 are built: contracts, daemon-runtime construction, and Android executor
+reporting ship in `patches/agent-device/0002-actuation-outcome-reporting.patch`; Apple runner
+outcome reporting, direct-iOS delegation reasons, and Relay adopted-listener parsing ship in
+`patches/agent-device/0003-apple-runner-actuation-reporting.patch` and
+`packages/core/src/device/device-activation-transport.ts`. Physical-iOS selector presses now
+classify honestly; old runners record `unobserved` rather than earning purity. Not yet
+instrumented: sequence/double-tap batches, mouse click, drag/swipe gestures, and tvOS remote
+presses report `executor: unknown` conservatively.
 
 ## Why
 
@@ -42,7 +46,7 @@ keep vendored type names upstream-neutral (no Relay vocabulary).
 
 1. (done) Contracts + daemon-runtime construction + Android executor reporting + Relay ledger
    consumption. Corrects the dominant unknowability without any runner upgrade.
-2. Apple runner outcome reporting + direct-iOS delegation reasons + Relay adopted-listener
+2. (done) Apple runner outcome reporting + direct-iOS delegation reasons + Relay adopted-listener
    parsing. Makes physical-iOS selector presses honest.
 3. Capability advertisement, guarantee-matrix classification, skew hardening.
 

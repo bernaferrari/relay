@@ -1187,6 +1187,167 @@ test("adopts a LISTENER_READY runner when the SDK session is missing", async () 
   }
 });
 
+test("a physical-iOS listener selector press classifies a runner actuation report honestly", async () => {
+  const { pressIdentifier } = await import("./device.js");
+  const { runWithTargetContext } = await import("../target/target-context.js");
+  const { setLiveIosRunnerCommandPostForTests } =
+    await import("../ios/ios-runner-listener-command.js");
+  const { activationTransportsSince, resetActivationTransportJournalsForTests } =
+    await import("./device-activation-transport.js");
+  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-press-actuation-"));
+  const serial = "ipad-press-actuation";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 57061,
+    }),
+  );
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    assert.equal(command.command, "tap");
+    assert.equal(command.selectorKey, "id");
+    assert.equal(command.selectorValue, "close");
+    return {
+      ok: true,
+      data: {
+        actuation: {
+          version: 1,
+          targeting: "element",
+          geometry: "runner-element-frame",
+          executor: "xctest-synthesized-touch",
+        },
+      },
+    };
+  });
+  const target = { kind: "device", platform: "ios", serial } as const;
+  const { runWithTargetSupervisorStore, TargetSupervisorStore } =
+    await import("../target/target-supervisor-store.js");
+  const supervisor = new TargetSupervisorStore(":memory:");
+  try {
+    resetActivationTransportJournalsForTests();
+    const records = await runWithTargetSupervisorStore(supervisor, () =>
+      runWithTargetContext(target, async () => {
+        await pressIdentifier({} as never, "close");
+        return activationTransportsSince(0);
+      }),
+    );
+    const record = records[0]!;
+    assert.equal(record.channel, "listener");
+    assert.equal(record.transport, "native-selector");
+    assert.equal(record.actuationGeometry, "runner-element-frame");
+    assert.equal(record.actuationExecutor, "xctest-synthesized-touch");
+  } finally {
+    supervisor.close();
+    restore();
+    resetActivationTransportJournalsForTests();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a physical-iOS listener press from an old runner records unobserved rather than semantic", async () => {
+  const { pressIdentifier } = await import("./device.js");
+  const { runWithTargetContext } = await import("../target/target-context.js");
+  const { setLiveIosRunnerCommandPostForTests } =
+    await import("../ios/ios-runner-listener-command.js");
+  const { activationTransportsSince, resetActivationTransportJournalsForTests } =
+    await import("./device-activation-transport.js");
+  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-old-runner-press-"));
+  const serial = "ipad-old-runner-press";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({
+      runnerToken: "relay-listener-fixture-token",
+      runnerPid: process.pid,
+      port: 57062,
+    }),
+  );
+  const restore = setLiveIosRunnerCommandPostForTests(async () => ({ ok: true, data: {} }));
+  const target = { kind: "device", platform: "ios", serial } as const;
+  const { runWithTargetSupervisorStore, TargetSupervisorStore } =
+    await import("../target/target-supervisor-store.js");
+  const supervisor = new TargetSupervisorStore(":memory:");
+  try {
+    resetActivationTransportJournalsForTests();
+    const records = await runWithTargetSupervisorStore(supervisor, () =>
+      runWithTargetContext(target, async () => {
+        await pressIdentifier({} as never, "close");
+        return activationTransportsSince(0);
+      }),
+    );
+    const record = records[0]!;
+    assert.equal(record.channel, "listener");
+    assert.equal(record.transport, "unobserved");
+    assert.equal(record.pointContribution, true);
+  } finally {
+    supervisor.close();
+    restore();
+    resetActivationTransportJournalsForTests();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a daemon fill response records executor facts without upgrading absent geometry", async () => {
+  const { replaceText } = await import("./device.js");
+  const { runWithTargetContext } = await import("../target/target-context.js");
+  const { activationTransportsSince, resetActivationTransportJournalsForTests } =
+    await import("./device-activation-transport.js");
+  const target = { kind: "device", platform: "ios", serial: "ipad-fill-actuation" } as const;
+  const fills: Array<Record<string, unknown>> = [];
+  const device = {
+    capture: { snapshot: async () => ({ nodes: [] }) },
+    interactions: {
+      fill: async (options: Record<string, unknown>) => {
+        fills.push(options);
+        return {
+          actuation: {
+            version: 1,
+            targeting: "element",
+            geometry: "daemon-snapshot",
+            executor: "keyboard",
+            executorDetail: "xctest-element",
+          },
+        };
+      },
+    },
+  };
+  const { runWithTargetSupervisorStore, TargetSupervisorStore } =
+    await import("../target/target-supervisor-store.js");
+  const supervisor = new TargetSupervisorStore(":memory:");
+  try {
+    resetActivationTransportJournalsForTests();
+    const records = await runWithTargetSupervisorStore(supervisor, () =>
+      runWithTargetContext(target, async () => {
+        await replaceText(device as never, { label: "Name" }, "Ada");
+        return activationTransportsSince(0);
+      }),
+    );
+    assert.equal(fills[0]?.selector, 'label="Name"');
+    const record = records[0]!;
+    assert.equal(record.operation, "fill");
+    assert.equal(record.transport, "native-selector");
+    assert.equal(record.actuationExecutor, "keyboard");
+    assert.equal(record.actuationExecutorDetail, "xctest-element");
+  } finally {
+    supervisor.close();
+    resetActivationTransportJournalsForTests();
+  }
+});
+
 test("a genuine missing iOS XCTest session remains distinct from an accessibility timeout", async () => {
   const { IosSnapshotTimedOutError, snapshot } = await import("./device.js");
   const { runWithTargetContext } = await import("../target/target-context.js");
